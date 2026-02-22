@@ -1,375 +1,464 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>メニューログ</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🍽️</text></svg>">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700&family=Zen+Maru+Gothic:wght@400;500;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
-<link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet">
-<style>
-  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  body { margin: 0; font-family: 'Zen Maru Gothic', sans-serif; }
-  .scrollbar-hide::-webkit-scrollbar { display: none; }
-  .scrollbar-hide { scrollbar-width: none; -ms-overflow-style: none; }
-  .backdrop-blur-sm { backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ワン＋インタラクション</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <!-- Firebase auto-init (Firebase Hosting用 — 設定不要) -->
+  <script src="/__/firebase/init.js"></script>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body,#app{height:100%;font-family:'DM Sans','Noto Sans JP',sans-serif}
+    body{background:#0c0c1d;color:#e0e0ff;overflow:hidden}
+    @keyframes fadeIn{from{opacity:0;transform:scale(0.96)}to{opacity:1;transform:scale(1)}}
+    @keyframes spin{to{transform:rotate(360deg)}}
+    @keyframes pulse{0%,100%{opacity:1}50%{opacity:.6}}
+
+    /* 共通UI */
+    .btn{padding:6px 14px;border-radius:8px;border:1px solid #3a3a6a;background:#1a1a3a;color:#e0e0ff;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s}
+    .btn:hover{background:#252550;border-color:#7c6cf0}
+    .btn-primary{background:linear-gradient(135deg,#7c6cf0,#e06caa);color:#fff;border:none}
+    .btn-primary:hover{opacity:.9}
+    .inp{background:#1a1a3a;border:1px solid #2a2a5a;border-radius:8px;padding:8px 12px;color:#e0e0ff;font-size:13px;outline:none;width:100%;box-sizing:border-box}
+    .lbl{font-size:11px;font-weight:600;color:#888}
+
+    /* ヘッダー */
+    .hdr{padding:14px 24px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #1a1a3a;background:#0e0e22}
+    .hdr-left{display:flex;align-items:center;gap:10px}
+    .logo{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,#7c6cf0,#e06caa);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#fff}
+    .hdr-title{font-weight:700;font-size:16px}
+    .badge{font-size:10px;background:#7c6cf020;color:#7c6cf0;padding:2px 8px;border-radius:20px;font-weight:600;border:1px solid #7c6cf040}
+    .hdr-btns{display:flex;gap:8px}
+
+    /* エディター3カラム */
+    .editor{display:flex;height:calc(100vh - 57px)}
+    .side-l{width:220px;padding:16px;border-right:1px solid #1a1a3a;display:flex;flex-direction:column;gap:6px;overflow-y:auto;background:#0e0e22}
+    .side-r{width:280px;border-left:1px solid #1a1a3a;overflow-y:auto;background:#0e0e22;padding:16px}
+    .center{flex:1;display:flex;flex-direction:column;overflow:hidden}
+
+    /* カード */
+    .card{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;background:#1e1e3a;border:1px solid #3a3a6a;cursor:grab;transition:all .2s;user-select:none}
+    .card:hover{border-color:#7c6cf0}
+    .card.active{background:#252550;border:2px solid #7c6cf0}
+
+    /* 動画ボックス */
+    .vbox{width:100%;max-width:800px;aspect-ratio:16/9;border-radius:12px;overflow:hidden;position:relative;border:1px solid #2a2a4a;background:#0a0a1a;box-shadow:0 4px 30px rgba(0,0,0,.4);transition:all .3s}
+    .vbox.dragover{border:3px dashed #7c6cf0;box-shadow:0 0 40px rgba(124,108,240,.3)}
+    .vbox iframe{width:100%;height:100%;border:none}
+
+    /* タイムライン */
+    .tl{height:48px;background:#12122a;border-radius:10px;position:relative;cursor:pointer;border:1px solid #2a2a4a;overflow:hidden}
+    .tl.dragover{background:#1a1a4a;border:2px dashed #7c6cf0}
+
+    /* オーバーレイ */
+    .ol{position:absolute;inset:0;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(8,8,24,.92);backdrop-filter:blur(8px);animation:fadeIn .3s ease}
+    .ol-inner{max-width:480px;width:85%;text-align:center}
+    .ol-btn{display:block;width:100%;padding:14px 20px;margin-bottom:10px;border-radius:12px;border:1px solid #3a3a6a;background:#1a1a3a;color:#e0e0ff;font-size:15px;cursor:pointer;text-align:left;transition:all .15s}
+    .ol-btn:hover{background:#252550;border-color:#7c6cf0}
+
+    /* プレビュー */
+    .pv-wrap{position:fixed;inset:0;background:#08081a;z-index:1000;display:flex;flex-direction:column}
+    .pv-vbox{width:100%;max-width:960px;aspect-ratio:16/9;border-radius:16px;position:relative;background:#000;box-shadow:0 8px 60px rgba(0,0,0,.6);border:1px solid #2a2a4a;overflow:hidden}
+    .pv-vbox iframe{position:absolute;inset:0;width:100%;height:100%;border:none;z-index:1}
+    .pbar{height:6px;border-radius:3px;background:#1a1a3a;position:relative}
+    .pbar-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,#7c6cf0,#e06caa);transition:width .2s linear}
+    .pbar-mark{position:absolute;top:-5px;width:16px;height:16px;border-radius:50%;transform:translateX(-50%);border:2px solid #0c0c20;display:flex;align-items:center;justify-content:center;font-size:8px;transition:all .3s}
+    .cta-ft{padding:10px 24px;background:linear-gradient(90deg,#1a1a4a,#2a1a3a);border-top:1px solid #3a3a6a;display:flex;align-items:center;justify-content:center;gap:12px}
+
+    /* モーダル */
+    .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:2000}
+    .modal{background:#14142a;border:1px solid #2a2a5a;border-radius:16px;padding:24px;width:90%;max-width:520px;display:flex;flex-direction:column;gap:16px}
+
+    /* Loading */
+    .loading{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:16px}
+    .spinner{width:40px;height:40px;border:3px solid #2a2a5a;border-top-color:#7c6cf0;border-radius:50%;animation:spin .8s linear infinite}
+    .err-box{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:16px;text-align:center;padding:40px}
+    .err-box h2{color:#ff4466;font-size:20px}
+    .err-box p{color:#888;font-size:14px;max-width:400px}
+
+    /* Poll */
+    .poll-bg{height:8px;border-radius:4px;background:#1a1a3a;overflow:hidden}
+    .poll-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,#7c6cf0,#e06caa);transition:width .8s}
+
+    /* コンソールボタン */
+    .console-btn{position:fixed;bottom:8px;right:8px;z-index:9999;font-size:10px;padding:4px 8px;border-radius:4px;background:#1a1a3a;color:#555;border:1px solid #2a2a4a;cursor:pointer}
+  </style>
 </head>
 <body>
-<div id="root"></div>
-<script type="text/babel">
-const { useState, useEffect, useRef } = React;
+<div id="app"></div>
+<button class="console-btn" onclick="copyConsole()">📋 Console</button>
+<script>
+// ─── コンソールログ収集 ───
+var _logs=[];
+(function(){var o=console.log,e=console.error,w=console.warn;
+console.log=function(){_logs.push("[LOG] "+Array.from(arguments).join(" "));o.apply(console,arguments)};
+console.error=function(){_logs.push("[ERR] "+Array.from(arguments).join(" "));e.apply(console,arguments)};
+console.warn=function(){_logs.push("[WARN] "+Array.from(arguments).join(" "));w.apply(console,arguments)};
+})();
+function copyConsole(){try{navigator.clipboard.writeText(_logs.join("\n")).then(function(){alert("コンソールログをコピーしました ("+_logs.length+"行)")})}catch(e){prompt("コンソール:",_logs.join("\n").substring(0,2000))}}
 
-const STORAGE_KEY = "menu-log-v3";
-const F1 = "'Noto Serif JP', serif";
-const F2 = "'Zen Maru Gothic', sans-serif";
-const GR = "linear-gradient(135deg, #F59E0B, #D97706)";
-const ALL_CAT = "__all__";
-const NO_CAT = "その他";
+(function(){
+"use strict";
+var db=firebase.firestore();
+var COLLECTION="interactions";
 
-// Storage wrapper using localStorage
-const storage = {
-  get: (key) => { try { const v = localStorage.getItem(key); return v ? { value: v } : null; } catch { return null; } },
-  set: (key, value) => { try { localStorage.setItem(key, value); return true; } catch { return false; } },
-  delete: (key) => { try { localStorage.removeItem(key); return true; } catch { return false; } },
+var TYPES=[
+  {type:"quiz",icon:"❓",label:"クイズ",desc:"選択式クイズ"},
+  {type:"cta_button",icon:"🔗",label:"CTAボタン",desc:"リンク付きボタン"},
+  {type:"branch",icon:"🔀",label:"分岐",desc:"2択ジャンプ"},
+  {type:"poll",icon:"📊",label:"投票",desc:"アンケート"},
+  {type:"hotspot",icon:"👆",label:"ホットスポット",desc:"クリック領域"},
+  {type:"text_overlay",icon:"💬",label:"テキスト",desc:"オーバーレイ表示"}
+];
+var TYPEMAP={};TYPES.forEach(function(t){TYPEMAP[t.type]=t});
+
+var DEFAULTS={
+  quiz:{question:"ここにクイズの質問を入力",choices:[{id:"a",text:"選択肢A",is_correct:true},{id:"b",text:"選択肢B",is_correct:false},{id:"c",text:"選択肢C",is_correct:false}],feedback:{correct:"正解！🎉",incorrect:"残念…もう一度！"}},
+  cta_button:{label:"今すぐ申し込む",url:"https://example.com"},
+  branch:{question:"どちらに興味がありますか？",options:[{id:"opt_a",text:"オプションA",jump_to_sec:30},{id:"opt_b",text:"オプションB",jump_to_sec:60}]},
+  poll:{question:"この動画は役に立ちましたか？",choices:[{id:"p1",text:"とても役立った"},{id:"p2",text:"まあまあ"},{id:"p3",text:"あまり役立たなかった"}],show_results:true},
+  hotspot:{regions:[{id:"hs_1",shape:"rect",coords:{x:35,y:35,width:30,height:30},action:{type:"url",value:"https://example.com"},tooltip:"詳細はこちら"}]},
+  text_overlay:{text:"💡 ポイント：ここが重要です",duration_sec:5}
 };
 
-const readFile = (f) => new Promise((r, e) => { const x = new FileReader(); x.onload = () => r(x.result); x.onerror = e; x.readAsDataURL(f); });
-const shrink = (src, mW = 600) => new Promise((r) => {
-  const i = new Image(); i.onload = () => { if (i.width <= mW) return r(src); const c = document.createElement("canvas"); const ra = mW / i.width; c.width = mW; c.height = Math.round(i.height * ra); const x = c.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.drawImage(i, 0, 0, c.width, c.height); r(c.toDataURL("image/jpeg", 0.75)); }; i.onerror = () => r(src); i.src = src;
-});
+// ─── ユーティリティ ───
+function esc(s){if(!s)return"";return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
+function getYtId(input){
+  if(!input)return null;
+  var c=input.replace(/<[^>]*>/g," ").trim();
+  var u=(c.match(/https?:\/\/[^\s"'<>]+/)||[])[0]||c;
+  u=u.replace(/["'].*$/,"");
+  var m=u.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/|v\/))([a-zA-Z0-9_-]{11})/);
+  return m?m[1]:null;
+}
+function fmt(s){return Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0")}
+function ytPost(iframe,func){if(!iframe||!iframe.contentWindow)return;try{iframe.contentWindow.postMessage(JSON.stringify({event:"command",func:func,args:[]}),"*")}catch(e){}}
+function qs(k){return new URLSearchParams(window.location.search).get(k)}
+function cpx(t,cb){try{navigator.clipboard.writeText(t).then(cb)}catch(e){prompt("コピー:",t.substring(0,500))}}
 
-const StarRating = ({ rating = 0, onRate, size = "text-2xl", interactive = true }) => {
-  const [h, setH] = useState(0);
-  return (<div style={{display:"flex",gap:"2px"}}>{[1,2,3,4,5].map(s => (
-    <button key={s} type="button" disabled={!interactive} style={{fontSize: size === "text-lg" ? "18px" : "24px", cursor: interactive ? "pointer" : "default", background:"none", border:"none", padding:0, transition:"transform 0.1s"}}
-      onMouseEnter={() => interactive && setH(s)} onMouseLeave={() => interactive && setH(0)} onClick={() => interactive && onRate(s)}>
-      <span style={{ color: s <= (h || rating) ? "#F59E0B" : "#D1D5DB" }}>{s <= (h || rating) ? "★" : "☆"}</span>
-    </button>))}</div>);
-};
-
-const ShareButton = ({ item, rName }) => {
-  const [ok, setOk] = useState(false);
-  const go = async () => {
-    const t = [`🍽️ ${rName}`,`📋 ${item.name}`,item.description&&`📝 ${item.description}`,item.price&&`💰 ${item.price}`,"★".repeat(item.rating)+"☆".repeat(5-item.rating),item.comment&&`💬 ${item.comment}`,item.eatenDate&&`📅 ${item.eatenDate}`].filter(Boolean).join("\n");
-    if (navigator.share) { try { await navigator.share({ title:`${rName} - ${item.name}`, text:t }); } catch{} } else { await navigator.clipboard.writeText(t); setOk(true); setTimeout(()=>setOk(false),2000); }
-  };
-  return <button onClick={go} style={{padding:"6px 12px",borderRadius:"9999px",fontSize:"12px",fontWeight:500,background:"#f1f5f9",color:"#475569",border:"none",cursor:"pointer"}}>{ok?"✓ コピー済み":"↗ 共有"}</button>;
-};
-
-const PhotoPicker = ({ photo, onChange, compact }) => {
-  const cR = useRef(null), aR = useRef(null);
-  const pk = async (e) => { const f = e.target.files?.[0]; if(!f) return; onChange(await shrink(await readFile(f))); e.target.value=""; };
-  const bh = compact ? "80px" : "112px";
-  const btnStyle = (hoverColor) => ({flex:1,height:bh,border:"2px dashed #cbd5e1",borderRadius:"8px",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",color:"#94a3b8",background:"none",cursor:"pointer",fontSize:"12px"});
-  return (<div>
-    <input ref={cR} type="file" accept="image/*" capture="environment" onChange={pk} style={{display:"none"}} />
-    <input ref={aR} type="file" accept="image/*" onChange={pk} style={{display:"none"}} />
-    {photo ? (<div style={{position:"relative"}}><img src={photo} alt="" style={{width:"100%",height:compact?"112px":"144px",objectFit:"cover",borderRadius:"8px"}} /><button onClick={()=>onChange(null)} style={{position:"absolute",top:4,right:4,background:"rgba(0,0,0,0.5)",color:"#fff",width:24,height:24,borderRadius:"50%",border:"none",fontSize:12,cursor:"pointer"}}>✕</button></div>
-    ) : (<div style={{display:"flex",gap:"8px"}}>
-      <button onClick={()=>cR.current?.click()} style={btnStyle()}><span style={{fontSize:compact?"18px":"24px"}}>📸</span><span>撮影</span></button>
-      <button onClick={()=>aR.current?.click()} style={btnStyle()}><span style={{fontSize:compact?"18px":"24px"}}>🖼️</span><span>アルバム</span></button>
-    </div>)}
-  </div>);
-};
-
-const ImportModal = ({ isOpen, onClose, onImport }) => {
-  const [text, setText] = useState("");
-  const [err, setErr] = useState("");
-  const tryImport = () => {
-    setErr("");
-    try {
-      let c = text.trim();
-      c = c.replace(/[\u201C\u201D\u201E\u201F\u2033\uFF02]/g, '"');
-      c = c.replace(/[\u2018\u2019\u201A\u201B\u2032\uFF07]/g, "'");
-      c = c.replace(/```json\s*/g,"").replace(/```/g,"").trim();
-      const m = c.match(/\[[\s\S]*\]/); if (m) c = m[0];
-      const arr = JSON.parse(c);
-      if (!Array.isArray(arr) || !arr.length) throw new Error("空の配列");
-      onImport(arr); setText(""); onClose();
-    } catch (e) { setErr("JSONの形式が正しくありません: " + e.message); }
-  };
-  if (!isOpen) return null;
-  return (
-    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:50,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:16,width:"100%",maxWidth:400,padding:20,maxHeight:"85vh",overflowY:"auto",boxShadow:"0 25px 50px rgba(0,0,0,0.25)"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-          <h3 style={{fontFamily:F1,fontSize:18,fontWeight:700,color:"#1e293b",margin:0}}>📋 メニューをインポート</h3>
-          <button onClick={onClose} style={{background:"none",border:"none",color:"#94a3b8",fontSize:20,cursor:"pointer"}}>✕</button>
-        </div>
-        <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:12,padding:12,marginBottom:16}}>
-          <p style={{fontSize:12,color:"#92400e",fontWeight:600,marginBottom:8,fontFamily:F2}}>使い方</p>
-          <ol style={{fontSize:12,color:"#b45309",margin:0,paddingLeft:0,listStyle:"none",fontFamily:F2}}>
-            <li>1. Claudeの会話でメニュー写真を送信</li>
-            <li style={{marginTop:4}}>2.「カテゴリ付きJSON形式で読み取って」と依頼</li>
-            <li style={{marginTop:4}}>3. 返ってきたJSONをここにペースト</li>
-          </ol>
-        </div>
-        <textarea value={text} onChange={e=>setText(e.target.value)} placeholder='[{"name":"...","category":"...","description":"...","price":"..."}]'
-          style={{width:"100%",height:128,padding:"10px 12px",border:"1px solid #e2e8f0",borderRadius:12,fontSize:14,fontFamily:"monospace",resize:"none",boxSizing:"border-box"}} />
-        {err && <p style={{color:"#ef4444",fontSize:12,marginTop:8}}>{err}</p>}
-        <button onClick={tryImport} disabled={!text.trim()} style={{width:"100%",marginTop:12,padding:"12px 0",borderRadius:12,fontWeight:700,color:"#fff",border:"none",cursor:text.trim()?"pointer":"default",opacity:text.trim()?1:0.4,background:GR,fontSize:14}}>インポートする</button>
-      </div>
-    </div>
-  );
-};
-
-const AddItemForm = ({ onAdd, onClose, categories }) => {
-  const blank = { name:"", category:"", description:"", price:"", photo:null, rating:0, comment:"", eatenDate:"", eaten:false };
-  const [form, setForm] = useState(blank);
-  const submit = () => { if(!form.name.trim()) return; onAdd({ ...form, id:Date.now().toString(), category:form.category||NO_CAT, eaten:form.rating>0||!!form.comment||!!form.eatenDate }); onClose(); };
-  const inputStyle = {width:"100%",padding:"10px 12px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:14,boxSizing:"border-box"};
-  return (
-    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.6)",zIndex:50,display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
-      <div onClick={e=>e.stopPropagation()} style={{background:"#fff",borderRadius:"16px 16px 0 0",width:"100%",maxWidth:400,padding:20,maxHeight:"90vh",overflowY:"auto"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-          <h3 style={{fontFamily:F1,fontSize:18,fontWeight:700,color:"#1e293b",margin:0}}>➕ メニューを追加</h3>
-          <button onClick={onClose} style={{background:"none",border:"none",color:"#94a3b8",fontSize:20,cursor:"pointer"}}>✕</button>
-        </div>
-        <div style={{display:"flex",flexDirection:"column",gap:12}}>
-          <PhotoPicker photo={form.photo} onChange={p=>setForm({...form,photo:p})} compact />
-          <input value={form.name} onChange={e=>setForm({...form,name:e.target.value})} placeholder="メニュー名 *" style={inputStyle} />
-          <div><input list="cat-list" value={form.category} onChange={e=>setForm({...form,category:e.target.value})} placeholder="カテゴリ（例: カレー、ナン）" style={inputStyle} /><datalist id="cat-list">{categories.map(c=><option key={c} value={c} />)}</datalist></div>
-          <input value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="料理の内容" style={inputStyle} />
-          <input value={form.price} onChange={e=>setForm({...form,price:e.target.value})} placeholder="価格" style={inputStyle} />
-          <div><label style={{fontSize:12,color:"#64748b",display:"block",marginBottom:4}}>レーティング</label><StarRating rating={form.rating} onRate={r=>setForm({...form,rating:r})} /></div>
-          <input value={form.comment} onChange={e=>setForm({...form,comment:e.target.value})} placeholder="一言感想" style={inputStyle} />
-          <input type="date" value={form.eatenDate} onChange={e=>setForm({...form,eatenDate:e.target.value})} style={inputStyle} />
-          <button onClick={submit} disabled={!form.name.trim()} style={{width:"100%",padding:"12px 0",borderRadius:12,fontWeight:700,color:"#fff",border:"none",cursor:form.name.trim()?"pointer":"default",opacity:form.name.trim()?1:0.4,background:GR,fontSize:14}}>追加する</button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-const MenuItemCard = ({ item, onUpdate, onDelete, rName }) => {
-  const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState(item);
-  const inputStyle = {width:"100%",padding:"8px 12px",border:"1px solid #e2e8f0",borderRadius:8,fontSize:14,boxSizing:"border-box"};
-  const smallBtn = (onClick, label, color="#94a3b8") => <button onClick={onClick} style={{fontSize:12,color,background:"none",border:"none",cursor:"pointer",padding:"4px 8px"}}>{label}</button>;
-
-  if (editing) {
-    return (
-      <div style={{background:"#fff",borderRadius:16,boxShadow:"0 4px 6px rgba(0,0,0,0.07)",border:"1px solid #f1f5f9",padding:16,display:"flex",flexDirection:"column",gap:12}}>
-        <PhotoPicker photo={form.photo} onChange={p=>setForm({...form,photo:p})} compact />
-        {[["name","メニュー名"],["description","料理の内容"],["price","価格"]].map(([k,ph])=>(
-          <input key={k} value={form[k]} onChange={e=>setForm({...form,[k]:e.target.value})} placeholder={ph} style={inputStyle} />
-        ))}
-        <div><label style={{fontSize:12,color:"#64748b",display:"block",marginBottom:4}}>レーティング</label><StarRating rating={form.rating} onRate={r=>setForm({...form,rating:r})} /></div>
-        <input value={form.comment} onChange={e=>setForm({...form,comment:e.target.value})} placeholder="一言感想" style={inputStyle} />
-        <input type="date" value={form.eatenDate} onChange={e=>setForm({...form,eatenDate:e.target.value})} style={inputStyle} />
-        <div style={{display:"flex",gap:8}}>
-          <button onClick={()=>{onUpdate(form);setEditing(false);}} style={{flex:1,padding:"8px 0",borderRadius:8,fontWeight:700,color:"#fff",border:"none",cursor:"pointer",background:GR,fontSize:14}}>保存</button>
-          <button onClick={()=>{setForm(item);setEditing(false);}} style={{flex:1,padding:"8px 0",borderRadius:8,fontWeight:500,color:"#475569",border:"none",cursor:"pointer",background:"#f1f5f9",fontSize:14}}>キャンセル</button>
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div style={{background:"#fff",borderRadius:16,boxShadow:"0 4px 6px rgba(0,0,0,0.07)",border:"1px solid #f1f5f9",overflow:"hidden"}}>
-      {item.photo && <img src={item.photo} alt={item.name} style={{width:"100%",height:160,objectFit:"cover"}} />}
-      <div style={{padding:16}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:4}}>
-          <h4 style={{fontFamily:F1,fontWeight:700,color:"#1e293b",fontSize:16,margin:0}}>{item.name}</h4>
-          {item.price && <span style={{color:"#d97706",fontWeight:700,fontSize:14,whiteSpace:"nowrap",marginLeft:8}}>{item.price}</span>}
-        </div>
-        {item.description && <p style={{fontSize:12,color:"#64748b",marginBottom:8,marginTop:0}}>{item.description}</p>}
-        {item.eaten ? (
-          <div>
-            <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
-              <span style={{background:"#dcfce7",color:"#15803d",fontSize:12,padding:"2px 8px",borderRadius:9999,fontWeight:500}}>食べた！</span>
-              {item.eatenDate && <span style={{fontSize:12,color:"#94a3b8"}}>{item.eatenDate}</span>}
-            </div>
-            <StarRating rating={item.rating} onRate={()=>{}} size="text-lg" interactive={false} />
-            {item.comment && <p style={{fontSize:14,color:"#475569",background:"#f8fafc",borderRadius:8,padding:8,fontStyle:"italic",margin:"8px 0"}}>「{item.comment}」</p>}
-            <div style={{display:"flex",gap:8,paddingTop:4,flexWrap:"wrap"}}>
-              <ShareButton item={item} rName={rName} />
-              {smallBtn(()=>setEditing(true),"✏️ 編集")}
-              {smallBtn(()=>onDelete(item.id),"🗑️ 削除","#94a3b8")}
-            </div>
-          </div>
-        ) : (
-          <div>
-            <span style={{background:"#f1f5f9",color:"#64748b",fontSize:12,padding:"2px 8px",borderRadius:9999,fontWeight:500}}>まだ食べてない</span>
-            <div style={{display:"flex",gap:8,paddingTop:8,flexWrap:"wrap"}}>
-              <button onClick={()=>onUpdate({...item,eaten:true,eatenDate:new Date().toISOString().split("T")[0]})} style={{fontSize:12,fontWeight:500,color:"#d97706",padding:"6px 12px",background:"#fffbeb",borderRadius:9999,border:"none",cursor:"pointer"}}>🍴 食べた！</button>
-              {smallBtn(()=>setEditing(true),"✏️ 編集")}
-              {smallBtn(()=>onDelete(item.id),"🗑️ 削除","#94a3b8")}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-const RestaurantPhotos = ({ photos, onAdd, onRemove }) => {
-  const cR=useRef(null), aR=useRef(null);
-  const pk = async(e)=>{ for(const f of Array.from(e.target.files)) onAdd(await shrink(await readFile(f))); e.target.value=""; };
-  return (
-    <div style={{padding:"0 16px 16px"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-        <h3 style={{fontFamily:F1,fontSize:14,fontWeight:700,color:"#334155",margin:0}}>📷 お店の写真</h3>
-        <div style={{display:"flex",gap:4}}>
-          <input ref={cR} type="file" accept="image/*" capture="environment" onChange={pk} style={{display:"none"}} />
-          <input ref={aR} type="file" accept="image/*" multiple onChange={pk} style={{display:"none"}} />
-          <button onClick={()=>cR.current?.click()} style={{fontSize:12,color:"#d97706",padding:"4px 8px",background:"#fffbeb",borderRadius:9999,border:"none",cursor:"pointer"}}>📸 撮影</button>
-          <button onClick={()=>aR.current?.click()} style={{fontSize:12,color:"#0284c7",padding:"4px 8px",background:"#f0f9ff",borderRadius:9999,border:"none",cursor:"pointer"}}>🖼️ 追加</button>
-        </div>
-      </div>
-      {photos.length > 0 ? (
-        <div className="scrollbar-hide" style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4}}>{photos.map((p,i)=>(
-          <div key={i} style={{position:"relative",flexShrink:0}}><img src={p} alt="" style={{width:112,height:80,objectFit:"cover",borderRadius:8}} />
-            <button onClick={()=>onRemove(i)} style={{position:"absolute",top:2,right:2,background:"rgba(0,0,0,0.5)",color:"#fff",width:20,height:20,borderRadius:"50%",border:"none",fontSize:10,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
-          </div>))}</div>
-      ) : <p style={{fontSize:12,color:"#94a3b8",textAlign:"center",padding:"12px 0",fontFamily:F2}}>外観や内装の写真を追加</p>}
-    </div>
-  );
-};
-
-const CategoryTabs = ({ categories, active, onSelect, items }) => {
-  const countFor = (cat) => cat === ALL_CAT ? items.length : items.filter(i => (i.category || NO_CAT) === cat).length;
-  const eatenFor = (cat) => { const list = cat === ALL_CAT ? items : items.filter(i => (i.category || NO_CAT) === cat); return list.filter(i => i.eaten).length; };
-  return (
-    <div style={{padding:"0 16px 12px"}}>
-      <div className="scrollbar-hide" style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:4}}>
-        {[ALL_CAT, ...categories].map(cat => {
-          const isA = active === cat;
-          return (
-            <button key={cat} onClick={() => onSelect(cat)}
-              style={{flexShrink:0,padding:"8px 12px",borderRadius:12,fontSize:12,fontWeight:500,whiteSpace:"nowrap",border:"none",cursor:"pointer",transition:"all 0.2s",fontFamily:F2,
-                background:isA?"#f59e0b":"rgba(255,255,255,0.7)",color:isA?"#fff":"#475569",boxShadow:isA?"0 1px 3px rgba(0,0,0,0.1)":"none"}}>
-              {cat === ALL_CAT ? "すべて" : cat}
-              <span style={{marginLeft:4,color:isA?"rgba(255,255,255,0.7)":"#94a3b8"}}>{eatenFor(cat)}/{countFor(cat)}</span>
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-};
-
-function MenuLogApp() {
-  const [rest, setRest] = useState({ name: "お店の名前", icon: null, photos: [] });
-  const [items, setItems] = useState([]);
-  const [activeCat, setActiveCat] = useState(ALL_CAT);
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [showImport, setShowImport] = useState(false);
-  const [showAdd, setShowAdd] = useState(false);
-  const [editName, setEditName] = useState(false);
-  const [loaded, setLoaded] = useState(false);
-
-  useEffect(() => { const r = storage.get(STORAGE_KEY); if(r?.value){try{const d=JSON.parse(r.value); if(d.rest) setRest(p=>({...p,...d.rest,photos:d.rest.photos||[]})); if(d.items) setItems(d.items);}catch{}} setLoaded(true); }, []);
-  useEffect(() => { if(!loaded) return; storage.set(STORAGE_KEY, JSON.stringify({rest,items})); }, [rest, items, loaded]);
-
-  const categories = [...new Set(items.map(i => i.category || NO_CAT))];
-  const eaten = items.filter(i => i.eaten).length;
-  const total = items.length;
-  const catFiltered = activeCat === ALL_CAT ? items : items.filter(i => (i.category || NO_CAT) === activeCat);
-  const shown = catFiltered.filter(i => statusFilter === "eaten" ? i.eaten : statusFilter === "notEaten" ? !i.eaten : true);
-
-  const handleImport = (arr) => {
-    const newItems = arr.map((d, i) => ({
-      id: (Date.now() + i).toString(), name: d.name || "不明", category: d.category || NO_CAT,
-      description: d.description || "", price: d.price || "",
-      photo: null, rating: 0, comment: "", eatenDate: "", eaten: false,
-    }));
-    setItems(p => [...p, ...newItems]);
-  };
-
-  const handleReset = () => { if(confirm("すべてのデータをリセットしますか？")){ setRest({name:"お店の名前",icon:null,photos:[]}); setItems([]); setActiveCat(ALL_CAT); storage.delete(STORAGE_KEY); }};
-
-  const filterBtnStyle = (active) => ({flex:1,padding:"8px 0",borderRadius:8,fontSize:12,fontWeight:500,border:"none",cursor:"pointer",transition:"all 0.2s",fontFamily:F2,background:active?"#fff":"transparent",color:active?"#b45309":"#64748b",boxShadow:active?"0 1px 2px rgba(0,0,0,0.05)":"none"});
-
-  return (
-    <div style={{minHeight:"100vh",background:"linear-gradient(180deg, #FFFBEB 0%, #FEF3C7 30%, #FDE68A 100%)"}}>
-      {/* Header */}
-      <div style={{position:"relative",overflow:"hidden"}}>
-        <div style={{padding:"32px 16px 24px",position:"relative"}}>
-          <div style={{display:"flex",justifyContent:"center",marginBottom:12}}>
-            <div style={{position:"relative",width:80,height:80,borderRadius:"50%",overflow:"hidden",border:"4px solid #fff",boxShadow:"0 4px 12px rgba(0,0,0,0.1)",background:"#fef3c7"}}>
-              {rest.icon ? <img src={rest.icon} alt="" style={{width:"100%",height:"100%",objectFit:"cover"}} /> : <div style={{width:"100%",height:"100%",display:"flex",alignItems:"center",justifyContent:"center",fontSize:30}}>🍽️</div>}
-              <input type="file" accept="image/*" style={{position:"absolute",inset:0,opacity:0,cursor:"pointer"}}
-                onChange={async(e)=>{const f=e.target.files?.[0]; if(f){const s=await shrink(await readFile(f),400); setRest(r=>({...r,icon:s}));}}} />
-            </div>
-          </div>
-          {editName ? (
-            <div style={{display:"flex",justifyContent:"center",gap:8,marginBottom:8}}>
-              <input autoFocus value={rest.name} onChange={e=>setRest(r=>({...r,name:e.target.value}))} onKeyDown={e=>e.key==="Enter"&&setEditName(false)}
-                style={{textAlign:"center",fontSize:20,fontWeight:700,background:"rgba(255,255,255,0.8)",borderRadius:8,padding:"4px 16px",border:"1px solid #fcd34d",fontFamily:F1}} />
-              <button onClick={()=>setEditName(false)} style={{color:"#d97706",fontWeight:700,fontSize:18,background:"none",border:"none",cursor:"pointer"}}>✓</button>
-            </div>
-          ) : (
-            <h1 onClick={()=>setEditName(true)} style={{fontSize:24,fontWeight:700,textAlign:"center",color:"#1e293b",cursor:"pointer",margin:"0 0 4px",fontFamily:F1}}>{rest.name}</h1>
-          )}
-          <p style={{textAlign:"center",fontSize:12,color:"#94a3b8",marginBottom:16,fontFamily:F2}}>タップで店名・アイコンを変更</p>
-          <div style={{display:"flex",justifyContent:"center",gap:24}}>
-            {[["食べた",eaten,"#d97706"],["未食",total-eaten,"#94a3b8"],["全メニュー",total,"#334155"]].map(([l,n,c])=>(
-              <div key={l} style={{textAlign:"center"}}><div style={{fontSize:24,fontWeight:700,color:c}}>{n}</div><div style={{fontSize:12,color:"#64748b"}}>{l}</div></div>
-            ))}
-          </div>
-          {total > 0 && (
-            <div style={{marginTop:12,maxWidth:240,marginLeft:"auto",marginRight:"auto"}}>
-              <div style={{height:8,background:"rgba(255,255,255,0.6)",borderRadius:9999,overflow:"hidden"}}>
-                <div style={{height:"100%",borderRadius:9999,transition:"width 0.5s",width:`${(eaten/total)*100}%`,background:"linear-gradient(90deg, #F59E0B, #D97706)"}} />
-              </div>
-              <p style={{fontSize:12,textAlign:"center",color:"#64748b",marginTop:4}}>{Math.round((eaten/total)*100)}% 制覇</p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      <RestaurantPhotos photos={rest.photos} onAdd={p=>setRest(r=>({...r,photos:[...r.photos,p]}))} onRemove={i=>setRest(r=>({...r,photos:r.photos.filter((_,j)=>j!==i)}))} />
-
-      <div style={{padding:"0 16px 16px"}}>
-        <div style={{display:"flex",gap:8}}>
-          <button onClick={()=>setShowImport(true)} style={{flex:1,padding:"12px 0",borderRadius:12,fontWeight:700,color:"#fff",border:"none",cursor:"pointer",background:GR,fontSize:14,fontFamily:F2,boxShadow:"0 4px 6px rgba(0,0,0,0.1)"}}>📋 メニューをインポート</button>
-          <button onClick={()=>setShowAdd(true)} style={{padding:"12px 16px",borderRadius:12,fontWeight:700,color:"#b45309",background:"#fff",border:"1px solid #fde68a",cursor:"pointer",fontSize:14,fontFamily:F2,boxShadow:"0 4px 6px rgba(0,0,0,0.1)"}}>➕ 手動追加</button>
-        </div>
-      </div>
-
-      {categories.length > 0 && <CategoryTabs categories={categories} active={activeCat} onSelect={setActiveCat} items={items} />}
-
-      {items.length > 0 && (
-        <div style={{padding:"0 16px 12px"}}>
-          <div style={{display:"flex",gap:4,background:"rgba(255,255,255,0.6)",borderRadius:12,padding:4}}>
-            {[["all",`すべて (${catFiltered.length})`],["eaten",`食べた (${catFiltered.filter(i=>i.eaten).length})`],["notEaten",`未食 (${catFiltered.filter(i=>!i.eaten).length})`]].map(([k,l])=>(
-              <button key={k} onClick={()=>setStatusFilter(k)} style={filterBtnStyle(statusFilter===k)}>{l}</button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div style={{padding:"0 16px 32px",display:"flex",flexDirection:"column",gap:12}}>
-        {shown.length === 0 && total === 0 && (
-          <div style={{textAlign:"center",padding:"64px 0"}}>
-            <div style={{fontSize:48,marginBottom:16}}>🍜</div>
-            <p style={{color:"#64748b",fontSize:14,marginBottom:8,fontFamily:F2}}>まだメニューがありません</p>
-            <p style={{color:"#94a3b8",fontSize:12,lineHeight:1.6,fontFamily:F2}}>Claudeの会話でメニュー写真を送って<br/>JSON形式で読み取ってもらい、<br/>「📋 メニューをインポート」からペーストしましょう！</p>
-          </div>
-        )}
-        {shown.length === 0 && total > 0 && (
-          <div style={{textAlign:"center",padding:"32px 0"}}><p style={{color:"#94a3b8",fontSize:14,fontFamily:F2}}>該当するメニューがありません</p></div>
-        )}
-        {shown.map(item => (
-          <MenuItemCard key={item.id} item={item} rName={rest.name}
-            onUpdate={u=>setItems(p=>p.map(i=>i.id===u.id?u:i))}
-            onDelete={id=>setItems(p=>p.filter(i=>i.id!==id))} />
-        ))}
-      </div>
-
-      {total > 0 && <div style={{padding:"0 16px 32px",textAlign:"center"}}><button onClick={handleReset} style={{fontSize:12,color:"#94a3b8",background:"none",border:"none",cursor:"pointer"}}>データをリセット</button></div>}
-
-      <ImportModal isOpen={showImport} onClose={()=>setShowImport(false)} onImport={handleImport} />
-      {showAdd && <AddItemForm onAdd={item=>setItems(p=>[...p,item])} onClose={()=>setShowAdd(false)} categories={categories} />}
-    </div>
-  );
+// ─── ルーティング ───
+var shareId=qs("id");
+if(shareId){
+  loadViewer(shareId);
+}else{
+  loadEditor();
 }
 
-ReactDOM.render(<MenuLogApp />, document.getElementById("root"));
+// ═══════════════════════════════════════
+//  VIEWER（共有リンクから開いた場合）
+// ═══════════════════════════════════════
+function loadViewer(id){
+  var app=document.getElementById("app");
+  app.innerHTML='<div class="loading"><div class="spinner"></div><div style="color:#888;font-size:13px">読み込み中…</div></div>';
+
+  db.collection(COLLECTION).doc(id).get().then(function(doc){
+    if(!doc.exists)throw new Error("見つかりません");
+    renderPlayer(doc.data());
+  }).catch(function(err){
+    console.error("Firestore error:",err);
+    app.innerHTML='<div class="err-box"><h2>⚠️ データの読み込みに失敗</h2><p>ID: '+esc(id)+'<br><br>'+esc(err.message)+'</p></div>';
+  });
+}
+
+function renderPlayer(cfg){
+  var vid=getYtId(cfg.videoUrl);
+  var interaction=cfg.interaction;
+  var triggerTime=cfg.triggerTime||30;
+  var pauseVideo=cfg.pauseVideo!==false;
+  var videoDuration=cfg.videoDuration||180;
+  var meta=interaction?TYPEMAP[interaction.type]:null;
+  document.title=(cfg.videoTitle||"ワン＋インタラクション")+" | 1+";
+  var iframeSrc=vid?"https://www.youtube.com/embed/"+vid+"?autoplay=1&enablejsapi=1&rel=0&modestbranding=1&playsinline=1&origin="+encodeURIComponent(window.location.origin):"";
+
+  var h='<div class="pv-wrap">';
+  // Header
+  h+='<header class="hdr" style="padding:10px 20px"><div class="hdr-left"><div class="logo" style="width:28px;height:28px;border-radius:7px;font-size:13px">1+</div><span style="font-weight:700;font-size:15px">'+esc(cfg.videoTitle||"動画")+'</span></div>';
+  if(meta)h+='<div style="display:flex;align-items:center;gap:6px;font-size:12px;color:#888;background:#1a1a3a;padding:5px 12px;border-radius:8px;border:1px solid #2a2a5a">'+meta.icon+' '+meta.label+' <span style="color:#7c6cf0;font-family:JetBrains Mono;font-weight:600">@ '+fmt(triggerTime)+'</span></div>';
+  h+='</header>';
+  // Video
+  h+='<div style="flex:1;display:flex;align-items:center;justify-content:center;padding:24px"><div class="pv-vbox">';
+  if(vid)h+='<iframe id="yt-frame" src="'+iframeSrc+'" allow="accelerometer;autoplay;clipboard-write;encrypted-media;gyroscope;picture-in-picture;web-share" allowfullscreen></iframe>';
+  else h+='<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#0a0a2a"><div style="font-size:56px;opacity:.3">🎥</div></div>';
+  h+='<div id="ol-ct"></div></div></div>';
+  // Controls
+  h+='<div style="padding:10px 24px 14px;border-top:1px solid #1a1a3a;background:#0c0c20;flex-shrink:0"><div style="display:flex;align-items:center;gap:12px;margin-bottom:8px"><span id="ct-time" style="font-family:JetBrains Mono;font-size:13px;color:#7c6cf0;font-weight:600">0:00<span style="color:#555"> / '+fmt(videoDuration)+'</span></span><div style="flex:1"></div><span id="ct-status" style="font-size:12px;font-weight:600"></span></div>';
+  h+='<div class="pbar"><div class="pbar-fill" id="pbar-fill"></div>';
+  if(interaction)h+='<div class="pbar-mark" id="pbar-mark" style="left:'+((triggerTime/videoDuration)*100)+'%;background:#7c6cf0">'+((meta&&meta.icon)||"")+'</div>';
+  h+='</div></div>';
+  // CTA
+  h+='<div class="cta-ft"><span style="font-size:13px;color:#999">もっとインタラクションを追加したい？</span><button class="btn btn-primary" onclick="window.open(\'https://hihaho.com\',\'_blank\')">🚀 hihahoで続きを編集</button></div>';
+  h+='</div>';
+  document.getElementById("app").innerHTML=h;
+
+  // Timer
+  var iframe=document.getElementById("yt-frame");
+  var olEl=document.getElementById("ol-ct");
+  var ctEl=document.getElementById("ct-time");
+  var pbEl=document.getElementById("pbar-fill");
+  var stEl=document.getElementById("ct-status");
+  var mkEl=document.getElementById("pbar-mark");
+  var startTime=Date.now(),offset=0,fired=false,paused=false,timer=null;
+  function stop(){if(timer){clearInterval(timer);timer=null}}
+  function start(){stop();startTime=Date.now();timer=setInterval(tick,200)}
+  function tick(){
+    var ct=offset+(Date.now()-startTime)/1000;
+    if(ct>=videoDuration){ct=videoDuration;stop()}
+    ctEl.innerHTML=fmt(ct)+'<span style="color:#555"> / '+fmt(videoDuration)+'</span>';
+    pbEl.style.width=Math.min((ct/videoDuration)*100,100)+"%";
+    if(interaction&&!fired&&ct>=triggerTime){
+      fired=true;showOL(interaction,olEl,function dismiss(){
+        olEl.innerHTML="";
+        if(paused){ytPost(iframe,"playVideo");paused=false;start()}
+        stEl.style.color="#50c878";stEl.textContent="✓ 発火済み";
+        if(mkEl)mkEl.style.background="#50c878";
+      });
+      if(pauseVideo&&iframe){ytPost(iframe,"pauseVideo");offset=ct;stop();paused=true;stEl.style.color="#e06caa";stEl.textContent="⏸ 動画一時停止中"}
+      else{stEl.style.color="#e06caa";stEl.textContent="🟣 インタラクション表示中"}
+      if(mkEl)mkEl.style.background="#e06caa";
+    }
+  }
+  start();
+}
+
+// ─── オーバーレイ描画（viewer/preview共通）───
+function showOL(interaction,el,dismiss){
+  var t=interaction.type,c=interaction.content,h="";
+  if(t==="quiz"){
+    h='<div class="ol"><div class="ol-inner"><div style="font-size:11px;color:#7c6cf0;font-weight:700;margin-bottom:8px">❓ クイズ</div><p style="font-size:19px;font-weight:700;color:#fff;margin:0 0 20px">'+esc(c.question)+'</p><div id="q-ch">';
+    c.choices.forEach(function(ch){h+='<button class="ol-btn" data-ok="'+(ch.is_correct?"1":"0")+'" onclick="window._qa(this)">'+esc(ch.text)+'</button>'});
+    h+='</div></div></div>';el.innerHTML=h;
+    window._qa=function(b){var ok=b.getAttribute("data-ok")==="1";document.getElementById("q-ch").innerHTML='<div style="padding:18px;border-radius:12px;font-size:17px;font-weight:700;background:'+(ok?"rgba(80,200,120,.12)":"rgba(255,70,70,.12)")+';border:2px solid '+(ok?"#50c878":"#ff4444")+';color:'+(ok?"#50c878":"#ff4444")+'">'+(ok?esc(c.feedback.correct):esc(c.feedback.incorrect))+'</div>';setTimeout(dismiss,2200)};
+  }else if(t==="cta_button"){
+    h='<div class="ol"><button class="btn-primary" style="padding:16px 48px;border-radius:14px;border:none;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 4px 24px rgba(124,108,240,.5)" onclick="window._cd()">'+esc(c.label)+'</button></div>';el.innerHTML=h;window._cd=dismiss;
+  }else if(t==="branch"){
+    h='<div class="ol"><div class="ol-inner"><div style="font-size:11px;color:#e06caa;font-weight:700;margin-bottom:8px">🔀 分岐</div><p style="font-size:19px;font-weight:700;color:#fff;margin:0 0 20px">'+esc(c.question)+'</p>';
+    c.options.forEach(function(o){h+='<button class="ol-btn" onclick="window._bd()">'+esc(o.text)+' <span style="font-size:11px;color:#888;margin-left:8px">→ '+fmt(o.jump_to_sec)+'</span></button>'});
+    h+='</div></div>';el.innerHTML=h;window._bd=dismiss;
+  }else if(t==="poll"){
+    h='<div class="ol"><div class="ol-inner"><div style="font-size:11px;color:#50c878;font-weight:700;margin-bottom:8px">📊 投票</div><p style="font-size:19px;font-weight:700;color:#fff;margin:0 0 20px">'+esc(c.question)+'</p><div id="p-ch">';
+    c.choices.forEach(function(ch){h+='<button class="ol-btn" onclick="window._pv(\''+ch.id+'\')">'+esc(ch.text)+'</button>'});
+    h+='</div></div></div>';el.innerHTML=h;
+    window._pv=function(id){var v={},tot=0;c.choices.forEach(function(ch){var n=Math.floor(Math.random()*40)+5;if(ch.id===id)n+=20;v[ch.id]=n;tot+=n});var r="";c.choices.forEach(function(ch){var p=Math.round((v[ch.id]/tot)*100);r+='<div style="margin-bottom:10px;text-align:left"><div style="display:flex;justify-content:space-between;font-size:13px;color:#e0e0ff;margin-bottom:3px"><span>'+esc(ch.text)+'</span><span style="color:#7c6cf0;font-weight:700">'+p+'%</span></div><div class="poll-bg"><div class="poll-fill" style="width:'+p+'%"></div></div></div>'});document.getElementById("p-ch").innerHTML=r;setTimeout(dismiss,3000)};
+  }else if(t==="text_overlay"){
+    h='<div style="position:absolute;bottom:14%;left:50%;transform:translateX(-50%);z-index:50;background:rgba(8,8,24,.9);backdrop-filter:blur(6px);padding:16px 32px;border-radius:14px;border:1px solid #3a3a6a;color:#fff;font-size:18px;font-weight:600;box-shadow:0 6px 30px rgba(0,0,0,.5);animation:fadeIn .3s ease">'+esc(c.text)+'</div>';
+    el.innerHTML=h;setTimeout(dismiss,(c.duration_sec||5)*1000);
+  }else if(t==="hotspot"){
+    var r=c.regions[0];
+    h='<div style="position:absolute;left:'+r.coords.x+'%;top:'+r.coords.y+'%;width:'+r.coords.width+'%;height:'+r.coords.height+'%;z-index:50;border:3px dashed #7c6cf0;border-radius:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;background:rgba(124,108,240,.18);animation:fadeIn .3s ease" onclick="window._hd()"><span style="background:#7c6cf0;color:#fff;padding:8px 16px;border-radius:8px;font-size:14px;font-weight:600">'+esc(r.tooltip)+'</span></div>';
+    el.innerHTML=h;window._hd=dismiss;
+  }
+}
+
+// ═══════════════════════════════════════
+//  EDITOR（デフォルト画面）
+// ═══════════════════════════════════════
+function loadEditor(){
+  // State
+  var S={videoUrl:"",inter:null,trigTime:30,pauseVid:true,dur:180,title:"マイ動画プロジェクト",mode:"editor"};
+
+  function vid(){return getYtId(S.videoUrl)}
+  function meta(){return S.inter?TYPEMAP[S.inter.type]:null}
+  function render(){S.mode==="editor"?renderEditor():renderPreview()}
+
+  // ─── Editor render ───
+  function renderEditor(){
+    var v=vid(),m=meta();
+    var h='<div style="display:flex;flex-direction:column;height:100vh">';
+    // Header
+    h+='<header class="hdr"><div class="hdr-left"><div class="logo">1+</div><span class="hdr-title">ワン＋インタラクション</span><span class="badge">FREE</span></div><div class="hdr-btns">';
+    if(S.inter)h+='<button class="btn btn-primary" onclick="E.preview()">▶ プレビュー</button><button class="btn" onclick="E.share()">🔗 共有</button>';
+    h+='</div></header>';
+    // 3 columns
+    h+='<div class="editor">';
+    // Left
+    h+='<div class="side-l"><div style="font-size:11px;font-weight:600;color:#777;text-transform:uppercase;margin-bottom:4px">インタラクション</div><div style="font-size:11px;color:#555;margin-bottom:8px">ドラッグで追加・入れ替え →</div>';
+    TYPES.forEach(function(t){
+      var active=S.inter&&S.inter.type===t.type;
+      h+='<div class="card'+(active?" active":"")+'" draggable="true" ondragstart="E.ds(event,\''+t.type+'\')">';
+      h+='<span style="font-size:22px">'+t.icon+'</span><div style="flex:1"><div style="font-weight:600;font-size:13px;color:#e0e0ff">'+t.label+'</div><div style="font-size:11px;color:#777;margin-top:1px">'+t.desc+'</div></div>';
+      if(active)h+='<span style="font-size:9px;color:#7c6cf0;font-weight:700;background:#7c6cf020;padding:2px 6px;border-radius:6px">ON</span>';
+      h+='</div>';
+    });
+    if(S.inter)h+='<button class="btn" style="margin-top:12px;border-color:#ff4466;color:#ff4466" onclick="E.clear()">🗑 クリア</button>';
+    h+='<div style="flex:1"></div><div style="padding:12px;border-radius:10px;border:1px solid #2a2a4a;font-size:11px;color:#999">💡 別カードをドロップで入れ替え</div></div>';
+    // Center
+    h+='<div class="center"><div style="padding:10px 20px;border-bottom:1px solid #1a1a3a;display:flex;gap:8px;align-items:center"><span style="color:#777;font-size:12px">🎬</span><input class="inp" style="flex:1" placeholder="YouTube URL（埋め込みコードもOK）" value="'+esc(S.videoUrl)+'" oninput="E.setUrl(this.value)">';
+    if(v)h+='<span style="font-size:11px;color:#50c878;flex-shrink:0;font-family:JetBrains Mono">✓ '+v+'</span>';
+    h+='<input class="inp" style="width:170px" placeholder="プロジェクト名" value="'+esc(S.title)+'" oninput="E.setTitle(this.value)"></div>';
+    // Video area
+    h+='<div style="flex:1;display:flex;align-items:center;justify-content:center;padding:20px" ondragover="E.dov(event)" ondragleave="E.dlv()" ondrop="E.drop(event,false)">';
+    h+='<div class="vbox" id="vbox">';
+    if(v)h+='<iframe src="https://www.youtube.com/embed/'+v+'?rel=0&modestbranding=1&enablejsapi=1" allow="accelerometer;autoplay;clipboard-write;encrypted-media;gyroscope;picture-in-picture" allowfullscreen></iframe>';
+    else h+='<div style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px"><div style="font-size:48px;opacity:.3">🎥</div><div style="color:#555;font-size:14px">YouTube URLを入力</div></div>';
+    if(S.inter)h+='<div style="position:absolute;bottom:12px;right:12px;background:rgba(124,108,240,.9);padding:6px 12px;border-radius:8px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px;color:#fff;z-index:5">'+m.icon+' '+m.label+' @ '+fmt(S.trigTime)+'</div>';
+    h+='</div></div>';
+    // Timeline
+    h+='<div style="padding:12px 20px 16px;border-top:1px solid #1a1a3a"><div style="display:flex;align-items:center;gap:12px;margin-bottom:8px"><span style="font-size:11px;color:#777;font-weight:600">タイムライン</span><input type="number" min="10" max="600" value="'+S.dur+'" onchange="E.setDur(this.value)" style="width:60px;background:#1a1a3a;border:1px solid #2a2a5a;border-radius:6px;padding:3px 8px;color:#e0e0ff;font-size:11px;text-align:center"><span style="font-size:11px;color:#555">秒</span></div>';
+    h+='<div class="tl" id="tl" ondragover="E.tdov(event)" ondragleave="E.tdlv()" ondrop="E.drop(event,true)" onclick="E.tlClick(event)">';
+    var marks=Math.min(Math.floor(S.dur/30)+1,20);
+    for(var i=0;i<marks;i++){var t=i*30;h+='<div style="position:absolute;left:'+((t/S.dur)*100)+'%;top:0;bottom:0;border-left:1px solid #2a2a4a;display:flex;align-items:flex-end;padding-left:4px;padding-bottom:2px"><span style="font-size:9px;color:#555">'+fmt(t)+'</span></div>'}
+    if(S.inter)h+='<div draggable="true" ondragstart="E.ds(event,\''+S.inter.type+'\')" style="position:absolute;left:calc('+((S.trigTime/S.dur)*100)+'% - 16px);top:4px;width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,#7c6cf0,#e06caa);display:flex;align-items:center;justify-content:center;font-size:16px;cursor:grab;z-index:2;box-shadow:0 2px 12px rgba(124,108,240,.5);transition:left .15s ease">'+m.icon+'</div>';
+    else h+='<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#444;font-size:12px;pointer-events:none">← ドラッグ＆ドロップ</div>';
+    h+='</div></div></div>';
+    // Right
+    h+='<div class="side-r">';
+    if(S.inter){
+      h+='<div style="display:flex;align-items:center;gap:8px;padding-bottom:12px;border-bottom:1px solid #1a1a3a"><span style="font-size:20px">'+m.icon+'</span><div><div style="font-weight:700;font-size:14px">'+m.label+'</div><div style="font-size:11px;color:#777">'+m.desc+'</div></div></div>';
+      h+='<div style="margin-top:12px"><span class="lbl">表示タイミング</span><div style="display:flex;align-items:center;gap:8px;margin-top:6px"><input type="range" min="0" max="'+S.dur+'" value="'+S.trigTime+'" oninput="E.setTrig(this.value)" style="flex:1;accent-color:#7c6cf0"><span style="font-family:JetBrains Mono;font-size:13px;color:#7c6cf0;min-width:40px">'+fmt(S.trigTime)+'</span></div></div>';
+      h+='<label class="lbl" style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-top:12px"><input type="checkbox" '+(S.pauseVid?"checked":"")+' onchange="E.setPause(this.checked)" style="accent-color:#7c6cf0"> 動画を一時停止</label>';
+      h+='<div style="border-top:1px solid #1a1a3a;padding-top:12px;margin-top:12px"><div style="font-size:11px;font-weight:600;color:#777;margin-bottom:10px;text-transform:uppercase">コンテンツ設定</div>';
+      h+=renderContentEditor(S.inter);
+      h+='</div>';
+    }else{
+      h+='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;text-align:center;gap:12px"><div style="font-size:40px;opacity:.3">✨</div><div style="color:#555;font-size:13px">左からドラッグ＆ドロップ</div></div>';
+    }
+    h+='</div></div></div>';
+    document.getElementById("app").innerHTML=h;
+  }
+
+  function renderContentEditor(inter){
+    var t=inter.type,c=inter.content,h="";
+    if(t==="quiz"){
+      h+='<span class="lbl">質問文</span><input class="inp" value="'+esc(c.question)+'" oninput="E.uc(\'question\',this.value)" style="margin:4px 0 8px">';
+      h+='<span class="lbl">選択肢</span>';
+      c.choices.forEach(function(ch,i){
+        h+='<div style="display:flex;gap:6px;align-items:center;margin:4px 0"><input type="radio" name="qc" '+(ch.is_correct?"checked":"")+' onchange="E.ucr('+i+')" style="accent-color:#7c6cf0"><input class="inp" style="flex:1" value="'+esc(ch.text)+'" oninput="E.ucc('+i+',this.value)"></div>';
+      });
+      h+='<span class="lbl" style="margin-top:8px">正解FB</span><input class="inp" value="'+esc(c.feedback.correct)+'" oninput="E.ucf(\'correct\',this.value)" style="margin:4px 0">';
+      h+='<span class="lbl">不正解FB</span><input class="inp" value="'+esc(c.feedback.incorrect)+'" oninput="E.ucf(\'incorrect\',this.value)" style="margin:4px 0">';
+    }else if(t==="cta_button"){
+      h+='<span class="lbl">ラベル</span><input class="inp" value="'+esc(c.label)+'" oninput="E.uc(\'label\',this.value)" style="margin:4px 0 8px">';
+      h+='<span class="lbl">URL</span><input class="inp" value="'+esc(c.url)+'" oninput="E.uc(\'url\',this.value)" style="margin:4px 0">';
+    }else if(t==="branch"){
+      h+='<span class="lbl">質問</span><input class="inp" value="'+esc(c.question)+'" oninput="E.uc(\'question\',this.value)" style="margin:4px 0 8px">';
+      c.options.forEach(function(o,i){
+        h+='<div style="display:flex;gap:6px;margin:4px 0"><input class="inp" style="flex:1" value="'+esc(o.text)+'" oninput="E.uco('+i+',\'text\',this.value)"><input class="inp" style="width:60px" type="number" value="'+o.jump_to_sec+'" oninput="E.uco('+i+',\'jump_to_sec\',+this.value)"><span style="color:#777;font-size:11px;align-self:center">秒</span></div>';
+      });
+    }else if(t==="poll"){
+      h+='<span class="lbl">質問</span><input class="inp" value="'+esc(c.question)+'" oninput="E.uc(\'question\',this.value)" style="margin:4px 0 8px">';
+      c.choices.forEach(function(ch,i){h+='<input class="inp" value="'+esc(ch.text)+'" oninput="E.upc('+i+',this.value)" style="margin:4px 0">'});
+    }else if(t==="text_overlay"){
+      h+='<span class="lbl">テキスト</span><textarea class="inp" style="min-height:60px;resize:vertical;margin:4px 0 8px" oninput="E.uc(\'text\',this.value)">'+esc(c.text)+'</textarea>';
+      h+='<span class="lbl">表示秒数</span><input class="inp" type="number" value="'+c.duration_sec+'" oninput="E.uc(\'duration_sec\',+this.value)" style="margin:4px 0">';
+    }else if(t==="hotspot"){
+      var r=c.regions[0];
+      h+='<span class="lbl">ツールチップ</span><input class="inp" value="'+esc(r.tooltip)+'" oninput="E.uhs(\'tooltip\',this.value)" style="margin:4px 0 8px">';
+      h+='<span class="lbl">URL</span><input class="inp" value="'+esc(r.action.value)+'" oninput="E.uhs(\'url\',this.value)" style="margin:4px 0">';
+    }
+    return h;
+  }
+
+  // ─── Preview render ───
+  function renderPreview(){
+    var v=vid(),m=meta();
+    var triggerTime=S.trigTime,pauseVideo=S.pauseVid,videoDuration=S.dur;
+    var iframeSrc=v?"https://www.youtube.com/embed/"+v+"?autoplay=1&enablejsapi=1&rel=0&modestbranding=1&playsinline=1&origin="+encodeURIComponent(window.location.origin):"";
+    var h='<div class="pv-wrap">';
+    h+='<header class="hdr" style="padding:10px 20px"><div class="hdr-left"><button class="btn" onclick="E.backEdit()">← 編集に戻る</button><div class="logo" style="width:28px;height:28px;border-radius:7px;font-size:13px">1+</div><span style="font-weight:700;font-size:15px">'+esc(S.title)+'</span></div>';
+    if(m)h+='<div style="display:flex;align-items:center;gap:6px;font-size:12px;color:#888;background:#1a1a3a;padding:5px 12px;border-radius:8px;border:1px solid #2a2a5a">'+m.icon+' '+m.label+' <span style="color:#7c6cf0;font-family:JetBrains Mono;font-weight:600">@ '+fmt(triggerTime)+'</span></div>';
+    h+='</header>';
+    h+='<div style="flex:1;display:flex;align-items:center;justify-content:center;padding:24px"><div class="pv-vbox">';
+    if(v)h+='<iframe id="pv-yt" src="'+iframeSrc+'" allow="accelerometer;autoplay;clipboard-write;encrypted-media;gyroscope;picture-in-picture;web-share" allowfullscreen></iframe>';
+    else h+='<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#0a0a2a"><div style="font-size:56px;opacity:.3">🎥</div></div>';
+    h+='<div id="pv-ol"></div></div></div>';
+    h+='<div style="padding:10px 24px 14px;border-top:1px solid #1a1a3a;background:#0c0c20;flex-shrink:0"><div style="display:flex;align-items:center;gap:12px;margin-bottom:8px"><span id="pv-ct" style="font-family:JetBrains Mono;font-size:13px;color:#7c6cf0;font-weight:600">0:00<span style="color:#555"> / '+fmt(videoDuration)+'</span></span><div style="flex:1"></div><span id="pv-st" style="font-size:12px;font-weight:600"></span></div>';
+    h+='<div class="pbar"><div class="pbar-fill" id="pv-pb"></div>';
+    if(S.inter)h+='<div class="pbar-mark" id="pv-mk" style="left:'+((triggerTime/videoDuration)*100)+'%;background:#7c6cf0">'+(m?m.icon:"")+'</div>';
+    h+='</div></div></div>';
+    document.getElementById("app").innerHTML=h;
+
+    // Timer
+    var iframe=document.getElementById("pv-yt"),olEl=document.getElementById("pv-ol");
+    var ctEl=document.getElementById("pv-ct"),pbEl=document.getElementById("pv-pb");
+    var stEl=document.getElementById("pv-st"),mkEl=document.getElementById("pv-mk");
+    var startTime=Date.now(),offset=0,fired=false,paused=false,timer=null;
+    function stop(){if(timer){clearInterval(timer);timer=null}}
+    function start(){stop();startTime=Date.now();timer=setInterval(tick,200)}
+    function tick(){
+      var ct=offset+(Date.now()-startTime)/1000;
+      if(ct>=videoDuration){ct=videoDuration;stop()}
+      ctEl.innerHTML=fmt(ct)+'<span style="color:#555"> / '+fmt(videoDuration)+'</span>';
+      pbEl.style.width=Math.min((ct/videoDuration)*100,100)+"%";
+      if(S.inter&&!fired&&ct>=triggerTime){
+        fired=true;
+        showOL(S.inter,olEl,function(){olEl.innerHTML="";if(paused){ytPost(iframe,"playVideo");paused=false;start()}stEl.style.color="#50c878";stEl.textContent="✓ 発火済み";if(mkEl)mkEl.style.background="#50c878"});
+        if(pauseVideo&&iframe){ytPost(iframe,"pauseVideo");offset=ct;stop();paused=true;stEl.style.color="#e06caa";stEl.textContent="⏸ 動画一時停止中"}
+        else{stEl.style.color="#e06caa";stEl.textContent="🟣 インタラクション表示中"}
+        if(mkEl)mkEl.style.background="#e06caa";
+      }
+    }
+    window._pvStop=stop;
+    start();
+  }
+
+  // ─── Editor API (window.E) ───
+  window.E={
+    setUrl:function(v){S.videoUrl=v;render()},
+    setTitle:function(v){S.title=v}, // No re-render needed
+    setDur:function(v){S.dur=Math.max(10,+v);render()},
+    setTrig:function(v){S.trigTime=+v;render()},
+    setPause:function(v){S.pauseVid=v},
+    clear:function(){S.inter=null;render()},
+    ds:function(e,type){e.dataTransfer.setData("itype",type);e.dataTransfer.effectAllowed="copy"},
+    dov:function(e){e.preventDefault();var el=document.getElementById("vbox");if(el)el.classList.add("dragover")},
+    dlv:function(){var el=document.getElementById("vbox");if(el)el.classList.remove("dragover")},
+    tdov:function(e){e.preventDefault();var el=document.getElementById("tl");if(el)el.classList.add("dragover")},
+    tdlv:function(){var el=document.getElementById("tl");if(el)el.classList.remove("dragover")},
+    drop:function(e,fromTl){
+      e.preventDefault();
+      var type=e.dataTransfer.getData("itype");if(!type)return;
+      if(fromTl){var tl=document.getElementById("tl");if(tl){var r=tl.getBoundingClientRect();S.trigTime=Math.round(Math.max(0,Math.min(1,(e.clientX-r.left)/r.width))*S.dur)}}
+      S.inter={type:type,content:JSON.parse(JSON.stringify(DEFAULTS[type]))};
+      render();
+    },
+    tlClick:function(e){
+      if(!S.inter)return;var tl=document.getElementById("tl");if(!tl)return;
+      var r=tl.getBoundingClientRect();S.trigTime=Math.round(Math.max(0,Math.min(1,(e.clientX-r.left)/r.width))*S.dur);render();
+    },
+    preview:function(){S.mode="preview";render()},
+    backEdit:function(){if(window._pvStop)window._pvStop();S.mode="editor";render()},
+    // Content editors
+    uc:function(k,v){if(S.inter)S.inter.content[k]=v},
+    ucr:function(i){if(!S.inter)return;S.inter.content.choices.forEach(function(c,j){c.is_correct=j===i});render()},
+    ucc:function(i,v){if(S.inter)S.inter.content.choices[i].text=v},
+    ucf:function(k,v){if(S.inter)S.inter.content.feedback[k]=v},
+    uco:function(i,k,v){if(S.inter)S.inter.content.options[i][k]=v},
+    upc:function(i,v){if(S.inter)S.inter.content.choices[i].text=v},
+    uhs:function(k,v){if(!S.inter)return;var r=S.inter.content.regions[0];if(k==="tooltip")r.tooltip=v;else r.action.value=v},
+    // ─── 共有（Firestore保存）───
+    share:function(){
+      if(!S.inter){alert("インタラクションを追加してください");return}
+      var data={videoUrl:S.videoUrl,videoTitle:S.title,videoDuration:S.dur,triggerTime:S.trigTime,pauseVideo:S.pauseVid,interaction:S.inter,createdAt:firebase.firestore.FieldValue.serverTimestamp()};
+
+      // モーダル表示
+      var m=document.createElement("div");m.className="modal-bg";m.id="share-modal";
+      m.innerHTML='<div class="modal"><div style="text-align:center"><div class="spinner" style="margin:0 auto"></div><div style="color:#888;font-size:13px;margin-top:12px">Firestoreに保存中…</div></div></div>';
+      document.body.appendChild(m);
+
+      db.collection(COLLECTION).add(data).then(function(ref){
+        var url=window.location.origin+window.location.pathname+"?id="+ref.id;
+        var modal=document.getElementById("share-modal");
+        modal.innerHTML='<div class="modal" onclick="event.stopPropagation()"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:700;font-size:18px;color:#e0e0ff">🔗 共有リンク</span><button class="btn" onclick="document.getElementById(\'share-modal\').remove()">✕</button></div><div style="padding:12px;border-radius:10px;background:#0a0a1a;border:1px solid #2a2a5a;font-family:JetBrains Mono;font-size:12px;color:#a0a0ff;word-break:break-all">'+esc(url)+'</div><button class="btn btn-primary" style="width:100%;padding:12px;font-size:14px" onclick="E.copyUrl(\''+url+'\')">📋 URLをコピー</button><div style="font-size:11px;color:#555;text-align:center">このリンクを共有すると、誰でもインタラクション付き動画を体験できます</div></div>';
+        modal.onclick=function(){modal.remove()};
+        console.log("Saved to Firestore: "+ref.id);
+      }).catch(function(err){
+        console.error("Firestore save error:",err);
+        var modal=document.getElementById("share-modal");
+        modal.innerHTML='<div class="modal"><div style="color:#ff4466;font-weight:700">⚠️ 保存に失敗しました</div><div style="color:#888;font-size:13px">'+esc(err.message)+'</div><button class="btn" onclick="document.getElementById(\'share-modal\').remove()">閉じる</button></div>';
+        modal.onclick=function(){modal.remove()};
+      });
+    },
+    copyUrl:function(url){cpx(url,function(){var b=document.querySelector(".btn-primary");if(b){b.textContent="✅ コピー済み！";b.style.background="#50c878";setTimeout(function(){b.textContent="📋 URLをコピー";b.style.background=""},2000)}})}
+  };
+
+  render();
+}
+
+})();
 </script>
 </body>
 </html>
