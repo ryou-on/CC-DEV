@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ワン＋インタラクション</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body{height:100%;background:#08081a;color:#e0e0ff;font-family:'DM Sans','Noto Sans JP',sans-serif;overflow:hidden}
+    @keyframes fadeIn{from{opacity:0;transform:scale(0.96)}to{opacity:1;transform:scale(1)}}
+    @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}
+    @keyframes spin{to{transform:rotate(360deg)}}
+
+    /* レイアウト */
+    .wrap{display:flex;flex-direction:column;height:100vh}
+    .header{padding:10px 20px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #1a1a3a;background:#0c0c20;flex-shrink:0}
+    .header-left{display:flex;align-items:center;gap:12px}
+    .logo{width:28px;height:28px;border-radius:7px;background:linear-gradient(135deg,#7c6cf0,#e06caa);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff}
+    .title{font-weight:700;font-size:15px;color:#e0e0ff}
+    .badge{font-size:10px;background:#7c6cf020;color:#7c6cf0;padding:2px 8px;border-radius:20px;font-weight:600;border:1px solid #7c6cf040}
+    .meta{display:flex;align-items:center;gap:6px;font-size:12px;color:#888;background:#1a1a3a;padding:5px 12px;border-radius:8px;border:1px solid #2a2a5a}
+    .meta .time{color:#7c6cf0;font-family:'JetBrains Mono';font-weight:600}
+
+    /* 動画エリア */
+    .video-area{flex:1;display:flex;align-items:center;justify-content:center;padding:24px}
+    .video-box{width:100%;max-width:960px;aspect-ratio:16/9;border-radius:16px;position:relative;background:#000;box-shadow:0 8px 60px rgba(0,0,0,0.6);border:1px solid #2a2a4a;overflow:hidden}
+    .video-box iframe{position:absolute;inset:0;width:100%;height:100%;border:none;z-index:1}
+
+    /* オーバーレイ */
+    .overlay{position:absolute;inset:0;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(8,8,24,0.92);backdrop-filter:blur(8px);animation:fadeIn 0.3s ease}
+    .overlay-inner{max-width:480px;width:85%;text-align:center}
+    .overlay-tag{font-size:11px;font-weight:700;margin-bottom:8px}
+    .overlay-q{font-size:19px;font-weight:700;color:#fff;margin:0 0 20px}
+    .overlay-btn{display:block;width:100%;padding:14px 20px;margin-bottom:10px;border-radius:12px;border:1px solid #3a3a6a;background:#1a1a3a;color:#e0e0ff;font-size:15px;cursor:pointer;text-align:left;transition:all 0.15s}
+    .overlay-btn:hover{background:#252550;border-color:#7c6cf0}
+    .result{padding:18px;border-radius:12px;font-size:17px;font-weight:700}
+    .result-ok{background:rgba(80,200,120,0.12);border:2px solid #50c878;color:#50c878}
+    .result-ng{background:rgba(255,70,70,0.12);border:2px solid #ff4444;color:#ff4444}
+    .cta-btn{padding:16px 48px;border-radius:14px;border:none;font-size:17px;font-weight:700;background:linear-gradient(135deg,#7c6cf0,#e06caa);color:#fff;cursor:pointer;box-shadow:0 4px 24px rgba(124,108,240,0.5)}
+    .text-ol{position:absolute;bottom:14%;left:50%;transform:translateX(-50%);z-index:50;background:rgba(8,8,24,0.9);backdrop-filter:blur(6px);padding:16px 32px;border-radius:14px;border:1px solid #3a3a6a;color:#fff;font-size:18px;font-weight:600;box-shadow:0 6px 30px rgba(0,0,0,0.5);animation:fadeIn 0.3s ease}
+    .hotspot{z-index:50;border:3px dashed #7c6cf0;border-radius:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;background:rgba(124,108,240,0.18);animation:fadeIn 0.3s ease;position:absolute}
+    .hotspot span{background:#7c6cf0;color:#fff;padding:8px 16px;border-radius:8px;font-size:14px;font-weight:600}
+
+    /* コントロールバー */
+    .controls{padding:10px 24px 14px;border-top:1px solid #1a1a3a;background:#0c0c20;flex-shrink:0}
+    .controls-row{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+    .controls-time{font-family:'JetBrains Mono';font-size:13px;color:#7c6cf0;font-weight:600}
+    .controls-time span{color:#555}
+    .status{font-size:12px;font-weight:600}
+    .progress{height:6px;border-radius:3px;background:#1a1a3a;position:relative}
+    .progress-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,#7c6cf0,#e06caa);transition:width 0.2s linear}
+    .marker{position:absolute;top:-5px;width:16px;height:16px;border-radius:50%;transform:translateX(-50%);border:2px solid #0c0c20;display:flex;align-items:center;justify-content:center;font-size:8px;transition:all 0.3s}
+
+    /* CTA Footer */
+    .cta-footer{padding:10px 24px;background:linear-gradient(90deg,#1a1a4a,#2a1a3a);border-top:1px solid #3a3a6a;display:flex;align-items:center;justify-content:center;gap:12px}
+    .cta-footer span{font-size:13px;color:#999}
+    .cta-footer button{padding:6px 20px;border-radius:8px;border:none;background:linear-gradient(135deg,#7c6cf0,#e06caa);color:#fff;font-weight:700;font-size:12px;cursor:pointer}
+
+    /* Poll bar */
+    .poll-bar-bg{height:8px;border-radius:4px;background:#1a1a3a;overflow:hidden}
+    .poll-bar-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,#7c6cf0,#e06caa);transition:width 0.8s}
+
+    /* Loading */
+    .loading{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:16px}
+    .spinner{width:40px;height:40px;border:3px solid #2a2a5a;border-top-color:#7c6cf0;border-radius:50%;animation:spin 0.8s linear infinite}
+    .error-box{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:16px;text-align:center;padding:40px}
+    .error-box h2{color:#ff4466;font-size:20px}
+    .error-box p{color:#888;font-size:14px;max-width:400px}
+  </style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+(function(){
+  "use strict";
+
+  // ─── ユーティリティ ───
+  function getYtId(input){
+    if(!input)return null;
+    var c=input.replace(/<[^>]*>/g," ").trim();
+    var u=(c.match(/https?:\/\/[^\s"'<>]+/)||[])[0]||c;
+    u=u.replace(/["'].*$/,"");
+    var m=u.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/|v\/))([a-zA-Z0-9_-]{11})/);
+    return m?m[1]:null;
+  }
+  function fmt(s){return Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0")}
+  function ytPost(iframe,func){
+    if(!iframe||!iframe.contentWindow)return;
+    try{iframe.contentWindow.postMessage(JSON.stringify({event:"command",func:func,args:[]}),"*")}catch(e){}
+  }
+  function qs(k){return new URLSearchParams(window.location.search).get(k)}
+
+  var TYPES={quiz:{icon:"❓",label:"クイズ"},cta_button:{icon:"🔗",label:"CTAボタン"},branch:{icon:"🔀",label:"分岐"},poll:{icon:"📊",label:"投票"},hotspot:{icon:"👆",label:"ホットスポット"},text_overlay:{icon:"💬",label:"テキスト"}};
+
+  // ─── 設定読み込み ───
+  var configPath=qs("config");
+  if(!configPath){
+    document.getElementById("app").innerHTML='<div class="error-box"><h2>⚠️ 設定ファイルが指定されていません</h2><p>URLに <code>?config=configs/demo.json</code> のようにパラメータを追加してください。</p><p style="margin-top:12px;color:#555;font-size:12px">例: https://cc-dev-ps7.web.app/oneplus/?config=configs/demo.json</p></div>';
+    return;
+  }
+
+  // ローディング表示
+  document.getElementById("app").innerHTML='<div class="loading"><div class="spinner"></div><div style="color:#888;font-size:13px">設定を読み込み中…</div></div>';
+
+  fetch(configPath).then(function(r){
+    if(!r.ok)throw new Error(r.status+" "+r.statusText);
+    return r.json();
+  }).then(function(cfg){
+    renderPlayer(cfg);
+  }).catch(function(err){
+    document.getElementById("app").innerHTML='<div class="error-box"><h2>⚠️ 設定ファイルの読み込みに失敗</h2><p>'+configPath+'<br><br>'+err.message+'</p></div>';
+  });
+
+  // ─── プレイヤー描画 ───
+  function renderPlayer(cfg){
+    var vid=getYtId(cfg.videoUrl);
+    var interaction=cfg.interaction;
+    var triggerTime=cfg.triggerTime||30;
+    var pauseVideo=cfg.pauseVideo!==false;
+    var videoDuration=cfg.videoDuration||180;
+    var meta=interaction&&TYPES[interaction.type]?TYPES[interaction.type]:null;
+
+    // タイトル設定
+    document.title=(cfg.videoTitle||"ワン＋インタラクション")+" | 1+";
+
+    var iframeSrc=vid?"https://www.youtube.com/embed/"+vid+"?autoplay=1&enablejsapi=1&rel=0&modestbranding=1&playsinline=1&origin="+encodeURIComponent(window.location.origin):"";
+
+    var html='<div class="wrap">';
+
+    // ヘッダー
+    html+='<header class="header"><div class="header-left"><div class="logo">1+</div><span class="title">'+esc(cfg.videoTitle||"動画")+'</span></div>';
+    if(meta)html+='<div class="meta">'+meta.icon+' '+meta.label+' <span class="time">@ '+fmt(triggerTime)+'</span></div>';
+    html+='</header>';
+
+    // 動画エリア
+    html+='<div class="video-area"><div class="video-box">';
+    if(vid)html+='<iframe id="yt-frame" src="'+iframeSrc+'" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>';
+    else html+='<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#0a0a2a"><div style="font-size:56px;opacity:0.3">🎥</div></div>';
+    html+='<div id="overlay-container"></div>';
+    html+='</div></div>';
+
+    // コントロール
+    html+='<div class="controls"><div class="controls-row"><span class="controls-time" id="ct-display">0:00<span> / '+fmt(videoDuration)+'</span></span><div style="flex:1"></div><span class="status" id="status-display"></span></div>';
+    html+='<div class="progress"><div class="progress-fill" id="progress-fill" style="width:0%"></div>';
+    if(interaction)html+='<div class="marker" id="marker" style="left:'+((triggerTime/videoDuration)*100)+'%;background:#7c6cf0">'+((meta&&meta.icon)||"")+'</div>';
+    html+='</div></div>';
+
+    // CTA Footer
+    html+='<div class="cta-footer"><span>もっとインタラクションを追加したい？</span><button onclick="window.open(\'https://hihaho.com\',\'_blank\')">🚀 hihahoで続きを編集</button></div>';
+
+    html+='</div>';
+    document.getElementById("app").innerHTML=html;
+
+    // ─── タイマー＆インタラクション制御 ───
+    var iframe=document.getElementById("yt-frame");
+    var overlayEl=document.getElementById("overlay-container");
+    var ctEl=document.getElementById("ct-display");
+    var progressEl=document.getElementById("progress-fill");
+    var statusEl=document.getElementById("status-display");
+    var markerEl=document.getElementById("marker");
+
+    var startTime=Date.now();
+    var offset=0;
+    var fired=false;
+    var paused=false;
+    var timer=null;
+
+    function stopTimer(){if(timer){clearInterval(timer);timer=null}}
+    function startTimer(){
+      stopTimer();
+      startTime=Date.now();
+      timer=setInterval(tick,200);
+    }
+
+    function tick(){
+      var ct=offset+(Date.now()-startTime)/1000;
+      if(ct>=videoDuration){ct=videoDuration;stopTimer()}
+      // 表示更新
+      ctEl.innerHTML=fmt(ct)+'<span> / '+fmt(videoDuration)+'</span>';
+      progressEl.style.width=Math.min((ct/videoDuration)*100,100)+"%";
+
+      // インタラクション発火
+      if(interaction&&!fired&&ct>=triggerTime){
+        fired=true;
+        showInteraction();
+        if(pauseVideo&&iframe){
+          ytPost(iframe,"pauseVideo");
+          offset=ct;
+          stopTimer();
+          paused=true;
+          statusEl.style.color="#e06caa";
+          statusEl.textContent="⏸ 動画一時停止中";
+        }else{
+          statusEl.style.color="#e06caa";
+          statusEl.textContent="🟣 インタラクション表示中";
+        }
+        if(markerEl)markerEl.style.background="#e06caa";
+      }
+    }
+
+    function dismissOverlay(){
+      overlayEl.innerHTML="";
+      if(paused){
+        ytPost(iframe,"playVideo");
+        paused=false;
+        startTimer();
+      }
+      statusEl.style.color="#50c878";
+      statusEl.textContent="✓ 発火済み";
+      if(markerEl)markerEl.style.background="#50c878";
+    }
+
+    // ─── インタラクション表示 ───
+    function showInteraction(){
+      if(!interaction)return;
+      var t=interaction.type,c=interaction.content;
+      var h="";
+
+      if(t==="quiz"){
+        h='<div class="overlay"><div class="overlay-inner"><div class="overlay-tag" style="color:#7c6cf0">❓ クイズ</div><p class="overlay-q">'+esc(c.question)+'</p><div id="quiz-choices">';
+        c.choices.forEach(function(ch){
+          h+='<button class="overlay-btn" data-correct="'+(ch.is_correct?"1":"0")+'" onclick="window._quizAnswer(this)">'+esc(ch.text)+'</button>';
+        });
+        h+='</div></div></div>';
+        overlayEl.innerHTML=h;
+        window._quizAnswer=function(btn){
+          var ok=btn.getAttribute("data-correct")==="1";
+          document.getElementById("quiz-choices").innerHTML='<div class="result '+(ok?"result-ok":"result-ng")+'">'+(ok?esc(c.feedback.correct):esc(c.feedback.incorrect))+'</div>';
+          setTimeout(dismissOverlay,2200);
+        };
+      }
+      else if(t==="cta_button"){
+        h='<div class="overlay"><button class="cta-btn" onclick="window._ctaDismiss()">'+esc(c.label)+'</button></div>';
+        overlayEl.innerHTML=h;
+        window._ctaDismiss=dismissOverlay;
+      }
+      else if(t==="branch"){
+        h='<div class="overlay"><div class="overlay-inner"><div class="overlay-tag" style="color:#e06caa">🔀 分岐</div><p class="overlay-q">'+esc(c.question)+'</p>';
+        c.options.forEach(function(o){
+          h+='<button class="overlay-btn" onclick="window._branchDismiss()">'+esc(o.text)+' <span style="font-size:11px;color:#888;margin-left:8px">→ '+fmt(o.jump_to_sec)+'</span></button>';
+        });
+        h+='</div></div>';
+        overlayEl.innerHTML=h;
+        window._branchDismiss=dismissOverlay;
+      }
+      else if(t==="poll"){
+        h='<div class="overlay"><div class="overlay-inner"><div class="overlay-tag" style="color:#50c878">📊 投票</div><p class="overlay-q">'+esc(c.question)+'</p><div id="poll-choices">';
+        c.choices.forEach(function(ch){
+          h+='<button class="overlay-btn" data-id="'+ch.id+'" onclick="window._pollVote(\''+ch.id+'\')">'+esc(ch.text)+'</button>';
+        });
+        h+='</div></div></div>';
+        overlayEl.innerHTML=h;
+        window._pollVote=function(id){
+          // 擬似結果
+          var votes={};var total=0;
+          c.choices.forEach(function(ch){var v=Math.floor(Math.random()*40)+5;if(ch.id===id)v+=20;votes[ch.id]=v;total+=v});
+          var rh="";
+          c.choices.forEach(function(ch){
+            var pct=Math.round((votes[ch.id]/total)*100);
+            rh+='<div style="margin-bottom:10px;text-align:left"><div style="display:flex;justify-content:space-between;font-size:13px;color:#e0e0ff;margin-bottom:3px"><span>'+esc(ch.text)+'</span><span style="color:#7c6cf0;font-weight:700">'+pct+'%</span></div><div class="poll-bar-bg"><div class="poll-bar-fill" style="width:'+pct+'%"></div></div></div>';
+          });
+          document.getElementById("poll-choices").innerHTML=rh;
+          setTimeout(dismissOverlay,3000);
+        };
+      }
+      else if(t==="text_overlay"){
+        h='<div class="text-ol">'+esc(c.text)+'</div>';
+        overlayEl.innerHTML=h;
+        setTimeout(dismissOverlay,(c.duration_sec||5)*1000);
+      }
+      else if(t==="hotspot"){
+        var r=c.regions[0];
+        h='<div class="hotspot" style="left:'+r.coords.x+'%;top:'+r.coords.y+'%;width:'+r.coords.width+'%;height:'+r.coords.height+'%" onclick="window._hotDismiss()"><span>'+esc(r.tooltip)+'</span></div>';
+        overlayEl.innerHTML=h;
+        window._hotDismiss=dismissOverlay;
+      }
+    }
+
+    // タイマー開始
+    startTimer();
+  }
+
+  function esc(s){if(!s)return"";return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
+})();
+</script>
+</body>
+</html>
