@@ -403,13 +403,20 @@ function loadEditor(){
     setTrig:function(v){S.trigTime=+v;render()},
     setPause:function(v){S.pauseVid=v},
     clear:function(){S.inter=null;render()},
-    ds:function(e,type){e.dataTransfer.setData("itype",type);e.dataTransfer.effectAllowed="copy"},
-    dov:function(e){e.preventDefault();var el=document.getElementById("vbox");if(el)el.classList.add("dragover")},
+    ds:function(e,type){
+      e.dataTransfer.setData("itype",type);e.dataTransfer.effectAllowed="copy";
+      // iframe がドラッグイベントを吸収するので、ドラッグ中は無効化
+      document.querySelectorAll("iframe").forEach(function(f){f.style.pointerEvents="none"});
+      // ドラッグ終了時に復元
+      e.target.addEventListener("dragend",function(){document.querySelectorAll("iframe").forEach(function(f){f.style.pointerEvents=""})},{once:true});
+    },
+    dov:function(e){e.preventDefault();e.dataTransfer.dropEffect="copy";var el=document.getElementById("vbox");if(el)el.classList.add("dragover")},
     dlv:function(){var el=document.getElementById("vbox");if(el)el.classList.remove("dragover")},
-    tdov:function(e){e.preventDefault();var el=document.getElementById("tl");if(el)el.classList.add("dragover")},
+    tdov:function(e){e.preventDefault();e.dataTransfer.dropEffect="copy";var el=document.getElementById("tl");if(el)el.classList.add("dragover")},
     tdlv:function(){var el=document.getElementById("tl");if(el)el.classList.remove("dragover")},
     drop:function(e,fromTl){
       e.preventDefault();
+      document.querySelectorAll("iframe").forEach(function(f){f.style.pointerEvents=""});
       var type=e.dataTransfer.getData("itype");if(!type)return;
       if(fromTl){var tl=document.getElementById("tl");if(tl){var r=tl.getBoundingClientRect();S.trigTime=Math.round(Math.max(0,Math.min(1,(e.clientX-r.left)/r.width))*S.dur)}}
       S.inter={type:type,content:JSON.parse(JSON.stringify(DEFAULTS[type]))};
