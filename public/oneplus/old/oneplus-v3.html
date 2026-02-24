@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ワン＋インタラクション</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+  <script src="/__/firebase/init.js"></script>
+  <!-- YouTube IFrame API -->
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    html,body,#app{height:100%;font-family:'DM Sans','Noto Sans JP',sans-serif}
+    body{background:#0c0c1d;color:#e0e0ff;overflow:hidden}
+    @keyframes fadeIn{from{opacity:0;transform:scale(0.96)}to{opacity:1;transform:scale(1)}}
+    @keyframes spin{to{transform:rotate(360deg)}}
+
+    .btn{padding:6px 14px;border-radius:8px;border:1px solid #3a3a6a;background:#1a1a3a;color:#e0e0ff;font-size:12px;font-weight:600;cursor:pointer;transition:all .15s}
+    .btn:hover{background:#252550;border-color:#7c6cf0}
+    .btn-primary{background:linear-gradient(135deg,#7c6cf0,#e06caa);color:#fff;border:none}
+    .btn-primary:hover{opacity:.9}
+    .inp{background:#1a1a3a;border:1px solid #2a2a5a;border-radius:8px;padding:8px 12px;color:#e0e0ff;font-size:13px;outline:none;width:100%;box-sizing:border-box}
+    .lbl{font-size:11px;font-weight:600;color:#888}
+
+    .hdr{padding:14px 24px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #1a1a3a;background:#0e0e22}
+    .hdr-left{display:flex;align-items:center;gap:10px}
+    .logo{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,#7c6cf0,#e06caa);display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;color:#fff}
+    .hdr-title{font-weight:700;font-size:16px}
+    .badge{font-size:10px;background:#7c6cf020;color:#7c6cf0;padding:2px 8px;border-radius:20px;font-weight:600;border:1px solid #7c6cf040}
+
+    .editor{display:flex;height:calc(100vh - 57px)}
+    .side-l{width:220px;padding:16px;border-right:1px solid #1a1a3a;display:flex;flex-direction:column;gap:6px;overflow-y:auto;background:#0e0e22}
+    .side-r{width:280px;border-left:1px solid #1a1a3a;overflow-y:auto;background:#0e0e22;padding:16px}
+    .center{flex:1;display:flex;flex-direction:column;overflow:hidden}
+
+    .card{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;background:#1e1e3a;border:1px solid #3a3a6a;cursor:grab;transition:all .2s;user-select:none}
+    .card:hover{border-color:#7c6cf0}
+    .card.active{background:#252550;border:2px solid #7c6cf0}
+
+    .vbox{width:100%;max-width:800px;aspect-ratio:16/9;border-radius:12px;overflow:hidden;position:relative;border:1px solid #2a2a4a;background:#0a0a1a;box-shadow:0 4px 30px rgba(0,0,0,.4);transition:all .3s}
+    .vbox.dragover{border:3px dashed #7c6cf0;box-shadow:0 0 40px rgba(124,108,240,.3)}
+
+    .tl{height:48px;background:#12122a;border-radius:10px;position:relative;cursor:pointer;border:1px solid #2a2a4a;overflow:hidden}
+    .tl.dragover{background:#1a1a4a;border:2px dashed #7c6cf0}
+
+    .ol{position:absolute;inset:0;z-index:50;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(8,8,24,.92);backdrop-filter:blur(8px);animation:fadeIn .3s ease}
+    .ol-inner{max-width:480px;width:85%;text-align:center}
+    .ol-btn{display:block;width:100%;padding:14px 20px;margin-bottom:10px;border-radius:12px;border:1px solid #3a3a6a;background:#1a1a3a;color:#e0e0ff;font-size:15px;cursor:pointer;text-align:left;transition:all .15s}
+    .ol-btn:hover{background:#252550;border-color:#7c6cf0}
+
+    .pv-wrap{position:fixed;inset:0;background:#08081a;z-index:1000;display:flex;flex-direction:column}
+    .pv-vbox{width:100%;max-width:960px;aspect-ratio:16/9;border-radius:16px;position:relative;background:#000;box-shadow:0 8px 60px rgba(0,0,0,.6);border:1px solid #2a2a4a;overflow:hidden}
+    .pbar{height:6px;border-radius:3px;background:#1a1a3a;position:relative}
+    .pbar-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,#7c6cf0,#e06caa);transition:width .2s linear}
+    .pbar-mark{position:absolute;top:-5px;width:16px;height:16px;border-radius:50%;transform:translateX(-50%);border:2px solid #0c0c20;display:flex;align-items:center;justify-content:center;font-size:8px;transition:all .3s}
+    .cta-ft{padding:10px 24px;background:linear-gradient(90deg,#1a1a4a,#2a1a3a);border-top:1px solid #3a3a6a;display:flex;align-items:center;justify-content:center;gap:12px}
+
+    .modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:2000}
+    .modal{background:#14142a;border:1px solid #2a2a5a;border-radius:16px;padding:24px;width:90%;max-width:520px;display:flex;flex-direction:column;gap:16px}
+
+    .loading{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:16px}
+    .spinner{width:40px;height:40px;border:3px solid #2a2a5a;border-top-color:#7c6cf0;border-radius:50%;animation:spin .8s linear infinite}
+    .err-box{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;gap:16px;text-align:center;padding:40px}
+    .err-box h2{color:#ff4466;font-size:20px}
+    .err-box p{color:#888;font-size:14px;max-width:400px}
+
+    .poll-bg{height:8px;border-radius:4px;background:#1a1a3a;overflow:hidden}
+    .poll-fill{height:100%;border-radius:4px;background:linear-gradient(90deg,#7c6cf0,#e06caa);transition:width .8s}
+
+    .console-btn{position:fixed;bottom:8px;right:8px;z-index:9999;font-size:10px;padding:4px 8px;border-radius:4px;background:#1a1a3a;color:#555;border:1px solid #2a2a4a;cursor:pointer}
+    /* ドラッグ中はiframeのポインターイベント無効 */
+    body.dragging iframe{pointer-events:none!important}
+  </style>
+</head>
+<body>
+<div id="app"></div>
+<button class="console-btn" onclick="copyConsole()">📋 Console</button>
+<script>
+// コンソールログ収集
+var _logs=[];
+(function(){var o=console.log,e=console.error,w=console.warn;
+console.log=function(){_logs.push("[LOG] "+Array.from(arguments).join(" "));o.apply(console,arguments)};
+console.error=function(){_logs.push("[ERR] "+Array.from(arguments).join(" "));e.apply(console,arguments)};
+console.warn=function(){_logs.push("[WARN] "+Array.from(arguments).join(" "));w.apply(console,arguments)};
+})();
+function copyConsole(){try{navigator.clipboard.writeText(_logs.join("\n")).then(function(){alert("コンソールログをコピーしました ("+_logs.length+"行)")})}catch(e){prompt("コンソール:",_logs.join("\n").substring(0,2000))}}
+
+// YouTube IFrame API Ready flag
+var ytReady=false;
+var ytReadyCallbacks=[];
+window.onYouTubeIframeAPIReady=function(){ytReady=true;console.log("YouTube IFrame API Ready");ytReadyCallbacks.forEach(function(cb){cb()});ytReadyCallbacks=[]};
+function whenYTReady(cb){if(ytReady)cb();else ytReadyCallbacks.push(cb)}
+
+(function(){
+"use strict";
+var db=firebase.firestore();
+var COLLECTION="interactions";
+
+var TYPES=[
+  {type:"quiz",icon:"❓",label:"クイズ",desc:"選択式クイズ"},
+  {type:"cta_button",icon:"🔗",label:"CTAボタン",desc:"リンク付きボタン"},
+  {type:"branch",icon:"🔀",label:"分岐",desc:"2択ジャンプ"},
+  {type:"poll",icon:"📊",label:"投票",desc:"アンケート"},
+  {type:"hotspot",icon:"👆",label:"ホットスポット",desc:"クリック領域"},
+  {type:"text_overlay",icon:"💬",label:"テキスト",desc:"オーバーレイ表示"}
+];
+var TYPEMAP={};TYPES.forEach(function(t){TYPEMAP[t.type]=t});
+
+var DEFAULTS={
+  quiz:{question:"ここにクイズの質問を入力",choices:[{id:"a",text:"選択肢A",is_correct:true},{id:"b",text:"選択肢B",is_correct:false},{id:"c",text:"選択肢C",is_correct:false}],feedback:{correct:"正解！🎉",incorrect:"残念…もう一度！"}},
+  cta_button:{label:"今すぐ申し込む",url:"https://example.com"},
+  branch:{question:"どちらに興味がありますか？",options:[{id:"opt_a",text:"オプションA",jump_to_sec:30},{id:"opt_b",text:"オプションB",jump_to_sec:60}]},
+  poll:{question:"この動画は役に立ちましたか？",choices:[{id:"p1",text:"とても役立った"},{id:"p2",text:"まあまあ"},{id:"p3",text:"あまり役立たなかった"}],show_results:true},
+  hotspot:{regions:[{id:"hs_1",shape:"rect",coords:{x:35,y:35,width:30,height:30},action:{type:"url",value:"https://example.com"},tooltip:"詳細はこちら"}]},
+  text_overlay:{text:"💡 ポイント：ここが重要です",duration_sec:5}
+};
+
+function esc(s){if(!s)return"";return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
+function getYtId(input){
+  if(!input)return null;
+  var c=input.replace(/<[^>]*>/g," ").trim();
+  var u=(c.match(/https?:\/\/[^\s"'<>]+/)||[])[0]||c;
+  u=u.replace(/["'].*$/,"");
+  var m=u.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/|v\/))([a-zA-Z0-9_-]{11})/);
+  return m?m[1]:null;
+}
+function fmt(s){return Math.floor(s/60)+":"+String(Math.floor(s%60)).padStart(2,"0")}
+function qs(k){return new URLSearchParams(window.location.search).get(k)}
+function cpx(t,cb){try{navigator.clipboard.writeText(t).then(cb)}catch(e){prompt("コピー:",t.substring(0,500))}}
+
+// ─── YT.Player を作成するヘルパー ───
+// elementId: div要素のid, videoId: YouTube動画ID, autoplay: bool
+// onReady, onStateChange コールバック
+function createYTPlayer(elementId,videoId,autoplay,onReady,onStateChange){
+  return new YT.Player(elementId,{
+    videoId:videoId,
+    playerVars:{rel:0,modestbranding:1,playsinline:1,autoplay:autoplay?1:0,enablejsapi:1},
+    events:{onReady:onReady||function(){},onStateChange:onStateChange||function(){}}
+  });
+}
+
+// ─── ルーティング ───
+var shareId=qs("id");
+if(shareId){loadViewer(shareId)}else{loadEditor()}
+
+// ═══════════════════════════════════════
+//  VIEWER
+// ═══════════════════════════════════════
+function loadViewer(id){
+  var app=document.getElementById("app");
+  app.innerHTML='<div class="loading"><div class="spinner"></div><div style="color:#888;font-size:13px">読み込み中…</div></div>';
+  db.collection(COLLECTION).doc(id).get().then(function(doc){
+    if(!doc.exists)throw new Error("見つかりません");
+    renderPlayer(doc.data());
+  }).catch(function(err){
+    console.error("Firestore error:",err);
+    app.innerHTML='<div class="err-box"><h2>⚠️ データの読み込みに失敗</h2><p>ID: '+esc(id)+'<br>'+esc(err.message)+'</p></div>';
+  });
+}
+
+function renderPlayer(cfg){
+  var vid=getYtId(cfg.videoUrl);
+  var interaction=cfg.interaction;
+  var triggerTime=cfg.triggerTime||30;
+  var pauseVideo=cfg.pauseVideo!==false;
+  var videoDuration=cfg.videoDuration||180;
+  var meta=interaction?TYPEMAP[interaction.type]:null;
+  document.title=(cfg.videoTitle||"ワン＋インタラクション")+" | 1+";
+
+  var h='<div class="pv-wrap">';
+  h+='<header class="hdr" style="padding:10px 20px"><div class="hdr-left"><div class="logo" style="width:28px;height:28px;border-radius:7px;font-size:13px">1+</div><span style="font-weight:700;font-size:15px">'+esc(cfg.videoTitle||"動画")+'</span></div>';
+  if(meta)h+='<div style="display:flex;align-items:center;gap:6px;font-size:12px;color:#888;background:#1a1a3a;padding:5px 12px;border-radius:8px;border:1px solid #2a2a5a">'+meta.icon+' '+meta.label+' <span style="color:#7c6cf0;font-family:JetBrains Mono;font-weight:600">@ '+fmt(triggerTime)+'</span></div>';
+  h+='</header>';
+  h+='<div style="flex:1;display:flex;align-items:center;justify-content:center;padding:24px"><div class="pv-vbox">';
+  if(vid)h+='<div id="vw-yt" style="position:absolute;inset:0;z-index:1"></div>';
+  else h+='<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#0a0a2a"><div style="font-size:56px;opacity:.3">🎥</div></div>';
+  h+='<div id="vw-ol"></div></div></div>';
+  h+='<div style="padding:10px 24px 14px;border-top:1px solid #1a1a3a;background:#0c0c20;flex-shrink:0"><div style="display:flex;align-items:center;gap:12px;margin-bottom:8px"><span id="vw-ct" style="font-family:JetBrains Mono;font-size:13px;color:#7c6cf0;font-weight:600">0:00<span style="color:#555"> / '+fmt(videoDuration)+'</span></span><div style="flex:1"></div><span id="vw-st" style="font-size:12px;font-weight:600"></span></div>';
+  h+='<div class="pbar"><div class="pbar-fill" id="vw-pb"></div>';
+  if(interaction)h+='<div class="pbar-mark" id="vw-mk" style="left:'+((triggerTime/videoDuration)*100)+'%;background:#7c6cf0">'+((meta&&meta.icon)||"")+'</div>';
+  h+='</div></div>';
+  h+='<div class="cta-ft"><span style="font-size:13px;color:#999">もっとインタラクションを追加したい？</span><button class="btn btn-primary" onclick="window.open(\'https://hihaho.com\',\'_blank\')">🚀 hihahoで続きを編集</button></div>';
+  h+='</div>';
+  document.getElementById("app").innerHTML=h;
+
+  if(!vid)return;
+
+  // YouTube IFrame API で同期
+  whenYTReady(function(){
+    var player=createYTPlayer("vw-yt",vid,true);
+    var olEl=document.getElementById("vw-ol");
+    var ctEl=document.getElementById("vw-ct");
+    var pbEl=document.getElementById("vw-pb");
+    var stEl=document.getElementById("vw-st");
+    var mkEl=document.getElementById("vw-mk");
+    var fired=false,timer=null;
+
+    function stop(){if(timer){clearInterval(timer);timer=null}}
+    function start(){stop();timer=setInterval(tick,250)}
+
+    function tick(){
+      var ct=0;
+      try{ct=player.getCurrentTime()||0}catch(e){}
+      ctEl.innerHTML=fmt(ct)+'<span style="color:#555"> / '+fmt(videoDuration)+'</span>';
+      pbEl.style.width=Math.min((ct/videoDuration)*100,100)+"%";
+      if(interaction&&!fired&&ct>=triggerTime){
+        fired=true;
+        showOL(interaction,olEl,function dismiss(){
+          olEl.innerHTML="";
+          player.playVideo();
+          stEl.style.color="#50c878";stEl.textContent="✓ 発火済み";
+          if(mkEl)mkEl.style.background="#50c878";
+        });
+        if(pauseVideo){player.pauseVideo();stEl.style.color="#e06caa";stEl.textContent="⏸ 動画一時停止中"}
+        else{stEl.style.color="#e06caa";stEl.textContent="🟣 インタラクション表示中"}
+        if(mkEl)mkEl.style.background="#e06caa";
+      }
+    }
+    start();
+  });
+}
+
+// ─── オーバーレイ描画 ───
+function showOL(interaction,el,dismiss){
+  var t=interaction.type,c=interaction.content,h="";
+  if(t==="quiz"){
+    h='<div class="ol"><div class="ol-inner"><div style="font-size:11px;color:#7c6cf0;font-weight:700;margin-bottom:8px">❓ クイズ</div><p style="font-size:19px;font-weight:700;color:#fff;margin:0 0 20px">'+esc(c.question)+'</p><div id="q-ch">';
+    c.choices.forEach(function(ch){h+='<button class="ol-btn" data-ok="'+(ch.is_correct?"1":"0")+'" onclick="window._qa(this)">'+esc(ch.text)+'</button>'});
+    h+='</div></div></div>';el.innerHTML=h;
+    window._qa=function(b){var ok=b.getAttribute("data-ok")==="1";document.getElementById("q-ch").innerHTML='<div style="padding:18px;border-radius:12px;font-size:17px;font-weight:700;background:'+(ok?"rgba(80,200,120,.12)":"rgba(255,70,70,.12)")+';border:2px solid '+(ok?"#50c878":"#ff4444")+';color:'+(ok?"#50c878":"#ff4444")+'">'+(ok?esc(c.feedback.correct):esc(c.feedback.incorrect))+'</div>';setTimeout(dismiss,2200)};
+  }else if(t==="cta_button"){
+    h='<div class="ol"><button class="btn-primary" style="padding:16px 48px;border-radius:14px;border:none;font-size:17px;font-weight:700;cursor:pointer;box-shadow:0 4px 24px rgba(124,108,240,.5)" onclick="window._cd()">'+esc(c.label)+'</button></div>';el.innerHTML=h;window._cd=dismiss;
+  }else if(t==="branch"){
+    h='<div class="ol"><div class="ol-inner"><div style="font-size:11px;color:#e06caa;font-weight:700;margin-bottom:8px">🔀 分岐</div><p style="font-size:19px;font-weight:700;color:#fff;margin:0 0 20px">'+esc(c.question)+'</p>';
+    c.options.forEach(function(o){h+='<button class="ol-btn" onclick="window._bd()">'+esc(o.text)+' <span style="font-size:11px;color:#888;margin-left:8px">→ '+fmt(o.jump_to_sec)+'</span></button>'});
+    h+='</div></div>';el.innerHTML=h;window._bd=dismiss;
+  }else if(t==="poll"){
+    h='<div class="ol"><div class="ol-inner"><div style="font-size:11px;color:#50c878;font-weight:700;margin-bottom:8px">📊 投票</div><p style="font-size:19px;font-weight:700;color:#fff;margin:0 0 20px">'+esc(c.question)+'</p><div id="p-ch">';
+    c.choices.forEach(function(ch){h+='<button class="ol-btn" onclick="window._pv(\''+ch.id+'\')">'+esc(ch.text)+'</button>'});
+    h+='</div></div></div>';el.innerHTML=h;
+    window._pv=function(id){var v={},tot=0;c.choices.forEach(function(ch){var n=Math.floor(Math.random()*40)+5;if(ch.id===id)n+=20;v[ch.id]=n;tot+=n});var r="";c.choices.forEach(function(ch){var p=Math.round((v[ch.id]/tot)*100);r+='<div style="margin-bottom:10px;text-align:left"><div style="display:flex;justify-content:space-between;font-size:13px;color:#e0e0ff;margin-bottom:3px"><span>'+esc(ch.text)+'</span><span style="color:#7c6cf0;font-weight:700">'+p+'%</span></div><div class="poll-bg"><div class="poll-fill" style="width:'+p+'%"></div></div></div>'});document.getElementById("p-ch").innerHTML=r;setTimeout(dismiss,3000)};
+  }else if(t==="text_overlay"){
+    h='<div style="position:absolute;bottom:14%;left:50%;transform:translateX(-50%);z-index:50;background:rgba(8,8,24,.9);backdrop-filter:blur(6px);padding:16px 32px;border-radius:14px;border:1px solid #3a3a6a;color:#fff;font-size:18px;font-weight:600;box-shadow:0 6px 30px rgba(0,0,0,.5);animation:fadeIn .3s ease">'+esc(c.text)+'</div>';
+    el.innerHTML=h;setTimeout(dismiss,(c.duration_sec||5)*1000);
+  }else if(t==="hotspot"){
+    var r=c.regions[0];
+    h='<div style="position:absolute;left:'+r.coords.x+'%;top:'+r.coords.y+'%;width:'+r.coords.width+'%;height:'+r.coords.height+'%;z-index:50;border:3px dashed #7c6cf0;border-radius:12px;cursor:pointer;display:flex;align-items:center;justify-content:center;background:rgba(124,108,240,.18);animation:fadeIn .3s ease" onclick="window._hd()"><span style="background:#7c6cf0;color:#fff;padding:8px 16px;border-radius:8px;font-size:14px;font-weight:600">'+esc(r.tooltip)+'</span></div>';
+    el.innerHTML=h;window._hd=dismiss;
+  }
+}
+
+// ═══════════════════════════════════════
+//  EDITOR
+// ═══════════════════════════════════════
+function loadEditor(){
+  var S={videoUrl:"",inter:null,trigTime:30,pauseVid:true,dur:180,title:"マイ動画プロジェクト",mode:"editor"};
+  // プレビュー用のYT.Player参照とタイマー
+  var pvPlayer=null,pvTimer=null;
+
+  function vid(){return getYtId(S.videoUrl)}
+  function meta(){return S.inter?TYPEMAP[S.inter.type]:null}
+  function render(){S.mode==="editor"?renderEditor():renderPreview()}
+
+  function renderEditor(){
+    // プレビューのタイマー/プレイヤーをクリーンアップ
+    if(pvTimer){clearInterval(pvTimer);pvTimer=null}
+    if(pvPlayer){try{pvPlayer.destroy()}catch(e){}pvPlayer=null}
+
+    var v=vid(),m=meta();
+    var h='<div style="display:flex;flex-direction:column;height:100vh">';
+    h+='<header class="hdr"><div class="hdr-left"><div class="logo">1+</div><span class="hdr-title">ワン＋インタラクション</span><span class="badge">FREE</span></div><div style="display:flex;gap:8px">';
+    if(S.inter)h+='<button class="btn btn-primary" onclick="E.preview()">▶ プレビュー</button><button class="btn" onclick="E.share()">🔗 共有</button>';
+    h+='</div></header>';
+    h+='<div class="editor">';
+    // Left
+    h+='<div class="side-l"><div style="font-size:11px;font-weight:600;color:#777;text-transform:uppercase;margin-bottom:4px">インタラクション</div><div style="font-size:11px;color:#555;margin-bottom:8px">ドラッグで追加・入れ替え →</div>';
+    TYPES.forEach(function(t){
+      var active=S.inter&&S.inter.type===t.type;
+      h+='<div class="card'+(active?" active":"")+'" draggable="true" ondragstart="E.ds(event,\''+t.type+'\')">';
+      h+='<span style="font-size:22px">'+t.icon+'</span><div style="flex:1"><div style="font-weight:600;font-size:13px;color:#e0e0ff">'+t.label+'</div><div style="font-size:11px;color:#777;margin-top:1px">'+t.desc+'</div></div>';
+      if(active)h+='<span style="font-size:9px;color:#7c6cf0;font-weight:700;background:#7c6cf020;padding:2px 6px;border-radius:6px">ON</span>';
+      h+='</div>';
+    });
+    if(S.inter)h+='<button class="btn" style="margin-top:12px;border-color:#ff4466;color:#ff4466" onclick="E.clear()">🗑 クリア</button>';
+    h+='<div style="flex:1"></div><div style="padding:12px;border-radius:10px;border:1px solid #2a2a4a;font-size:11px;color:#999">💡 別カードをドロップで入れ替え</div></div>';
+    // Center
+    h+='<div class="center"><div style="padding:10px 20px;border-bottom:1px solid #1a1a3a;display:flex;gap:8px;align-items:center"><span style="color:#777;font-size:12px">🎬</span><input class="inp" style="flex:1" placeholder="YouTube URL（埋め込みコードもOK）" value="'+esc(S.videoUrl)+'" oninput="E.setUrl(this.value)">';
+    if(v)h+='<span style="font-size:11px;color:#50c878;flex-shrink:0;font-family:JetBrains Mono">✓ '+v+'</span>';
+    h+='<input class="inp" style="width:170px" placeholder="プロジェクト名" value="'+esc(S.title)+'" oninput="E.setTitle(this.value)"></div>';
+    h+='<div style="flex:1;display:flex;align-items:center;justify-content:center;padding:20px" ondragover="E.dov(event)" ondragleave="E.dlv()" ondrop="E.drop(event,false)">';
+    h+='<div class="vbox" id="vbox">';
+    if(v)h+='<div id="ed-yt" style="width:100%;height:100%"></div>';
+    else h+='<div style="width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px"><div style="font-size:48px;opacity:.3">🎥</div><div style="color:#555;font-size:14px">YouTube URLを入力</div></div>';
+    if(S.inter)h+='<div style="position:absolute;bottom:12px;right:12px;background:rgba(124,108,240,.9);padding:6px 12px;border-radius:8px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px;color:#fff;z-index:5">'+m.icon+' '+m.label+' @ '+fmt(S.trigTime)+'</div>';
+    h+='</div></div>';
+    // Timeline
+    h+='<div style="padding:12px 20px 16px;border-top:1px solid #1a1a3a"><div style="display:flex;align-items:center;gap:12px;margin-bottom:8px"><span style="font-size:11px;color:#777;font-weight:600">タイムライン</span><input type="number" min="10" max="600" value="'+S.dur+'" onchange="E.setDur(this.value)" style="width:60px;background:#1a1a3a;border:1px solid #2a2a5a;border-radius:6px;padding:3px 8px;color:#e0e0ff;font-size:11px;text-align:center"><span style="font-size:11px;color:#555">秒</span></div>';
+    h+='<div class="tl" id="tl" ondragover="E.tdov(event)" ondragleave="E.tdlv()" ondrop="E.drop(event,true)" onclick="E.tlClick(event)">';
+    var marks=Math.min(Math.floor(S.dur/30)+1,20);
+    for(var i=0;i<marks;i++){var t=i*30;h+='<div style="position:absolute;left:'+((t/S.dur)*100)+'%;top:0;bottom:0;border-left:1px solid #2a2a4a;display:flex;align-items:flex-end;padding-left:4px;padding-bottom:2px"><span style="font-size:9px;color:#555">'+fmt(t)+'</span></div>'}
+    if(S.inter)h+='<div draggable="true" ondragstart="E.ds(event,\''+S.inter.type+'\')" style="position:absolute;left:calc('+((S.trigTime/S.dur)*100)+'% - 16px);top:4px;width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,#7c6cf0,#e06caa);display:flex;align-items:center;justify-content:center;font-size:16px;cursor:grab;z-index:2;box-shadow:0 2px 12px rgba(124,108,240,.5);transition:left .15s ease">'+m.icon+'</div>';
+    else h+='<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#444;font-size:12px;pointer-events:none">← ドラッグ＆ドロップ</div>';
+    h+='</div></div></div>';
+    // Right
+    h+='<div class="side-r">';
+    if(S.inter){
+      h+='<div style="display:flex;align-items:center;gap:8px;padding-bottom:12px;border-bottom:1px solid #1a1a3a"><span style="font-size:20px">'+m.icon+'</span><div><div style="font-weight:700;font-size:14px">'+m.label+'</div><div style="font-size:11px;color:#777">'+m.desc+'</div></div></div>';
+      h+='<div style="margin-top:12px"><span class="lbl">表示タイミング</span><div style="display:flex;align-items:center;gap:8px;margin-top:6px"><input type="range" min="0" max="'+S.dur+'" value="'+S.trigTime+'" oninput="E.setTrig(this.value)" style="flex:1;accent-color:#7c6cf0"><span style="font-family:JetBrains Mono;font-size:13px;color:#7c6cf0;min-width:40px">'+fmt(S.trigTime)+'</span></div></div>';
+      h+='<label class="lbl" style="display:flex;align-items:center;gap:6px;cursor:pointer;margin-top:12px"><input type="checkbox" '+(S.pauseVid?"checked":"")+' onchange="E.setPause(this.checked)" style="accent-color:#7c6cf0"> 動画を一時停止</label>';
+      h+='<div style="border-top:1px solid #1a1a3a;padding-top:12px;margin-top:12px"><div style="font-size:11px;font-weight:600;color:#777;margin-bottom:10px;text-transform:uppercase">コンテンツ設定</div>';
+      h+=renderContentEditor(S.inter);
+      h+='</div>';
+    }else{
+      h+='<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;text-align:center;gap:12px"><div style="font-size:40px;opacity:.3">✨</div><div style="color:#555;font-size:13px">左からドラッグ＆ドロップ</div></div>';
+    }
+    h+='</div></div></div>';
+    document.getElementById("app").innerHTML=h;
+
+    // エディター画面のYouTubeプレイヤー（プレビューなし）
+    if(v){whenYTReady(function(){createYTPlayer("ed-yt",v,false)})}
+  }
+
+  function renderContentEditor(inter){
+    var t=inter.type,c=inter.content,h="";
+    if(t==="quiz"){
+      h+='<span class="lbl">質問文</span><input class="inp" value="'+esc(c.question)+'" oninput="E.uc(\'question\',this.value)" style="margin:4px 0 8px">';
+      h+='<span class="lbl">選択肢</span>';
+      c.choices.forEach(function(ch,i){h+='<div style="display:flex;gap:6px;align-items:center;margin:4px 0"><input type="radio" name="qc" '+(ch.is_correct?"checked":"")+' onchange="E.ucr('+i+')" style="accent-color:#7c6cf0"><input class="inp" style="flex:1" value="'+esc(ch.text)+'" oninput="E.ucc('+i+',this.value)"></div>'});
+      h+='<span class="lbl" style="margin-top:8px">正解FB</span><input class="inp" value="'+esc(c.feedback.correct)+'" oninput="E.ucf(\'correct\',this.value)" style="margin:4px 0">';
+      h+='<span class="lbl">不正解FB</span><input class="inp" value="'+esc(c.feedback.incorrect)+'" oninput="E.ucf(\'incorrect\',this.value)" style="margin:4px 0">';
+    }else if(t==="cta_button"){
+      h+='<span class="lbl">ラベル</span><input class="inp" value="'+esc(c.label)+'" oninput="E.uc(\'label\',this.value)" style="margin:4px 0 8px">';
+      h+='<span class="lbl">URL</span><input class="inp" value="'+esc(c.url)+'" oninput="E.uc(\'url\',this.value)" style="margin:4px 0">';
+    }else if(t==="branch"){
+      h+='<span class="lbl">質問</span><input class="inp" value="'+esc(c.question)+'" oninput="E.uc(\'question\',this.value)" style="margin:4px 0 8px">';
+      c.options.forEach(function(o,i){h+='<div style="display:flex;gap:6px;margin:4px 0"><input class="inp" style="flex:1" value="'+esc(o.text)+'" oninput="E.uco('+i+',\'text\',this.value)"><input class="inp" style="width:60px" type="number" value="'+o.jump_to_sec+'" oninput="E.uco('+i+',\'jump_to_sec\',+this.value)"><span style="color:#777;font-size:11px;align-self:center">秒</span></div>'});
+    }else if(t==="poll"){
+      h+='<span class="lbl">質問</span><input class="inp" value="'+esc(c.question)+'" oninput="E.uc(\'question\',this.value)" style="margin:4px 0 8px">';
+      c.choices.forEach(function(ch,i){h+='<input class="inp" value="'+esc(ch.text)+'" oninput="E.upc('+i+',this.value)" style="margin:4px 0">'});
+    }else if(t==="text_overlay"){
+      h+='<span class="lbl">テキスト</span><textarea class="inp" style="min-height:60px;resize:vertical;margin:4px 0 8px" oninput="E.uc(\'text\',this.value)">'+esc(c.text)+'</textarea>';
+      h+='<span class="lbl">表示秒数</span><input class="inp" type="number" value="'+c.duration_sec+'" oninput="E.uc(\'duration_sec\',+this.value)" style="margin:4px 0">';
+    }else if(t==="hotspot"){
+      var r=c.regions[0];
+      h+='<span class="lbl">ツールチップ</span><input class="inp" value="'+esc(r.tooltip)+'" oninput="E.uhs(\'tooltip\',this.value)" style="margin:4px 0 8px">';
+      h+='<span class="lbl">URL</span><input class="inp" value="'+esc(r.action.value)+'" oninput="E.uhs(\'url\',this.value)" style="margin:4px 0">';
+    }
+    return h;
+  }
+
+  // ─── Preview ───
+  function renderPreview(){
+    var v=vid(),m=meta();
+    var triggerTime=S.trigTime,pauseVideo=S.pauseVid,videoDuration=S.dur;
+
+    var h='<div class="pv-wrap">';
+    h+='<header class="hdr" style="padding:10px 20px"><div class="hdr-left"><button class="btn" onclick="E.backEdit()">← 編集に戻る</button><div class="logo" style="width:28px;height:28px;border-radius:7px;font-size:13px">1+</div><span style="font-weight:700;font-size:15px">'+esc(S.title)+'</span></div>';
+    if(m)h+='<div style="display:flex;align-items:center;gap:6px;font-size:12px;color:#888;background:#1a1a3a;padding:5px 12px;border-radius:8px;border:1px solid #2a2a5a">'+m.icon+' '+m.label+' <span style="color:#7c6cf0;font-family:JetBrains Mono;font-weight:600">@ '+fmt(triggerTime)+'</span></div>';
+    h+='</header>';
+    h+='<div style="flex:1;display:flex;align-items:center;justify-content:center;padding:24px"><div class="pv-vbox">';
+    if(v)h+='<div id="pv-yt" style="position:absolute;inset:0;z-index:1"></div>';
+    else h+='<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#0a0a2a"><div style="font-size:56px;opacity:.3">🎥</div></div>';
+    h+='<div id="pv-ol"></div></div></div>';
+    h+='<div style="padding:10px 24px 14px;border-top:1px solid #1a1a3a;background:#0c0c20;flex-shrink:0"><div style="display:flex;align-items:center;gap:12px;margin-bottom:8px"><span id="pv-ct" style="font-family:JetBrains Mono;font-size:13px;color:#7c6cf0;font-weight:600">0:00<span style="color:#555"> / '+fmt(videoDuration)+'</span></span><div style="flex:1"></div><span id="pv-st" style="font-size:12px;font-weight:600"></span></div>';
+    h+='<div class="pbar"><div class="pbar-fill" id="pv-pb"></div>';
+    if(S.inter)h+='<div class="pbar-mark" id="pv-mk" style="left:'+((triggerTime/videoDuration)*100)+'%;background:#7c6cf0">'+(m?m.icon:"")+'</div>';
+    h+='</div></div></div>';
+    document.getElementById("app").innerHTML=h;
+
+    if(!v)return;
+
+    // YouTube IFrame API で完全同期
+    whenYTReady(function(){
+      var olEl=document.getElementById("pv-ol");
+      var ctEl=document.getElementById("pv-ct");
+      var pbEl=document.getElementById("pv-pb");
+      var stEl=document.getElementById("pv-st");
+      var mkEl=document.getElementById("pv-mk");
+      var fired=false;
+
+      pvPlayer=createYTPlayer("pv-yt",v,true,null,null);
+
+      function stop(){if(pvTimer){clearInterval(pvTimer);pvTimer=null}}
+      function start(){stop();pvTimer=setInterval(tick,250)}
+
+      function tick(){
+        var ct=0;
+        try{ct=pvPlayer.getCurrentTime()||0}catch(e){}
+        ctEl.innerHTML=fmt(ct)+'<span style="color:#555"> / '+fmt(videoDuration)+'</span>';
+        pbEl.style.width=Math.min((ct/videoDuration)*100,100)+"%";
+        if(S.inter&&!fired&&ct>=triggerTime){
+          fired=true;
+          showOL(S.inter,olEl,function(){
+            olEl.innerHTML="";
+            pvPlayer.playVideo();
+            stEl.style.color="#50c878";stEl.textContent="✓ 発火済み";
+            if(mkEl)mkEl.style.background="#50c878";
+          });
+          if(pauseVideo){pvPlayer.pauseVideo();stEl.style.color="#e06caa";stEl.textContent="⏸ 動画一時停止中"}
+          else{stEl.style.color="#e06caa";stEl.textContent="🟣 インタラクション表示中"}
+          if(mkEl)mkEl.style.background="#e06caa";
+        }
+      }
+      start();
+    });
+  }
+
+  // ─── Editor API ───
+  window.E={
+    setUrl:function(v){S.videoUrl=v;render()},
+    setTitle:function(v){S.title=v},
+    setDur:function(v){S.dur=Math.max(10,+v);render()},
+    setTrig:function(v){S.trigTime=+v;render()},
+    setPause:function(v){S.pauseVid=v},
+    clear:function(){S.inter=null;render()},
+    ds:function(e,type){
+      e.dataTransfer.setData("itype",type);e.dataTransfer.effectAllowed="copy";
+      document.body.classList.add("dragging");
+      function onEnd(){document.body.classList.remove("dragging")}
+      e.target.addEventListener("dragend",onEnd,{once:true});
+    },
+    dov:function(e){e.preventDefault();e.dataTransfer.dropEffect="copy";var el=document.getElementById("vbox");if(el)el.classList.add("dragover")},
+    dlv:function(){var el=document.getElementById("vbox");if(el)el.classList.remove("dragover")},
+    tdov:function(e){e.preventDefault();e.dataTransfer.dropEffect="copy";var el=document.getElementById("tl");if(el)el.classList.add("dragover")},
+    tdlv:function(){var el=document.getElementById("tl");if(el)el.classList.remove("dragover")},
+    drop:function(e,fromTl){
+      e.preventDefault();document.body.classList.remove("dragging");
+      var type=e.dataTransfer.getData("itype");if(!type)return;
+      if(fromTl){var tl=document.getElementById("tl");if(tl){var r=tl.getBoundingClientRect();S.trigTime=Math.round(Math.max(0,Math.min(1,(e.clientX-r.left)/r.width))*S.dur)}}
+      S.inter={type:type,content:JSON.parse(JSON.stringify(DEFAULTS[type]))};
+      render();
+    },
+    tlClick:function(e){
+      if(!S.inter)return;var tl=document.getElementById("tl");if(!tl)return;
+      var r=tl.getBoundingClientRect();S.trigTime=Math.round(Math.max(0,Math.min(1,(e.clientX-r.left)/r.width))*S.dur);render();
+    },
+    preview:function(){S.mode="preview";render()},
+    backEdit:function(){if(pvTimer){clearInterval(pvTimer);pvTimer=null}if(pvPlayer){try{pvPlayer.destroy()}catch(e){}pvPlayer=null}S.mode="editor";render()},
+    uc:function(k,v){if(S.inter)S.inter.content[k]=v},
+    ucr:function(i){if(!S.inter)return;S.inter.content.choices.forEach(function(c,j){c.is_correct=j===i});render()},
+    ucc:function(i,v){if(S.inter)S.inter.content.choices[i].text=v},
+    ucf:function(k,v){if(S.inter)S.inter.content.feedback[k]=v},
+    uco:function(i,k,v){if(S.inter)S.inter.content.options[i][k]=v},
+    upc:function(i,v){if(S.inter)S.inter.content.choices[i].text=v},
+    uhs:function(k,v){if(!S.inter)return;var r=S.inter.content.regions[0];if(k==="tooltip")r.tooltip=v;else r.action.value=v},
+    share:function(){
+      if(!S.inter){alert("インタラクションを追加してください");return}
+      var data={videoUrl:S.videoUrl,videoTitle:S.title,videoDuration:S.dur,triggerTime:S.trigTime,pauseVideo:S.pauseVid,interaction:S.inter,createdAt:firebase.firestore.FieldValue.serverTimestamp()};
+      var m=document.createElement("div");m.className="modal-bg";m.id="share-modal";
+      m.innerHTML='<div class="modal"><div style="text-align:center"><div class="spinner" style="margin:0 auto"></div><div style="color:#888;font-size:13px;margin-top:12px">Firestoreに保存中…</div></div></div>';
+      document.body.appendChild(m);
+      db.collection(COLLECTION).add(data).then(function(ref){
+        var url=window.location.origin+"/oneplus/index.html?id="+ref.id;
+        var modal=document.getElementById("share-modal");
+        modal.innerHTML='<div class="modal" onclick="event.stopPropagation()"><div style="display:flex;justify-content:space-between;align-items:center"><span style="font-weight:700;font-size:18px;color:#e0e0ff">🔗 共有リンク</span><button class="btn" onclick="document.getElementById(\'share-modal\').remove()">✕</button></div><div style="padding:12px;border-radius:10px;background:#0a0a1a;border:1px solid #2a2a5a;font-family:JetBrains Mono;font-size:12px;color:#a0a0ff;word-break:break-all">'+esc(url)+'</div><button class="btn btn-primary" style="width:100%;padding:12px;font-size:14px" onclick="E.copyUrl(\''+url+'\')">📋 URLをコピー</button><div style="font-size:11px;color:#555;text-align:center">このリンクを共有すると、誰でもインタラクション付き動画を体験できます</div></div>';
+        modal.onclick=function(){modal.remove()};
+        console.log("Saved to Firestore: "+ref.id);
+      }).catch(function(err){
+        console.error("Firestore save error:",err);
+        var modal=document.getElementById("share-modal");
+        modal.innerHTML='<div class="modal"><div style="color:#ff4466;font-weight:700">⚠️ 保存に失敗しました</div><div style="color:#888;font-size:13px">'+esc(err.message)+'</div><button class="btn" onclick="document.getElementById(\'share-modal\').remove()">閉じる</button></div>';
+        modal.onclick=function(){modal.remove()};
+      });
+    },
+    copyUrl:function(url){cpx(url,function(){var b=document.querySelector(".btn-primary");if(b){b.textContent="✅ コピー済み！";b.style.background="#50c878";setTimeout(function(){b.textContent="📋 URLをコピー";b.style.background=""},2000)}})}
+  };
+  render();
+}
+
+})();
+</script>
+</body>
+</html>

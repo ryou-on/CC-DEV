@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Site Annotator v1.0 - Web修正指示ツール</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body,#root{width:100%;height:100%;overflow:hidden}
+body{background:#0a0a0f;font-family:'Noto Sans JP',sans-serif}
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:rgba(255,255,255,.03)}::-webkit-scrollbar-thumb{background:rgba(255,255,255,.12);border-radius:3px}
+@keyframes fadeIn{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:scale(1)}}
+@keyframes slideUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@keyframes tipIn{from{opacity:0;transform:translateX(-50%) translateY(4px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;z-index:999;animation:fadeIn .2s ease}
+.modal-box{background:#1a1a24;border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:28px;min-width:380px;max-width:520px;max-height:85vh;overflow-y:auto;box-shadow:0 24px 64px rgba(0,0,0,.6);animation:slideUp .25s ease}
+.log-row{display:flex;align-items:flex-start;gap:6px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.03)}
+.log-row:hover .log-copy-btn{opacity:1}
+.log-copy-btn{opacity:0;transition:opacity .15s;flex-shrink:0;background:none;border:1px solid rgba(255,255,255,.15);border-radius:4px;color:#888;cursor:pointer;padding:2px 4px;display:flex;align-items:center}
+.scroll-fab{position:absolute;right:20px;top:50%;transform:translateY(-50%);width:52px;height:52px;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:55;transition:all .2s;backdrop-filter:blur(12px)}
+.scroll-fab.off{background:rgba(18,18,26,.85);color:#888;border:2px solid rgba(255,255,255,.12);box-shadow:0 4px 16px rgba(0,0,0,.4)}
+.scroll-fab.on{background:rgba(107,203,119,.15);color:#6BCB77;border:2px solid rgba(107,203,119,.5);box-shadow:0 4px 20px rgba(107,203,119,.25)}
+.scroll-fab:hover{transform:translateY(-50%) scale(1.1)}
+.scroll-label{position:absolute;right:20px;top:50%;transform:translateY(calc(-50% + 36px));font-size:10px;font-weight:700;font-family:'JetBrains Mono',monospace;z-index:56;pointer-events:none;text-align:center;width:52px}
+.stamp-palette{position:absolute;bottom:72px;left:50%;transform:translateX(-50%);display:flex;gap:4px;padding:8px 12px;background:rgba(18,18,26,.97);backdrop-filter:blur(16px);border-radius:12px;border:1px solid rgba(255,255,255,.1);box-shadow:0 8px 32px rgba(0,0,0,.5);z-index:51;flex-wrap:wrap;max-width:360px;justify-content:center}
+.stamp-btn{padding:6px 12px;border-radius:8px;border:1px solid rgba(255,59,59,.25);background:rgba(255,59,59,.08);color:#FF3B3B;font-size:13px;font-weight:700;cursor:pointer;transition:all .15s;white-space:nowrap}
+.stamp-btn:hover{background:rgba(255,59,59,.2);border-color:rgba(255,59,59,.5)}
+.stamp-btn.active{background:rgba(255,59,59,.25);border-color:#FF3B3B;box-shadow:0 0 8px rgba(255,59,59,.3)}
+.rtip{position:absolute;bottom:calc(100% + 10px);left:50%;transform:translateX(-50%);padding:7px 12px;background:#1a1a28;border:1px solid rgba(255,255,255,.15);border-radius:8px;color:#e0e0e0;font-size:11px;line-height:1.5;white-space:nowrap;pointer-events:none;z-index:200;animation:tipIn .12s ease;box-shadow:0 6px 20px rgba(0,0,0,.6)}
+.rtip::after{content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);border:5px solid transparent;border-top-color:#1a1a28}
+.rtip .rkey{display:inline-block;padding:1px 5px;margin-left:6px;border-radius:3px;background:rgba(255,255,255,.1);font-family:'JetBrains Mono',monospace;font-size:10px;color:#999}
+.help-row{display:flex;align-items:flex-start;gap:10px;padding:7px 0;font-size:12px;color:#bbb;line-height:1.7}
+.help-ic{width:32px;height:32px;border-radius:8px;background:rgba(255,255,255,.06);display:flex;align-items:center;justify-content:center;flex-shrink:0;color:#aaa}
+.hk{display:inline-block;padding:1px 6px;border-radius:4px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.1);font-family:'JetBrains Mono',monospace;font-size:11px;color:#aaa}
+</style>
+<script>
+(function(){
+  window.onerror=function(m){if(typeof m==='string'&&m.indexOf('ResizeObserver')!==-1)return true};
+  window.addEventListener('error',function(e){if(e.message&&e.message.indexOf('ResizeObserver')!==-1){e.stopImmediatePropagation();e.preventDefault()}},true);
+  window.addEventListener('unhandledrejection',function(e){if(e.reason&&e.reason.message&&e.reason.message.indexOf('ResizeObserver')!==-1)e.preventDefault()},true);
+  var _logs=[];var _o={log:console.log,warn:console.warn,error:console.error,info:console.info};
+  function ts(){return new Date().toLocaleTimeString('ja-JP',{hour12:false})}
+  function cap(lv,args){var msg=Array.from(args).map(function(a){try{return typeof a==='object'?JSON.stringify(a):String(a)}catch(e){return String(a)}}).join(' ');if(msg.indexOf('ResizeObserver')!==-1||msg.indexOf('in-browser Babel')!==-1)return;_logs.push({time:ts(),level:lv,msg:msg});if(_logs.length>300)_logs.shift()}
+  console.log=function(){cap('LOG',arguments);_o.log.apply(console,arguments)};console.warn=function(){cap('WARN',arguments);_o.warn.apply(console,arguments)};console.error=function(){cap('ERROR',arguments);_o.error.apply(console,arguments)};console.info=function(){cap('INFO',arguments);_o.info.apply(console,arguments)};
+  window.addEventListener('error',function(e){if(!e.message||e.message.indexOf('ResizeObserver')!==-1)return;_logs.push({time:ts(),level:'ERROR',msg:e.message})});
+  window.__getLogs=function(){return _logs.slice()};window.__clearLogs=function(){_logs.length=0}
+})();
+</script>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useRef,useCallback,useEffect}=React;
+const VER="1.0";
+const TOOLS={PEN:"pen",ARROW:"arrow",TEXT:"text",REDTEXT:"redtext",STAMP:"stamp",HIGHLIGHT:"highlight",ERASER:"eraser"};
+const STAMPS=["トル","トルツメ","ツメ","ママ","イキ","改行","一字アキ","半角アキ","小書き","大書き","要確認"];
+const COLORS=["#FF3B3B","#FF8C42","#FFD93D","#6BCB77","#4D96FF","#9B5DE5","#F15BB5","#ffffff"];
+const uid=()=>Math.random().toString(36).substr(2,9);
+const HIST_MAX=100;const PAGE_H=15000;
+const MODES={VIEW:"view",COMMENT:"comment",EDIT:"edit"};
+const MODE_LABELS={[MODES.VIEW]:"閲覧のみ",[MODES.COMMENT]:"コメントのみ",[MODES.EDIT]:"編集可能"};
+const MODE_COLORS={[MODES.VIEW]:"#9B5DE5",[MODES.COMMENT]:"#FFD93D",[MODES.EDIT]:"#6BCB77"};
+const TTIPS={pen:{l:"ペン",d:"フリーハンドで線を描画"},arrow:{l:"矢印",d:"ドラッグで矢印を描画"},text:{l:"コメント",d:"番号付き指摘を配置"},redtext:{l:"修正テキスト",d:"赤字で直接修正を配置"},stamp:{l:"スタンプ",d:"校正記号をワンクリック配置"},highlight:{l:"ハイライト",d:"半透明マーカーで強調"},eraser:{l:"消しゴム",d:"クリックで描画・注釈を削除"}};
+const COLOR_N={"#FF3B3B":"赤","#FF8C42":"橙","#FFD93D":"黄","#6BCB77":"緑","#4D96FF":"青","#9B5DE5":"紫","#F15BB5":"ピンク","#ffffff":"白"};
+
+const IC={
+pen:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>,
+arrow:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>,
+text:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg>,
+redtext:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#FF3B3B" strokeWidth="2" strokeLinecap="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>,
+stamp:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 22h16"/><path d="M12 17V11"/><path d="M8 17h8a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4z"/><rect x="8" y="2" width="8" height="6" rx="1"/></svg>,
+highlight:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="11" width="18" height="6" rx="1"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>,
+eraser:<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg>,
+undo:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>,
+redo:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3L21 13"/></svg>,
+trash:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>,
+panel:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/></svg>,
+globe:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>,
+dl:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,
+gdoc:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8M16 17H8M10 9H8"/></svg>,
+pdf:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>,
+doc:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>,
+share:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>,
+x:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
+copy:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>,
+copyS:<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>,
+check:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>,
+checkS:<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#6BCB77" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>,
+eye:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>,
+msg:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>,
+edit2:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
+terminal:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>,
+scroll:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 2v20M5 9l7-7 7 7M5 15l7 7 7-7"/></svg>,
+lock:<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>,
+help:<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
+};
+
+/* ── Tooltip ── */
+function Tip({children,label,desc,shortcut}){
+  const[show,setShow]=useState(false);const t=useRef(null);
+  const enter=()=>{t.current=setTimeout(()=>setShow(true),500)};
+  const leave=()=>{clearTimeout(t.current);setShow(false)};
+  useEffect(()=>()=>clearTimeout(t.current),[]);
+  return(<div style={{position:"relative",display:"inline-flex"}} onMouseEnter={enter} onMouseLeave={leave}>
+    {children}
+    {show&&<div className="rtip"><strong>{label}</strong>{desc&&<span style={{color:"#999"}}>{" — "+desc}</span>}{shortcut&&<span className="rkey">{shortcut}</span>}</div>}
+  </div>);
+}
+
+/* ── Share ── */
+function encodeShare(u,a,m){try{return btoa(unescape(encodeURIComponent(JSON.stringify({u,m,a:a.map(x=>({t:x.type,n:x.number||0,x:Math.round(x.x),y:Math.round(x.y),c:x.color,tx:x.text||"",lb:x.label||""}))}))))}catch(e){return null}}
+function decodeShare(h){try{const d=JSON.parse(decodeURIComponent(escape(atob(h))));return{url:d.u,mode:d.m||MODES.VIEW,anns:(d.a||d.t||[]).map(a=>({id:uid(),type:a.t||"text",number:a.n||0,x:a.x,y:a.y,color:a.c,text:a.tx||"",label:a.lb||""}))}}catch(e){return null}}
+function parseInit(){const h=window.location.hash.replace(/^#/,"");if(!h)return null;return decodeShare(new URLSearchParams(h).get("share"))}
+
+/* ── History ── */
+function useHistory(init){
+  const[past,setPast]=useState([]);const[present,setPresent]=useState(init);const[future,setFuture]=useState([]);
+  const push=useCallback(s=>{setPast(p=>[...p,present].slice(-HIST_MAX));setPresent(s);setFuture([])},[present]);
+  const undo=useCallback(()=>{if(!past.length)return;setFuture(f=>[present,...f]);setPresent(past[past.length-1]);setPast(p=>p.slice(0,-1))},[past,present]);
+  const redo=useCallback(()=>{if(!future.length)return;setPast(p=>[...p,present]);setPresent(future[0]);setFuture(f=>f.slice(1))},[future,present]);
+  const reset=useCallback(s=>{setPast([]);setPresent(s);setFuture([])},[]);
+  return{s:present,push,undo,redo,reset,canUndo:past.length>0,canRedo:future.length>0};
+}
+
+/* ── Drawing ── */
+function drawArr(ctx,fx,fy,tx,ty,col,w){const hl=16,a=Math.atan2(ty-fy,tx-fx);ctx.beginPath();ctx.strokeStyle=col;ctx.lineWidth=w;ctx.lineCap="round";ctx.moveTo(fx,fy);ctx.lineTo(tx,ty);ctx.stroke();ctx.beginPath();ctx.fillStyle=col;ctx.moveTo(tx,ty);ctx.lineTo(tx-hl*Math.cos(a-Math.PI/6),ty-hl*Math.sin(a-Math.PI/6));ctx.lineTo(tx-hl*Math.cos(a+Math.PI/6),ty-hl*Math.sin(a+Math.PI/6));ctx.closePath();ctx.fill()}
+function paintAll(ctx,list){list.forEach(a=>{if(a.type==="pen"||a.type==="highlight"){ctx.beginPath();ctx.strokeStyle=a.color;ctx.lineWidth=a.type==="highlight"?a.strokeWidth*3:a.strokeWidth;ctx.lineCap="round";ctx.lineJoin="round";ctx.globalAlpha=a.type==="highlight"?0.35:1;a.points.forEach((p,i)=>(i===0?ctx.moveTo(p.x,p.y):ctx.lineTo(p.x,p.y)));ctx.stroke();ctx.globalAlpha=1}else if(a.type==="arrow")drawArr(ctx,a.start.x,a.start.y,a.end.x,a.end.y,a.color,a.strokeWidth)})}
+
+function DrawCanvas({drawings,tool,color,sw,onDone,cW,cH}){
+  const ref=useRef(null);const live=useRef(false);const pts=useRef([]);const arrS=useRef(null);
+  const redraw=useCallback(()=>{const c=ref.current;if(!c)return;const x=c.getContext("2d");x.clearRect(0,0,c.width,c.height);paintAll(x,drawings)},[drawings]);
+  useEffect(()=>{redraw()},[redraw,cW,cH]);
+  const gp=e=>{const r=ref.current.getBoundingClientRect();return{x:(e.touches?e.touches[0].clientX:e.clientX)-r.left,y:(e.touches?e.touches[0].clientY:e.clientY)-r.top}};
+  const isDT=[TOOLS.PEN,TOOLS.ARROW,TOOLS.HIGHLIGHT].includes(tool);
+  const dn=e=>{if(!isDT)return;e.preventDefault();live.current=true;const p=gp(e);tool===TOOLS.ARROW?(arrS.current=p):(pts.current=[p])};
+  const mv=e=>{if(!live.current)return;e.preventDefault();const p=gp(e),c=ref.current,x=c.getContext("2d");
+    if(tool===TOOLS.ARROW){redraw();if(arrS.current)drawArr(x,arrS.current.x,arrS.current.y,p.x,p.y,color,sw)}
+    else{pts.current.push(p);redraw();x.beginPath();x.strokeStyle=color;x.lineWidth=tool===TOOLS.HIGHLIGHT?sw*3:sw;x.lineCap="round";x.lineJoin="round";x.globalAlpha=tool===TOOLS.HIGHLIGHT?0.35:1;pts.current.forEach((pt,i)=>(i===0?x.moveTo(pt.x,pt.y):x.lineTo(pt.x,pt.y)));x.stroke();x.globalAlpha=1}};
+  const up=e=>{if(!live.current)return;live.current=false;
+    if(tool===TOOLS.ARROW&&arrS.current){const raw=e.changedTouches?e.changedTouches[0]:e;const ep=gp(raw);onDone({id:uid(),type:"arrow",start:arrS.current,end:ep,color,strokeWidth:sw});arrS.current=null}
+    else if(pts.current.length>1)onDone({id:uid(),type:tool===TOOLS.HIGHLIGHT?"highlight":"pen",points:[...pts.current],color,strokeWidth:sw});pts.current=[]};
+  return <canvas ref={ref} width={cW} height={cH} onMouseDown={isDT?dn:undefined} onMouseMove={isDT?mv:undefined} onMouseUp={isDT?up:undefined} onMouseLeave={isDT?up:undefined} onTouchStart={isDT?dn:undefined} onTouchMove={isDT?mv:undefined} onTouchEnd={isDT?up:undefined} style={{position:"absolute",top:0,left:0,width:cW,height:cH,cursor:tool===TOOLS.TEXT||tool===TOOLS.REDTEXT?"crosshair":tool===TOOLS.STAMP?"copy":tool===TOOLS.ERASER?"cell":"crosshair",touchAction:"none"}}/>;
+}
+function ROCanvas({drawings,cW,cH}){const ref=useRef(null);useEffect(()=>{const c=ref.current;if(!c)return;const x=c.getContext("2d");x.clearRect(0,0,c.width,c.height);paintAll(x,drawings)},[drawings,cW,cH]);return <canvas ref={ref} width={cW} height={cH} style={{position:"absolute",top:0,left:0,width:cW,height:cH,pointerEvents:"none"}}/>}
+
+/* ── TextBubble ── */
+function TextBubble({ann,selected,onSelect,onUpdate,onDelete,readonly}){
+  const[editing,setEditing]=useState(!ann.text&&!readonly);const[text,setText]=useState(ann.text||"");
+  const[drag,setDrag]=useState(false);const composing=useRef(false);const off=useRef({x:0,y:0});const inp=useRef(null);const layerRef=useRef(null);const mdT=useRef(0);const mdP=useRef({x:0,y:0});
+  useEffect(()=>{if(editing&&inp.current)inp.current.focus()},[editing]);
+  useEffect(()=>{setText(ann.text||"")},[ann.text]);
+  useEffect(()=>{if(!drag)return;const mv=e=>{const L=layerRef.current;if(!L)return;const r=L.getBoundingClientRect();onUpdate(ann.id,{x:e.clientX-r.left-off.current.x,y:e.clientY-r.top-off.current.y})};const u=()=>setDrag(false);window.addEventListener("mousemove",mv);window.addEventListener("mouseup",u);return()=>{window.removeEventListener("mousemove",mv);window.removeEventListener("mouseup",u)}},[drag,ann.id,onUpdate]);
+  const commit=()=>{setEditing(false);text.trim()?onUpdate(ann.id,{text}):onDelete(ann.id)};
+  return(<div ref={el=>{if(el)layerRef.current=el.closest('[data-layer]')}} onClick={e=>e.stopPropagation()}
+    onMouseDown={e=>{if(editing||readonly)return;e.stopPropagation();mdT.current=Date.now();mdP.current={x:e.clientX,y:e.clientY};onSelect(ann.id);setDrag(true);const lr=(e.currentTarget.closest('[data-layer]')||e.currentTarget).getBoundingClientRect();off.current={x:e.clientX-lr.left-ann.x,y:e.clientY-lr.top-ann.y}}}
+    onMouseUp={e=>{if(readonly||editing)return;if(Date.now()-mdT.current<300&&Math.abs(e.clientX-mdP.current.x)<5&&Math.abs(e.clientY-mdP.current.y)<5&&selected){e.stopPropagation();setEditing(true)}}}
+    style={{position:"absolute",left:ann.x,top:ann.y,zIndex:10,display:"flex",alignItems:"flex-start",gap:6,cursor:readonly?"default":editing?"text":"grab",userSelect:"none"}}>
+    <div style={{width:26,height:26,borderRadius:"50%",background:ann.color,color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",flexShrink:0,boxShadow:"0 2px 8px rgba(0,0,0,.3)"}}>{ann.number}</div>
+    <div style={{background:"rgba(15,15,20,.92)",backdropFilter:"blur(12px)",border:`2px solid ${ann.color}`,borderRadius:8,padding:"8px 12px",minWidth:140,maxWidth:320,boxShadow:selected?`0 0 0 2px ${ann.color}44, 0 4px 16px rgba(0,0,0,.4)`:"0 4px 16px rgba(0,0,0,.3)"}}>
+      {editing?(<textarea ref={inp} value={text} onChange={e=>setText(e.target.value)} onCompositionStart={()=>{composing.current=true}} onCompositionEnd={()=>{composing.current=false}} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){if(composing.current)return;e.preventDefault();commit()}if(e.key==="Escape")commit()}} onBlur={commit} placeholder="修正内容を入力... (Enter確定)" style={{background:"transparent",border:"none",color:"#f0f0f0",fontSize:13,fontFamily:"'Noto Sans JP',sans-serif",lineHeight:1.5,width:"100%",minHeight:44,resize:"vertical",outline:"none"}}/>
+      ):(<div style={{color:"#f0f0f0",fontSize:13,lineHeight:1.5,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{ann.text||<span style={{opacity:.4}}>クリックで編集</span>}</div>)}
+    </div>
+    {selected&&!editing&&!readonly&&<button onClick={e=>{e.stopPropagation();onDelete(ann.id)}} style={{position:"absolute",top:-8,right:-8,width:22,height:22,borderRadius:"50%",background:"#FF3B3B",border:"2px solid rgba(15,15,20,.9)",color:"#fff",fontSize:11,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>×</button>}
+  </div>);
+}
+
+/* ── RedTextBubble ── */
+function RedTextBubble({ann,selected,onSelect,onUpdate,onDelete,readonly}){
+  const[editing,setEditing]=useState(!ann.text&&!readonly);const[text,setText]=useState(ann.text||"");
+  const[drag,setDrag]=useState(false);const composing=useRef(false);const off=useRef({x:0,y:0});const inp=useRef(null);const layerRef=useRef(null);const mdT=useRef(0);const mdP=useRef({x:0,y:0});
+  useEffect(()=>{if(editing&&inp.current)inp.current.focus()},[editing]);
+  useEffect(()=>{setText(ann.text||"")},[ann.text]);
+  useEffect(()=>{if(!drag)return;const mv=e=>{const L=layerRef.current;if(!L)return;const r=L.getBoundingClientRect();onUpdate(ann.id,{x:e.clientX-r.left-off.current.x,y:e.clientY-r.top-off.current.y})};const u=()=>setDrag(false);window.addEventListener("mousemove",mv);window.addEventListener("mouseup",u);return()=>{window.removeEventListener("mousemove",mv);window.removeEventListener("mouseup",u)}},[drag,ann.id,onUpdate]);
+  const commit=()=>{setEditing(false);text.trim()?onUpdate(ann.id,{text}):onDelete(ann.id)};
+  return(<div ref={el=>{if(el)layerRef.current=el.closest('[data-layer]')}} onClick={e=>e.stopPropagation()}
+    onMouseDown={e=>{if(editing||readonly)return;e.stopPropagation();mdT.current=Date.now();mdP.current={x:e.clientX,y:e.clientY};onSelect(ann.id);setDrag(true);const lr=(e.currentTarget.closest('[data-layer]')||e.currentTarget).getBoundingClientRect();off.current={x:e.clientX-lr.left-ann.x,y:e.clientY-lr.top-ann.y}}}
+    onMouseUp={e=>{if(readonly||editing)return;if(Date.now()-mdT.current<300&&Math.abs(e.clientX-mdP.current.x)<5&&Math.abs(e.clientY-mdP.current.y)<5&&selected){e.stopPropagation();setEditing(true)}}}
+    style={{position:"absolute",left:ann.x,top:ann.y,zIndex:10,cursor:readonly?"default":editing?"text":"grab",userSelect:"none"}}>
+    {editing?(<textarea ref={inp} value={text} onChange={e=>setText(e.target.value)} onCompositionStart={()=>{composing.current=true}} onCompositionEnd={()=>{composing.current=false}} onKeyDown={e=>{if(e.key==="Enter"&&!e.shiftKey){if(composing.current)return;e.preventDefault();commit()}if(e.key==="Escape")commit()}} onBlur={commit} placeholder="修正テキスト..." style={{background:"rgba(255,255,255,.08)",border:"none",borderBottom:"2px solid #FF3B3B",color:"#FF3B3B",fontSize:16,fontWeight:700,fontFamily:"'Noto Sans JP',sans-serif",lineHeight:1.4,minWidth:60,minHeight:28,resize:"both",outline:"none",padding:"2px 4px",borderRadius:"2px 2px 0 0"}}/>
+    ):(<div style={{color:"#FF3B3B",fontSize:16,fontWeight:700,lineHeight:1.4,whiteSpace:"pre-wrap",wordBreak:"break-word",textShadow:"0 1px 3px rgba(0,0,0,.5)"}}>{ann.text||""}</div>)}
+    {selected&&!editing&&!readonly&&<button onClick={e=>{e.stopPropagation();onDelete(ann.id)}} style={{position:"absolute",top:-10,right:-10,width:20,height:20,borderRadius:"50%",background:"#FF3B3B",border:"2px solid rgba(15,15,20,.9)",color:"#fff",fontSize:10,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>×</button>}
+  </div>);
+}
+
+/* ── StampBubble ── */
+function StampBubble({ann,selected,onSelect,onDelete,onUpdate,readonly}){
+  const[drag,setDrag]=useState(false);const off=useRef({x:0,y:0});const layerRef=useRef(null);
+  useEffect(()=>{if(!drag)return;const mv=e=>{const L=layerRef.current;if(!L)return;const r=L.getBoundingClientRect();onUpdate(ann.id,{x:e.clientX-r.left-off.current.x,y:e.clientY-r.top-off.current.y})};const u=()=>setDrag(false);window.addEventListener("mousemove",mv);window.addEventListener("mouseup",u);return()=>{window.removeEventListener("mousemove",mv);window.removeEventListener("mouseup",u)}},[drag,ann.id,onUpdate]);
+  return(<div ref={el=>{if(el)layerRef.current=el.closest('[data-layer]')}} onClick={e=>e.stopPropagation()}
+    onMouseDown={e=>{if(!readonly){e.stopPropagation();onSelect(ann.id);setDrag(true);const lr=(e.currentTarget.closest('[data-layer]')||e.currentTarget).getBoundingClientRect();off.current={x:e.clientX-lr.left-ann.x,y:e.clientY-lr.top-ann.y}}}}
+    style={{position:"absolute",left:ann.x,top:ann.y,zIndex:10,cursor:readonly?"default":"grab",userSelect:"none"}}>
+    <div style={{padding:"4px 14px",borderRadius:6,border:"2px solid #FF3B3B",background:"rgba(255,59,59,.08)",color:"#FF3B3B",fontSize:15,fontWeight:800,whiteSpace:"nowrap",boxShadow:"0 2px 8px rgba(255,59,59,.2)"}}>{ann.label}</div>
+    {selected&&!readonly&&<button onClick={e=>{e.stopPropagation();onDelete(ann.id)}} style={{position:"absolute",top:-8,right:-8,width:20,height:20,borderRadius:"50%",background:"#FF3B3B",border:"2px solid rgba(15,15,20,.9)",color:"#fff",fontSize:10,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>×</button>}
+  </div>);
+}
+
+/* ── Console ── */
+function ConsolePanel(){const[open,setOpen]=useState(false);const[logs,setLogs]=useState([]);const[ac,setAc]=useState(false);const[ci,setCi]=useState(-1);const refresh=()=>setLogs(window.__getLogs?window.__getLogs():[]);useEffect(()=>{if(open){refresh();const iv=setInterval(refresh,2000);return()=>clearInterval(iv)}},[open]);const fmt=l=>`[${l.time}] [${l.level}] ${l.msg}`;const lc=lv=>lv==='ERROR'?'#FF3B3B':lv==='WARN'?'#FFD93D':'#aaa';return(<><Tip label="コンソール" desc="ページのログを表示"><button onClick={()=>setOpen(!open)} style={{position:"fixed",bottom:20,right:16,width:36,height:36,borderRadius:10,border:"1px solid rgba(255,255,255,.1)",background:open?"rgba(77,150,255,.15)":"rgba(18,18,26,.9)",color:open?"#4D96FF":"#888",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",zIndex:90,backdropFilter:"blur(8px)"}}>{IC.terminal}</button></Tip>{open&&(<div style={{position:"fixed",bottom:64,right:16,width:460,maxHeight:360,background:"rgba(18,18,26,.97)",border:"1px solid rgba(255,255,255,.1)",borderRadius:12,zIndex:91,display:"flex",flexDirection:"column",overflow:"hidden",boxShadow:"0 12px 40px rgba(0,0,0,.5)"}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",borderBottom:"1px solid rgba(255,255,255,.06)"}}><span style={{fontSize:12,fontWeight:600,color:"#aaa",fontFamily:"'JetBrains Mono',monospace"}}>Console ({logs.length})</span><div style={{display:"flex",gap:6}}><button onClick={refresh} style={{padding:"4px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,.1)",background:"transparent",color:"#888",fontSize:11,cursor:"pointer"}}>更新</button><button onClick={()=>{navigator.clipboard.writeText(logs.map(fmt).join("\n")).then(()=>{setAc(true);setTimeout(()=>setAc(false),1500)})}} style={{padding:"4px 10px",borderRadius:6,border:"none",background:ac?"#6BCB77":"#4D96FF",color:"#fff",fontSize:11,cursor:"pointer",fontWeight:600}}>{ac?"Copied":"全コピー"}</button><button onClick={()=>{window.__clearLogs?.();refresh()}} style={{padding:"4px 10px",borderRadius:6,border:"1px solid rgba(255,255,255,.1)",background:"transparent",color:"#888",fontSize:11,cursor:"pointer"}}>クリア</button><button onClick={()=>setOpen(false)} style={{background:"none",border:"none",color:"#666",cursor:"pointer"}}>{IC.x}</button></div></div><div style={{flex:1,overflow:"auto",padding:"6px 10px",fontSize:11,fontFamily:"'JetBrains Mono',monospace",lineHeight:1.6}}>{logs.length===0?<div style={{color:"#555",padding:12,textAlign:"center"}}>ログなし</div>:logs.map((l,i)=>(<div key={i} className="log-row"><button className="log-copy-btn" onClick={()=>{navigator.clipboard.writeText(fmt(l)).then(()=>{setCi(i);setTimeout(()=>setCi(-1),1200)})}}>{ci===i?IC.checkS:IC.copyS}</button><span style={{color:"#666",flexShrink:0,fontSize:10}}>{l.time}</span><span style={{color:lc(l.level),fontWeight:600,flexShrink:0,fontSize:10,minWidth:36}}>{l.level}</span><span style={{color:lc(l.level),wordBreak:"break-all",flex:1}}>{l.msg}</span></div>))}</div></div>)}</>);}
+
+/* ── Help Modal ── */
+function HelpModal({onClose}){
+  const K=({c})=><span className="hk">{c}</span>;
+  return(<div className="modal-overlay" onClick={onClose}><div className="modal-box" onClick={e=>e.stopPropagation()} style={{maxWidth:540}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}>
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
+        <div style={{width:36,height:36,borderRadius:10,background:"linear-gradient(135deg,#FF3B3B,#FF8C42)",display:"flex",alignItems:"center",justifyContent:"center"}}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></div>
+        <div><div style={{fontSize:16,fontWeight:700,color:"#f0f0f0"}}>Site Annotator</div><div style={{fontSize:11,color:"#666",fontFamily:"'JetBrains Mono',monospace"}}>v{VER} — 使い方ガイド</div></div>
+      </div>
+      <button onClick={onClose} style={{background:"none",border:"none",color:"#888",cursor:"pointer",padding:4}}>{IC.x}</button>
+    </div>
+    <div style={{fontSize:13,color:"#999",lineHeight:1.7,marginBottom:20}}>Webページに注釈を重ねて修正指示書を作成・共有できるツールです。</div>
+
+    <div style={{marginBottom:18}}><h3 style={{fontSize:13,fontWeight:700,color:"#e0e0e0",marginBottom:10}}>🖊️ 描画ツール</h3>
+      <div className="help-row"><div className="help-ic">{IC.pen}</div><div><strong style={{color:"#e0e0e0"}}>ペン</strong> — フリーハンドで線を描画。色・太さを選択可能。</div></div>
+      <div className="help-row"><div className="help-ic">{IC.arrow}</div><div><strong style={{color:"#e0e0e0"}}>矢印</strong> — ドラッグで始点→終点の矢印を描画。</div></div>
+      <div className="help-row"><div className="help-ic">{IC.highlight}</div><div><strong style={{color:"#e0e0e0"}}>ハイライト</strong> — 半透明マーカーで重要箇所を強調。</div></div>
+    </div>
+    <div style={{marginBottom:18}}><h3 style={{fontSize:13,fontWeight:700,color:"#e0e0e0",marginBottom:10}}>💬 テキストツール</h3>
+      <div className="help-row"><div className="help-ic">{IC.text}</div><div><strong style={{color:"#e0e0e0"}}>コメント</strong> — 番号付きの指摘コメント。「こうした方がいい」という提案用。<br/>クリックで配置 → テキスト入力 → <K c="Enter"/> で確定。</div></div>
+      <div className="help-row"><div className="help-ic" style={{color:"#FF3B3B"}}>{IC.redtext}</div><div><strong style={{color:"#FF3B3B"}}>修正テキスト</strong> — 赤字の直接修正指示。「こう直す」という校正用。<br/>バブルなし・番号なしでページ上に直接赤字を配置。</div></div>
+    </div>
+    <div style={{marginBottom:18}}><h3 style={{fontSize:13,fontWeight:700,color:"#e0e0e0",marginBottom:10}}>📌 スタンプ</h3>
+      <div className="help-row"><div className="help-ic">{IC.stamp}</div><div><strong style={{color:"#e0e0e0"}}>校正スタンプ</strong> — トル・トルツメ・ママ・イキなど校正記号をワンクリックで配置。</div></div>
+    </div>
+    <div style={{marginBottom:18}}><h3 style={{fontSize:13,fontWeight:700,color:"#e0e0e0",marginBottom:10}}>🧹 その他</h3>
+      <div className="help-row"><div className="help-ic">{IC.eraser}</div><div><strong style={{color:"#e0e0e0"}}>消しゴム</strong> — 描画・スタンプ・テキストをクリックで削除。</div></div>
+    </div>
+    <div style={{marginBottom:18}}><h3 style={{fontSize:13,fontWeight:700,color:"#e0e0e0",marginBottom:10}}>⌨️ ショートカット・操作</h3>
+      <div style={{display:"flex",flexDirection:"column",gap:6,fontSize:12,color:"#bbb",lineHeight:1.7}}>
+        <div>• <strong style={{color:"#e0e0e0"}}>スクロール切替</strong> — 右端の丸ボタン、または <K c="Ctrl"/><span style={{color:"#666"}}>+</span><K c="S"/></div>
+        <div>• <strong style={{color:"#e0e0e0"}}>テキスト編集</strong> — 1回目クリックで選択、もう1回クリックで編集モード</div>
+        <div>• <strong style={{color:"#e0e0e0"}}>ドラッグ移動</strong> — テキスト・スタンプはドラッグで移動可能</div>
+        <div>• <strong style={{color:"#e0e0e0"}}>元に戻す</strong> — <K c="Ctrl"/><span style={{color:"#666"}}>+</span><K c="Z"/>　やり直し: <K c="Ctrl"/><span style={{color:"#666"}}>+</span><K c="Shift"/><span style={{color:"#666"}}>+</span><K c="Z"/></div>
+        <div>• <strong style={{color:"#e0e0e0"}}>削除</strong> — 選択中の×ボタン、または消しゴムツール</div>
+      </div>
+    </div>
+    <div style={{marginBottom:18}}><h3 style={{fontSize:13,fontWeight:700,color:"#e0e0e0",marginBottom:10}}>📤 共有・書き出し</h3>
+      <div style={{fontSize:12,color:"#bbb",lineHeight:1.7}}>
+        <div>• <strong style={{color:"#e0e0e0"}}>リンク共有</strong> — 閲覧/コメント/編集の3段階権限付きURL</div>
+        <div>• <strong style={{color:"#e0e0e0"}}>書き出し</strong> — PDF / HTML / Markdown / JSON形式</div>
+      </div>
+    </div>
+    <button onClick={onClose} style={{marginTop:4,padding:"12px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#FF3B3B,#FF8C42)",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer",width:"100%"}}>閉じる</button>
+  </div></div>);
+}
+
+/* ── Export Modal ── */
+function ExportModal({onClose,url,anns,drawings,vpRef}){const[busy,setBusy]=useState(false);const total=drawings.length+anns.length;const esc=s=>(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");const dJP=()=>new Date().toLocaleDateString("ja-JP");const d2s=()=>new Date().toISOString().slice(0,10);const dlB=(b,n)=>{const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download=n;a.click();URL.revokeObjectURL(a.href)};
+  const bHTML=img=>{const rows=anns.map(a=>{const tp=a.type==="text"?`#${a.number}`:a.type==="stamp"?`📌 ${a.label}`:"✏️";const ct=a.type==="stamp"?a.label:esc(a.text);return`<tr><td style="padding:8px 12px;border:1px solid #dadce0;text-align:center;font-weight:bold;color:${a.color||"#FF3B3B"}">${tp}</td><td style="padding:8px 12px;border:1px solid #dadce0;font-size:12px;color:#666">(${Math.round(a.x)}, ${Math.round(a.y)})</td><td style="padding:8px 12px;border:1px solid #dadce0;white-space:pre-wrap">${ct}</td><td style="padding:8px 12px;border:1px solid #dadce0">□</td></tr>`}).join("\n");const imgS=img?`<h2>スクリーンショット</h2><img src="${img}" style="max-width:100%;border:1px solid #dadce0;border-radius:8px;margin:12px 0"/><p style="font-size:11px;color:#999">※ 外部サイトの場合、ブラウザのセキュリティ制約により注釈レイヤーのみ表示される場合があります。<br/>元ページの完全なキャプチャが必要な場合は、ブラウザのスクリーンショット機能をご利用ください。</p>`:`<h2>スクリーンショット</h2><div style="padding:24px;border:2px dashed #dadce0;border-radius:8px;text-align:center;color:#999;margin:12px 0"><p>📸 スクリーンショットを撮影して貼り付けてください</p><p style="font-size:12px;margin-top:8px">ブラウザの「Ctrl+Shift+S」等のスクリーンショット機能が便利です</p></div>`;return`<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>修正指示書</title><style>body{font-family:'Arial','Noto Sans JP',sans-serif;max-width:800px;margin:40px auto;color:#202124;line-height:1.6;padding:20px}h1{font-size:24px;border-bottom:3px solid #4285f4;padding-bottom:8px}h2{font-size:18px;color:#1a73e8;margin-top:32px}.meta{background:#f8f9fa;border-left:4px solid #4285f4;padding:12px 16px;margin:16px 0}.meta p{margin:4px 0;font-size:13px}table{border-collapse:collapse;width:100%;margin:16px 0}th{background:#4285f4;color:#fff;padding:8px 12px;border:1px solid #3367d6;font-size:13px}tr:nth-child(even) td{background:#f8f9fa}.footer{margin-top:40px;border-top:1px solid #dadce0;padding-top:16px;font-size:12px;color:#5f6368}</style></head><body><h1>📝 修正指示書</h1><div class="meta"><p><strong>URL:</strong> <a href="${url}">${esc(url)}</a></p><p><strong>作成日:</strong> ${dJP()}</p><p><strong>項目数:</strong> ${anns.length}件</p></div>${imgS}<h2>修正項目</h2><table><thead><tr><th style="width:80px;text-align:center">種別</th><th style="width:100px">位置</th><th>内容</th><th style="width:60px">状態</th></tr></thead><tbody>${rows}</tbody></table><div class="footer">Site Annotator v${VER} — ${dJP()}</div></body></html>`};
+  const doCapture=async()=>{const el=vpRef.current;if(!el||!window.html2canvas)return null;try{const cv=await window.html2canvas(el,{useCORS:true,allowTaint:true,backgroundColor:"#fff",scale:1.5,logging:false,foreignObjectRendering:true});return cv.toDataURL("image/png",.92)}catch(e1){try{const cv=await window.html2canvas(el,{useCORS:true,allowTaint:true,backgroundColor:"#fff",scale:1.5,logging:false});return cv.toDataURL("image/png",.92)}catch(e2){return null}}};
+  const doPDF=async()=>{setBusy(true);const i=await doCapture();setBusy(false);const w=window.open("","_blank");if(!w)return;w.document.write(bHTML(i)+'<script>window.onload=function(){setTimeout(function(){window.print()},600)}<\/script>');w.document.close();onClose()};
+  const doGDoc=async()=>{setBusy(true);const i=await doCapture();setBusy(false);dlB(new Blob([bHTML(i)],{type:"text/html"}),'修正指示書-'+d2s()+'.html');onClose()};
+  const doMD=()=>{let md='# 修正指示書\n\n**URL:** '+url+'  \n**作成日:** '+dJP()+'\n\n---\n\n';anns.forEach(a=>{const h=a.type==="text"?'コメント #'+a.number:a.type==="stamp"?'スタンプ: '+a.label:'修正テキスト';md+='### '+h+'\n- **位置:** ('+Math.round(a.x)+', '+Math.round(a.y)+')\n- **内容:** '+(a.text||a.label||'')+'\n\n'});dlB(new Blob([md],{type:"text/markdown"}),'修正指示書-'+d2s()+'.md');onClose()};
+  const doJSON=()=>{dlB(new Blob([JSON.stringify({url,version:VER,exportedAt:new Date().toISOString(),annotations:anns.map(a=>({type:a.type,number:a.number,text:a.text,label:a.label,x:Math.round(a.x),y:Math.round(a.y),color:a.color})),drawingCount:drawings.length},null,2)],{type:"application/json"}),'annotations-'+d2s()+'.json');onClose()};
+  const bs=p=>({padding:"11px 16px",borderRadius:10,border:p?"none":"1px solid rgba(255,255,255,.1)",background:p?"linear-gradient(135deg,#FF3B3B,#FF8C42)":"rgba(255,255,255,.05)",color:p?"#fff":"#bbb",fontSize:13,fontWeight:p?600:400,cursor:busy?"wait":"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:8,width:"100%",opacity:busy?.6:1});
+  return(<div className="modal-overlay" onClick={onClose}><div className="modal-box" onClick={e=>e.stopPropagation()}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}><span style={{fontSize:16,fontWeight:700,color:"#f0f0f0"}}>書き出し</span><button onClick={onClose} style={{background:"none",border:"none",color:"#888",cursor:"pointer"}}>{IC.x}</button></div>{busy&&<div style={{padding:12,marginBottom:12,background:"rgba(77,150,255,.1)",borderRadius:10,fontSize:12,color:"#4D96FF",textAlign:"center"}}>📸 キャプチャ中...</div>}<div style={{display:"flex",flexDirection:"column",gap:10}}><button onClick={doPDF} disabled={!anns.length||busy} style={bs(true)}>{IC.pdf} PDF</button><button onClick={doGDoc} disabled={!anns.length||busy} style={bs(false)}>{IC.gdoc} GDoc用HTML</button><button onClick={doMD} disabled={!anns.length} style={bs(false)}>{IC.doc} Markdown</button><button onClick={doJSON} disabled={!total} style={bs(false)}>{IC.dl} JSON</button></div><button onClick={onClose} style={{marginTop:14,padding:"10px",borderRadius:10,border:"1px solid rgba(255,255,255,.08)",background:"transparent",color:"#999",fontSize:13,cursor:"pointer",width:"100%"}}>キャンセル</button></div></div>);}
+
+/* ── Share Modal ── */
+function ShareModal({onClose,url,anns}){const[mode,setMode]=useState(MODES.VIEW);const[copied,setCopied]=useState(false);const enc=encodeShare(url,anns,mode);const base=window.location.origin+window.location.pathname;const sURL=enc?base+"#share="+enc:"";const tl=sURL.length>8000;const cp=()=>{if(tl)return;navigator.clipboard.writeText(sURL).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000)})};return(<div className="modal-overlay" onClick={onClose}><div className="modal-box" onClick={e=>e.stopPropagation()}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20}}><span style={{fontSize:16,fontWeight:700,color:"#f0f0f0"}}>{IC.share} 共有</span><button onClick={onClose} style={{background:"none",border:"none",color:"#888",cursor:"pointer"}}>{IC.x}</button></div><div style={{marginBottom:16}}><div style={{fontSize:12,color:"#888",marginBottom:8}}>権限</div><div style={{display:"flex",gap:8}}>{[MODES.VIEW,MODES.COMMENT,MODES.EDIT].map(m=>(<button key={m} onClick={()=>{setMode(m);setCopied(false)}} style={{flex:1,padding:"10px 8px",borderRadius:10,border:mode===m?`2px solid ${MODE_COLORS[m]}`:"1px solid rgba(255,255,255,.1)",background:mode===m?`${MODE_COLORS[m]}15`:"rgba(255,255,255,.03)",cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",gap:4}}><span style={{color:MODE_COLORS[m]}}>{{[MODES.VIEW]:IC.eye,[MODES.COMMENT]:IC.msg,[MODES.EDIT]:IC.edit2}[m]}</span><span style={{fontSize:11,fontWeight:600,color:mode===m?"#f0f0f0":"#888"}}>{MODE_LABELS[m]}</span></button>))}</div></div>{tl?<div style={{padding:12,background:"rgba(255,59,59,.1)",borderRadius:10,fontSize:12,color:"#FF8C42"}}>注釈が多すぎます。</div>:(<div style={{display:"flex",gap:8}}><div style={{flex:1,padding:"10px 12px",background:"rgba(255,255,255,.05)",borderRadius:10,fontSize:11,fontFamily:"'JetBrains Mono',monospace",color:"#aaa",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sURL}</div><button onClick={cp} style={{padding:"10px 16px",borderRadius:10,border:"none",background:copied?"#6BCB77":"linear-gradient(135deg,#4D96FF,#9B5DE5)",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",gap:6,whiteSpace:"nowrap"}}>{copied?IC.check:IC.copy}{copied?"済":"コピー"}</button></div>)}<button onClick={onClose} style={{marginTop:16,padding:"10px",borderRadius:10,border:"1px solid rgba(255,255,255,.08)",background:"transparent",color:"#999",fontSize:13,cursor:"pointer",width:"100%"}}>キャンセル</button></div></div>);}
+
+function ModeBadge({mode}){if(mode===MODES.EDIT)return null;return(<div style={{position:"fixed",top:58,left:"50%",transform:"translateX(-50%)",padding:"6px 16px",borderRadius:20,background:`${MODE_COLORS[mode]}20`,border:`1px solid ${MODE_COLORS[mode]}40`,color:MODE_COLORS[mode],fontSize:12,fontWeight:600,zIndex:60,display:"flex",alignItems:"center",gap:6,backdropFilter:"blur(8px)",pointerEvents:"none"}}>{{[MODES.VIEW]:IC.eye,[MODES.COMMENT]:IC.msg}[mode]}{MODE_LABELS[mode]}モード</div>)}
+
+function SidePanel({anns,drawings,selId,onSel,show,onExport,onShare}){if(!show)return null;const total=drawings.length+anns.length;const icon=a=>a.type==="text"?a.number:a.type==="stamp"?"📌":"✏️";const label=a=>a.type==="text"?(a.text||"（未入力）"):a.type==="stamp"?a.label:(a.text||"（未入力）");return(<div style={{width:280,background:"rgba(18,18,26,.95)",borderLeft:"1px solid rgba(255,255,255,.06)",display:"flex",flexDirection:"column",overflow:"hidden",flexShrink:0}}><div style={{padding:"14px 16px",borderBottom:"1px solid rgba(255,255,255,.06)",display:"flex",alignItems:"center",justifyContent:"space-between"}}><span style={{fontSize:13,fontWeight:600,color:"#e0e0e0"}}>修正指示</span><span style={{fontSize:11,color:"#666",fontFamily:"'JetBrains Mono',monospace"}}>{total} 件</span></div><div style={{flex:1,overflow:"auto",padding:12}}>{anns.length>0?(<div style={{display:"flex",flexDirection:"column",gap:6}}>{anns.map(a=>(<div key={a.id} onClick={()=>onSel(a.id)} style={{display:"flex",alignItems:"flex-start",gap:8,padding:"8px 10px",borderRadius:8,background:selId===a.id?"rgba(255,255,255,.08)":"rgba(255,255,255,.03)",cursor:"pointer",border:selId===a.id?`1px solid ${(a.color||"#FF3B3B")}44`:"1px solid transparent"}}><div style={{width:22,height:22,borderRadius:a.type==="text"?"50%":"6px",background:a.color||"#FF3B3B",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",fontSize:a.type==="text"?11:9,fontWeight:700,flexShrink:0}}>{icon(a)}</div><div style={{fontSize:12,color:a.type==="redtext"?"#FF3B3B":"#ccc",fontWeight:a.type==="redtext"?600:400,lineHeight:1.4,overflow:"hidden",textOverflow:"ellipsis",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{label(a)}</div></div>))}</div>):(<div style={{textAlign:"center",padding:"32px 16px",color:"#444",fontSize:12,lineHeight:1.6}}>ツールで注釈を追加</div>)}</div><div style={{padding:12,borderTop:"1px solid rgba(255,255,255,.06)",display:"flex",flexDirection:"column",gap:8}}><button onClick={onShare} style={{padding:"10px",borderRadius:10,border:"none",background:"linear-gradient(135deg,#4D96FF,#9B5DE5)",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>{IC.share} 共有</button><button onClick={onExport} style={{padding:"10px",borderRadius:10,border:"1px solid rgba(255,255,255,.1)",background:"rgba(255,255,255,.04)",color:"#ccc",fontSize:12,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>{IC.dl} 書き出し</button></div></div>);}
+
+/* ═══════════════ MAIN ═══════════════ */
+function App(){
+  const initS=useRef(parseInit());
+  const[url,setUrl]=useState(initS.current?.url||"");const[loadedUrl,setLoadedUrl]=useState(initS.current?.url||"");
+  const[tool,setTool]=useState(TOOLS.PEN);const[color,setColor]=useState(COLORS[0]);const[sw,setSw]=useState(3);
+  const[selAnn,setSelAnn]=useState(null);const[showPanel,setShowPanel]=useState(true);const[vpW,setVpW]=useState(1200);
+  const[scrollMode,setScrollMode]=useState(false);const[activeStamp,setActiveStamp]=useState(STAMPS[0]);
+  const[showExport,setShowExport]=useState(false);const[showShare,setShowShare]=useState(false);const[showHelp,setShowHelp]=useState(false);
+  const[activeMode,setActiveMode]=useState(initS.current?.mode||MODES.EDIT);
+  const scrollRef=useRef(null);const vpRef=useRef(null);
+  const initAnns=initS.current?.anns||[];
+  const hist=useHistory({drawings:[],anns:initAnns,ctr:initAnns.filter(a=>a.type==="text").length+1});
+  const{drawings,anns,ctr}=hist.s;
+
+  useEffect(()=>{const el=vpRef.current;if(!el)return;let t;const ro=new ResizeObserver(()=>{clearTimeout(t);t=setTimeout(()=>{try{setVpW(el.getBoundingClientRect().width)}catch(e){}},50)});ro.observe(el);return()=>{ro.disconnect();clearTimeout(t)}},[loadedUrl]);
+  useEffect(()=>{const h=e=>{if(e.target.tagName==="TEXTAREA"||e.target.tagName==="INPUT")return;const m=e.metaKey||e.ctrlKey;if(m&&e.key==="z"&&!e.shiftKey){e.preventDefault();hist.undo()}if(m&&((e.key==="z"&&e.shiftKey)||e.key==="y")){e.preventDefault();hist.redo()}if(m&&e.key==="s"){e.preventDefault();setScrollMode(s=>!s)}};window.addEventListener("keydown",h);return()=>window.removeEventListener("keydown",h)},[hist]);
+
+  const canDraw=activeMode===MODES.EDIT;const canComment=activeMode===MODES.EDIT||activeMode===MODES.COMMENT;const isView=activeMode===MODES.VIEW;
+  const selectTool=t=>{setTool(t);if(scrollMode)setScrollMode(false)};
+  const handleLoad=()=>{if(!url.trim())return;let u=url.trim();if(!/^https?:\/\//i.test(u))u="https://"+u;setLoadedUrl(u);setScrollMode(false);hist.reset({drawings:[],anns:[],ctr:1});setSelAnn(null);if(window.location.hash)window.history.replaceState(null,"",window.location.pathname);setActiveMode(MODES.EDIT);if(scrollRef.current)scrollRef.current.scrollTop=0};
+  const addDrawing=useCallback(d=>{hist.push({drawings:[...drawings,d],anns,ctr})},[hist,drawings,anns,ctr]);
+  const handleOverlayClick=e=>{if(scrollMode||isView)return;if(e.target.tagName==="CANVAS"&&[TOOLS.PEN,TOOLS.ARROW,TOOLS.HIGHLIGHT].includes(tool))return;const lr=e.currentTarget.getBoundingClientRect();const x=e.clientX-lr.left;const y=e.clientY-lr.top;
+    if([TOOLS.TEXT,TOOLS.REDTEXT].includes(tool)){const nb=anns.find(a=>Math.hypot(a.x-x,a.y-y)<40);if(nb){setSelAnn(nb.id);return}}
+    if(tool===TOOLS.TEXT&&canComment){hist.push({drawings,anns:[...anns,{id:uid(),type:"text",x,y,text:"",color,number:ctr}],ctr:ctr+1});setSelAnn(null)}
+    else if(tool===TOOLS.REDTEXT&&canComment){const na={id:uid(),type:"redtext",x,y,text:"",color:"#FF3B3B"};hist.push({drawings,anns:[...anns,na],ctr});setSelAnn(na.id)}
+    else if(tool===TOOLS.STAMP&&canDraw){hist.push({drawings,anns:[...anns,{id:uid(),type:"stamp",x,y,label:activeStamp,color:"#FF3B3B"}],ctr});setSelAnn(null)}
+    else if(tool===TOOLS.ERASER&&canDraw){const kD=drawings.filter(a=>{if(a.type==="pen"||a.type==="highlight")return!a.points.some(p=>Math.hypot(p.x-x,p.y-y)<15);if(a.type==="arrow"){const m={x:(a.start.x+a.end.x)/2,y:(a.start.y+a.end.y)/2};return Math.hypot(m.x-x,m.y-y)>30}return true});const kA=anns.filter(a=>Math.hypot(a.x-x,a.y-y)>20);if(kD.length!==drawings.length||kA.length!==anns.length)hist.push({drawings:kD,anns:kA,ctr})}else setSelAnn(null)};
+  const updateAnn=useCallback((id,upd)=>{if(isView)return;hist.push({drawings,anns:anns.map(a=>a.id===id?{...a,...upd}:a),ctr})},[hist,drawings,anns,ctr,isView]);
+  const deleteAnn=useCallback(id=>{const t=anns.find(a=>a.id===id);const nc=(t&&t.type==="text"&&!t.text)?Math.max(1,ctr-1):ctr;hist.push({drawings,anns:anns.filter(a=>a.id!==id),ctr:nc});setSelAnn(null)},[hist,drawings,anns,ctr]);
+  const clearAll=()=>{hist.push({drawings:[],anns:[],ctr:1});setSelAnn(null)};
+  const total=drawings.length+anns.length;
+  const availableTools=(()=>{if(isView)return[];if(activeMode===MODES.COMMENT)return[TOOLS.TEXT,TOOLS.REDTEXT];return Object.values(TOOLS)})();
+
+  return(<div style={{width:"100vw",height:"100vh",display:"flex",flexDirection:"column",background:"#0a0a0f",overflow:"hidden"}}>
+    {/* Top Bar */}
+    <div style={{display:"flex",alignItems:"center",gap:12,padding:"10px 16px",background:"rgba(18,18,26,.95)",borderBottom:"1px solid rgba(255,255,255,.06)",backdropFilter:"blur(12px)",zIndex:100,flexShrink:0}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+        <div style={{width:32,height:32,borderRadius:8,background:"linear-gradient(135deg,#FF3B3B,#FF8C42)",display:"flex",alignItems:"center",justifyContent:"center"}}><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></div>
+        <span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:700,fontSize:14,color:"#f0f0f0"}}>Site Annotator</span>
+        <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:10,color:"#555"}}>v{VER}</span>
+      </div>
+      <div style={{flex:1,display:"flex",alignItems:"center",gap:8,background:"rgba(255,255,255,.05)",borderRadius:10,padding:"4px 4px 4px 14px",border:"1px solid rgba(255,255,255,.08)"}}>{IC.globe}<input type="text" value={url} onChange={e=>setUrl(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")handleLoad()}} placeholder="URLを入力して Enter で読み込み" readOnly={isView} style={{flex:1,background:"transparent",border:"none",color:"#e0e0e0",fontSize:13,fontFamily:"'JetBrains Mono',monospace",outline:"none"}}/>{!isView&&<button onClick={handleLoad} style={{padding:"6px 16px",borderRadius:7,border:"none",background:"linear-gradient(135deg,#FF3B3B,#FF8C42)",color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>読み込み</button>}</div>
+      <Tip label="使い方ガイド" desc="全ツールの説明・ショートカット"><button onClick={()=>setShowHelp(true)} style={{padding:"6px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,.1)",background:"transparent",color:"#888",cursor:"pointer",display:"flex",alignItems:"center",gap:4,fontSize:12}}>{IC.help}</button></Tip>
+      {activeMode!==MODES.VIEW&&<Tip label="サイドパネル" desc="注釈一覧の表示切替"><button onClick={()=>setShowPanel(!showPanel)} style={{padding:"6px 10px",borderRadius:7,border:"1px solid rgba(255,255,255,.1)",background:showPanel?"rgba(255,255,255,.08)":"transparent",color:"#aaa",cursor:"pointer",display:"flex",alignItems:"center"}}>{IC.panel}</button></Tip>}
+    </div>
+
+    <div style={{display:"flex",flex:1,overflow:"hidden"}}>
+      <div ref={vpRef} style={{flex:1,position:"relative",overflow:"hidden"}}>
+        {!loadedUrl?(<div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100%",gap:20,color:"#555"}}><div style={{width:80,height:80,borderRadius:20,background:"rgba(255,255,255,.03)",border:"2px dashed rgba(255,255,255,.08)",display:"flex",alignItems:"center",justifyContent:"center"}}><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#444" strokeWidth="1.5"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></div><div style={{textAlign:"center"}}><div style={{fontSize:16,fontWeight:600,color:"#666",marginBottom:8}}>URLを入力してページを読み込み</div><div style={{fontSize:13,color:"#444"}}>初めての方は <button onClick={()=>setShowHelp(true)} style={{background:"none",border:"none",color:"#4D96FF",cursor:"pointer",fontSize:13,textDecoration:"underline"}}>使い方ガイド</button> をご覧ください</div></div></div>
+        ):(<>
+          <div ref={scrollRef} style={{width:"100%",height:"100%",overflow:scrollMode?"auto":"hidden",position:"relative"}}><div style={{position:"relative",width:"100%",height:PAGE_H}}>
+            <iframe src={loadedUrl} title="Target" sandbox="allow-scripts allow-same-origin allow-popups" style={{width:"100%",height:"100%",border:"none",pointerEvents:"none"}}/>
+            <div data-layer="true" style={{position:"absolute",top:0,left:0,right:0,bottom:0,pointerEvents:scrollMode||isView?"none":"auto"}} onClick={handleOverlayClick}>
+              {canDraw&&<DrawCanvas drawings={drawings} tool={tool} color={color} sw={sw} onDone={addDrawing} cW={vpW} cH={PAGE_H}/>}
+              {!canDraw&&drawings.length>0&&<ROCanvas drawings={drawings} cW={vpW} cH={PAGE_H}/>}
+              {anns.map(a=>{if(a.type==="text")return<TextBubble key={a.id} ann={a} selected={selAnn===a.id} onSelect={setSelAnn} onUpdate={updateAnn} onDelete={deleteAnn} readonly={isView}/>;if(a.type==="redtext")return<RedTextBubble key={a.id} ann={a} selected={selAnn===a.id} onSelect={setSelAnn} onUpdate={updateAnn} onDelete={deleteAnn} readonly={isView}/>;if(a.type==="stamp")return<StampBubble key={a.id} ann={a} selected={selAnn===a.id} onSelect={setSelAnn} onUpdate={updateAnn} onDelete={deleteAnn} readonly={isView}/>;return null})}
+            </div>
+          </div></div>
+          <Tip label={scrollMode?"スクロール中":"ロック中"} desc="クリックまたは Ctrl+S で切替" shortcut="⌘S"><button className={`scroll-fab ${scrollMode?"on":"off"}`} onClick={()=>setScrollMode(s=>!s)}>{scrollMode?IC.scroll:IC.lock}</button></Tip>
+          <div className="scroll-label" style={{color:scrollMode?"#6BCB77":"#666"}}>{scrollMode?"SCROLL":"LOCK"}</div>
+        </>)}
+        <ModeBadge mode={activeMode}/>
+
+        {/* Toolbar */}
+        {loadedUrl&&availableTools.length>0&&(<div style={{position:"absolute",bottom:20,left:"50%",transform:"translateX(-50%)",display:"flex",alignItems:"center",gap:3,padding:"6px 10px",background:"rgba(18,18,26,.95)",backdropFilter:"blur(16px)",borderRadius:14,border:"1px solid rgba(255,255,255,.08)",boxShadow:"0 8px 32px rgba(0,0,0,.5)",zIndex:50}}>
+          {availableTools.map(t=>{const ti=TTIPS[t]||{l:t,d:""};return(<Tip key={t} label={ti.l} desc={ti.d}><button onClick={()=>selectTool(t)} style={{width:38,height:38,borderRadius:10,border:"none",background:tool===t&&!scrollMode?"rgba(255,255,255,.12)":"transparent",color:tool===t&&!scrollMode?(t===TOOLS.REDTEXT?"#FF3B3B":color):"#777",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",position:"relative",transition:"all .15s"}}>{IC[t]}{tool===t&&!scrollMode&&<div style={{position:"absolute",bottom:2,width:12,height:2,borderRadius:1,background:t===TOOLS.REDTEXT?"#FF3B3B":color}}/>}</button></Tip>)})}
+          {canDraw&&<><Sep/>{COLORS.map(c=>(<Tip key={c} label={COLOR_N[c]||c}><button onClick={()=>setColor(c)} style={{width:20,height:20,borderRadius:"50%",border:color===c?"2px solid #fff":"2px solid transparent",background:c,cursor:"pointer",padding:0,transform:color===c?"scale(1.2)":"scale(1)",transition:"transform .15s"}}/></Tip>))}<Sep/><Tip label="線の太さ" desc="1〜8px"><input type="range" min="1" max="8" value={sw} onChange={e=>setSw(+e.target.value)} style={{width:50,accentColor:color}}/></Tip></>}
+          {canComment&&<><Sep/><Tip label="元に戻す" shortcut="⌘Z"><TBtn icon={IC.undo} onClick={hist.undo} disabled={!hist.canUndo} accent={hist.canUndo?"#4D96FF":null}/></Tip><Tip label="やり直し" shortcut="⌘⇧Z"><TBtn icon={IC.redo} onClick={hist.redo} disabled={!hist.canRedo} accent={hist.canRedo?"#4D96FF":null}/></Tip></>}
+          {canDraw&&<><Sep/><Tip label="全消去" desc="全ての描画・注釈を削除"><TBtn icon={IC.trash} onClick={clearAll} disabled={!total}/></Tip></>}
+          {total>0&&<div style={{padding:"2px 8px",borderRadius:10,background:"rgba(255,59,59,.15)",color:"#FF3B3B",fontSize:11,fontWeight:600,fontFamily:"'JetBrains Mono',monospace"}}>{total}</div>}
+        </div>)}
+        {loadedUrl&&tool===TOOLS.STAMP&&!scrollMode&&(<div className="stamp-palette">{STAMPS.map(s=>(<button key={s} className={`stamp-btn${activeStamp===s?" active":""}`} onClick={()=>setActiveStamp(s)}>{s}</button>))}</div>)}
+      </div>
+      {activeMode!==MODES.VIEW&&<SidePanel anns={anns} drawings={drawings} selId={selAnn} onSel={setSelAnn} show={showPanel&&!!loadedUrl} onExport={()=>setShowExport(true)} onShare={()=>setShowShare(true)}/>}
+    </div>
+    {showHelp&&<HelpModal onClose={()=>setShowHelp(false)}/>}
+    {showExport&&<ExportModal onClose={()=>setShowExport(false)} url={loadedUrl} anns={anns} drawings={drawings} vpRef={vpRef}/>}
+    {showShare&&<ShareModal onClose={()=>setShowShare(false)} url={loadedUrl} anns={anns}/>}
+    <ConsolePanel/>
+  </div>);
+}
+
+function Sep(){return<div style={{width:1,height:24,background:"rgba(255,255,255,.08)",margin:"0 3px"}}/>}
+function TBtn({icon,onClick,disabled,accent}){return<button onClick={onClick} disabled={disabled} style={{width:36,height:36,borderRadius:10,border:"none",background:"transparent",color:disabled?"#444":accent||"#999",cursor:disabled?"default":"pointer",display:"flex",alignItems:"center",justifyContent:"center",opacity:disabled?0.4:1}}>{icon}</button>}
+
+ReactDOM.render(<App/>,document.getElementById("root"));
+</script>
+</body>
+</html>
