@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Content Multiplier AI - 1-3-5 Method</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600;700&family=DM+Sans:wght@300;400;500;600;700&family=Noto+Sans+JP:wght@300;400;500;600;700&family=Noto+Serif+JP:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'DM Sans','Noto Sans JP',sans-serif;background:#FAFAF8;color:#1A1917}
+@keyframes spin{to{transform:rotate(360deg)}}
+textarea:focus,input:focus{outline:none}
+button{font-family:inherit}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.26.2/babel.min.js"></script>
+<script type="text/babel">
+const {useState,useCallback,useEffect} = React;
+
+/* ═══ Constants ═══ */
+const C={bg:"#FAFAF8",surface:"#FFFFFF",surfaceAlt:"#F5F4F0",border:"#E8E6E1",borderLight:"#F0EEEA",text:"#1A1917",textSub:"#6B6860",textMuted:"#A09D95",accent:"#2D5A27",accentLight:"#E8F0E7",warn:"#B45309",warnBg:"#FEF9EC",error:"#B91C1C",errorBg:"#FEF2F2",core:["#2D5A27","#1E5F8A","#9A5B2E"],coreBg:["#E8F0E7","#E5F0F6","#F5EDE4"]};
+const AM={short_text_insight:{icon:"◈",label:"洞察テキスト",tag:"Insight"},short_text_quote:{icon:"❝",label:"引用テキスト",tag:"Quote"},video_script:{icon:"▶",label:"動画台本",tag:"Video"},carousel:{icon:"☷",label:"カルーセル案",tag:"Carousel"},poll:{icon:"◉",label:"アンケート",tag:"Poll"}};
+const TABS=[{id:"input",num:"01",label:"Pillar Input"},{id:"core",num:"02",label:"Core Ideas"},{id:"assets",num:"03",label:"Micro Assets"},{id:"dash",num:"04",label:"Dashboard"}];
+const F={h:"'Cormorant Garamond','Noto Serif JP',Georgia,serif",b:"'DM Sans','Noto Sans JP',sans-serif",m:"'IBM Plex Mono',monospace"};
+const bs=(on,col=C.accent)=>({background:on?col:"transparent",border:`1.5px solid ${on?col:C.border}`,borderRadius:8,padding:"9px 20px",color:on?"#fff":C.textSub,fontSize:13,fontWeight:600,cursor:on?"pointer":"not-allowed",fontFamily:F.b,opacity:on?1:0.5});
+
+/* ═══ Clipboard ═══ */
+function copyToClip(text){
+  try{const ta=document.createElement("textarea");ta.value=text;ta.style.cssText="position:fixed;left:-9999px;top:-9999px;opacity:0";document.body.appendChild(ta);ta.focus();ta.select();document.execCommand("copy");document.body.removeChild(ta)}
+  catch(e){if(navigator.clipboard)navigator.clipboard.writeText(text).catch(()=>{})}
+}
+
+/* ═══ File Download ═══ */
+function dlFile(content,name,mime){const a=document.createElement("a");a.href="data:"+mime+";charset=utf-8,"+encodeURIComponent(content);a.download=name;document.body.appendChild(a);a.click();document.body.removeChild(a)}
+
+/* ═══ CopyBtn ═══ */
+function CopyBtn({text,label}){
+  const[ok,setOk]=useState(false);
+  const go=(e)=>{e.stopPropagation();copyToClip(text);setOk(true);setTimeout(()=>setOk(false),1400)};
+  return <button onClick={go} style={{background:ok?C.accentLight:C.surfaceAlt,border:`1px solid ${ok?C.accent+"40":C.borderLight}`,borderRadius:6,padding:"3px 10px",fontSize:11,color:ok?C.accent:C.textMuted,cursor:"pointer",fontFamily:F.m,fontWeight:500,whiteSpace:"nowrap"}}>{ok?"✓ コピー済":(label||"コピー")}</button>
+}
+
+/* ═══ Debug Console ═══ */
+function DebugBtn(){
+  const[logs]=useState([]);
+  const copy=()=>{
+    const t=["[Content Multiplier Debug]","UA: "+navigator.userAgent,"Time: "+new Date().toISOString(),...logs].join("\n");
+    copyToClip(t);
+  };
+  return <button onClick={copy} style={{position:"fixed",bottom:12,right:12,background:"#333",color:"#aaa",border:"none",borderRadius:6,padding:"4px 10px",fontSize:10,cursor:"pointer",fontFamily:F.m,opacity:0.6,zIndex:999}}>🐛 Debug</button>
+}
+
+/* ═══ NoteImporter ═══ */
+function NoteImporter({onImport,disabled,noteUrl,setNoteUrl}){
+  const[ld,setLd]=useState(false);const[err,setErr]=useState(null);const[manual,setManual]=useState(false);const[pt,setPt]=useState("");
+  const ok=noteUrl.includes("note.com")&&noteUrl.startsWith("http");
+  const go=async()=>{
+    setErr(null);setLd(true);setManual(false);
+    try{
+      const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:4000,system:"URLの記事本文を抽出。1行目タイトル、3行目以降本文。説明不要。",tools:[{type:"web_search_20250305",name:"web_search"}],messages:[{role:"user",content:"記事全文を取得: "+noteUrl}]})});
+      const d=await r.json();if(d.error)throw new Error(d.error.message);
+      let t=(d.content||[]).filter(c=>c.type==="text"&&c.text).map(c=>c.text).join("\n").trim();
+      if(t.length>=100){onImport(t,t.split("\n")[0].trim());return}
+      throw new Error("auto");
+    }catch{setManual(true);setErr("自動取得エラー。下に本文を貼り付けてください。")}finally{setLd(false)}
+  };
+  const mp=()=>{const t=pt.trim();if(t.length<50)return;onImport(t,t.split("\n")[0].trim());setPt("");setManual(false);setErr(null)};
+  return(
+    <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"20px 22px",display:"flex",flexDirection:"column",gap:12}}>
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
+        <div style={{width:32,height:32,borderRadius:8,background:"#41C9B4",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:14,fontFamily:F.m,flexShrink:0}}>n</div>
+        <div><div style={{fontSize:13,fontWeight:600}}>note記事をインポート</div><div style={{fontSize:11,color:C.textMuted}}>URLを貼り付けて取り込み</div></div>
+      </div>
+      <div style={{display:"flex",gap:8}}>
+        <input type="url" value={noteUrl} onChange={e=>{setNoteUrl(e.target.value);setErr(null);setManual(false)}} placeholder="https://note.com/username/n/..." disabled={disabled||ld} style={{flex:1,background:C.surfaceAlt,border:`1px solid ${C.borderLight}`,borderRadius:8,padding:"9px 14px",fontSize:13,color:C.text,fontFamily:F.m}}/>
+        <button onClick={go} disabled={!ok||ld||disabled} style={{...bs(ok&&!ld&&!disabled,"#41C9B4"),padding:"9px 18px",minWidth:80}}>
+          {ld?<span style={{display:"inline-block",width:14,height:14,border:"2px solid #fff4",borderTopColor:"#fff",borderRadius:"50%",animation:"spin 0.7s linear infinite"}}/>:"取り込む"}
+        </button>
+      </div>
+      {err&&<div style={{fontSize:12,color:C.warn}}>{err}</div>}
+      {manual&&<div style={{display:"flex",flexDirection:"column",gap:10,borderTop:`1px solid ${C.borderLight}`,paddingTop:12}}>
+        <div style={{fontSize:12,color:C.textSub}}>記事ページで本文を全選択・コピーして貼り付け</div>
+        <textarea value={pt} onChange={e=>setPt(e.target.value)} placeholder="記事の本文をここに貼り付け..." style={{background:C.surfaceAlt,border:`1px solid ${C.borderLight}`,borderRadius:10,padding:14,color:C.text,fontSize:13.5,lineHeight:1.75,minHeight:100,resize:"vertical",fontFamily:F.b}}/>
+        <div style={{display:"flex",justifyContent:"flex-end"}}><button onClick={mp} disabled={pt.trim().length<50} style={bs(pt.trim().length>=50,"#41C9B4")}>貼り付けて取り込む</button></div>
+      </div>}
+    </div>
+  );
+}
+
+/* ═══ PillarScore ═══ */
+function PillarScore({score,feedback}){
+  if(score===null)return null;
+  const col=score>=80?C.accent:score>=50?C.warn:C.error;
+  const bg=score>=80?C.accentLight:score>=50?C.warnBg:C.errorBg;
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      <div style={{display:"flex",alignItems:"center",gap:16,padding:"16px 20px",background:bg,border:`1px solid ${col}22`,borderRadius:12}}>
+        <div style={{width:54,height:54,borderRadius:"50%",border:`2.5px solid ${col}`,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:F.m,fontSize:19,fontWeight:700,color:col,flexShrink:0}}>{score}</div>
+        <div><div style={{fontSize:13,fontWeight:700,color:col}}>Pillar Strength: {score>=80?"Strong":score>=50?"Needs Work":"Weak"}</div><div style={{fontSize:12,color:C.textSub,marginTop:3}}>{score>=80?"展開に十分な深さと構造":score>=50?"要素を補強すると品質向上":"主張や具体例の追加を"}</div></div>
+      </div>
+      {feedback&&<div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"18px 20px",fontSize:13.5,color:C.textSub,lineHeight:1.85,whiteSpace:"pre-wrap"}}>{feedback}</div>}
+    </div>
+  );
+}
+
+/* ═══ CoreIdeaCard ═══ */
+function CoreIdeaCard({idea,index}){
+  const ac=C.core[index],bg=C.coreBg[index];
+  const full=idea.title+"\n\n"+idea.summary+(idea.hook?"\n\nHook: "+idea.hook:"");
+  return(
+    <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:"24px 22px",position:"relative",overflow:"hidden"}}>
+      <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:ac,opacity:0.7}}/>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:14}}>
+        <div style={{fontSize:10,fontWeight:700,color:ac,background:bg,padding:"4px 10px",borderRadius:6,fontFamily:F.m}}>CORE #{index+1}</div>
+        <CopyBtn text={full}/>
+      </div>
+      <h3 style={{fontSize:17,fontWeight:700,color:C.text,margin:"0 0 10px",lineHeight:1.5,fontFamily:F.h}}>{idea.title}</h3>
+      <p style={{fontSize:13.5,color:C.textSub,margin:0,lineHeight:1.75}}>{idea.summary}</p>
+      {idea.hook&&<div style={{marginTop:16,padding:"10px 14px",background:bg,borderLeft:`3px solid ${ac}60`,borderRadius:"0 8px 8px 0",fontSize:12.5,color:ac,fontStyle:"italic",lineHeight:1.6}}>Hook: {idea.hook}</div>}
+    </div>
+  );
+}
+
+/* ═══ AssetCard ═══ */
+function AssetCard({asset,index,onUpdate}){
+  const[ed,setEd]=useState(false);const[txt,setTxt]=useState(asset.content);const[url,setUrl]=useState(asset.url||"");
+  useEffect(()=>{setTxt(asset.content);setUrl(asset.url||"")},[asset.content,asset.url]);
+  const m=AM[asset.type]||{icon:"●",label:asset.type};const ac=C.core[asset.coreIndex%3];
+  const copyText=url?txt+"\n\n"+url:txt;
+  const save=()=>{setEd(false);onUpdate(index,{...asset,content:txt,url})};
+  const cancel=()=>{setEd(false);setTxt(asset.content);setUrl(asset.url||"")};
+  return(
+    <div style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:14,padding:"20px 20px 16px",display:"flex",flexDirection:"column",gap:10}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontSize:16,color:ac}}>{m.icon}</span><span style={{fontSize:11.5,fontWeight:600,color:C.textSub}}>{m.label}</span></div>
+        <div style={{display:"flex",alignItems:"center",gap:6}}><CopyBtn text={copyText}/><span style={{fontSize:10,fontFamily:F.m,color:ac,background:C.coreBg[asset.coreIndex%3],padding:"2px 8px",borderRadius:5,fontWeight:600}}>Core #{asset.coreIndex+1}</span></div>
+      </div>
+      {ed?(
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          <textarea value={txt} onChange={e=>setTxt(e.target.value)} style={{background:C.surfaceAlt,border:`1px solid ${C.border}`,borderRadius:10,padding:14,color:C.text,fontSize:13.5,lineHeight:1.75,minHeight:120,resize:"vertical",fontFamily:F.b}}/>
+          <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:12,color:C.textMuted,flexShrink:0}}>🔗</span><input value={url} onChange={e=>setUrl(e.target.value)} placeholder="リンク先URL（任意）" style={{flex:1,background:C.surfaceAlt,border:`1px solid ${C.borderLight}`,borderRadius:6,padding:"6px 10px",fontSize:12,color:C.text,fontFamily:F.m}}/></div>
+          <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+            <button onClick={cancel} style={{background:"transparent",border:`1px solid ${C.border}`,borderRadius:7,padding:"5px 14px",color:C.textMuted,fontSize:12,cursor:"pointer"}}>キャンセル</button>
+            <button onClick={save} style={{background:C.accent,border:"none",borderRadius:7,padding:"5px 14px",color:"#fff",fontSize:12,cursor:"pointer",fontWeight:600}}>保存</button>
+          </div>
+        </div>
+      ):(
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          <div onClick={()=>setEd(true)} style={{fontSize:13.5,color:C.text,lineHeight:1.8,whiteSpace:"pre-wrap",cursor:"text",padding:"6px 8px",borderRadius:8,minHeight:40}}>{txt}</div>
+          <div style={{display:"flex",alignItems:"center",gap:6,padding:"0 8px"}}>
+            <span style={{fontSize:11,color:C.textMuted,flexShrink:0}}>🔗</span>
+            <input value={url} onChange={e=>{setUrl(e.target.value);onUpdate(index,{...asset,url:e.target.value})}} onClick={e=>e.stopPropagation()} placeholder="リンク先URL（任意）" style={{flex:1,background:"transparent",border:`1px solid ${url?C.borderLight:"transparent"}`,borderRadius:6,padding:"4px 8px",fontSize:11.5,color:url?"#41C9B4":C.textMuted,fontFamily:F.m}}/>
+          </div>
+        </div>
+      )}
+      <div style={{fontSize:10.5,color:C.textMuted,fontFamily:F.m,textAlign:"right",borderTop:`1px solid ${C.borderLight}`,paddingTop:8}}>{txt.length} chars</div>
+    </div>
+  );
+}
+
+/* ═══ AssetFilter ═══ */
+function AssetFilter({active,onChange,assets}){
+  const fs=[{id:"all",l:"すべて"},{id:"short_text_insight",l:"◈ 洞察"},{id:"short_text_quote",l:"❝ 引用"},{id:"video_script",l:"▶ 動画"},{id:"carousel",l:"☷ カルーセル"},{id:"poll",l:"◉ アンケート"}];
+  return <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:18}}>{fs.map(f=>{
+    const cnt=f.id==="all"?assets.length:assets.filter(a=>a.type===f.id).length;const on=active===f.id;
+    return <button key={f.id} onClick={()=>onChange(f.id)} style={{background:on?C.text:"transparent",border:`1px solid ${on?C.text:C.border}`,borderRadius:20,padding:"5px 14px",color:on?"#fff":C.textSub,fontSize:12,cursor:"pointer",fontWeight:500,fontFamily:F.b}}>{f.l} ({cnt})</button>
+  })}</div>
+}
+
+/* ═══ ExportPanel ═══ */
+function ExportPanel({coreIdeas,assets}){
+  const[copied,setCopied]=useState(false);
+  const rows=()=>assets.map(a=>{const m=AM[a.type]||{};const ci=coreIdeas[a.coreIndex]||{};return{type:a.type,label:m.label||a.type,ci:a.coreIndex+1,ct:ci.title||"",content:a.content,url:a.url||""}});
+  const ft=r=>r.content+(r.url?"\n"+r.url:"");
+  const doJSON=()=>{dlFile(JSON.stringify({coreIdeas,assets:rows(),exportedAt:new Date().toISOString()},null,2),"content-multiplier.json","application/json")};
+  const doCSV=()=>{const r=rows(),h="タイプ,タイプ名,Core#,Coreタイトル,コンテンツ,URL";const body=r.map(x=>[x.type,x.label,x.ci,x.ct,x.content,x.url].map(v=>'"'+String(v).replace(/"/g,'""').replace(/\n/g,"\\n")+'"').join(",")).join("\n");dlFile("\uFEFF"+h+"\n"+body,"content-multiplier.csv","text/csv")};
+  const doTSV=()=>{const r=rows(),h="タイプ\tタイプ名\tCore#\tCoreタイトル\tコンテンツ\tURL";const body=r.map(x=>[x.type,x.label,x.ci,x.ct,x.content.replace(/\t/g," ").replace(/\n/g,"\\n"),x.url].join("\t")).join("\n");dlFile(h+"\n"+body,"content-multiplier.tsv","text/tab-separated-values")};
+  const doTxt=()=>{const t=rows().map(r=>"【"+r.label+"】(Core #"+r.ci+")\n"+ft(r)).join("\n\n---\n\n");dlFile(t,"content-multiplier.txt","text/plain")};
+  const doCopy=()=>{const t=rows().map(r=>"【"+r.label+"】(Core #"+r.ci+")\n"+ft(r)).join("\n\n---\n\n");copyToClip(t);setCopied(true);setTimeout(()=>setCopied(false),1500)};
+  const eb=(fn,label,col)=><button onClick={fn} style={{...bs(true,col),padding:"7px 14px",fontSize:12}}>{label}</button>;
+  return <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+    {eb(doJSON,"⬇ JSON",C.core[1])}{eb(doCSV,"⬇ CSV",C.core[2])}{eb(doTSV,"⬇ TSV","#666")}{eb(doTxt,"⬇ テキスト","#555")}
+    <button onClick={doCopy} style={{...bs(true,C.accent),padding:"7px 14px",fontSize:12}}>{copied?"✓ コピー済":"全てコピー"}</button>
+  </div>
+}
+
+/* ═══ Dashboard ═══ */
+function DashSummary({coreIdeas,assets}){
+  return <div style={{display:"flex",flexDirection:"column",gap:22}}>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:12}}>
+      {[{l:"Pillar",v:"1",c:C.core[0]},{l:"Core Ideas",v:coreIdeas.length,c:C.core[1]},{l:"Assets",v:assets.length,c:C.core[2]},{l:"合計",v:1+coreIdeas.length+assets.length,c:C.accent}].map(s=>
+        <div key={s.l} style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:"20px 16px",textAlign:"center"}}>
+          <div style={{fontSize:30,fontWeight:800,color:s.c,fontFamily:F.h}}>{s.v}</div>
+          <div style={{fontSize:11,color:C.textMuted,marginTop:4,fontWeight:600,fontFamily:F.m,textTransform:"uppercase"}}>{s.l}</div>
+        </div>)}
+    </div>
+    <div style={{background:C.surface,borderRadius:14,border:`1px solid ${C.border}`,padding:24}}>
+      <h4 style={{margin:"0 0 18px",fontSize:14,fontWeight:700,fontFamily:F.h}}>アセット内訳</h4>
+      {Object.entries(AM).map(([t,m])=>{const cnt=assets.filter(a=>a.type===t).length;
+        return <div key={t} style={{display:"flex",alignItems:"center",gap:12,marginBottom:10}}>
+          <span style={{fontSize:16,width:24,textAlign:"center",color:C.textSub}}>{m.icon}</span>
+          <span style={{flex:1,fontSize:13,color:C.textSub,fontWeight:500}}>{m.label}</span>
+          <div style={{width:110,height:5,background:C.surfaceAlt,borderRadius:3,overflow:"hidden"}}><div style={{width:`${(cnt/3)*100}%`,height:"100%",background:cnt===3?C.accent:C.core[1],borderRadius:3}}/></div>
+          <span style={{fontFamily:F.m,fontSize:11,color:C.textMuted,width:32,textAlign:"right"}}>{cnt}/3</span>
+        </div>})}
+    </div>
+  </div>
+}
+
+/* ═══ Loading ═══ */
+function LoadingPhase({phase}){
+  const lb={analyzing:"Pillar分析中...",extracting:"Core Ideas抽出中...",generating:"アセット生成中...",done:"生成完了"};
+  if(!lb[phase])return null;
+  return <div style={{display:"flex",alignItems:"center",gap:12,padding:"14px 20px",background:phase==="done"?C.accentLight:C.surfaceAlt,border:`1px solid ${phase==="done"?C.accent+"30":C.border}`,borderRadius:12,margin:"14px 0"}}>
+    {phase!=="done"?<div style={{width:16,height:16,border:`2px solid ${C.border}`,borderTopColor:C.accent,borderRadius:"50%",animation:"spin 0.7s linear infinite"}}/>:<span style={{fontSize:16,color:C.accent}}>✓</span>}
+    <span style={{fontSize:13,fontWeight:500}}>{lb[phase]}</span>
+  </div>
+}
+
+/* ═══════════════ MAIN ═══════════════ */
+function App(){
+  const[tab,setTab]=useState("input");
+  const[pillar,setPillar]=useState("");
+  const[phase,setPhase]=useState("idle");
+  const[pScore,setPScore]=useState(null);
+  const[pFeedback,setPFeedback]=useState("");
+  const[coreIdeas,setCoreIdeas]=useState([]);
+  const[assets,setAssets]=useState([]);
+  const[aFilter,setAFilter]=useState("all");
+  const[error,setError]=useState(null);
+  const[noteImported,setNoteImported]=useState(false);
+  const[noteUrl,setNoteUrl]=useState("");
+  const[autoFillUrl,setAutoFillUrl]=useState(true);
+
+  const callClaude=useCallback(async(sys,usr)=>{
+    const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:4000,system:sys,messages:[{role:"user",content:usr}]})});
+    const d=await r.json();if(d.error)throw new Error(d.error.message);
+    return d.content.filter(c=>c.type==="text").map(c=>c.text).join("\n");
+  },[]);
+
+  const pJ=raw=>{
+    let c=raw.replace(/```json|```/g,"").trim();
+    try{return JSON.parse(c)}catch{
+      c=c.replace(/\r\n/g,"\\n").replace(/\n/g,"\\n").replace(/\t/g,"\\t");
+      try{return JSON.parse(c)}catch{
+        const m=c.match(/\[[\s\S]*\]/)||c.match(/\{[\s\S]*\}/);
+        if(m)return JSON.parse(m[0].replace(/,\s*([}\]])/g,"$1"));
+        throw new Error("JSONパース失敗");
+      }
+    }
+  };
+
+  const handleNoteImport=(text,title)=>{setPillar(text);setNoteImported(title||true);setPScore(null);setPFeedback("");setCoreIdeas([]);setAssets([])};
+
+  const analyze=useCallback(async()=>{
+    setError(null);setPhase("analyzing");setPScore(null);setPFeedback("");setCoreIdeas([]);setAssets([]);
+    try{
+      const r=pJ(await callClaude('コンテンツ品質スコアをJSON返答。{"score":0-100,"feedback":"2-3文","strengths":["..."],"gaps":["..."]}',pillar));
+      setPScore(r.score);setPFeedback(r.feedback+"\n\n✅ 強み: "+r.strengths.join("、")+"\n⚠️ 補強点: "+r.gaps.join("、"));
+    }catch(e){setError("分析エラー: "+e.message)}setPhase("idle");
+  },[pillar,callClaude]);
+
+  const extract=useCallback(async()=>{
+    setError(null);setPhase("extracting");
+    try{setCoreIdeas(pJ(await callClaude('Pillarから独立した3つのCore Ideaを抽出。JSONのみ: [{"title":"...","summary":"200-300字","hook":"一文","cta":"行動喚起"}]',pillar)));setTab("core")}
+    catch(e){setError("抽出エラー: "+e.message)}setPhase("idle");
+  },[pillar,callClaude]);
+
+  const generate=useCallback(async()=>{
+    setError(null);setPhase("generating");setAssets([]);const all=[];
+    try{
+      for(let i=0;i<coreIdeas.length;i++){
+        const sys='SNSコンテンツ専門家。Core Ideaから5アセット生成。\n1.洞察型(short_text_insight):140-280字 2.引用型(short_text_quote):140-280字 3.動画台本(video_script):60秒 4.カルーセル(carousel):5-10スライド 5.アンケート(poll):問い+選択肢\n【厳守】有効なJSON配列のみ。content内の改行は\\n、ダブルクォートは\\"でエスケープ。要素5つ。\n[{"type":"short_text_insight","coreIndex":'+i+',"content":"..."},{"type":"short_text_quote","coreIndex":'+i+',"content":"..."},{"type":"video_script","coreIndex":'+i+',"content":"..."},{"type":"carousel","coreIndex":'+i+',"content":"..."},{"type":"poll","coreIndex":'+i+',"content":"..."}]';
+        const msg="Core #"+(i+1)+": "+coreIdeas[i].title+"\n概要: "+coreIdeas[i].summary+"\nHook: "+(coreIdeas[i].hook||"")+"\n\nPillar:\n"+pillar.slice(0,1500);
+        const batch=pJ(await callClaude(sys,msg));
+        const withUrl=batch.map(a=>({...a,url:autoFillUrl&&noteUrl?noteUrl:""}));
+        all.push(...withUrl);setAssets([...all]);
+      }
+      setPhase("done");setTimeout(()=>{setPhase("idle");setTab("assets")},1000);
+    }catch(e){setError("生成エラー: "+e.message);setPhase("idle")}
+  },[coreIdeas,pillar,callClaude,noteUrl,autoFillUrl]);
+
+  const updateAsset=(index,updated)=>{setAssets(prev=>{const n=[...prev];n[index]=updated;return n})};
+  const filtered=aFilter==="all"?assets:assets.filter(a=>a.type===aFilter);
+
+  return(
+    <div style={{minHeight:"100vh",background:C.bg,fontFamily:F.b,color:C.text}}>
+      <header style={{borderBottom:`1px solid ${C.border}`,padding:"22px 32px",display:"flex",alignItems:"center",justifyContent:"space-between",background:C.surface}}>
+        <div style={{display:"flex",alignItems:"baseline",gap:14}}>
+          <h1 style={{margin:0,fontSize:22,fontWeight:700,fontFamily:F.h}}>Content Multiplier</h1>
+          <span style={{fontSize:11,color:C.textMuted,fontFamily:F.m,border:`1px solid ${C.border}`,padding:"2px 8px",borderRadius:5}}>1 → 3 → 15</span>
+        </div>
+        <div style={{fontSize:11,fontFamily:F.m,color:C.textMuted}}>V1 · 1-3-5 Method</div>
+      </header>
+      <nav style={{display:"flex",padding:"0 32px",borderBottom:`1px solid ${C.border}`,background:C.surface,overflowX:"auto"}}>
+        {TABS.map(t=>{const on=tab===t.id;return <button key={t.id} onClick={()=>setTab(t.id)} style={{background:"transparent",border:"none",borderBottom:`2px solid ${on?C.accent:"transparent"}`,padding:"12px 22px",color:on?C.text:C.textMuted,fontSize:13,cursor:"pointer",fontWeight:on?600:400,fontFamily:F.b,display:"flex",alignItems:"center",gap:8,whiteSpace:"nowrap"}}><span style={{fontSize:10,fontFamily:F.m,color:on?C.accent:C.textMuted,fontWeight:600}}>{t.num}</span>{t.label}</button>})}
+      </nav>
+      <main style={{padding:"30px 32px",maxWidth:960,margin:"0 auto"}}>
+        {error&&<div style={{background:C.errorBg,border:`1px solid ${C.error}20`,borderRadius:10,padding:"12px 18px",marginBottom:18,color:C.error,fontSize:13}}>{error}</div>}
+        <LoadingPhase phase={phase}/>
+
+        {tab==="input"&&<div style={{display:"flex",flexDirection:"column",gap:20}}>
+          <div><h2 style={{fontSize:24,fontWeight:700,margin:"0 0 6px",fontFamily:F.h}}>Pillar Content</h2><p style={{color:C.textSub,fontSize:13,margin:0}}>柱となるコンテンツを入力、またはnote記事から取り込み</p></div>
+          <NoteImporter onImport={handleNoteImport} disabled={phase!=="idle"} noteUrl={noteUrl} setNoteUrl={setNoteUrl}/>
+          {noteUrl&&<label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:C.textSub,cursor:"pointer"}}><input type="checkbox" checked={autoFillUrl} onChange={e=>setAutoFillUrl(e.target.checked)} style={{accentColor:C.accent}}/>生成時にnote URLを各アセットのリンクに自動セット</label>}
+          {noteImported&&pillar&&<div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 16px",background:"#E5FBF6",border:"1px solid #41C9B430",borderRadius:10,fontSize:13,color:"#1A7A65",fontWeight:500}}><span>✓</span><span><b>note</b> 取り込み完了{typeof noteImported==="string"?"："+noteImported:""}</span></div>}
+          <textarea value={pillar} onChange={e=>{setPillar(e.target.value);setNoteImported(false)}} placeholder="ブログ記事、ニュースレター、YouTubeスクリプトなどを貼り付け..." style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:12,padding:20,color:C.text,fontSize:14.5,lineHeight:1.85,minHeight:240,resize:"vertical",fontFamily:F.b}}/>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+            <span style={{fontFamily:F.m,fontSize:11.5,color:C.textMuted}}>{pillar.length} 文字</span>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={analyze} disabled={pillar.length<100||phase!=="idle"} style={bs(pillar.length>=100&&phase==="idle")}>分析する</button>
+              <button onClick={extract} disabled={!(pScore>=30)||phase!=="idle"} style={bs(pScore>=30&&phase==="idle",C.core[1])}>Core Ideas を抽出</button>
+            </div>
+          </div>
+          <PillarScore score={pScore} feedback={pFeedback}/>
+        </div>}
+
+        {tab==="core"&&<div style={{display:"flex",flexDirection:"column",gap:22}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
+            <div><h2 style={{fontSize:24,fontWeight:700,margin:"0 0 4px",fontFamily:F.h}}>Core Ideas</h2><p style={{color:C.textSub,fontSize:13,margin:0}}>セマンティック独立性を持つ3つの概念</p></div>
+            {coreIdeas.length===3&&<button onClick={generate} disabled={phase!=="idle"} style={bs(phase==="idle",C.core[2])}>15アセットを生成</button>}
+          </div>
+          {coreIdeas.length===0?<div style={{textAlign:"center",padding:60,color:C.textMuted}}>Pillarから Core Ideas を抽出してください</div>
+          :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(250px,1fr))",gap:16}}>{coreIdeas.map((d,i)=><CoreIdeaCard key={i} idea={d} index={i}/>)}</div>}
+        </div>}
+
+        {tab==="assets"&&<div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:14,marginBottom:20}}>
+            <div><h2 style={{fontSize:24,fontWeight:700,margin:"0 0 4px",fontFamily:F.h}}>Micro Assets <span style={{fontFamily:F.m,fontSize:14,color:C.textMuted,marginLeft:10}}>{assets.length}/15</span></h2><p style={{color:C.textSub,fontSize:13,margin:0}}>クリックで編集 · 各アセットにURLを設定可能</p></div>
+            {assets.length>0&&<ExportPanel coreIdeas={coreIdeas} assets={assets}/>}
+          </div>
+          {assets.length===0?<div style={{textAlign:"center",padding:60,color:C.textMuted}}>Core Ideas抽出後にアセットを生成</div>:<>
+            <AssetFilter active={aFilter} onChange={setAFilter} assets={assets}/>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(340px,1fr))",gap:14}}>{filtered.map(a=>{const idx=assets.indexOf(a);return <AssetCard key={idx} asset={a} index={idx} onUpdate={updateAsset}/>})}</div>
+          </>}
+        </div>}
+
+        {tab==="dash"&&<div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:14,marginBottom:22}}>
+            <h2 style={{fontSize:24,fontWeight:700,margin:0,fontFamily:F.h}}>Dashboard</h2>
+            {assets.length>0&&<ExportPanel coreIdeas={coreIdeas} assets={assets}/>}
+          </div>
+          {assets.length===0?<div style={{textAlign:"center",padding:60,color:C.textMuted}}>アセット生成後に表示</div>:<DashSummary coreIdeas={coreIdeas} assets={assets}/>}
+        </div>}
+      </main>
+      <DebugBtn/>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
