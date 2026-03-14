@@ -1,0 +1,882 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🌍 World ABC</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Righteous&family=Baloo+2:wght@800&family=Nunito:wght@400;700;900&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Nunito', sans-serif;
+  background: #111;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+/* ===== 16:9 ステージ ===== */
+#stage {
+  position: relative;
+  width: 100vw;
+  height: 56.25vw;
+  max-height: 100vh;
+  max-width: 177.78vh;
+  overflow: hidden;
+}
+
+/* ===== 背景（言語ごとに変わる） ===== */
+#bg-layer {
+  position: absolute;
+  inset: 0;
+  transition: background 0.7s ease;
+}
+
+/* ===== タブバー ===== */
+#tab-bar {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 8%;
+  display: flex;
+  z-index: 50;
+  background: rgba(0,0,0,0.45);
+  backdrop-filter: blur(8px);
+  border-bottom: 2px solid rgba(255,255,255,0.1);
+}
+
+.tab {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4vw;
+  cursor: pointer;
+  font-family: 'Nunito', sans-serif;
+  font-weight: 900;
+  font-size: 1.5vw;
+  color: rgba(255,255,255,0.45);
+  border-bottom: 3px solid transparent;
+  transition: all 0.25s ease;
+  user-select: none;
+  letter-spacing: 0.03em;
+  padding-bottom: 2px;
+  position: relative;
+}
+.tab:hover { color: rgba(255,255,255,0.8); background: rgba(255,255,255,0.06); }
+.tab.active {
+  color: #fff;
+  border-bottom-color: var(--accent);
+  background: rgba(255,255,255,0.08);
+}
+.tab .flag { font-size: 2vw; line-height: 1; }
+.tab .lang-name { font-size: 1.4vw; }
+
+/* ===== メインコンテンツエリア ===== */
+#content {
+  position: absolute;
+  top: 8%; left: 0; right: 0; bottom: 0;
+}
+
+/* ===== 待機画面 ===== */
+#idle {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5vh;
+  z-index: 10;
+  transition: opacity 0.4s;
+  pointer-events: none;
+}
+#idle.hidden { opacity: 0; }
+
+#idle-title {
+  font-size: 5.5vw;
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 0 4vw var(--accent), 0 3px 0 rgba(0,0,0,0.5);
+  animation: idleFloat 3s ease-in-out infinite;
+  letter-spacing: 0.05em;
+}
+#idle-sub {
+  font-size: 2.2vw;
+  color: rgba(255,255,255,0.6);
+  letter-spacing: 0.08em;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.6);
+}
+#idle-hint {
+  font-size: 1.6vw;
+  color: rgba(255,255,255,0.35);
+  font-style: italic;
+}
+@keyframes idleFloat {
+  0%,100% { transform: translateY(0) rotate(-0.8deg); }
+  50%      { transform: translateY(-1.2vh) rotate(0.8deg); }
+}
+
+/* ===== 表示エリア ===== */
+#display {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+#display.show { display: flex; }
+
+#letter {
+  font-size: 20vw;
+  line-height: 0.9;
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 0 5vw var(--accent), 0 0.6vw 0 rgba(0,0,0,0.4);
+  animation: letterPop 0.38s cubic-bezier(0.34,1.56,0.64,1) both;
+  z-index: 2;
+}
+@keyframes letterPop {
+  from { transform: scale(0.3) rotate(-12deg); opacity: 0; }
+  to   { transform: scale(1)   rotate(0deg);   opacity: 1; }
+}
+
+#illust {
+  font-size: 14vw;
+  line-height: 1;
+  margin-top: -1.5vw;
+  animation: illustBounce 0.5s 0.1s cubic-bezier(0.34,1.56,0.64,1) both;
+  filter: drop-shadow(0 2vw 3vw rgba(0,0,0,0.5));
+  z-index: 2;
+}
+@keyframes illustBounce {
+  from { transform: scale(0.2) translateY(6vh); opacity: 0; }
+  to   { transform: scale(1)   translateY(0);   opacity: 1; }
+}
+
+#word-area {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3vw;
+  margin-top: 0.3vw;
+  animation: wordSlide 0.4s 0.2s ease-out both;
+  z-index: 2;
+}
+@keyframes wordSlide {
+  from { transform: translateY(3vh); opacity: 0; }
+  to   { transform: translateY(0);   opacity: 1; }
+}
+
+#main-word {
+  font-size: 4.5vw;
+  font-weight: 900;
+  color: #fff;
+  text-shadow: 0 2px 15px rgba(0,0,0,0.7), 0 0 3vw var(--accent);
+  letter-spacing: 0.04em;
+  text-align: center;
+  max-width: 80vw;
+  line-height: 1.15;
+}
+#sub-word {
+  font-size: 1.8vw;
+  color: rgba(255,255,255,0.6);
+  font-weight: 700;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.6);
+  letter-spacing: 0.06em;
+}
+
+/* ===== フラッシュ ===== */
+#bg-flash {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+#bg-flash.flash { animation: flashAnim 0.5s ease-out forwards; }
+@keyframes flashAnim { 0% { opacity: 0.35; } 100% { opacity: 0; } }
+
+/* ===== パーティクル ===== */
+.particle {
+  position: absolute;
+  pointer-events: none;
+  animation: pFly var(--dur) ease-out forwards;
+  z-index: 6;
+}
+@keyframes pFly {
+  0%   { transform: translate(0,0) rotate(0deg) scale(1); opacity: 1; }
+  100% { transform: translate(var(--tx),var(--ty)) rotate(var(--rot)) scale(0); opacity: 0; }
+}
+
+/* ===== ヒント・コンソール ===== */
+#hint {
+  position: absolute;
+  bottom: 2.5vh; left: 50%;
+  transform: translateX(-50%);
+  font-size: 1.4vw;
+  color: rgba(255,255,255,0.28);
+  white-space: nowrap;
+  z-index: 20;
+  letter-spacing: 0.05em;
+}
+#console-btn {
+  position: absolute;
+  bottom: 2vh; right: 1.5vw;
+  z-index: 30;
+  padding: 0.5vh 1vw;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.3);
+  border-radius: 0.5vw;
+  font-size: 1.1vw;
+  cursor: pointer;
+  font-family: 'Nunito', sans-serif;
+  transition: all 0.2s;
+}
+#console-btn:hover { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.7); }
+
+/* ===== 言語別スタイル ===== */
+
+/* EN：宇宙 */
+body.lang-en #bg-layer {
+  background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+}
+body.lang-en { --accent: #7C3AED; }
+body.lang-en #letter { font-family: 'Fredoka One', cursive; }
+body.lang-en #main-word { font-family: 'Fredoka One', cursive; }
+
+/* ZU：サバンナ */
+body.lang-zu #bg-layer {
+  background: linear-gradient(160deg, #0d1b3e 0%, #1a3a6e 35%, #c2612a 70%, #6b2700 100%);
+}
+body.lang-zu { --accent: #E67E22; }
+body.lang-zu #letter { font-family: 'Baloo 2', cursive; }
+body.lang-zu #main-word { font-family: 'Baloo 2', cursive; }
+
+/* ES：フィエスタ */
+body.lang-es #bg-layer {
+  background: radial-gradient(ellipse at 50% 40%, #3d0c00 0%, #1a0800 60%, #0a0400 100%);
+}
+body.lang-es { --accent: #E74C3C; }
+body.lang-es #letter { font-family: 'Righteous', cursive; }
+body.lang-es #main-word { font-family: 'Righteous', cursive; }
+
+/* JA：和 */
+body.lang-ja #bg-layer {
+  background: linear-gradient(160deg, #1a0010 0%, #3d0030 40%, #1a0018 70%, #0a000a 100%);
+}
+body.lang-ja { --accent: #FF4081; }
+body.lang-ja #letter { font-family: 'Nunito', sans-serif; font-weight: 900; }
+body.lang-ja #main-word { font-family: 'Nunito', sans-serif; font-weight: 900; }
+
+/* VI：南国 */
+body.lang-vi #bg-layer {
+  background: linear-gradient(160deg, #001a0e 0%, #003d1a 35%, #004d20 65%, #001a0a 100%);
+}
+body.lang-vi { --accent: #00C853; }
+body.lang-vi #letter { font-family: 'Nunito', sans-serif; font-weight: 900; }
+body.lang-vi #main-word { font-family: 'Nunito', sans-serif; font-weight: 900; }
+
+/* ===== 言語別タブ装飾背景 ===== */
+body.lang-en  #tab-bar { border-bottom-color: rgba(124,58,237,0.4); }
+body.lang-zu  #tab-bar { border-bottom-color: rgba(230,126,34,0.4); }
+body.lang-es  #tab-bar { border-bottom-color: rgba(231,76,60,0.4); }
+body.lang-ja  #tab-bar { border-bottom-color: rgba(255,64,129,0.4); }
+body.lang-vi  #tab-bar { border-bottom-color: rgba(0,200,83,0.4); }
+
+/* 日本語専用：和柄パターン背景 */
+body.lang-ja #bg-layer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle, rgba(255,64,129,0.06) 1px, transparent 1px);
+  background-size: 3vw 3vw;
+}
+
+/* ベトナム語専用：格子パターン */
+body.lang-vi #bg-layer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(0,200,83,0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,200,83,0.05) 1px, transparent 1px);
+  background-size: 4vw 4vw;
+}
+</style>
+</head>
+<body class="lang-en">
+<div id="stage">
+
+  <!-- 背景 -->
+  <div id="bg-layer"></div>
+  <!-- マウス軌跡canvas -->
+  <canvas id="trail-canvas" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2;"></canvas>
+
+  <!-- タブバー -->
+  <div id="tab-bar">
+    <div class="tab active" data-lang="en" style="--accent:#7C3AED" onclick="switchLang('en')">
+      <span class="flag">🇺🇸</span><span class="lang-name">English</span>
+    </div>
+    <div class="tab" data-lang="zu" style="--accent:#E67E22" onclick="switchLang('zu')">
+      <span class="flag">🇿🇦</span><span class="lang-name">isiZulu</span>
+    </div>
+    <div class="tab" data-lang="es" style="--accent:#E74C3C" onclick="switchLang('es')">
+      <span class="flag">🇪🇸</span><span class="lang-name">Español</span>
+    </div>
+    <div class="tab" data-lang="ja" style="--accent:#FF4081" onclick="switchLang('ja')">
+      <span class="flag">🇯🇵</span><span class="lang-name">日本語</span>
+    </div>
+    <div class="tab" data-lang="vi" style="--accent:#00C853" onclick="switchLang('vi')">
+      <span class="flag">🇻🇳</span><span class="lang-name">Tiếng Việt</span>
+    </div>
+  </div>
+
+  <!-- コンテンツ -->
+  <div id="content">
+    <div id="bg-flash"></div>
+
+    <!-- 待機画面 -->
+    <div id="idle">
+      <div id="idle-title">🌍 World ABC 🌎</div>
+      <div id="idle-sub" id="idle-sub">Press a key! / キーを押してみよう！</div>
+      <div id="idle-hint">A〜Z</div>
+    </div>
+
+    <!-- 表示 -->
+    <div id="display">
+      <div id="letter">A</div>
+      <div id="illust">🍎</div>
+      <div id="word-area">
+        <div id="main-word">Apple</div>
+        <div id="sub-word"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="hint">A〜Z のキーを押してね</div>
+  <button id="console-btn" onclick="copyConsole()">📋 console</button>
+
+</div>
+
+<script>
+// ============================================================
+// ===== 言語データ =====
+// ============================================================
+const LANGS = {
+
+  // ---------- English ----------
+  en: {
+    name: 'English', flag: '🇺🇸', voice: 'en-US',
+    idle: ['🌟 ABC Time! 🌟', 'Press any key!', 'A〜Z'],
+    data: {
+      A:[{w:'Apple',     s:'',emoji:'🍎'},{w:'Ant',      s:'',emoji:'🐜'},{w:'Avocado', s:'',emoji:'🥑'},{w:'Airplane',s:'',emoji:'✈️'}],
+      B:[{w:'Banana',    s:'',emoji:'🍌'},{w:'Bear',     s:'',emoji:'🐻'},{w:'Butterfly',s:'',emoji:'🦋'},{w:'Balloon', s:'',emoji:'🎈'}],
+      C:[{w:'Cat',       s:'',emoji:'🐱'},{w:'Cake',     s:'',emoji:'🎂'},{w:'Carrot',  s:'',emoji:'🥕'},{w:'Cow',     s:'',emoji:'🐮'}],
+      D:[{w:'Dog',       s:'',emoji:'🐶'},{w:'Dolphin',  s:'',emoji:'🐬'},{w:'Donut',   s:'',emoji:'🍩'},{w:'Dragon',  s:'',emoji:'🐉'}],
+      E:[{w:'Elephant',  s:'',emoji:'🐘'},{w:'Egg',      s:'',emoji:'🥚'},{w:'Earth',   s:'',emoji:'🌍'},{w:'Eagle',   s:'',emoji:'🦅'}],
+      F:[{w:'Fox',       s:'',emoji:'🦊'},{w:'Frog',     s:'',emoji:'🐸'},{w:'Fish',    s:'',emoji:'🐟'},{w:'Flower',  s:'',emoji:'🌸'}],
+      G:[{w:'Gorilla',   s:'',emoji:'🦍'},{w:'Grape',    s:'',emoji:'🍇'},{w:'Giraffe', s:'',emoji:'🦒'},{w:'Ghost',   s:'',emoji:'👻'}],
+      H:[{w:'Horse',     s:'',emoji:'🐴'},{w:'Hamster',  s:'',emoji:'🐹'},{w:'Heart',   s:'',emoji:'❤️'},{w:'Hippo',   s:'',emoji:'🦛'}],
+      I:[{w:'Ice Cream', s:'',emoji:'🍦'},{w:'Island',   s:'',emoji:'🏝️'},{w:'Igloo',   s:'',emoji:'🏔️'},{w:'Insect',  s:'',emoji:'🐛'}],
+      J:[{w:'Jellyfish', s:'',emoji:'🪼'},{w:'Jaguar',   s:'',emoji:'🐆'},{w:'Juice',   s:'',emoji:'🧃'},{w:'Jet',     s:'',emoji:'🛩️'}],
+      K:[{w:'Koala',     s:'',emoji:'🐨'},{w:'Kangaroo', s:'',emoji:'🦘'},{w:'Key',     s:'',emoji:'🔑'},{w:'Kite',    s:'',emoji:'🪁'}],
+      L:[{w:'Lion',      s:'',emoji:'🦁'},{w:'Lemon',    s:'',emoji:'🍋'},{w:'Lobster', s:'',emoji:'🦞'},{w:'Llama',   s:'',emoji:'🦙'}],
+      M:[{w:'Monkey',    s:'',emoji:'🐒'},{w:'Moon',     s:'',emoji:'🌙'},{w:'Mushroom',s:'',emoji:'🍄'},{w:'Mouse',   s:'',emoji:'🐭'}],
+      N:[{w:'Narwhal',   s:'',emoji:'🐋'},{w:'Nest',     s:'',emoji:'🪺'},{w:'Noodle',  s:'',emoji:'🍜'},{w:'Night',   s:'',emoji:'🌃'}],
+      O:[{w:'Octopus',   s:'',emoji:'🐙'},{w:'Owl',      s:'',emoji:'🦉'},{w:'Orange',  s:'',emoji:'🍊'},{w:'Otter',   s:'',emoji:'🦦'}],
+      P:[{w:'Penguin',   s:'',emoji:'🐧'},{w:'Pizza',    s:'',emoji:'🍕'},{w:'Parrot',  s:'',emoji:'🦜'},{w:'Peach',   s:'',emoji:'🍑'}],
+      Q:[{w:'Queen',     s:'',emoji:'👑'},{w:'Quail',    s:'',emoji:'🐦'},{w:'Quokka',  s:'',emoji:'🦔'}],
+      R:[{w:'Rabbit',    s:'',emoji:'🐰'},{w:'Rainbow',  s:'',emoji:'🌈'},{w:'Robot',   s:'',emoji:'🤖'},{w:'Rocket',  s:'',emoji:'🚀'}],
+      S:[{w:'Swallow',   s:'',emoji:'🐦'},{w:'Strawberry',s:'',emoji:'🍓'},{w:'Snake',  s:'',emoji:'🐍'},{w:'Star',    s:'',emoji:'⭐'}],
+      T:[{w:'Tiger',     s:'',emoji:'🐯'},{w:'Turtle',   s:'',emoji:'🐢'},{w:'Train',   s:'',emoji:'🚂'},{w:'Tulip',   s:'',emoji:'🌷'}],
+      U:[{w:'Unicorn',   s:'',emoji:'🦄'},{w:'Umbrella', s:'',emoji:'☂️'},{w:'UFO',     s:'',emoji:'🛸'}],
+      V:[{w:'Volcano',   s:'',emoji:'🌋'},{w:'Violin',   s:'',emoji:'🎻'},{w:'Van',     s:'',emoji:'🚐'}],
+      W:[{w:'Whale',     s:'',emoji:'🐳'},{w:'Wolf',     s:'',emoji:'🐺'},{w:'Watermelon',s:'',emoji:'🍉'},{w:'Worm',  s:'',emoji:'🪱'}],
+      X:[{w:'Xylophone', s:'',emoji:'🎵'},{w:'X-ray',    s:'',emoji:'🩻'}],
+      Y:[{w:'Yak',       s:'',emoji:'🐃'},{w:'Yacht',    s:'',emoji:'⛵'},{w:'Yarn',    s:'',emoji:'🧶'}],
+      Z:[{w:'Zebra',     s:'',emoji:'🦓'},{w:'Zombie',   s:'',emoji:'🧟'},{w:'Zeppelin',s:'',emoji:'🛸'}],
+    }
+  },
+
+  // ---------- isiZulu ----------
+  zu: {
+    name: 'isiZulu', flag: '🇿🇦', voice: 'en-ZA',
+    idle: ['🦁 isiZulu ABC 🌍', 'Cofa inkinobho!', 'A〜Z'],
+    data: {
+      A:[{w:'amasi',      s:'sour milk・発酵乳',    emoji:'🥛'},{w:'amanzi',    s:'water・水',          emoji:'💧'},{w:'amabhubesi',s:'lions・ライオン', emoji:'🦁'}],
+      B:[{w:'ibhubesi',   s:'lion・ライオン',       emoji:'🦁'},{w:'ibuzi',     s:'goat・ヤギ',         emoji:'🐐'},{w:'ibhokisi',  s:'box・箱',         emoji:'📦'}],
+      C:[{w:'isicebi',    s:'rich person・お金持ち', emoji:'💰'},{w:'icala',     s:'crime/side・罪',     emoji:'⚖️'}],
+      D:[{w:'idada',      s:'duck・アヒル',         emoji:'🦆'},{w:'indlovu',   s:'elephant・象',       emoji:'🐘'},{w:'idolobha',  s:'city・都市',      emoji:'🏙️'}],
+      E:[{w:'ekhaya',     s:'at home・家で',        emoji:'🏠'},{w:'emanzini',  s:'in water・水の中',   emoji:'🌊'},{w:'esikoleni', s:'at school・学校', emoji:'🏫'}],
+      F:[{w:'ifu',        s:'cloud・雲',            emoji:'☁️'},{w:'ukudla',    s:'food・食べ物',       emoji:'🍽️'},{w:'isifundo',  s:'lesson・授業',    emoji:'📚'}],
+      G:[{w:'igundane',   s:'rat・ネズミ',          emoji:'🐭'},{w:'igama',     s:'name/word・名前',    emoji:'🔤'},{w:'igolide',   s:'gold・金',        emoji:'🥇'}],
+      H:[{w:'ihhashi',    s:'horse・馬',            emoji:'🐴'},{w:'inhlanzi',  s:'fish・魚',           emoji:'🐟'},{w:'ihlathi',   s:'forest・森',      emoji:'🌳'}],
+      I:[{w:'inja',       s:'dog・犬',              emoji:'🐶'},{w:'inkukhu',   s:'chicken・ニワトリ',  emoji:'🐔'},{w:'imvula',    s:'rain・雨',        emoji:'🌧️'}],
+      J:[{w:'ijuba',      s:'dove・ハト',           emoji:'🕊️'},{w:'ijele',     s:'prison・刑務所',     emoji:'🔒'}],
+      K:[{w:'ikati',      s:'cat・猫',              emoji:'🐱'},{w:'ukhozi',    s:'eagle・ワシ',        emoji:'🦅'},{w:'inkomo',    s:'cattle・牛',      emoji:'🐄'}],
+      L:[{w:'ilanga',     s:'sun/day・太陽',        emoji:'☀️'},{w:'ingwe',     s:'leopard・ヒョウ',    emoji:'🐆'},{w:'izulu',     s:'sky・空',         emoji:'🌤️'}],
+      M:[{w:'umuntu',     s:'person・人',           emoji:'🧑'},{w:'umlilo',    s:'fire・火',           emoji:'🔥'},{w:'imbuzi',    s:'goat・ヤギ',      emoji:'🐐'}],
+      N:[{w:'inyoka',     s:'snake・ヘビ',          emoji:'🐍'},{w:'inkanyezi', s:'star・星',           emoji:'⭐'},{w:'intaba',    s:'mountain・山',    emoji:'⛰️'}],
+      O:[{w:'omama',      s:'mothers・お母さんたち', emoji:'👩‍👦'},{w:'oyise',    s:'fathers・お父さんたち',emoji:'👨‍👧'},{w:'onke',      s:'all・すべて',     emoji:'✨'}],
+      P:[{w:'impisi',     s:'hyena・ハイエナ',      emoji:'🦴'},{w:'uphoko',    s:'spoon・スプーン',    emoji:'🥄'}],
+      Q:[{w:'iqanda',     s:'egg・卵',              emoji:'🥚'},{w:'iqhude',    s:'rooster・オス鶏',    emoji:'🐓'},{w:'iqabunga',  s:'leaf・葉',        emoji:'🍃'}],
+      R:[{w:'ithafa',     s:'savanna・サバンナ',     emoji:'🌾'},{w:'inhlanzi',  s:'fish・魚',           emoji:'🐟'}],
+      S:[{w:'isilwane',   s:'animal・動物',         emoji:'🦓'},{w:'isibhakabhaka',s:'sky・大空',       emoji:'🌌'},{w:'isango',    s:'gate・門',        emoji:'🚪'}],
+      T:[{w:'ithanga',    s:'pumpkin・カボチャ',     emoji:'🎃'},{w:'ithambo',   s:'bone・骨',           emoji:'🦴'}],
+      U:[{w:'ubuntu',     s:'humanity・人間性',     emoji:'🤝'},{w:'unwabu',    s:'chameleon・カメレオン',emoji:'🦎'},{w:'umlilo',   s:'fire・火',        emoji:'🔥'}],
+      V:[{w:'imvubu',     s:'hippo・カバ',          emoji:'🦛'},{w:'ivangeli',  s:'gospel・福音',       emoji:'📖'},{w:'ingulube',  s:'pig・ブタ',       emoji:'🐷'}],
+      W:[{w:'woza',       s:'come!・来て！',        emoji:'👋'},{w:'indawo',    s:'place・場所',        emoji:'📍'}],
+      X:[{w:'ixoxo',      s:'frog・カエル',         emoji:'🐸'},{w:'ixhama',    s:'locust・バッタ',     emoji:'🦗'}],
+      Y:[{w:'yebo',       s:'yes・はい',            emoji:'✅'},{w:'inyoni',    s:'bird・鳥',           emoji:'🐦'},{w:'inyoka',    s:'snake・ヘビ',     emoji:'🐍'}],
+      Z:[{w:'izulu',      s:'sky/heaven・天空',     emoji:'🌤️'},{w:'inkanyezi', s:'star・星',           emoji:'⭐'},{w:'impunzi',   s:'duiker・小鹿',   emoji:'🦌'}],
+    }
+  },
+
+  // ---------- Español ----------
+  es: {
+    name: 'Español', flag: '🇪🇸', voice: 'es-ES',
+    idle: ['🌹 Español ABC 🎸', '¡Pulsa una tecla!', 'A〜Z'],
+    data: {
+      A:[{w:'Águila',     s:'鷲',        emoji:'🦅'},{w:'Abeja',     s:'蜂',        emoji:'🐝'},{w:'Árbol',    s:'木',      emoji:'🌳'},{w:'Amigo',    s:'友達',    emoji:'🤝'}],
+      B:[{w:'Burro',      s:'ロバ',      emoji:'🫏'},{w:'Barco',     s:'船',        emoji:'⛵'},{w:'Ballena',  s:'クジラ',  emoji:'🐳'},{w:'Bailarina',s:'ダンサー',emoji:'💃'}],
+      C:[{w:'Caballo',    s:'馬',        emoji:'🐴'},{w:'Castillo',  s:'城',        emoji:'🏰'},{w:'Cocodrilo',s:'ワニ',    emoji:'🐊'},{w:'Cigüeña',  s:'コウノトリ',emoji:'🦢'}],
+      D:[{w:'Delfín',     s:'イルカ',    emoji:'🐬'},{w:'Dragón',    s:'ドラゴン',  emoji:'🐉'},{w:'Dinosaurio',s:'恐竜',  emoji:'🦕'},{w:'Duende',   s:'小人',    emoji:'🧝'}],
+      E:[{w:'Elefante',   s:'象',        emoji:'🐘'},{w:'Estrella',  s:'星',        emoji:'⭐'},{w:'Escorpión',s:'サソリ',  emoji:'🦂'},{w:'Espada',   s:'剣',      emoji:'⚔️'}],
+      F:[{w:'Flamenco',   s:'フラメンコ',emoji:'💃'},{w:'Fresa',     s:'イチゴ',    emoji:'🍓'},{w:'Flor',     s:'花',      emoji:'🌸'},{w:'Foca',     s:'アザラシ',emoji:'🦭'}],
+      G:[{w:'Gato',       s:'猫',        emoji:'🐱'},{w:'Guitarra',  s:'ギター',    emoji:'🎸'},{w:'Gorila',   s:'ゴリラ',  emoji:'🦍'},{w:'Girasol',  s:'ひまわり',emoji:'🌻'}],
+      H:[{w:'Helado',     s:'アイス',    emoji:'🍦'},{w:'Hormiga',   s:'アリ',      emoji:'🐜'},{w:'Hipopótamo',s:'カバ',  emoji:'🦛'},{w:'Hada',     s:'妖精',    emoji:'🧚'}],
+      I:[{w:'Iglesia',    s:'教会',      emoji:'⛪'},{w:'Iguana',    s:'イグアナ',  emoji:'🦎'},{w:'Isla',     s:'島',      emoji:'🏝️'},{w:'Imán',     s:'磁石',    emoji:'🧲'}],
+      J:[{w:'Jaguar',     s:'ジャガー',  emoji:'🐆'},{w:'Jirafa',    s:'キリン',    emoji:'🦒'},{w:'Jardín',   s:'庭',      emoji:'🌿'},{w:'Jamón',    s:'ハモン',  emoji:'🍖'}],
+      K:[{w:'Koala',      s:'コアラ',    emoji:'🐨'},{w:'Kiwi',      s:'キウイ',    emoji:'🥝'},{w:'Kayak',    s:'カヤック',emoji:'🛶'}],
+      L:[{w:'León',       s:'ライオン',  emoji:'🦁'},{w:'Luna',      s:'月',        emoji:'🌙'},{w:'Loro',     s:'オウム',  emoji:'🦜'},{w:'Limón',    s:'レモン',  emoji:'🍋'}],
+      M:[{w:'Mariposa',   s:'蝶',        emoji:'🦋'},{w:'Mono',      s:'サル',      emoji:'🐒'},{w:'Manzana',  s:'リンゴ',  emoji:'🍎'},{w:'Mar',      s:'海',      emoji:'🌊'}],
+      N:[{w:'Naranja',    s:'オレンジ',  emoji:'🍊'},{w:'Nieve',     s:'雪',        emoji:'❄️'},{w:'Nube',     s:'雲',      emoji:'☁️'},{w:'Nutria',   s:'カワウソ',emoji:'🦦'}],
+      O:[{w:'Oso',        s:'クマ',      emoji:'🐻'},{w:'Oveja',     s:'羊',        emoji:'🐑'},{w:'Orquídea', s:'ラン',    emoji:'🌺'},{w:'Océano',   s:'大洋',    emoji:'🌊'}],
+      P:[{w:'Perro',      s:'犬',        emoji:'🐶'},{w:'Pulpo',     s:'タコ',      emoji:'🐙'},{w:'Pingüino', s:'ペンギン',emoji:'🐧'},{w:'Pavo real',s:'クジャク',emoji:'🦚'}],
+      Q:[{w:'Queso',      s:'チーズ',    emoji:'🧀'},{w:'Quetzal',   s:'ケツァル',  emoji:'🦜'},{w:'Quijote',  s:'ドンキホーテ',emoji:'⚔️'}],
+      R:[{w:'Rosa',       s:'バラ',      emoji:'🌹'},{w:'Rana',      s:'カエル',    emoji:'🐸'},{w:'Ratón',    s:'ネズミ',  emoji:'🐭'},{w:'Relámpago',s:'雷',      emoji:'⚡'}],
+      S:[{w:'Sol',        s:'太陽',      emoji:'☀️'},{w:'Serpiente', s:'ヘビ',      emoji:'🐍'},{w:'Sandía',   s:'スイカ',  emoji:'🍉'},{w:'Sombrero', s:'帽子',    emoji:'👒'}],
+      T:[{w:'Toro',       s:'牡牛',      emoji:'🐂'},{w:'Tigre',     s:'トラ',      emoji:'🐯'},{w:'Tortuga',  s:'カメ',    emoji:'🐢'},{w:'Tomate',   s:'トマト',  emoji:'🍅'}],
+      U:[{w:'Uva',        s:'ぶどう',    emoji:'🍇'},{w:'Unicornio', s:'ユニコーン',emoji:'🦄'},{w:'Urraca',   s:'カチガラス',emoji:'🐦'}],
+      V:[{w:'Vaca',       s:'牛',        emoji:'🐄'},{w:'Volcán',    s:'火山',      emoji:'🌋'},{w:'Violín',   s:'バイオリン',emoji:'🎻'},{w:'Venado',   s:'シカ',    emoji:'🦌'}],
+      W:[{w:'Wombat',     s:'ウォンバット',emoji:'🦘'},{w:'Wifi',    s:'ワイファイ',emoji:'📶'}],
+      X:[{w:'Xilófono',   s:'木琴',      emoji:'🎵'}],
+      Y:[{w:'Yak',        s:'ヤク',      emoji:'🐃'},{w:'Yegua',    s:'牝馬',      emoji:'🐴'},{w:'Yogur',    s:'ヨーグルト',emoji:'🥛'}],
+      Z:[{w:'Zorro',      s:'キツネ',    emoji:'🦊'},{w:'Zanahoria',s:'ニンジン',  emoji:'🥕'},{w:'Zebra',    s:'シマウマ',emoji:'🦓'},{w:'Zapato',   s:'靴',      emoji:'👟'}],
+    }
+  },
+
+  // ---------- 日本語（ローマ字で入力 → ひらがな/カタカナ語） ----------
+  ja: {
+    name: '日本語', flag: '🇯🇵', voice: 'ja-JP',
+    idle: ['🌸 にほんご ABC 🗾', 'キーをおしてみよう！', 'A〜Z'],
+    data: {
+      A:[{w:'あり',       s:'ant',        emoji:'🐜'},{w:'あおぞら',  s:'blue sky',   emoji:'🌤️'},{w:'あひる',  s:'duck',      emoji:'🦆'}],
+      B:[{w:'ばなな',     s:'banana',     emoji:'🍌'},{w:'ぼうし',    s:'hat',        emoji:'👒'},{w:'ぶた',    s:'pig',       emoji:'🐷'}],
+      C:[{w:'さくら',     s:'cherry blossom',emoji:'🌸'},{w:'ちょうちょ',s:'butterfly',emoji:'🦋'}],
+      D:[{w:'でんしゃ',   s:'train',      emoji:'🚃'},{w:'どうぶつ',  s:'animal',     emoji:'🐾'},{w:'だいこん',s:'radish',    emoji:'🥬'}],
+      E:[{w:'えび',       s:'shrimp',     emoji:'🦐'},{w:'えんぴつ',  s:'pencil',     emoji:'✏️'},{w:'えいご',  s:'English',   emoji:'🇺🇸'}],
+      F:[{w:'ふじさん',   s:'Mt. Fuji',   emoji:'🗻'},{w:'ふくろう',  s:'owl',        emoji:'🦉'},{w:'ふね',    s:'ship',      emoji:'⛵'}],
+      G:[{w:'ごりら',     s:'gorilla',    emoji:'🦍'},{w:'げんき',    s:'healthy',    emoji:'💪'},{w:'ぎんがけい',s:'galaxy',   emoji:'🌌'}],
+      H:[{w:'はな',       s:'flower',     emoji:'🌸'},{w:'はり',      s:'needle',     emoji:'🪡'},{w:'ほし',    s:'star',      emoji:'⭐'}],
+      I:[{w:'いぬ',       s:'dog',        emoji:'🐶'},{w:'いちご',    s:'strawberry', emoji:'🍓'},{w:'いかのおすし',s:'safety',emoji:'🚨'}],
+      J:[{w:'じてんしゃ', s:'bicycle',    emoji:'🚲'},{w:'じんじゃ',  s:'shrine',     emoji:'⛩️'},{w:'じぶん',  s:'myself',    emoji:'🙋'}],
+      K:[{w:'かめ',       s:'turtle',     emoji:'🐢'},{w:'きつね',    s:'fox',        emoji:'🦊'},{w:'くも',    s:'cloud',     emoji:'☁️'}],
+      L:[{w:'れもん',     s:'lemon',      emoji:'🍋'},{w:'らいおん',  s:'lion',       emoji:'🦁'}],
+      M:[{w:'むしめがね', s:'magnifying glass',emoji:'🔍'},{w:'まつり',s:'festival',   emoji:'🎆'},{w:'みかん',  s:'mandarin',  emoji:'🍊'}],
+      N:[{w:'にじ',       s:'rainbow',    emoji:'🌈'},{w:'ねこ',      s:'cat',        emoji:'🐱'},{w:'のり',    s:'seaweed',   emoji:'🌿'}],
+      O:[{w:'おにぎり',   s:'rice ball',  emoji:'🍙'},{w:'おかし',    s:'sweets',     emoji:'🍬'},{w:'おうさま',s:'king',      emoji:'👑'}],
+      P:[{w:'ぱんだ',     s:'panda',      emoji:'🐼'},{w:'ぴあの',    s:'piano',      emoji:'🎹'},{w:'ぺんぎん',s:'penguin',   emoji:'🐧'}],
+      Q:[{w:'くじら',     s:'whale',      emoji:'🐳'},{w:'きゅうり',  s:'cucumber',   emoji:'🥒'}],
+      R:[{w:'りんご',     s:'apple',      emoji:'🍎'},{w:'ろけっと',  s:'rocket',     emoji:'🚀'},{w:'らっこ',  s:'sea otter', emoji:'🦦'}],
+      S:[{w:'さかな',     s:'fish',       emoji:'🐟'},{w:'さるかに',  s:'monkey & crab',emoji:'🐒'},{w:'すいか',  s:'watermelon',emoji:'🍉'}],
+      T:[{w:'たいよう',   s:'sun',        emoji:'☀️'},{w:'たこ',      s:'octopus',    emoji:'🐙'},{w:'とら',    s:'tiger',     emoji:'🐯'}],
+      U:[{w:'うさぎ',     s:'rabbit',     emoji:'🐰'},{w:'うみ',      s:'sea',        emoji:'🌊'},{w:'うちゅう',s:'space',     emoji:'🌌'}],
+      V:[{w:'ばいおりん', s:'violin',     emoji:'🎻'},{w:'びでお',    s:'video',      emoji:'📹'}],
+      W:[{w:'わし',       s:'eagle',      emoji:'🦅'},{w:'わらう',    s:'laugh',      emoji:'😄'},{w:'わたあめ',s:'cotton candy',emoji:'🍭'}],
+      X:[{w:'きしろほん', s:'xylophone',  emoji:'🎵'}],
+      Y:[{w:'やま',       s:'mountain',   emoji:'⛰️'},{w:'ゆき',      s:'snow',       emoji:'❄️'},{w:'よぞら',  s:'night sky', emoji:'🌃'}],
+      Z:[{w:'ぞう',       s:'elephant',   emoji:'🐘'},{w:'ざぶとん',  s:'cushion',    emoji:'🪑'},{w:'ずかん',  s:'encyclopedia',emoji:'📚'}],
+    }
+  },
+
+  // ---------- Tiếng Việt ----------
+  vi: {
+    name: 'Tiếng Việt', flag: '🇻🇳', voice: 'vi-VN',
+    idle: ['🌿 Tiếng Việt ABC 🐉', 'Nhấn một phím!', 'A〜Z・ấn phím'],
+    data: {
+      A:[{w:'Áo dài',    s:'アオザイ（民族衣装）',emoji:'👘'},{w:'Ăn uống',  s:'食べること',     emoji:'🍜'},{w:'Ảo thuật', s:'マジック',   emoji:'🎩'}],
+      B:[{w:'Bướm',      s:'butterfly・蝶',   emoji:'🦋'},{w:'Bánh mì',  s:'バインミー',    emoji:'🥖'},{w:'Bò',       s:'cow・牛',      emoji:'🐄'}],
+      C:[{w:'Cá',        s:'fish・魚',         emoji:'🐟'},{w:'Cây',      s:'tree・木',       emoji:'🌳'},{w:'Cua',      s:'crab・カニ',   emoji:'🦀'}],
+      D:[{w:'Dừa',       s:'coconut・ヤシの実',emoji:'🥥'},{w:'Dê',       s:'goat・ヤギ',     emoji:'🐐'},{w:'Dòng sông',s:'river・川',   emoji:'🌊'}],
+      E:[{w:'Em bé',     s:'baby・赤ちゃん',   emoji:'👶'},{w:'Ếch',      s:'frog・カエル',   emoji:'🐸'}],
+      G:[{w:'Gà',        s:'chicken・鶏',      emoji:'🐔'},{w:'Gấu',      s:'bear・クマ',     emoji:'🐻'},{w:'Gió',      s:'wind・風',     emoji:'💨'}],
+      H:[{w:'Hoa',       s:'flower・花',       emoji:'🌸'},{w:'Hổ',       s:'tiger・トラ',    emoji:'🐯'},{w:'Hà Nội',   s:'ハノイ（首都）',emoji:'🏙️'}],
+      I:[{w:'In',        s:'print・印刷',       emoji:'🖨️'}],
+      K:[{w:'Khỉ',       s:'monkey・サル',     emoji:'🐒'},{w:'Kỳ lân',   s:'unicorn・一角獣',emoji:'🦄'},{w:'Kẹo',      s:'candy・飴',    emoji:'🍬'}],
+      L:[{w:'Lợn',       s:'pig・ブタ',        emoji:'🐷'},{w:'Lúa',      s:'rice・稲',       emoji:'🌾'},{w:'Lửa',      s:'fire・火',     emoji:'🔥'}],
+      M:[{w:'Mèo',       s:'cat・猫',          emoji:'🐱'},{w:'Mưa',      s:'rain・雨',       emoji:'🌧️'},{w:'Mặt trời', s:'sun・太陽',    emoji:'☀️'}],
+      N:[{w:'Ngựa',      s:'horse・馬',        emoji:'🐴'},{w:'Núi',      s:'mountain・山',   emoji:'⛰️'},{w:'Nước',     s:'water・水',    emoji:'💧'}],
+      O:[{w:'Ong',       s:'bee・蜂',          emoji:'🐝'},{w:'Ốc',       s:'snail・カタツムリ',emoji:'🐌'}],
+      P:[{w:'Phở',       s:'フォー（料理）',    emoji:'🍜'},{w:'Pháo hoa', s:'fireworks・花火',emoji:'🎆'},{w:'Phượng hoàng',s:'phoenix・鳳凰',emoji:'🔥'}],
+      Q:[{w:'Quả xoài',  s:'mango・マンゴー',  emoji:'🥭'},{w:'Quạt',     s:'fan・扇子',      emoji:'🪭'},{w:'Quê hương',s:'hometown・故郷',emoji:'🏡'}],
+      R:[{w:'Rồng',      s:'dragon・龍',       emoji:'🐉'},{w:'Rừng',     s:'forest・森',     emoji:'🌿'},{w:'Rùa',      s:'turtle・カメ', emoji:'🐢'}],
+      S:[{w:'Sông',      s:'river・川',        emoji:'🌊'},{w:'Sư tử',    s:'lion・ライオン', emoji:'🦁'},{w:'Sao',      s:'star・星',     emoji:'⭐'}],
+      T:[{w:'Trăng',     s:'moon・月',         emoji:'🌙'},{w:'Thỏ',      s:'rabbit・ウサギ', emoji:'🐰'},{w:'Trâu',     s:'buffalo・水牛',emoji:'🐃'}],
+      U:[{w:'Ủ rũ',      s:'sad・悲しい',      emoji:'😢'},{w:'Uyên ương',s:'lovebirds・つがい鳥',emoji:'🐦‍🔥'}],
+      V:[{w:'Voi',       s:'elephant・象',     emoji:'🐘'},{w:'Vịt',      s:'duck・アヒル',   emoji:'🦆'},{w:'Vũ điệu',  s:'dance・踊り',  emoji:'💃'}],
+      X:[{w:'Xoài',      s:'mango・マンゴー',  emoji:'🥭'},{w:'Xuân',     s:'spring・春',     emoji:'🌱'}],
+      Y:[{w:'Yêu',       s:'love・愛',         emoji:'❤️'},{w:'Yến sào',  s:'bird\'s nest・燕の巣',emoji:'🪺'}],
+    }
+  }
+};
+
+// ============================================================
+// ===== アプリ状態 =====
+// ============================================================
+let currentLang = 'en';
+
+const COLORS = [
+  '#FF6B6B','#FF8E53','#FFC300','#2ECC71','#1ABC9C',
+  '#3498DB','#9B59B6','#E91E63','#00BCD4','#FF5722',
+  '#8BC34A','#FF9800','#E74C3C','#27AE60','#F39C12',
+];
+
+// ===== DOM =====
+const idleEl    = document.getElementById('idle');
+const displayEl = document.getElementById('display');
+const letterEl  = document.getElementById('letter');
+const illustEl  = document.getElementById('illust');
+const mainWordEl= document.getElementById('main-word');
+const subWordEl = document.getElementById('sub-word');
+const flashEl   = document.getElementById('bg-flash');
+const idleTitleEl = document.getElementById('idle-title');
+const idleSubEl   = document.getElementById('idle-sub');
+const idleHintEl  = document.getElementById('idle-hint');
+
+// ===== 音声 =====
+const synth = window.speechSynthesis;
+let voices = [];
+synth.onvoiceschanged = () => { voices = synth.getVoices(); };
+setTimeout(() => { voices = synth.getVoices(); }, 500);
+
+function speak(langCode, word) {
+  synth.cancel();
+  const langDef = LANGS[langCode];
+
+  // 言語コードに合う声を探す
+  const voice = voices.find(v => v.lang.startsWith(langDef.voice.split('-')[0]))
+             || voices.find(v => v.lang.startsWith('en'));
+
+  const u = new SpeechSynthesisUtterance(word);
+  if (voice) u.voice = voice;
+  u.lang  = langDef.voice;
+  u.rate  = 0.8;
+  u.pitch = 1.1;
+  synth.speak(u);
+}
+
+// ===== タブ切り替え =====
+function switchLang(lang) {
+  currentLang = lang;
+  document.body.className = 'lang-' + lang;
+
+  // タブ見た目
+  document.querySelectorAll('.tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.lang === lang);
+    const acc = LANGS[lang] ? getAccent(lang) : '#fff';
+    if (t.dataset.lang === lang) t.style.setProperty('--accent', acc);
+  });
+
+  // 待機画面テキスト更新
+  const ld = LANGS[lang];
+  idleTitleEl.textContent = ld.idle[0];
+  idleSubEl.textContent   = ld.idle[1];
+  idleHintEl.textContent  = ld.idle[2];
+
+  // 表示をリセット → 待機画面へ
+  displayEl.classList.remove('show');
+  idleEl.classList.remove('hidden');
+
+  synth.cancel();
+}
+
+function getAccent(lang) {
+  const map = { en:'#7C3AED', zu:'#E67E22', es:'#E74C3C', ja:'#FF4081', vi:'#00C853' };
+  return map[lang] || '#fff';
+}
+
+// ===== アニメーションリセット =====
+function resetAnim(el) {
+  el.style.animation = 'none';
+  void el.offsetWidth;
+  el.style.animation = '';
+}
+
+// ===== パーティクル =====
+const PARTICLES = ['✨','🌟','💫','⭐','🎊','🎉','🔥','💥'];
+function spawnParticles(color) {
+  const stage = document.getElementById('stage');
+  const cx = stage.clientWidth / 2;
+  const cy = stage.clientHeight * 0.6; // タブ分下にずらす
+  for (let i = 0; i < 18; i++) {
+    const p = document.createElement('div');
+    p.className = 'particle';
+    const angle = (Math.random() * 360) * Math.PI / 180;
+    const dist  = Math.random() * 32 + 12;
+    const tx = Math.cos(angle) * dist * (stage.clientWidth / 100);
+    const ty = Math.sin(angle) * dist * (stage.clientHeight / 100);
+    const sz  = (Math.random() * 2 + 1.2).toFixed(1);
+    const rot = (Math.random() * 720 - 360).toFixed(0);
+    p.style.cssText = `
+      left:${cx}px; top:${cy}px;
+      font-size:${sz}vw;
+      --tx:${tx}px; --ty:${ty}px;
+      --rot:${rot}deg;
+      --dur:${(Math.random()*0.5+0.5).toFixed(2)}s;
+    `;
+    p.textContent = PARTICLES[Math.floor(Math.random() * PARTICLES.length)];
+    stage.appendChild(p);
+    p.addEventListener('animationend', () => p.remove());
+  }
+}
+
+// ===== キー押下 =====
+document.addEventListener('keydown', (e) => {
+  if (e.repeat) return; // 押しっぱなしリピートは無視
+  const key = e.key.toUpperCase();
+  const data = LANGS[currentLang]?.data;
+  if (!data || !data[key]) return;
+
+  // 初回キー押下時に全画面へ（ユーザー操作起点なので許可される）
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+
+  const list  = data[key];
+  const item  = list[Math.floor(Math.random() * list.length)];
+  const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+
+  // 待機画面を隠す
+  idleEl.classList.add('hidden');
+
+  // 表示更新
+  resetAnim(letterEl); letterEl.textContent = key;
+  resetAnim(illustEl); illustEl.textContent = item.emoji;
+  resetAnim(mainWordEl); mainWordEl.textContent = item.w;
+  subWordEl.textContent = item.s || '';
+
+  displayEl.classList.add('show');
+
+  // フラッシュ
+  flashEl.style.background = color;
+  flashEl.classList.remove('flash');
+  void flashEl.offsetWidth;
+  flashEl.classList.add('flash');
+
+  // パーティクル
+  spawnParticles(color);
+
+  // 音声（単語を読み上げ）
+  speak(currentLang, item.w);
+});
+
+// ===== タブキーでタブ切り替え（Tabキー） =====
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const langs = Object.keys(LANGS);
+    const idx = langs.indexOf(currentLang);
+    switchLang(langs[(idx + 1) % langs.length]);
+  }
+});
+
+// ===== マウス軌跡 =====
+(function() {
+  const canvas = document.getElementById('trail-canvas');
+  const ctx    = canvas.getContext('2d');
+  const stage  = document.getElementById('stage');
+
+  // ===== リサイズ =====
+  function resize() {
+    canvas.width  = stage.clientWidth;
+    canvas.height = stage.clientHeight;
+  }
+  resize();
+  new ResizeObserver(resize).observe(stage);
+
+  // ===== ポイント管理 =====
+  // 各ポイント: {x, y, life}  life: 1.0(新) → 0.0(消滅)
+  const MAX_POINTS = 120;
+  const points = [];
+
+  function toStagePos(e) {
+    const r = stage.getBoundingClientRect();
+    return {
+      x: (e.clientX - r.left) * (canvas.width  / r.width),
+      y: (e.clientY - r.top)  * (canvas.height / r.height),
+    };
+  }
+
+  stage.addEventListener('mousemove', (e) => {
+    const pos = toStagePos(e);
+    points.push({ x: pos.x, y: pos.y, life: 1.0 });
+    if (points.length > MAX_POINTS) points.shift();
+  });
+
+  // ===== 言語別カラー（複数色で虹彗星に） =====
+  const COMET_COLORS = {
+    en: [[ 220,180,255],[160,100,255],[100, 60,220],[255,255,255]], // 紫〜白
+    zu: [[ 255,200, 60],[255,140, 20],[255, 80,  0],[255,240,180]], // 炎オレンジ
+    es: [[ 255,100, 60],[255, 50, 30],[220,  0,  0],[255,220,180]], // 赤〜金
+    ja: [[ 255,140,200],[255, 80,160],[200, 40,120],[255,240,240]], // ピンク
+    vi: [[  60,255,140],[ 20,200, 80],[  0,140, 60],[200,255,220]], // エメラルド
+  };
+
+  function getColors() {
+    return COMET_COLORS[currentLang] || [[255,255,255],[200,200,255],[150,150,255],[255,255,255]];
+  }
+
+  // ===== 輝きパーティクル（スパーク） =====
+  const sparks = [];
+  stage.addEventListener('mousemove', (e) => {
+    if (Math.random() < 0.3) { // 30%の確率でスパーク生成
+      const pos = toStagePos(e);
+      sparks.push({
+        x: pos.x, y: pos.y,
+        vx: (Math.random() - 0.5) * 4,
+        vy: (Math.random() - 0.5) * 4,
+        life: 1.0,
+        size: Math.random() * 3 + 1,
+      });
+    }
+  });
+
+  // ===== 描画ループ =====
+  function draw() {
+    // 前フレームを完全クリア
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const colors = getColors();
+
+    // ----- 彗星の尾（太さが尻尾から頭へ細くなる）-----
+    if (points.length >= 2) {
+      for (let i = 1; i < points.length; i++) {
+        const p0 = points[i - 1];
+        const p1 = points[i];
+
+        // t: 0=尾の先端(古い), 1=頭(新しい)
+        const t  = i / (points.length - 1);
+        const t2 = t * t; // 二乗で加速感
+
+        // 太さ：尾→細、頭→太（最大35px）
+        const width = t2 * 35 + 0.5;
+
+        // カラーミックス（尾→頭で色変化）
+        const ci   = Math.floor(t * (colors.length - 1));
+        const ci2  = Math.min(ci + 1, colors.length - 1);
+        const cf   = t * (colors.length - 1) - ci;
+        const r = colors[ci][0] * (1-cf) + colors[ci2][0] * cf;
+        const g = colors[ci][1] * (1-cf) + colors[ci2][1] * cf;
+        const b = colors[ci][2] * (1-cf) + colors[ci2][2] * cf;
+
+        // life減衰（尾の先端ほど早く消える）
+        const alpha = p1.life * t2;
+
+        // ---- 外側グロー（大）----
+        ctx.beginPath();
+        ctx.moveTo(p0.x, p0.y);
+        ctx.lineTo(p1.x, p1.y);
+        ctx.strokeStyle = `rgba(${r|0},${g|0},${b|0},${alpha * 0.15})`;
+        ctx.lineWidth   = width * 3.5;
+        ctx.lineCap     = 'round';
+        ctx.lineJoin    = 'round';
+        ctx.stroke();
+
+        // ---- 中グロー ----
+        ctx.beginPath();
+        ctx.moveTo(p0.x, p0.y);
+        ctx.lineTo(p1.x, p1.y);
+        ctx.strokeStyle = `rgba(${r|0},${g|0},${b|0},${alpha * 0.35})`;
+        ctx.lineWidth   = width * 1.5;
+        ctx.stroke();
+
+        // ---- 芯（鮮明な白〜本色）----
+        ctx.beginPath();
+        ctx.moveTo(p0.x, p0.y);
+        ctx.lineTo(p1.x, p1.y);
+        const coreR = r * 0.6 + 255 * 0.4;
+        const coreG = g * 0.6 + 255 * 0.4;
+        const coreB = b * 0.6 + 255 * 0.4;
+        ctx.strokeStyle = `rgba(${coreR|0},${coreG|0},${coreB|0},${alpha * 0.9})`;
+        ctx.lineWidth   = Math.max(width * 0.25, 1);
+        ctx.stroke();
+      }
+
+      // ---- 頭の輝点（彗星核） ----
+      const head = points[points.length - 1];
+      const hc   = colors[colors.length - 1];
+      const grad = ctx.createRadialGradient(head.x, head.y, 0, head.x, head.y, 28);
+      grad.addColorStop(0,   `rgba(255,255,255,${head.life * 0.95})`);
+      grad.addColorStop(0.2, `rgba(${hc[0]},${hc[1]},${hc[2]},${head.life * 0.8})`);
+      grad.addColorStop(0.6, `rgba(${hc[0]},${hc[1]},${hc[2]},${head.life * 0.2})`);
+      grad.addColorStop(1,   'rgba(0,0,0,0)');
+      ctx.beginPath();
+      ctx.arc(head.x, head.y, 28, 0, Math.PI * 2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+    }
+
+    // ----- スパーク（飛び散る火花） -----
+    for (let i = sparks.length - 1; i >= 0; i--) {
+      const s = sparks[i];
+      s.x   += s.vx;
+      s.y   += s.vy;
+      s.vy  += 0.08; // 重力
+      s.life -= 0.045;
+
+      if (s.life <= 0) { sparks.splice(i, 1); continue; }
+
+      const sc = colors[Math.floor(Math.random() * colors.length)];
+      const grad = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.size * 3);
+      grad.addColorStop(0, `rgba(255,255,255,${s.life})`);
+      grad.addColorStop(0.4, `rgba(${sc[0]},${sc[1]},${sc[2]},${s.life * 0.8})`);
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.size * 3, 0, Math.PI * 2);
+      ctx.fillStyle = grad;
+      ctx.fill();
+    }
+
+    // ポイントのlife減衰（尾がゆっくり消える）
+    for (let i = 0; i < points.length; i++) {
+      points[i].life -= 0.012 * (1 - i / points.length);
+      if (points[i].life < 0) points[i].life = 0;
+    }
+    // 完全消滅したものを削除
+    while (points.length && points[0].life <= 0) points.shift();
+
+    requestAnimationFrame(draw);
+  }
+  draw();
+})();
+
+// ===== コンソールコピー =====
+const consoleLogs = [];
+const _log = console.log.bind(console);
+const _err = console.error.bind(console);
+console.log   = (...a) => { consoleLogs.push('[LOG] '+a.join(' ')); _log(...a); };
+console.error = (...a) => { consoleLogs.push('[ERR] '+a.join(' ')); _err(...a); };
+function copyConsole() {
+  navigator.clipboard.writeText(consoleLogs.join('\n') || '（ログなし）')
+    .then(() => alert('コピーしました'))
+    .catch(() => alert('コピー失敗'));
+}
+</script>
+</body>
+</html>
