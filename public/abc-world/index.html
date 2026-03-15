@@ -347,6 +347,7 @@ body.lang-vi #bg-layer::after {
       <div id="idle-title">🌍 World ABC 🌎</div>
       <div id="idle-sub" id="idle-sub">Press a key! / キーを押してみよう！</div>
       <div id="idle-hint">A〜Z</div>
+      <div style="position:absolute;bottom:2vh;right:2vw;font-size:1.1vw;color:rgba(255,255,255,0.18);letter-spacing:0.1em;font-family:'Nunito',sans-serif;pointer-events:none;">v1.2.0</div>
     </div>
 
     <!-- 表示 -->
@@ -360,7 +361,7 @@ body.lang-vi #bg-layer::after {
     </div>
   </div>
 
-  <div id="hint">A〜Z のキーを押してね</div>
+  <div id="hint">A〜Z のキーを押してね　<span style="opacity:0.5;font-size:0.9em;">｜ Esc で全画面解除</span></div>
   <button id="console-btn" onclick="copyConsole()">📋 console</button>
 
 </div>
@@ -850,8 +851,9 @@ document.addEventListener('keydown', (e) => {
     switchLang(langs[(idx + 1) % langs.length]);
     return;
   }
-  // F5・Ctrl系など全画面に関係ない特殊キーを抑制
-  if (e.key === 'F5' || (e.ctrlKey && ['r','R','w','W','t','T','n','N'].includes(e.key))) {
+  // Ctrl+R / Cmd+R はリフレッシュを許可、それ以外の特殊キーを抑制
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'r' || e.key === 'R')) return; // リフレッシュ許可
+  if (e.key === 'F5' || (e.ctrlKey && ['w','W','t','T','n','N'].includes(e.key))) {
     e.preventDefault(); return;
   }
 
@@ -1065,13 +1067,18 @@ document.addEventListener('keydown', (e) => {
 document.addEventListener('contextmenu', (e) => e.preventDefault());
 
 // ===== PrintScreen無効化 =====
-// keyupで検知してクリップボードを上書き
 document.addEventListener('keyup', (e) => {
   if (e.key === 'PrintScreen') {
-    navigator.clipboard.writeText('').catch(() => {});
+    // クリップボードを透明1pxのcanvasデータで上書き
+    try {
+      const c = document.createElement('canvas');
+      c.width = 1; c.height = 1;
+      c.toBlob(blob => { if (blob) navigator.clipboard.write([new ClipboardItem({'image/png': blob})]).catch(()=>{}); });
+    } catch(err) {
+      navigator.clipboard.writeText('').catch(() => {});
+    }
   }
 });
-// PrintScreen押下時もブロック試行
 document.addEventListener('keydown', (e) => {
   if (e.key === 'PrintScreen') e.preventDefault();
 });
