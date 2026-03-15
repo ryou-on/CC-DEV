@@ -648,52 +648,247 @@ function spawnParticles(color) {
   }
 }
 
-// ===== キー押下 =====
-document.addEventListener('keydown', (e) => {
-  if (e.repeat) return; // 押しっぱなしリピートは無視
-  const key = e.key.toUpperCase();
-  const data = LANGS[currentLang]?.data;
-  if (!data || !data[key]) return;
+// ===== イースターエッグ定義 =====
+const EASTER_EGGS = [
+  // 各エッグ: { emoji, message, sound関数, bg }
+  {
+    emoji: '🎺', message: 'パパパパパパーン！',
+    bg: '#FFD700',
+    sound: (ac) => {
+      // ファンファーレ風（ド・ミ・ソ・ド）
+      [[523,0],[659,0.25],[784,0.5],[1047,0.75]].forEach(([f,t]) => {
+        const o = ac.createOscillator();
+        const g = ac.createGain();
+        o.connect(g); g.connect(ac.destination);
+        o.type = 'sawtooth'; o.frequency.value = f;
+        g.gain.setValueAtTime(0, ac.currentTime + t);
+        g.gain.linearRampToValueAtTime(0.4, ac.currentTime + t + 0.05);
+        g.gain.linearRampToValueAtTime(0, ac.currentTime + t + 0.35);
+        o.start(ac.currentTime + t); o.stop(ac.currentTime + t + 0.4);
+      });
+    }
+  },
+  {
+    emoji: '🥁', message: 'ドンドンドン！',
+    bg: '#FF6B35',
+    sound: (ac) => {
+      // ドラムロール風
+      for (let i = 0; i < 8; i++) {
+        const buf = ac.createBuffer(1, ac.sampleRate * 0.1, ac.sampleRate);
+        const d = buf.getChannelData(0);
+        for (let j = 0; j < d.length; j++) d[j] = (Math.random() * 2 - 1) * Math.pow(1 - j/d.length, 2);
+        const s = ac.createBufferSource();
+        const g = ac.createGain();
+        s.buffer = buf; s.connect(g); g.connect(ac.destination);
+        g.gain.value = 0.5;
+        s.start(ac.currentTime + i * 0.08);
+      }
+    }
+  },
+  {
+    emoji: '⭐', message: 'きらきら〜！',
+    bg: '#9B59B6',
+    sound: (ac) => {
+      // きらきら星風の高音
+      [1047,1319,1568,2093,1568,1319,1047].forEach((f,i) => {
+        const o = ac.createOscillator();
+        const g = ac.createGain();
+        o.connect(g); g.connect(ac.destination);
+        o.type = 'sine'; o.frequency.value = f;
+        const t = ac.currentTime + i * 0.18;
+        g.gain.setValueAtTime(0.3, t);
+        g.gain.linearRampToValueAtTime(0, t + 0.15);
+        o.start(t); o.stop(t + 0.2);
+      });
+    }
+  },
+  {
+    emoji: '🚀', message: 'しゅっぱーつ！',
+    bg: '#2C3E50',
+    sound: (ac) => {
+      // ロケット発射音（周波数上昇）
+      const o = ac.createOscillator();
+      const g = ac.createGain();
+      o.connect(g); g.connect(ac.destination);
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(80, ac.currentTime);
+      o.frequency.exponentialRampToValueAtTime(800, ac.currentTime + 0.8);
+      g.gain.setValueAtTime(0.4, ac.currentTime);
+      g.gain.linearRampToValueAtTime(0, ac.currentTime + 0.8);
+      o.start(); o.stop(ac.currentTime + 0.8);
+    }
+  },
+  {
+    emoji: '🌈', message: 'にじいろ〜！',
+    bg: 'linear-gradient(135deg,#FF6B6B,#FFD93D,#6BCB77,#4D96FF)',
+    sound: (ac) => {
+      // 上昇アルペジオ
+      [262,330,392,523,659,784,1047].forEach((f,i) => {
+        const o = ac.createOscillator();
+        const g = ac.createGain();
+        o.connect(g); g.connect(ac.destination);
+        o.type = 'triangle'; o.frequency.value = f;
+        const t = ac.currentTime + i * 0.1;
+        g.gain.setValueAtTime(0.25, t);
+        g.gain.linearRampToValueAtTime(0, t + 0.2);
+        o.start(t); o.stop(t + 0.25);
+      });
+    }
+  },
+  {
+    emoji: '💥', message: 'ドッカーン！',
+    bg: '#E74C3C',
+    sound: (ac) => {
+      // 爆発音
+      const buf = ac.createBuffer(1, ac.sampleRate * 0.6, ac.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/d.length, 1.5);
+      const s = ac.createBufferSource();
+      const g = ac.createGain();
+      const f = ac.createBiquadFilter();
+      f.type = 'lowpass'; f.frequency.value = 300;
+      s.buffer = buf; s.connect(f); f.connect(g); g.connect(ac.destination);
+      g.gain.value = 1.0;
+      s.start();
+    }
+  },
+  {
+    emoji: '🎵', message: 'ランランラン♪',
+    bg: '#1ABC9C',
+    sound: (ac) => {
+      // ポップなメロディ
+      [523,523,784,784,880,880,784,0,659,659,587,587,523].forEach((f,i) => {
+        if (!f) return;
+        const o = ac.createOscillator();
+        const g = ac.createGain();
+        o.connect(g); g.connect(ac.destination);
+        o.type = 'square'; o.frequency.value = f;
+        const t = ac.currentTime + i * 0.22;
+        g.gain.setValueAtTime(0.15, t);
+        g.gain.linearRampToValueAtTime(0, t + 0.18);
+        o.start(t); o.stop(t + 0.22);
+      });
+    }
+  },
+  {
+    emoji: '🐱', message: 'にゃーん！',
+    bg: '#E67E22',
+    sound: (ac) => {
+      // 猫の鳴き声風
+      const o = ac.createOscillator();
+      const g = ac.createGain();
+      o.connect(g); g.connect(ac.destination);
+      o.type = 'sine';
+      o.frequency.setValueAtTime(600, ac.currentTime);
+      o.frequency.linearRampToValueAtTime(900, ac.currentTime + 0.15);
+      o.frequency.linearRampToValueAtTime(500, ac.currentTime + 0.45);
+      g.gain.setValueAtTime(0.35, ac.currentTime);
+      g.gain.linearRampToValueAtTime(0, ac.currentTime + 0.5);
+      o.start(); o.stop(ac.currentTime + 0.5);
+    }
+  },
+];
 
-  // 初回キー押下時に全画面へ（ユーザー操作起点なので許可される）
-  if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+// AudioContext（初回ユーザー操作後に生成）
+let audioCtx = null;
+function getAC() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
 
-  const list  = data[key];
-  const item  = list[Math.floor(Math.random() * list.length)];
-  const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+// ===== イースターエッグ発動 =====
+const eggOverlay = document.createElement('div');
+eggOverlay.style.cssText = `
+  position:absolute; inset:0; z-index:80;
+  display:none; flex-direction:column;
+  align-items:center; justify-content:center; gap:2vh;
+  pointer-events:none;
+`;
+document.getElementById('stage').appendChild(eggOverlay);
 
-  // 待機画面を隠す
-  idleEl.classList.add('hidden');
+let eggTimer = null;
+function triggerEasterEgg() {
+  const egg = EASTER_EGGS[Math.floor(Math.random() * EASTER_EGGS.length)];
 
-  // 表示更新
-  resetAnim(letterEl); letterEl.textContent = key;
-  resetAnim(illustEl); illustEl.textContent = item.emoji;
-  resetAnim(mainWordEl); mainWordEl.textContent = item.w;
-  subWordEl.textContent = item.s || '';
+  // 音
+  try { egg.sound(getAC()); } catch(e) {}
 
-  displayEl.classList.add('show');
+  // オーバーレイ表示
+  eggOverlay.innerHTML = `
+    <div style="font-size:18vw;animation:letterPop .4s cubic-bezier(.34,1.56,.64,1) both;filter:drop-shadow(0 0 4vw white)">${egg.emoji}</div>
+    <div style="font-family:'Fredoka One',cursive;font-size:5vw;color:#fff;
+      text-shadow:0 0 3vw rgba(255,255,255,.8),0 3px 0 rgba(0,0,0,.4);
+      animation:wordSlide .4s .15s ease-out both">${egg.message}</div>
+  `;
+  eggOverlay.style.background = egg.bg.includes('gradient') ? egg.bg : egg.bg + 'cc';
+  eggOverlay.style.display = 'flex';
 
   // フラッシュ
-  flashEl.style.background = color;
+  flashEl.style.background = typeof egg.bg === 'string' && !egg.bg.includes('gradient') ? egg.bg : '#fff';
   flashEl.classList.remove('flash');
   void flashEl.offsetWidth;
   flashEl.classList.add('flash');
 
-  // パーティクル
-  spawnParticles(color);
+  // スパーク
+  spawnParticles(typeof egg.bg === 'string' && !egg.bg.includes('gradient') ? egg.bg : '#fff');
 
-  // 音声（単語を読み上げ）
-  speak(currentLang, item.w);
-});
+  // 1.5秒後に消す
+  clearTimeout(eggTimer);
+  eggTimer = setTimeout(() => { eggOverlay.style.display = 'none'; }, 1500);
+}
 
-// ===== タブキーでタブ切り替え（Tabキー） =====
+// ===== キー押下 =====
 document.addEventListener('keydown', (e) => {
+  if (e.repeat) return; // 押しっぱなしリピートは無視
+
+  // Escのみ全画面解除を許可、それ以外の特殊キーはブロック
+  if (e.key === 'Escape') return; // ブラウザのEsc処理に任せる（全画面解除）
   if (e.key === 'Tab') {
     e.preventDefault();
     const langs = Object.keys(LANGS);
     const idx = langs.indexOf(currentLang);
     switchLang(langs[(idx + 1) % langs.length]);
+    return;
   }
+  // F5・Ctrl系など全画面に関係ない特殊キーを抑制
+  if (e.key === 'F5' || (e.ctrlKey && ['r','R','w','W','t','T','n','N'].includes(e.key))) {
+    e.preventDefault(); return;
+  }
+
+  const key = e.key.toUpperCase();
+  const data = LANGS[currentLang]?.data;
+
+  // 初回キー押下時に全画面へ
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+
+  // A-Zで対応単語がある → 通常表示
+  if (data && data[key]) {
+    const list  = data[key];
+    const item  = list[Math.floor(Math.random() * list.length)];
+    const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+
+    idleEl.classList.add('hidden');
+    eggOverlay.style.display = 'none';
+
+    resetAnim(letterEl); letterEl.textContent = key;
+    resetAnim(illustEl); illustEl.textContent = item.emoji;
+    resetAnim(mainWordEl); mainWordEl.textContent = item.w;
+    subWordEl.textContent = item.s || '';
+    displayEl.classList.add('show');
+
+    flashEl.style.background = color;
+    flashEl.classList.remove('flash');
+    void flashEl.offsetWidth;
+    flashEl.classList.add('flash');
+
+    spawnParticles(color);
+    speak(currentLang, item.w);
+
+  } else if (e.key.length === 1) {
+    // 対応単語がない文字キー（記号・数字など） → イースターエッグ
+    triggerEasterEgg();
+  }
+  // それ以外（矢印・Shift・Alt・Metaなど）は何もしない
 });
 
 // ===== マウス軌跡 =====
