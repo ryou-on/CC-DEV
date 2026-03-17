@@ -123,3 +123,30 @@ public/{project-name}/
 | `[AndroidCC]` | Androidアプリ |
 | `[BMCC]` | ブックマークレット |
 | `[IDEA]` | 企画・ブレスト |
+
+---
+
+## hihaho固有ルール
+
+- iframeはモーダルopen時のみ生成、close時に必ず破棄する
+- カードサムネイルにiframeを使わない（1表示ごとに課金発生）
+- hihaho記事CTA末尾: 「『見るだけの動画から触れる動画へ』...スプライングローバルまでお問い合わせください。」+ splineglobal.comリンク
+
+---
+
+## Claude API利用ルール
+
+- ストリーミング必須: fetch + TextDecoder + chunkリアルタイム表示
+- ローディング表示: スピナー +「生成中...（X字）」文字カウンター
+- モデル: claude-sonnet-4-20250514
+- max_tokens: 1000（Artifact内）/ 4096（エージェント）
+
+---
+
+## エージェント設計原則（Claude認定アーキテクト準拠）
+
+- stop_reasonで終了判定する（"end_turn" = 完了 / "tool_use" = ツール実行して継続）
+- 自然言語で終了判定しない（「完了しました」検知はNG）
+- サブエージェントに必要な情報はすべてプロンプトに明示的に渡す
+- ツール説明文には「何をするか・入力形式・似たツールとの使い分け」を含める
+- エラー種別: Transient（リトライ可）/ Validation（修正後リトライ）/ Business・Permission（リトライ不可）
