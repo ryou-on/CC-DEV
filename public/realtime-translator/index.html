@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Realtime Translator - 日英リアルタイム翻訳</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Noto+Sans+JP:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* ===== ベーススタイル ===== */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    background: linear-gradient(160deg, #0a0a0f 0%, #111827 50%, #0f172a 100%);
+    color: #e2e8f0;
+    font-family: 'Noto Sans JP', 'DM Sans', sans-serif;
+  }
+
+  /* ===== ヘッダー ===== */
+  header {
+    padding: 24px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .header-left { display: flex; align-items: center; gap: 12px; }
+  .logo {
+    width: 36px; height: 36px; border-radius: 10px;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; color: #fff;
+  }
+  header h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
+  .badge {
+    font-size: 11px; color: #6366f1;
+    background: rgba(99,102,241,0.12);
+    padding: 2px 8px; border-radius: 6px; font-weight: 500;
+  }
+  .btn-console {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #94a3b8; padding: 6px 14px; border-radius: 8px;
+    cursor: pointer; font-size: 12px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* ===== メイン ===== */
+  main { max-width: 960px; margin: 0 auto; padding: 32px 24px; }
+
+  /* ===== APIキー入力 ===== */
+  .api-key-bar {
+    display: flex; gap: 8px; margin-bottom: 24px;
+    align-items: center;
+  }
+  .api-key-bar input {
+    flex: 1; padding: 10px 14px; border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.04); color: #e2e8f0;
+    font-size: 13px; font-family: 'JetBrains Mono', monospace;
+    outline: none;
+  }
+  .api-key-bar input:focus { border-color: rgba(99,102,241,0.4); }
+  .api-key-bar input::placeholder { color: #475569; }
+  .api-key-bar .status {
+    font-size: 11px; color: #64748b; white-space: nowrap;
+  }
+  .api-key-bar .status.ok { color: #4ade80; }
+
+  /* ===== 言語切り替え ===== */
+  .lang-bar {
+    display: flex; align-items: center; justify-content: center;
+    gap: 16px; margin-bottom: 28px;
+  }
+  .lang-label {
+    font-size: 15px; font-weight: 600; color: #c7d2fe;
+    padding: 8px 20px; background: rgba(99,102,241,0.1);
+    border-radius: 10px; min-width: 100px; text-align: center;
+  }
+  .btn-swap {
+    width: 44px; height: 44px; border-radius: 50%;
+    border: 2px solid rgba(99,102,241,0.3);
+    background: rgba(99,102,241,0.08); color: #818cf8;
+    cursor: pointer; font-size: 20px;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.3s;
+  }
+  .btn-swap:hover { background: rgba(99,102,241,0.2); transform: rotate(180deg); }
+
+  /* ===== 翻訳エリア ===== */
+  .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 700px) { .panels { grid-template-columns: 1fr; } }
+
+  .panel {
+    border-radius: 16px; padding: 20px; position: relative;
+  }
+  .panel-input {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+  .panel-output {
+    background: rgba(99,102,241,0.04);
+    border: 1px solid rgba(99,102,241,0.12);
+  }
+  .panel-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 12px; font-size: 12px; color: #64748b;
+  }
+  .panel-label {
+    font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .panel-header-left { display: flex; align-items: center; gap: 8px; }
+
+  textarea {
+    width: 100%; min-height: 280px; background: transparent;
+    border: none; color: #e2e8f0; font-size: 16px; line-height: 1.8;
+    resize: vertical; outline: none;
+    font-family: 'Noto Sans JP', 'DM Sans', sans-serif;
+  }
+  textarea::placeholder { color: #475569; }
+  .output-text {
+    min-height: 280px; font-size: 16px; line-height: 1.8;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .output-placeholder { color: #475569; font-style: italic; }
+
+  /* ===== マイクボタン ===== */
+  .btn-mic {
+    width: 32px; height: 32px; border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.05); color: #94a3b8;
+    cursor: pointer; font-size: 14px;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s;
+  }
+  .btn-mic.active {
+    border: 2px solid #ef4444;
+    background: rgba(239,68,68,0.15); color: #f87171;
+    animation: micPulse 1.5s infinite;
+  }
+  .listening-indicator {
+    color: #f87171; font-size: 11px; font-weight: 500;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .listening-dot {
+    display: inline-block; width: 6px; height: 6px;
+    border-radius: 50%; background: #ef4444;
+    animation: pulse 1s infinite;
+  }
+
+  /* ===== ステータス ===== */
+  .translating {
+    color: #818cf8; display: flex; align-items: center; gap: 6px;
+    font-size: 12px;
+  }
+  .translating-dot {
+    display: inline-block; width: 6px; height: 6px;
+    border-radius: 50%; background: #818cf8;
+    animation: pulse 1s infinite;
+  }
+  .btn-copy {
+    background: rgba(99,102,241,0.15); border: none;
+    color: #a5b4fc; padding: 4px 10px; border-radius: 6px;
+    cursor: pointer; font-size: 11px;
+  }
+  .btn-copy:hover { background: rgba(99,102,241,0.25); }
+
+  /* ===== エラー ===== */
+  .error-bar {
+    margin-top: 16px; padding: 12px 16px;
+    background: rgba(239,68,68,0.1);
+    border: 1px solid rgba(239,68,68,0.2);
+    border-radius: 10px; color: #fca5a5; font-size: 13px;
+  }
+
+  /* ===== デバッグコンソール ===== */
+  .debug-console {
+    margin-top: 24px; background: rgba(0,0,0,0.4);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px; padding: 16px;
+  }
+  .debug-header {
+    display: flex; justify-content: space-between; margin-bottom: 8px;
+  }
+  .debug-label {
+    font-size: 11px; font-weight: 600; color: #64748b;
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .btn-copy-console {
+    background: rgba(255,255,255,0.06); border: none;
+    color: #94a3b8; padding: 3px 10px; border-radius: 5px;
+    cursor: pointer; font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .debug-logs {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; color: #94a3b8;
+    max-height: 160px; overflow: auto; line-height: 1.7;
+  }
+  .debug-logs .empty { color: #475569; }
+
+  /* ===== アニメーション ===== */
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+  @keyframes micPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); }
+    50% { box-shadow: 0 0 0 8px rgba(239,68,68,0); }
+  }
+
+  /* ===== スクロールバー ===== */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<!-- ===== ヘッダー ===== -->
+<header>
+  <div class="header-left">
+    <div class="logo">翻</div>
+    <h1>Realtime Translator</h1>
+    <span class="badge">Claude API</span>
+  </div>
+  <button class="btn-console" id="btnConsole">Console ▼</button>
+</header>
+
+<main>
+  <!-- APIキー入力 -->
+  <div class="api-key-bar">
+    <input type="password" id="apiKey" placeholder="sk-ant-... Claude APIキーを入力" autocomplete="off">
+    <span class="status" id="apiStatus">未設定</span>
+  </div>
+
+  <!-- 言語切り替え -->
+  <div class="lang-bar">
+    <div class="lang-label" id="srcLabel">日本語</div>
+    <button class="btn-swap" id="btnSwap" title="入出力を入れ替え">⇄</button>
+    <div class="lang-label" id="tgtLabel">English</div>
+  </div>
+
+  <!-- 翻訳パネル -->
+  <div class="panels">
+    <!-- 入力 -->
+    <div class="panel panel-input">
+      <div class="panel-header">
+        <div class="panel-header-left">
+          <span class="panel-label">入力</span>
+          <button class="btn-mic" id="btnMic" title="音声入力を開始">🎤</button>
+          <span class="listening-indicator hidden" id="listeningIndicator">
+            <span class="listening-dot"></span> 認識中...
+          </span>
+        </div>
+        <span id="inputCount">0 文字</span>
+      </div>
+      <textarea id="inputArea" placeholder="日本語を入力してください..."></textarea>
+    </div>
+
+    <!-- 出力 -->
+    <div class="panel panel-output">
+      <div class="panel-header">
+        <span class="panel-label">翻訳結果</span>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span class="translating hidden" id="translatingIndicator">
+            <span class="translating-dot"></span>
+            生成中...（<span id="charCount">0</span>字）
+          </span>
+          <button class="btn-copy hidden" id="btnCopy">コピー</button>
+        </div>
+      </div>
+      <div class="output-text" id="outputArea">
+        <span class="output-placeholder" id="outputPlaceholder">Translation will appear here...</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- エラー -->
+  <div class="error-bar hidden" id="errorBar"></div>
+
+  <!-- デバッグコンソール -->
+  <div class="debug-console hidden" id="debugConsole">
+    <div class="debug-header">
+      <span class="debug-label">Debug Console</span>
+      <button class="btn-copy-console" id="btnCopyConsole">📋 コピー</button>
+    </div>
+    <div class="debug-logs" id="debugLogs"><span class="empty">ログなし</span></div>
+  </div>
+</main>
+
+<script>
+// ===== リアルタイム翻訳アプリ =====
+// Claude APIストリーミング + Web Speech API音声入力
+
+(() => {
+  'use strict';
+
+  // --- 定数 ---
+  const DEBOUNCE_MS = 600;
+
+  // --- 状態 ---
+  let direction = 'ja2en';       // 翻訳方向
+  let isTranslating = false;     // 翻訳中フラグ
+  let isListening = false;       // 音声認識中フラグ
+  let abortController = null;    // fetch中断用
+  let debounceTimer = null;      // デバウンスタイマー
+  let recognition = null;        // SpeechRecognitionインスタンス
+  let finalTranscript = '';      // 音声認識の確定テキスト蓄積
+  const logs = [];               // コンソールログ
+
+  // --- DOM要素 ---
+  const $ = (id) => document.getElementById(id);
+  const apiKeyInput   = $('apiKey');
+  const apiStatus     = $('apiStatus');
+  const srcLabel      = $('srcLabel');
+  const tgtLabel      = $('tgtLabel');
+  const btnSwap       = $('btnSwap');
+  const btnMic        = $('btnMic');
+  const listeningInd  = $('listeningIndicator');
+  const inputArea     = $('inputArea');
+  const inputCount    = $('inputCount');
+  const outputArea    = $('outputArea');
+  const outputPH      = $('outputPlaceholder');
+  const translatingInd = $('translatingIndicator');
+  const charCountEl   = $('charCount');
+  const btnCopy       = $('btnCopy');
+  const errorBar      = $('errorBar');
+  const btnConsole    = $('btnConsole');
+  const debugConsole  = $('debugConsole');
+  const debugLogs     = $('debugLogs');
+  const btnCopyConsole = $('btnCopyConsole');
+
+  // --- ユーティリティ ---
+  function addLog(msg) {
+    const ts = new Date().toLocaleTimeString('ja-JP');
+    const entry = `[${ts}] ${msg}`;
+    logs.push(entry);
+    if (logs.length > 50) logs.shift();
+    renderLogs();
+  }
+
+  function renderLogs() {
+    if (logs.length === 0) {
+      debugLogs.innerHTML = '<span class="empty">ログなし</span>';
+    } else {
+      debugLogs.innerHTML = logs.map(l => `<div>${escapeHtml(l)}</div>`).join('');
+      debugLogs.scrollTop = debugLogs.scrollHeight;
+    }
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function showError(msg) {
+    errorBar.textContent = '⚠ ' + msg;
+    errorBar.classList.remove('hidden');
+  }
+  function hideError() { errorBar.classList.add('hidden'); }
+
+  function updateLabels() {
+    srcLabel.textContent = direction === 'ja2en' ? '日本語' : 'English';
+    tgtLabel.textContent = direction === 'ja2en' ? 'English' : '日本語';
+    inputArea.placeholder = direction === 'ja2en'
+      ? '日本語を入力してください...'
+      : 'Type in English...';
+    outputPH.textContent = direction === 'ja2en'
+      ? 'Translation will appear here...'
+      : '翻訳結果がここに表示されます...';
+  }
+
+  // --- APIキー管理 ---
+  // ローカルストレージに保存
+  const savedKey = localStorage.getItem('claude_api_key') || '';
+  if (savedKey) {
+    apiKeyInput.value = savedKey;
+    apiStatus.textContent = '設定済み ✓';
+    apiStatus.classList.add('ok');
+  }
+
+  apiKeyInput.addEventListener('input', () => {
+    const key = apiKeyInput.value.trim();
+    localStorage.setItem('claude_api_key', key);
+    if (key) {
+      apiStatus.textContent = '設定済み ✓';
+      apiStatus.classList.add('ok');
+    } else {
+      apiStatus.textContent = '未設定';
+      apiStatus.classList.remove('ok');
+    }
+  });
+
+  // --- ストリーミング翻訳 ---
+  async function translate(text) {
+    if (!text.trim()) {
+      outputArea.innerHTML = `<span class="output-placeholder">${outputPH.textContent}</span>`;
+      btnCopy.classList.add('hidden');
+      return;
+    }
+
+    const apiKey = apiKeyInput.value.trim();
+    if (!apiKey) {
+      showError('APIキーを入力してください');
+      return;
+    }
+
+    // 前回のリクエストをキャンセル
+    if (abortController) abortController.abort();
+    abortController = new AbortController();
+
+    isTranslating = true;
+    hideError();
+    outputArea.textContent = '';
+    btnCopy.classList.add('hidden');
+    translatingInd.classList.remove('hidden');
+    charCountEl.textContent = '0';
+
+    const sourceLang = direction === 'ja2en' ? '日本語' : '英語';
+    const targetLang = direction === 'ja2en' ? '英語' : '日本語';
+    addLog(`翻訳開始: ${sourceLang}→${targetLang} (${text.length}文字)`);
+
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 1000,
+          stream: true,
+          system: `あなたはプロの翻訳者です。${sourceLang}を${targetLang}に自然に翻訳してください。翻訳結果のみを出力し、説明や注釈は一切不要です。`,
+          messages: [{ role: 'user', content: text }],
+        }),
+        signal: abortController.signal,
+      });
+
+      if (!res.ok) {
+        const errBody = await res.text();
+        throw new Error(`API Error ${res.status}: ${errBody.slice(0, 200)}`);
+      }
+
+      // SSEストリーム読み取り
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let fullText = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const data = line.slice(6).trim();
+          if (data === '[DONE]') break;
+
+          try {
+            const parsed = JSON.parse(data);
+            if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'text_delta') {
+              fullText += parsed.delta.text;
+              outputArea.textContent = fullText;
+              charCountEl.textContent = fullText.length;
+            }
+          } catch {
+            // JSON解析失敗は無視
+          }
+        }
+      }
+
+      addLog(`翻訳完了: ${fullText.length}文字`);
+      if (fullText) btnCopy.classList.remove('hidden');
+
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        addLog('翻訳キャンセル');
+        return;
+      }
+      showError(err.message);
+      addLog(`エラー: ${err.message}`);
+    } finally {
+      isTranslating = false;
+      translatingInd.classList.add('hidden');
+    }
+  }
+
+  // --- テキスト入力（デバウンス付き） ---
+  inputArea.addEventListener('input', () => {
+    inputCount.textContent = inputArea.value.length + ' 文字';
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => translate(inputArea.value), DEBOUNCE_MS);
+  });
+
+  // --- 入出力入れ替え ---
+  btnSwap.addEventListener('click', () => {
+    const prev = outputArea.textContent;
+    direction = direction === 'ja2en' ? 'en2ja' : 'ja2en';
+    updateLabels();
+
+    // 音声認識中なら停止
+    if (isListening) stopListening();
+
+    inputArea.value = prev;
+    inputCount.textContent = prev.length + ' 文字';
+    outputArea.innerHTML = `<span class="output-placeholder">${outputPH.textContent}</span>`;
+    btnCopy.classList.add('hidden');
+    finalTranscript = prev;
+
+    if (prev.trim()) {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => translate(prev), 100);
+    }
+  });
+
+  // --- コピー ---
+  btnCopy.addEventListener('click', () => {
+    navigator.clipboard.writeText(outputArea.textContent);
+    addLog('翻訳結果をコピーしました');
+    btnCopy.textContent = 'コピー済み ✓';
+    setTimeout(() => { btnCopy.textContent = 'コピー'; }, 1500);
+  });
+
+  // --- デバッグコンソール ---
+  let consoleOpen = false;
+  btnConsole.addEventListener('click', () => {
+    consoleOpen = !consoleOpen;
+    debugConsole.classList.toggle('hidden', !consoleOpen);
+    btnConsole.textContent = consoleOpen ? 'Console ▲' : 'Console ▼';
+  });
+  btnCopyConsole.addEventListener('click', () => {
+    navigator.clipboard.writeText(logs.join('\n'));
+    addLog('コンソールログをコピーしました');
+  });
+
+  // ===== 音声認識（Web Speech API） =====
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  if (!SpeechRecognition) {
+    // 非対応ブラウザ
+    btnMic.classList.add('hidden');
+    addLog('⚠ このブラウザは音声認識に非対応です');
+  } else {
+    recognition = new SpeechRecognition();
+    recognition.continuous = true;       // 連続認識モード
+    recognition.interimResults = true;   // 中間結果も取得
+    recognition.lang = 'ja-JP';
+
+    recognition.onresult = (event) => {
+      let interim = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          // 確定テキスト
+          finalTranscript += transcript;
+          inputArea.value = finalTranscript;
+          inputCount.textContent = finalTranscript.length + ' 文字';
+          // 確定したら翻訳をトリガー
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => translate(finalTranscript), DEBOUNCE_MS);
+          addLog(`🎤 確定: "${transcript}"`);
+        } else {
+          interim += transcript;
+        }
+      }
+      // 中間結果もリアルタイム表示
+      if (interim) {
+        inputArea.value = finalTranscript + interim;
+        inputCount.textContent = inputArea.value.length + ' 文字';
+      }
+    };
+
+    recognition.onerror = (event) => {
+      if (event.error === 'no-speech') return; // 無音は無視
+      addLog(`🎤 エラー: ${event.error}`);
+      if (event.error === 'not-allowed') {
+        showError('マイクのアクセスが拒否されました。ブラウザの設定を確認してください。');
+        stopListening();
+      }
+    };
+
+    recognition.onend = () => {
+      // continuous=trueでも途切れることがあるので自動再起動
+      if (isListening) {
+        try { recognition.start(); } catch {}
+      }
+    };
+  }
+
+  function startListening() {
+    if (!recognition) return;
+    recognition.lang = direction === 'ja2en' ? 'ja-JP' : 'en-US';
+    finalTranscript = inputArea.value; // 既存テキストに追記モード
+
+    try {
+      recognition.start();
+      isListening = true;
+      hideError();
+      btnMic.classList.add('active');
+      listeningInd.classList.remove('hidden');
+      addLog(`🎤 音声認識を開始 (${recognition.lang})`);
+    } catch (err) {
+      addLog(`🎤 開始失敗: ${err.message}`);
+      showError('音声認識の開始に失敗しました');
+    }
+  }
+
+  function stopListening() {
+    if (!recognition) return;
+    try { recognition.stop(); } catch {}
+    isListening = false;
+    btnMic.classList.remove('active');
+    listeningInd.classList.add('hidden');
+    addLog('🎤 音声認識を停止');
+  }
+
+  btnMic.addEventListener('click', () => {
+    if (isListening) {
+      stopListening();
+    } else {
+      startListening();
+    }
+  });
+
+  // --- 初期化 ---
+  updateLabels();
+  addLog('アプリ起動');
+})();
+</script>
+</body>
+</html>
