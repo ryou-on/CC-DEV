@@ -3,1095 +3,663 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>🌍 World ABC</title>
+<title>Realtime Translator v0.3.0</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Noto+Sans+JP:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Righteous&family=Baloo+2:wght@800&family=Nunito:wght@400;700;900&display=swap');
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    min-height: 100vh;
+    background: linear-gradient(160deg, #0a0a0f 0%, #111827 50%, #0f172a 100%);
+    color: #e2e8f0; font-family: 'Noto Sans JP', 'DM Sans', sans-serif;
+  }
+  header {
+    padding: 20px 32px; display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .header-left { display: flex; align-items: center; gap: 12px; }
+  .logo {
+    width: 36px; height: 36px; border-radius: 10px;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    display: flex; align-items: center; justify-content: center; font-size: 18px; color: #fff;
+  }
+  .header-title { display: flex; flex-direction: column; }
+  .header-title h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.2; }
+  .header-title .version { font-size: 11px; color: #64748b; font-family: 'JetBrains Mono', monospace; }
+  .badge { font-size: 11px; color: #6366f1; background: rgba(99,102,241,0.12); padding: 2px 8px; border-radius: 6px; font-weight: 500; align-self: flex-start; }
+  .btn-console {
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+    color: #94a3b8; padding: 6px 14px; border-radius: 8px; cursor: pointer;
+    font-size: 12px; font-family: 'JetBrains Mono', monospace;
+  }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px; }
 
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  /* APIキー・マイク選択 */
+  .api-key-bar { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
+  .api-key-bar input {
+    flex: 1; padding: 10px 14px; border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04);
+    color: #e2e8f0; font-size: 13px; font-family: 'JetBrains Mono', monospace; outline: none;
+  }
+  .api-key-bar input:focus { border-color: rgba(99,102,241,0.4); }
+  .api-key-bar input::placeholder { color: #475569; }
+  .api-key-bar .status { font-size: 11px; color: #64748b; white-space: nowrap; }
+  .api-key-bar .status.ok { color: #4ade80; }
+  .mic-bar { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
+  .mic-bar label { font-size: 12px; color: #64748b; white-space: nowrap; display: flex; align-items: center; gap: 6px; }
+  .mic-bar select {
+    flex: 1; padding: 8px 12px; border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04);
+    color: #e2e8f0; font-size: 12px; outline: none; cursor: pointer; appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2394a3b8'%3E%3Cpath d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px;
+  }
+  .mic-bar select:focus { border-color: rgba(99,102,241,0.4); }
+  .mic-bar select option { background: #1e293b; color: #e2e8f0; }
+  .btn-refresh-mic {
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+    color: #94a3b8; padding: 6px 10px; border-radius: 8px; cursor: pointer; font-size: 14px;
+  }
+  .btn-refresh-mic:hover { background: rgba(255,255,255,0.1); }
+  .mic-active-name {
+    font-size: 11px; color: #4ade80; font-family: 'JetBrains Mono', monospace;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px;
+  }
 
-body {
-  font-family: 'Nunito', sans-serif;
-  background: #111;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 100vh;
-  overflow: hidden;
-}
+  /* 言語切り替え */
+  .lang-bar { display: flex; align-items: center; justify-content: center; gap: 16px; margin-bottom: 14px; }
+  .lang-label { font-size: 15px; font-weight: 600; color: #c7d2fe; padding: 8px 20px; background: rgba(99,102,241,0.1); border-radius: 10px; min-width: 100px; text-align: center; }
+  .btn-swap {
+    width: 44px; height: 44px; border-radius: 50%; border: 2px solid rgba(99,102,241,0.3);
+    background: rgba(99,102,241,0.08); color: #818cf8; cursor: pointer; font-size: 20px;
+    display: flex; align-items: center; justify-content: center; transition: all 0.3s;
+  }
+  .btn-swap:hover { background: rgba(99,102,241,0.2); transform: rotate(180deg); }
 
-/* ===== 16:9 ステージ ===== */
-#stage {
-  position: relative;
-  width: 100vw;
-  height: 56.25vw;
-  max-height: 100vh;
-  max-width: 177.78vh;
-  overflow: hidden;
-}
+  /* パネル */
+  .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  @media (max-width: 750px) { .panels { grid-template-columns: 1fr; } }
+  .panel { border-radius: 16px; padding: 16px; }
+  .panel-input { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); }
+  .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 12px; color: #64748b; }
+  .panel-label { font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+  .panel-header-left { display: flex; align-items: center; gap: 8px; }
+  textarea {
+    width: 100%; min-height: 420px; background: transparent; border: none;
+    color: #e2e8f0; font-size: 15px; line-height: 1.8; resize: vertical;
+    outline: none; font-family: 'Noto Sans JP', 'DM Sans', sans-serif;
+  }
+  textarea::placeholder { color: #475569; }
 
-/* ===== 背景（言語ごとに変わる） ===== */
-#bg-layer {
-  position: absolute;
-  inset: 0;
-  transition: background 0.7s ease;
-}
+  /* 右カラム */
+  .output-column { display: flex; flex-direction: column; gap: 12px; }
 
-/* ===== タブバー ===== */
-#tab-bar {
-  position: absolute;
-  top: 0; left: 0; right: 0;
-  height: 8%;
-  display: flex;
-  z-index: 50;
-  background: rgba(0,0,0,0.45);
-  backdrop-filter: blur(8px);
-  border-bottom: 2px solid rgba(255,255,255,0.1);
-}
+  /* リアルタイム翻訳パネル - ホールド表示用 */
+  .panel-realtime {
+    background: rgba(251,191,36,0.04); border: 1px solid rgba(251,191,36,0.15);
+    border-radius: 16px; padding: 16px; transition: opacity 0.8s ease;
+  }
+  .panel-realtime.fading { opacity: 0.3; }
+  .panel-realtime .panel-label { color: #fbbf24; }
+  .realtime-text {
+    min-height: 60px; max-height: 160px; overflow-y: auto;
+    font-size: 16px; line-height: 2; white-space: pre-wrap; word-break: break-word;
+  }
+  .realtime-status {
+    margin-top: 8px; font-size: 11px; color: #64748b;
+    font-family: 'JetBrains Mono', monospace;
+  }
 
-.tab {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.4vw;
-  cursor: pointer;
-  font-family: 'Nunito', sans-serif;
-  font-weight: 900;
-  font-size: 1.5vw;
-  color: rgba(255,255,255,0.45);
-  border-bottom: 3px solid transparent;
-  transition: all 0.25s ease;
-  user-select: none;
-  letter-spacing: 0.03em;
-  padding-bottom: 2px;
-  position: relative;
-}
-.tab:hover { color: rgba(255,255,255,0.8); background: rgba(255,255,255,0.06); }
-.tab.active {
-  color: #fff;
-  border-bottom-color: var(--accent);
-  background: rgba(255,255,255,0.08);
-}
-.tab .flag { font-size: 2vw; line-height: 1; }
-.tab .lang-name { font-size: 1.4vw; }
+  /* 確定翻訳パネル - カード形式 */
+  .panel-confirmed {
+    background: rgba(99,102,241,0.04); border: 1px solid rgba(99,102,241,0.12);
+    border-radius: 16px; padding: 16px; flex: 1;
+  }
+  .confirmed-scroll {
+    max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px;
+  }
+  /* 個別翻訳カード */
+  .translation-card {
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px; padding: 14px 16px; position: relative;
+    animation: cardSlideIn 0.4s ease;
+  }
+  .translation-card .card-num {
+    position: absolute; top: 8px; right: 12px;
+    font-size: 10px; color: #475569; font-family: 'JetBrains Mono', monospace;
+  }
+  .translation-card .card-text {
+    font-size: 15px; line-height: 2; white-space: pre-wrap; word-break: break-word;
+    color: #e2e8f0;
+  }
+  .translation-card .card-time {
+    margin-top: 6px; font-size: 10px; color: #475569;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  @keyframes cardSlideIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
 
-/* ===== メインコンテンツエリア ===== */
-#content {
-  position: absolute;
-  top: 8%; left: 0; right: 0; bottom: 0;
-}
+  .output-placeholder { color: #475569; font-style: italic; }
 
-/* ===== 待機画面 ===== */
-#idle {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1.5vh;
-  z-index: 10;
-  transition: opacity 0.4s;
-  pointer-events: none;
-}
-#idle.hidden { opacity: 0; }
+  /* マイク・ステータス */
+  .btn-mic {
+    width: 32px; height: 32px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.05); color: #94a3b8; cursor: pointer; font-size: 14px;
+    display: flex; align-items: center; justify-content: center; transition: all 0.2s;
+  }
+  .btn-mic.active { border: 2px solid #ef4444; background: rgba(239,68,68,0.15); color: #f87171; animation: micPulse 1.5s infinite; }
+  .listening-indicator { color: #f87171; font-size: 11px; font-weight: 500; display: flex; align-items: center; gap: 4px; }
+  .listening-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #ef4444; animation: pulse 1s infinite; }
+  .translating { color: #fbbf24; display: flex; align-items: center; gap: 6px; font-size: 12px; }
+  .translating-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #fbbf24; animation: pulse 1s infinite; }
+  .btn-copy { background: rgba(99,102,241,0.15); border: none; color: #a5b4fc; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; }
+  .btn-copy:hover { background: rgba(99,102,241,0.25); }
+  .btn-clear { background: rgba(239,68,68,0.1); border: none; color: #fca5a5; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; }
+  .btn-clear:hover { background: rgba(239,68,68,0.2); }
+  .error-bar { margin-top: 16px; padding: 12px 16px; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.2); border-radius: 10px; color: #fca5a5; font-size: 13px; }
 
-#idle-title {
-  font-size: 5.5vw;
-  font-weight: 900;
-  color: #fff;
-  text-shadow: 0 0 4vw var(--accent), 0 3px 0 rgba(0,0,0,0.5);
-  animation: idleFloat 3s ease-in-out infinite;
-  letter-spacing: 0.05em;
-}
-#idle-sub {
-  font-size: 2.2vw;
-  color: rgba(255,255,255,0.6);
-  letter-spacing: 0.08em;
-  text-shadow: 0 2px 8px rgba(0,0,0,0.6);
-}
-#idle-hint {
-  font-size: 1.6vw;
-  color: rgba(255,255,255,0.35);
-  font-style: italic;
-}
-@keyframes idleFloat {
-  0%,100% { transform: translateY(0) rotate(-0.8deg); }
-  50%      { transform: translateY(-1.2vh) rotate(0.8deg); }
-}
+  /* コンソール */
+  .debug-console { margin-top: 24px; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 16px; }
+  .debug-header { display: flex; justify-content: space-between; margin-bottom: 8px; }
+  .debug-label { font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+  .btn-copy-console { background: rgba(255,255,255,0.06); border: none; color: #94a3b8; padding: 3px 10px; border-radius: 5px; cursor: pointer; font-size: 11px; font-family: 'JetBrains Mono', monospace; }
+  .debug-logs { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #94a3b8; max-height: 160px; overflow: auto; line-height: 1.7; }
+  .debug-logs .empty { color: #475569; }
 
-/* ===== 表示エリア ===== */
-#display {
-  position: absolute;
-  inset: 0;
-  display: none;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  z-index: 10;
-}
-#display.show { display: flex; }
-
-#letter {
-  font-size: 20vw;
-  line-height: 0.9;
-  font-weight: 900;
-  color: #fff;
-  text-shadow: 0 0 5vw var(--accent), 0 0.6vw 0 rgba(0,0,0,0.4);
-  animation: letterPop 0.38s cubic-bezier(0.34,1.56,0.64,1) both;
-  z-index: 2;
-}
-@keyframes letterPop {
-  from { transform: scale(0.3) rotate(-12deg); opacity: 0; }
-  to   { transform: scale(1)   rotate(0deg);   opacity: 1; }
-}
-
-#illust {
-  font-size: 14vw;
-  line-height: 1;
-  margin-top: -1.5vw;
-  animation: illustBounce 0.5s 0.1s cubic-bezier(0.34,1.56,0.64,1) both;
-  filter: drop-shadow(0 2vw 3vw rgba(0,0,0,0.5));
-  z-index: 2;
-}
-@keyframes illustBounce {
-  from { transform: scale(0.2) translateY(6vh); opacity: 0; }
-  to   { transform: scale(1)   translateY(0);   opacity: 1; }
-}
-
-#word-area {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.3vw;
-  margin-top: 0.3vw;
-  animation: wordSlide 0.4s 0.2s ease-out both;
-  z-index: 2;
-}
-@keyframes wordSlide {
-  from { transform: translateY(3vh); opacity: 0; }
-  to   { transform: translateY(0);   opacity: 1; }
-}
-
-#main-word {
-  font-size: 4.5vw;
-  font-weight: 900;
-  color: #fff;
-  text-shadow: 0 2px 15px rgba(0,0,0,0.7), 0 0 3vw var(--accent);
-  letter-spacing: 0.04em;
-  text-align: center;
-  max-width: 80vw;
-  line-height: 1.15;
-}
-#sub-word {
-  font-size: 1.8vw;
-  color: rgba(255,255,255,0.6);
-  font-weight: 700;
-  text-shadow: 0 2px 8px rgba(0,0,0,0.6);
-  letter-spacing: 0.06em;
-}
-
-/* ===== フラッシュ ===== */
-#bg-flash {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  pointer-events: none;
-  z-index: 5;
-}
-#bg-flash.flash { animation: flashAnim 0.5s ease-out forwards; }
-@keyframes flashAnim { 0% { opacity: 0.35; } 100% { opacity: 0; } }
-
-/* ===== パーティクル ===== */
-.particle {
-  position: absolute;
-  pointer-events: none;
-  animation: pFly var(--dur) ease-out forwards;
-  z-index: 6;
-}
-@keyframes pFly {
-  0%   { transform: translate(0,0) rotate(0deg) scale(1); opacity: 1; }
-  100% { transform: translate(var(--tx),var(--ty)) rotate(var(--rot)) scale(0); opacity: 0; }
-}
-
-/* ===== ヒント・コンソール ===== */
-#hint {
-  position: absolute;
-  bottom: 2.5vh; left: 50%;
-  transform: translateX(-50%);
-  font-size: 1.4vw;
-  color: rgba(255,255,255,0.28);
-  white-space: nowrap;
-  z-index: 20;
-  letter-spacing: 0.05em;
-}
-#console-btn {
-  position: absolute;
-  bottom: 2vh; right: 1.5vw;
-  z-index: 30;
-  padding: 0.5vh 1vw;
-  background: rgba(0,0,0,0.3);
-  border: 1px solid rgba(255,255,255,0.12);
-  color: rgba(255,255,255,0.3);
-  border-radius: 0.5vw;
-  font-size: 1.1vw;
-  cursor: pointer;
-  font-family: 'Nunito', sans-serif;
-  transition: all 0.2s;
-}
-#console-btn:hover { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.7); }
-
-/* ===== 言語別スタイル ===== */
-
-/* EN：宇宙 */
-body.lang-en #bg-layer {
-  background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
-}
-body.lang-en { --accent: #7C3AED; }
-body.lang-en #letter { font-family: 'Fredoka One', cursive; }
-body.lang-en #main-word { font-family: 'Fredoka One', cursive; }
-
-/* ZU：サバンナ */
-body.lang-zu #bg-layer {
-  background: linear-gradient(160deg, #0d1b3e 0%, #1a3a6e 35%, #c2612a 70%, #6b2700 100%);
-}
-body.lang-zu { --accent: #E67E22; }
-body.lang-zu #letter { font-family: 'Baloo 2', cursive; }
-body.lang-zu #main-word { font-family: 'Baloo 2', cursive; }
-
-/* ES：フィエスタ */
-body.lang-es #bg-layer {
-  background: radial-gradient(ellipse at 50% 40%, #3d0c00 0%, #1a0800 60%, #0a0400 100%);
-}
-body.lang-es { --accent: #E74C3C; }
-body.lang-es #letter { font-family: 'Righteous', cursive; }
-body.lang-es #main-word { font-family: 'Righteous', cursive; }
-
-/* JA：和 */
-body.lang-ja #bg-layer {
-  background: linear-gradient(160deg, #1a0010 0%, #3d0030 40%, #1a0018 70%, #0a000a 100%);
-}
-body.lang-ja { --accent: #FF4081; }
-body.lang-ja #letter { font-family: 'Nunito', sans-serif; font-weight: 900; }
-body.lang-ja #main-word { font-family: 'Nunito', sans-serif; font-weight: 900; }
-
-/* VI：南国 */
-body.lang-vi #bg-layer {
-  background: linear-gradient(160deg, #001a0e 0%, #003d1a 35%, #004d20 65%, #001a0a 100%);
-}
-body.lang-vi { --accent: #00C853; }
-body.lang-vi #letter { font-family: 'Nunito', sans-serif; font-weight: 900; }
-body.lang-vi #main-word { font-family: 'Nunito', sans-serif; font-weight: 900; }
-
-/* ===== 言語別タブ装飾背景 ===== */
-body.lang-en  #tab-bar { border-bottom-color: rgba(124,58,237,0.4); }
-body.lang-zu  #tab-bar { border-bottom-color: rgba(230,126,34,0.4); }
-body.lang-es  #tab-bar { border-bottom-color: rgba(231,76,60,0.4); }
-body.lang-ja  #tab-bar { border-bottom-color: rgba(255,64,129,0.4); }
-body.lang-vi  #tab-bar { border-bottom-color: rgba(0,200,83,0.4); }
-
-/* 日本語専用：和柄パターン背景 */
-body.lang-ja #bg-layer::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background-image: radial-gradient(circle, rgba(255,64,129,0.06) 1px, transparent 1px);
-  background-size: 3vw 3vw;
-}
-
-/* ベトナム語専用：格子パターン */
-body.lang-vi #bg-layer::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(0,200,83,0.05) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0,200,83,0.05) 1px, transparent 1px);
-  background-size: 4vw 4vw;
-}
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+  @keyframes micPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); } 50% { box-shadow: 0 0 0 8px rgba(239,68,68,0); } }
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+  .hidden { display: none !important; }
 </style>
 </head>
-<body class="lang-en">
-<div id="stage">
+<body>
 
-  <!-- 背景 -->
-  <div id="bg-layer"></div>
-  <!-- マウス軌跡canvas -->
-  <canvas id="trail-canvas" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:2;"></canvas>
+<header>
+  <div class="header-left">
+    <div class="logo">翻</div>
+    <div class="header-title"><h1>Realtime Translator</h1><span class="version">v0.3.0</span></div>
+    <span class="badge">Claude API</span>
+  </div>
+  <button class="btn-console" id="btnConsole">Console ▼</button>
+</header>
 
-  <!-- タブバー -->
-  <div id="tab-bar">
-    <div class="tab active" data-lang="en" style="--accent:#7C3AED" onclick="switchLang('en')">
-      <span class="flag">🇺🇸</span><span class="lang-name">English</span>
-    </div>
-    <div class="tab" data-lang="zu" style="--accent:#E67E22" onclick="switchLang('zu')">
-      <span class="flag">🇿🇦</span><span class="lang-name">isiZulu</span>
-    </div>
-    <div class="tab" data-lang="es" style="--accent:#E74C3C" onclick="switchLang('es')">
-      <span class="flag">🇪🇸</span><span class="lang-name">Español</span>
-    </div>
-    <div class="tab" data-lang="ja" style="--accent:#FF4081" onclick="switchLang('ja')">
-      <span class="flag">🇯🇵</span><span class="lang-name">日本語</span>
-    </div>
-    <div class="tab" data-lang="vi" style="--accent:#00C853" onclick="switchLang('vi')">
-      <span class="flag">🇻🇳</span><span class="lang-name">Tiếng Việt</span>
-    </div>
+<main>
+  <div class="api-key-bar">
+    <input type="password" id="apiKey" placeholder="sk-ant-... Claude APIキーを入力" autocomplete="off">
+    <span class="status" id="apiStatus">未設定</span>
+  </div>
+  <div class="mic-bar">
+    <label>🎤 マイク:</label>
+    <select id="micSelect"><option value="">読み込み中...</option></select>
+    <button class="btn-refresh-mic" id="btnRefreshMic" title="マイク一覧を更新">🔄</button>
+    <span class="mic-active-name hidden" id="micActiveName"></span>
+  </div>
+  <div class="lang-bar">
+    <div class="lang-label" id="srcLabel">日本語</div>
+    <button class="btn-swap" id="btnSwap" title="入出力を入れ替え">⇄</button>
+    <div class="lang-label" id="tgtLabel">English</div>
   </div>
 
-  <!-- コンテンツ -->
-  <div id="content">
-    <div id="bg-flash"></div>
-
-    <!-- 待機画面 -->
-    <div id="idle">
-      <div id="idle-title">🌍 World ABC 🌎</div>
-      <div id="idle-sub" id="idle-sub">Press a key! / キーを押してみよう！</div>
-      <div id="idle-hint">A〜Z</div>
-      <div style="position:absolute;bottom:2vh;right:2vw;font-size:1.1vw;color:rgba(255,255,255,0.18);letter-spacing:0.1em;font-family:'Nunito',sans-serif;pointer-events:none;">v1.2.0</div>
+  <div class="panels">
+    <!-- 左：入力 -->
+    <div class="panel panel-input">
+      <div class="panel-header">
+        <div class="panel-header-left">
+          <span class="panel-label">入力</span>
+          <button class="btn-mic" id="btnMic" title="音声入力を開始">🎤</button>
+          <span class="listening-indicator hidden" id="listeningIndicator"><span class="listening-dot"></span> 認識中...</span>
+        </div>
+        <span id="inputCount">0 文字</span>
+      </div>
+      <textarea id="inputArea" placeholder="日本語を入力してください..."></textarea>
     </div>
 
-    <!-- 表示 -->
-    <div id="display">
-      <div id="letter">A</div>
-      <div id="illust">🍎</div>
-      <div id="word-area">
-        <div id="main-word">Apple</div>
-        <div id="sub-word"></div>
+    <!-- 右：翻訳結果 -->
+    <div class="output-column">
+      <!-- リアルタイム翻訳（ホールド表示） -->
+      <div class="panel panel-realtime" id="realtimePanel">
+        <div class="panel-header">
+          <span class="panel-label">🔄 リアルタイム翻訳</span>
+          <span class="translating hidden" id="translatingIndicator">
+            <span class="translating-dot"></span> 生成中...（<span id="charCount">0</span>字）
+          </span>
+        </div>
+        <div class="realtime-text" id="realtimeArea">
+          <span class="output-placeholder">翻訳中のテキストがここに表示...</span>
+        </div>
+        <div class="realtime-status" id="realtimeStatus"></div>
+      </div>
+
+      <!-- 確定翻訳（カード形式で蓄積） -->
+      <div class="panel panel-confirmed">
+        <div class="panel-header">
+          <div class="panel-header-left">
+            <span class="panel-label">✅ 確定翻訳</span>
+            <span id="confirmedCount" style="font-size:11px;color:#64748b"></span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <button class="btn-copy hidden" id="btnCopy">コピー</button>
+            <button class="btn-clear hidden" id="btnClear">クリア</button>
+          </div>
+        </div>
+        <div class="confirmed-scroll" id="confirmedScroll">
+          <span class="output-placeholder" id="confirmedPH">確定した翻訳がカード形式で蓄積されます...</span>
+        </div>
       </div>
     </div>
   </div>
 
-  <div id="hint">A〜Z のキーを押してね　<span style="opacity:0.5;font-size:0.9em;">｜ Esc で全画面解除</span></div>
-  <button id="console-btn" onclick="copyConsole()">📋 console</button>
-
-</div>
+  <div class="error-bar hidden" id="errorBar"></div>
+  <div class="debug-console hidden" id="debugConsole">
+    <div class="debug-header">
+      <span class="debug-label">Debug Console</span>
+      <button class="btn-copy-console" id="btnCopyConsole">📋 コピー</button>
+    </div>
+    <div class="debug-logs" id="debugLogs"><span class="empty">ログなし</span></div>
+  </div>
+</main>
 
 <script>
-// ============================================================
-// ===== 言語データ =====
-// ============================================================
-const LANGS = {
+(() => {
+  'use strict';
 
-  // ---------- English ----------
-  en: {
-    name: 'English', flag: '🇺🇸', voice: 'en-US',
-    idle: ['🌟 ABC Time! 🌟', 'Press any key!', 'A〜Z'],
-    data: {
-      A:[{w:'Apple',     s:'',emoji:'🍎'},{w:'Ant',      s:'',emoji:'🐜'},{w:'Avocado', s:'',emoji:'🥑'},{w:'Airplane',s:'',emoji:'✈️'}],
-      B:[{w:'Banana',    s:'',emoji:'🍌'},{w:'Bear',     s:'',emoji:'🐻'},{w:'Butterfly',s:'',emoji:'🦋'},{w:'Balloon', s:'',emoji:'🎈'}],
-      C:[{w:'Cat',       s:'',emoji:'🐱'},{w:'Cake',     s:'',emoji:'🎂'},{w:'Carrot',  s:'',emoji:'🥕'},{w:'Cow',     s:'',emoji:'🐮'}],
-      D:[{w:'Dog',       s:'',emoji:'🐶'},{w:'Dolphin',  s:'',emoji:'🐬'},{w:'Donut',   s:'',emoji:'🍩'},{w:'Dragon',  s:'',emoji:'🐉'}],
-      E:[{w:'Elephant',  s:'',emoji:'🐘'},{w:'Egg',      s:'',emoji:'🥚'},{w:'Earth',   s:'',emoji:'🌍'},{w:'Eagle',   s:'',emoji:'🦅'}],
-      F:[{w:'Fox',       s:'',emoji:'🦊'},{w:'Frog',     s:'',emoji:'🐸'},{w:'Fish',    s:'',emoji:'🐟'},{w:'Flower',  s:'',emoji:'🌸'}],
-      G:[{w:'Gorilla',   s:'',emoji:'🦍'},{w:'Grape',    s:'',emoji:'🍇'},{w:'Giraffe', s:'',emoji:'🦒'},{w:'Ghost',   s:'',emoji:'👻'}],
-      H:[{w:'Horse',     s:'',emoji:'🐴'},{w:'Hamster',  s:'',emoji:'🐹'},{w:'Heart',   s:'',emoji:'❤️'},{w:'Hippo',   s:'',emoji:'🦛'}],
-      I:[{w:'Ice Cream', s:'',emoji:'🍦'},{w:'Island',   s:'',emoji:'🏝️'},{w:'Igloo',   s:'',emoji:'🏔️'},{w:'Insect',  s:'',emoji:'🐛'}],
-      J:[{w:'Jellyfish', s:'',emoji:'🪼'},{w:'Jaguar',   s:'',emoji:'🐆'},{w:'Juice',   s:'',emoji:'🧃'},{w:'Jet',     s:'',emoji:'🛩️'}],
-      K:[{w:'Koala',     s:'',emoji:'🐨'},{w:'Kangaroo', s:'',emoji:'🦘'},{w:'Key',     s:'',emoji:'🔑'},{w:'Kite',    s:'',emoji:'🪁'}],
-      L:[{w:'Lion',      s:'',emoji:'🦁'},{w:'Lemon',    s:'',emoji:'🍋'},{w:'Lobster', s:'',emoji:'🦞'},{w:'Llama',   s:'',emoji:'🦙'}],
-      M:[{w:'Monkey',    s:'',emoji:'🐒'},{w:'Moon',     s:'',emoji:'🌙'},{w:'Mushroom',s:'',emoji:'🍄'},{w:'Mouse',   s:'',emoji:'🐭'}],
-      N:[{w:'Narwhal',   s:'',emoji:'🐋'},{w:'Nest',     s:'',emoji:'🪺'},{w:'Noodle',  s:'',emoji:'🍜'},{w:'Night',   s:'',emoji:'🌃'}],
-      O:[{w:'Octopus',   s:'',emoji:'🐙'},{w:'Owl',      s:'',emoji:'🦉'},{w:'Orange',  s:'',emoji:'🍊'},{w:'Otter',   s:'',emoji:'🦦'}],
-      P:[{w:'Penguin',   s:'',emoji:'🐧'},{w:'Pizza',    s:'',emoji:'🍕'},{w:'Parrot',  s:'',emoji:'🦜'},{w:'Peach',   s:'',emoji:'🍑'}],
-      Q:[{w:'Queen',     s:'',emoji:'👑'},{w:'Quail',    s:'',emoji:'🐦'},{w:'Quokka',  s:'',emoji:'🦔'}],
-      R:[{w:'Rabbit',    s:'',emoji:'🐰'},{w:'Rainbow',  s:'',emoji:'🌈'},{w:'Robot',   s:'',emoji:'🤖'},{w:'Rocket',  s:'',emoji:'🚀'}],
-      S:[{w:'Swallow',   s:'',emoji:'🐦'},{w:'Strawberry',s:'',emoji:'🍓'},{w:'Snake',  s:'',emoji:'🐍'},{w:'Star',    s:'',emoji:'⭐'}],
-      T:[{w:'Tiger',     s:'',emoji:'🐯'},{w:'Turtle',   s:'',emoji:'🐢'},{w:'Train',   s:'',emoji:'🚂'},{w:'Tulip',   s:'',emoji:'🌷'}],
-      U:[{w:'Unicorn',   s:'',emoji:'🦄'},{w:'Umbrella', s:'',emoji:'☂️'},{w:'UFO',     s:'',emoji:'🛸'}],
-      V:[{w:'Volcano',   s:'',emoji:'🌋'},{w:'Violin',   s:'',emoji:'🎻'},{w:'Van',     s:'',emoji:'🚐'}],
-      W:[{w:'Whale',     s:'',emoji:'🐳'},{w:'Wolf',     s:'',emoji:'🐺'},{w:'Watermelon',s:'',emoji:'🍉'},{w:'Worm',  s:'',emoji:'🪱'}],
-      X:[{w:'Xylophone', s:'',emoji:'🎵'},{w:'X-ray',    s:'',emoji:'🩻'}],
-      Y:[{w:'Yak',       s:'',emoji:'🐃'},{w:'Yacht',    s:'',emoji:'⛵'},{w:'Yarn',    s:'',emoji:'🧶'}],
-      Z:[{w:'Zebra',     s:'',emoji:'🦓'},{w:'Zombie',   s:'',emoji:'🧟'},{w:'Zeppelin',s:'',emoji:'🛸'}],
-    }
-  },
+  const DEBOUNCE_MS = 600;
+  const HOLD_MS = 3000;  // 翻訳完了後にリアルタイムエリアにホールドする秒数
+  const APP_VERSION = '0.3.0';
 
-  // ---------- isiZulu ----------
-  zu: {
-    name: 'isiZulu', flag: '🇿🇦', voice: 'en-ZA',
-    idle: ['🦁 isiZulu ABC 🌍', 'Cofa inkinobho!', 'A〜Z'],
-    data: {
-      A:[{w:'amasi',      s:'sour milk・発酵乳',    emoji:'🥛'},{w:'amanzi',    s:'water・水',          emoji:'💧'},{w:'amabhubesi',s:'lions・ライオン', emoji:'🦁'}],
-      B:[{w:'ibhubesi',   s:'lion・ライオン',       emoji:'🦁'},{w:'ibuzi',     s:'goat・ヤギ',         emoji:'🐐'},{w:'ibhokisi',  s:'box・箱',         emoji:'📦'}],
-      C:[{w:'isicebi',    s:'rich person・お金持ち', emoji:'💰'},{w:'icala',     s:'crime/side・罪',     emoji:'⚖️'}],
-      D:[{w:'idada',      s:'duck・アヒル',         emoji:'🦆'},{w:'indlovu',   s:'elephant・象',       emoji:'🐘'},{w:'idolobha',  s:'city・都市',      emoji:'🏙️'}],
-      E:[{w:'ekhaya',     s:'at home・家で',        emoji:'🏠'},{w:'emanzini',  s:'in water・水の中',   emoji:'🌊'},{w:'esikoleni', s:'at school・学校', emoji:'🏫'}],
-      F:[{w:'ifu',        s:'cloud・雲',            emoji:'☁️'},{w:'ukudla',    s:'food・食べ物',       emoji:'🍽️'},{w:'isifundo',  s:'lesson・授業',    emoji:'📚'}],
-      G:[{w:'igundane',   s:'rat・ネズミ',          emoji:'🐭'},{w:'igama',     s:'name/word・名前',    emoji:'🔤'},{w:'igolide',   s:'gold・金',        emoji:'🥇'}],
-      H:[{w:'ihhashi',    s:'horse・馬',            emoji:'🐴'},{w:'inhlanzi',  s:'fish・魚',           emoji:'🐟'},{w:'ihlathi',   s:'forest・森',      emoji:'🌳'}],
-      I:[{w:'inja',       s:'dog・犬',              emoji:'🐶'},{w:'inkukhu',   s:'chicken・ニワトリ',  emoji:'🐔'},{w:'imvula',    s:'rain・雨',        emoji:'🌧️'}],
-      J:[{w:'ijuba',      s:'dove・ハト',           emoji:'🕊️'},{w:'ijele',     s:'prison・刑務所',     emoji:'🔒'}],
-      K:[{w:'ikati',      s:'cat・猫',              emoji:'🐱'},{w:'ukhozi',    s:'eagle・ワシ',        emoji:'🦅'},{w:'inkomo',    s:'cattle・牛',      emoji:'🐄'}],
-      L:[{w:'ilanga',     s:'sun/day・太陽',        emoji:'☀️'},{w:'ingwe',     s:'leopard・ヒョウ',    emoji:'🐆'},{w:'izulu',     s:'sky・空',         emoji:'🌤️'}],
-      M:[{w:'umuntu',     s:'person・人',           emoji:'🧑'},{w:'umlilo',    s:'fire・火',           emoji:'🔥'},{w:'imbuzi',    s:'goat・ヤギ',      emoji:'🐐'}],
-      N:[{w:'inyoka',     s:'snake・ヘビ',          emoji:'🐍'},{w:'inkanyezi', s:'star・星',           emoji:'⭐'},{w:'intaba',    s:'mountain・山',    emoji:'⛰️'}],
-      O:[{w:'omama',      s:'mothers・お母さんたち', emoji:'👩‍👦'},{w:'oyise',    s:'fathers・お父さんたち',emoji:'👨‍👧'},{w:'onke',      s:'all・すべて',     emoji:'✨'}],
-      P:[{w:'impisi',     s:'hyena・ハイエナ',      emoji:'🦴'},{w:'uphoko',    s:'spoon・スプーン',    emoji:'🥄'}],
-      Q:[{w:'iqanda',     s:'egg・卵',              emoji:'🥚'},{w:'iqhude',    s:'rooster・オス鶏',    emoji:'🐓'},{w:'iqabunga',  s:'leaf・葉',        emoji:'🍃'}],
-      R:[{w:'ithafa',     s:'savanna・サバンナ',     emoji:'🌾'},{w:'inhlanzi',  s:'fish・魚',           emoji:'🐟'}],
-      S:[{w:'isilwane',   s:'animal・動物',         emoji:'🦓'},{w:'isibhakabhaka',s:'sky・大空',       emoji:'🌌'},{w:'isango',    s:'gate・門',        emoji:'🚪'}],
-      T:[{w:'ithanga',    s:'pumpkin・カボチャ',     emoji:'🎃'},{w:'ithambo',   s:'bone・骨',           emoji:'🦴'}],
-      U:[{w:'ubuntu',     s:'humanity・人間性',     emoji:'🤝'},{w:'unwabu',    s:'chameleon・カメレオン',emoji:'🦎'},{w:'umlilo',   s:'fire・火',        emoji:'🔥'}],
-      V:[{w:'imvubu',     s:'hippo・カバ',          emoji:'🦛'},{w:'ivangeli',  s:'gospel・福音',       emoji:'📖'},{w:'ingulube',  s:'pig・ブタ',       emoji:'🐷'}],
-      W:[{w:'woza',       s:'come!・来て！',        emoji:'👋'},{w:'indawo',    s:'place・場所',        emoji:'📍'}],
-      X:[{w:'ixoxo',      s:'frog・カエル',         emoji:'🐸'},{w:'ixhama',    s:'locust・バッタ',     emoji:'🦗'}],
-      Y:[{w:'yebo',       s:'yes・はい',            emoji:'✅'},{w:'inyoni',    s:'bird・鳥',           emoji:'🐦'},{w:'inyoka',    s:'snake・ヘビ',     emoji:'🐍'}],
-      Z:[{w:'izulu',      s:'sky/heaven・天空',     emoji:'🌤️'},{w:'inkanyezi', s:'star・星',           emoji:'⭐'},{w:'impunzi',   s:'duiker・小鹿',   emoji:'🦌'}],
-    }
-  },
+  let direction = 'ja2en';
+  let isTranslating = false;
+  let isListening = false;
+  let abortController = null;
+  let debounceTimer = null;
+  let holdTimer = null;
+  let recognition = null;
+  let finalTranscript = '';
+  let selectedDeviceId = '';
+  const translations = []; // { text, time }
+  const logs = [];
 
-  // ---------- Español ----------
-  es: {
-    name: 'Español', flag: '🇪🇸', voice: 'es-ES',
-    idle: ['🌹 Español ABC 🎸', '¡Pulsa una tecla!', 'A〜Z'],
-    data: {
-      A:[{w:'Águila',     s:'鷲',        emoji:'🦅'},{w:'Abeja',     s:'蜂',        emoji:'🐝'},{w:'Árbol',    s:'木',      emoji:'🌳'},{w:'Amigo',    s:'友達',    emoji:'🤝'}],
-      B:[{w:'Burro',      s:'ロバ',      emoji:'🫏'},{w:'Barco',     s:'船',        emoji:'⛵'},{w:'Ballena',  s:'クジラ',  emoji:'🐳'},{w:'Bailarina',s:'ダンサー',emoji:'💃'}],
-      C:[{w:'Caballo',    s:'馬',        emoji:'🐴'},{w:'Castillo',  s:'城',        emoji:'🏰'},{w:'Cocodrilo',s:'ワニ',    emoji:'🐊'},{w:'Cigüeña',  s:'コウノトリ',emoji:'🦢'}],
-      D:[{w:'Delfín',     s:'イルカ',    emoji:'🐬'},{w:'Dragón',    s:'ドラゴン',  emoji:'🐉'},{w:'Dinosaurio',s:'恐竜',  emoji:'🦕'},{w:'Duende',   s:'小人',    emoji:'🧝'}],
-      E:[{w:'Elefante',   s:'象',        emoji:'🐘'},{w:'Estrella',  s:'星',        emoji:'⭐'},{w:'Escorpión',s:'サソリ',  emoji:'🦂'},{w:'Espada',   s:'剣',      emoji:'⚔️'}],
-      F:[{w:'Flamenco',   s:'フラメンコ',emoji:'💃'},{w:'Fresa',     s:'イチゴ',    emoji:'🍓'},{w:'Flor',     s:'花',      emoji:'🌸'},{w:'Foca',     s:'アザラシ',emoji:'🦭'}],
-      G:[{w:'Gato',       s:'猫',        emoji:'🐱'},{w:'Guitarra',  s:'ギター',    emoji:'🎸'},{w:'Gorila',   s:'ゴリラ',  emoji:'🦍'},{w:'Girasol',  s:'ひまわり',emoji:'🌻'}],
-      H:[{w:'Helado',     s:'アイス',    emoji:'🍦'},{w:'Hormiga',   s:'アリ',      emoji:'🐜'},{w:'Hipopótamo',s:'カバ',  emoji:'🦛'},{w:'Hada',     s:'妖精',    emoji:'🧚'}],
-      I:[{w:'Iglesia',    s:'教会',      emoji:'⛪'},{w:'Iguana',    s:'イグアナ',  emoji:'🦎'},{w:'Isla',     s:'島',      emoji:'🏝️'},{w:'Imán',     s:'磁石',    emoji:'🧲'}],
-      J:[{w:'Jaguar',     s:'ジャガー',  emoji:'🐆'},{w:'Jirafa',    s:'キリン',    emoji:'🦒'},{w:'Jardín',   s:'庭',      emoji:'🌿'},{w:'Jamón',    s:'ハモン',  emoji:'🍖'}],
-      K:[{w:'Koala',      s:'コアラ',    emoji:'🐨'},{w:'Kiwi',      s:'キウイ',    emoji:'🥝'},{w:'Kayak',    s:'カヤック',emoji:'🛶'}],
-      L:[{w:'León',       s:'ライオン',  emoji:'🦁'},{w:'Luna',      s:'月',        emoji:'🌙'},{w:'Loro',     s:'オウム',  emoji:'🦜'},{w:'Limón',    s:'レモン',  emoji:'🍋'}],
-      M:[{w:'Mariposa',   s:'蝶',        emoji:'🦋'},{w:'Mono',      s:'サル',      emoji:'🐒'},{w:'Manzana',  s:'リンゴ',  emoji:'🍎'},{w:'Mar',      s:'海',      emoji:'🌊'}],
-      N:[{w:'Naranja',    s:'オレンジ',  emoji:'🍊'},{w:'Nieve',     s:'雪',        emoji:'❄️'},{w:'Nube',     s:'雲',      emoji:'☁️'},{w:'Nutria',   s:'カワウソ',emoji:'🦦'}],
-      O:[{w:'Oso',        s:'クマ',      emoji:'🐻'},{w:'Oveja',     s:'羊',        emoji:'🐑'},{w:'Orquídea', s:'ラン',    emoji:'🌺'},{w:'Océano',   s:'大洋',    emoji:'🌊'}],
-      P:[{w:'Perro',      s:'犬',        emoji:'🐶'},{w:'Pulpo',     s:'タコ',      emoji:'🐙'},{w:'Pingüino', s:'ペンギン',emoji:'🐧'},{w:'Pavo real',s:'クジャク',emoji:'🦚'}],
-      Q:[{w:'Queso',      s:'チーズ',    emoji:'🧀'},{w:'Quetzal',   s:'ケツァル',  emoji:'🦜'},{w:'Quijote',  s:'ドンキホーテ',emoji:'⚔️'}],
-      R:[{w:'Rosa',       s:'バラ',      emoji:'🌹'},{w:'Rana',      s:'カエル',    emoji:'🐸'},{w:'Ratón',    s:'ネズミ',  emoji:'🐭'},{w:'Relámpago',s:'雷',      emoji:'⚡'}],
-      S:[{w:'Sol',        s:'太陽',      emoji:'☀️'},{w:'Serpiente', s:'ヘビ',      emoji:'🐍'},{w:'Sandía',   s:'スイカ',  emoji:'🍉'},{w:'Sombrero', s:'帽子',    emoji:'👒'}],
-      T:[{w:'Toro',       s:'牡牛',      emoji:'🐂'},{w:'Tigre',     s:'トラ',      emoji:'🐯'},{w:'Tortuga',  s:'カメ',    emoji:'🐢'},{w:'Tomate',   s:'トマト',  emoji:'🍅'}],
-      U:[{w:'Uva',        s:'ぶどう',    emoji:'🍇'},{w:'Unicornio', s:'ユニコーン',emoji:'🦄'},{w:'Urraca',   s:'カチガラス',emoji:'🐦'}],
-      V:[{w:'Vaca',       s:'牛',        emoji:'🐄'},{w:'Volcán',    s:'火山',      emoji:'🌋'},{w:'Violín',   s:'バイオリン',emoji:'🎻'},{w:'Venado',   s:'シカ',    emoji:'🦌'}],
-      W:[{w:'Wombat',     s:'ウォンバット',emoji:'🦘'},{w:'Wifi',    s:'ワイファイ',emoji:'📶'}],
-      X:[{w:'Xilófono',   s:'木琴',      emoji:'🎵'}],
-      Y:[{w:'Yak',        s:'ヤク',      emoji:'🐃'},{w:'Yegua',    s:'牝馬',      emoji:'🐴'},{w:'Yogur',    s:'ヨーグルト',emoji:'🥛'}],
-      Z:[{w:'Zorro',      s:'キツネ',    emoji:'🦊'},{w:'Zanahoria',s:'ニンジン',  emoji:'🥕'},{w:'Zebra',    s:'シマウマ',emoji:'🦓'},{w:'Zapato',   s:'靴',      emoji:'👟'}],
-    }
-  },
+  const $ = id => document.getElementById(id);
+  const apiKeyInput    = $('apiKey');
+  const apiStatus      = $('apiStatus');
+  const micSelect      = $('micSelect');
+  const btnRefreshMic  = $('btnRefreshMic');
+  const micActiveName  = $('micActiveName');
+  const srcLabel       = $('srcLabel');
+  const tgtLabel       = $('tgtLabel');
+  const btnSwap        = $('btnSwap');
+  const btnMic         = $('btnMic');
+  const listeningInd   = $('listeningIndicator');
+  const inputArea      = $('inputArea');
+  const inputCount     = $('inputCount');
+  const realtimePanel  = $('realtimePanel');
+  const realtimeArea   = $('realtimeArea');
+  const realtimeStatus = $('realtimeStatus');
+  const translatingInd = $('translatingIndicator');
+  const charCountEl    = $('charCount');
+  const confirmedScroll = $('confirmedScroll');
+  const confirmedPH    = $('confirmedPH');
+  const confirmedCount = $('confirmedCount');
+  const btnCopy        = $('btnCopy');
+  const btnClear       = $('btnClear');
+  const errorBar       = $('errorBar');
+  const btnConsole     = $('btnConsole');
+  const debugConsole   = $('debugConsole');
+  const debugLogs      = $('debugLogs');
+  const btnCopyConsole = $('btnCopyConsole');
 
-  // ---------- 日本語（ローマ字で入力 → ひらがな/カタカナ語） ----------
-  ja: {
-    name: '日本語', flag: '🇯🇵', voice: 'ja-JP',
-    idle: ['🌸 にほんご ABC 🗾', 'キーをおしてみよう！', 'A〜Z'],
-    data: {
-      A:[{w:'あり',       s:'ant',        emoji:'🐜'},{w:'あおぞら',  s:'blue sky',   emoji:'🌤️'},{w:'あひる',  s:'duck',      emoji:'🦆'}],
-      B:[{w:'ばなな',     s:'banana',     emoji:'🍌'},{w:'ぼうし',    s:'hat',        emoji:'👒'},{w:'ぶた',    s:'pig',       emoji:'🐷'}],
-      C:[{w:'さくら',     s:'cherry blossom',emoji:'🌸'},{w:'ちょうちょ',s:'butterfly',emoji:'🦋'}],
-      D:[{w:'でんしゃ',   s:'train',      emoji:'🚃'},{w:'どうぶつ',  s:'animal',     emoji:'🐾'},{w:'だいこん',s:'radish',    emoji:'🥬'}],
-      E:[{w:'えび',       s:'shrimp',     emoji:'🦐'},{w:'えんぴつ',  s:'pencil',     emoji:'✏️'},{w:'えいご',  s:'English',   emoji:'🇺🇸'}],
-      F:[{w:'ふじさん',   s:'Mt. Fuji',   emoji:'🗻'},{w:'ふくろう',  s:'owl',        emoji:'🦉'},{w:'ふね',    s:'ship',      emoji:'⛵'}],
-      G:[{w:'ごりら',     s:'gorilla',    emoji:'🦍'},{w:'げんき',    s:'healthy',    emoji:'💪'},{w:'ぎんがけい',s:'galaxy',   emoji:'🌌'}],
-      H:[{w:'はな',       s:'flower',     emoji:'🌸'},{w:'はり',      s:'needle',     emoji:'🪡'},{w:'ほし',    s:'star',      emoji:'⭐'}],
-      I:[{w:'いぬ',       s:'dog',        emoji:'🐶'},{w:'いちご',    s:'strawberry', emoji:'🍓'},{w:'いかのおすし',s:'safety',emoji:'🚨'}],
-      J:[{w:'じてんしゃ', s:'bicycle',    emoji:'🚲'},{w:'じんじゃ',  s:'shrine',     emoji:'⛩️'},{w:'じぶん',  s:'myself',    emoji:'🙋'}],
-      K:[{w:'かめ',       s:'turtle',     emoji:'🐢'},{w:'きつね',    s:'fox',        emoji:'🦊'},{w:'くも',    s:'cloud',     emoji:'☁️'}],
-      L:[{w:'れもん',     s:'lemon',      emoji:'🍋'},{w:'らいおん',  s:'lion',       emoji:'🦁'}],
-      M:[{w:'むしめがね', s:'magnifying glass',emoji:'🔍'},{w:'まつり',s:'festival',   emoji:'🎆'},{w:'みかん',  s:'mandarin',  emoji:'🍊'}],
-      N:[{w:'にじ',       s:'rainbow',    emoji:'🌈'},{w:'ねこ',      s:'cat',        emoji:'🐱'},{w:'のり',    s:'seaweed',   emoji:'🌿'}],
-      O:[{w:'おにぎり',   s:'rice ball',  emoji:'🍙'},{w:'おかし',    s:'sweets',     emoji:'🍬'},{w:'おうさま',s:'king',      emoji:'👑'}],
-      P:[{w:'ぱんだ',     s:'panda',      emoji:'🐼'},{w:'ぴあの',    s:'piano',      emoji:'🎹'},{w:'ぺんぎん',s:'penguin',   emoji:'🐧'}],
-      Q:[{w:'くじら',     s:'whale',      emoji:'🐳'},{w:'きゅうり',  s:'cucumber',   emoji:'🥒'}],
-      R:[{w:'りんご',     s:'apple',      emoji:'🍎'},{w:'ろけっと',  s:'rocket',     emoji:'🚀'},{w:'らっこ',  s:'sea otter', emoji:'🦦'}],
-      S:[{w:'さかな',     s:'fish',       emoji:'🐟'},{w:'さるかに',  s:'monkey & crab',emoji:'🐒'},{w:'すいか',  s:'watermelon',emoji:'🍉'}],
-      T:[{w:'たいよう',   s:'sun',        emoji:'☀️'},{w:'たこ',      s:'octopus',    emoji:'🐙'},{w:'とら',    s:'tiger',     emoji:'🐯'}],
-      U:[{w:'うさぎ',     s:'rabbit',     emoji:'🐰'},{w:'うみ',      s:'sea',        emoji:'🌊'},{w:'うちゅう',s:'space',     emoji:'🌌'}],
-      V:[{w:'ばいおりん', s:'violin',     emoji:'🎻'},{w:'びでお',    s:'video',      emoji:'📹'}],
-      W:[{w:'わし',       s:'eagle',      emoji:'🦅'},{w:'わらう',    s:'laugh',      emoji:'😄'},{w:'わたあめ',s:'cotton candy',emoji:'🍭'}],
-      X:[{w:'きしろほん', s:'xylophone',  emoji:'🎵'}],
-      Y:[{w:'やま',       s:'mountain',   emoji:'⛰️'},{w:'ゆき',      s:'snow',       emoji:'❄️'},{w:'よぞら',  s:'night sky', emoji:'🌃'}],
-      Z:[{w:'ぞう',       s:'elephant',   emoji:'🐘'},{w:'ざぶとん',  s:'cushion',    emoji:'🪑'},{w:'ずかん',  s:'encyclopedia',emoji:'📚'}],
-    }
-  },
-
-  // ---------- Tiếng Việt ----------
-  vi: {
-    name: 'Tiếng Việt', flag: '🇻🇳', voice: 'vi-VN',
-    idle: ['🌿 Tiếng Việt ABC 🐉', 'Nhấn một phím!', 'A〜Z・ấn phím'],
-    data: {
-      A:[{w:'Áo dài',    s:'アオザイ（民族衣装）',emoji:'👘'},{w:'Ăn uống',  s:'食べること',     emoji:'🍜'},{w:'Ảo thuật', s:'マジック',   emoji:'🎩'}],
-      B:[{w:'Bướm',      s:'butterfly・蝶',   emoji:'🦋'},{w:'Bánh mì',  s:'バインミー',    emoji:'🥖'},{w:'Bò',       s:'cow・牛',      emoji:'🐄'}],
-      C:[{w:'Cá',        s:'fish・魚',         emoji:'🐟'},{w:'Cây',      s:'tree・木',       emoji:'🌳'},{w:'Cua',      s:'crab・カニ',   emoji:'🦀'}],
-      D:[{w:'Dừa',       s:'coconut・ヤシの実',emoji:'🥥'},{w:'Dê',       s:'goat・ヤギ',     emoji:'🐐'},{w:'Dòng sông',s:'river・川',   emoji:'🌊'}],
-      E:[{w:'Em bé',     s:'baby・赤ちゃん',   emoji:'👶'},{w:'Ếch',      s:'frog・カエル',   emoji:'🐸'}],
-      G:[{w:'Gà',        s:'chicken・鶏',      emoji:'🐔'},{w:'Gấu',      s:'bear・クマ',     emoji:'🐻'},{w:'Gió',      s:'wind・風',     emoji:'💨'}],
-      H:[{w:'Hoa',       s:'flower・花',       emoji:'🌸'},{w:'Hổ',       s:'tiger・トラ',    emoji:'🐯'},{w:'Hà Nội',   s:'ハノイ（首都）',emoji:'🏙️'}],
-      I:[{w:'In',        s:'print・印刷',       emoji:'🖨️'}],
-      K:[{w:'Khỉ',       s:'monkey・サル',     emoji:'🐒'},{w:'Kỳ lân',   s:'unicorn・一角獣',emoji:'🦄'},{w:'Kẹo',      s:'candy・飴',    emoji:'🍬'}],
-      L:[{w:'Lợn',       s:'pig・ブタ',        emoji:'🐷'},{w:'Lúa',      s:'rice・稲',       emoji:'🌾'},{w:'Lửa',      s:'fire・火',     emoji:'🔥'}],
-      M:[{w:'Mèo',       s:'cat・猫',          emoji:'🐱'},{w:'Mưa',      s:'rain・雨',       emoji:'🌧️'},{w:'Mặt trời', s:'sun・太陽',    emoji:'☀️'}],
-      N:[{w:'Ngựa',      s:'horse・馬',        emoji:'🐴'},{w:'Núi',      s:'mountain・山',   emoji:'⛰️'},{w:'Nước',     s:'water・水',    emoji:'💧'}],
-      O:[{w:'Ong',       s:'bee・蜂',          emoji:'🐝'},{w:'Ốc',       s:'snail・カタツムリ',emoji:'🐌'}],
-      P:[{w:'Phở',       s:'フォー（料理）',    emoji:'🍜'},{w:'Pháo hoa', s:'fireworks・花火',emoji:'🎆'},{w:'Phượng hoàng',s:'phoenix・鳳凰',emoji:'🔥'}],
-      Q:[{w:'Quả xoài',  s:'mango・マンゴー',  emoji:'🥭'},{w:'Quạt',     s:'fan・扇子',      emoji:'🪭'},{w:'Quê hương',s:'hometown・故郷',emoji:'🏡'}],
-      R:[{w:'Rồng',      s:'dragon・龍',       emoji:'🐉'},{w:'Rừng',     s:'forest・森',     emoji:'🌿'},{w:'Rùa',      s:'turtle・カメ', emoji:'🐢'}],
-      S:[{w:'Sông',      s:'river・川',        emoji:'🌊'},{w:'Sư tử',    s:'lion・ライオン', emoji:'🦁'},{w:'Sao',      s:'star・星',     emoji:'⭐'}],
-      T:[{w:'Trăng',     s:'moon・月',         emoji:'🌙'},{w:'Thỏ',      s:'rabbit・ウサギ', emoji:'🐰'},{w:'Trâu',     s:'buffalo・水牛',emoji:'🐃'}],
-      U:[{w:'Ủ rũ',      s:'sad・悲しい',      emoji:'😢'},{w:'Uyên ương',s:'lovebirds・つがい鳥',emoji:'🐦‍🔥'}],
-      V:[{w:'Voi',       s:'elephant・象',     emoji:'🐘'},{w:'Vịt',      s:'duck・アヒル',   emoji:'🦆'},{w:'Vũ điệu',  s:'dance・踊り',  emoji:'💃'}],
-      X:[{w:'Xoài',      s:'mango・マンゴー',  emoji:'🥭'},{w:'Xuân',     s:'spring・春',     emoji:'🌱'}],
-      Y:[{w:'Yêu',       s:'love・愛',         emoji:'❤️'},{w:'Yến sào',  s:'bird\'s nest・燕の巣',emoji:'🪺'}],
-    }
+  // ユーティリティ
+  function addLog(msg) {
+    const ts = new Date().toLocaleTimeString('ja-JP');
+    logs.push(`[${ts}] ${msg}`);
+    if (logs.length > 80) logs.shift();
+    debugLogs.innerHTML = logs.map(l => `<div>${l.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>`).join('');
+    debugLogs.scrollTop = debugLogs.scrollHeight;
   }
-};
-
-// ============================================================
-// ===== アプリ状態 =====
-// ============================================================
-let currentLang = 'en';
-
-const COLORS = [
-  '#FF6B6B','#FF8E53','#FFC300','#2ECC71','#1ABC9C',
-  '#3498DB','#9B59B6','#E91E63','#00BCD4','#FF5722',
-  '#8BC34A','#FF9800','#E74C3C','#27AE60','#F39C12',
-];
-
-// ===== DOM =====
-const idleEl    = document.getElementById('idle');
-const displayEl = document.getElementById('display');
-const letterEl  = document.getElementById('letter');
-const illustEl  = document.getElementById('illust');
-const mainWordEl= document.getElementById('main-word');
-const subWordEl = document.getElementById('sub-word');
-const flashEl   = document.getElementById('bg-flash');
-const idleTitleEl = document.getElementById('idle-title');
-const idleSubEl   = document.getElementById('idle-sub');
-const idleHintEl  = document.getElementById('idle-hint');
-
-// ===== 音声 =====
-const synth = window.speechSynthesis;
-let voices = [];
-synth.onvoiceschanged = () => { voices = synth.getVoices(); };
-setTimeout(() => { voices = synth.getVoices(); }, 500);
-
-function speak(langCode, word) {
-  synth.cancel();
-  const langDef = LANGS[langCode];
-
-  // 言語コードに合う声を探す
-  const voice = voices.find(v => v.lang.startsWith(langDef.voice.split('-')[0]))
-             || voices.find(v => v.lang.startsWith('en'));
-
-  const u = new SpeechSynthesisUtterance(word);
-  if (voice) u.voice = voice;
-  u.lang  = langDef.voice;
-  u.rate  = 0.8;
-  u.pitch = 1.1;
-  synth.speak(u);
-}
-
-// ===== タブ切り替え =====
-function switchLang(lang) {
-  currentLang = lang;
-  document.body.className = 'lang-' + lang;
-
-  // タブ見た目
-  document.querySelectorAll('.tab').forEach(t => {
-    t.classList.toggle('active', t.dataset.lang === lang);
-    const acc = LANGS[lang] ? getAccent(lang) : '#fff';
-    if (t.dataset.lang === lang) t.style.setProperty('--accent', acc);
-  });
-
-  // 待機画面テキスト更新
-  const ld = LANGS[lang];
-  idleTitleEl.textContent = ld.idle[0];
-  idleSubEl.textContent   = ld.idle[1];
-  idleHintEl.textContent  = ld.idle[2];
-
-  // 表示をリセット → 待機画面へ
-  displayEl.classList.remove('show');
-  idleEl.classList.remove('hidden');
-
-  synth.cancel();
-}
-
-function getAccent(lang) {
-  const map = { en:'#7C3AED', zu:'#E67E22', es:'#E74C3C', ja:'#FF4081', vi:'#00C853' };
-  return map[lang] || '#fff';
-}
-
-// ===== アニメーションリセット =====
-function resetAnim(el) {
-  el.style.animation = 'none';
-  void el.offsetWidth;
-  el.style.animation = '';
-}
-
-// ===== パーティクル =====
-const PARTICLES = ['✨','🌟','💫','⭐','🎊','🎉','🔥','💥'];
-function spawnParticles(color) {
-  const stage = document.getElementById('stage');
-  const cx = stage.clientWidth / 2;
-  const cy = stage.clientHeight * 0.6; // タブ分下にずらす
-  for (let i = 0; i < 18; i++) {
-    const p = document.createElement('div');
-    p.className = 'particle';
-    const angle = (Math.random() * 360) * Math.PI / 180;
-    const dist  = Math.random() * 32 + 12;
-    const tx = Math.cos(angle) * dist * (stage.clientWidth / 100);
-    const ty = Math.sin(angle) * dist * (stage.clientHeight / 100);
-    const sz  = (Math.random() * 2 + 1.2).toFixed(1);
-    const rot = (Math.random() * 720 - 360).toFixed(0);
-    p.style.cssText = `
-      left:${cx}px; top:${cy}px;
-      font-size:${sz}vw;
-      --tx:${tx}px; --ty:${ty}px;
-      --rot:${rot}deg;
-      --dur:${(Math.random()*0.5+0.5).toFixed(2)}s;
-    `;
-    p.textContent = PARTICLES[Math.floor(Math.random() * PARTICLES.length)];
-    stage.appendChild(p);
-    p.addEventListener('animationend', () => p.remove());
+  function showError(msg) { errorBar.textContent = '⚠ ' + msg; errorBar.classList.remove('hidden'); }
+  function hideError() { errorBar.classList.add('hidden'); }
+  function updateLabels() {
+    srcLabel.textContent = direction === 'ja2en' ? '日本語' : 'English';
+    tgtLabel.textContent = direction === 'ja2en' ? 'English' : '日本語';
+    inputArea.placeholder = direction === 'ja2en' ? '日本語を入力してください...' : 'Type in English...';
   }
-}
+  function scrollInputToBottom() { inputArea.scrollTop = inputArea.scrollHeight; }
 
-// ===== イースターエッグ定義 =====
-const EASTER_EGGS = [
-  // 各エッグ: { emoji, message, sound関数, bg }
-  {
-    emoji: '🎺', message: 'パパパパパパーン！',
-    bg: '#FFD700',
-    sound: (ac) => {
-      // ファンファーレ風（ド・ミ・ソ・ド）
-      [[523,0],[659,0.25],[784,0.5],[1047,0.75]].forEach(([f,t]) => {
-        const o = ac.createOscillator();
-        const g = ac.createGain();
-        o.connect(g); g.connect(ac.destination);
-        o.type = 'sawtooth'; o.frequency.value = f;
-        g.gain.setValueAtTime(0, ac.currentTime + t);
-        g.gain.linearRampToValueAtTime(0.4, ac.currentTime + t + 0.05);
-        g.gain.linearRampToValueAtTime(0, ac.currentTime + t + 0.35);
-        o.start(ac.currentTime + t); o.stop(ac.currentTime + t + 0.4);
-      });
+  // ===== 確定翻訳をカード形式で描画 =====
+  function renderConfirmedCards() {
+    if (translations.length === 0) {
+      confirmedScroll.innerHTML = '<span class="output-placeholder">確定した翻訳がカード形式で蓄積されます...</span>';
+      btnCopy.classList.add('hidden');
+      btnClear.classList.add('hidden');
+      confirmedCount.textContent = '';
+      return;
     }
-  },
-  {
-    emoji: '🥁', message: 'ドンドンドン！',
-    bg: '#FF6B35',
-    sound: (ac) => {
-      // ドラムロール風
-      for (let i = 0; i < 8; i++) {
-        const buf = ac.createBuffer(1, ac.sampleRate * 0.1, ac.sampleRate);
-        const d = buf.getChannelData(0);
-        for (let j = 0; j < d.length; j++) d[j] = (Math.random() * 2 - 1) * Math.pow(1 - j/d.length, 2);
-        const s = ac.createBufferSource();
-        const g = ac.createGain();
-        s.buffer = buf; s.connect(g); g.connect(ac.destination);
-        g.gain.value = 0.5;
-        s.start(ac.currentTime + i * 0.08);
-      }
-    }
-  },
-  {
-    emoji: '⭐', message: 'きらきら〜！',
-    bg: '#9B59B6',
-    sound: (ac) => {
-      // きらきら星風の高音
-      [1047,1319,1568,2093,1568,1319,1047].forEach((f,i) => {
-        const o = ac.createOscillator();
-        const g = ac.createGain();
-        o.connect(g); g.connect(ac.destination);
-        o.type = 'sine'; o.frequency.value = f;
-        const t = ac.currentTime + i * 0.18;
-        g.gain.setValueAtTime(0.3, t);
-        g.gain.linearRampToValueAtTime(0, t + 0.15);
-        o.start(t); o.stop(t + 0.2);
-      });
-    }
-  },
-  {
-    emoji: '🚀', message: 'しゅっぱーつ！',
-    bg: '#2C3E50',
-    sound: (ac) => {
-      // ロケット発射音（周波数上昇）
-      const o = ac.createOscillator();
-      const g = ac.createGain();
-      o.connect(g); g.connect(ac.destination);
-      o.type = 'sawtooth';
-      o.frequency.setValueAtTime(80, ac.currentTime);
-      o.frequency.exponentialRampToValueAtTime(800, ac.currentTime + 0.8);
-      g.gain.setValueAtTime(0.4, ac.currentTime);
-      g.gain.linearRampToValueAtTime(0, ac.currentTime + 0.8);
-      o.start(); o.stop(ac.currentTime + 0.8);
-    }
-  },
-  {
-    emoji: '🌈', message: 'にじいろ〜！',
-    bg: 'linear-gradient(135deg,#FF6B6B,#FFD93D,#6BCB77,#4D96FF)',
-    sound: (ac) => {
-      // 上昇アルペジオ
-      [262,330,392,523,659,784,1047].forEach((f,i) => {
-        const o = ac.createOscillator();
-        const g = ac.createGain();
-        o.connect(g); g.connect(ac.destination);
-        o.type = 'triangle'; o.frequency.value = f;
-        const t = ac.currentTime + i * 0.1;
-        g.gain.setValueAtTime(0.25, t);
-        g.gain.linearRampToValueAtTime(0, t + 0.2);
-        o.start(t); o.stop(t + 0.25);
-      });
-    }
-  },
-  {
-    emoji: '💥', message: 'ドッカーン！',
-    bg: '#E74C3C',
-    sound: (ac) => {
-      // 爆発音
-      const buf = ac.createBuffer(1, ac.sampleRate * 0.6, ac.sampleRate);
-      const d = buf.getChannelData(0);
-      for (let i = 0; i < d.length; i++) d[i] = (Math.random()*2-1) * Math.pow(1 - i/d.length, 1.5);
-      const s = ac.createBufferSource();
-      const g = ac.createGain();
-      const f = ac.createBiquadFilter();
-      f.type = 'lowpass'; f.frequency.value = 300;
-      s.buffer = buf; s.connect(f); f.connect(g); g.connect(ac.destination);
-      g.gain.value = 1.0;
-      s.start();
-    }
-  },
-  {
-    emoji: '🎵', message: 'ランランラン♪',
-    bg: '#1ABC9C',
-    sound: (ac) => {
-      // ポップなメロディ
-      [523,523,784,784,880,880,784,0,659,659,587,587,523].forEach((f,i) => {
-        if (!f) return;
-        const o = ac.createOscillator();
-        const g = ac.createGain();
-        o.connect(g); g.connect(ac.destination);
-        o.type = 'square'; o.frequency.value = f;
-        const t = ac.currentTime + i * 0.22;
-        g.gain.setValueAtTime(0.15, t);
-        g.gain.linearRampToValueAtTime(0, t + 0.18);
-        o.start(t); o.stop(t + 0.22);
-      });
-    }
-  },
-  {
-    emoji: '🐱', message: 'にゃーん！',
-    bg: '#E67E22',
-    sound: (ac) => {
-      // 猫の鳴き声風
-      const o = ac.createOscillator();
-      const g = ac.createGain();
-      o.connect(g); g.connect(ac.destination);
-      o.type = 'sine';
-      o.frequency.setValueAtTime(600, ac.currentTime);
-      o.frequency.linearRampToValueAtTime(900, ac.currentTime + 0.15);
-      o.frequency.linearRampToValueAtTime(500, ac.currentTime + 0.45);
-      g.gain.setValueAtTime(0.35, ac.currentTime);
-      g.gain.linearRampToValueAtTime(0, ac.currentTime + 0.5);
-      o.start(); o.stop(ac.currentTime + 0.5);
-    }
-  },
-];
 
-// AudioContext（初回ユーザー操作後に生成）
-let audioCtx = null;
-function getAC() {
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  return audioCtx;
-}
+    confirmedScroll.innerHTML = translations.map((t, i) => `
+      <div class="translation-card">
+        <span class="card-num">#${i + 1}</span>
+        <div class="card-text">${t.text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+        <div class="card-time">${t.time}</div>
+      </div>
+    `).join('');
 
-// ===== イースターエッグ発動 =====
-const eggOverlay = document.createElement('div');
-eggOverlay.style.cssText = `
-  position:absolute; inset:0; z-index:80;
-  display:none; flex-direction:column;
-  align-items:center; justify-content:center; gap:2vh;
-  pointer-events:none;
-`;
-document.getElementById('stage').appendChild(eggOverlay);
+    btnCopy.classList.remove('hidden');
+    btnClear.classList.remove('hidden');
+    confirmedCount.textContent = `${translations.length}件`;
 
-let eggTimer = null;
-function triggerEasterEgg() {
-  const egg = EASTER_EGGS[Math.floor(Math.random() * EASTER_EGGS.length)];
-
-  // 音
-  try { egg.sound(getAC()); } catch(e) {}
-
-  // オーバーレイ表示
-  eggOverlay.innerHTML = `
-    <div style="font-size:18vw;animation:letterPop .4s cubic-bezier(.34,1.56,.64,1) both;filter:drop-shadow(0 0 4vw white)">${egg.emoji}</div>
-    <div style="font-family:'Fredoka One',cursive;font-size:5vw;color:#fff;
-      text-shadow:0 0 3vw rgba(255,255,255,.8),0 3px 0 rgba(0,0,0,.4);
-      animation:wordSlide .4s .15s ease-out both">${egg.message}</div>
-  `;
-  eggOverlay.style.background = egg.bg.includes('gradient') ? egg.bg : egg.bg + 'cc';
-  eggOverlay.style.display = 'flex';
-
-  // フラッシュ
-  flashEl.style.background = typeof egg.bg === 'string' && !egg.bg.includes('gradient') ? egg.bg : '#fff';
-  flashEl.classList.remove('flash');
-  void flashEl.offsetWidth;
-  flashEl.classList.add('flash');
-
-  // スパーク
-  spawnParticles(typeof egg.bg === 'string' && !egg.bg.includes('gradient') ? egg.bg : '#fff');
-
-  // 1.5秒後に消す
-  clearTimeout(eggTimer);
-  eggTimer = setTimeout(() => { eggOverlay.style.display = 'none'; }, 1500);
-}
-
-// ===== キー押下 =====
-document.addEventListener('keydown', (e) => {
-  if (e.repeat) return; // 押しっぱなしリピートは無視
-
-  // Escのみ全画面解除を許可、それ以外の特殊キーはブロック
-  if (e.key === 'Escape') return; // ブラウザのEsc処理に任せる（全画面解除）
-  if (e.key === 'Tab') {
-    e.preventDefault();
-    const langs = Object.keys(LANGS);
-    const idx = langs.indexOf(currentLang);
-    switchLang(langs[(idx + 1) % langs.length]);
-    return;
-  }
-  // Ctrl+R / Cmd+R はリフレッシュを許可、それ以外の特殊キーを抑制
-  if ((e.ctrlKey || e.metaKey) && (e.key === 'r' || e.key === 'R')) return; // リフレッシュ許可
-  if (e.key === 'F5' || (e.ctrlKey && ['w','W','t','T','n','N'].includes(e.key))) {
-    e.preventDefault(); return;
+    // 最新カードまでスクロール
+    requestAnimationFrame(() => {
+      confirmedScroll.scrollTop = confirmedScroll.scrollHeight;
+    });
   }
 
-  const key = e.key.toUpperCase();
-  const data = LANGS[currentLang]?.data;
+  // ===== リアルタイムエリアのホールド＆移行 =====
+  function holdAndTransfer(text) {
+    // ホールド中はフェードなし、くっきり表示
+    realtimePanel.classList.remove('fading');
+    realtimeStatus.textContent = '✅ 翻訳完了 — 確定エリアへ移動中...';
 
-  // 初回キー押下時に全画面へ
-  if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+    if (holdTimer) clearTimeout(holdTimer);
 
-  // A-Zで対応単語がある → 通常表示
-  if (data && data[key]) {
-    const list  = data[key];
-    const item  = list[Math.floor(Math.random() * list.length)];
-    const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+    // HOLD_MS後にフェードアウトして確定エリアへ
+    holdTimer = setTimeout(() => {
+      realtimePanel.classList.add('fading');
 
-    idleEl.classList.add('hidden');
-    eggOverlay.style.display = 'none';
+      // フェード完了後にカード追加＆リアルタイムエリアクリア
+      setTimeout(() => {
+        translations.push({
+          text: text,
+          time: new Date().toLocaleTimeString('ja-JP')
+        });
+        renderConfirmedCards();
+        addLog(`確定移動: #${translations.length}`);
 
-    resetAnim(letterEl); letterEl.textContent = key;
-    resetAnim(illustEl); illustEl.textContent = item.emoji;
-    resetAnim(mainWordEl); mainWordEl.textContent = item.w;
-    subWordEl.textContent = item.s || '';
-    displayEl.classList.add('show');
-
-    flashEl.style.background = color;
-    flashEl.classList.remove('flash');
-    void flashEl.offsetWidth;
-    flashEl.classList.add('flash');
-
-    spawnParticles(color);
-    speak(currentLang, item.w);
-
-  } else if (e.key.length === 1) {
-    // 対応単語がない文字キー（記号・数字など） → イースターエッグ
-    triggerEasterEgg();
-  }
-  // それ以外（矢印・Shift・Alt・Metaなど）は何もしない
-});
-
-// ===== マウス軌跡 =====
-(function() {
-  const canvas = document.getElementById('trail-canvas');
-  const ctx    = canvas.getContext('2d');
-  const stage  = document.getElementById('stage');
-
-  // ===== リサイズ =====
-  function resize() {
-    canvas.width  = stage.clientWidth;
-    canvas.height = stage.clientHeight;
-  }
-  resize();
-  new ResizeObserver(resize).observe(stage);
-
-  // ===== ポイント管理 =====
-  // 各ポイント: {x, y, life}  life: 1.0(新) → 0.0(消滅)
-  const MAX_POINTS = 120;
-  const points = [];
-
-  function toStagePos(e) {
-    const r = stage.getBoundingClientRect();
-    return {
-      x: (e.clientX - r.left) * (canvas.width  / r.width),
-      y: (e.clientY - r.top)  * (canvas.height / r.height),
-    };
+        realtimePanel.classList.remove('fading');
+        realtimeArea.innerHTML = '<span class="output-placeholder">次の翻訳を待機中...</span>';
+        realtimeStatus.textContent = '';
+      }, 800);
+    }, HOLD_MS);
   }
 
-  stage.addEventListener('mousemove', (e) => {
-    const pos = toStagePos(e);
-    points.push({ x: pos.x, y: pos.y, life: 1.0 });
-    if (points.length > MAX_POINTS) points.shift();
-  });
-
-  // ===== 言語別カラー（複数色で虹彗星に） =====
-  const COMET_COLORS = {
-    en: [[ 220,180,255],[160,100,255],[100, 60,220],[255,255,255]], // 紫〜白
-    zu: [[ 255,200, 60],[255,140, 20],[255, 80,  0],[255,240,180]], // 炎オレンジ
-    es: [[ 255,100, 60],[255, 50, 30],[220,  0,  0],[255,220,180]], // 赤〜金
-    ja: [[ 255,140,200],[255, 80,160],[200, 40,120],[255,240,240]], // ピンク
-    vi: [[  60,255,140],[ 20,200, 80],[  0,140, 60],[200,255,220]], // エメラルド
-  };
-
-  function getColors() {
-    return COMET_COLORS[currentLang] || [[255,255,255],[200,200,255],[150,150,255],[255,255,255]];
-  }
-
-  // ===== 輝きパーティクル（スパーク） =====
-  const sparks = [];
-  stage.addEventListener('mousemove', (e) => {
-    if (Math.random() < 0.3) { // 30%の確率でスパーク生成
-      const pos = toStagePos(e);
-      sparks.push({
-        x: pos.x, y: pos.y,
-        vx: (Math.random() - 0.5) * 4,
-        vy: (Math.random() - 0.5) * 4,
-        life: 1.0,
-        size: Math.random() * 3 + 1,
-      });
-    }
-  });
-
-  // ===== 描画ループ =====
-  function draw() {
-    // 前フレームを完全クリア
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    const colors = getColors();
-
-    // ----- 彗星の尾（太さが尻尾から頭へ細くなる）-----
-    if (points.length >= 2) {
-      for (let i = 1; i < points.length; i++) {
-        const p0 = points[i - 1];
-        const p1 = points[i];
-
-        // t: 0=尾の先端(古い), 1=頭(新しい)
-        const t  = i / (points.length - 1);
-        const t2 = t * t; // 二乗で加速感
-
-        // 太さ：尾→細、頭→太（最大35px）
-        const width = t2 * 35 + 0.5;
-
-        // カラーミックス（尾→頭で色変化）
-        const ci   = Math.floor(t * (colors.length - 1));
-        const ci2  = Math.min(ci + 1, colors.length - 1);
-        const cf   = t * (colors.length - 1) - ci;
-        const r = colors[ci][0] * (1-cf) + colors[ci2][0] * cf;
-        const g = colors[ci][1] * (1-cf) + colors[ci2][1] * cf;
-        const b = colors[ci][2] * (1-cf) + colors[ci2][2] * cf;
-
-        // life減衰（尾の先端ほど早く消える）
-        const alpha = p1.life * t2;
-
-        // ---- 外側グロー（大）----
-        ctx.beginPath();
-        ctx.moveTo(p0.x, p0.y);
-        ctx.lineTo(p1.x, p1.y);
-        ctx.strokeStyle = `rgba(${r|0},${g|0},${b|0},${alpha * 0.15})`;
-        ctx.lineWidth   = width * 3.5;
-        ctx.lineCap     = 'round';
-        ctx.lineJoin    = 'round';
-        ctx.stroke();
-
-        // ---- 中グロー ----
-        ctx.beginPath();
-        ctx.moveTo(p0.x, p0.y);
-        ctx.lineTo(p1.x, p1.y);
-        ctx.strokeStyle = `rgba(${r|0},${g|0},${b|0},${alpha * 0.35})`;
-        ctx.lineWidth   = width * 1.5;
-        ctx.stroke();
-
-        // ---- 芯（鮮明な白〜本色）----
-        ctx.beginPath();
-        ctx.moveTo(p0.x, p0.y);
-        ctx.lineTo(p1.x, p1.y);
-        const coreR = r * 0.6 + 255 * 0.4;
-        const coreG = g * 0.6 + 255 * 0.4;
-        const coreB = b * 0.6 + 255 * 0.4;
-        ctx.strokeStyle = `rgba(${coreR|0},${coreG|0},${coreB|0},${alpha * 0.9})`;
-        ctx.lineWidth   = Math.max(width * 0.25, 1);
-        ctx.stroke();
-      }
-
-      // ---- 頭の輝点（彗星核） ----
-      const head = points[points.length - 1];
-      const hc   = colors[colors.length - 1];
-      const grad = ctx.createRadialGradient(head.x, head.y, 0, head.x, head.y, 28);
-      grad.addColorStop(0,   `rgba(255,255,255,${head.life * 0.95})`);
-      grad.addColorStop(0.2, `rgba(${hc[0]},${hc[1]},${hc[2]},${head.life * 0.8})`);
-      grad.addColorStop(0.6, `rgba(${hc[0]},${hc[1]},${hc[2]},${head.life * 0.2})`);
-      grad.addColorStop(1,   'rgba(0,0,0,0)');
-      ctx.beginPath();
-      ctx.arc(head.x, head.y, 28, 0, Math.PI * 2);
-      ctx.fillStyle = grad;
-      ctx.fill();
-    }
-
-    // ----- スパーク（飛び散る火花） -----
-    for (let i = sparks.length - 1; i >= 0; i--) {
-      const s = sparks[i];
-      s.x   += s.vx;
-      s.y   += s.vy;
-      s.vy  += 0.08; // 重力
-      s.life -= 0.045;
-
-      if (s.life <= 0) { sparks.splice(i, 1); continue; }
-
-      const sc = colors[Math.floor(Math.random() * colors.length)];
-      const grad = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.size * 3);
-      grad.addColorStop(0, `rgba(255,255,255,${s.life})`);
-      grad.addColorStop(0.4, `rgba(${sc[0]},${sc[1]},${sc[2]},${s.life * 0.8})`);
-      grad.addColorStop(1, 'rgba(0,0,0,0)');
-      ctx.beginPath();
-      ctx.arc(s.x, s.y, s.size * 3, 0, Math.PI * 2);
-      ctx.fillStyle = grad;
-      ctx.fill();
-    }
-
-    // ポイントのlife減衰（尾がゆっくり消える）
-    for (let i = 0; i < points.length; i++) {
-      points[i].life -= 0.012 * (1 - i / points.length);
-      if (points[i].life < 0) points[i].life = 0;
-    }
-    // 完全消滅したものを削除
-    while (points.length && points[0].life <= 0) points.shift();
-
-    requestAnimationFrame(draw);
-  }
-  draw();
-})();
-
-// ===== 右クリック無効 =====
-document.addEventListener('contextmenu', (e) => e.preventDefault());
-
-// ===== PrintScreen無効化 =====
-document.addEventListener('keyup', (e) => {
-  if (e.key === 'PrintScreen') {
-    // クリップボードを透明1pxのcanvasデータで上書き
+  // ===== マイクデバイス =====
+  async function loadMicDevices() {
     try {
-      const c = document.createElement('canvas');
-      c.width = 1; c.height = 1;
-      c.toBlob(blob => { if (blob) navigator.clipboard.write([new ClipboardItem({'image/png': blob})]).catch(()=>{}); });
-    } catch(err) {
-      navigator.clipboard.writeText('').catch(() => {});
+      const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+      s.getTracks().forEach(t => t.stop());
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const mics = devices.filter(d => d.kind === 'audioinput');
+      micSelect.innerHTML = '';
+      if (mics.length === 0) { micSelect.innerHTML = '<option value="">マイクなし</option>'; return; }
+      const savedId = localStorage.getItem('rt_mic_device_id') || '';
+      mics.forEach((d, i) => {
+        const opt = document.createElement('option');
+        opt.value = d.deviceId;
+        opt.textContent = d.label || `マイク ${i + 1}`;
+        if (d.deviceId === savedId) opt.selected = true;
+        micSelect.appendChild(opt);
+      });
+      selectedDeviceId = micSelect.value;
+      addLog(`🎤 ${mics.length}台検出`);
+    } catch (err) {
+      micSelect.innerHTML = '<option value="">取得失敗</option>';
+      addLog(`🎤 デバイスエラー: ${err.message}`);
     }
   }
-});
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'PrintScreen') e.preventDefault();
-});
-const consoleLogs = [];
-const _log = console.log.bind(console);
-const _err = console.error.bind(console);
-console.log   = (...a) => { consoleLogs.push('[LOG] '+a.join(' ')); _log(...a); };
-console.error = (...a) => { consoleLogs.push('[ERR] '+a.join(' ')); _err(...a); };
-function copyConsole() {
-  navigator.clipboard.writeText(consoleLogs.join('\n') || '（ログなし）')
-    .then(() => alert('コピーしました'))
-    .catch(() => alert('コピー失敗'));
-}
+  micSelect.addEventListener('change', () => {
+    selectedDeviceId = micSelect.value;
+    localStorage.setItem('rt_mic_device_id', selectedDeviceId);
+    addLog(`🎤 切替: ${micSelect.options[micSelect.selectedIndex]?.text}`);
+    if (isListening) { stopListening(); setTimeout(startListening, 200); }
+  });
+  btnRefreshMic.addEventListener('click', loadMicDevices);
+
+  // ===== APIキー =====
+  const savedKey = localStorage.getItem('claude_api_key') || '';
+  if (savedKey) { apiKeyInput.value = savedKey; apiStatus.textContent = '設定済み ✓'; apiStatus.classList.add('ok'); }
+  apiKeyInput.addEventListener('input', () => {
+    const key = apiKeyInput.value.trim();
+    localStorage.setItem('claude_api_key', key);
+    apiStatus.textContent = key ? '設定済み ✓' : '未設定';
+    apiStatus.classList.toggle('ok', !!key);
+  });
+
+  // ===== ストリーミング翻訳 =====
+  async function translate(text) {
+    if (!text.trim()) {
+      realtimeArea.innerHTML = '<span class="output-placeholder">翻訳中のテキストがここに表示...</span>';
+      realtimeStatus.textContent = '';
+      return;
+    }
+    const apiKey = apiKeyInput.value.trim();
+    if (!apiKey) { showError('APIキーを入力してください'); return; }
+
+    // ホールドタイマーをキャンセル（新しい翻訳が来たら即上書き）
+    if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
+    // 前回ホールド中のテキストがあれば即確定へ
+    const prevText = realtimeArea.textContent;
+    if (prevText && !prevText.includes('待機中') && !prevText.includes('表示...') && prevText.length > 0) {
+      const clean = prevText.trim();
+      if (clean && !translations.some(t => t.text === clean)) {
+        translations.push({ text: clean, time: new Date().toLocaleTimeString('ja-JP') });
+        renderConfirmedCards();
+        addLog(`確定移動(即時): #${translations.length}`);
+      }
+    }
+
+    if (abortController) abortController.abort();
+    abortController = new AbortController();
+
+    isTranslating = true;
+    hideError();
+    realtimeArea.textContent = '';
+    realtimePanel.classList.remove('fading');
+    realtimeStatus.textContent = '';
+    translatingInd.classList.remove('hidden');
+    charCountEl.textContent = '0';
+
+    const srcLang = direction === 'ja2en' ? '日本語' : '英語';
+    const tgtLang = direction === 'ja2en' ? '英語' : '日本語';
+    addLog(`翻訳開始: ${srcLang}→${tgtLang} (${text.length}文字)`);
+
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'anthropic-dangerous-direct-browser-access': 'true',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 1000,
+          stream: true,
+          system: `あなたはプロの翻訳者です。${srcLang}を${tgtLang}に自然に翻訳してください。翻訳結果のみを出力し、説明や注釈は一切不要です。`,
+          messages: [{ role: 'user', content: text }],
+        }),
+        signal: abortController.signal,
+      });
+
+      if (!res.ok) { throw new Error(`API Error ${res.status}: ${(await res.text()).slice(0, 200)}`); }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '', fullText = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const data = line.slice(6).trim();
+          if (data === '[DONE]') break;
+          try {
+            const p = JSON.parse(data);
+            if (p.type === 'content_block_delta' && p.delta?.type === 'text_delta') {
+              fullText += p.delta.text;
+              realtimeArea.textContent = fullText;
+              charCountEl.textContent = fullText.length;
+              realtimeArea.scrollTop = realtimeArea.scrollHeight;
+            }
+          } catch {}
+        }
+      }
+
+      addLog(`翻訳完了: ${fullText.length}文字`);
+
+      // 翻訳完了 → ホールド表示してから確定エリアへ
+      if (fullText.trim()) {
+        holdAndTransfer(fullText.trim());
+      } else {
+        realtimeArea.innerHTML = '<span class="output-placeholder">次の翻訳を待機中...</span>';
+      }
+
+    } catch (err) {
+      if (err.name === 'AbortError') { addLog('翻訳キャンセル'); return; }
+      showError(err.message);
+      addLog(`エラー: ${err.message}`);
+    } finally {
+      isTranslating = false;
+      translatingInd.classList.add('hidden');
+    }
+  }
+
+  // テキスト入力
+  inputArea.addEventListener('input', () => {
+    inputCount.textContent = inputArea.value.length + ' 文字';
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => translate(inputArea.value), DEBOUNCE_MS);
+  });
+
+  // 入れ替え
+  btnSwap.addEventListener('click', () => {
+    const last = translations.length > 0 ? translations[translations.length - 1].text : '';
+    direction = direction === 'ja2en' ? 'en2ja' : 'ja2en';
+    updateLabels();
+    if (isListening) stopListening();
+    inputArea.value = last;
+    inputCount.textContent = last.length + ' 文字';
+    translations.length = 0;
+    renderConfirmedCards();
+    realtimeArea.innerHTML = '<span class="output-placeholder">翻訳中のテキストがここに表示...</span>';
+    realtimeStatus.textContent = '';
+    finalTranscript = last;
+    if (last.trim()) {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => translate(last), 100);
+    }
+  });
+
+  // コピー（全カードのテキストを改行区切り）
+  btnCopy.addEventListener('click', () => {
+    const allText = translations.map((t, i) => `[#${i+1}] ${t.text}`).join('\n\n');
+    navigator.clipboard.writeText(allText);
+    addLog('確定翻訳をコピー');
+    btnCopy.textContent = '✓'; setTimeout(() => { btnCopy.textContent = 'コピー'; }, 1500);
+  });
+  btnClear.addEventListener('click', () => {
+    translations.length = 0;
+    renderConfirmedCards();
+    addLog('確定翻訳をクリア');
+  });
+
+  // コンソール
+  let consoleOpen = false;
+  btnConsole.addEventListener('click', () => {
+    consoleOpen = !consoleOpen;
+    debugConsole.classList.toggle('hidden', !consoleOpen);
+    btnConsole.textContent = consoleOpen ? 'Console ▲' : 'Console ▼';
+  });
+  btnCopyConsole.addEventListener('click', () => {
+    navigator.clipboard.writeText(logs.join('\n'));
+    addLog('ログコピー');
+  });
+
+  // ===== 音声認識 =====
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    btnMic.classList.add('hidden');
+    addLog('⚠ 音声認識非対応');
+  } else {
+    recognition = new SR();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'ja-JP';
+
+    recognition.onresult = (event) => {
+      let interim = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const t = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += t;
+          inputArea.value = finalTranscript;
+          inputCount.textContent = finalTranscript.length + ' 文字';
+          scrollInputToBottom();
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => translate(finalTranscript), DEBOUNCE_MS);
+          addLog(`🎤 確定: "${t}"`);
+        } else {
+          interim += t;
+        }
+      }
+      if (interim) {
+        inputArea.value = finalTranscript + interim;
+        inputCount.textContent = inputArea.value.length + ' 文字';
+        scrollInputToBottom();
+      }
+    };
+    recognition.onerror = (event) => {
+      if (event.error === 'no-speech') return;
+      addLog(`🎤 エラー: ${event.error}`);
+      if (event.error === 'not-allowed') { showError('マイクアクセス拒否'); stopListening(); }
+    };
+    recognition.onend = () => { if (isListening) { try { recognition.start(); } catch {} } };
+  }
+
+  function startListening() {
+    if (!recognition) return;
+    recognition.lang = direction === 'ja2en' ? 'ja-JP' : 'en-US';
+    finalTranscript = inputArea.value;
+    const constraints = selectedDeviceId ? { audio: { deviceId: { exact: selectedDeviceId } } } : { audio: true };
+    navigator.mediaDevices.getUserMedia(constraints).then(stream => {
+      const track = stream.getAudioTracks()[0];
+      const name = track?.label || 'Unknown';
+      micActiveName.textContent = `使用中: ${name}`;
+      micActiveName.classList.remove('hidden');
+      addLog(`🎤 使用: ${name}`);
+      window._activeStream = stream;
+      try {
+        recognition.start(); isListening = true; hideError();
+        btnMic.classList.add('active'); listeningInd.classList.remove('hidden');
+        addLog(`🎤 認識開始 (${recognition.lang})`);
+      } catch (err) {
+        addLog(`🎤 開始失敗: ${err.message}`);
+        stream.getTracks().forEach(t => t.stop());
+      }
+    }).catch(err => { addLog(`🎤 マイク取得失敗: ${err.message}`); showError('マイクアクセス失敗'); });
+  }
+  function stopListening() {
+    if (!recognition) return;
+    try { recognition.stop(); } catch {}
+    isListening = false; btnMic.classList.remove('active');
+    listeningInd.classList.add('hidden'); micActiveName.classList.add('hidden');
+    if (window._activeStream) { window._activeStream.getTracks().forEach(t => t.stop()); window._activeStream = null; }
+    addLog('🎤 認識停止');
+  }
+  btnMic.addEventListener('click', () => { isListening ? stopListening() : startListening(); });
+
+  // 初期化
+  updateLabels();
+  renderConfirmedCards();
+  loadMicDevices();
+  addLog(`起動 v${APP_VERSION}`);
+})();
 </script>
 </body>
 </html>
