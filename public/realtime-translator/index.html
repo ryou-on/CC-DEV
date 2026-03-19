@@ -363,14 +363,10 @@
     }
   }
 
-  // 音声認識の言語を切り替え（次の再起動時に反映、途中停止しない）
+  // 音声認識の言語を次回再起動時に反映
+  let nextRecogLang = null;
   function switchRecognitionLang(lang) {
-    if (!recognition) return;
-    const newLang = lang === 'ja' ? 'ja-JP' : 'en-US';
-    if (recognition.lang !== newLang) {
-      recognition.lang = newLang;
-      addLog(`🌐 次回認識言語: ${newLang}`);
-    }
+    nextRecogLang = lang === 'ja' ? 'ja-JP' : 'en-US';
   }
 
   // ===== リアルタイムスタック =====
@@ -727,20 +723,55 @@
     };
 
     recognition.onerror = (event) => {
-      if (event.error === 'no-speech') return;
-      addLog(`🎤 エラー: ${event.error}`);
+      if (event.error === 'no-speech') {
+        addLog('🎤 (無音)');
+        return;
+      }
+      addLog(`🎤 ❌ エラー: ${event.error} (message: ${event.message || 'none'})`);
       if (event.error === 'not-allowed') { showError('マイクアクセス拒否'); stopListening(); }
+      if (event.error === 'aborted') { addLog('🎤 認識中断(abort)'); }
+      if (event.error === 'network') { showError('ネットワークエラー（音声認識サーバー接続失敗）'); }
     };
-    recognition.onend = () => { if (isListening) { try { recognition.start(); } catch {} } };
+    recognition.onend = () => {
+      addLog(`🎤 onend (isListening: ${isListening})`);
+      if (isListening) {
+        // 言語変更があればここで反映
+        if (nextRecogLang && recognition.lang !== nextRecogLang) {
+          addLog(`🌐 認識言語切替: ${recognition.lang} → ${nextRecogLang}`);
+          recognition.lang = nextRecogLang;
+        }
+        try {
+          recognition.start();
+          addLog(`🎤 再起動OK (${recognition.lang})`);
+        } catch (e) {
+          addLog(`🎤 ❌ 再起動失敗: ${e.message}`);
+          // 少し待ってリトライ
+          setTimeout(() => {
+            if (isListening) {
+              try { recognition.start(); addLog('🎤 リトライOK'); }
+              catch (e2) {
+                addLog(`🎤 ❌ リトライも失敗: ${e2.message}`);
+                isListening = false;
+                btnMic.classList.remove('active');
+                listeningInd.classList.add('hidden');
+              }
+            }
+          }, 300);
+        }
+      }
+    };
   }
 
   function startListening() {
-    if (!recognition) return;
+    if (!recognition) { addLog('🎤 ❌ recognition未初期化'); return; }
     // 前回の検出言語があればそれを使う、なければja-JP
     recognition.lang = lastDetectedLang === 'en' ? 'en-US' : 'ja-JP';
     finalTranscript = inputArea.value;
     lastFinalTime = 0;
+    pendingBuffer = ''; pendingLang = null; // バッファもリセット
+    if (bufferTimer) { clearTimeout(bufferTimer); bufferTimer = null; }
     const c = selectedDeviceId ? { audio: { deviceId: { exact: selectedDeviceId } } } : { audio: true };
+    addLog(`🎤 マイク取得中... (device: ${selectedDeviceId || 'default'})`);
     navigator.mediaDevices.getUserMedia(c).then(stream => {
       const name = stream.getAudioTracks()[0]?.label || 'Unknown';
       micActiveName.textContent = `使用中: ${name}`;
@@ -749,9 +780,16 @@
       try {
         recognition.start(); isListening = true; hideError();
         btnMic.classList.add('active'); listeningInd.classList.remove('hidden');
-        addLog(`🎤 開始 (${recognition.lang})`);
-      } catch (e) { stream.getTracks().forEach(t => t.stop()); }
-    }).catch(() => showError('マイクアクセス失敗'));
+        addLog(`🎤 開始OK (${recognition.lang}) ${name}`);
+      } catch (e) {
+        addLog(`🎤 ❌ recognition.start()失敗: ${e.message}`);
+        showError(`音声認識開始失敗: ${e.message}`);
+        stream.getTracks().forEach(t => t.stop());
+      }
+    }).catch(e => {
+      addLog(`🎤 ❌ getUserMedia失敗: ${e.message}`);
+      showError(`マイクアクセス失敗: ${e.message}`);
+    });
   }
 
   function stopListening() {
