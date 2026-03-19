@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Realtime Translator v0.6.0</title>
+<title>Realtime Translator v0.9.0</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Noto+Sans+JP:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -32,10 +32,12 @@
   .btn-sm:hover { background: rgba(255,255,255,0.1); }
   .mic-active-name { font-size: 11px; color: #4ade80; font-family: 'JetBrains Mono', monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
 
+  /* 言語表示バー */
   .lang-bar { display: flex; align-items: center; justify-content: center; gap: 16px; margin-bottom: 14px; }
-  .lang-label { font-size: 15px; font-weight: 600; color: #c7d2fe; padding: 8px 20px; background: rgba(99,102,241,0.1); border-radius: 10px; min-width: 100px; text-align: center; }
-  .btn-swap { width: 44px; height: 44px; border-radius: 50%; border: 2px solid rgba(99,102,241,0.3); background: rgba(99,102,241,0.08); color: #818cf8; cursor: pointer; font-size: 20px; display: flex; align-items: center; justify-content: center; transition: all 0.3s; }
-  .btn-swap:hover { background: rgba(99,102,241,0.2); transform: rotate(180deg); }
+  .lang-label { font-size: 15px; font-weight: 600; color: #c7d2fe; padding: 8px 20px; background: rgba(99,102,241,0.1); border-radius: 10px; min-width: 100px; text-align: center; transition: all 0.3s; }
+  .lang-label.active-lang { background: rgba(99,102,241,0.25); border: 1px solid rgba(99,102,241,0.4); }
+  .lang-arrow { font-size: 20px; color: #818cf8; }
+  .lang-auto-badge { font-size: 10px; color: #4ade80; background: rgba(74,222,128,0.1); padding: 2px 6px; border-radius: 4px; margin-left: 6px; }
 
   .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
   @media (max-width: 750px) { .panels { grid-template-columns: 1fr; } }
@@ -48,19 +50,17 @@
   textarea::placeholder { color: #475569; }
   .output-column { display: flex; flex-direction: column; gap: 12px; }
 
-  /* ===== リアルタイム翻訳: 直近3件スタック ===== */
+  /* リアルタイム翻訳スタック */
   .panel-realtime { background: rgba(251,191,36,0.04); border: 1px solid rgba(251,191,36,0.15); border-radius: 16px; padding: 16px; }
   .panel-realtime .panel-label { color: #fbbf24; }
   .realtime-stack { display: flex; flex-direction: column; gap: 8px; min-height: 60px; }
-  .rt-item {
-    background: rgba(251,191,36,0.06); border: 1px solid rgba(251,191,36,0.12);
-    border-radius: 10px; padding: 10px 14px; position: relative;
-    animation: rtSlideIn 0.3s ease;
-    transition: opacity 2s ease;
-  }
+  .rt-item { background: rgba(251,191,36,0.06); border: 1px solid rgba(251,191,36,0.12); border-radius: 10px; padding: 10px 14px; position: relative; animation: rtSlideIn 0.3s ease; transition: opacity 2s ease; }
   .rt-item.fading { opacity: 0.15; }
   .rt-item .rt-text { font-size: 15px; line-height: 1.9; white-space: pre-wrap; word-break: break-word; color: #e2e8f0; }
-  .rt-item .rt-meta { margin-top: 4px; font-size: 10px; color: #64748b; font-family: 'JetBrains Mono', monospace; display: flex; justify-content: space-between; }
+  .rt-item .rt-meta { margin-top: 4px; font-size: 10px; color: #64748b; font-family: 'JetBrains Mono', monospace; display: flex; justify-content: space-between; align-items: center; }
+  .rt-item .rt-lang-tag { font-size: 9px; padding: 1px 5px; border-radius: 3px; }
+  .rt-lang-ja { background: rgba(239,68,68,0.15); color: #fca5a5; }
+  .rt-lang-en { background: rgba(59,130,246,0.15); color: #93c5fd; }
   .rt-item.streaming { border-color: rgba(251,191,36,0.35); }
   .rt-item.streaming .rt-text { color: #fbbf24; }
   @keyframes rtSlideIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
@@ -72,6 +72,7 @@
   .translation-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 12px 14px; position: relative; animation: cardSlideIn 0.3s ease; }
   .translation-card .card-num { position: absolute; top: 6px; right: 10px; font-size: 10px; color: #475569; font-family: 'JetBrains Mono', monospace; }
   .translation-card .card-text { font-size: 15px; line-height: 1.9; white-space: pre-wrap; word-break: break-word; color: #e2e8f0; }
+  .translation-card .card-src { margin-top: 6px; font-size: 12px; color: #64748b; line-height: 1.6; white-space: pre-wrap; border-left: 2px solid rgba(255,255,255,0.08); padding-left: 10px; }
   .translation-card .card-time { margin-top: 4px; font-size: 10px; color: #475569; font-family: 'JetBrains Mono', monospace; }
   @keyframes cardSlideIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
   .output-placeholder { color: #475569; font-style: italic; }
@@ -99,6 +100,28 @@
   ::-webkit-scrollbar-track { background: transparent; }
   ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
   .hidden { display: none !important; }
+
+  /* 辞書パネル */
+  .dict-panel { margin-bottom: 12px; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; overflow: hidden; }
+  .dict-toggle { width: 100%; padding: 10px 16px; background: none; border: none; color: #94a3b8; font-size: 12px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; font-family: 'Noto Sans JP', sans-serif; }
+  .dict-toggle:hover { background: rgba(255,255,255,0.02); }
+  .dict-body { padding: 12px 16px; border-top: 1px solid rgba(255,255,255,0.04); }
+  .dict-add-row { display: flex; gap: 6px; margin-bottom: 10px; align-items: center; }
+  .dict-add-row input { flex: 1; padding: 7px 10px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04); color: #e2e8f0; font-size: 12px; outline: none; }
+  .dict-add-row input::placeholder { color: #475569; }
+  .dict-add-row input:focus { border-color: rgba(99,102,241,0.4); }
+  .btn-dict-add { background: rgba(99,102,241,0.2); border: none; color: #a5b4fc; padding: 7px 12px; border-radius: 8px; cursor: pointer; font-size: 12px; white-space: nowrap; }
+  .btn-dict-add:hover { background: rgba(99,102,241,0.3); }
+  .dict-list { display: flex; flex-wrap: wrap; gap: 6px; }
+  .dict-tag { display: inline-flex; align-items: center; gap: 4px; background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.2); border-radius: 8px; padding: 4px 10px; font-size: 11px; color: #c7d2fe; }
+  .dict-tag .dict-arrow { color: #64748b; }
+  .dict-tag .dict-del { cursor: pointer; color: #64748b; margin-left: 2px; font-size: 13px; }
+  .dict-tag .dict-del:hover { color: #fca5a5; }
+  .dict-empty { font-size: 11px; color: #475569; font-style: italic; }
+
+  /* 再翻訳ボタン */
+  .btn-retranslate { background: rgba(251,191,36,0.15); border: 1px solid rgba(251,191,36,0.3); color: #fbbf24; padding: 5px 12px; border-radius: 8px; cursor: pointer; font-size: 11px; white-space: nowrap; transition: all 0.2s; }
+  .btn-retranslate:hover { background: rgba(251,191,36,0.25); }
 </style>
 </head>
 <body>
@@ -106,7 +129,7 @@
 <header>
   <div class="header-left">
     <div class="logo">翻</div>
-    <div class="header-title"><h1>Realtime Translator</h1><span class="version">v0.6.0</span></div>
+    <div class="header-title"><h1>Realtime Translator</h1><span class="version">v0.9.0</span></div>
     <span class="badge">Claude API</span>
   </div>
   <button class="btn-console" id="btnConsole">Console ▼</button>
@@ -123,10 +146,26 @@
     <button class="btn-sm" id="btnRefreshMic">🔄</button>
     <span class="mic-active-name hidden" id="micActiveName"></span>
   </div>
+
+  <!-- 言語表示（自動検出） -->
+  <!-- 辞書パネル -->
+  <div class="dict-panel">
+    <button class="dict-toggle" id="dictToggle">📖 ユーザー辞書（固有名詞・専門用語）<span id="dictCount">0件</span> <span id="dictArrow">▼</span></button>
+    <div class="dict-body hidden" id="dictBody">
+      <div class="dict-add-row">
+        <input type="text" id="dictSrc" placeholder="原語（例: hihaho）">
+        <span style="color:#64748b">→</span>
+        <input type="text" id="dictTgt" placeholder="訳語（例: ヒハホ）">
+        <button class="btn-dict-add" id="btnDictAdd">追加</button>
+      </div>
+      <div class="dict-list" id="dictList"><span class="dict-empty">辞書は空です。固有名詞や専門用語を登録してください。</span></div>
+    </div>
+  </div>
+
   <div class="lang-bar">
-    <div class="lang-label" id="srcLabel">日本語</div>
-    <button class="btn-swap" id="btnSwap">⇄</button>
-    <div class="lang-label" id="tgtLabel">English</div>
+    <div class="lang-label" id="srcLabel">自動検出<span class="lang-auto-badge">AUTO</span></div>
+    <span class="lang-arrow">→</span>
+    <div class="lang-label" id="tgtLabel">翻訳先</div>
   </div>
 
   <div class="panels">
@@ -136,14 +175,14 @@
           <span class="panel-label">入力</span>
           <button class="btn-mic" id="btnMic">🎤</button>
           <span class="listening-indicator hidden" id="listeningInd"><span class="listening-dot"></span> 認識中...</span>
+          <button class="btn-retranslate" id="btnRetranslate" title="テキストを編集してから押すと再翻訳">✏️ 再翻訳</button>
         </div>
         <span id="inputCount">0 文字</span>
       </div>
-      <textarea id="inputArea" placeholder="日本語を入力してください..."></textarea>
+      <textarea id="inputArea" placeholder="話すか入力してください（言語は自動判定）&#10;💡 音声認識の誤りはここで直接編集→再翻訳ボタンで送信できます"></textarea>
     </div>
 
     <div class="output-column">
-      <!-- リアルタイム翻訳: 直近3件スタック -->
       <div class="panel panel-realtime">
         <div class="panel-header">
           <span class="panel-label">🔄 リアルタイム翻訳</span>
@@ -154,7 +193,6 @@
         </div>
       </div>
 
-      <!-- 確定翻訳 -->
       <div class="panel panel-confirmed">
         <div class="panel-header">
           <div class="panel-header-left">
@@ -187,14 +225,59 @@
 (() => {
   'use strict';
 
+  const RT_DISPLAY_SEC = 12;
+  const RT_FADE_SEC = 3;
+  const RT_MAX_ITEMS = 3;
   const DEBOUNCE_MS = 600;
-  const RT_DISPLAY_SEC = 12;        // リアルタイムエリアに表示する秒数
-  const RT_FADE_SEC = 3;            // フェードアウト開始までの追加秒数
-  const RT_MAX_ITEMS = 3;           // リアルタイムエリアの最大表示件数
-  const MODEL = 'claude-haiku-4-5-20251001';
-  const APP_VERSION = '0.6.0';
+  const PAUSE_THRESHOLD_MS = 2000;  // 話者区切りとみなす無音時間
+  const BUFFER_WAIT_MS = 1200;      // 短文を次の確定と結合するまでの待ち時間
+  const SHORT_THRESHOLD = 50;       // この文字数以下はHaiku、超はSonnet
+  const MODEL_FAST = 'claude-haiku-4-5-20251001';
+  const MODEL_QUALITY = 'claude-sonnet-4-20250514';
+  const APP_VERSION = '0.9.0';
 
-  let direction = 'ja2en';
+  // 日本語検出
+  const JA_REGEX = /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u3000-\u303F]/;
+
+  // ===== ユーザー辞書 =====
+  // localStorage に保存: [{src, tgt}, ...]
+  let userDict = JSON.parse(localStorage.getItem('rt_user_dict') || '[]');
+
+  function saveDict() { localStorage.setItem('rt_user_dict', JSON.stringify(userDict)); }
+
+  function renderDict() {
+    const list = document.getElementById('dictList');
+    const count = document.getElementById('dictCount');
+    count.textContent = `${userDict.length}件`;
+    if (userDict.length === 0) {
+      list.innerHTML = '<span class="dict-empty">辞書は空です。固有名詞や専門用語を登録してください。</span>';
+      return;
+    }
+    list.innerHTML = userDict.map((d, i) => `
+      <span class="dict-tag">
+        ${esc(d.src)} <span class="dict-arrow">→</span> ${esc(d.tgt)}
+        <span class="dict-del" data-idx="${i}" title="削除">×</span>
+      </span>`).join('');
+    // 削除ボタン
+    list.querySelectorAll('.dict-del').forEach(el => {
+      el.addEventListener('click', () => {
+        const idx = parseInt(el.dataset.idx);
+        userDict.splice(idx, 1);
+        saveDict(); renderDict();
+        addLog(`📖 辞書削除 (残${userDict.length}件)`);
+      });
+    });
+  }
+
+  // 辞書をシステムプロンプトに注入するテキスト生成
+  function getDictPrompt() {
+    if (userDict.length === 0) return '';
+    const entries = userDict.map(d => `「${d.src}」→「${d.tgt}」`).join('、');
+    return `\n\n【用語辞書】以下の固有名詞・専門用語は必ずこの訳語を使ってください: ${entries}`;
+  }
+
+  let direction = 'auto';  // 'ja2en' | 'en2ja' | 'auto'
+  let lastDetectedLang = null;  // 'ja' | 'en'
   let isTranslating = false;
   let isListening = false;
   let abortController = null;
@@ -202,11 +285,13 @@
   let recognition = null;
   let finalTranscript = '';
   let selectedDeviceId = '';
-  // リアルタイムスタック: { id, text, el, fadeTimer, removeTimer }
+  let lastFinalTime = 0;        // 最後の確定時刻（話者分離用）
+  let bufferTimer = null;       // 文結合バッファタイマー
+  let pendingBuffer = '';       // バッファに溜まっているテキスト
+  let pendingLang = null;       // バッファの言語
+
   const rtStack = [];
   let rtIdCounter = 0;
-  // ストリーミング中の現在のアイテム
-  let currentStreamItem = null;
   const translations = [];
   const logs = [];
 
@@ -218,7 +303,6 @@
   const micActiveName  = $('micActiveName');
   const srcLabel       = $('srcLabel');
   const tgtLabel       = $('tgtLabel');
-  const btnSwap        = $('btnSwap');
   const btnMic         = $('btnMic');
   const listeningInd   = $('listeningInd');
   const inputArea      = $('inputArea');
@@ -246,47 +330,71 @@
   function showError(msg) { errorBar.textContent = '⚠ ' + msg; errorBar.classList.remove('hidden'); }
   function hideError() { errorBar.classList.add('hidden'); }
   function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-  function updateLabels() {
-    srcLabel.textContent = direction === 'ja2en' ? '日本語' : 'English';
-    tgtLabel.textContent = direction === 'ja2en' ? 'English' : '日本語';
-    inputArea.placeholder = direction === 'ja2en' ? '日本語を入力してください...' : 'Type in English...';
-  }
   function scrollInputToBottom() { inputArea.scrollTop = inputArea.scrollHeight; }
 
-  // ===== リアルタイムスタック管理 =====
-  // 新しいアイテムを追加（最大RT_MAX_ITEMS件、古いものからフェードアウト→確定移行）
-  function rtAddItem() {
+  // ===== 言語自動検出 =====
+  function detectLanguage(text) {
+    return JA_REGEX.test(text) ? 'ja' : 'en';
+  }
+
+  function updateLangDisplay(detectedLang) {
+    lastDetectedLang = detectedLang;
+    if (detectedLang === 'ja') {
+      direction = 'ja2en';
+      srcLabel.innerHTML = '日本語<span class="lang-auto-badge">検出</span>';
+      srcLabel.classList.add('active-lang');
+      tgtLabel.textContent = 'English';
+      tgtLabel.classList.remove('active-lang');
+    } else {
+      direction = 'en2ja';
+      srcLabel.innerHTML = 'English<span class="lang-auto-badge">検出</span>';
+      srcLabel.classList.add('active-lang');
+      tgtLabel.textContent = '日本語';
+      tgtLabel.classList.remove('active-lang');
+    }
+  }
+
+  // 音声認識の言語を切り替え（認識中なら再起動）
+  function switchRecognitionLang(lang) {
+    if (!recognition) return;
+    const newLang = lang === 'ja' ? 'ja-JP' : 'en-US';
+    if (recognition.lang !== newLang) {
+      recognition.lang = newLang;
+      addLog(`🌐 認識言語切替: ${newLang}`);
+      // 認識中なら再起動
+      if (isListening) {
+        try { recognition.stop(); } catch {}
+        // onendハンドラが自動再起動する
+      }
+    }
+  }
+
+  // ===== リアルタイムスタック =====
+  function rtAddItem(detectedLang, modelName) {
     const id = ++rtIdCounter;
+    const langTag = detectedLang === 'ja'
+      ? '<span class="rt-lang-tag rt-lang-ja">JA→EN</span>'
+      : '<span class="rt-lang-tag rt-lang-en">EN→JA</span>';
+    const modelTag = modelName.includes('haiku')
+      ? '<span style="font-size:9px;color:#94a3b8;background:rgba(148,163,184,0.1);padding:1px 4px;border-radius:3px">⚡Haiku</span>'
+      : '<span style="font-size:9px;color:#a78bfa;background:rgba(167,139,250,0.1);padding:1px 4px;border-radius:3px">✨Sonnet</span>';
     const el = document.createElement('div');
     el.className = 'rt-item streaming';
     el.innerHTML = `
       <div class="rt-text" id="rt-text-${id}"></div>
       <div class="rt-meta">
-        <span class="rt-time">${new Date().toLocaleTimeString('ja-JP')}</span>
-        <span class="rt-chars" id="rt-chars-${id}">0字</span>
+        <span>${langTag} ${modelTag} ${new Date().toLocaleTimeString('ja-JP')}</span>
+        <span id="rt-chars-${id}">0字</span>
       </div>`;
-
-    // プレースホルダーを削除
     const ph = realtimeStack.querySelector('.rt-placeholder');
     if (ph) ph.remove();
-
-    // 先頭に追加（新しいものが上）
     realtimeStack.prepend(el);
-
-    const item = { id, text: '', el, fadeTimer: null, removeTimer: null };
+    const item = { id, text: '', srcText: '', el, fadeTimer: null, removeTimer: null, lang: detectedLang };
     rtStack.unshift(item);
-    currentStreamItem = item;
-
-    // 古いアイテムを削除（RT_MAX_ITEMS + 1件まで許容し、超過分を即削除）
-    while (rtStack.length > RT_MAX_ITEMS + 1) {
-      const old = rtStack.pop();
-      rtFinalize(old);
-    }
-
+    while (rtStack.length > RT_MAX_ITEMS + 1) { const old = rtStack.pop(); rtFinalize(old); }
     return item;
   }
 
-  // ストリーミング中のテキスト更新
   function rtUpdateText(item, text) {
     item.text = text;
     const textEl = document.getElementById(`rt-text-${item.id}`);
@@ -295,47 +403,36 @@
     if (charsEl) charsEl.textContent = `${text.length}字`;
   }
 
-  // ストリーミング完了 → タイマー開始
   function rtComplete(item) {
     item.el.classList.remove('streaming');
-
-    // RT_DISPLAY_SEC後にフェード開始
     item.fadeTimer = setTimeout(() => {
       item.el.classList.add('fading');
-
-      // RT_FADE_SEC後に確定エリアへ移動＆DOM削除
-      item.removeTimer = setTimeout(() => {
-        rtFinalize(item);
-      }, RT_FADE_SEC * 1000);
+      item.removeTimer = setTimeout(() => rtFinalize(item), RT_FADE_SEC * 1000);
     }, RT_DISPLAY_SEC * 1000);
   }
 
-  // 確定エリアへ移動＆クリーンアップ
   function rtFinalize(item) {
     if (item.fadeTimer) clearTimeout(item.fadeTimer);
     if (item.removeTimer) clearTimeout(item.removeTimer);
-
-    // 確定エリアに追加
     if (item.text.trim() && !translations.some(t => t.text === item.text.trim())) {
-      translations.push({ text: item.text.trim(), time: new Date().toLocaleTimeString('ja-JP') });
+      translations.push({
+        text: item.text.trim(),
+        src: item.srcText || '',
+        lang: item.lang,
+        time: new Date().toLocaleTimeString('ja-JP')
+      });
       renderCards();
       addLog(`確定: #${translations.length}`);
     }
-
-    // DOM削除
     if (item.el.parentNode) item.el.remove();
-
-    // スタックから削除
     const idx = rtStack.indexOf(item);
     if (idx >= 0) rtStack.splice(idx, 1);
-
-    // スタックが空ならプレースホルダー表示
     if (rtStack.length === 0) {
       realtimeStack.innerHTML = '<span class="rt-placeholder">翻訳結果がここに表示されます...</span>';
     }
   }
 
-  // ===== 確定翻訳カード =====
+  // ===== 確定翻訳カード（原文も表示） =====
   function renderCards() {
     if (translations.length === 0) {
       confirmedScroll.innerHTML = '<span class="output-placeholder">確定した翻訳がカード形式で蓄積されます...</span>';
@@ -347,34 +444,78 @@
       <div class="translation-card">
         <span class="card-num">#${i + 1}</span>
         <div class="card-text">${esc(t.text)}</div>
-        <div class="card-time">${t.time}</div>
+        ${t.src ? `<div class="card-src">${esc(t.src)}</div>` : ''}
+        <div class="card-time">${t.time} · ${t.lang === 'ja' ? 'JA→EN' : 'EN→JA'}</div>
       </div>`).join('');
     btnCopy.classList.remove('hidden'); btnClear.classList.remove('hidden');
     confirmedCount.textContent = `${translations.length}件`;
     requestAnimationFrame(() => { confirmedScroll.scrollTop = confirmedScroll.scrollHeight; });
   }
 
-  // ===== ストリーミング翻訳（1回に1リクエストのみ） =====
-  async function translate(text) {
+  // ===== モデル選択: 短文→Haiku(速い)、長文→Sonnet(高品質) =====
+  function chooseModel(text) {
+    return text.length <= SHORT_THRESHOLD ? MODEL_FAST : MODEL_QUALITY;
+  }
+
+  // ===== 文結合バッファ: 短い確定テキストは次と結合してから翻訳 =====
+  function bufferAndTranslate(text, lang) {
+    // バッファに追加
+    if (pendingBuffer) {
+      pendingBuffer += ' ' + text.trim();
+    } else {
+      pendingBuffer = text.trim();
+      pendingLang = lang;
+    }
+
+    // タイマーリセット
+    if (bufferTimer) clearTimeout(bufferTimer);
+
+    // バッファが十分長い or 文末の区切りがある → 即翻訳
+    const hasEndPunct = /[。！？.!?\n]$/.test(pendingBuffer.trim());
+    if (pendingBuffer.length > SHORT_THRESHOLD || hasEndPunct) {
+      flushBuffer();
+      return;
+    }
+
+    // 短い場合はBUFFER_WAIT_MS待って次の確定と結合
+    bufferTimer = setTimeout(() => {
+      flushBuffer();
+    }, BUFFER_WAIT_MS);
+    addLog(`📦 バッファ: "${pendingBuffer.slice(0, 25)}..." (${pendingBuffer.length}字, ${BUFFER_WAIT_MS}ms待機)`);
+  }
+
+  function flushBuffer() {
+    if (bufferTimer) { clearTimeout(bufferTimer); bufferTimer = null; }
+    if (!pendingBuffer.trim()) return;
+    const text = pendingBuffer;
+    const lang = pendingLang;
+    pendingBuffer = '';
+    pendingLang = null;
+    translate(text, lang);
+  }
+
+  // ===== ストリーミング翻訳 =====
+  async function translate(text, detectedLang) {
     if (!text.trim()) return;
     const apiKey = apiKeyInput.value.trim();
     if (!apiKey) { showError('APIキーを入力してください'); return; }
 
-    // 前回のリクエストをキャンセル（並列接続を防止）
     if (abortController) abortController.abort();
     abortController = new AbortController();
 
-    // リアルタイムスタックに新アイテムを追加
-    const item = rtAddItem();
+    const model = chooseModel(text);
+    const item = rtAddItem(detectedLang, model);
+    item.srcText = text.trim();
 
     isTranslating = true;
     hideError();
     translatingInd.classList.remove('hidden');
     charCountEl.textContent = '0';
 
-    const srcLang = direction === 'ja2en' ? '日本語' : '英語';
-    const tgtLang = direction === 'ja2en' ? '英語' : '日本語';
-    addLog(`翻訳: "${text.slice(0, 30)}${text.length > 30 ? '...' : ''}" (${text.length}字)`);
+    const srcLang = detectedLang === 'ja' ? '日本語' : '英語';
+    const tgtLang = detectedLang === 'ja' ? '英語' : '日本語';
+    const modelShort = model.includes('haiku') ? '⚡Haiku' : '✨Sonnet';
+    addLog(`翻訳[${modelShort}](${srcLang}→${tgtLang}): "${text.slice(0, 25)}..." (${text.length}字)`);
 
     try {
       const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -386,10 +527,10 @@
           'anthropic-dangerous-direct-browser-access': 'true',
         },
         body: JSON.stringify({
-          model: MODEL,
+          model: model,
           max_tokens: 500,
           stream: true,
-          system: `あなたはリアルタイム通訳者です。${srcLang}を${tgtLang}に即座に自然な翻訳をしてください。翻訳結果のみ出力。説明不要。`,
+          system: `あなたはプロのリアルタイム通訳者です。${srcLang}を${tgtLang}に、文脈を考慮して自然で正確に翻訳してください。翻訳結果のみ出力。説明・注釈・確認は不要。${getDictPrompt()}`,
           messages: [{ role: 'user', content: text }],
         }),
         signal: abortController.signal,
@@ -422,60 +563,38 @@
         }
       }
 
-      // 翻訳完了 → タイマー開始（12秒表示してからフェードアウト→確定移行）
-      if (full.trim()) {
-        rtComplete(item);
-        addLog(`完了: ${full.length}字`);
-      }
-
+      if (full.trim()) { rtComplete(item); }
     } catch (err) {
       if (err.name === 'AbortError') {
-        // キャンセルされたアイテムを削除
         if (item.el.parentNode) item.el.remove();
-        const idx = rtStack.indexOf(item);
-        if (idx >= 0) rtStack.splice(idx, 1);
+        const idx = rtStack.indexOf(item); if (idx >= 0) rtStack.splice(idx, 1);
         return;
       }
-      showError(err.message);
-      addLog(`エラー: ${err.message}`);
+      showError(err.message); addLog(`エラー: ${err.message}`);
       if (item.el.parentNode) item.el.remove();
-      const idx = rtStack.indexOf(item);
-      if (idx >= 0) rtStack.splice(idx, 1);
+      const idx = rtStack.indexOf(item); if (idx >= 0) rtStack.splice(idx, 1);
     } finally {
       isTranslating = false;
       translatingInd.classList.add('hidden');
-      currentStreamItem = null;
     }
   }
 
-  // テキスト入力
+  // テキスト手動入力
   inputArea.addEventListener('input', () => {
     inputCount.textContent = inputArea.value.length + ' 文字';
     if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => translate(inputArea.value), DEBOUNCE_MS);
+    debounceTimer = setTimeout(() => {
+      const text = inputArea.value;
+      const lang = detectLanguage(text);
+      updateLangDisplay(lang);
+      translate(text, lang);
+    }, DEBOUNCE_MS);
   });
 
-  // 入れ替え
-  btnSwap.addEventListener('click', () => {
-    const last = translations.length > 0 ? translations[translations.length - 1].text : '';
-    direction = direction === 'ja2en' ? 'en2ja' : 'ja2en';
-    updateLabels();
-    if (isListening) stopListening();
-    inputArea.value = last; inputCount.textContent = last.length + ' 文字';
-    translations.length = 0; renderCards();
-    // リアルタイムスタックもクリア
-    rtStack.forEach(i => { if (i.fadeTimer) clearTimeout(i.fadeTimer); if (i.removeTimer) clearTimeout(i.removeTimer); });
-    rtStack.length = 0;
-    realtimeStack.innerHTML = '<span class="rt-placeholder">翻訳結果がここに表示されます...</span>';
-    finalTranscript = last;
-    if (last.trim()) {
-      if (debounceTimer) clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => translate(last), 100);
-    }
-  });
-
+  // コピー・クリア
   btnCopy.addEventListener('click', () => {
-    navigator.clipboard.writeText(translations.map((t, i) => `[#${i+1}] ${t.text}`).join('\n\n'));
+    const allText = translations.map((t, i) => `[#${i+1}] ${t.text}\n  原文: ${t.src}`).join('\n\n');
+    navigator.clipboard.writeText(allText);
     btnCopy.textContent = '✓'; setTimeout(() => { btnCopy.textContent = 'コピー'; }, 1200);
   });
   btnClear.addEventListener('click', () => { translations.length = 0; renderCards(); });
@@ -523,37 +642,66 @@
     apiStatus.classList.toggle('ok', !!k);
   });
 
-  // 音声認識
+  // ===== 音声認識 =====
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) { btnMic.classList.add('hidden'); }
   else {
     recognition = new SR();
     recognition.continuous = true;
     recognition.interimResults = true;
-    recognition.lang = 'ja-JP';
+    recognition.lang = 'ja-JP';  // 初期値（自動切替される）
 
     recognition.onresult = (event) => {
       let interim = '';
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const t = event.results[i][0].transcript;
         if (event.results[i].isFinal) {
+          const now = Date.now();
+          const pauseGap = now - lastFinalTime;
+
+          // 話者分離: 2秒以上の間があったら段落区切り
+          if (lastFinalTime > 0 && pauseGap > PAUSE_THRESHOLD_MS) {
+            finalTranscript += '\n\n';
+            addLog(`📝 段落区切り (${(pauseGap / 1000).toFixed(1)}秒)`);
+          } else if (lastFinalTime > 0) {
+            // 通常のセンテンス区切り: 改行
+            finalTranscript += '\n';
+          }
+
           finalTranscript += t;
+          lastFinalTime = now;
+
           inputArea.value = finalTranscript;
           inputCount.textContent = finalTranscript.length + ' 文字';
           scrollInputToBottom();
-          // 最新の確定テキストのみ翻訳（並列なし）
-          translate(t);
-          addLog(`🎤 確定: "${t.slice(0, 30)}"`);
+
+          // 言語自動検出
+          const lang = detectLanguage(t);
+          updateLangDisplay(lang);
+
+          // 言語が変わったら音声認識の言語も切替
+          switchRecognitionLang(lang);
+
+          // 最新の確定テキストをバッファ経由で翻訳
+          bufferAndTranslate(t, lang);
+          addLog(`🎤 確定(${lang}): "${t.slice(0, 30)}"`);
         } else {
           interim += t;
         }
       }
       if (interim) {
-        inputArea.value = finalTranscript + interim;
+        // 中間結果の言語も検出して表示を更新
+        const interimLang = detectLanguage(interim);
+        if (interimLang !== lastDetectedLang) {
+          updateLangDisplay(interimLang);
+          switchRecognitionLang(interimLang);
+        }
+        inputArea.value = finalTranscript + (finalTranscript ? '\n' : '') + interim;
         inputCount.textContent = inputArea.value.length + ' 文字';
         scrollInputToBottom();
       }
     };
+
     recognition.onerror = (event) => {
       if (event.error === 'no-speech') return;
       addLog(`🎤 エラー: ${event.error}`);
@@ -564,8 +712,10 @@
 
   function startListening() {
     if (!recognition) return;
-    recognition.lang = direction === 'ja2en' ? 'ja-JP' : 'en-US';
+    // 前回の検出言語があればそれを使う、なければja-JP
+    recognition.lang = lastDetectedLang === 'en' ? 'en-US' : 'ja-JP';
     finalTranscript = inputArea.value;
+    lastFinalTime = 0;
     const c = selectedDeviceId ? { audio: { deviceId: { exact: selectedDeviceId } } } : { audio: true };
     navigator.mediaDevices.getUserMedia(c).then(stream => {
       const name = stream.getAudioTracks()[0]?.label || 'Unknown';
@@ -579,6 +729,7 @@
       } catch (e) { stream.getTracks().forEach(t => t.stop()); }
     }).catch(() => showError('マイクアクセス失敗'));
   }
+
   function stopListening() {
     if (!recognition) return;
     try { recognition.stop(); } catch {}
@@ -589,8 +740,68 @@
   }
   btnMic.addEventListener('click', () => { isListening ? stopListening() : startListening(); });
 
-  updateLabels(); renderCards(); loadMics();
-  addLog(`起動 v${APP_VERSION} (${MODEL})`);
+  // ===== 辞書UI =====
+  const dictToggle = $('dictToggle');
+  const dictBody = $('dictBody');
+  const dictArrow = $('dictArrow');
+  const dictSrc = $('dictSrc');
+  const dictTgt = $('dictTgt');
+  const btnDictAdd = $('btnDictAdd');
+
+  let dictOpen = false;
+  dictToggle.addEventListener('click', () => {
+    dictOpen = !dictOpen;
+    dictBody.classList.toggle('hidden', !dictOpen);
+    dictArrow.textContent = dictOpen ? '▲' : '▼';
+  });
+
+  btnDictAdd.addEventListener('click', () => {
+    const src = dictSrc.value.trim();
+    const tgt = dictTgt.value.trim();
+    if (!src || !tgt) return;
+    userDict.push({ src, tgt });
+    saveDict(); renderDict();
+    dictSrc.value = ''; dictTgt.value = '';
+    addLog(`📖 辞書追加: ${src} → ${tgt} (${userDict.length}件)`);
+  });
+
+  // Enterキーで辞書追加
+  [dictSrc, dictTgt].forEach(el => {
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); btnDictAdd.click(); }
+    });
+  });
+
+  // ===== 再翻訳ボタン =====
+  const btnRetranslate = $('btnRetranslate');
+  btnRetranslate.addEventListener('click', () => {
+    // 入力エリアの最後の行（または選択範囲）を翻訳
+    const text = inputArea.value;
+    if (!text.trim()) return;
+
+    // 選択範囲があればそれを、なければ最後の非空行を翻訳
+    const start = inputArea.selectionStart;
+    const end = inputArea.selectionEnd;
+    let target;
+    if (start !== end) {
+      target = text.slice(start, end).trim();
+      addLog(`✏️ 選択テキスト再翻訳: "${target.slice(0, 30)}..."`);
+    } else {
+      // 最後の非空行を取得
+      const lines = text.split('\n').filter(l => l.trim());
+      target = lines[lines.length - 1]?.trim() || '';
+      addLog(`✏️ 最終行を再翻訳: "${target.slice(0, 30)}..."`);
+    }
+
+    if (!target) return;
+    const lang = detectLanguage(target);
+    updateLangDisplay(lang);
+    translate(target, lang);
+  });
+
+  // 初期化
+  renderDict(); renderCards(); loadMics();
+  addLog(`起動 v${APP_VERSION} (短文:Haiku / 長文:Sonnet / 辞書:${userDict.length}件)`);
 })();
 </script>
 </body>
