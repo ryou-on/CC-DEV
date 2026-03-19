@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Realtime Translator v0.5.0</title>
+<title>Realtime Translator v0.6.0</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Noto+Sans+JP:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -18,14 +18,13 @@
   .btn-console { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #94a3b8; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-size: 12px; font-family: 'JetBrains Mono', monospace; }
   main { max-width: 1100px; margin: 0 auto; padding: 24px; }
 
-  /* 設定バー */
   .settings-row { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
   .settings-row input[type="password"] { flex: 1; padding: 10px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04); color: #e2e8f0; font-size: 13px; font-family: 'JetBrains Mono', monospace; outline: none; }
   .settings-row input:focus { border-color: rgba(99,102,241,0.4); }
   .settings-row input::placeholder { color: #475569; }
   .settings-row .status { font-size: 11px; color: #64748b; white-space: nowrap; }
   .settings-row .status.ok { color: #4ade80; }
-  .settings-row select { padding: 8px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04); color: #e2e8f0; font-size: 12px; outline: none; cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2394a3b8'%3E%3Cpath d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; }
+  .settings-row select { flex: 1; padding: 8px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04); color: #e2e8f0; font-size: 12px; outline: none; cursor: pointer; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2394a3b8'%3E%3Cpath d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px; }
   .settings-row select:focus { border-color: rgba(99,102,241,0.4); }
   .settings-row select option { background: #1e293b; color: #e2e8f0; }
   .settings-row label { font-size: 12px; color: #64748b; white-space: nowrap; }
@@ -33,13 +32,11 @@
   .btn-sm:hover { background: rgba(255,255,255,0.1); }
   .mic-active-name { font-size: 11px; color: #4ade80; font-family: 'JetBrains Mono', monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
 
-  /* 言語 */
   .lang-bar { display: flex; align-items: center; justify-content: center; gap: 16px; margin-bottom: 14px; }
   .lang-label { font-size: 15px; font-weight: 600; color: #c7d2fe; padding: 8px 20px; background: rgba(99,102,241,0.1); border-radius: 10px; min-width: 100px; text-align: center; }
   .btn-swap { width: 44px; height: 44px; border-radius: 50%; border: 2px solid rgba(99,102,241,0.3); background: rgba(99,102,241,0.08); color: #818cf8; cursor: pointer; font-size: 20px; display: flex; align-items: center; justify-content: center; transition: all 0.3s; }
   .btn-swap:hover { background: rgba(99,102,241,0.2); transform: rotate(180deg); }
 
-  /* パネル */
   .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
   @media (max-width: 750px) { .panels { grid-template-columns: 1fr; } }
   .panel { border-radius: 16px; padding: 16px; }
@@ -47,21 +44,31 @@
   .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 12px; color: #64748b; }
   .panel-label { font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
   .panel-header-left { display: flex; align-items: center; gap: 8px; }
-  textarea { width: 100%; min-height: 420px; background: transparent; border: none; color: #e2e8f0; font-size: 15px; line-height: 1.8; resize: vertical; outline: none; font-family: 'Noto Sans JP', 'DM Sans', sans-serif; }
+  textarea { width: 100%; min-height: 480px; background: transparent; border: none; color: #e2e8f0; font-size: 15px; line-height: 1.8; resize: vertical; outline: none; font-family: 'Noto Sans JP', 'DM Sans', sans-serif; }
   textarea::placeholder { color: #475569; }
   .output-column { display: flex; flex-direction: column; gap: 12px; }
 
-  /* リアルタイム */
-  .panel-realtime { background: rgba(251,191,36,0.04); border: 1px solid rgba(251,191,36,0.15); border-radius: 16px; padding: 16px; transition: opacity 0.6s ease; }
-  .panel-realtime.fading { opacity: 0.3; }
+  /* ===== リアルタイム翻訳: 直近3件スタック ===== */
+  .panel-realtime { background: rgba(251,191,36,0.04); border: 1px solid rgba(251,191,36,0.15); border-radius: 16px; padding: 16px; }
   .panel-realtime .panel-label { color: #fbbf24; }
-  .realtime-text { min-height: 50px; max-height: 140px; overflow-y: auto; font-size: 16px; line-height: 1.9; white-space: pre-wrap; word-break: break-word; }
-  .realtime-text.preview { opacity: 0.5; }
-  .realtime-status { margin-top: 6px; font-size: 11px; color: #64748b; font-family: 'JetBrains Mono', monospace; }
+  .realtime-stack { display: flex; flex-direction: column; gap: 8px; min-height: 60px; }
+  .rt-item {
+    background: rgba(251,191,36,0.06); border: 1px solid rgba(251,191,36,0.12);
+    border-radius: 10px; padding: 10px 14px; position: relative;
+    animation: rtSlideIn 0.3s ease;
+    transition: opacity 2s ease;
+  }
+  .rt-item.fading { opacity: 0.15; }
+  .rt-item .rt-text { font-size: 15px; line-height: 1.9; white-space: pre-wrap; word-break: break-word; color: #e2e8f0; }
+  .rt-item .rt-meta { margin-top: 4px; font-size: 10px; color: #64748b; font-family: 'JetBrains Mono', monospace; display: flex; justify-content: space-between; }
+  .rt-item.streaming { border-color: rgba(251,191,36,0.35); }
+  .rt-item.streaming .rt-text { color: #fbbf24; }
+  @keyframes rtSlideIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+  .rt-placeholder { color: #475569; font-style: italic; padding: 8px 0; }
 
   /* 確定翻訳 */
   .panel-confirmed { background: rgba(99,102,241,0.04); border: 1px solid rgba(99,102,241,0.12); border-radius: 16px; padding: 16px; flex: 1; }
-  .confirmed-scroll { max-height: 300px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+  .confirmed-scroll { max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
   .translation-card { background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 12px 14px; position: relative; animation: cardSlideIn 0.3s ease; }
   .translation-card .card-num { position: absolute; top: 6px; right: 10px; font-size: 10px; color: #475569; font-family: 'JetBrains Mono', monospace; }
   .translation-card .card-text { font-size: 15px; line-height: 1.9; white-space: pre-wrap; word-break: break-word; color: #e2e8f0; }
@@ -69,20 +76,17 @@
   @keyframes cardSlideIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
   .output-placeholder { color: #475569; font-style: italic; }
 
-  /* ボタン・インジケーター */
   .btn-mic { width: 32px; height: 32px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.15); background: rgba(255,255,255,0.05); color: #94a3b8; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
   .btn-mic.active { border: 2px solid #ef4444; background: rgba(239,68,68,0.15); color: #f87171; animation: micPulse 1.5s infinite; }
   .listening-indicator { color: #f87171; font-size: 11px; font-weight: 500; display: flex; align-items: center; gap: 4px; }
   .listening-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #ef4444; animation: pulse 1s infinite; }
-  .translating { color: #fbbf24; display: flex; align-items: center; gap: 6px; font-size: 11px; }
+  .translating-ind { color: #fbbf24; display: flex; align-items: center; gap: 6px; font-size: 11px; }
   .translating-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #fbbf24; animation: pulse 1s infinite; }
   .btn-copy { background: rgba(99,102,241,0.15); border: none; color: #a5b4fc; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; }
   .btn-copy:hover { background: rgba(99,102,241,0.25); }
   .btn-clear { background: rgba(239,68,68,0.1); border: none; color: #fca5a5; padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 11px; }
   .btn-clear:hover { background: rgba(239,68,68,0.2); }
   .error-bar { margin-top: 16px; padding: 12px 16px; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.2); border-radius: 10px; color: #fca5a5; font-size: 13px; }
-
-  /* コンソール */
   .debug-console { margin-top: 24px; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 16px; }
   .debug-header { display: flex; justify-content: space-between; margin-bottom: 8px; }
   .debug-label { font-size: 11px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
@@ -102,29 +106,26 @@
 <header>
   <div class="header-left">
     <div class="logo">翻</div>
-    <div class="header-title"><h1>Realtime Translator</h1><span class="version">v0.5.0</span></div>
+    <div class="header-title"><h1>Realtime Translator</h1><span class="version">v0.6.0</span></div>
     <span class="badge">Claude API</span>
   </div>
   <button class="btn-console" id="btnConsole">Console ▼</button>
 </header>
 
 <main>
-  <!-- APIキー -->
   <div class="settings-row">
     <input type="password" id="apiKey" placeholder="sk-ant-... Claude APIキーを入力" autocomplete="off">
     <span class="status" id="apiStatus">未設定</span>
   </div>
-  <!-- マイク -->
   <div class="settings-row">
     <label>🎤</label>
-    <select id="micSelect" style="flex:1"><option value="">読み込み中...</option></select>
-    <button class="btn-sm" id="btnRefreshMic" title="更新">🔄</button>
+    <select id="micSelect"><option value="">読み込み中...</option></select>
+    <button class="btn-sm" id="btnRefreshMic">🔄</button>
     <span class="mic-active-name hidden" id="micActiveName"></span>
   </div>
-
   <div class="lang-bar">
     <div class="lang-label" id="srcLabel">日本語</div>
-    <button class="btn-swap" id="btnSwap" title="入出力を入れ替え">⇄</button>
+    <button class="btn-swap" id="btnSwap">⇄</button>
     <div class="lang-label" id="tgtLabel">English</div>
   </div>
 
@@ -133,7 +134,7 @@
       <div class="panel-header">
         <div class="panel-header-left">
           <span class="panel-label">入力</span>
-          <button class="btn-mic" id="btnMic" title="音声入力">🎤</button>
+          <button class="btn-mic" id="btnMic">🎤</button>
           <span class="listening-indicator hidden" id="listeningInd"><span class="listening-dot"></span> 認識中...</span>
         </div>
         <span id="inputCount">0 文字</span>
@@ -142,15 +143,18 @@
     </div>
 
     <div class="output-column">
-      <div class="panel panel-realtime" id="realtimePanel">
+      <!-- リアルタイム翻訳: 直近3件スタック -->
+      <div class="panel panel-realtime">
         <div class="panel-header">
           <span class="panel-label">🔄 リアルタイム翻訳</span>
-          <span class="translating hidden" id="translatingInd"><span class="translating-dot"></span> <span id="charCount">0</span>字</span>
+          <span class="translating-ind hidden" id="translatingInd"><span class="translating-dot"></span> <span id="charCount">0</span>字</span>
         </div>
-        <div class="realtime-text" id="realtimeArea"><span class="output-placeholder">翻訳中のテキストがここに表示...</span></div>
-        <div class="realtime-status" id="realtimeStatus"></div>
+        <div class="realtime-stack" id="realtimeStack">
+          <span class="rt-placeholder">翻訳結果がここに表示されます...</span>
+        </div>
       </div>
 
+      <!-- 確定翻訳 -->
       <div class="panel panel-confirmed">
         <div class="panel-header">
           <div class="panel-header-left">
@@ -175,7 +179,7 @@
       <span class="debug-label">Debug Console</span>
       <button class="btn-copy-console" id="btnCopyConsole">📋 コピー</button>
     </div>
-    <div class="debug-logs" id="debugLogs"><span class="empty" style="color:#475569">ログなし</span></div>
+    <div class="debug-logs" id="debugLogs"><span style="color:#475569">ログなし</span></div>
   </div>
 </main>
 
@@ -183,31 +187,26 @@
 (() => {
   'use strict';
 
-  // ===== 設定 =====
-  const HOLD_MS = 1500;            // 翻訳完了後のホールド時間（短縮）
-  const CHUNK_DEBOUNCE_MS = 300;   // 中間結果の区切り検出デバウンス
-  const MANUAL_DEBOUNCE_MS = 600;  // 手動入力デバウンス
-  const JA_CHUNK_CHARS = 25;       // 日本語の強制チャンク文字数
-  const EN_CHUNK_CHARS = 40;       // 英語の強制チャンク文字数
-  const MODEL = 'claude-haiku-4-5-20251001'; // 高速モデル
-  const APP_VERSION = '0.5.0';
-
-  // 区切り文字パターン
-  const JA_BREAKS = /[。、！？\n]/;
-  const EN_BREAKS = /[.,!?\n]/;
+  const DEBOUNCE_MS = 600;
+  const RT_DISPLAY_SEC = 12;        // リアルタイムエリアに表示する秒数
+  const RT_FADE_SEC = 3;            // フェードアウト開始までの追加秒数
+  const RT_MAX_ITEMS = 3;           // リアルタイムエリアの最大表示件数
+  const MODEL = 'claude-haiku-4-5-20251001';
+  const APP_VERSION = '0.6.0';
 
   let direction = 'ja2en';
   let isTranslating = false;
   let isListening = false;
   let abortController = null;
-  let manualDebounceTimer = null;
-  let chunkTimer = null;
-  let holdTimer = null;
+  let debounceTimer = null;
   let recognition = null;
   let finalTranscript = '';
-  let pendingInterim = '';         // まだ翻訳に送っていない中間テキスト
-  let lastSentInterim = '';        // 最後に予測翻訳に送った中間テキスト
   let selectedDeviceId = '';
+  // リアルタイムスタック: { id, text, el, fadeTimer, removeTimer }
+  const rtStack = [];
+  let rtIdCounter = 0;
+  // ストリーミング中の現在のアイテム
+  let currentStreamItem = null;
   const translations = [];
   const logs = [];
 
@@ -224,9 +223,7 @@
   const listeningInd   = $('listeningInd');
   const inputArea      = $('inputArea');
   const inputCount     = $('inputCount');
-  const realtimePanel  = $('realtimePanel');
-  const realtimeArea   = $('realtimeArea');
-  const realtimeStatus = $('realtimeStatus');
+  const realtimeStack  = $('realtimeStack');
   const translatingInd = $('translatingInd');
   const charCountEl    = $('charCount');
   const confirmedScroll= $('confirmedScroll');
@@ -239,7 +236,6 @@
   const debugLogs      = $('debugLogs');
   const btnCopyConsole = $('btnCopyConsole');
 
-  // ユーティリティ
   function addLog(msg) {
     const ts = new Date().toLocaleTimeString('ja-JP');
     logs.push(`[${ts}] ${msg}`);
@@ -249,12 +245,95 @@
   }
   function showError(msg) { errorBar.textContent = '⚠ ' + msg; errorBar.classList.remove('hidden'); }
   function hideError() { errorBar.classList.add('hidden'); }
+  function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
   function updateLabels() {
     srcLabel.textContent = direction === 'ja2en' ? '日本語' : 'English';
     tgtLabel.textContent = direction === 'ja2en' ? 'English' : '日本語';
     inputArea.placeholder = direction === 'ja2en' ? '日本語を入力してください...' : 'Type in English...';
   }
   function scrollInputToBottom() { inputArea.scrollTop = inputArea.scrollHeight; }
+
+  // ===== リアルタイムスタック管理 =====
+  // 新しいアイテムを追加（最大RT_MAX_ITEMS件、古いものからフェードアウト→確定移行）
+  function rtAddItem() {
+    const id = ++rtIdCounter;
+    const el = document.createElement('div');
+    el.className = 'rt-item streaming';
+    el.innerHTML = `
+      <div class="rt-text" id="rt-text-${id}"></div>
+      <div class="rt-meta">
+        <span class="rt-time">${new Date().toLocaleTimeString('ja-JP')}</span>
+        <span class="rt-chars" id="rt-chars-${id}">0字</span>
+      </div>`;
+
+    // プレースホルダーを削除
+    const ph = realtimeStack.querySelector('.rt-placeholder');
+    if (ph) ph.remove();
+
+    // 先頭に追加（新しいものが上）
+    realtimeStack.prepend(el);
+
+    const item = { id, text: '', el, fadeTimer: null, removeTimer: null };
+    rtStack.unshift(item);
+    currentStreamItem = item;
+
+    // 古いアイテムを削除（RT_MAX_ITEMS + 1件まで許容し、超過分を即削除）
+    while (rtStack.length > RT_MAX_ITEMS + 1) {
+      const old = rtStack.pop();
+      rtFinalize(old);
+    }
+
+    return item;
+  }
+
+  // ストリーミング中のテキスト更新
+  function rtUpdateText(item, text) {
+    item.text = text;
+    const textEl = document.getElementById(`rt-text-${item.id}`);
+    const charsEl = document.getElementById(`rt-chars-${item.id}`);
+    if (textEl) textEl.textContent = text;
+    if (charsEl) charsEl.textContent = `${text.length}字`;
+  }
+
+  // ストリーミング完了 → タイマー開始
+  function rtComplete(item) {
+    item.el.classList.remove('streaming');
+
+    // RT_DISPLAY_SEC後にフェード開始
+    item.fadeTimer = setTimeout(() => {
+      item.el.classList.add('fading');
+
+      // RT_FADE_SEC後に確定エリアへ移動＆DOM削除
+      item.removeTimer = setTimeout(() => {
+        rtFinalize(item);
+      }, RT_FADE_SEC * 1000);
+    }, RT_DISPLAY_SEC * 1000);
+  }
+
+  // 確定エリアへ移動＆クリーンアップ
+  function rtFinalize(item) {
+    if (item.fadeTimer) clearTimeout(item.fadeTimer);
+    if (item.removeTimer) clearTimeout(item.removeTimer);
+
+    // 確定エリアに追加
+    if (item.text.trim() && !translations.some(t => t.text === item.text.trim())) {
+      translations.push({ text: item.text.trim(), time: new Date().toLocaleTimeString('ja-JP') });
+      renderCards();
+      addLog(`確定: #${translations.length}`);
+    }
+
+    // DOM削除
+    if (item.el.parentNode) item.el.remove();
+
+    // スタックから削除
+    const idx = rtStack.indexOf(item);
+    if (idx >= 0) rtStack.splice(idx, 1);
+
+    // スタックが空ならプレースホルダー表示
+    if (rtStack.length === 0) {
+      realtimeStack.innerHTML = '<span class="rt-placeholder">翻訳結果がここに表示されます...</span>';
+    }
+  }
 
   // ===== 確定翻訳カード =====
   function renderCards() {
@@ -267,7 +346,7 @@
     confirmedScroll.innerHTML = translations.map((t, i) => `
       <div class="translation-card">
         <span class="card-num">#${i + 1}</span>
-        <div class="card-text">${t.text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+        <div class="card-text">${esc(t.text)}</div>
         <div class="card-time">${t.time}</div>
       </div>`).join('');
     btnCopy.classList.remove('hidden'); btnClear.classList.remove('hidden');
@@ -275,62 +354,27 @@
     requestAnimationFrame(() => { confirmedScroll.scrollTop = confirmedScroll.scrollHeight; });
   }
 
-  // ===== リアルタイム → 確定移行 =====
-  function flushToConfirmed() {
-    if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; }
-    const text = realtimeArea.textContent?.trim();
-    if (text && text.length > 0 && !text.includes('待機中') && !text.includes('表示...')) {
-      if (!translations.some(t => t.text === text)) {
-        translations.push({ text, time: new Date().toLocaleTimeString('ja-JP') });
-        renderCards();
-        addLog(`確定: #${translations.length}`);
-      }
-    }
-    realtimePanel.classList.remove('fading');
-    realtimeArea.classList.remove('preview');
-    realtimeStatus.textContent = '';
-  }
-
-  function holdAndTransfer(text) {
-    realtimePanel.classList.remove('fading');
-    realtimeArea.classList.remove('preview');
-    realtimeStatus.textContent = '✅ 確定エリアへ移動中...';
-    if (holdTimer) clearTimeout(holdTimer);
-    holdTimer = setTimeout(() => {
-      realtimePanel.classList.add('fading');
-      setTimeout(() => {
-        translations.push({ text, time: new Date().toLocaleTimeString('ja-JP') });
-        renderCards();
-        addLog(`確定: #${translations.length}`);
-        realtimePanel.classList.remove('fading');
-        realtimeArea.innerHTML = '<span class="output-placeholder">次の翻訳を待機中...</span>';
-        realtimeStatus.textContent = '';
-      }, 600);
-    }, HOLD_MS);
-  }
-
-  // ===== ストリーミング翻訳 =====
-  async function translateChunk(text, isPreview = false) {
+  // ===== ストリーミング翻訳（1回に1リクエストのみ） =====
+  async function translate(text) {
     if (!text.trim()) return;
     const apiKey = apiKeyInput.value.trim();
-    if (!apiKey) { if (!isPreview) showError('APIキーを入力してください'); return; }
+    if (!apiKey) { showError('APIキーを入力してください'); return; }
 
-    // 前回のホールド中テキストを即確定
-    if (!isPreview) flushToConfirmed();
-
+    // 前回のリクエストをキャンセル（並列接続を防止）
     if (abortController) abortController.abort();
     abortController = new AbortController();
 
+    // リアルタイムスタックに新アイテムを追加
+    const item = rtAddItem();
+
     isTranslating = true;
     hideError();
-    realtimeArea.textContent = '';
-    realtimeArea.classList.toggle('preview', isPreview);
     translatingInd.classList.remove('hidden');
     charCountEl.textContent = '0';
 
     const srcLang = direction === 'ja2en' ? '日本語' : '英語';
     const tgtLang = direction === 'ja2en' ? '英語' : '日本語';
-    addLog(`翻訳: "${text.slice(0, 25)}${text.length > 25 ? '...' : ''}" (${text.length}字${isPreview ? ',予測' : ''})`);
+    addLog(`翻訳: "${text.slice(0, 30)}${text.length > 30 ? '...' : ''}" (${text.length}字)`);
 
     try {
       const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -371,62 +415,44 @@
             const p = JSON.parse(d);
             if (p.type === 'content_block_delta' && p.delta?.type === 'text_delta') {
               full += p.delta.text;
-              realtimeArea.textContent = full;
+              rtUpdateText(item, full);
               charCountEl.textContent = full.length;
-              realtimeArea.scrollTop = realtimeArea.scrollHeight;
             }
           } catch {}
         }
       }
 
+      // 翻訳完了 → タイマー開始（12秒表示してからフェードアウト→確定移行）
       if (full.trim()) {
-        if (isPreview) {
-          realtimeStatus.textContent = '💭 予測（確定待ち）';
-        } else {
-          holdAndTransfer(full.trim());
-        }
+        rtComplete(item);
+        addLog(`完了: ${full.length}字`);
       }
+
     } catch (err) {
-      if (err.name === 'AbortError') return;
+      if (err.name === 'AbortError') {
+        // キャンセルされたアイテムを削除
+        if (item.el.parentNode) item.el.remove();
+        const idx = rtStack.indexOf(item);
+        if (idx >= 0) rtStack.splice(idx, 1);
+        return;
+      }
       showError(err.message);
       addLog(`エラー: ${err.message}`);
+      if (item.el.parentNode) item.el.remove();
+      const idx = rtStack.indexOf(item);
+      if (idx >= 0) rtStack.splice(idx, 1);
     } finally {
       isTranslating = false;
       translatingInd.classList.add('hidden');
+      currentStreamItem = null;
     }
   }
 
-  // ===== 中間テキストから区切りを検出して翻訳チャンクを抽出 =====
-  function detectBreakAndTranslate(interim) {
-    const isJa = direction === 'ja2en';
-    const breakPattern = isJa ? JA_BREAKS : EN_BREAKS;
-    const maxChars = isJa ? JA_CHUNK_CHARS : EN_CHUNK_CHARS;
-
-    // 区切り文字で分割を試みる
-    const lastBreakIdx = interim.search(breakPattern);
-
-    if (lastBreakIdx >= 0) {
-      // 区切りが見つかった → そこまでを翻訳チャンクとして送信
-      const chunk = interim.slice(0, lastBreakIdx + 1).trim();
-      if (chunk.length > 0 && chunk !== lastSentInterim) {
-        lastSentInterim = chunk;
-        translateChunk(chunk, true);
-      }
-    } else if (interim.length >= maxChars) {
-      // 区切りなしでも長くなった → 強制的に送信
-      const chunk = interim.trim();
-      if (chunk !== lastSentInterim) {
-        lastSentInterim = chunk;
-        translateChunk(chunk, true);
-      }
-    }
-  }
-
-  // ===== テキスト入力（手動） =====
+  // テキスト入力
   inputArea.addEventListener('input', () => {
     inputCount.textContent = inputArea.value.length + ' 文字';
-    if (manualDebounceTimer) clearTimeout(manualDebounceTimer);
-    manualDebounceTimer = setTimeout(() => translateChunk(inputArea.value, false), MANUAL_DEBOUNCE_MS);
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => translate(inputArea.value), DEBOUNCE_MS);
   });
 
   // 入れ替え
@@ -437,22 +463,23 @@
     if (isListening) stopListening();
     inputArea.value = last; inputCount.textContent = last.length + ' 文字';
     translations.length = 0; renderCards();
-    realtimeArea.innerHTML = '<span class="output-placeholder">翻訳中のテキストがここに表示...</span>';
-    realtimeStatus.textContent = ''; finalTranscript = last; lastSentInterim = '';
+    // リアルタイムスタックもクリア
+    rtStack.forEach(i => { if (i.fadeTimer) clearTimeout(i.fadeTimer); if (i.removeTimer) clearTimeout(i.removeTimer); });
+    rtStack.length = 0;
+    realtimeStack.innerHTML = '<span class="rt-placeholder">翻訳結果がここに表示されます...</span>';
+    finalTranscript = last;
     if (last.trim()) {
-      if (manualDebounceTimer) clearTimeout(manualDebounceTimer);
-      manualDebounceTimer = setTimeout(() => translateChunk(last, false), 100);
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => translate(last), 100);
     }
   });
 
-  // コピー・クリア
   btnCopy.addEventListener('click', () => {
     navigator.clipboard.writeText(translations.map((t, i) => `[#${i+1}] ${t.text}`).join('\n\n'));
     btnCopy.textContent = '✓'; setTimeout(() => { btnCopy.textContent = 'コピー'; }, 1200);
   });
-  btnClear.addEventListener('click', () => { translations.length = 0; renderCards(); addLog('クリア'); });
+  btnClear.addEventListener('click', () => { translations.length = 0; renderCards(); });
 
-  // コンソール
   let consoleOpen = false;
   btnConsole.addEventListener('click', () => {
     consoleOpen = !consoleOpen;
@@ -461,7 +488,7 @@
   });
   btnCopyConsole.addEventListener('click', () => { navigator.clipboard.writeText(logs.join('\n')); });
 
-  // ===== マイクデバイス =====
+  // マイク
   async function loadMics() {
     try {
       const s = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -477,7 +504,6 @@
         micSelect.appendChild(o);
       });
       selectedDeviceId = micSelect.value;
-      addLog(`🎤 ${devs.length}台`);
     } catch (e) { micSelect.innerHTML = '<option>取得失敗</option>'; }
   }
   micSelect.addEventListener('change', () => {
@@ -497,7 +523,7 @@
     apiStatus.classList.toggle('ok', !!k);
   });
 
-  // ===== 音声認識 =====
+  // 音声認識
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) { btnMic.classList.add('hidden'); }
   else {
@@ -511,38 +537,23 @@
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const t = event.results[i][0].transcript;
         if (event.results[i].isFinal) {
-          // ===== 確定: 最新セグメントだけを正式翻訳 =====
           finalTranscript += t;
           inputArea.value = finalTranscript;
           inputCount.textContent = finalTranscript.length + ' 文字';
           scrollInputToBottom();
-
-          // 予測タイマーをキャンセル、正式翻訳を即実行
-          if (chunkTimer) { clearTimeout(chunkTimer); chunkTimer = null; }
-          lastSentInterim = '';
-          pendingInterim = '';
-          translateChunk(t, false);
+          // 最新の確定テキストのみ翻訳（並列なし）
+          translate(t);
           addLog(`🎤 確定: "${t.slice(0, 30)}"`);
         } else {
           interim += t;
         }
       }
-
-      // ===== 中間結果: 短い文節で予測翻訳 =====
       if (interim) {
         inputArea.value = finalTranscript + interim;
         inputCount.textContent = inputArea.value.length + ' 文字';
         scrollInputToBottom();
-        pendingInterim = interim;
-
-        // デバウンスで区切り検出＆予測翻訳
-        if (chunkTimer) clearTimeout(chunkTimer);
-        chunkTimer = setTimeout(() => {
-          detectBreakAndTranslate(pendingInterim);
-        }, CHUNK_DEBOUNCE_MS);
       }
     };
-
     recognition.onerror = (event) => {
       if (event.error === 'no-speech') return;
       addLog(`🎤 エラー: ${event.error}`);
@@ -555,7 +566,6 @@
     if (!recognition) return;
     recognition.lang = direction === 'ja2en' ? 'ja-JP' : 'en-US';
     finalTranscript = inputArea.value;
-    lastSentInterim = ''; pendingInterim = '';
     const c = selectedDeviceId ? { audio: { deviceId: { exact: selectedDeviceId } } } : { audio: true };
     navigator.mediaDevices.getUserMedia(c).then(stream => {
       const name = stream.getAudioTracks()[0]?.label || 'Unknown';
@@ -565,11 +575,10 @@
       try {
         recognition.start(); isListening = true; hideError();
         btnMic.classList.add('active'); listeningInd.classList.remove('hidden');
-        addLog(`🎤 開始 (${recognition.lang}) ${name}`);
+        addLog(`🎤 開始 (${recognition.lang})`);
       } catch (e) { stream.getTracks().forEach(t => t.stop()); }
-    }).catch(e => { showError('マイクアクセス失敗'); });
+    }).catch(() => showError('マイクアクセス失敗'));
   }
-
   function stopListening() {
     if (!recognition) return;
     try { recognition.stop(); } catch {}
@@ -580,9 +589,8 @@
   }
   btnMic.addEventListener('click', () => { isListening ? stopListening() : startListening(); });
 
-  // 初期化
   updateLabels(); renderCards(); loadMics();
-  addLog(`起動 v${APP_VERSION} (model: ${MODEL})`);
+  addLog(`起動 v${APP_VERSION} (${MODEL})`);
 })();
 </script>
 </body>
