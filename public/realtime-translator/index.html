@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Realtime Translator v0.9.0</title>
+<title>Realtime Translator v0.9.2</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Noto+Sans+JP:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -129,7 +129,7 @@
 <header>
   <div class="header-left">
     <div class="logo">翻</div>
-    <div class="header-title"><h1>Realtime Translator</h1><span class="version">v0.9.0</span></div>
+    <div class="header-title"><h1>Realtime Translator</h1><span class="version">v0.9.2</span></div>
     <span class="badge">Claude API</span>
   </div>
   <button class="btn-console" id="btnConsole">Console ▼</button>
@@ -145,6 +145,15 @@
     <select id="micSelect"><option value="">読み込み中...</option></select>
     <button class="btn-sm" id="btnRefreshMic">🔄</button>
     <span class="mic-active-name hidden" id="micActiveName"></span>
+  </div>
+  <!-- モデル選択 -->
+  <div class="settings-row">
+    <label>🧠 モデル:</label>
+    <select id="modelSelect">
+      <option value="sonnet">✨ Sonnet（高品質）</option>
+      <option value="haiku">⚡ Haiku（高速）</option>
+      <option value="auto">🔄 自動（短文Haiku/長文Sonnet）</option>
+    </select>
   </div>
 
   <!-- 言語表示（自動検出） -->
@@ -234,7 +243,7 @@
   const SHORT_THRESHOLD = 50;       // この文字数以下はHaiku、超はSonnet
   const MODEL_FAST = 'claude-haiku-4-5-20251001';
   const MODEL_QUALITY = 'claude-sonnet-4-20250514';
-  const APP_VERSION = '0.9.0';
+  const APP_VERSION = '0.9.2';
 
   // 日本語検出
   const JA_REGEX = /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u3000-\u303F]/;
@@ -354,18 +363,13 @@
     }
   }
 
-  // 音声認識の言語を切り替え（認識中なら再起動）
+  // 音声認識の言語を切り替え（次の再起動時に反映、途中停止しない）
   function switchRecognitionLang(lang) {
     if (!recognition) return;
     const newLang = lang === 'ja' ? 'ja-JP' : 'en-US';
     if (recognition.lang !== newLang) {
       recognition.lang = newLang;
-      addLog(`🌐 認識言語切替: ${newLang}`);
-      // 認識中なら再起動
-      if (isListening) {
-        try { recognition.stop(); } catch {}
-        // onendハンドラが自動再起動する
-      }
+      addLog(`🌐 次回認識言語: ${newLang}`);
     }
   }
 
@@ -452,13 +456,32 @@
     requestAnimationFrame(() => { confirmedScroll.scrollTop = confirmedScroll.scrollHeight; });
   }
 
-  // ===== モデル選択: 短文→Haiku(速い)、長文→Sonnet(高品質) =====
+  // ===== モデル選択 =====
+  let modelMode = localStorage.getItem('rt_model_mode') || 'sonnet'; // デフォルトSonnet
+  const modelSelect = $('modelSelect');
+  modelSelect.value = modelMode;
+
+  modelSelect.addEventListener('change', () => {
+    modelMode = modelSelect.value;
+    localStorage.setItem('rt_model_mode', modelMode);
+    addLog(`🧠 モデル変更: ${modelMode}`);
+  });
+
   function chooseModel(text) {
+    if (modelMode === 'sonnet') return MODEL_QUALITY;
+    if (modelMode === 'haiku') return MODEL_FAST;
+    // auto: 短文Haiku、長文Sonnet
     return text.length <= SHORT_THRESHOLD ? MODEL_FAST : MODEL_QUALITY;
   }
 
   // ===== 文結合バッファ: 短い確定テキストは次と結合してから翻訳 =====
   function bufferAndTranslate(text, lang) {
+    // 言語が変わったら先にバッファをフラッシュ（日英交互対応）
+    if (pendingBuffer && pendingLang && pendingLang !== lang) {
+      addLog(`🌐 言語切替検出(${pendingLang}→${lang}) バッファフラッシュ`);
+      flushBuffer();
+    }
+
     // バッファに追加
     if (pendingBuffer) {
       pendingBuffer += ' ' + text.trim();
@@ -481,7 +504,7 @@
     bufferTimer = setTimeout(() => {
       flushBuffer();
     }, BUFFER_WAIT_MS);
-    addLog(`📦 バッファ: "${pendingBuffer.slice(0, 25)}..." (${pendingBuffer.length}字, ${BUFFER_WAIT_MS}ms待機)`);
+    addLog(`📦 バッファ(${lang}): "${pendingBuffer.slice(0, 25)}..." (${pendingBuffer.length}字)`);
   }
 
   function flushBuffer() {
@@ -690,10 +713,11 @@
         }
       }
       if (interim) {
-        // 中間結果の言語も検出して表示を更新
+        // 中間結果の言語を検出して表示を更新（認識は止めない）
         const interimLang = detectLanguage(interim);
         if (interimLang !== lastDetectedLang) {
           updateLangDisplay(interimLang);
+          // 認識言語は次回onend再起動時に反映される
           switchRecognitionLang(interimLang);
         }
         inputArea.value = finalTranscript + (finalTranscript ? '\n' : '') + interim;
