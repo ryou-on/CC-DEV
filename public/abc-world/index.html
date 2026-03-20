@@ -1527,31 +1527,14 @@ document.addEventListener('keydown', handleKey);
   function playTrailSound() {
     if (!trailAudio) return;
     try {
-      if (!trailPlaying) {
-        trailAudio.currentTime = 0;
-        trailAudio.volume = 0.5;
-        trailAudio.loop = true;
-        trailAudio.play().catch(() => {});
-        trailPlaying = true;
-      }
+      trailAudio.loop = false;        // ループしない（1回のみ）
+      trailAudio.volume = 0.5;
+      trailAudio.currentTime = 0;    // 先頭から再生
+      trailAudio.play().catch(() => {});
+      trailPlaying = true;
+      // 再生が終わったらフラグをリセット（次の動作で再生可能に）
+      trailAudio.onended = () => { trailPlaying = false; };
     } catch(e) {}
-  }
-
-  function stopTrailSound() {
-    if (trailAudio && trailPlaying) {
-      // フェードアウト
-      const fadeStep = () => {
-        if (trailAudio.volume > 0.05) {
-          trailAudio.volume = Math.max(0, trailAudio.volume - 0.08);
-          setTimeout(fadeStep, 30);
-        } else {
-          trailAudio.pause();
-          trailAudio.volume = 0.5;
-          trailPlaying = false;
-        }
-      };
-      fadeStep();
-    }
   }
 
   stage.addEventListener('mousemove', (e) => {
@@ -1559,11 +1542,15 @@ document.addEventListener('keydown', handleKey);
     points.push({ x: pos.x, y: pos.y, life: 1.0 });
     if (points.length > MAX_POINTS) points.shift();
 
-    // マウスが動いている間は音を再生
-    playTrailSound();
-    // 動きが止まったらフェードアウト
+    // マウスが動き始めたとき（再生中でなければ）先頭から1回再生
+    if (!trailPlaying) {
+      playTrailSound();
+    }
+
+    // マウスが止まったら「再生中」フラグをリセット
+    // → 音は最後まで流れ続けるが、次に動かしたとき先頭から再スタート
     clearTimeout(trailStopTimer);
-    trailStopTimer = setTimeout(stopTrailSound, 150);
+    trailStopTimer = setTimeout(() => { trailPlaying = false; }, 150);
   });
 
   // ===== 言語別カラー（複数色で虹彗星に） =====
