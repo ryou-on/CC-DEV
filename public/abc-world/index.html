@@ -319,6 +319,75 @@ body {
 }
 #console-btn:hover { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.7); }
 
+/* ===== モバイル：横向きアラート ===== */
+#landscape-alert {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0,0,0,0.95);
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3vh;
+}
+#landscape-alert .la-icon  { font-size: 15vw; animation: laRotate 1.5s ease-in-out infinite alternate; }
+#landscape-alert .la-text  { font-family:'Fredoka One',cursive; font-size:6vw; color:#fff; text-align:center; line-height:1.4; }
+#landscape-alert .la-sub   { font-size:3vw; color:rgba(255,255,255,0.5); }
+@keyframes laRotate {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(-90deg); }
+}
+@media (orientation: landscape) and (max-width: 1024px) {
+  /* タブレット以下の横向きで発動 */
+  #landscape-alert { display: flex; }
+}
+
+/* ===== モバイル：非表示の入力フィールド（ソフトキーボード呼び出し用） ===== */
+#mobile-input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+  width: 1px; height: 1px;
+  top: 50%; left: 50%;
+  font-size: 16px; /* iOSズーム防止 */
+  border: none; outline: none;
+  background: transparent;
+  color: transparent;
+  caret-color: transparent;
+}
+
+/* ===== モバイル縦向き：ソフトキーボードを促すバナー ===== */
+#kb-prompt {
+  display: none;
+  position: absolute;
+  bottom: 10vh;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.25);
+  border-radius: 2vw;
+  padding: 1.5vh 4vw;
+  font-size: 3.5vw;
+  color: rgba(255,255,255,0.8);
+  white-space: nowrap;
+  backdrop-filter: blur(8px);
+  animation: kbPulse 2s ease-in-out infinite;
+  cursor: pointer;
+}
+@keyframes kbPulse {
+  0%,100% { opacity:0.7; transform:translateX(-50%) scale(1); }
+  50%      { opacity:1;   transform:translateX(-50%) scale(1.04); }
+}
+/* モバイル縦向きのみ表示 */
+@media (max-width: 768px) and (orientation: portrait) {
+  #kb-prompt { display: block; }
+  /* モバイルではhintを非表示（狭いので） */
+  #hint { display: none; }
+}
+
+
 /* ===== 言語別スタイル ===== */
 
 /* EN：宇宙 */
@@ -408,6 +477,23 @@ body.lang-bn #bg-layer::after {
   background: radial-gradient(circle at 45% 50%, rgba(255,51,51,0.12) 0%, transparent 50%);
 }
 
+/* タイ語専用：寺院・金・赤 */
+body.lang-th #bg-layer {
+  background: linear-gradient(160deg, #1a0d00 0%, #3d1f00 30%, #6b3800 60%, #1a0800 100%);
+}
+body.lang-th { --accent: #FFD700; }
+body.lang-th #letter { font-family: 'Nunito', sans-serif; font-weight: 900; font-size: 16vw; }
+body.lang-th #main-word { font-family: 'Nunito', sans-serif; font-weight: 900; font-size: 3.8vw; }
+body.lang-th #tab-bar { border-bottom-color: rgba(255,215,0,0.4); }
+body.lang-th #bg-layer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(
+    60deg, rgba(255,215,0,0.04) 0px, rgba(255,215,0,0.04) 1px, transparent 1px, transparent 30px),
+    repeating-linear-gradient(
+    -60deg, rgba(255,100,0,0.03) 0px, rgba(255,100,0,0.03) 1px, transparent 1px, transparent 30px);
+}
 /* ベトナム語専用：格子パターン */
 body.lang-vi #bg-layer::after {
   content: '';
@@ -421,7 +507,19 @@ body.lang-vi #bg-layer::after {
 </style>
 </head>
 <body class="lang-en">
+<!-- 横向きアラート（モバイルのみ） -->
+<div id="landscape-alert">
+  <div class="la-icon">📱</div>
+  <div class="la-text">画面を<br>縦にしてください</div>
+  <div class="la-sub">Please rotate your device</div>
+</div>
+
 <div id="stage">
+
+  <!-- モバイル用：ソフトキーボード呼び出しinput -->
+  <input id="mobile-input" type="text" inputmode="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+  <!-- キーボードを開くプロンプト（モバイル縦向きのみ表示） -->
+  <div id="kb-prompt" onclick="focusMobileInput()">⌨️ タップしてキーボードを開く</div>
 
   <!-- 背景 -->
   <div id="bg-layer"></div>
@@ -447,6 +545,9 @@ body.lang-vi #bg-layer::after {
     </div>
     <div class="tab" data-lang="bn" style="--accent:#FF3333" onclick="switchLang('bn')">
       <span class="flag">🇧🇩</span><span class="lang-name">বাংলা</span>
+    </div>
+    <div class="tab" data-lang="th" style="--accent:#FFD700" onclick="switchLang('th')">
+      <span class="flag">🇹🇭</span><span class="lang-name">ภาษาไทย</span>
     </div>
     <div class="tab" data-lang="vi" style="--accent:#00C853" onclick="switchLang('vi')">
       <span class="flag">🇻🇳</span><span class="lang-name">Tiếng Việt</span>
@@ -821,6 +922,40 @@ const LANGS = {
     }
   },
 
+
+  // ---------- ภาษาไทย (Thai) ----------
+  th: {
+    name: 'ภาษาไทย', flag: '🇹🇭', voice: 'th-TH',
+    idle: ['🏯 ภาษาไทย ABC 🐘', 'กดปุ่มใดก็ได้!', 'A〜Z'],
+    data: {
+      A:[{w:'แมว',        s:'cat・猫',          emoji:'🐱'},{w:'แอปเปิ้ล',  s:'apple・りんご',   emoji:'🍎'},{w:'อากาศ',    s:'weather・天気',   emoji:'🌤️'}],
+      B:[{w:'บ้าน',       s:'house・家',        emoji:'🏠'},{w:'ปลา',       s:'fish・魚',        emoji:'🐟'},{w:'ผีเสื้อ',  s:'butterfly・蝶',   emoji:'🦋'}],
+      C:[{w:'ช้าง',       s:'elephant・象',     emoji:'🐘'},{w:'แมลง',      s:'insect・虫',      emoji:'🐛'}],
+      D:[{w:'ดาว',        s:'star・星',         emoji:'⭐'},{w:'ดอกไม้',    s:'flower・花',      emoji:'🌸'},{w:'เด็ก',     s:'child・子供',     emoji:'👶'}],
+      E:[{w:'เอกลักษณ์',  s:'identity・アイデンティティ',emoji:'✨'}],
+      F:[{w:'ฟ้า',        s:'sky・空',          emoji:'🌤️'},{w:'ไฟ',        s:'fire・火',        emoji:'🔥'},{w:'ฝน',       s:'rain・雨',        emoji:'🌧️'}],
+      G:[{w:'กบ',         s:'frog・カエル',     emoji:'🐸'},{w:'เก้าอี้',   s:'chair・椅子',     emoji:'🪑'},{w:'กุ้ง',     s:'shrimp・エビ',    emoji:'🦐'}],
+      H:[{w:'หมา',        s:'dog・犬',          emoji:'🐶'},{w:'หมี',       s:'bear・クマ',      emoji:'🐻'},{w:'หัวใจ',    s:'heart・心',       emoji:'❤️'}],
+      I:[{w:'อินทรี',     s:'eagle・ワシ',      emoji:'🦅'},{w:'เกาะ',      s:'island・島',      emoji:'🏝️'}],
+      J:[{w:'จระเข้',     s:'crocodile・ワニ',  emoji:'🐊'},{w:'จันทร์',    s:'moon・月',        emoji:'🌙'}],
+      K:[{w:'ควาย',       s:'buffalo・水牛',    emoji:'🐃'},{w:'ไก่',       s:'chicken・鶏',     emoji:'🐔'},{w:'แกะ',      s:'sheep・羊',       emoji:'🐑'}],
+      L:[{w:'ลิง',        s:'monkey・サル',     emoji:'🐒'},{w:'เลมอน',     s:'lemon・レモン',   emoji:'🍋'},{w:'ล้อ',      s:'wheel・車輪',     emoji:'🎡'}],
+      M:[{w:'แมงมุม',     s:'spider・クモ',     emoji:'🕷️'},{w:'มะม่วง',   s:'mango・マンゴー', emoji:'🥭'},{w:'ม้า',      s:'horse・馬',       emoji:'🐴'}],
+      N:[{w:'นก',         s:'bird・鳥',         emoji:'🐦'},{w:'น้ำ',       s:'water・水',       emoji:'💧'},{w:'หนู',      s:'mouse・ネズミ',   emoji:'🐭'}],
+      O:[{w:'อ้วน',       s:'fat・太い',        emoji:'🍔'},{w:'อูฐ',       s:'camel・ラクダ',   emoji:'🐪'}],
+      P:[{w:'ปลาวาฬ',     s:'whale・クジラ',    emoji:'🐳'},{w:'เป็ด',      s:'duck・アヒル',    emoji:'🦆'},{w:'แพนด้า',  s:'panda・パンダ',   emoji:'🐼'}],
+      Q:[{w:'ควาย',       s:'buffalo・水牛',    emoji:'🐃'}],
+      R:[{w:'รุ้ง',       s:'rainbow・虹',      emoji:'🌈'},{w:'เรือ',      s:'boat・ボート',    emoji:'⛵'},{w:'ราชสีห์',  s:'lion・ライオン',  emoji:'🦁'}],
+      S:[{w:'เสือ',       s:'tiger・トラ',      emoji:'🐯'},{w:'สุนัข',     s:'dog・犬',         emoji:'🐶'},{w:'สิงโต',    s:'lion・ライオン',  emoji:'🦁'}],
+      T:[{w:'ต้นไม้',     s:'tree・木',         emoji:'🌳'},{w:'เต่า',      s:'turtle・カメ',    emoji:'🐢'},{w:'ทะเล',     s:'sea・海',         emoji:'🌊'}],
+      U:[{w:'อุ้งเท้า',   s:'paw・足跡',        emoji:'🐾'},{w:'อูฐ',       s:'camel・ラクダ',   emoji:'🐪'}],
+      V:[{w:'วัว',        s:'cow・牛',          emoji:'🐄'},{w:'วานร',      s:'monkey・サル',    emoji:'🐒'}],
+      W:[{w:'วาฬ',        s:'whale・クジラ',    emoji:'🐳'},{w:'แตงโม',     s:'watermelon・スイカ',emoji:'🍉'}],
+      X:[{w:'ระนาด',      s:'xylophone・木琴',  emoji:'🎵'}],
+      Y:[{w:'ยีราฟ',      s:'giraffe・キリン',  emoji:'🦒'},{w:'ยุง',       s:'mosquito・蚊',    emoji:'🦟'}],
+      Z:[{w:'ม้าลาย',     s:'zebra・シマウマ',  emoji:'🦓'},{w:'สวนสัตว์',  s:'zoo・動物園',     emoji:'🦁'}],
+    }
+  },
   // ---------- Tiếng Việt ----------
   vi: {
     name: 'Tiếng Việt', flag: '🇻🇳', voice: 'vi-VN',
@@ -1008,7 +1143,7 @@ function switchLang(lang) {
 }
 
 function getAccent(lang) {
-  const map = { en:'#7C3AED', zu:'#E67E22', es:'#E74C3C', ja:'#FF4081', vi:'#00C853', nl:'#FF6600', bn:'#FF3333' };
+  const map = { en:'#7C3AED', zu:'#E67E22', es:'#E74C3C', ja:'#FF4081', vi:'#00C853', nl:'#FF6600', bn:'#FF3333', th:'#FFD700' };
   return map[lang] || '#fff';
 }
 
@@ -1273,13 +1408,11 @@ function triggerEasterEgg(key) {
   }, egg.dur || 1000);
 }
 
-// ===== キー押下 =====
-document.addEventListener('keydown', (e) => {
-  if (e.repeat) return;      // 押しっぱなしリピートは無視
-  if (isSpeaking) return;    // 読み上げ・SE再生中は無視
-
-  // Escのみ全画面解除を許可、それ以外の特殊キーはブロック
-  if (e.key === 'Escape') return; // ブラウザのEsc処理に任せる（全画面解除）
+// ===== キー処理（keydown & モバイル共通） =====
+function handleKey(e) {
+  if (e.repeat) return;
+  if (isSpeaking) return;
+  if (e.key === 'Escape') return;
   if (e.key === 'Tab') {
     e.preventDefault();
     const langs = Object.keys(LANGS);
@@ -1287,8 +1420,7 @@ document.addEventListener('keydown', (e) => {
     switchLang(langs[(idx + 1) % langs.length]);
     return;
   }
-  // Ctrl+R / Cmd+R はリフレッシュを許可、それ以外の特殊キーを抑制
-  if ((e.ctrlKey || e.metaKey) && (e.key === 'r' || e.key === 'R')) return; // リフレッシュ許可
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'r' || e.key === 'R')) return;
   if (e.key === 'F5' || (e.ctrlKey && ['w','W','t','T','n','N'].includes(e.key))) {
     e.preventDefault(); return;
   }
@@ -1354,7 +1486,10 @@ document.addEventListener('keydown', (e) => {
     triggerEasterEgg(e.key);
   }
   // それ以外（矢印・Shift・Alt・Metaなど）は何もしない
-});
+}
+
+// ===== キー押下イベント =====
+document.addEventListener('keydown', handleKey);
 
 // ===== マウス軌跡 =====
 (function() {
@@ -1383,10 +1518,54 @@ document.addEventListener('keydown', (e) => {
     };
   }
 
+  // チャラリーン音の状態管理
+  let trailSoundTimer = null;
+  let trailSoundActive = false;
+  let trailOscNodes = []; // 再生中のノードを追跡
+
+  // チャラリーン：ランダムな高い鈴・水晶音をWeb Audio APIで生成
+  function playTrailSound() {
+    if (!audioCtx) return;
+    // 同時発音数を制限（最大3音）
+    if (trailOscNodes.length >= 3) return;
+    try {
+      const freqs = [1047, 1319, 1568, 2093, 2637, 3136]; // C6〜G7付近
+      const f = freqs[Math.floor(Math.random() * freqs.length)];
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      const t = audioCtx.currentTime;
+      o.connect(g); g.connect(audioCtx.destination);
+      o.type = 'sine';
+      o.frequency.value = f;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(0.08, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+      o.start(t);
+      o.stop(t + 0.55);
+      trailOscNodes.push(o);
+      o.onended = () => { trailOscNodes = trailOscNodes.filter(x => x !== o); };
+    } catch(e) {}
+  }
+
   stage.addEventListener('mousemove', (e) => {
     const pos = toStagePos(e);
     points.push({ x: pos.x, y: pos.y, life: 1.0 });
     if (points.length > MAX_POINTS) points.shift();
+
+    // チャラリーン：マウスが動いている間、間欠的に鳴らす
+    if (!trailSoundActive) {
+      trailSoundActive = true;
+      // 動き始めに1音
+      playTrailSound();
+      // 一定間隔で鳴らし続ける
+      trailSoundTimer = setInterval(playTrailSound, 180);
+    }
+    // 動きが止まったら音も止める（200ms後にタイムアウト）
+    clearTimeout(trailSoundTimer._stop);
+    trailSoundTimer._stop = setTimeout(() => {
+      clearInterval(trailSoundTimer);
+      trailSoundActive = false;
+    }, 200);
   });
 
   // ===== 言語別カラー（複数色で虹彗星に） =====
@@ -1398,6 +1577,7 @@ document.addEventListener('keydown', (e) => {
     vi: [[  60,255,140],[ 20,200, 80],[  0,140, 60],[200,255,220]], // エメラルド
     nl: [[ 255,120, 20],[255, 80,  0],[200, 50,  0],[255,220,180]], // オランダオレンジ
     bn: [[ 255, 80, 80],[200,  0,  0],[100,200,  0],[255,200,200]], // バングラデシュ赤緑
+    th: [[ 255,215,  0],[255,140,  0],[200, 80,  0],[255,240,180]], // タイ黄金
   };
 
   function getColors() {
@@ -1586,6 +1766,47 @@ document.addEventListener('keyup', (e) => {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'PrintScreen') { try { e.preventDefault(); } catch(e) {} }
 });
+// ===== モバイル対応 =====
+const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)
+              || (navigator.maxTouchPoints > 1 && /MacIntel/.test(navigator.platform));
+
+const mobileInput = document.getElementById('mobile-input');
+
+function focusMobileInput() {
+  if (!isMobile) return;
+  mobileInput.style.pointerEvents = 'auto';
+  mobileInput.focus();
+  mobileInput.style.pointerEvents = 'none';
+}
+
+// mobile-inputへの入力をhandleKeyに流す
+mobileInput.addEventListener('input', () => {
+  const val = mobileInput.value;
+  if (!val) return;
+  mobileInput.value = '';
+  const ch = val.slice(-1);
+  handleKey({ key: ch, code: 'Key' + ch.toUpperCase(), repeat: false, ctrlKey: false, metaKey: false, preventDefault: () => {} });
+});
+
+// 向き監視
+function checkOrientation() {
+  const alertEl = document.getElementById('landscape-alert');
+  if (!alertEl) return;
+  if (isMobile) {
+    alertEl.style.display = (window.innerWidth > window.innerHeight) ? 'flex' : 'none';
+  }
+}
+window.addEventListener('resize', checkOrientation);
+window.addEventListener('orientationchange', () => setTimeout(checkOrientation, 300));
+checkOrientation();
+
+// モバイルのタップでキーボードを開く
+if (isMobile) {
+  document.getElementById('idle').addEventListener('click', focusMobileInput);
+  document.getElementById('display').addEventListener('click', focusMobileInput);
+}
+
+// ===== コンソールログ =====
 const consoleLogs = [];
 const _log = console.log.bind(console);
 const _err = console.error.bind(console);
