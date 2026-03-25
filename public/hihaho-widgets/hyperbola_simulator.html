@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>高精度双曲線シミュレーション</title>
+<style>
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
+    background: transparent;
+    min-height: 100vh;
+    color: rgba(255, 255, 255, 0.95);
+    background-color: #aa55bb;
+}
+
+.container {
+    width: 768px;
+    max-width: 90vw;
+    max-height: 90vh;
+    min-width: 400px;
+    min-height: 200px;
+    position: absolute;
+    top: 5vh;
+    left: calc(50vw - 384px);
+    background: rgba(0, 0, 0, 0.7);
+    border-radius: 12px;
+    padding: 12px;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    transition: background 0.3s ease;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    resize: none;
+}
+
+.container.collapsed {
+    background: rgba(0, 0, 0, 0.5);
+    min-height: 32px;
+}
+
+.container.collapsed .resize-handle {
+    pointer-events: none;
+    opacity: 0.3;
+}
+
+.toggle-btn {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 32px;
+    height: 32px;
+    background: rgba(255, 255, 255, 0.15);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    z-index: 10;
+}
+
+.toggle-btn:hover {
+    background: rgba(255, 255, 255, 0.25);
+    transform: scale(1.05);
+}
+
+.toggle-icon {
+    color: rgba(255, 255, 255, 0.95);
+    font-size: 20px;
+    font-weight: bold;
+    line-height: 1;
+    transition: transform 0.3s ease;
+}
+
+h1 {
+    text-align: center;
+    margin-top: 0;
+    margin-bottom: 15px;
+    padding-bottom: 15px;
+    font-size: 20px;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
+    color: rgba(255, 255, 255, 0.95);
+    cursor: move;
+    user-select: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    padding-right: 40px;
+    position: relative;
+    z-index: 1;
+    transition: margin-bottom 0.5s cubic-bezier(0.4, 0, 0.2, 1),
+        padding-bottom 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.container.collapsed h1 {
+    margin-bottom: 12px;
+    padding-bottom: 0;
+}
+
+.main-content {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    opacity: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    transition: max-height 0.5s cubic-bezier(0.4, 0, 0.2, 1),
+        opacity 0.4s ease,
+        margin-top 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    flex: 1;
+    max-height: 2000px;
+}
+
+.main-content.hidden {
+    max-height: 0;
+    opacity: 0;
+    margin-top: -15px;
+    overflow: hidden;
+}
+
+.canvas-container {
+    flex: 1;
+    background: rgba(20, 20, 20, 0.85);
+    border-radius: 10px;
+    padding: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+canvas {
+    border-radius: 8px;
+    display: block;
+    background: rgba(30, 30, 30, 0.95);
+    max-width: 100%;
+    height: auto;
+}
+
+.controls {
+    width: 260px;
+    background: rgba(20, 20, 20, 0.85);
+    border-radius: 10px;
+    padding: 12px;
+    backdrop-filter: blur(5px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.control-group {
+    margin-bottom: 15px;
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.4);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.control-group h3 {
+    margin: 0 0 10px 0;
+    color: rgba(255, 255, 255, 0.95);
+    font-size: 13px;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.slider-container {
+    margin-bottom: 10px;
+}
+
+label {
+    display: block;
+    margin-bottom: 5px;
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+input[type="range"] {
+    width: 100%;
+    height: 5px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.15);
+    outline: none;
+    margin-bottom: 3px;
+    -webkit-appearance: none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #4CAF50;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+
+input[type="range"]::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #4CAF50;
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+
+.value-display {
+    text-align: right;
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.7);
+    font-weight: bold;
+}
+
+.info {
+    margin-top: 12px;
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.4);
+    border-radius: 8px;
+    font-size: 10px;
+    line-height: 1.5;
+    color: rgba(255, 255, 255, 0.75);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.3s ease, padding 0.3s ease;
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
+.info.open {
+    max-height: 500px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+}
+
+.info-header {
+    margin-top: 12px;
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.4);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: background 0.3s ease;
+    user-select: none;
+}
+
+.info-header:hover {
+    background: rgba(0, 0, 0, 0.6);
+}
+
+.info-icon {
+    display: inline-block;
+    transition: transform 0.3s ease;
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.info-header.open .info-icon {
+    transform: rotate(90deg);
+}
+
+.hyperbola-count {
+    text-align: center;
+    margin-top: 6px;
+    font-weight: bold;
+    font-size: 11px;
+    color: #FFD700;
+    text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+#saveSVG {
+    width: 100%;
+    padding: 8px;
+    background: linear-gradient(45deg, #4CAF50, #45a049);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+    transition: all 0.3s ease;
+}
+
+#saveSVG:hover {
+    background: linear-gradient(45deg, #45a049, #4CAF50);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+}
+
+#saveSVG:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.resize-handle {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 20px;
+    height: 20px;
+    cursor: nwse-resize;
+    z-index: 20;
+}
+
+.resize-handle::before {
+    content: '';
+    position: absolute;
+    bottom: 3px;
+    right: 3px;
+    width: 12px;
+    height: 12px;
+    border-right: 2px solid rgba(255, 255, 255, 0.4);
+    border-bottom: 2px solid rgba(255, 255, 255, 0.4);
+    border-bottom-right-radius: 3px;
+}
+
+.resize-handle::after {
+    content: '';
+    position: absolute;
+    bottom: 7px;
+    right: 7px;
+    width: 6px;
+    height: 6px;
+    border-right: 2px solid rgba(255, 255, 255, 0.25);
+    border-bottom: 2px solid rgba(255, 255, 255, 0.25);
+}
+
+.resize-handle:hover::before {
+    border-color: rgba(255, 255, 255, 0.7);
+}
+
+.resize-handle:hover::after {
+    border-color: rgba(255, 255, 255, 0.5);
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+    <button id="toggleButton" class="toggle-btn" aria-label="コンテンツを畳む">
+        <span class="toggle-icon">−</span>
+    </button>
+    <h1>高精度双曲線シミュレーション</h1>
+
+    <div class="main-content">
+        <div class="canvas-container">
+            <canvas id="canvas" width="1200" height="900"></canvas>
+            <div class="hyperbola-count" id="hyperbolaCount">高精度双曲線数: 0</div>
+        </div>
+
+        <div class="controls">
+            <div class="control-group">
+                <h3>円の設定</h3>
+                <div class="slider-container">
+                    <label>半径差 (r)</label>
+                    <input type="range" id="radiusDiff" min="14.8" max="38" value="25" step="0.1">
+                    <div class="value-display" id="radiusDiffValue">25.0</div>
+                </div>
+                <div class="slider-container">
+                    <label>円の数</label>
+                    <input type="range" id="circleCount" min="3" max="80" value="12" step="1">
+                    <div class="value-display" id="circleCountValue">12</div>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <h3>円群の位置</h3>
+                <div class="slider-container">
+                    <label>中心間隔 (d)</label>
+                    <input type="range" id="centerDistance" min="8" max="600" value="300" step="1">
+                    <div class="value-display" id="centerDistanceValue">300</div>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <h3>データ保存</h3>
+                <button id="saveSVG">SVG形式で保存</button>
+            </div>
+
+            <div class="info-header" id="infoToggle">
+                <span class="info-icon">▶</span>
+                <strong>詳細情報</strong>
+            </div>
+            <div class="info" id="infoContent">
+            </div>
+        </div>
+    </div>
+    <div class="resize-handle" id="resizeHandle"></div>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+// コントロール要素
+const radiusDiff = document.getElementById('radiusDiff');
+const circleCount = document.getElementById('circleCount');
+const centerDistance = document.getElementById('centerDistance');
+
+// 値表示要素
+const radiusDiffValue = document.getElementById('radiusDiffValue');
+const circleCountValue = document.getElementById('circleCountValue');
+const centerDistanceValue = document.getElementById('centerDistanceValue');
+const hyperbolaCount = document.getElementById('hyperbolaCount');
+
+// 2つの円の交点を計算
+function getCircleIntersections(x1, y1, r1, x2, y2, r2) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const d = Math.sqrt(dx * dx + dy * dy);
+
+    if (d > r1 + r2 || d < Math.abs(r1 - r2) || d === 0) {
+        return [];
+    }
+
+    const a = (r1 * r1 - r2 * r2 + d * d) / (2 * d);
+    const h = Math.sqrt(r1 * r1 - a * a);
+
+    const px = x1 + a * dx / d;
+    const py = y1 + a * dy / d;
+
+    const x3 = px + h * dy / d;
+    const y3 = py - h * dx / d;
+    const x4 = px - h * dy / d;
+    const y4 = py + h * dx / d;
+
+    return [{ x: x3, y: y3 }, { x: x4, y: y4 }];
+}
+
+// 数学的に正確な双曲線を計算する関数
+function calculatePreciseHyperbola(distanceDiff, c1x, c1y, c2x, c2y, canvasWidth, canvasHeight) {
+    const a = distanceDiff / 2;
+    const c = Math.sqrt((c2x - c1x) * (c2x - c1x) + (c2y - c1y) * (c2y - c1y)) / 2;
+
+    if (a >= c) return [[], []];
+
+    const b = Math.sqrt(c * c - a * a);
+
+    const centerX = (c1x + c2x) / 2;
+    const centerY = (c1y + c2y) / 2;
+
+    const upperBranch = [];
+    const lowerBranch = [];
+
+    const xMin = -100;
+    const xMax = canvasWidth + 100;
+    const step = 1;
+
+    for (let x = xMin; x <= xMax; x += step) {
+        const relativeX = x - centerX;
+        const ySquared = a * a * (1 + (relativeX * relativeX) / (b * b));
+        const y = Math.sqrt(ySquared);
+
+        if (!isNaN(y)) {
+            const upperY = centerY - y;
+            if (upperY >= -100 && upperY <= canvasHeight + 100) {
+                upperBranch.push({ x: x, y: upperY });
+            }
+
+            const lowerY = centerY + y;
+            if (lowerY >= -100 && lowerY <= canvasHeight + 100) {
+                lowerBranch.push({ x: x, y: lowerY });
+            }
+        }
+    }
+
+    return [upperBranch, lowerBranch];
+}
+
+function drawPreciseCurve(points, color) {
+    if (points.length < 2) return;
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.globalAlpha = 1.0;
+
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+
+    for (let i = 1; i < points.length; i++) {
+        ctx.lineTo(points[i].x, points[i].y);
+    }
+
+    ctx.stroke();
+    ctx.globalAlpha = 1.0;
+}
+
+function drawSmoothCurve(points, color) {
+    if (points.length < 2) return;
+
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3;
+    ctx.globalAlpha = 0.8;
+
+    ctx.beginPath();
+    ctx.moveTo(points[0].x, points[0].y);
+
+    if (points.length === 2) {
+        ctx.lineTo(points[1].x, points[1].y);
+    } else if (points.length === 3) {
+        ctx.quadraticCurveTo(points[1].x, points[1].y, points[2].x, points[2].y);
+    } else {
+        for (let i = 1; i < points.length - 2; i++) {
+            const cp1x = (points[i].x + points[i + 1].x) / 2;
+            const cp1y = (points[i].y + points[i + 1].y) / 2;
+            ctx.quadraticCurveTo(points[i].x, points[i].y, cp1x, cp1y);
+        }
+        ctx.quadraticCurveTo(
+            points[points.length - 2].x,
+            points[points.length - 2].y,
+            points[points.length - 1].x,
+            points[points.length - 1].y
+        );
+    }
+
+    ctx.stroke();
+    ctx.globalAlpha = 1.0;
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const rDiff = parseFloat(radiusDiff.value);
+    const count = parseInt(circleCount.value);
+    const distance = parseInt(centerDistance.value);
+
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    const c1x = centerX;
+    const c1y = centerY - distance / 2;
+    const c2x = centerX;
+    const c2y = centerY + distance / 2;
+
+    ctx.fillStyle = '#FF4444';
+    ctx.beginPath();
+    ctx.arc(c1x, c1y, 6, 0, 2 * Math.PI);
+    ctx.fill();
+
+    ctx.fillStyle = '#4444FF';
+    ctx.beginPath();
+    ctx.arc(c2x, c2y, 6, 0, 2 * Math.PI);
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(128, 128, 128, 0.6)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]);
+    ctx.beginPath();
+    ctx.moveTo(c1x, c1y);
+    ctx.lineTo(c2x, c2y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.strokeStyle = 'rgba(255, 68, 68, 0.5)';
+    ctx.lineWidth = 2;
+    for (let i = 1; i <= count; i++) {
+        const radius = i * rDiff;
+        ctx.beginPath();
+        ctx.arc(c1x, c1y, radius, 0, 2 * Math.PI);
+        ctx.stroke();
+    }
+
+    ctx.strokeStyle = 'rgba(68, 68, 255, 0.5)';
+    ctx.lineWidth = 2;
+    for (let i = 1; i <= count; i++) {
+        const radius = i * rDiff;
+        ctx.beginPath();
+        ctx.arc(c2x, c2y, radius, 0, 2 * Math.PI);
+        ctx.stroke();
+    }
+
+    const hyperbolaColor = '#0072c2';
+    const hyperbolaBranches = new Map();
+    const preciseHyperbolas = new Map();
+
+    for (let i = 1; i <= count; i++) {
+        for (let j = 1; j <= count; j++) {
+            const r1 = i * rDiff;
+            const r2 = j * rDiff;
+            const distanceDiff = Math.abs(r1 - r2);
+
+            if (distanceDiff < 1) continue;
+
+            const intersections = getCircleIntersections(c1x, c1y, r1, c2x, c2y, r2);
+
+            if (intersections.length === 2) {
+                const key = Math.round(distanceDiff);
+                if (!hyperbolaBranches.has(key)) {
+                    hyperbolaBranches.set(key, []);
+                    preciseHyperbolas.set(key, calculatePreciseHyperbola(distanceDiff, c1x, c1y, c2x, c2y, canvas.width, canvas.height));
+                }
+
+                intersections.forEach(point => {
+                    const d1 = Math.sqrt((point.x - c1x) * (point.x - c1x) + (point.y - c1y) * (point.y - c1y));
+                    const d2 = Math.sqrt((point.x - c2x) * (point.x - c2x) + (point.y - c2y) * (point.y - c2y));
+                    const actualDiff = Math.abs(d1 - d2);
+
+                    if (Math.abs(actualDiff - distanceDiff) < 1) {
+                        hyperbolaBranches.get(key).push({
+                            x: point.x,
+                            y: point.y,
+                            diff: actualDiff
+                        });
+                    }
+                });
+            }
+        }
+    }
+
+    let hyperbolaCountNum = 0;
+    const sortedKeys = Array.from(preciseHyperbolas.keys()).sort((a, b) => a - b);
+    const maxHyperbolas = 6;
+
+    sortedKeys.slice(0, maxHyperbolas).forEach(key => {
+        const [upperBranch, lowerBranch] = preciseHyperbolas.get(key);
+        const samplePoints = hyperbolaBranches.get(key) || [];
+
+        ctx.fillStyle = 'black';
+        samplePoints.forEach(point => {
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, 3, 0, 2 * Math.PI);
+            ctx.fill();
+        });
+
+        if (upperBranch.length > 0) {
+            drawPreciseCurve(upperBranch, hyperbolaColor);
+        }
+        if (lowerBranch.length > 0) {
+            drawPreciseCurve(lowerBranch, hyperbolaColor);
+        }
+
+        hyperbolaCountNum++;
+    });
+
+    hyperbolaCount.textContent = `高精度双曲線数: ${hyperbolaCountNum}`;
+}
+
+function generateSmoothPath(points) {
+    if (points.length < 2) return '';
+
+    let pathData = `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
+
+    if (points.length === 2) {
+        pathData += ` L ${points[1].x.toFixed(2)} ${points[1].y.toFixed(2)}`;
+    } else if (points.length === 3) {
+        pathData += ` Q ${points[1].x.toFixed(2)} ${points[1].y.toFixed(2)} ${points[2].x.toFixed(2)} ${points[2].y.toFixed(2)}`;
+    } else {
+        for (let i = 1; i < points.length - 2; i++) {
+            const cp1x = (points[i].x + points[i + 1].x) / 2;
+            const cp1y = (points[i].y + points[i + 1].y) / 2;
+            pathData += ` Q ${points[i].x.toFixed(2)} ${points[i].y.toFixed(2)} ${cp1x.toFixed(2)} ${cp1y.toFixed(2)}`;
+        }
+        pathData += ` Q ${points[points.length - 2].x.toFixed(2)} ${points[points.length - 2].y.toFixed(2)} ${points[points.length - 1].x.toFixed(2)} ${points[points.length - 1].y.toFixed(2)}`;
+    }
+
+    return pathData;
+}
+
+function generateSVG() {
+    const rDiff = parseFloat(radiusDiff.value);
+    const count = parseInt(circleCount.value);
+    const distance = parseInt(centerDistance.value);
+
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    const c1x = centerX;
+    const c1y = centerY - distance / 2;
+    const c2x = centerX;
+    const c2y = centerY + distance / 2;
+
+    let svgContent = `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1200" height="900" viewBox="0 0 1200 900" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .focus-red { fill: #FF4444; }
+      .focus-blue { fill: #4444FF; }
+      .circle-red { fill: none; stroke: rgba(255, 68, 68, 0.3); stroke-width: 1; }
+      .circle-blue { fill: none; stroke: rgba(68, 68, 255, 0.3); stroke-width: 1; }
+    </style>
+  </defs>
+  
+  <rect width="1200" height="900" fill="white"/>
+  
+  <!-- 同心円 (赤) -->
+`;
+
+    for (let i = 1; i <= count; i++) {
+        const radius = i * rDiff;
+        svgContent += `  <circle cx="${c1x}" cy="${c1y}" r="${radius}" class="circle-red"/>\n`;
+    }
+
+    svgContent += `  \n  <!-- 同心円 (青) -->\n`;
+
+    for (let i = 1; i <= count; i++) {
+        const radius = i * rDiff;
+        svgContent += `  <circle cx="${c2x}" cy="${c2y}" r="${radius}" class="circle-blue"/>\n`;
+    }
+
+    const hyperbolaColor = '#0072c2';
+    const hyperbolaBranches = new Map();
+    const preciseHyperbolas = new Map();
+
+    for (let i = 1; i <= count; i++) {
+        for (let j = 1; j <= count; j++) {
+            const r1 = i * rDiff;
+            const r2 = j * rDiff;
+            const distanceDiff = Math.abs(r1 - r2);
+
+            if (distanceDiff < 1) continue;
+
+            const intersections = getCircleIntersections(c1x, c1y, r1, c2x, c2y, r2);
+
+            if (intersections.length === 2) {
+                const key = Math.round(distanceDiff);
+                if (!hyperbolaBranches.has(key)) {
+                    hyperbolaBranches.set(key, []);
+                    preciseHyperbolas.set(key, calculatePreciseHyperbola(distanceDiff, c1x, c1y, c2x, c2y, 1200, 900));
+                }
+
+                intersections.forEach(point => {
+                    const d1 = Math.sqrt((point.x - c1x) * (point.x - c1x) + (point.y - c1y) * (point.y - c1y));
+                    const d2 = Math.sqrt((point.x - c2x) * (point.x - c2x) + (point.y - c2y) * (point.y - c2y));
+                    const actualDiff = Math.abs(d1 - d2);
+
+                    if (Math.abs(actualDiff - distanceDiff) < 1) {
+                        hyperbolaBranches.get(key).push({
+                            x: point.x,
+                            y: point.y,
+                            diff: actualDiff
+                        });
+                    }
+                });
+            }
+        }
+    }
+
+    svgContent += `\n  <!-- 双曲線と交点 -->\n`;
+
+    let hyperbolaCountNum = 0;
+    const sortedKeys = Array.from(preciseHyperbolas.keys()).sort((a, b) => a - b);
+    const maxHyperbolas = 6;
+
+    sortedKeys.slice(0, maxHyperbolas).forEach(key => {
+        const [upperBranch, lowerBranch] = preciseHyperbolas.get(key);
+        const samplePoints = hyperbolaBranches.get(key) || [];
+
+        samplePoints.forEach(point => {
+            svgContent += `  <circle cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="3" fill="black"/>\n`;
+        });
+
+        [upperBranch, lowerBranch].forEach(branch => {
+            if (branch.length >= 2) {
+                let pathData = `M ${branch[0].x.toFixed(2)} ${branch[0].y.toFixed(2)}`;
+                for (let i = 1; i < branch.length; i++) {
+                    pathData += ` L ${branch[i].x.toFixed(2)} ${branch[i].y.toFixed(2)}`;
+                }
+                svgContent += `  <path d="${pathData}" stroke="${hyperbolaColor}" stroke-width="3" fill="none" opacity="1.0"/>\n`;
+            }
+        });
+
+        hyperbolaCountNum++;
+    });
+
+    svgContent += `
+  <!-- 焦点 -->
+  <circle cx="${c1x}" cy="${c1y}" r="6" class="focus-red"/>
+  <circle cx="${c2x}" cy="${c2y}" r="6" class="focus-blue"/>
+  
+  <line x1="${c1x}" y1="${c1y}" x2="${c2x}" y2="${c2y}" stroke="rgba(128, 128, 128, 0.6)" stroke-width="2" stroke-dasharray="5,5"/>
+  
+  <text x="10" y="20" font-family="Arial, sans-serif" font-size="14" fill="#333">
+    高精度双曲線シミュレーション（数学的双曲線方程式使用）
+  </text>
+  <text x="10" y="40" font-family="Arial, sans-serif" font-size="12" fill="#666">
+    半径差: ${rDiff}px, 円の数: ${count}, 中心間隔: ${distance}px
+  </text>
+  <text x="10" y="55" font-family="Arial, sans-serif" font-size="12" fill="#666">
+    高精度双曲線数: ${hyperbolaCountNum}
+  </text>
+</svg>`;
+
+    return svgContent;
+}
+
+function downloadSVG() {
+    const svgContent = generateSVG();
+    const blob = new Blob([svgContent], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `hyperbola_simulation_${Date.now()}.svg`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+function updateValues() {
+    radiusDiffValue.textContent = parseFloat(radiusDiff.value).toFixed(1);
+    circleCountValue.textContent = circleCount.value;
+    centerDistanceValue.textContent = centerDistance.value;
+}
+
+// イベントリスナー
+[radiusDiff, circleCount, centerDistance].forEach(slider => {
+    slider.addEventListener('input', () => {
+        updateValues();
+        draw();
+    });
+});
+
+document.getElementById('saveSVG').addEventListener('click', downloadSVG);
+
+// 折りたたみ機能
+const toggleButton = document.getElementById('toggleButton');
+const mainContent = document.querySelector('.main-content');
+const container = document.querySelector('.container');
+const toggleIcon = document.querySelector('.toggle-icon');
+const header = document.querySelector('h1');
+let isCollapsed = false;
+
+toggleButton.addEventListener('click', () => {
+    isCollapsed = !isCollapsed;
+
+    if (isCollapsed) {
+        mainContent.classList.add('hidden');
+        container.classList.add('collapsed');
+        toggleIcon.textContent = '+';
+        container.style.height = 'auto';
+    } else {
+        mainContent.classList.remove('hidden');
+        container.classList.remove('collapsed');
+        toggleIcon.textContent = '−';
+        if (!container.style.width || container.style.width === '768px') {
+            container.style.height = 'auto';
+        }
+    }
+});
+
+// 詳細情報アコーディオン
+const infoToggle = document.getElementById('infoToggle');
+const infoContent = document.getElementById('infoContent');
+
+infoContent.innerHTML = `
+    <strong>原理：</strong><br>
+    双曲線は、2つの焦点からの距離の差が一定である点の軌跡です。同心円群の交点から距離差を特定し、数学的に正確な双曲線方程式を使用して高精度な双曲線を描画します。
+    <br><br>
+    <strong>精度：</strong><br>
+    • 数学的正確性: 双曲線方程式 y²/a² - x²/b² = 1 を使用<br>
+    • 同心円交点: 双曲線の存在を確認する参照点（黒色）<br>
+    • 連続曲線: 画面全体にわたる滑らかな双曲線<br>
+    • 微細調整: 半径差0.1px、中心間隔1px刻みの精密制御
+    <br><br>
+    <strong>操作：</strong><br>
+    • 半径差: 円同士の間隔（14.8-38px、0.1刻み）<br>
+    • 円の数: 描画する円の数（3-80個）<br>
+    • 中心間隔: 2つの焦点間の距離（8-600px、1px刻み）
+`;
+
+let isInfoOpen = false;
+
+infoToggle.addEventListener('click', () => {
+    isInfoOpen = !isInfoOpen;
+
+    if (isInfoOpen) {
+        infoContent.classList.add('open');
+        infoToggle.classList.add('open');
+    } else {
+        infoContent.classList.remove('open');
+        infoToggle.classList.remove('open');
+    }
+});
+
+// ドラッグ機能
+let isDragging = false;
+let currentX;
+let currentY;
+let initialX;
+let initialY;
+let xOffset = 0;
+let yOffset = 0;
+
+header.addEventListener('mousedown', dragStart);
+document.addEventListener('mousemove', drag);
+document.addEventListener('mouseup', dragEnd);
+
+header.addEventListener('touchstart', dragStart);
+document.addEventListener('touchmove', drag);
+document.addEventListener('touchend', dragEnd);
+
+function dragStart(e) {
+    if (e.type === 'touchstart') {
+        initialX = e.touches[0].clientX - xOffset;
+        initialY = e.touches[0].clientY - yOffset;
+    } else {
+        initialX = e.clientX - xOffset;
+        initialY = e.clientY - yOffset;
+    }
+
+    if (e.target === header || header.contains(e.target)) {
+        isDragging = true;
+    }
+}
+
+function drag(e) {
+    if (isDragging) {
+        e.preventDefault();
+
+        if (e.type === 'touchmove') {
+            currentX = e.touches[0].clientX - initialX;
+            currentY = e.touches[0].clientY - initialY;
+        } else {
+            currentX = e.clientX - initialX;
+            currentY = e.clientY - initialY;
+        }
+
+        xOffset = currentX;
+        yOffset = currentY;
+
+        setTranslate(currentX, currentY, container);
+    }
+}
+
+function dragEnd(e) {
+    initialX = currentX;
+    initialY = currentY;
+    isDragging = false;
+}
+
+function setTranslate(xPos, yPos, el) {
+    const initialLeft = window.innerWidth / 2 - 384;
+    const initialTop = window.innerHeight * 0.05;
+    let newLeft = initialLeft + xPos;
+    let newTop = initialTop + yPos;
+
+    const containerWidth = el.offsetWidth;
+    const containerHeight = el.offsetHeight;
+
+    if (newLeft < 0) newLeft = 0;
+    if (newLeft + containerWidth > window.innerWidth) newLeft = window.innerWidth - containerWidth;
+    if (newTop < 0) newTop = 0;
+    if (newTop + containerHeight > window.innerHeight) newTop = window.innerHeight - containerHeight;
+
+    el.style.left = `${newLeft}px`;
+    el.style.top = `${newTop}px`;
+}
+
+// リサイズ機能
+const resizeHandle = document.getElementById('resizeHandle');
+let isResizing = false;
+let resizeStartX, resizeStartY;
+let startWidth, startHeight;
+
+resizeHandle.addEventListener('mousedown', startResize);
+document.addEventListener('mousemove', resize);
+document.addEventListener('mouseup', stopResize);
+
+resizeHandle.addEventListener('touchstart', startResize);
+document.addEventListener('touchmove', resize);
+document.addEventListener('touchend', stopResize);
+
+function startResize(e) {
+    isResizing = true;
+
+    if (e.type === 'touchstart') {
+        resizeStartX = e.touches[0].clientX;
+        resizeStartY = e.touches[0].clientY;
+    } else {
+        resizeStartX = e.clientX;
+        resizeStartY = e.clientY;
+    }
+
+    startWidth = container.offsetWidth;
+    startHeight = container.offsetHeight;
+    e.preventDefault();
+    e.stopPropagation();
+}
+
+function resize(e) {
+    if (!isResizing) return;
+
+    let clientX, clientY;
+    if (e.type === 'touchmove') {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+    } else {
+        clientX = e.clientX;
+        clientY = e.clientY;
+    }
+
+    const deltaX = clientX - resizeStartX;
+    const deltaY = clientY - resizeStartY;
+
+    const newWidth = Math.max(400, Math.min(startWidth + deltaX, window.innerWidth * 0.9));
+    const newHeight = Math.max(200, Math.min(startHeight + deltaY, window.innerHeight * 0.9));
+
+    container.style.width = `${newWidth}px`;
+    container.style.height = `${newHeight}px`;
+}
+
+function stopResize() {
+    isResizing = false;
+}
+
+// 初期描画
+updateValues();
+draw();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Submarine HUD Game Overlay</title>
+<style>
+  :root {
+    --hud-cyan: #00f3ff;
+    --hud-red: #ff3333;
+    --hud-bg: rgba(0, 20, 40, 0.4);
+  }
+  body, html {
+    margin: 0;
+    padding: 0;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: transparent !important;
+    font-family: 'Courier New', Courier, monospace;
+    user-select: none;
+  }
+  #gameCanvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 10;
+    cursor: none;
+  }
+  #ui-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 20;
+    pointer-events: none;
+    color: var(--hud-cyan);
+    text-shadow: 0 0 5px var(--hud-cyan);
+  }
+  /* Crosshair */
+  #crosshair {
+    position: absolute;
+    width: 40px;
+    height: 40px;
+    border: 1px solid var(--hud-cyan);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    box-shadow: 0 0 8px var(--hud-cyan), inset 0 0 8px var(--hud-cyan);
+    transition: width 0.1s, height 0.1s;
+  }
+  #crosshair::before, #crosshair::after {
+    content: '';
+    position: absolute;
+    background: var(--hud-cyan);
+  }
+  #crosshair::before {
+    top: -10px; bottom: -10px; left: 19px; width: 2px;
+  }
+  #crosshair::after {
+    left: -10px; right: -10px; top: 19px; height: 2px;
+  }
+  /* HUD Panels */
+  .hud-panel {
+    position: absolute;
+    background: var(--hud-bg);
+    border: 1px solid var(--hud-cyan);
+    padding: 10px 15px;
+    backdrop-filter: blur(4px);
+    box-shadow: 0 0 10px rgba(0, 243, 255, 0.2);
+  }
+  #status-panel {
+    top: 20px;
+    right: 20px;
+    text-align: right;
+  }
+  #comms-panel {
+    bottom: 20px;
+    left: 20px;
+    width: 400px;
+    min-height: 80px;
+    border-left: 4px solid var(--hud-cyan);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  #barrier-gauge-container {
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 300px;
+    height: 20px;
+    border: 1px solid var(--hud-cyan);
+    background: rgba(0,0,0,0.5);
+    display: none;
+  }
+  #barrier-gauge {
+    height: 100%;
+    width: 100%;
+    background: var(--hud-cyan);
+    box-shadow: 0 0 10px var(--hud-cyan);
+    transition: width 0.2s;
+  }
+  .text-sm { font-size: 0.8rem; }
+  .text-lg { font-size: 1.2rem; font-weight: bold; }
+  .blink { animation: blink 1s infinite; }
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+  #timer-display { font-size: 1.5rem; letter-spacing: 2px; }
+  #flash-overlay {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: white;
+    z-index: 100;
+    pointer-events: none;
+    opacity: 0;
+  }
+  #damage-overlay {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: red;
+    z-index: 90;
+    pointer-events: none;
+    opacity: 0;
+  }
+  #mission-result {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 3rem;
+    text-align: center;
+    background: rgba(0,0,0,0.8);
+    padding: 30px;
+    border: 2px solid var(--hud-cyan);
+    display: none;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="gameCanvas"></canvas>
+
+<div id="ui-layer">
+  <div id="crosshair"></div>
+  
+  <div id="status-panel" class="hud-panel">
+    <div class="text-sm">SYSTEM STATUS</div>
+    <div class="text-lg">FLASH: <span id="flash-count">3</span></div>
+    <div class="text-sm mt-2">TIME REMAINING</div>
+    <div id="timer-display">50.00</div>
+  </div>
+
+  <div id="barrier-gauge-container">
+    <div id="barrier-gauge"></div>
+  </div>
+
+  <div id="comms-panel" class="hud-panel">
+    <div class="text-sm" style="margin-bottom: 5px; opacity: 0.7;">INCOMING TRANSMISSION</div>
+    <div id="comms-text" class="text-lg">Standby...</div>
+  </div>
+
+  <div id="mission-result">
+    <div id="result-text">MISSION COMPLETE</div>
+  </div>
+</div>
+
+<div id="flash-overlay"></div>
+<div id="damage-overlay"></div>
+
+<script>
+/**
+ * Simple Sound Synthesis for HUD
+ */
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+function playSound(type) {
+  if(audioCtx.state === 'suspended') audioCtx.resume();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  
+  const now = audioCtx.currentTime;
+  if (type === 'laser') {
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(800, now);
+    osc.frequency.exponentialRampToValueAtTime(100, now + 0.1);
+    gain.gain.setValueAtTime(0.1, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+    osc.start(now);
+    osc.stop(now + 0.1);
+  } else if (type === 'torpedo') {
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(200, now);
+    osc.frequency.linearRampToValueAtTime(50, now + 0.3);
+    gain.gain.setValueAtTime(0.2, now);
+    gain.gain.linearRampToValueAtTime(0.01, now + 0.3);
+    osc.start(now);
+    osc.stop(now + 0.3);
+  } else if (type === 'explosion') {
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(100, now);
+    osc.frequency.exponentialRampToValueAtTime(10, now + 0.5);
+    gain.gain.setValueAtTime(0.3, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+    osc.start(now);
+    osc.stop(now + 0.5);
+  } else if (type === 'beep') {
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(1200, now);
+    gain.gain.setValueAtTime(0.05, now);
+    osc.start(now);
+    osc.stop(now + 0.05);
+  } else if (type === 'flash') {
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(1500, now);
+    osc.frequency.exponentialRampToValueAtTime(200, now + 1.0);
+    gain.gain.setValueAtTime(0.3, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 1.0);
+    osc.start(now);
+    osc.stop(now + 1.0);
+  }
+}
+
+/**
+ * Game Engine & Logic
+ */
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d', { alpha: true });
+let width, height, cx, cy;
+const FOV = 400;
+
+function resize() {
+  width = window.innerWidth;
+  height = window.innerHeight;
+  canvas.width = width;
+  canvas.height = height;
+  cx = width / 2;
+  cy = height / 2;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// Game State
+const state = {
+  timeElapsed: 0,
+  maxTime: 50,
+  isGameOver: false,
+  flashCount: 3,
+  barrierActive: false,
+  barrierGauge: 100,
+  lastHitTime: 0,
+  decoyActiveTime: 0
+};
+
+// Inputs
+const mouse = { x: cx, y: cy };
+window.addEventListener('mousemove', (e) => {
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+  const ch = document.getElementById('crosshair');
+  ch.style.left = mouse.x + 'px';
+  ch.style.top = mouse.y + 'px';
+});
+
+// Keyboard Handling
+window.addEventListener('keydown', (e) => {
+  if(state.isGameOver) return;
+  
+  const isCmd = e.metaKey || e.ctrlKey;
+  const isShift = e.shiftKey;
+  const isEnter = e.key === 'Enter';
+  const isEscape = e.key === 'Escape';
+  const isCmdOnly = (e.key === 'Meta' || e.key === 'Control');
+
+  if (isShift && isCmd && isEnter) {
+    // Barrier Toggle
+    state.barrierActive = !state.barrierActive;
+    document.getElementById('barrier-gauge-container').style.display = state.barrierActive ? 'block' : 'none';
+    playSound('beep');
+    e.preventDefault();
+  } else if (isShift && !isCmd && isEnter) {
+    // Flash
+    if(state.flashCount > 0) {
+      state.flashCount--;
+      document.getElementById('flash-count').innerText = state.flashCount;
+      triggerFlash();
+      playSound('flash');
+    } else {
+      playSound('beep'); // Error
+    }
+    e.preventDefault();
+  } else if (!isShift && !isCmd && isEnter) {
+    // Torpedo
+    fireTorpedo();
+    e.preventDefault();
+  } else if (isCmdOnly) {
+    // Laser (Rapid fire on press)
+    fireLaser();
+  } else if (isEscape) {
+    // Decoy
+    fireDecoy();
+    e.preventDefault();
+  }
+});
+
+// Entities
+let entities = [];
+let particles = [];
+
+function project(x, y, z) {
+  if(z <= 0.1) z = 0.1;
+  const scale = FOV / z;
+  return {
+    sx: x * scale + cx,
+    sy: y * scale + cy,
+    scale: scale
+  };
+}
+
+class Enemy {
+  constructor(type) {
+    this.type = type; // 'sub' or 'beast'
+    this.x = (Math.random() - 0.5) * 2000;
+    this.y = (Math.random() - 0.5) * 1000;
+    this.z = 2000;
+    this.vx = (Math.random() - 0.5) * 2;
+    this.vy = (Math.random() - 0.5) * 2;
+    this.vz = type === 'sub' ? -15 : -10;
+    this.hp = type === 'sub' ? 2 : 4;
+    this.size = type === 'sub' ? 60 : 80;
+    this.color = type === 'sub' ? '#ffaa00' : '#ff0055';
+    this.timeOffset = Math.random() * 100;
+  }
+  update(dt) {
+    const speedMult = state.decoyActiveTime > 0 ? 0.3 : 1; // Decoy slows enemies
+    this.z += this.vz * speedMult;
+    this.x += this.vx * speedMult;
+    
+    if(this.type === 'beast') {
+      this.y += Math.sin(state.timeElapsed * 5 + this.timeOffset) * 5;
+      this.x += Math.cos(state.timeElapsed * 3 + this.timeOffset) * 5;
+    }
+
+    if (this.z < 10) {
+      takeDamage(20);
+      this.hp = 0;
+    }
+  }
+  draw(ctx) {
+    const p = project(this.x, this.y, this.z);
+    if(p.sx < -100 || p.sx > width+100 || p.sy < -100 || p.sy > height+100) return;
+    
+    const s = this.size * p.scale;
+    ctx.fillStyle = this.color;
+    ctx.beginPath();
+    if(this.type === 'sub') {
+      // Diamond shape
+      ctx.moveTo(p.sx, p.sy - s);
+      ctx.lineTo(p.sx + s*1.5, p.sy);
+      ctx.lineTo(p.sx, p.sy + s);
+      ctx.lineTo(p.sx - s*1.5, p.sy);
+    } else {
+      // Organic circle shape
+      ctx.arc(p.sx, p.sy, s, 0, Math.PI * 2);
+    }
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.stroke();
+  }
+}
+
+class Laser {
+  constructor(targetX, targetY) {
+    this.x = 0; this.y = 50; this.z = 10; // Fired from bottom center
+    // Direction vector based on mouse projection at z=500
+    const dx = targetX - cx;
+    const dy = targetY - cy;
+    this.vx = dx / (FOV/500) * 0.1;
+    this.vy = dy / (FOV/500) * 0.1;
+    this.vz = 80;
+    this.life = 60;
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.z += this.vz;
+    this.life--;
+    // Collision with enemies
+    entities.forEach(e => {
+      if(e instanceof Enemy && e.hp > 0) {
+        if(Math.abs(e.z - this.z) < 100) {
+          const p = project(e.x, e.y, e.z);
+          const lp = project(this.x, this.y, this.z);
+          const dist = Math.hypot(p.sx - lp.sx, p.sy - lp.sy);
+          if(dist < e.size * p.scale) {
+            e.hp--;
+            this.life = 0;
+            spawnParticles(e.x, e.y, e.z, '#00ffff', 5);
+          }
+        }
+      }
+    });
+  }
+  draw(ctx) {
+    const p = project(this.x, this.y, this.z);
+    const p2 = project(this.x - this.vx*2, this.y - this.vy*2, this.z - this.vz*2);
+    ctx.strokeStyle = '#00ffff';
+    ctx.lineWidth = 3 * p.scale;
+    ctx.beginPath();
+    ctx.moveTo(p.sx, p.sy);
+    ctx.lineTo(p2.sx, p2.sy);
+    ctx.stroke();
+  }
+}
+
+class Torpedo {
+  constructor(targetX, targetY) {
+    this.x = 0; this.y = 100; this.z = 10;
+    const dx = targetX - cx;
+    const dy = targetY - cy;
+    const targetRealX = dx / (FOV/800);
+    const targetRealY = dy / (FOV/800);
+    this.vx = (targetRealX - this.x) * 0.05;
+    this.vy = (targetRealY - this.y) * 0.05;
+    this.vz = 30;
+    this.targetZ = 800;
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.z += this.vz;
+    if(this.z >= this.targetZ) {
+      this.explode();
+      this.life = 0;
+    } else {
+      this.life = 1;
+    }
+  }
+  explode() {
+    playSound('explosion');
+    spawnParticles(this.x, this.y, this.z, '#ff8800', 30);
+    // Area damage
+    entities.forEach(e => {
+      if(e instanceof Enemy && e.hp > 0) {
+        const dist3D = Math.hypot(e.x - this.x, e.y - this.y, (e.z - this.z)*0.5);
+        if(dist3D < 300) {
+          e.hp -= 5;
+        }
+      }
+    });
+  }
+  draw(ctx) {
+    const p = project(this.x, this.y, this.z);
+    ctx.fillStyle = '#ff8800';
+    ctx.beginPath();
+    ctx.arc(p.sx, p.sy, 5 * p.scale, 0, Math.PI*2);
+    ctx.fill();
+  }
+}
+
+class Decoy {
+  constructor() {
+    this.x = (Math.random() - 0.5) * 1000;
+    this.y = 500;
+    this.z = 200 + Math.random()*500;
+    this.vy = -5 - Math.random()*5;
+    this.size = 10 + Math.random()*20;
+    this.life = 100;
+  }
+  update() {
+    this.y += this.vy;
+    this.x += Math.sin(this.y * 0.05) * 2;
+    this.life--;
+  }
+  draw(ctx) {
+    const p = project(this.x, this.y, this.z);
+    ctx.strokeStyle = `rgba(255,255,255,${this.life/100})`;
+    ctx.lineWidth = 2 * p.scale;
+    ctx.beginPath();
+    ctx.arc(p.sx, p.sy, this.size * p.scale, 0, Math.PI*2);
+    ctx.stroke();
+  }
+}
+
+class Particle {
+  constructor(x, y, z, color) {
+    this.x = x; this.y = y; this.z = z;
+    this.vx = (Math.random()-0.5)*20;
+    this.vy = (Math.random()-0.5)*20;
+    this.vz = (Math.random()-0.5)*20;
+    this.color = color;
+    this.life = 30 + Math.random()*20;
+    this.maxLife = this.life;
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.z += this.vz;
+    this.life--;
+  }
+  draw(ctx) {
+    const p = project(this.x, this.y, this.z);
+    ctx.fillStyle = this.color;
+    ctx.globalAlpha = this.life / this.maxLife;
+    ctx.beginPath();
+    ctx.arc(p.sx, p.sy, 10 * p.scale, 0, Math.PI*2);
+    ctx.fill();
+    ctx.globalAlpha = 1.0;
+  }
+}
+
+function spawnParticles(x, y, z, color, count) {
+  for(let i=0; i<count; i++) {
+    particles.push(new Particle(x, y, z, color));
+  }
+}
+
+// Actions
+function fireLaser() {
+  playSound('laser');
+  entities.push(new Laser(mouse.x, mouse.y));
+  // Visual recoil on crosshair
+  const ch = document.getElementById('crosshair');
+  ch.style.transform = 'translate(-50%, -50%) scale(1.2)';
+  setTimeout(() => ch.style.transform = 'translate(-50%, -50%) scale(1)', 50);
+}
+function fireTorpedo() {
+  playSound('torpedo');
+  entities.push(new Torpedo(mouse.x, mouse.y));
+}
+function fireDecoy() {
+  playSound('beep');
+  state.decoyActiveTime = 3; // seconds
+  for(let i=0; i<30; i++) entities.push(new Decoy());
+}
+function triggerFlash() {
+  // Kill all visible enemies
+  entities.forEach(e => {
+    if(e instanceof Enemy && e.z < 2000) e.hp -= 10;
+  });
+  const el = document.getElementById('flash-overlay');
+  el.style.opacity = 1;
+  el.style.transition = 'none';
+  setTimeout(() => {
+    el.style.transition = 'opacity 1s';
+    el.style.opacity = 0;
+  }, 50);
+}
+
+function takeDamage(amt) {
+  state.lastHitTime = state.timeElapsed;
+  if (state.barrierActive && state.barrierGauge > 0) {
+    state.barrierGauge -= amt;
+    playSound('beep');
+    if(state.barrierGauge <= 0) {
+      state.barrierGauge = 0;
+      state.barrierActive = false;
+      document.getElementById('barrier-gauge-container').style.display = 'none';
+      triggerDamageEffect();
+    }
+    updateBarrierUI();
+  } else {
+    triggerDamageEffect();
+  }
+}
+
+function triggerDamageEffect() {
+  playSound('explosion');
+  const el = document.getElementById('damage-overlay');
+  el.style.opacity = 0.5;
+  el.style.transition = 'none';
+  setTimeout(() => {
+    el.style.transition = 'opacity 0.5s';
+    el.style.opacity = 0;
+  }, 50);
+}
+
+function updateBarrierUI() {
+  document.getElementById('barrier-gauge').style.width = state.barrierGauge + '%';
+  if(state.barrierGauge < 30) {
+    document.getElementById('barrier-gauge').style.background = '#ff3333';
+  } else {
+    document.getElementById('barrier-gauge').style.background = 'var(--hud-cyan)';
+  }
+}
+
+// Subtitles & Scripting
+const scriptEvents = [
+  { time: 2, text: "[HQ] Operation started. Defend the sector." },
+  { time: 10, text: "[WINGMAN] Contacts on sonar. Subs and beasts mixed." },
+  { time: 15, text: "[WINGMAN] Enemy confirmed! Too many of them!" },
+  { time: 25, text: "[WINGMAN] Incoming swarm! Watch your six!" },
+  { time: 30, text: "[WINGMAN] I'm hit! Main engine dead! AAAAAH!", action: () => {
+      playSound('explosion');
+      spawnParticles(-800, 0, 500, '#ffaa00', 100); // Visual explosion far left
+  }},
+  { time: 32, text: "[SYSTEM] Signal lost from Wingman." },
+  { time: 40, text: "[HQ] Hold the line! Almost done!" },
+  { time: 50, text: "[HQ] Sector secured. RTB. Good job.", action: () => endGame(true) }
+];
+
+function showSubtitle(text) {
+  const el = document.getElementById('comms-text');
+  el.innerText = '';
+  playSound('beep');
+  let i = 0;
+  const interval = setInterval(() => {
+    el.innerText += text.charAt(i);
+    i++;
+    if(i >= text.length) clearInterval(interval);
+  }, 30);
+}
+
+function endGame(win) {
+  state.isGameOver = true;
+  document.getElementById('mission-result').style.display = 'block';
+  document.getElementById('result-text').innerText = win ? 'MISSION COMPLETE' : 'MISSION FAILED';
+  document.getElementById('result-text').style.color = win ? 'var(--hud-cyan)' : 'var(--hud-red)';
+}
+
+// Main Loop
+let lastTime = performance.now();
+function loop(now) {
+  const dt = (now - lastTime) / 1000;
+  lastTime = now;
+  
+  if(!state.isGameOver) {
+    state.timeElapsed += dt;
+    if(state.decoyActiveTime > 0) state.decoyActiveTime -= dt;
+
+    // Barrier regeneration
+    if(state.barrierActive && state.barrierGauge < 100 && (state.timeElapsed - state.lastHitTime > 3)) {
+      state.barrierGauge = Math.min(100, state.barrierGauge + 10 * dt);
+      updateBarrierUI();
+    }
+
+    // Script Events
+    if(scriptEvents.length > 0 && state.timeElapsed >= scriptEvents[0].time) {
+      const ev = scriptEvents.shift();
+      showSubtitle(ev.text);
+      if(ev.action) ev.action();
+    }
+
+    // Spawning
+    const spawnRate = state.timeElapsed > 35 ? 0.2 : (state.timeElapsed > 15 ? 0.5 : 1.5);
+    if (Math.random() < dt / spawnRate && state.timeElapsed < 48) {
+      entities.push(new Enemy(Math.random() > 0.6 ? 'beast' : 'sub'));
+    }
+
+    // Update UI Timer
+    const remain = Math.max(0, state.maxTime - state.timeElapsed);
+    document.getElementById('timer-display').innerText = remain.toFixed(2);
+  }
+
+  // Clear Canvas
+  ctx.clearRect(0, 0, width, height);
+
+  // Draw Barrier Effect
+  if (state.barrierActive && state.barrierGauge > 0) {
+    ctx.fillStyle = `rgba(0, 243, 255, ${0.05 + state.barrierGauge * 0.0005})`;
+    ctx.fillRect(0, 0, width, height);
+  }
+
+  // Update & Draw Entities
+  entities = entities.filter(e => e.life !== 0 && e.hp !== 0);
+  entities.sort((a, b) => b.z - a.z); // Draw back to front
+  entities.forEach(e => {
+    if(!state.isGameOver) e.update(dt);
+    e.draw(ctx);
+  });
+
+  // Particles
+  particles = particles.filter(p => p.life > 0);
+  particles.forEach(p => {
+    p.update();
+    p.draw(ctx);
+  });
+
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

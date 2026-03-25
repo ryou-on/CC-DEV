@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Random Music Widget</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body, html {
+            background-color: transparent !important;
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+
+        /* Glassmorphism Card */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.65);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        /* Text Shadow for visibility over video */
+        .text-glow {
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+        }
+
+        /* Vinyl Spin Animation */
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .spin-slow {
+            animation: spin 8s linear infinite;
+        }
+
+        /* Audio Visualizer Bars */
+        .bar {
+            width: 4px;
+            background: linear-gradient(to top, #a855f7, #ec4899);
+            border-radius: 999px;
+            animation: sound 0ms -800ms linear infinite alternate;
+            height: 5px;
+        }
+
+        @keyframes sound {
+            0% { height: 5px; opacity: 0.5; }
+            100% { height: 24px; opacity: 1; }
+        }
+
+        .playing .bar {
+            animation-duration: 400ms;
+        }
+        .paused .bar {
+            animation-play-state: paused;
+            height: 5px !important;
+            transition: height 0.3s ease;
+        }
+
+        /* Hover effects */
+        .btn-hover {
+            transition: all 0.2s ease;
+        }
+        .btn-hover:active {
+            transform: scale(0.95);
+        }
+    </style>
+</head>
+<body class="flex items-end justify-end p-4 sm:p-8">
+
+    <!-- Widget Container -->
+    <div id="music-widget" class="glass-panel rounded-2xl p-4 w-72 sm:w-80 flex flex-col gap-4 transition-all duration-300 transform hover:scale-[1.02]">
+        
+        <!-- Header / Status -->
+        <div class="flex justify-between items-center text-white/70 text-xs uppercase tracking-widest">
+            <span><i class="fa-solid fa-radio mr-2"></i>Random Player</span>
+            <div id="visualizer" class="flex gap-1 h-6 items-end paused">
+                <div class="bar" style="animation-delay: -0.2s"></div>
+                <div class="bar" style="animation-delay: -0.4s"></div>
+                <div class="bar" style="animation-delay: -0.6s"></div>
+                <div class="bar" style="animation-delay: -0.8s"></div>
+            </div>
+        </div>
+
+        <!-- Main Content: Art & Info -->
+        <div class="flex items-center gap-4">
+            <!-- Album Art / Vinyl -->
+            <div class="relative w-16 h-16 flex-shrink-0">
+                <div id="vinyl" class="w-full h-full rounded-full bg-gradient-to-tr from-gray-900 to-gray-700 border-2 border-white/20 flex items-center justify-center shadow-lg">
+                    <div class="w-6 h-6 rounded-full bg-black border border-white/30"></div>
+                </div>
+                <!-- Music Note Overlay -->
+                <div class="absolute -top-2 -right-2 bg-pink-500 rounded-full w-6 h-6 flex items-center justify-center text-white text-xs shadow-md">
+                    <i class="fa-solid fa-music"></i>
+                </div>
+            </div>
+
+            <!-- Text Info -->
+            <div class="overflow-hidden">
+                <h3 id="track-title" class="text-white font-bold text-lg truncate text-glow leading-tight">No Track Selected</h3>
+                <p id="track-artist" class="text-white/60 text-sm truncate text-glow">Tap Shuffle to play</p>
+            </div>
+        </div>
+
+        <!-- Progress Bar (Fake) -->
+        <div class="w-full bg-white/10 h-1.5 rounded-full overflow-hidden">
+            <div id="progress" class="bg-gradient-to-r from-purple-500 to-pink-500 w-0 h-full transition-all duration-1000 ease-linear"></div>
+        </div>
+
+        <!-- Controls -->
+        <div class="flex justify-between items-center px-2">
+             <button id="btn-like" class="text-white/40 hover:text-red-500 btn-hover transition-colors">
+                <i class="fa-regular fa-heart text-xl"></i>
+            </button>
+
+            <button id="btn-shuffle" class="bg-white text-black rounded-full w-12 h-12 flex items-center justify-center shadow-[0_0_15px_rgba(255,255,255,0.4)] hover:bg-gray-100 btn-hover">
+                <i class="fa-solid fa-shuffle text-lg"></i>
+            </button>
+
+            <button id="btn-next" class="text-white hover:text-purple-400 btn-hover transition-colors">
+                <i class="fa-solid fa-forward-step text-xl"></i>
+            </button>
+        </div>
+
+    </div>
+
+    <script>
+        // Mock Data
+        const tracks = [
+            { title: "Neon City Lights", artist: "Synthwave Boy" },
+            { title: "Midnight Rain", artist: "Lofi Study Girl" },
+            { title: "Cyber Chase", artist: "Glitch Protocol" },
+            { title: "Summer Breeze", artist: "Tropical House" },
+            { title: "Deep Focus", artist: "Ambient Minds" },
+            { title: "Retro Arcade", artist: "8-Bit Hero" },
+            { title: "Tokyo Drift", artist: "Phonk Walker" },
+            { title: "Coffee Shop", artist: "Jazzy Vibes" }
+        ];
+
+        // Elements
+        const btnShuffle = document.getElementById('btn-shuffle');
+        const btnNext = document.getElementById('btn-next');
+        const btnLike = document.getElementById('btn-like');
+        const trackTitle = document.getElementById('track-title');
+        const trackArtist = document.getElementById('track-artist');
+        const vinyl = document.getElementById('vinyl');
+        const visualizer = document.getElementById('visualizer');
+        const progressBar = document.getElementById('progress');
+
+        let isPlaying = false;
+        let progressInterval;
+        let currentProgress = 0;
+
+        // Functions
+        function playRandomTrack() {
+            // 1. UI Feedback
+            trackTitle.innerText = "Loading...";
+            trackArtist.innerText = "Fetching stream...";
+            resetProgress();
+
+            // 2. Simulate delay for effect
+            setTimeout(() => {
+                const randomTrack = tracks[Math.floor(Math.random() * tracks.length)];
+                
+                // Update UI
+                trackTitle.innerText = randomTrack.title;
+                trackArtist.innerText = randomTrack.artist;
+                
+                // State: Playing
+                isPlaying = true;
+                updatePlayState();
+                startProgress();
+
+            }, 400);
+        }
+
+        function togglePlay() {
+            if (trackTitle.innerText === "No Track Selected") {
+                playRandomTrack();
+                return;
+            }
+            isPlaying = !isPlaying;
+            updatePlayState();
+        }
+
+        function updatePlayState() {
+            const icon = btnShuffle.querySelector('i');
+            if (isPlaying) {
+                // Change Shuffle icon to Pause for UX logic, or keep shuffle to skip?
+                // Let's make the center button a Play/Pause toggle after first shuffle
+                // But requested feature is "Random Button", so let's keep it behaving like "Play New Random" or "Pause"
+                // For this UI: Center button becomes Pause/Play, Next button gets new random.
+                
+                icon.classList.remove('fa-shuffle', 'fa-play');
+                icon.classList.add('fa-pause');
+                
+                vinyl.classList.add('spin-slow');
+                visualizer.classList.remove('paused');
+                visualizer.classList.add('playing');
+                startProgress();
+            } else {
+                icon.classList.remove('fa-pause');
+                icon.classList.add('fa-play');
+                
+                vinyl.classList.remove('spin-slow');
+                vinyl.style.transform = 'rotate(0deg)'; // Optional: reset or pause rotation
+                visualizer.classList.remove('playing');
+                visualizer.classList.add('paused');
+                clearInterval(progressInterval);
+            }
+        }
+
+        function startProgress() {
+            clearInterval(progressInterval);
+            progressInterval = setInterval(() => {
+                currentProgress += 1;
+                if (currentProgress > 100) {
+                    currentProgress = 0;
+                    playRandomTrack(); // Auto-play next random
+                }
+                progressBar.style.width = currentProgress + '%';
+            }, 100);
+        }
+
+        function resetProgress() {
+            currentProgress = 0;
+            progressBar.style.width = '0%';
+        }
+
+        // Event Listeners
+        btnShuffle.addEventListener('click', () => {
+            // If not playing anything, play random.
+            // If playing, toggle pause.
+            if (trackTitle.innerText === "No Track Selected") {
+                playRandomTrack();
+            } else {
+                togglePlay();
+            }
+        });
+
+        btnNext.addEventListener('click', playRandomTrack);
+        
+        btnLike.addEventListener('click', function() {
+            const icon = this.querySelector('i');
+            if (icon.classList.contains('fa-regular')) {
+                icon.classList.remove('fa-regular');
+                icon.classList.add('fa-solid', 'text-red-500');
+            } else {
+                icon.classList.add('fa-regular');
+                icon.classList.remove('fa-solid', 'text-red-500');
+            }
+        });
+
+    </script>
+</body>
+</html>

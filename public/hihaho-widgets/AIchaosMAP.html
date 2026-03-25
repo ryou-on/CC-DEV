@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Landscape Report 2025: Major Players & Service Breakdown</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&display=swap');
+        
+        body {
+            font-family: 'Noto Sans JP', sans-serif;
+            background-color: #f8fafc; /* Slate 50 */
+            color: #334155; /* Slate 700 */
+        }
+
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 700px;
+            margin: 0 auto;
+            height: 350px;
+            max-height: 400px;
+        }
+
+        @media (max-width: 640px) {
+            .chart-container {
+                height: 300px;
+            }
+        }
+
+        .card-hover {
+            transition: all 0.3s ease;
+        }
+        .card-hover:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+
+        .active-tab {
+            border-bottom: 2px solid #3b82f6; /* Blue 500 */
+            color: #1d4ed8; /* Blue 700 */
+            font-weight: 600;
+        }
+
+        .inactive-tab {
+            color: #64748b; /* Slate 500 */
+        }
+        .inactive-tab:hover {
+            color: #334155;
+        }
+
+        /* Custom Scrollbar for internal lists */
+        .custom-scroll::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scroll::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        .custom-scroll::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+        .custom-scroll::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+    <!-- Chosen Palette: Slate (Backgrounds/Text) + Blue (Primary) + Indigo/Violet (Accents) -->
+    <!-- Application Structure Plan: 
+         1. Header: Title and simple navigation.
+         2. Hero Section: Brief overview of the current "AI War".
+         3. Interactive Chaos Map (Main Feature): A filterable grid system categorizing AI tools (Text, Video, Audio, Dev, etc.). This allows users to explore specific niches like "Music AI" vs "Big Tech Ecosystems".
+         4. Ecosystem Deep Dive: A dedicated section for the "Big 3" (Google, OpenAI, Anthropic) to break down their complex service lists (Gemini, Veo, etc.) as requested.
+         5. Comparative Analysis: Radar charts comparing model capabilities (Reasoning, Speed, Context, etc.) to give quantitative context.
+         6. Trend Analysis: Textual insights on Agents, Multimodality, etc.
+    -->
+    <!-- Visualization & Content Choices:
+         - Chaos Map: Grid of cards with JS filtering. Goal: Organize the chaotic landscape. Method: HTML/Tailwind + JS.
+         - Ecosystem Breakdown: Accordion or Tabbed lists. Goal: Inform about specific sub-services.
+         - Model Comparison: Radar Chart (Chart.js). Goal: Compare strengths of GPT-4o, Claude 3.5, Gemini 1.5.
+         - Market Trend: Donut Chart (Chart.js). Goal: Visualize the shift in AI modality focus.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <!-- Navigation -->
+    <nav class="bg-white border-b border-slate-200 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16">
+                <div class="flex">
+                    <div class="flex-shrink-0 flex items-center">
+                        <span class="font-bold text-xl text-blue-600">AI Landscape 2025</span>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <button onclick="scrollToSection('dashboard')" class="text-sm font-medium text-slate-600 hover:text-blue-600">カオスマップ</button>
+                    <button onclick="scrollToSection('ecosystems')" class="text-sm font-medium text-slate-600 hover:text-blue-600">主要プレイヤー詳細</button>
+                    <button onclick="scrollToSection('analysis')" class="text-sm font-medium text-slate-600 hover:text-blue-600">比較分析</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-12">
+
+        <!-- Intro Section -->
+        <section class="text-center space-y-4">
+            <h1 class="text-3xl md:text-4xl font-bold text-slate-900">生成AIのエコシステムと主要プレイヤー詳細</h1>
+            <p class="max-w-3xl mx-auto text-lg text-slate-600">
+                LLM（大規模言語モデル）の競争から、映像、音楽、そしてエージェント型AIへ。
+                Google、OpenAI、Anthropicなどの総合型テックジャイアントと、
+                SunoやKlingのような特化型スタートアップが入り乱れる現在のAIランドスケープを可視化・解説します。
+            </p>
+        </section>
+
+        <!-- Interactive Chaos Map Section -->
+        <section id="dashboard" class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+            <div class="mb-6">
+                <h2 class="text-2xl font-bold text-slate-800 mb-2">インタラクティブ・カオスマップ</h2>
+                <p class="text-slate-500 text-sm mb-4">
+                    カテゴリーをクリックして、各分野の主要AIツールとサービスをフィルタリングできます。
+                    総合型から単機能特化型まで網羅しています。
+                </p>
+                
+                <!-- Filters -->
+                <div class="flex flex-wrap gap-2" id="filter-container">
+                    <button onclick="filterMap('all')" class="filter-btn px-4 py-2 rounded-full text-sm font-medium bg-blue-600 text-white shadow-sm transition-colors hover:bg-blue-700" data-filter="all">すべて表示</button>
+                    <button onclick="filterMap('text')" class="filter-btn px-4 py-2 rounded-full text-sm font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors" data-filter="text">テキスト/LLM</button>
+                    <button onclick="filterMap('image')" class="filter-btn px-4 py-2 rounded-full text-sm font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors" data-filter="image">画像生成</button>
+                    <button onclick="filterMap('video')" class="filter-btn px-4 py-2 rounded-full text-sm font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors" data-filter="video">動画生成</button>
+                    <button onclick="filterMap('audio')" class="filter-btn px-4 py-2 rounded-full text-sm font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors" data-filter="audio">音楽・音声</button>
+                    <button onclick="filterMap('coding')" class="filter-btn px-4 py-2 rounded-full text-sm font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors" data-filter="coding">コーディング/開発</button>
+                    <button onclick="filterMap('agent')" class="filter-btn px-4 py-2 rounded-full text-sm font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors" data-filter="agent">エージェント/自律型</button>
+                </div>
+            </div>
+
+            <!-- Grid Display -->
+            <div id="chaos-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                <!-- Content injected via JS -->
+            </div>
+        </section>
+
+        <!-- Ecosystem Deep Dive Section (Big 3) -->
+        <section id="ecosystems" class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div class="col-span-1 lg:col-span-3">
+                <h2 class="text-2xl font-bold text-slate-800 mb-2">主要プラットフォーマーのサービス内訳</h2>
+                <p class="text-slate-600">
+                    Google、OpenAI、Anthropicなどの総合企業は、単一のAIモデルではなく、
+                    多数のプロダクト群を展開しています。ユーザーのリクエストに基づき、それぞれのサービスを細分化してリストアップしました。
+                </p>
+            </div>
+
+            <!-- Google Deep Dive -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 card-hover">
+                <div class="flex items-center mb-4">
+                    <div class="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold mr-3">G</div>
+                    <h3 class="text-xl font-bold">Google Ecosystem</h3>
+                </div>
+                <div class="space-y-4">
+                    <div class="border-l-4 border-blue-500 pl-4">
+                        <h4 class="font-bold text-sm text-slate-500 uppercase">Foundation Models</h4>
+                        <ul class="mt-2 space-y-1 text-sm">
+                            <li><span class="font-semibold text-slate-800">Gemini 1.5 Pro/Flash</span>: 主力のマルチモーダルLLM。</li>
+                            <li><span class="font-semibold text-slate-800">Gemini Ultra</span>: 最も高性能な大規模モデル。</li>
+                            <li><span class="font-semibold text-slate-800">Gemini Nano</span>: オンデバイス（スマホ等）で動く軽量モデル。</li>
+                            <li><span class="font-semibold text-slate-800">Gemma</span>: 開発者向けのオープンモデルシリーズ。</li>
+                        </ul>
+                    </div>
+                    <div class="border-l-4 border-red-400 pl-4">
+                        <h4 class="font-bold text-sm text-slate-500 uppercase">Media Generation</h4>
+                        <ul class="mt-2 space-y-1 text-sm">
+                            <li><span class="font-semibold text-slate-800">Veo</span>: 高精細な動画生成AI（Sora対抗）。</li>
+                            <li><span class="font-semibold text-slate-800">Imagen 3</span>: 写実的な画像生成モデル。</li>
+                            <li><span class="font-semibold text-slate-800">MusicFX / Lyria</span>: 音楽生成実験ツール。</li>
+                        </ul>
+                    </div>
+                    <div class="border-l-4 border-green-400 pl-4">
+                        <h4 class="font-bold text-sm text-slate-500 uppercase">Tools & Platforms</h4>
+                        <ul class="mt-2 space-y-1 text-sm">
+                            <li><span class="font-semibold text-slate-800">NotebookLM</span>: 論文や資料を読み込ませるRAG特化ツール。</li>
+                            <li><span class="font-semibold text-slate-800">Google AI Studio</span>: 開発者向けプロトタイピング環境。</li>
+                            <li><span class="font-semibold text-slate-800">Vertex AI</span>: 企業向けクラウドAIプラットフォーム。</li>
+                            <li><span class="font-semibold text-slate-800">Project Astra</span>: リアルタイム映像認識エージェント。</li>
+                            <li><span class="font-semibold text-slate-800">AlphaFold</span>: タンパク質構造予測（科学特化）。</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- OpenAI Deep Dive -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 card-hover">
+                <div class="flex items-center mb-4">
+                    <div class="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center text-green-600 font-bold mr-3">O</div>
+                    <h3 class="text-xl font-bold">OpenAI Ecosystem</h3>
+                </div>
+                <div class="space-y-4">
+                    <div class="border-l-4 border-green-500 pl-4">
+                        <h4 class="font-bold text-sm text-slate-500 uppercase">Foundation Models</h4>
+                        <ul class="mt-2 space-y-1 text-sm">
+                            <li><span class="font-semibold text-slate-800">GPT-4o</span>: 高速・マルチモーダルな主力モデル（Omni）。</li>
+                            <li><span class="font-semibold text-slate-800">o1 (Preview)</span>: 論理的思考・推論に特化した新シリーズ。</li>
+                            <li><span class="font-semibold text-slate-800">GPT-4o mini</span>: 軽量かつ安価なモデル。</li>
+                        </ul>
+                    </div>
+                    <div class="border-l-4 border-purple-400 pl-4">
+                        <h4 class="font-bold text-sm text-slate-500 uppercase">Media Generation</h4>
+                        <ul class="mt-2 space-y-1 text-sm">
+                            <li><span class="font-semibold text-slate-800">DALL-E 3</span>: 言語理解能力の高い画像生成。</li>
+                            <li><span class="font-semibold text-slate-800">Sora</span>: 物理法則を理解する動画生成AI（未公開）。</li>
+                            <li><span class="font-semibold text-slate-800">Whisper</span>: 高精度な音声認識・文字起こし。</li>
+                            <li><span class="font-semibold text-slate-800">Voice Engine</span>: 音声合成・クローン技術。</li>
+                        </ul>
+                    </div>
+                    <div class="border-l-4 border-gray-400 pl-4">
+                        <h4 class="font-bold text-sm text-slate-500 uppercase">Products</h4>
+                        <ul class="mt-2 space-y-1 text-sm">
+                            <li><span class="font-semibold text-slate-800">ChatGPT (Plus/Team/Ent)</span>: 対話型インターフェース。</li>
+                            <li><span class="font-semibold text-slate-800">SearchGPT</span>: AI検索機能プロトタイプ。</li>
+                            <li><span class="font-semibold text-slate-800">Advanced Data Analysis</span>: コード実行によるデータ分析環境。</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Anthropic Deep Dive -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 card-hover">
+                <div class="flex items-center mb-4">
+                    <div class="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center text-orange-600 font-bold mr-3">A</div>
+                    <h3 class="text-xl font-bold">Anthropic Ecosystem</h3>
+                </div>
+                <div class="space-y-4">
+                    <div class="border-l-4 border-orange-500 pl-4">
+                        <h4 class="font-bold text-sm text-slate-500 uppercase">Foundation Models</h4>
+                        <ul class="mt-2 space-y-1 text-sm">
+                            <li><span class="font-semibold text-slate-800">Claude 3.5 Sonnet</span>: コーディングと推論のバランス最強モデル。</li>
+                            <li><span class="font-semibold text-slate-800">Claude 3 Opus</span>: 複雑なタスク向けの大規模モデル。</li>
+                            <li><span class="font-semibold text-slate-800">Claude 3 Haiku</span>: 超高速・低コストモデル。</li>
+                        </ul>
+                    </div>
+                    <div class="border-l-4 border-yellow-400 pl-4">
+                        <h4 class="font-bold text-sm text-slate-500 uppercase">Features & Tools</h4>
+                        <ul class="mt-2 space-y-1 text-sm">
+                            <li><span class="font-semibold text-slate-800">Artifacts</span>: コードやドキュメントを別画面でプレビューする機能。</li>
+                            <li><span class="font-semibold text-slate-800">Projects</span>: 文脈やナレッジを共有するワークスペース機能。</li>
+                            <li><span class="font-semibold text-slate-800">Claude for Enterprise</span>: GitHub連携など企業向け機能。</li>
+                            <li><span class="font-semibold text-slate-800">Computer Use</span>: AIがPC画面を操作するエージェント機能（Beta）。</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Analysis & Charts Section -->
+        <section id="analysis" class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            
+            <!-- Radar Chart: Model Comparison -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                <h3 class="text-lg font-bold text-slate-800 mb-4">主要LLMモデル特性比較</h3>
+                <p class="text-sm text-slate-500 mb-4">
+                    コーディング能力、推論能力（論理）、処理速度、創造性、マルチモーダル性能の5軸で比較。
+                    ※一般的なベンチマークとコミュニティの評価に基づく定性的な目安です。
+                </p>
+                <div class="chart-container">
+                    <canvas id="radarChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Trends Analysis Text -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between">
+                <div>
+                    <h3 class="text-lg font-bold text-slate-800 mb-4">2025年のAIトレンド分析</h3>
+                    <div class="space-y-4">
+                        <div class="flex items-start">
+                            <div class="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold">1</div>
+                            <div class="ml-4">
+                                <h4 class="font-bold text-slate-800">特化型AIの台頭</h4>
+                                <p class="text-sm text-slate-600">
+                                    テキスト生成だけでなく、KlingやSunoのような「映像」「音楽」に特化したAIが、品質面で汎用モデルを凌駕するケースが増えています。クリエイティブ制作の現場での実用化が加速しています。
+                                </p>
+                            </div>
+                        </div>
+                        <div class="flex items-start">
+                            <div class="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold">2</div>
+                            <div class="ml-4">
+                                <h4 class="font-bold text-slate-800">エージェント型への進化</h4>
+                                <p class="text-sm text-slate-600">
+                                    「チャットして終わり」から、「タスクを実行する」フェーズへ。DevinやClaudeのComputer Useのように、AIが自律的にコードを書いたりブラウザを操作したりするワークフロー（Agentic Workflow）が注目されています。
+                                </p>
+                            </div>
+                        </div>
+                        <div class="flex items-start">
+                            <div class="flex-shrink-0 w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold">3</div>
+                            <div class="ml-4">
+                                <h4 class="font-bold text-slate-800">推論モデル (Reasoning Models)</h4>
+                                <p class="text-sm text-slate-600">
+                                    OpenAIのo1シリーズのように、回答前に「考える時間」を持つことで、数学や科学、複雑なプログラミングにおいて劇的な精度向上を見せるモデルが登場しています。
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Simple Interaction: Market Focus -->
+                <div class="mt-6 pt-6 border-t border-slate-100">
+                     <h4 class="font-bold text-xs text-slate-400 uppercase mb-2">現在の開発競争フォーカス</h4>
+                     <div class="w-full bg-slate-100 rounded-full h-4 mb-2 overflow-hidden flex">
+                         <div class="bg-blue-500 h-4" style="width: 40%" title="推論/コーディング能力"></div>
+                         <div class="bg-red-400 h-4" style="width: 30%" title="マルチモーダル(動画/音声)"></div>
+                         <div class="bg-green-400 h-4" style="width: 20%" title="エージェント/自律性"></div>
+                         <div class="bg-slate-400 h-4" style="width: 10%" title="その他"></div>
+                     </div>
+                     <div class="flex text-xs text-slate-500 space-x-4">
+                         <span class="flex items-center"><span class="w-2 h-2 rounded-full bg-blue-500 mr-1"></span>推論/Code</span>
+                         <span class="flex items-center"><span class="w-2 h-2 rounded-full bg-red-400 mr-1"></span>動画/音声</span>
+                         <span class="flex items-center"><span class="w-2 h-2 rounded-full bg-green-400 mr-1"></span>エージェント</span>
+                     </div>
+                </div>
+            </div>
+
+        </section>
+
+    </main>
+
+    <footer class="bg-white border-t border-slate-200 mt-12 py-8">
+        <div class="max-w-7xl mx-auto px-4 text-center text-slate-400 text-sm">
+            <p>&copy; 2025 AI Landscape Report. Generated for Research Purposes.</p>
+        </div>
+    </footer>
+
+    <!-- JavaScript Logic -->
+    <script>
+        // --- 1. Data Source (Chaos Map Data) ---
+        const aiTools = [
+            // LLM / Text
+            { name: "ChatGPT (GPT-4o)", company: "OpenAI", category: "text", desc: "世界で最も利用されている対話型AI。マルチモーダル対応。", tag: "All-Rounder" },
+            { name: "Claude 3.5 Sonnet", company: "Anthropic", category: "text", desc: "自然な文章作成とコーディングに強みを持つ。", tag: "Coding Strong" },
+            { name: "Gemini 1.5 Pro", company: "Google", category: "text", desc: "Googleエコシステムと連携。長いコンテキスト(2Mトークン)が特徴。", tag: "Big Context" },
+            { name: "Llama 3", company: "Meta", category: "text", desc: "オープンソース(重み公開)モデルのデファクトスタンダード。", tag: "Open Source" },
+            { name: "Perplexity", company: "Perplexity", category: "text", desc: "検索エンジンとAIを統合した回答エンジン。", tag: "Search" },
+            { name: "Mistral Large", company: "Mistral AI", category: "text", desc: "ヨーロッパ発の高性能モデル。軽量かつ高性能。", tag: "Efficient" },
+            { name: "Grok", company: "xAI", category: "text", desc: "X (Twitter) のリアルタイムデータにアクセス可能なAI。", tag: "Real-time" },
+            { name: "NotebookLM", company: "Google", category: "text", desc: "ユーザーの資料を読み込み、ポッドキャスト風に解説するRAGツール。", tag: "Study Tool" },
+
+            // Image
+            { name: "Midjourney", company: "Midjourney", category: "image", desc: "芸術的で高品質な画像生成に定評がある。", tag: "Artistic" },
+            { name: "DALL-E 3", company: "OpenAI", category: "image", desc: "ChatGPT内で対話的に画像を生成できる。プロンプト理解力が高い。", tag: "Easy Use" },
+            { name: "Stable Diffusion 3", company: "Stability AI", category: "image", desc: "ローカル環境でも動作可能な生成AIの草分け。", tag: "Customizable" },
+            { name: "Imagen 3", company: "Google", category: "image", desc: "Googleの最新画像生成モデル。写実性が高い。", tag: "Realistic" },
+            { name: "Leonardo.ai", company: "Leonardo", category: "image", desc: "ゲーム素材やアセット制作に特化した機能を持つ。", tag: "Assets" },
+
+            // Video
+            { name: "Sora", company: "OpenAI", category: "video", desc: "物理法則をシミュレートするような高精度動画生成（一般未公開）。", tag: "Simulation" },
+            { name: "Runway Gen-3", company: "Runway", category: "video", desc: "映像クリエイター向けの細かい制御が可能な動画生成AI。", tag: "Pro Tools" },
+            { name: "Kling (可霊)", company: "Kuaishou", category: "video", desc: "中国発。Soraに匹敵する長時間・高品質な動画生成が可能。", tag: "High Quality" },
+            { name: "Luma Dream Machine", company: "Luma AI", category: "video", desc: "誰でも無料で試せる高品質な動画生成サービス。", tag: "Accessible" },
+            { name: "Veo", company: "Google", category: "video", desc: "1080p以上の解像度で映像を生成するGoogleの対抗馬。", tag: "High Res" },
+            { name: "Haiper", company: "Haiper", category: "video", desc: "短いループ動画やアニメーション生成に強い。", tag: "Shorts" },
+
+            // Audio / Music
+            { name: "Suno", company: "Suno", category: "audio", desc: "歌詞とジャンルを指定するだけでフル尺の楽曲を生成。", tag: "Music Gen" },
+            { name: "Udio", company: "Udio", category: "audio", desc: "高音質な音楽生成。Sunoの強力なライバル。", tag: "High Fidelity" },
+            { name: "ElevenLabs", company: "ElevenLabs", category: "audio", desc: "圧倒的に自然な音声合成・読み上げAI。", tag: "Speech" },
+            { name: "Stable Audio", company: "Stability AI", category: "audio", desc: "効果音やBGMの生成に適したモデル。", tag: "SFX" },
+
+            // Coding / Dev
+            { name: "GitHub Copilot", company: "Microsoft/GitHub", category: "coding", desc: "最も普及しているAIコード補完ツール。", tag: "Standard" },
+            { name: "Cursor", company: "Anysphere", category: "coding", desc: "VS CodeをフォークしたAIネイティブなコードエディタ。", tag: "Editor" },
+            { name: "Claude Artifacts", company: "Anthropic", category: "coding", desc: "生成したコードを即座にプレビュー実行できる機能。", tag: "Preview" },
+            { name: "Replit Ghostwriter", company: "Replit", category: "coding", desc: "クラウド開発環境に統合されたAI。", tag: "Cloud IDE" },
+
+            // Agents
+            { name: "Devin", company: "Cognition", category: "agent", desc: "自律的にエンジニアリングタスクをこなすAIソフトウェアエンジニア。", tag: "Autonomous" },
+            { name: "AutoGPT", company: "Community", category: "agent", desc: "目標を与えると自律的にサブタスクを作成・実行するOSS。", tag: "OSS" },
+            { name: "Project Astra", company: "Google", category: "agent", desc: "映像を見て音声で応答するリアルタイム・マルチモーダルエージェント。", tag: "Real-time" }
+        ];
+
+        // --- 2. Chaos Map Logic ---
+        function renderMap(filter) {
+            const grid = document.getElementById('chaos-grid');
+            grid.innerHTML = ''; // Clear current
+
+            const filteredTools = filter === 'all' 
+                ? aiTools 
+                : aiTools.filter(tool => tool.category === filter);
+
+            filteredTools.forEach(tool => {
+                const card = document.createElement('div');
+                card.className = `bg-white border border-slate-200 rounded-lg p-4 card-hover flex flex-col justify-between h-full`;
+                
+                // Color coding for tags
+                let tagColor = "bg-slate-100 text-slate-600";
+                if (tool.category === 'video') tagColor = "bg-red-50 text-red-600";
+                if (tool.category === 'coding') tagColor = "bg-blue-50 text-blue-600";
+                if (tool.category === 'agent') tagColor = "bg-green-50 text-green-600";
+                if (tool.category === 'audio') tagColor = "bg-yellow-50 text-yellow-600";
+                if (tool.category === 'image') tagColor = "bg-purple-50 text-purple-600";
+
+                card.innerHTML = `
+                    <div>
+                        <div class="flex justify-between items-start mb-2">
+                            <span class="text-xs font-bold uppercase tracking-wider ${tagColor} px-2 py-1 rounded">${tool.company}</span>
+                            <span class="text-xs text-slate-400 border border-slate-100 px-2 py-1 rounded-full">${getCategoryLabel(tool.category)}</span>
+                        </div>
+                        <h3 class="font-bold text-lg text-slate-800 mb-1">${tool.name}</h3>
+                        <p class="text-sm text-slate-600 leading-relaxed">${tool.desc}</p>
+                    </div>
+                    <div class="mt-4 pt-3 border-t border-slate-100 flex justify-between items-center">
+                        <span class="text-xs font-medium text-slate-400">#${tool.tag}</span>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        function getCategoryLabel(cat) {
+            const map = {
+                'text': 'LLM / Text',
+                'image': 'Image Gen',
+                'video': 'Video Gen',
+                'audio': 'Audio / Music',
+                'coding': 'Dev Tools',
+                'agent': 'Agent / Auto'
+            };
+            return map[cat] || cat;
+        }
+
+        function filterMap(category) {
+            // Update buttons
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                if (btn.dataset.filter === category) {
+                    btn.classList.remove('bg-slate-100', 'text-slate-600');
+                    btn.classList.add('bg-blue-600', 'text-white');
+                } else {
+                    btn.classList.add('bg-slate-100', 'text-slate-600');
+                    btn.classList.remove('bg-blue-600', 'text-white');
+                }
+            });
+            renderMap(category);
+        }
+
+        // --- 3. Scroll & Navigation ---
+        function scrollToSection(id) {
+            const element = document.getElementById(id);
+            if (element) {
+                element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }
+
+        // --- 4. Chart.js Implementation ---
+        document.addEventListener('DOMContentLoaded', () => {
+            // Initial Render
+            renderMap('all');
+
+            // Radar Chart
+            const ctxRadar = document.getElementById('radarChart').getContext('2d');
+            new Chart(ctxRadar, {
+                type: 'radar',
+                data: {
+                    labels: ['Coding/実装力', 'Reasoning/論理', 'Creative/創造性', 'Speed/速度', 'Multimodal/認識'],
+                    datasets: [{
+                        label: 'Claude 3.5 Sonnet',
+                        data: [95, 90, 85, 95, 90],
+                        fill: true,
+                        backgroundColor: 'rgba(249, 115, 22, 0.2)', // Orange
+                        borderColor: 'rgb(249, 115, 22)',
+                        pointBackgroundColor: 'rgb(249, 115, 22)',
+                        pointBorderColor: '#fff',
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: 'rgb(249, 115, 22)'
+                    }, {
+                        label: 'GPT-4o',
+                        data: [88, 88, 92, 98, 95], // Speed and Multimodal focus
+                        fill: true,
+                        backgroundColor: 'rgba(16, 185, 129, 0.2)', // Green
+                        borderColor: 'rgb(16, 185, 129)',
+                        pointBackgroundColor: 'rgb(16, 185, 129)',
+                        pointBorderColor: '#fff',
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: 'rgb(16, 185, 129)'
+                    }, {
+                        label: 'Gemini 1.5 Pro',
+                        data: [85, 85, 80, 80, 98], // Strong context/multimodal
+                        fill: true,
+                        backgroundColor: 'rgba(59, 130, 246, 0.2)', // Blue
+                        borderColor: 'rgb(59, 130, 246)',
+                        pointBackgroundColor: 'rgb(59, 130, 246)',
+                        pointBorderColor: '#fff',
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: 'rgb(59, 130, 246)'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    elements: {
+                        line: { borderWidth: 2 }
+                    },
+                    scales: {
+                        r: {
+                            angleLines: { display: true },
+                            suggestedMin: 50,
+                            suggestedMax: 100,
+                            ticks: { display: false } // Hide numbers for cleaner look
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': ' + context.raw + '/100';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+</html>

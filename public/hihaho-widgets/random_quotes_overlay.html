@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Great Quotes Overlay</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Base Transparency Rules */
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: transparent !important;
+            overflow: hidden;
+            font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif;
+        }
+
+        /* Custom Utilities for Video Visibility */
+        .text-shadow-md {
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+        }
+        
+        .glass-panel {
+            background: rgba(20, 20, 20, 0.75);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+        }
+
+        /* Animation Classes */
+        .fade-in {
+            animation: fadeIn 0.3s ease-out forwards;
+        }
+        
+        .fade-out {
+            animation: fadeOut 0.3s ease-in forwards;
+        }
+
+        .pop-in {
+            animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+
+        @keyframes popIn {
+            from { opacity: 0; transform: scale(0.8) translateY(20px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
+        /* Button Pulse */
+        @keyframes pulse-glow {
+            0% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(250, 204, 21, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0); }
+        }
+
+        .btn-pulse {
+            animation: pulse-glow 2s infinite;
+        }
+    </style>
+</head>
+<body class="pointer-events-none flex flex-col justify-end items-end p-6">
+
+    <!-- Popup Container (Initially Hidden) -->
+    <div id="quotePopup" class="hidden pointer-events-auto fixed inset-0 flex items-center justify-center bg-black/40 z-40 transition-opacity duration-300 opacity-0">
+        <div class="glass-panel rounded-2xl p-8 max-w-md w-11/12 text-center relative transform transition-all mx-4">
+            
+            <!-- Decorative Icon -->
+            <div class="text-4xl mb-4 text-yellow-400 drop-shadow-md">❝</div>
+            
+            <!-- Quote Text -->
+            <p id="quoteText" class="text-white text-xl md:text-2xl font-bold mb-4 leading-relaxed text-shadow-md">
+                Loading...
+            </p>
+            
+            <!-- Author -->
+            <p id="quoteAuthor" class="text-gray-300 text-sm md:text-base font-medium text-right mb-8 text-shadow-md">
+                - Author Name
+            </p>
+
+            <!-- Close Button -->
+            <button onclick="closePopup()" class="px-6 py-2 bg-white/10 hover:bg-white/20 border border-white/30 rounded-full text-white transition-colors duration-200 text-sm font-semibold backdrop-blur-sm">
+                閉じる
+            </button>
+        </div>
+    </div>
+
+    <!-- Trigger Button (Floating Action Button) -->
+    <div class="pointer-events-auto z-50 fixed bottom-8 right-8">
+        <button 
+            onclick="showRandomQuote()" 
+            class="btn-pulse group flex items-center justify-center w-14 h-14 md:w-16 md:h-16 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full shadow-lg hover:scale-110 active:scale-95 transition-transform duration-200 border-2 border-white/20 text-white"
+            aria-label="偉人の言葉を表示"
+        >
+            <!-- Lightbulb Icon -->
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 drop-shadow-md" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+            </svg>
+            
+            <!-- Tooltip -->
+            <span class="absolute right-full mr-3 bg-black/80 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap backdrop-blur-sm">
+                偉人の言葉
+            </span>
+        </button>
+    </div>
+
+    <script>
+        // 100 Quotes Database
+        const quotes = [
+            { text: "天才とは、1％のひらめきと99％の努力である。", author: "トーマス・エジソン" },
+            { text: "Stay hungry, stay foolish.", author: "スティーブ・ジョブズ" },
+            { text: "失敗したことのない人間は、新しいことに挑戦したことのない人間だ。", author: "アルバート・アインシュタイン" },
+            { text: "最大の名誉は決して倒れないことではない。倒れるたびに起き上がることである。", author: "孔子" },
+            { text: "夢を見ることができるなら、それは実現できる。", author: "ウォルト・ディズニー" },
+            { text: "思考は現実化する。", author: "ナポレオン・ヒル" },
+            { text: "未来を予測する最良の方法は、未来を創ることだ。", author: "アラン・ケイ" },
+            { text: "行動の伴わない想像力は、何の意味も持たない。", author: "チャーリー・チャップリン" },
+            { text: "何事も成功するまでは不可能に思えるものである。", author: "ネルソン・マンデラ" },
+            { text: "人生は自転車に乗るようなものだ。バランスを保つためには、走り続けなければならない。", author: "アルバート・アインシュタイン" },
+            { text: "昨日の自分より、今日の自分。今日の自分より、明日の自分。", author: "作者不詳" },
+            { text: "成功の反対は失敗ではなく、何もしないことだ。", author: "作者不詳" },
+            { text: "明日死ぬかのように生きろ。永遠に生きるかのように学べ。", author: "マハトマ・ガンディー" },
+            { text: "為せば成る、為さねば成らぬ何事も。", author: "上杉鷹山" },
+            { text: "自分を信じなさい。そうすれば、どう生きるべきかわかるはずだ。", author: "ゲーテ" },
+            { text: "困難の中にこそ、チャンスがある。", author: "アルバート・アインシュタイン" },
+            { text: "平和は微笑みから始まります。", author: "マザー・テレサ" },
+            { text: "変革の第一歩は、自分自身を変えることだ。", author: "作者不詳" },
+            { text: "最も暗い夜も、いつかは明ける。", author: "シェイクスピア" },
+            { text: "千里の道も一歩から。", author: "老子" },
+            { text: "人生とは自分を見つけることではない。人生とは自分を創ることだ。", author: "バーナード・ショー" },
+            { text: "できると思えばできる、できないと思えばできない。これは、ゆるぎない絶対的な法則である。", author: "パブロ・ピカソ" },
+            { text: "時間は限られている。だから他人の人生を生きて無駄にしてはいけない。", author: "スティーブ・ジョブズ" },
+            { text: "一人の人間が世界を変えることはできないが、一人の人間が世界を変えるきっかけを作ることはできる。", author: "ジョン・F・ケネディ" },
+            { text: "やってみせ、言って聞かせて、させてみせ、ほめてやらねば、人は動かじ。", author: "山本五十六" },
+            { text: "苦しいから逃げるのではない。逃げるから苦しくなるのだ。", author: "ウィリアム・ジェームズ" },
+            { text: "速度を上げるばかりが、人生ではない。", author: "マハトマ・ガンディー" },
+            { text: "人間は考える葦である。", author: "パスカル" },
+            { text: "世の人は我を何とも言わば言え、我が成す事は我のみぞ知る。", author: "坂本龍馬" },
+            { text: "金を失うのは小さく失うことだ。名誉を失うのは大きく失うことだ。しかし、勇気を失うのはすべてを失うことだ。", author: "ウィンストン・チャーチル" },
+            { text: "成功とは、情熱を失わずに失敗から失敗へと進む能力のことだ。", author: "ウィンストン・チャーチル" },
+            { text: "木を植えるのに一番いい時期は20年前だった。二番目にいい時期は今だ。", author: "中国の格言" },
+            { text: "知彼知己、百戦不殆。（彼を知り己を知れば百戦危うからず）", author: "孫子" },
+            { text: "シンプルさは究極の洗練である。", author: "レオナルド・ダ・ヴィンチ" },
+            { text: "我思う、ゆえに我あり。", author: "デカルト" },
+            { text: "少年よ大志を抱け。", author: "ウィリアム・スミス・クラーク" },
+            { text: "進まざる者は必ず退き、退かざる者は必ず進む。", author: "福沢諭吉" },
+            { text: "人の世に道は一つということはない。道は百も千も万もある。", author: "坂本龍馬" },
+            { text: "運は勇気ある者を助ける。", author: "ウェルギリウス" },
+            { text: "愛とは、お互いを見つめ合うことではなく、共に同じ方向を見つめることである。", author: "サン＝テグジュペリ" },
+            { text: "想像力は知識よりも重要である。", author: "アルバート・アインシュタイン" },
+            { text: "最も強い者が生き残るのではなく、最も賢い者が生き残るのでもない。唯一生き残ることが出来るのは、変化できる者である。", author: "チャールズ・ダーウィン" },
+            { text: "あなたの時間は限られている。", author: "スティーブ・ジョブズ" },
+            { text: "世界を変えたいなら、まず自分が変わりなさい。", author: "マハトマ・ガンディー" },
+            { text: "生きるとは呼吸することではない。行動することだ。", author: "ルソー" },
+            { text: "幸福は香水のようなもの。他人に振りかければ、自分にも数滴かかる。", author: "バーナード・ショー" },
+            { text: "壁というのは、できる人にしかやってこない。", author: "イチロー" },
+            { text: "小さいことを積み重ねるのが、とんでもないところへ行くただひとつの道だ。", author: "イチロー" },
+            { text: "負けたことがある、というのがいつか大きな財産になる。", author: "スラムダンク（漫画）" },
+            { text: "あきらめたらそこで試合終了ですよ。", author: "安西先生" },
+            { text: "神は細部に宿る。", author: "ミース・ファン・デル・ローエ" },
+            { text: "情報が多ければ多いほど、人は賢くなるわけではない。", author: "作者不詳" },
+            { text: "賢者は歴史から学び、愚者は経験から学ぶ。", author: "ビスマルク" },
+            { text: "止まりさえしなければ、どんなにゆっくりでも進めばよい。", author: "孔子" },
+            { text: "最も偉大な栄光は、一度も失敗しないことではなく、失敗するたびに立ち上がることにある。", author: "ラルフ・ワルド・エマーソン" },
+            { text: "人生にリハーサルはない。", author: "作者不詳" },
+            { text: "チャンスは準備された心に降り立つ。", author: "ルイ・パスツール" },
+            { text: "成功には秘密などない。それは準備、勤勉、そして失敗から学ぶことの結果である。", author: "コリン・パウエル" },
+            { text: "一日一生。", author: "内村鑑三" },
+            { text: "道は開ける。", author: "デール・カーネギー" },
+            { text: "人を動かす。", author: "デール・カーネギー" },
+            { text: "笑う門には福来たる。", author: "日本のことわざ" },
+            { text: "継続は力なり。", author: "日本のことわざ" },
+            { text: "雨降って地固まる。", author: "日本のことわざ" },
+            { text: "情けは人の為ならず。", author: "日本のことわざ" },
+            { text: "一期一会。", author: "千利休" },
+            { text: "急がば回れ。", author: "日本のことわざ" },
+            { text: "知識に投資することは、常に最高の利益を生む。", author: "ベンジャミン・フランクリン" },
+            { text: "時は金なり。", author: "ベンジャミン・フランクリン" },
+            { text: "勤勉は幸運の母である。", author: "ベンジャミン・フランクリン" },
+            { text: "初心忘るべからず。", author: "世阿弥" },
+            { text: "秘すれば花。", author: "世阿弥" },
+            { text: "石の上にも三年。", author: "日本のことわざ" },
+            { text: "七転び八起き。", author: "日本のことわざ" },
+            { text: "好きこそものの上手なれ。", author: "日本のことわざ" },
+            { text: "聞くは一時の恥、聞かぬは一生の恥。", author: "日本のことわざ" },
+            { text: "早起きは三文の徳。", author: "日本のことわざ" },
+            { text: "人生には三つのものが必要だ。希望、勇気、そしてサムマネー。", author: "チャーリー・チャップリン" },
+            { text: "すべては必然である。", author: "作者不詳" },
+            { text: "反省はしても後悔はするな。", author: "作者不詳" },
+            { text: "現状維持は衰退である。", author: "ウォルト・ディズニー" },
+            { text: "好奇心は、いつだって新しい道を教えてくれる。", author: "ウォルト・ディズニー" },
+            { text: "自分の無知を知ることは、知識への第一歩である。", author: "バイロン" },
+            { text: "誠実は最良の策である。", author: "セルバンテス" },
+            { text: "良い本を読むことは、過去の最も優れた人々と会話することだ。", author: "デカルト" },
+            { text: "人生はクローズアップで見れば悲劇だが、ロングショットで見れば喜劇だ。", author: "チャーリー・チャップリン" },
+            { text: "虹を見たければ、雨も我慢しなくてはならない。", author: "ドリー・パートン" },
+            { text: "今日という日は、残りの人生の最初の日である。", author: "映画『アメリカン・ビューティー』" },
+            { text: "リスクを冒さないことこそが最大のリスクだ。", author: "マーク・ザッカーバーグ" },
+            { text: "完了形より、進行形。", author: "作者不詳" },
+            { text: "アイデアに価値はない。それを実行することに価値がある。", author: "作者不詳" },
+            { text: "未来は、夢の美しさを信じる人々のものだ。", author: "エレノア・ルーズベルト" },
+            { text: "人生で犯した間違いの多くは、考えるべき時に感じ、感じるべき時に考えたことから生じている。", author: "ジョン・チャートン・コリンズ" },
+            { text: "誰かの曇った空に虹をかけてあげよう。", author: "マヤ・アンジェロウ" },
+            { text: "あなたができる最善のことは、誰かのために親切にすることだ。", author: "作者不詳" },
+            { text: "笑顔は世界共通の言語である。", author: "作者不詳" },
+            { text: "感謝の心を持てば、人生は豊かになる。", author: "作者不詳" },
+            { text: "終わりよければすべてよし。", author: "シェイクスピア" },
+            { text: "意志あるところに道は開ける。", author: "リンカーン" },
+            { text: "最善を尽くせ、あとは天命を待て。", author: "作者不詳" }
+        ];
+
+        // Elements
+        const popup = document.getElementById('quotePopup');
+        const quoteText = document.getElementById('quoteText');
+        const quoteAuthor = document.getElementById('quoteAuthor');
+        const popupContent = popup.querySelector('div');
+
+        function showRandomQuote() {
+            // Random Selection
+            const randomIndex = Math.floor(Math.random() * quotes.length);
+            const selectedQuote = quotes[randomIndex];
+
+            // Update Content
+            quoteText.textContent = selectedQuote.text;
+            quoteAuthor.textContent = `- ${selectedQuote.author}`;
+
+            // Show Popup
+            popup.classList.remove('hidden');
+            
+            // Animation Frame logic for smooth transitions
+            requestAnimationFrame(() => {
+                popup.classList.remove('opacity-0');
+                popupContent.classList.remove('scale-0');
+                popupContent.classList.add('pop-in');
+            });
+        }
+
+        function closePopup() {
+            // Fade out logic
+            popup.classList.add('opacity-0');
+            
+            setTimeout(() => {
+                popup.classList.add('hidden');
+                popupContent.classList.remove('pop-in');
+            }, 300);
+        }
+
+        // Close on outside click
+        popup.addEventListener('click', (e) => {
+            if (e.target === popup) {
+                closePopup();
+            }
+        });
+    </script>
+</body>
+</html>

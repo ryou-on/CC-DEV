@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Compact Resizable Clock Overlay</title>
+  <link href="https://fonts.googleapis.com/css2?family=Bungee&family=Montserrat:wght@500;700&family=Noto+Sans+JP:wght@500;700&family=Orbitron:wght@500;700&family=Oswald:wght@500;700&family=Pacifico&family=Press+Start+2P&family=Roboto:wght@500;700&display=swap" rel="stylesheet">
+  <style>
+    /* CSS Reset & Base */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body, html {
+      width: 100%;
+      height: 100%;
+      background: transparent !important;
+      overflow: hidden;
+      font-family: 'Roboto', sans-serif;
+    }
+
+    /* Widget Container */
+    #widget {
+      position: fixed;
+      top: 5%;
+      right: 5%;
+      background: rgba(15, 15, 15, 0.65);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 12px;
+      padding: 12px 16px;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      width: max-content;
+      color: #ffffff;
+      user-select: none;
+    }
+
+    /* Header (Time Display & Toggle Button) */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    #time {
+      font-size: 1.6rem;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-shadow: 0 2px 4px rgba(0,0,0,0.8), 0 0 8px rgba(0,0,0,0.5);
+      transition: font-size 0.3s ease;
+      white-space: nowrap;
+      line-height: 1;
+    }
+
+    /* Settings Panel */
+    #settings {
+      display: flex;
+      flex-direction: column;
+      transition: opacity 0.3s ease;
+      overflow: hidden;
+    }
+
+    .select-wrapper {
+      position: relative;
+    }
+
+    select {
+      appearance: none;
+      -webkit-appearance: none;
+      width: 100%;
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 6px;
+      padding: 6px 32px 6px 12px;
+      font-size: 0.85rem;
+      font-family: inherit;
+      cursor: pointer;
+      outline: none;
+      transition: background 0.2s;
+    }
+
+    select:hover {
+      background: rgba(255, 255, 255, 0.2);
+    }
+    
+    select option {
+      background: #222;
+      color: #fff;
+    }
+
+    .select-icon {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      pointer-events: none;
+      fill: #fff;
+      width: 16px;
+      height: 16px;
+    }
+
+    /* Toggle Button */
+    #toggle-btn {
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 6px;
+      color: #fff;
+      cursor: pointer;
+      padding: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+      min-width: 32px;
+      min-height: 32px;
+    }
+
+    #toggle-btn:hover {
+      background: rgba(255, 255, 255, 0.25);
+    }
+
+    #toggle-btn svg {
+      width: 18px;
+      height: 18px;
+      fill: currentColor;
+    }
+
+    /* Minimized State */
+    #widget.minimized {
+      background: transparent;
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      border-color: transparent;
+      box-shadow: none;
+      padding: 0;
+      gap: 0;
+    }
+
+    #widget.minimized #settings {
+      display: none;
+    }
+
+    #widget.minimized .header {
+      gap: 8px;
+    }
+
+    #widget.minimized #time {
+      font-size: 1.1rem;
+    }
+
+    #widget.minimized #toggle-btn {
+      background: transparent;
+      border-color: transparent;
+      opacity: 0.2;
+      padding: 4px;
+      min-width: 24px;
+      min-height: 24px;
+    }
+
+    #widget.minimized:hover #toggle-btn {
+      opacity: 1;
+      background: rgba(0, 0, 0, 0.6);
+    }
+
+    /* Mobile Responsiveness */
+    @media (max-width: 768px) {
+      #widget {
+        top: 2%;
+        right: 2%;
+        padding: 16px 20px;
+        gap: 16px;
+      }
+      
+      #time {
+        font-size: 2.2rem;
+      }
+      
+      #widget.minimized #time {
+        font-size: 1.4rem;
+      }
+
+      select {
+        font-size: 1.1rem;
+        padding: 10px 40px 10px 16px;
+        min-height: 44px;
+      }
+      
+      #toggle-btn {
+        padding: 10px;
+        min-width: 44px;
+        min-height: 44px;
+      }
+
+      #toggle-btn svg {
+        width: 24px;
+        height: 24px;
+      }
+      
+      .select-icon {
+        width: 20px;
+        height: 20px;
+        right: 12px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div id="widget">
+    <div class="header">
+      <div id="time">00:00:00</div>
+      <button id="toggle-btn" aria-label="Toggle Minimize">
+        <!-- Icon injected by JS -->
+      </button>
+    </div>
+    <div id="settings">
+      <div class="select-wrapper">
+        <select id="font-select" aria-label="Select Font">
+          <option value="'Roboto', sans-serif">Roboto (Standard)</option>
+          <option value="'Orbitron', sans-serif">Orbitron (Digital)</option>
+          <option value="'Bungee', cursive">Bungee (Pop)</option>
+          <option value="'Press Start 2P', cursive">Press Start 2P (Retro)</option>
+          <option value="'Noto Sans JP', sans-serif">Noto Sans JP</option>
+          <option value="'Oswald', sans-serif">Oswald (Tall)</option>
+          <option value="'Pacifico', cursive">Pacifico (Script)</option>
+          <option value="'Montserrat', sans-serif">Montserrat (Modern)</option>
+        </select>
+        <svg class="select-icon" viewBox="0 0 24 24"><path d="M7 10l5 5 5-5z"/></svg>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const minimizeIcon = `<svg viewBox="0 0 24 24"><path d="M19 13H5v-2h14v2z"/></svg>`;
+    const expandIcon = `<svg viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>`;
+
+    const widget = document.getElementById('widget');
+    const toggleBtn = document.getElementById('toggle-btn');
+    const fontSelect = document.getElementById('font-select');
+    const timeEl = document.getElementById('time');
+
+    // Initialize UI
+    toggleBtn.innerHTML = minimizeIcon;
+    timeEl.style.fontFamily = fontSelect.value;
+
+    // Toggle minimize state
+    toggleBtn.addEventListener('click', () => {
+      widget.classList.toggle('minimized');
+      if (widget.classList.contains('minimized')) {
+        toggleBtn.innerHTML = expandIcon;
+        toggleBtn.setAttribute('aria-label', 'Expand Widget');
+      } else {
+        toggleBtn.innerHTML = minimizeIcon;
+        toggleBtn.setAttribute('aria-label', 'Minimize Widget');
+      }
+    });
+
+    // Change Font
+    fontSelect.addEventListener('change', (e) => {
+      timeEl.style.fontFamily = e.target.value;
+    });
+
+    // Time Update Logic
+    function updateTime() {
+      const now = new Date();
+      const h = String(now.getHours()).padStart(2, '0');
+      const m = String(now.getMinutes()).padStart(2, '0');
+      const s = String(now.getSeconds()).padStart(2, '0');
+      timeEl.textContent = `${h}:${m}:${s}`;
+    }
+
+    // Start Clock
+    setInterval(updateTime, 1000);
+    updateTime();
+  </script>
+</body>
+</html>

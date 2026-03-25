@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kids Dutch Learner Overlay</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700;800&display=swap" rel="stylesheet">
+    <style>
+        /* Custom Styles for Video Overlay */
+        body {
+            background: transparent !important;
+            font-family: 'M PLUS Rounded 1c', sans-serif;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            /* Prevent selection to feel like an app */
+            user-select: none;
+        }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+            border: 4px solid #FF9B00; /* Dutch Orange */
+        }
+
+        .text-stroke {
+            -webkit-text-stroke: 2px #fff;
+            text-shadow: 2px 2px 0px rgba(0,0,0,0.2);
+        }
+        
+        .text-shadow-pop {
+            text-shadow: 0px 4px 10px rgba(0,0,0,0.5);
+        }
+
+        /* Animations */
+        @keyframes bounce-in {
+            0% { transform: scale(0.3); opacity: 0; }
+            50% { transform: scale(1.05); }
+            70% { transform: scale(0.9); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0px); }
+        }
+
+        .animate-bounce-in {
+            animation: bounce-in 0.6s cubic-bezier(0.68, -0.55, 0.27, 1.55) both;
+        }
+
+        .animate-float {
+            animation: float 3s ease-in-out infinite;
+        }
+
+        .confetti {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background-color: #f00;
+            animation: fall linear forwards;
+        }
+
+        @keyframes fall {
+            to {
+                transform: translateY(100vh) rotate(720deg);
+            }
+        }
+    </style>
+</head>
+<body class="w-full h-screen flex items-end justify-center pb-8 sm:items-center sm:pb-0 sm:justify-center">
+
+    <!-- Main Widget Container -->
+    <div id="app-container" class="relative w-11/12 max-w-md animate-bounce-in">
+        
+        <!-- Game Area -->
+        <div class="glass-panel rounded-3xl p-6 text-center relative overflow-hidden">
+            
+            <!-- Header Decoration -->
+            <div class="absolute -top-6 -left-6 w-16 h-16 bg-blue-400 rounded-full opacity-50"></div>
+            <div class="absolute -bottom-6 -right-6 w-20 h-20 bg-orange-400 rounded-full opacity-50"></div>
+
+            <!-- View: Main Menu -->
+            <div id="view-menu" class="space-y-6">
+                <h1 class="text-4xl font-extrabold text-orange-600 tracking-wider drop-shadow-sm">
+                    🇳🇱 オランダご
+                    <br>
+                    <span class="text-2xl text-gray-700">であそぼ！</span>
+                </h1>
+                <div class="text-6xl animate-float my-4">🦁</div>
+                <p class="text-gray-600 font-bold">はじめる？</p>
+                <button onclick="startGame()" class="w-full bg-gradient-to-b from-orange-400 to-orange-600 hover:from-orange-500 hover:to-orange-700 text-white text-2xl font-bold py-4 rounded-2xl shadow-lg transform transition active:scale-95 border-b-4 border-orange-800">
+                    スタート！
+                </button>
+            </div>
+
+            <!-- View: Learning (Flashcard) -->
+            <div id="view-learn" class="hidden space-y-4">
+                <div class="flex justify-between items-center">
+                    <span class="bg-blue-100 text-blue-600 px-3 py-1 rounded-full font-bold text-sm">おぼえてね</span>
+                    <span id="progress-text" class="text-gray-500 font-bold">1/5</span>
+                </div>
+                
+                <div class="bg-white/60 rounded-xl p-8 border-2 border-orange-200 shadow-inner">
+                    <div id="flashcard-emoji" class="text-8xl mb-2">🍎</div>
+                    <div id="flashcard-dutch" class="text-4xl font-extrabold text-orange-600">Appel</div>
+                    <div id="flashcard-jp" class="text-xl text-gray-600 font-bold mt-1">りんご</div>
+                </div>
+
+                <button onclick="nextCard()" class="w-full bg-blue-500 hover:bg-blue-600 text-white text-xl font-bold py-3 rounded-xl shadow-md transform transition active:scale-95 border-b-4 border-blue-700">
+                    つぎへ ➡
+                </button>
+            </div>
+
+            <!-- View: Quiz -->
+            <div id="view-quiz" class="hidden space-y-4">
+                <h2 class="text-2xl font-bold text-gray-700">どれかな？</h2>
+                
+                <div class="bg-orange-100 rounded-xl p-4 border-2 border-orange-300">
+                    <p id="quiz-question" class="text-3xl font-extrabold text-orange-600">Hond</p>
+                </div>
+
+                <div id="quiz-options" class="grid grid-cols-2 gap-3">
+                    <!-- Options generated by JS -->
+                </div>
+                <p id="quiz-feedback" class="h-6 text-lg font-bold text-green-600"></p>
+            </div>
+
+            <!-- View: Result -->
+            <div id="view-result" class="hidden space-y-5">
+                <h2 class="text-3xl font-extrabold text-orange-600">すごい！</h2>
+                <div class="text-7xl animate-bounce">🎉</div>
+                <p class="text-xl font-bold text-gray-600">ぜんぶできたね！</p>
+                <div class="p-4 bg-yellow-100 rounded-xl border-2 border-yellow-300">
+                    <p class="text-yellow-700 font-bold">オランダご マスター！</p>
+                </div>
+                <button onclick="resetGame()" class="w-full bg-green-500 hover:bg-green-600 text-white text-xl font-bold py-3 rounded-xl shadow-md border-b-4 border-green-700">
+                    もういっかい
+                </button>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Audio Elements (Simulated sources for demo) -->
+    <!-- In a real app, you would link to mp3 files -->
+
+    <script>
+        // --- Data ---
+        const vocabulary = [
+            { dutch: "Appel", jp: "りんご", emoji: "🍎", sound: "appel" },
+            { dutch: "Kat", jp: "ねこ", emoji: "🐱", sound: "kat" },
+            { dutch: "Hond", jp: "いぬ", emoji: "🐶", sound: "hond" },
+            { dutch: "Fiets", jp: "じてんしゃ", emoji: "🚲", sound: "fiets" },
+            { dutch: "Kaas", jp: "チーズ", emoji: "🧀", sound: "kaas" }
+        ];
+
+        // --- State ---
+        let currentIndex = 0;
+        let score = 0;
+        let isQuizMode = false;
+
+        // --- DOM Elements ---
+        const views = {
+            menu: document.getElementById('view-menu'),
+            learn: document.getElementById('view-learn'),
+            quiz: document.getElementById('view-quiz'),
+            result: document.getElementById('view-result')
+        };
+
+        const els = {
+            emoji: document.getElementById('flashcard-emoji'),
+            dutch: document.getElementById('flashcard-dutch'),
+            jp: document.getElementById('flashcard-jp'),
+            progress: document.getElementById('progress-text'),
+            quizQ: document.getElementById('quiz-question'),
+            quizOpts: document.getElementById('quiz-options'),
+            feedback: document.getElementById('quiz-feedback')
+        };
+
+        // --- Functions ---
+
+        function switchView(viewName) {
+            Object.values(views).forEach(el => el.classList.add('hidden'));
+            views[viewName].classList.remove('hidden');
+        }
+
+        function startGame() {
+            currentIndex = 0;
+            isQuizMode = false;
+            showCard();
+            switchView('learn');
+        }
+
+        function showCard() {
+            const item = vocabulary[currentIndex];
+            els.emoji.textContent = item.emoji;
+            els.dutch.textContent = item.dutch;
+            els.jp.textContent = item.jp;
+            els.progress.textContent = `${currentIndex + 1}/${vocabulary.length}`;
+            
+            // Simple text-to-speech simulation for demo
+            speak(item.dutch);
+        }
+
+        function nextCard() {
+            if (currentIndex < vocabulary.length - 1) {
+                currentIndex++;
+                showCard();
+            } else {
+                // Finished learning, start quiz
+                startQuiz();
+            }
+        }
+
+        function startQuiz() {
+            currentIndex = 0;
+            isQuizMode = true;
+            switchView('quiz');
+            showQuizQuestion();
+        }
+
+        function showQuizQuestion() {
+            const item = vocabulary[currentIndex];
+            els.quizQ.textContent = item.dutch;
+            els.feedback.textContent = "";
+            speak(item.dutch);
+
+            // Create options (Correct + 3 randoms)
+            let options = [item];
+            const others = vocabulary.filter(v => v !== item);
+            // Shuffle others and pick 3
+            others.sort(() => Math.random() - 0.5);
+            options = options.concat(others.slice(0, 3));
+            // Shuffle options
+            options.sort(() => Math.random() - 0.5);
+
+            els.quizOpts.innerHTML = '';
+            options.forEach(opt => {
+                const btn = document.createElement('button');
+                btn.className = "bg-white hover:bg-blue-50 border-2 border-blue-200 rounded-xl p-2 text-4xl transition transform active:scale-95 shadow-sm h-24 flex items-center justify-center";
+                btn.textContent = opt.emoji;
+                btn.onclick = () => checkAnswer(opt, item);
+                els.quizOpts.appendChild(btn);
+            });
+        }
+
+        function checkAnswer(selected, correct) {
+            const btns = els.quizOpts.querySelectorAll('button');
+            btns.forEach(b => b.disabled = true);
+
+            if (selected === correct) {
+                els.feedback.textContent = "せいかい！🙆‍♂️";
+                els.feedback.className = "h-6 text-lg font-bold text-green-600 animate-bounce";
+                playSound('correct');
+                setTimeout(() => {
+                    if (currentIndex < vocabulary.length - 1) {
+                        currentIndex++;
+                        showQuizQuestion();
+                    } else {
+                        fireConfetti();
+                        switchView('result');
+                    }
+                }, 1500);
+            } else {
+                els.feedback.textContent = "ざんねん...🙅";
+                els.feedback.className = "h-6 text-lg font-bold text-red-500";
+                playSound('wrong');
+                setTimeout(() => {
+                    btns.forEach(b => b.disabled = false);
+                    els.feedback.textContent = "";
+                }, 1000);
+            }
+        }
+
+        function resetGame() {
+            switchView('menu');
+        }
+
+        function speak(text) {
+            // Browser built-in TTS (Dutch if available, else generic)
+            if ('speechSynthesis' in window) {
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'nl-NL';
+                utterance.rate = 0.8; // Slower for kids
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+
+        function playSound(type) {
+            // Placeholder for sound effects
+            // Real implementation would use Audio objects
+        }
+
+        // Confetti Effect
+        function fireConfetti() {
+            const colors = ['#f00', '#0f0', '#00f', '#ff0', '#0ff', '#f0f'];
+            for (let i = 0; i < 50; i++) {
+                const conf = document.createElement('div');
+                conf.classList.add('confetti');
+                conf.style.left = Math.random() * 100 + 'vw';
+                conf.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                conf.style.animationDuration = (Math.random() * 2 + 2) + 's';
+                document.body.appendChild(conf);
+                setTimeout(() => conf.remove(), 4000);
+            }
+        }
+
+    </script>
+</body>
+</html>

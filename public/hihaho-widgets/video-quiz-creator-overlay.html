@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Quiz Creator Overlay</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            background-color: transparent !important;
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        /* Custom Scrollbar for the list */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.5);
+        }
+
+        /* Glassmorphism utility */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        .text-shadow {
+            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+        }
+
+        /* Input focus rings */
+        .input-glass {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            transition: all 0.2s;
+        }
+        .input-glass:focus {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: #22d3ee;
+            outline: none;
+        }
+    </style>
+</head>
+<body class="pointer-events-none flex flex-col items-end justify-center pr-4">
+
+    <!-- Main Widget Container -->
+    <div id="widget-container" class="pointer-events-auto glass-panel rounded-xl w-96 max-h-[90vh] flex flex-col transition-all duration-300 transform translate-x-0">
+        
+        <!-- Header -->
+        <div class="flex justify-between items-center p-4 border-b border-white/10">
+            <div class="flex items-center gap-2">
+                <i class="fa-solid fa-pen-to-square text-cyan-400"></i>
+                <h2 class="text-white font-bold text-lg text-shadow">問題作成ツール</h2>
+            </div>
+            <button onclick="toggleMinimize()" class="text-white/70 hover:text-white transition-colors">
+                <i class="fa-solid fa-minus"></i>
+            </button>
+        </div>
+
+        <!-- Scrollable Content -->
+        <div id="widget-content" class="overflow-y-auto p-4 space-y-4">
+            
+            <!-- Current Time & Question Type -->
+            <div class="flex gap-2">
+                <div class="w-1/3">
+                    <label class="text-xs text-cyan-300 font-semibold uppercase tracking-wider mb-1 block text-shadow">タイムスタンプ</label>
+                    <div class="flex">
+                        <input type="text" id="timestamp" value="00:00" class="input-glass w-full rounded-l-md px-2 py-1.5 text-sm text-center font-mono" readonly>
+                        <button onclick="captureTime()" class="bg-cyan-600 hover:bg-cyan-500 text-white px-2 rounded-r-md transition-colors" title="現在の時間を取得">
+                            <i class="fa-solid fa-stopwatch"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="w-2/3">
+                    <label class="text-xs text-cyan-300 font-semibold uppercase tracking-wider mb-1 block text-shadow">タイプ</label>
+                    <select id="qType" class="input-glass w-full rounded-md px-2 py-1.5 text-sm">
+                        <option value="text" class="bg-slate-800">記述式</option>
+                        <option value="choice" class="bg-slate-800">選択式</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Question Input -->
+            <div>
+                <label class="text-xs text-cyan-300 font-semibold uppercase tracking-wider mb-1 block text-shadow">質問内容</label>
+                <textarea id="qText" rows="2" class="input-glass w-full rounded-md px-3 py-2 text-sm" placeholder="例: このシーンで重要な要素は？"></textarea>
+            </div>
+
+            <!-- Options (Hidden by default, shown for Choice type) -->
+            <div id="options-container" class="hidden space-y-2">
+                <label class="text-xs text-cyan-300 font-semibold uppercase tracking-wider block text-shadow">選択肢</label>
+                <input type="text" class="option-input input-glass w-full rounded-md px-3 py-1.5 text-sm" placeholder="選択肢 1">
+                <input type="text" class="option-input input-glass w-full rounded-md px-3 py-1.5 text-sm" placeholder="選択肢 2">
+                <input type="text" class="option-input input-glass w-full rounded-md px-3 py-1.5 text-sm" placeholder="選択肢 3">
+            </div>
+
+            <!-- Action Buttons -->
+            <button onclick="addQuestion()" class="w-full bg-cyan-600 hover:bg-cyan-500 active:bg-cyan-700 text-white font-bold py-2 rounded-md shadow-lg transition-all flex items-center justify-center gap-2">
+                <i class="fa-solid fa-plus"></i> リストに追加
+            </button>
+
+            <!-- Divider -->
+            <div class="border-t border-white/10 my-2"></div>
+
+            <!-- Saved List Preview -->
+            <div>
+                <div class="flex justify-between items-center mb-2">
+                    <span class="text-xs text-white/70 font-semibold">作成済み (<span id="count">0</span>)</span>
+                    <button onclick="exportData()" class="text-xs text-cyan-400 hover:text-cyan-300 underline">JSON出力</button>
+                </div>
+                <ul id="saved-list" class="space-y-2 max-h-40 overflow-y-auto pr-1">
+                    <!-- Items will appear here -->
+                    <li class="text-white/50 text-xs text-center italic py-2">まだ質問がありません</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Minimized State Indicator (Hidden by default) -->
+        <div id="minimized-trigger" class="hidden p-3 cursor-pointer hover:bg-white/10 transition-colors flex justify-center" onclick="toggleMinimize()">
+            <i class="fa-solid fa-expand text-cyan-400"></i>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let questions = [];
+        let isMinimized = false;
+
+        // DOM Elements
+        const qTypeSelect = document.getElementById('qType');
+        const optionsContainer = document.getElementById('options-container');
+        const timestampInput = document.getElementById('timestamp');
+        const savedList = document.getElementById('saved-list');
+        const countSpan = document.getElementById('count');
+
+        // Toggle Options Visibility based on Type
+        qTypeSelect.addEventListener('change', (e) => {
+            if(e.target.value === 'choice') {
+                optionsContainer.classList.remove('hidden');
+            } else {
+                optionsContainer.classList.add('hidden');
+            }
+        });
+
+        // Mock Time Capture (In a real scenario, this would access video.currentTime)
+        function captureTime() {
+            // Mock: Generate random time for demo purposes or use real time if available
+            // For this overlay, we will simulate an advancing timer logic or just formatted placeholder
+            const now = new Date();
+            const seconds = now.getSeconds();
+            const minutes = now.getMinutes() % 60;
+            // Just a mock format MM:SS based on real clock for demo feel
+            const formatted = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            timestampInput.value = formatted;
+            
+            // Visual feedback
+            timestampInput.classList.add('bg-cyan-900/50');
+            setTimeout(() => timestampInput.classList.remove('bg-cyan-900/50'), 300);
+        }
+
+        // Add Question to List
+        function addQuestion() {
+            const type = qTypeSelect.value;
+            const text = document.getElementById('qText').value;
+            const time = timestampInput.value;
+            
+            if(!text.trim()) {
+                alert('質問内容を入力してください');
+                return;
+            }
+
+            const newQ = {
+                id: Date.now(),
+                time,
+                type,
+                text,
+                options: []
+            };
+
+            if(type === 'choice') {
+                const opts = document.querySelectorAll('.option-input');
+                opts.forEach(opt => {
+                    if(opt.value.trim()) newQ.options.push(opt.value);
+                });
+            }
+
+            questions.push(newQ);
+            renderList();
+            resetForm();
+        }
+
+        // Render List
+        function renderList() {
+            savedList.innerHTML = '';
+            countSpan.innerText = questions.length;
+
+            if(questions.length === 0) {
+                savedList.innerHTML = '<li class="text-white/50 text-xs text-center italic py-2">まだ質問がありません</li>';
+                return;
+            }
+
+            questions.forEach((q, index) => {
+                const li = document.createElement('li');
+                li.className = 'bg-white/5 rounded p-2 border-l-2 border-cyan-500 flex justify-between items-start group hover:bg-white/10 transition-colors';
+                
+                let details = '';
+                if(q.type === 'choice') {
+                    details = `<div class="text-xs text-white/50 mt-1">選択肢: ${q.options.length}個</div>`;
+                }
+
+                li.innerHTML = `
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="text-cyan-300 font-mono text-xs bg-cyan-900/50 px-1 rounded">${q.time}</span>
+                            <span class="text-white/60 text-[10px] border border-white/20 px-1 rounded uppercase">${q.type === 'text' ? '記述' : '選択'}</span>
+                        </div>
+                        <p class="text-white text-sm truncate pr-2" title="${q.text}">${q.text}</p>
+                        ${details}
+                    </div>
+                    <button onclick="deleteQuestion(${q.id})" class="text-red-400 hover:text-red-300 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                `;
+                savedList.prepend(li);
+            });
+        }
+
+        // Delete Question
+        window.deleteQuestion = (id) => {
+            questions = questions.filter(q => q.id !== id);
+            renderList();
+        };
+
+        // Reset Form
+        function resetForm() {
+            document.getElementById('qText').value = '';
+            document.querySelectorAll('.option-input').forEach(i => i.value = '');
+            document.getElementById('qText').focus();
+        }
+
+        // Toggle Minimize
+        window.toggleMinimize = () => {
+            const content = document.getElementById('widget-content');
+            const trigger = document.getElementById('minimized-trigger');
+            const container = document.getElementById('widget-container');
+            
+            isMinimized = !isMinimized;
+
+            if(isMinimized) {
+                content.classList.add('hidden');
+                trigger.classList.remove('hidden');
+                container.classList.remove('w-96');
+                container.classList.add('w-16');
+            } else {
+                content.classList.remove('hidden');
+                trigger.classList.add('hidden');
+                container.classList.remove('w-16');
+                container.classList.add('w-96');
+            }
+        };
+
+        // Export JSON
+        window.exportData = () => {
+            if(questions.length === 0) return alert('エクスポートするデータがありません');
+            
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(questions, null, 2));
+            const downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href", dataStr);
+            downloadAnchorNode.setAttribute("download", "video_quiz_data.json");
+            document.body.appendChild(downloadAnchorNode);
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
+        };
+
+    </script>
+</body>
+</html>

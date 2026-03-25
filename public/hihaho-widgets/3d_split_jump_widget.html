@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Jumping Overlay</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: transparent !important;
+        }
+        canvas {
+            display: block;
+            outline: none;
+        }
+        /* UI Overlay Styles */
+        .hud-overlay {
+            position: absolute;
+            top: 1rem;
+            left: 1rem;
+            pointer-events: none;
+            z-index: 10;
+            color: white;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.9);
+        }
+        .status-badge {
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(4px);
+            padding: 0.5rem 1rem;
+            border-radius: 9999px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            font-weight: bold;
+            font-family: monospace;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #4ade80;
+            box-shadow: 0 0 8px #4ade80;
+        }
+    </style>
+    <!-- Import Map for Three.js -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div class="hud-overlay">
+        <div class="status-badge">
+            <span class="status-dot" id="statusDot"></span>
+            <span id="statusText">INITIALIZING...</span>
+        </div>
+        <p class="mt-2 text-sm opacity-80">マウスで回転・ズーム操作可能</p>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // --- Configuration ---
+        const SPLIT_DELAY = 3.0; // Seconds before splitting
+        const JUMP_HEIGHT = 1.5;
+        const JUMP_SPEED = 3.0;
+        const OBJECT_COLOR = 0x00ffff;
+        const SPLIT_COLOR = 0xff00ff;
+
+        // --- Scene Setup ---
+        const scene = new THREE.Scene();
+        // Transparent background is key for overlay
+        scene.background = null; 
+
+        const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(0, 2, 5);
+
+        const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        document.body.appendChild(renderer.domElement);
+
+        // --- Controls ---
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = 2.0;
+
+        // --- Lighting ---
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+        dirLight.position.set(5, 10, 7);
+        scene.add(dirLight);
+        
+        const pointLight = new THREE.PointLight(OBJECT_COLOR, 5, 10);
+        pointLight.position.set(0, 2, 0);
+        scene.add(pointLight);
+
+        // --- Objects ---
+        const group = new THREE.Group();
+        scene.add(group);
+
+        // Material
+        const material = new THREE.MeshStandardMaterial({ 
+            color: OBJECT_COLOR, 
+            roughness: 0.2, 
+            metalness: 0.8,
+            emissive: 0x0044aa,
+            emissiveIntensity: 0.2
+        });
+
+        // Main Object (Cube)
+        const geometry = new THREE.BoxGeometry(1, 1, 1);
+        const mainMesh = new THREE.Mesh(geometry, material);
+        group.add(mainMesh);
+
+        // Smaller Objects (for splitting)
+        const fragments = [];
+        const fragmentGeo = new THREE.BoxGeometry(0.4, 0.4, 0.4);
+        const fragmentMat = new THREE.MeshStandardMaterial({ 
+            color: SPLIT_COLOR, 
+            roughness: 0.2, 
+            metalness: 0.6,
+            emissive: 0xaa0044,
+            emissiveIntensity: 0.4
+        });
+
+        // --- Logic State ---
+        const clock = new THREE.Clock();
+        let state = 'idle'; // idle, splitting, jumping
+        const uiText = document.getElementById('statusText');
+        const uiDot = document.getElementById('statusDot');
+
+        function triggerSplit() {
+            state = 'splitting';
+            uiText.innerText = "SYSTEM SPLIT";
+            uiDot.style.backgroundColor = "#ef4444";
+            uiDot.style.boxShadow = "0 0 8px #ef4444";
+
+            // Remove main mesh
+            group.remove(mainMesh);
+
+            // Spawn 8 fragments
+            const offset = 0.3;
+            const positions = [
+                [offset, offset, offset], [offset, offset, -offset], 
+                [offset, -offset, offset], [offset, -offset, -offset],
+                [-offset, offset, offset], [-offset, offset, -offset], 
+                [-offset, -offset, offset], [-offset, -offset, -offset]
+            ];
+
+            positions.forEach(pos => {
+                const mesh = new THREE.Mesh(fragmentGeo, fragmentMat);
+                mesh.position.set(0, 0, 0); // Start center
+                mesh.userData = { 
+                    targetPos: new THREE.Vector3(...pos), 
+                    velocity: new THREE.Vector3((Math.random()-0.5)*0.1, Math.random()*2, (Math.random()-0.5)*0.1)
+                };
+                group.add(mesh);
+                fragments.push(mesh);
+            });
+            
+            // Transition to jumping after brief expansion
+            setTimeout(() => {
+                state = 'jumping';
+                uiText.innerText = "ACTIVE JUMPING";
+                uiDot.style.backgroundColor = "#eab308";
+                uiDot.style.boxShadow = "0 0 8px #eab308";
+                controls.autoRotateSpeed = 10.0; // Spin faster
+            }, 500);
+        }
+
+        // --- Animation Loop ---
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = clock.getDelta();
+            const elapsedTime = clock.getElapsedTime();
+
+            controls.update();
+
+            // State Management
+            if (state === 'idle') {
+                uiText.innerText = `STABLE (${(SPLIT_DELAY - elapsedTime).toFixed(1)}s)`;
+                // Gentle float
+                mainMesh.position.y = Math.sin(elapsedTime) * 0.1;
+                mainMesh.rotation.x += delta * 0.5;
+                mainMesh.rotation.y += delta * 0.2;
+
+                if (elapsedTime > SPLIT_DELAY) {
+                    triggerSplit();
+                }
+            } 
+            else if (state === 'splitting') {
+                // Expand fragments outward
+                fragments.forEach(frag => {
+                    frag.position.lerp(frag.userData.targetPos, delta * 5);
+                    frag.rotation.x += delta * 5;
+                    frag.rotation.y += delta * 5;
+                });
+            }
+            else if (state === 'jumping') {
+                // Group Jump
+                const jumpY = Math.abs(Math.sin(elapsedTime * JUMP_SPEED)) * JUMP_HEIGHT;
+                group.position.y = jumpY;
+
+                // Individual rotations
+                fragments.forEach((frag, i) => {
+                    frag.rotation.x += delta * (2 + i * 0.1);
+                    frag.rotation.y += delta * (2 + i * 0.1);
+                });
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        // --- Resize Handler ---
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>

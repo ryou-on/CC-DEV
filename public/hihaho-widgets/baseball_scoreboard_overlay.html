@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Baseball Scoreboard Overlay</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+<style>
+    body {
+        background: transparent !important;
+        margin: 0;
+        padding: 0;
+        width: 100vw;
+        height: 100vh;
+        overflow: hidden;
+        /* Ensure clicks pass through the empty background to the video */
+        pointer-events: none;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+
+    /* Container for the draggable widget */
+    #widget-container {
+        pointer-events: auto; /* Enable clicks on the widget itself */
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        z-index: 9999;
+        user-select: none;
+        cursor: move;
+        /* Smooth transition for hover effects only, not dragging */
+        transition: transform 0.1s;
+    }
+    
+    #widget-container:active {
+        cursor: grabbing;
+        transform: scale(1.02);
+    }
+
+    /* Glassmorphism Panel */
+    .glass-panel {
+        background: rgba(15, 23, 42, 0.85);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+        border-radius: 8px;
+        color: white;
+        display: flex;
+        align-items: center;
+        overflow: hidden;
+    }
+
+    /* Text Styling */
+    .text-shadow {
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
+    }
+    
+    .score-font {
+        font-family: 'Courier New', Courier, monospace;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: -1px;
+    }
+
+    /* BSO Indicators (Ball, Strike, Out) */
+    .bso-grid {
+        display: grid;
+        grid-template-columns: 12px auto;
+        gap: 2px 6px;
+        align-items: center;
+        font-size: 10px;
+        font-weight: 800;
+    }
+
+    .dots-container {
+        display: flex;
+        gap: 3px;
+    }
+
+    .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background-color: #334155;
+        box-shadow: inset 0 1px 2px rgba(0,0,0,0.5);
+    }
+
+    /* Active states with neon glow */
+    .dot.active-b { background-color: #22c55e; box-shadow: 0 0 6px #22c55e; }
+    .dot.active-s { background-color: #eab308; box-shadow: 0 0 6px #eab308; }
+    .dot.active-o { background-color: #ef4444; box-shadow: 0 0 6px #ef4444; }
+
+    /* Diamond / Runners */
+    .diamond-container {
+        position: relative;
+        width: 36px;
+        height: 36px;
+    }
+    .base {
+        position: absolute;
+        width: 10px;
+        height: 10px;
+        background: rgba(255,255,255,0.2);
+        border: 1px solid rgba(255,255,255,0.4);
+        transform: rotate(45deg);
+    }
+    .base.active {
+        background: #facc15;
+        box-shadow: 0 0 6px #facc15;
+        border-color: #fde047;
+    }
+    /* Positioning bases */
+    .base-2 { top: 2px; left: 13px; } /* 2nd */
+    .base-1 { top: 13px; right: 2px; } /* 1st */
+    .base-3 { top: 13px; left: 2px; } /* 3rd */
+
+    /* Minimized View (Subtle Design) */
+    #minimized-view {
+        display: none;
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        background: rgba(0, 0, 0, 0.4);
+        backdrop-filter: blur(4px);
+        border: 1px solid rgba(255,255,255,0.2);
+        align-items: center;
+        justify-content: center;
+        transition: all 0.3s ease;
+        cursor: pointer;
+    }
+    
+    #minimized-view:hover {
+        background: rgba(255, 255, 255, 0.2);
+        transform: scale(1.1);
+        border-color: rgba(255,255,255,0.6);
+    }
+
+    /* Toggle Button */
+    .toggle-btn {
+        position: absolute;
+        top: -8px;
+        right: -8px;
+        background: #334155;
+        color: #94a3b8;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 10px;
+        cursor: pointer;
+        opacity: 0;
+        transition: opacity 0.2s;
+        border: 1px solid #475569;
+        z-index: 10;
+    }
+
+    #scoreboard:hover .toggle-btn {
+        opacity: 1;
+    }
+
+    .toggle-btn:hover {
+        background: #ef4444;
+        color: white;
+        border-color: #ef4444;
+    }
+
+</style>
+</head>
+<body>
+
+<!-- Draggable Container -->
+<div id="widget-container">
+    
+    <!-- FULL SCOREBOARD MODE -->
+    <div id="scoreboard" class="glass-panel p-3 gap-4 relative">
+        <!-- Close/Minimize Button -->
+        <div id="btn-minimize" class="toggle-btn">
+            <i class="fas fa-times"></i>
+        </div>
+
+        <!-- Teams & Scores -->
+        <div class="flex items-center gap-4">
+            <!-- Visitor -->
+            <div class="flex flex-col items-center w-14">
+                <span class="text-[10px] font-bold text-gray-400 tracking-wider">VISITOR</span>
+                <div class="flex justify-between w-full items-baseline">
+                    <span class="text-lg font-bold text-white tracking-wide">TIG</span>
+                    <span class="text-2xl score-font font-bold text-yellow-400 text-shadow">3</span>
+                </div>
+            </div>
+
+            <!-- Divider -->
+            <div class="h-8 w-px bg-gray-600"></div>
+
+            <!-- Home -->
+            <div class="flex flex-col items-center w-14">
+                <span class="text-[10px] font-bold text-gray-400 tracking-wider">HOME</span>
+                <div class="flex justify-between w-full items-baseline">
+                    <span class="text-lg font-bold text-white tracking-wide">GIA</span>
+                    <span class="text-2xl score-font font-bold text-white text-shadow">1</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Game Info (Inning & BSO) -->
+        <div class="flex items-center gap-3 bg-slate-800/50 rounded p-1 px-2 border border-slate-700/50">
+            <!-- Inning -->
+            <div class="flex flex-col items-center justify-center w-8">
+                <i class="fas fa-caret-up text-red-500 text-sm -mb-1"></i>
+                <span class="text-xl font-bold leading-none">5</span>
+            </div>
+
+            <!-- BSO Indicators -->
+            <div class="bso-grid">
+                <span class="text-green-500">B</span>
+                <div class="dots-container">
+                    <div class="dot active-b"></div>
+                    <div class="dot active-b"></div>
+                    <div class="dot"></div>
+                </div>
+                
+                <span class="text-yellow-500">S</span>
+                <div class="dots-container">
+                    <div class="dot active-s"></div>
+                    <div class="dot"></div>
+                </div>
+
+                <span class="text-red-500">O</span>
+                <div class="dots-container">
+                    <div class="dot active-o"></div>
+                    <div class="dot"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Runners Diamond -->
+        <div class="diamond-container">
+            <div class="base base-2 active"></div> <!-- 2nd Base Active -->
+            <div class="base base-1"></div>        <!-- 1st Base Empty -->
+            <div class="base base-3"></div>        <!-- 3rd Base Empty -->
+        </div>
+    </div>
+
+    <!-- MINIMIZED MODE (Subtle Icon) -->
+    <div id="minimized-view" title="スコアを表示">
+        <!-- Simple, subtle baseball icon -->
+        <i class="fas fa-baseball-ball text-gray-300 text-lg opacity-80"></i>
+    </div>
+
+</div>
+
+<script>
+    // Elements
+    const container = document.getElementById('widget-container');
+    const scoreboard = document.getElementById('scoreboard');
+    const minimizedView = document.getElementById('minimized-view');
+    const btnMinimize = document.getElementById('btn-minimize');
+
+    // State
+    let isDragging = false;
+    let startX, startY, initialLeft, initialTop;
+    let isMinimized = false;
+
+    // --- Toggle Visibility Logic ---
+    function toggleWidget(showScoreboard) {
+        isMinimized = !showScoreboard;
+        if (showScoreboard) {
+            scoreboard.style.display = 'flex';
+            minimizedView.style.display = 'none';
+        } else {
+            scoreboard.style.display = 'none';
+            minimizedView.style.display = 'flex';
+        }
+    }
+
+    btnMinimize.addEventListener('click', (e) => {
+        e.stopPropagation(); // Stop drag from starting
+        toggleWidget(false);
+    });
+
+    minimizedView.addEventListener('click', (e) => {
+        // Only toggle if we didn't just drag the icon
+        if (!isDragging) {
+            toggleWidget(true);
+        }
+    });
+
+    // --- Drag and Drop Logic ---
+    container.addEventListener('mousedown', (e) => {
+        // Prevent text selection or image dragging defaults
+        e.preventDefault();
+        
+        isDragging = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        
+        const rect = container.getBoundingClientRect();
+        initialLeft = rect.left;
+        initialTop = rect.top;
+        
+        // Visual feedback
+        container.style.opacity = '0.9';
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!isDragging) return;
+
+        const dx = e.clientX - startX;
+        const dy = e.clientY - startY;
+        
+        // Update position
+        container.style.left = ` + "`" + `${initialLeft + dx}px` + "`" + `;
+        container.style.top = ` + "`" + `${initialTop + dy}px` + "`" + `;
+    });
+
+    document.addEventListener('mouseup', (e) => {
+        if (isDragging) {
+            isDragging = false;
+            container.style.opacity = '1';
+        }
+    });
+</script>
+
+</body>
+</html>

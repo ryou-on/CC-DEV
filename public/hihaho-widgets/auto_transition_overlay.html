@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Transition Overlay</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background: transparent !important;
+            overflow: hidden;
+        }
+
+        /* Base overlay container */
+        #app {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* Let clicks pass through to video */
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            z-index: 50;
+        }
+
+        /* HUD Styles */
+        .hud-text {
+            font-family: 'Courier New', monospace;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.9);
+            font-weight: bold;
+        }
+
+        /* --- Animations --- */
+
+        /* 1. Flash Transition */
+        @keyframes flashAnim {
+            0% { opacity: 0; background-color: white; }
+            10% { opacity: 1; }
+            100% { opacity: 0; background-color: white; }
+        }
+        .effect-flash {
+            animation: flashAnim 0.8s ease-out forwards;
+        }
+
+        /* 2. Fade Black Transition */
+        @keyframes fadeBlackAnim {
+            0% { opacity: 0; background-color: black; }
+            40% { opacity: 1; }
+            60% { opacity: 1; }
+            100% { opacity: 0; background-color: black; }
+        }
+        .effect-fade-black {
+            animation: fadeBlackAnim 1.5s ease-in-out forwards;
+        }
+
+        /* 3. Slide Wipe */
+        @keyframes slideWipeAnim {
+            0% { transform: translateX(-100%); }
+            40% { transform: translateX(0); }
+            60% { transform: translateX(0); }
+            100% { transform: translateX(100%); }
+        }
+        .effect-slide-wipe {
+            background-color: #f59e0b; /* Amber */
+            animation: slideWipeAnim 1.2s cubic-bezier(0.7, 0, 0.3, 1) forwards;
+        }
+
+        /* 4. Shutter (Top/Bottom) */
+        .shutter-panel {
+            position: absolute;
+            left: 0;
+            width: 100%;
+            height: 50%;
+            background-color: #111;
+            transition: transform 0.4s ease-in-out;
+            z-index: 60;
+        }
+        .shutter-top { top: 0; transform: translateY(-100%); }
+        .shutter-bottom { bottom: 0; transform: translateY(100%); }
+        
+        .effect-shutter .shutter-top {
+            animation: shutterCloseOpenTop 1.5s ease-in-out forwards;
+        }
+        .effect-shutter .shutter-bottom {
+            animation: shutterCloseOpenBottom 1.5s ease-in-out forwards;
+        }
+
+        @keyframes shutterCloseOpenTop {
+            0% { transform: translateY(-100%); }
+            40% { transform: translateY(0); }
+            60% { transform: translateY(0); }
+            100% { transform: translateY(-100%); }
+        }
+        @keyframes shutterCloseOpenBottom {
+            0% { transform: translateY(100%); }
+            40% { transform: translateY(0); }
+            60% { transform: translateY(0); }
+            100% { transform: translateY(100%); }
+        }
+
+        /* 5. Glitch RGB Split */
+        @keyframes glitchAnim {
+            0% { transform: translate(0); filter: hue-rotate(0deg); opacity: 0; }
+            10% { opacity: 1; }
+            20% { transform: translate(-5px, 5px); filter: hue-rotate(90deg) blur(2px); }
+            40% { transform: translate(5px, -5px); filter: invert(1); }
+            60% { transform: translate(-5px, 0); filter: hue-rotate(-90deg); }
+            80% { transform: translate(5px, 0); filter: none; opacity: 1; }
+            100% { transform: translate(0); opacity: 0; }
+        }
+        .effect-glitch {
+            background: rgba(255, 0, 0, 0.3);
+            mix-blend-mode: hard-light;
+            animation: glitchAnim 0.6s steps(5) forwards;
+        }
+
+        /* Transition Layer */
+        #transition-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 40;
+            pointer-events: none;
+        }
+
+    </style>
+</head>
+<body>
+    <!-- Main Application Container -->
+    <div id="app">
+        <!-- Top HUD -->
+        <div class="w-full p-4 flex justify-between items-start">
+            <div class="flex flex-col gap-1">
+                <div class="flex items-center gap-2">
+                    <div id="rec-dot" class="w-3 h-3 rounded-full bg-red-600 animate-pulse"></div>
+                    <span class="hud-text text-red-500 text-sm tracking-widest">REC</span>
+                </div>
+                <span id="timer-display" class="hud-text text-white text-xs opacity-70">00:00:00:00</span>
+            </div>
+            <div class="text-right">
+                <div class="hud-text text-yellow-400 text-xs uppercase tracking-wider">Next Effect</div>
+                <div id="next-effect-name" class="hud-text text-white text-xl uppercase tracking-tighter drop-shadow-lg">WAITING...</div>
+            </div>
+        </div>
+
+        <!-- Center Area (Empty for visibility) -->
+
+        <!-- Bottom HUD -->
+        <div class="w-full p-6 flex flex-col gap-2">
+            <!-- Progress Bar -->
+            <div class="w-full h-1 bg-gray-800 bg-opacity-50 rounded overflow-hidden">
+                <div id="progress-bar" class="h-full bg-cyan-400 shadow-[0_0_10px_cyan] w-0"></div>
+            </div>
+            <div class="flex justify-between items-end">
+                <span class="hud-text text-cyan-400 text-xs opacity-80">AUTO-TRANSITION ENABLED</span>
+                <span class="hud-text text-white text-xs opacity-50">ID: A-884</span>
+            </div>
+        </div>
+
+        <!-- Transition Layer (Where effects happen) -->
+        <div id="transition-layer"></div>
+        
+        <!-- Special Shutter Elements (Hidden by default) -->
+        <div id="shutter-top" class="shutter-panel shutter-top"></div>
+        <div id="shutter-bottom" class="shutter-panel shutter-bottom"></div>
+    </div>
+
+    <script>
+        const EFFECTS = [
+            { name: 'FLASH CUT', type: 'flash', duration: 800 },
+            { name: 'FADE BLACK', type: 'fade-black', duration: 1500 },
+            { name: 'SLIDE WIPE', type: 'slide-wipe', duration: 1200 },
+            { name: 'SHUTTER', type: 'shutter', duration: 1500 },
+            { name: 'DIGITAL GLITCH', type: 'glitch', duration: 600 }
+        ];
+
+        let currentEffectIndex = 0;
+        let startTime = Date.now();
+        const CYCLE_DURATION = 8000; // 8 seconds
+
+        const progressBar = document.getElementById('progress-bar');
+        const transitionLayer = document.getElementById('transition-layer');
+        const nextEffectName = document.getElementById('next-effect-name');
+        const timerDisplay = document.getElementById('timer-display');
+        const shutterTop = document.getElementById('shutter-top');
+        const shutterBottom = document.getElementById('shutter-bottom');
+
+        // Helper to pick random effect excluding the current one
+        function getNextEffect() {
+            let nextIndex;
+            do {
+                nextIndex = Math.floor(Math.random() * EFFECTS.length);
+            } while (nextIndex === currentEffectIndex && EFFECTS.length > 1);
+            currentEffectIndex = nextIndex;
+            return EFFECTS[nextIndex];
+        }
+
+        let nextEffect = getNextEffect();
+        nextEffectName.innerText = nextEffect.name;
+
+        function triggerEffect(effect) {
+            // Reset styles
+            transitionLayer.className = '';
+            void transitionLayer.offsetWidth; // Trigger reflow
+            
+            // Special handling for shutter
+            if (effect.type === 'shutter') {
+                const container = document.getElementById('app');
+                container.classList.add('effect-shutter');
+                setTimeout(() => {
+                    container.classList.remove('effect-shutter');
+                }, effect.duration);
+            } else {
+                // Standard CSS class effects
+                transitionLayer.classList.add(`effect-${effect.type}`);
+                
+                // Cleanup class after animation
+                setTimeout(() => {
+                    transitionLayer.classList.remove(`effect-${effect.type}`);
+                }, effect.duration);
+            }
+        }
+
+        function update() {
+            const now = Date.now();
+            const elapsed = now - startTime;
+            const progress = (elapsed % CYCLE_DURATION) / CYCLE_DURATION;
+
+            // Update Progress Bar
+            progressBar.style.width = `${progress * 100}%`;
+
+            // Update Timer Text (HH:MM:SS:ms)
+            const t = new Date(elapsed);
+            const ms = Math.floor(t.getMilliseconds() / 10).toString().padStart(2, '0');
+            const ss = t.getSeconds().toString().padStart(2, '0');
+            const mm = t.getMinutes().toString().padStart(2, '0');
+            timerDisplay.innerText = `00:${mm}:${ss}:${ms}`;
+
+            // Check for cycle completion
+            if (elapsed >= CYCLE_DURATION) {
+                // Trigger the prepared effect
+                triggerEffect(nextEffect);
+
+                // Reset cycle
+                startTime = now;
+                
+                // Prepare next effect
+                nextEffect = getNextEffect();
+                nextEffectName.innerText = nextEffect.name;
+                
+                // Visual flair: flash the text
+                nextEffectName.classList.add('text-yellow-400');
+                setTimeout(() => nextEffectName.classList.remove('text-yellow-400'), 500);
+            }
+
+            requestAnimationFrame(update);
+        }
+
+        // Initialize
+        requestAnimationFrame(update);
+
+    </script>
+</body>
+</html>

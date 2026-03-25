@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Feedback Overlay</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body, html {
+            background-color: transparent !important;
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        /* Glassmorphism Base */
+        .glass {
+            background: rgba(20, 20, 20, 0.75);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            color: white;
+        }
+
+        /* High Contrast Text */
+        .text-shadow {
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
+        }
+
+        /* Markers on Video */
+        .marker {
+            position: absolute;
+            width: 24px;
+            height: 24px;
+            background: rgba(255, 0, 85, 0.9);
+            border: 2px solid white;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(255, 0, 85, 0.8);
+            transition: transform 0.2s, background 0.2s;
+            z-index: 30;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-weight: bold;
+        }
+
+        .marker:hover {
+            transform: translate(-50%, -50%) scale(1.2);
+            background: #ff0055;
+            z-index: 40;
+        }
+
+        .marker.active {
+            background: #00ffcc;
+            box-shadow: 0 0 15px #00ffcc;
+            border-color: #000;
+            color: #000;
+        }
+
+        /* Tooltip for comments */
+        .tooltip {
+            visibility: hidden;
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.9);
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 4px;
+            white-space: nowrap;
+            font-size: 12px;
+            z-index: 50;
+            border: 1px solid rgba(255,255,255,0.2);
+            opacity: 0;
+            transition: opacity 0.2s;
+            pointer-events: none;
+        }
+
+        .marker:hover .tooltip {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        /* Animation */
+        @keyframes popIn {
+            from { transform: scale(0); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+
+        .animate-pop {
+            animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        /* Scrollbar for list */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(255,255,255,0.05);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.2);
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Click Capture Layer -->
+    <div id="click-layer" class="absolute inset-0 z-10 cursor-crosshair"></div>
+
+    <!-- Container for Markers -->
+    <div id="markers-container" class="absolute inset-0 pointer-events-none z-20"></div>
+
+    <!-- Input Modal (Floating) -->
+    <div id="input-modal" class="hidden fixed z-50 glass rounded-lg p-4 w-64 animate-pop flex-col gap-2">
+        <div class="flex justify-between items-center mb-1">
+            <span class="text-xs font-mono text-cyan-300" id="modal-time">00:00</span>
+            <button id="close-modal" class="text-gray-400 hover:text-white"><i class="fas fa-times"></i></button>
+        </div>
+        <textarea id="comment-input" class="w-full bg-black/50 border border-gray-600 rounded p-2 text-white text-sm focus:outline-none focus:border-cyan-400 placeholder-gray-500" rows="3" placeholder="コメントを入力..."></textarea>
+        <button id="save-comment" class="w-full bg-cyan-600 hover:bg-cyan-500 text-white py-1 rounded text-sm font-bold transition">保存</button>
+    </div>
+
+    <!-- Main Control Panel -->
+    <div class="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-80 glass rounded-xl p-4 z-40 flex flex-col gap-4 transition-all duration-300" id="control-panel">
+        
+        <!-- Header / Timer -->
+        <div class="flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <button id="toggle-timer" class="w-10 h-10 rounded-full bg-green-600 hover:bg-green-500 flex items-center justify-center text-white transition shadow-lg">
+                    <i class="fas fa-play" id="play-icon"></i>
+                </button>
+                <div class="flex flex-col">
+                    <span class="text-xs text-gray-400 uppercase tracking-wider">Timer</span>
+                    <span id="timer-display" class="text-2xl font-mono font-bold text-white text-shadow">00:00</span>
+                </div>
+            </div>
+            <div class="flex gap-2">
+                 <button id="toggle-list" class="p-2 text-gray-300 hover:text-white" title="リスト表示">
+                    <i class="fas fa-list"></i>
+                </button>
+                <button id="clear-all" class="p-2 text-red-400 hover:text-red-300" title="全てクリア">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- URL Display (Read only or editable) -->
+        <div class="relative">
+            <i class="fas fa-link absolute left-2 top-2 text-gray-500 text-xs"></i>
+            <input type="text" id="video-url" class="w-full bg-black/40 border border-gray-700 rounded pl-8 pr-2 py-1 text-xs text-gray-300 focus:border-cyan-500 focus:outline-none" placeholder="動画URL (自動取得)">
+        </div>
+
+        <!-- Comment List (Collapsible) -->
+        <div id="comment-list-container" class="hidden flex-col gap-2 max-h-40 overflow-y-auto mt-2 border-t border-gray-700 pt-2">
+            <p class="text-center text-gray-500 text-xs py-2">コメントはまだありません</p>
+        </div>
+
+        <!-- IO Actions -->
+        <div class="grid grid-cols-2 gap-2 mt-2">
+            <button id="export-json" class="bg-blue-600/80 hover:bg-blue-500 text-white py-2 rounded text-sm flex items-center justify-center gap-2 transition">
+                <i class="fas fa-download"></i> JSON出力
+            </button>
+            <label class="bg-gray-700/80 hover:bg-gray-600 text-white py-2 rounded text-sm flex items-center justify-center gap-2 cursor-pointer transition">
+                <i class="fas fa-upload"></i> JSON読込
+                <input type="file" id="import-json" accept=".json" class="hidden">
+            </label>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let isRecording = false;
+        let startTime = 0;
+        let elapsedTime = 0;
+        let timerInterval = null;
+        let feedbacks = [];
+        let tempClickData = null;
+
+        // DOM Elements
+        const clickLayer = document.getElementById('click-layer');
+        const markersContainer = document.getElementById('markers-container');
+        const inputModal = document.getElementById('input-modal');
+        const commentInput = document.getElementById('comment-input');
+        const saveBtn = document.getElementById('save-comment');
+        const closeModalBtn = document.getElementById('close-modal');
+        const timerDisplay = document.getElementById('timer-display');
+        const toggleTimerBtn = document.getElementById('toggle-timer');
+        const playIcon = document.getElementById('play-icon');
+        const modalTime = document.getElementById('modal-time');
+        const exportBtn = document.getElementById('export-json');
+        const importInput = document.getElementById('import-json');
+        const videoUrlInput = document.getElementById('video-url');
+        const listContainer = document.getElementById('comment-list-container');
+        const toggleListBtn = document.getElementById('toggle-list');
+        const clearBtn = document.getElementById('clear-all');
+
+        // Initialize URL
+        videoUrlInput.value = window.location.href;
+
+        // Formatting Time (MM:SS)
+        const formatTime = (seconds) => {
+            const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+            const s = Math.floor(seconds % 60).toString().padStart(2, '0');
+            return `${m}:${s}`;
+        };
+
+        // Timer Logic
+        const toggleTimer = () => {
+            if (isRecording) {
+                // Pause
+                clearInterval(timerInterval);
+                isRecording = false;
+                playIcon.classList.remove('fa-pause');
+                playIcon.classList.add('fa-play');
+                toggleTimerBtn.classList.replace('bg-yellow-600', 'bg-green-600');
+            } else {
+                // Start
+                const now = Date.now();
+                startTime = now - (elapsedTime * 1000);
+                timerInterval = setInterval(() => {
+                    elapsedTime = (Date.now() - startTime) / 1000;
+                    timerDisplay.textContent = formatTime(elapsedTime);
+                }, 100);
+                isRecording = true;
+                playIcon.classList.remove('fa-play');
+                playIcon.classList.add('fa-pause');
+                toggleTimerBtn.classList.replace('bg-green-600', 'bg-yellow-600');
+            }
+        };
+
+        toggleTimerBtn.addEventListener('click', toggleTimer);
+
+        // Click on Screen -> Open Modal
+        clickLayer.addEventListener('click', (e) => {
+            // Pause timer if running for easier commenting
+            const wasPlaying = isRecording;
+            if (isRecording) toggleTimer();
+
+            const rect = clickLayer.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / rect.width) * 100;
+            const y = ((e.clientY - rect.top) / rect.height) * 100;
+            
+            tempClickData = { x, y, time: elapsedTime };
+            
+            // Position Modal near click but keep in viewport
+            inputModal.style.left = Math.min(e.clientX + 10, window.innerWidth - 270) + 'px';
+            inputModal.style.top = Math.min(e.clientY + 10, window.innerHeight - 200) + 'px';
+            inputModal.classList.remove('hidden');
+            
+            modalTime.textContent = formatTime(elapsedTime);
+            commentInput.value = '';
+            commentInput.focus();
+
+            // Restore playback state logic on close if desired, 
+            // strictly speaking we leave it paused so user can resume manually.
+        });
+
+        // Save Comment
+        saveBtn.addEventListener('click', () => {
+            const text = commentInput.value.trim();
+            if (!text) return;
+
+            const feedback = {
+                id: Date.now().toString(),
+                time: tempClickData.time,
+                x: tempClickData.x,
+                y: tempClickData.y,
+                text: text,
+                url: videoUrlInput.value
+            };
+
+            feedbacks.push(feedback);
+            renderMarker(feedback);
+            renderList();
+            closeModal();
+        });
+
+        const closeModal = () => {
+            inputModal.classList.add('hidden');
+            tempClickData = null;
+        };
+
+        closeModalBtn.addEventListener('click', closeModal);
+
+        // Render Marker
+        const renderMarker = (data) => {
+            const el = document.createElement('div');
+            el.className = 'marker animate-pop pointer-events-auto';
+            el.style.left = `${data.x}%`;
+            el.style.top = `${data.y}%`;
+            el.innerHTML = `
+                <i class="fas fa-comment-dots text-white"></i>
+                <div class="tooltip">
+                    <span class="font-mono text-cyan-300">${formatTime(data.time)}</span><br>
+                    ${data.text}
+                </div>
+            `;
+            
+            // Jump to time on click (Visual simulation)
+            el.addEventListener('click', (e) => {
+                e.stopPropagation(); // prevent opening new modal
+                alert(`Time: ${formatTime(data.time)}\nComment: ${data.text}`);
+                // Logic to seek video would go here
+            });
+
+            markersContainer.appendChild(el);
+        };
+
+        // Render List
+        const renderList = () => {
+            listContainer.innerHTML = '';
+            if (feedbacks.length === 0) {
+                listContainer.innerHTML = '<p class="text-center text-gray-500 text-xs py-2">コメントなし</p>';
+                return;
+            }
+            
+            // Sort by time
+            feedbacks.sort((a, b) => a.time - b.time).forEach(fb => {
+                const item = document.createElement('div');
+                item.className = 'bg-white/10 p-2 rounded text-xs flex justify-between items-start hover:bg-white/20 transition cursor-pointer';
+                item.innerHTML = `
+                    <div>
+                        <span class="text-cyan-400 font-mono font-bold mr-2">${formatTime(fb.time)}</span>
+                        <span class="text-white">${fb.text}</span>
+                    </div>
+                    <button class="text-red-400 hover:text-red-200 ml-2" onclick="deleteFeedback('${fb.id}')">
+                        <i class="fas fa-times"></i>
+                    </button>
+                `;
+                // Highlight marker on hover
+                item.addEventListener('mouseenter', () => {
+                    // Find marker and add active class (simplified since we don't link DOM explicitly, usually we map by ID)
+                });
+                listContainer.appendChild(item);
+            });
+        };
+
+        // Global delete function
+        window.deleteFeedback = (id) => {
+            feedbacks = feedbacks.filter(f => f.id !== id);
+            // Re-render everything
+            markersContainer.innerHTML = '';
+            feedbacks.forEach(renderMarker);
+            renderList();
+        };
+
+        // Toggle List
+        toggleListBtn.addEventListener('click', () => {
+            listContainer.classList.toggle('hidden');
+            listContainer.classList.toggle('flex');
+        });
+
+        // Clear All
+        clearBtn.addEventListener('click', () => {
+            if(confirm('全てのコメントを削除しますか？')) {
+                feedbacks = [];
+                markersContainer.innerHTML = '';
+                renderList();
+                elapsedTime = 0;
+                timerDisplay.textContent = "00:00";
+                if(isRecording) toggleTimer(); // Stop timer
+            }
+        });
+
+        // Export JSON
+        exportBtn.addEventListener('click', () => {
+            const dataStr = JSON.stringify(feedbacks, null, 2);
+            const blob = new Blob([dataStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `video_feedback_${Date.now()}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        });
+
+        // Import JSON
+        importInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const json = JSON.parse(event.target.result);
+                    if (Array.isArray(json)) {
+                        feedbacks = json;
+                        markersContainer.innerHTML = '';
+                        feedbacks.forEach(renderMarker);
+                        renderList();
+                        alert(`${feedbacks.length}件のコメントを読み込みました。`);
+                        
+                        // Optionally set timer to last feedback time or 0
+                        // elapsedTime = 0;
+                        // timerDisplay.textContent = formatTime(0);
+                    } else {
+                        alert('無効なJSON形式です。');
+                    }
+                } catch (err) {
+                    console.error(err);
+                    alert('ファイルの読み込みに失敗しました。');
+                }
+            };
+            reader.readAsText(file);
+            // Reset input so same file can be selected again
+            e.target.value = '';
+        });
+
+    </script>
+</body>
+</html>

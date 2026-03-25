@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ICD-11 Learning Companion - Memo Widget</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.05);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(0, 86, 151, 0.5);
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(0, 86, 151, 0.7);
+        }
+
+        /* Glassmorphism Utilities */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
+            border-left: 1px solid rgba(255, 255, 255, 0.4);
+        }
+
+        .glass-sidebar {
+            background: rgba(0, 48, 87, 0.85); /* WHO Blue variant */
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            box-shadow: 4px 0 24px rgba(0,0,0,0.2);
+        }
+
+        /* Animations */
+        .slide-in {
+            animation: slideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        .fade-in {
+            animation: fadeIn 0.3s ease-out forwards;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Base Transparent Body */
+        body {
+            background: transparent !important;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif;
+        }
+        
+        /* Memo Specific Styles */
+        .memo-textarea {
+            background-image: linear-gradient(transparent, transparent 31px, #e5e7eb 31px);
+            background-size: 100% 32px;
+            line-height: 32px;
+            scrollbar-color: rgba(0, 86, 151, 0.5) rgba(0, 0, 0, 0.05);
+            scrollbar-width: thin;
+        }
+
+        /* Floating Button Animation */
+        .btn-bounce:active {
+            transform: scale(0.95);
+        }
+    </style>
+</head>
+<body class="h-screen w-screen flex select-none">
+
+    <!-- Left Sidebar (Always Visible) -->
+    <nav class="glass-sidebar w-20 flex flex-col items-center py-6 h-full z-50 transition-all duration-300">
+        <!-- Logo / Home -->
+        <div class="mb-8 group relative">
+            <div class="w-12 h-12 bg-white rounded-full flex items-center justify-center text-[#005697] text-xl font-bold shadow-lg cursor-pointer hover:scale-110 transition-transform">
+                ICD
+            </div>
+            <span class="absolute left-14 top-2 bg-black/80 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                ICD-11 Learning Hub
+            </span>
+        </div>
+
+        <!-- Navigation Tabs -->
+        <div class="flex-1 flex flex-col space-y-6 w-full items-center">
+            <!-- Generated dynamically via JS -->
+            <div id="nav-container" class="flex flex-col gap-6 w-full items-center"></div>
+        </div>
+
+        <!-- External Link -->
+        <a href="https://icd.who.int/" target="_blank" class="mt-auto mb-4 text-white/70 hover:text-white transition-colors flex flex-col items-center gap-1 group">
+            <i class="fa-solid fa-globe text-xl"></i>
+            <span class="text-[10px]">WHO.int</span>
+        </a>
+    </nav>
+
+    <!-- Main Content Area (Overlay) -->
+    <main class="flex-1 relative overflow-hidden flex pointer-events-none">
+        <!-- Content Panel (Slide-out) -->
+        <div id="content-panel" class="hidden pointer-events-auto absolute right-0 top-0 h-full w-full md:w-[600px] lg:w-[800px] glass-panel flex-col z-40">
+            
+            <!-- Header -->
+            <div class="h-16 border-b border-gray-200/50 flex items-center justify-between px-6 bg-white/50">
+                <h2 id="panel-title" class="text-xl font-bold text-[#003d69] flex items-center gap-3">
+                    <!-- Title injected here -->
+                </h2>
+                <button onclick="closePanel()" class="w-8 h-8 rounded-full bg-gray-100 hover:bg-red-100 text-gray-500 hover:text-red-500 flex items-center justify-center transition-colors">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
+
+            <!-- Content Body -->
+            <div class="flex-1 overflow-hidden p-6 md:p-8 flex flex-col text-gray-700 leading-relaxed">
+                <!-- Context injected here -->
+                <div id="panel-body" class="h-full flex flex-col relative"></div>
+                
+                <!-- Action Area (Standard modules only) -->
+                <div id="action-container" class="mt-auto pt-6 border-t border-gray-200 hidden">
+                    <h4 class="text-sm font-bold text-gray-500 uppercase tracking-wide mb-3">Action Item</h4>
+                    <div class="bg-[#005697]/5 border-l-4 border-[#005697] p-4 rounded-r">
+                        <p id="panel-action" class="text-sm text-[#003d69] font-medium"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Overlay Backdrop (Click to close) -->
+        <div id="backdrop" onclick="closePanel()" class="hidden pointer-events-auto absolute inset-0 bg-black/20 backdrop-blur-[1px] -z-10"></div>
+    </main>
+
+    <script>
+        const modules = [
+            {
+                id: 1,
+                title: "1. ICD-11の構造把握",
+                icon: "fa-sitemap",
+                summary: "ICD-11の全体構造と階層を明確に理解する。",
+                detail: "<p>ICD-11は、医学的知識の進歩に対応するために完全にデジタル化された構造を持っています。</p><ul class='list-disc list-inside mt-2 space-y-2'><li><strong>階層構造:</strong> 章(Chapter) > ブロック(Block) > カテゴリ(Category)の流れを確認してください。</li><li><strong>URI識別子:</strong> 各疾患には固有のURIが割り当てられています。</li><li><strong>多重親構造:</strong> 1つの疾患が複数の系統に属することが可能です。</li></ul>",
+                action: "ICD-11ブラウザを開き、任意の疾患の階層ツリーを確認してください。"
+            },
+            {
+                id: 2,
+                title: "2. 目的・利点の理解",
+                icon: "fa-bullseye",
+                summary: "なぜICD-11を使用するのか、そのメリットを把握する。",
+                detail: "<p>従来のICD-10と比較して、ICD-11は以下の点で優れています。</p><div class='grid grid-cols-2 gap-2 mt-3'><div class='bg-white p-3 rounded shadow-sm'><strong>デジタル親和性</strong><br><span class='text-xs'>EHR/EMRへの統合が容易</span></div><div class='bg-white p-3 rounded shadow-sm'><strong>最新医学の反映</strong><br><span class='text-xs'>希少疾患、抗菌薬耐性などの詳細化</span></div></div>",
+                action: "臨床現場や研究において、ICD-11導入によるメリットを1つ挙げてみましょう。"
+            },
+            {
+                id: 3,
+                title: "3. Foundation vs MMS",
+                icon: "fa-layer-group",
+                summary: "ファウンデーションとMMS(死亡・疾病統計)の違いを説明できる。",
+                detail: "<p><strong>Foundation Component (基盤):</strong> ICDの全エンティティを含む巨大な意味ネットワーク。同義語や定義を含みます。</p><p class='mt-4'><strong>MMS (Mortality and Morbidity Statistics):</strong> 統計報告のためにFoundationから抽出された線形分類（従来のリスト形式）。</p>",
+                action: "『Foundationはデータベース、MMSは統計出力用のビュー』という関係性を図解でイメージしてください。"
+            },
+            {
+                id: 4,
+                title: "4. 分類規則と拡張コード",
+                icon: "fa-puzzle-piece",
+                summary: "MMSの分類規則と、ポストコーディネーション（拡張コード）の活用。",
+                detail: "<p>ICD-11の最大の特徴は<strong>ポストコーディネーション（Post-coordination）</strong>です。</p><p class='mt-2'>ステムコード（基本病名）に、エクステンションコード（重症度、部位、原因など）を『&』で結合して詳細な病態を記述します。</p><div class='mt-2 bg-gray-100 p-2 rounded font-mono text-sm'>例: 肺炎 (Stem) & 重症度 (Extension)</div>",
+                action: "エクステンションコードを使用して、『左側の・急性の』症状を表現する組み合わせを試してください。"
+            },
+            {
+                id: 5,
+                title: "5. コーディングの実践",
+                icon: "fa-laptop-medical",
+                summary: "コーディングツールおよびブラウザを用いた分類作業。",
+                detail: "<p>WHOが提供する公式コーディングツールを使用し、自然言語入力から正しいコードを導き出すプロセスを習得します。</p><ul class='list-decimal list-inside mt-2 space-y-1'><li>検索語句の入力</li><li>候補の絞り込み（ワードリスト）</li><li>チャプターノートの確認</li><li>最終コードの確定</li></ul>",
+                action: "WHO Coding Toolにアクセスし、『2型糖尿病』を検索してコードを特定してください。"
+            },
+            {
+                id: 6,
+                title: "6. メンテナンス体制",
+                icon: "fa-tools",
+                summary: "ICD-11の更新・提案プラットフォームについて。",
+                detail: "<p>ICD-11は静的な書籍ではなく、継続的に更新されるプラットフォームです。</p><p class='mt-2'>ユーザーは『Proposal Tool』を通じて、分類の修正や新しい疾患の追加を提案することができます。提案は専門家委員会によって審査されます。</p>",
+                action: "オレンジ色のメンテナンスプラットフォームのアイコンを識別し、提案のワークフローを確認してください。"
+            },
+            {
+                id: 7,
+                title: "7. 学習メモ (Notes)",
+                icon: "fa-pen-to-square",
+                summary: "学習記録・メモ",
+                detail: "MEMO_MODE", // Special flag
+                action: "アイコンをクリックして保存・消去を操作します。"
+            }
+        ];
+
+        const navContainer = document.getElementById('nav-container');
+        const panel = document.getElementById('content-panel');
+        const panelTitle = document.getElementById('panel-title');
+        const panelBody = document.getElementById('panel-body');
+        const panelAction = document.getElementById('panel-action');
+        const actionContainer = document.getElementById('action-container');
+        const backdrop = document.getElementById('backdrop');
+        let activeId = null;
+
+        // Render Sidebar Tabs
+        modules.forEach(mod => {
+            const btn = document.createElement('div');
+            btn.className = `w-12 h-12 rounded-xl flex items-center justify-center cursor-pointer transition-all duration-300 hover:bg-white/20 relative group ${activeId === mod.id ? 'bg-white text-[#005697] shadow-lg scale-105' : 'text-white/80'}`;
+            btn.onclick = () => openPanel(mod.id);
+            
+            // Icon
+            btn.innerHTML = `<i class="fa-solid ${mod.icon} text-lg"></i>`;
+
+            // Tooltip (Hover)
+            const tooltip = document.createElement('div');
+            tooltip.className = "absolute left-16 bg-[#005697] text-white text-xs px-3 py-2 rounded shadow-xl opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 pointer-events-none font-bold tracking-wide border border-white/10";
+            const tooltipText = mod.title.includes('.') ? mod.title.split('.')[1].trim() : mod.title;
+            tooltip.innerText = tooltipText;
+            btn.appendChild(tooltip);
+
+            // Selection Indicator
+            const indicator = document.createElement('div');
+            indicator.id = `indicator-${mod.id}`;
+            indicator.className = "absolute -left-[2px] h-8 w-1 bg-cyan-400 rounded-r opacity-0 transition-opacity";
+            btn.appendChild(indicator);
+
+            navContainer.appendChild(btn);
+        });
+
+        function openPanel(id) {
+            const mod = modules.find(m => m.id === id);
+            if (!mod) return;
+
+            activeId = id;
+            updateActiveTab(id);
+
+            // Update Title
+            panelTitle.innerHTML = `<i class="fa-solid ${mod.icon} text-[#0099cc]"></i> <span>${mod.title}</span>`;
+            
+            // Reset panel body
+            panelBody.innerHTML = '';
+
+            // Handle Content Body
+            if (mod.detail === "MEMO_MODE") {
+                // --- MEMO MODE ---
+                renderMemoInterface(mod);
+                actionContainer.classList.add('hidden');
+            } else {
+                // --- STANDARD MODE ---
+                panelBody.innerHTML = `<h3 class="text-lg font-bold text-[#005697] mb-2">${mod.summary}</h3><div class="overflow-y-auto pr-2">` + mod.detail + `</div>`;
+                panelAction.innerText = mod.action;
+                actionContainer.classList.remove('hidden');
+            }
+
+            // Show Panel
+            panel.classList.remove('hidden');
+            panel.classList.add('flex', 'slide-in');
+            backdrop.classList.remove('hidden');
+        }
+
+        function renderMemoInterface(mod) {
+            const savedMemo = localStorage.getItem('icd11-memo-content') || '';
+            
+            // Main Flex Container
+            const container = document.createElement('div');
+            container.className = 'flex flex-col h-full w-full';
+
+            // Instructions
+            const info = document.createElement('p');
+            info.className = 'text-sm text-gray-500 mb-2';
+            info.innerHTML = '<i class="fa-regular fa-circle-check text-[#005697]"></i> 学習中の気づきや疑問点を自由に記述してください。長い文章もスクロールして確認できます。';
+            container.appendChild(info);
+
+            // Textarea Wrapper (for scroll)
+            const wrapper = document.createElement('div');
+            wrapper.className = 'flex-1 relative mb-4 shadow-inner rounded-xl overflow-hidden border border-blue-100 bg-white/60 focus-within:ring-2 focus-within:ring-cyan-400/30 transition-all';
+            
+            const textarea = document.createElement('textarea');
+            textarea.id = 'user-memo';
+            textarea.className = 'w-full h-full p-6 text-[#003d69] text-base font-medium bg-transparent outline-none resize-none memo-textarea overflow-y-auto';
+            textarea.placeholder = 'ここにメモを入力...';
+            textarea.value = savedMemo;
+            
+            // Auto-save
+            textarea.addEventListener('input', (e) => {
+                localStorage.setItem('icd11-memo-content', e.target.value);
+            });
+
+            wrapper.appendChild(textarea);
+            container.appendChild(wrapper);
+
+            // Icon Toolbar
+            const toolbar = document.createElement('div');
+            toolbar.className = 'flex items-center justify-end gap-4 pt-2 border-t border-gray-100';
+
+            // Clear Button
+            const clearBtn = createIconButton(
+                'fa-trash-can',
+                'bg-white text-gray-400 border border-gray-200 hover:bg-red-50 hover:text-red-500 hover:border-red-200',
+                '消去 (Clear)',
+                clearMemo
+            );
+
+            // Save/Download Button
+            const downloadBtn = createIconButton(
+                'fa-file-arrow-down',
+                'bg-[#005697] text-white hover:bg-[#00447a] hover:shadow-cyan-500/30',
+                '保存 (Download)',
+                downloadMemo
+            );
+
+            toolbar.appendChild(clearBtn);
+            toolbar.appendChild(downloadBtn);
+            container.appendChild(toolbar);
+
+            panelBody.appendChild(container);
+        }
+
+        function createIconButton(iconClass, colorClass, tooltipText, onClickHandler) {
+            const btn = document.createElement('button');
+            btn.className = `w-14 h-14 rounded-full flex items-center justify-center shadow-md transition-all duration-200 btn-bounce group relative ${colorClass}`;
+            btn.onclick = onClickHandler;
+            btn.innerHTML = `<i class="fa-solid ${iconClass} text-xl"></i>`;
+            
+            // Tooltip
+            const tooltip = document.createElement('span');
+            tooltip.className = 'absolute -top-10 bg-gray-800 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10';
+            tooltip.innerText = tooltipText;
+            btn.appendChild(tooltip);
+
+            return btn;
+        }
+
+        function downloadMemo() {
+            const content = document.getElementById('user-memo').value;
+            if (!content.trim()) {
+                alert('メモが空のため保存できません。');
+                return;
+            }
+            
+            const blob = new Blob([content], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `ICD-11_Memo_${new Date().toISOString().slice(0,10)}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function clearMemo() {
+            if(confirm('メモを完全に消去しますか？\n(この操作は元に戻せません)')) {
+                localStorage.removeItem('icd11-memo-content');
+                const textarea = document.getElementById('user-memo');
+                if(textarea) textarea.value = '';
+            }
+        }
+
+        function closePanel() {
+            activeId = null;
+            updateActiveTab(null);
+            
+            panel.classList.add('hidden');
+            panel.classList.remove('flex', 'slide-in');
+            backdrop.classList.add('hidden');
+        }
+
+        function updateActiveTab(id) {
+            Array.from(navContainer.children).forEach(btn => {
+                btn.classList.remove('bg-white', 'text-[#005697]', 'shadow-lg', 'scale-105');
+                btn.classList.add('text-white/80');
+                const ind = btn.querySelector('[id^="indicator-"]');
+                if(ind) ind.classList.add('opacity-0');
+            });
+
+            if (id !== null) {
+                const targetIndex = modules.findIndex(m => m.id === id);
+                const targetBtn = navContainer.children[targetIndex];
+                if (targetBtn) {
+                    targetBtn.classList.remove('text-white/80');
+                    targetBtn.classList.add('bg-white', 'text-[#005697]', 'shadow-lg', 'scale-105');
+                    const ind = targetBtn.querySelector(`#indicator-${id}`);
+                    if(ind) ind.classList.remove('opacity-0');
+                }
+            }
+        }
+    </script>
+</body>
+</html>

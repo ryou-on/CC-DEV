@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Learning Feedback Overlay</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: transparent !important;
+        }
+
+        /* Glassmorphism Base */
+        .glass-panel {
+            background: rgba(20, 20, 25, 0.75);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            border-radius: 16px;
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+
+        /* Text readability */
+        .text-shadow {
+            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+        }
+
+        /* Button Hover Effects */
+        .reaction-btn {
+            transition: transform 0.1s, background-color 0.2s;
+        }
+        .reaction-btn:active {
+            transform: scale(0.9);
+        }
+
+        /* Floating Animations for Feedback */
+        @keyframes floatUp {
+            0% {
+                transform: translateY(0) scale(0.5);
+                opacity: 0;
+            }
+            10% {
+                opacity: 1;
+                transform: translateY(-10px) scale(1.1);
+            }
+            100% {
+                transform: translateY(-100px) scale(1);
+                opacity: 0;
+            }
+        }
+
+        .floating-reaction {
+            position: absolute;
+            pointer-events: none;
+            animation: floatUp 2s ease-out forwards;
+            font-size: 1.5rem;
+            z-index: 50;
+        }
+
+        /* Timeline / Heatmap visualizer */
+        .timeline-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            opacity: 0.8;
+            box-shadow: 0 0 4px rgba(255,255,255,0.5);
+        }
+
+        /* Minimization States */
+        .widget-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 300px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            transform-origin: bottom right;
+        }
+
+        .widget-container.minimized {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            overflow: hidden;
+            padding: 0;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+
+        /* Hide inner elements when minimized */
+        .widget-container.minimized .widget-content {
+            opacity: 0;
+            pointer-events: none;
+            position: absolute;
+        }
+
+        .widget-container.minimized .minimize-icon {
+            display: flex;
+        }
+
+        /* Show only minimize icon when minimized */
+        .minimize-icon {
+            display: none;
+            font-size: 1.5rem;
+            color: white;
+            width: 100%;
+            height: 100%;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #6366f1, #a855f7);
+        }
+
+        /* Scrollbar hide */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Reaction Spawner Container (Global) -->
+    <div id="reaction-area" class="fixed inset-0 pointer-events-none overflow-hidden z-40"></div>
+
+    <!-- Widget Container -->
+    <div id="widget" class="widget-container glass-panel p-4 z-50">
+        
+        <!-- Minimized State Icon (Hidden by default) -->
+        <div class="minimize-icon" onclick="toggleWidget()">
+            <i class="fa-solid fa-chart-line"></i>
+        </div>
+
+        <!-- Full Content -->
+        <div class="widget-content flex flex-col w-full h-full">
+            <!-- Header -->
+            <div class="flex justify-between items-center mb-3">
+                <h2 class="text-white font-bold text-sm tracking-wide text-shadow">
+                    <i class="fa-solid fa-graduation-cap text-indigo-400 mr-2"></i>学習フィードバック
+                </h2>
+                <button onclick="toggleWidget()" class="text-gray-400 hover:text-white transition-colors">
+                    <i class="fa-solid fa-minus"></i>
+                </button>
+            </div>
+
+            <!-- Visualization Area (Timeline) -->
+            <div class="relative w-full h-8 bg-black/40 rounded-full mb-4 overflow-hidden border border-white/10">
+                <div id="timeline-container" class="w-full h-full relative">
+                    <!-- Dots will be appended here -->
+                    <div class="absolute left-0 top-0 h-full w-1 bg-red-500/50" id="playhead"></div>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="grid grid-cols-3 gap-2 mb-2">
+                <button onclick="sendReaction('insight', '💡', '#facc15')" 
+                    class="reaction-btn flex flex-col items-center justify-center p-3 rounded-xl bg-gray-700/50 hover:bg-yellow-500/20 border border-white/5">
+                    <span class="text-2xl mb-1">💡</span>
+                    <span class="text-xs text-white font-medium">なるほど</span>
+                </button>
+                
+                <button onclick="sendReaction('question', '❓', '#f472b6')" 
+                    class="reaction-btn flex flex-col items-center justify-center p-3 rounded-xl bg-gray-700/50 hover:bg-pink-500/20 border border-white/5">
+                    <span class="text-2xl mb-1">❓</span>
+                    <span class="text-xs text-white font-medium">質問</span>
+                </button>
+
+                <button onclick="sendReaction('important', '⭐', '#60a5fa')" 
+                    class="reaction-btn flex flex-col items-center justify-center p-3 rounded-xl bg-gray-700/50 hover:bg-blue-500/20 border border-white/5">
+                    <span class="text-2xl mb-1">⭐</span>
+                    <span class="text-xs text-white font-medium">重要</span>
+                </button>
+            </div>
+
+            <!-- Mini Stats / Log -->
+            <div class="mt-2">
+                <div class="text-xs text-gray-300 flex justify-between px-1">
+                    <span>気づき合計:</span>
+                    <span id="count-display" class="font-mono font-bold text-white">0</span>
+                </div>
+                <div id="recent-log" class="h-6 mt-1 text-xs text-cyan-300 truncate text-center opacity-80">
+                    <!-- Recent action text appears here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let totalReactions = 0;
+        let isMinimized = false;
+        const widget = document.getElementById('widget');
+        const countDisplay = document.getElementById('count-display');
+        const recentLog = document.getElementById('recent-log');
+        const timeline = document.getElementById('timeline-container');
+        
+        // Dummy playhead movement to simulate video progress
+        const playhead = document.getElementById('playhead');
+        let progress = 0;
+        setInterval(() => {
+            progress += 0.1;
+            if(progress > 100) progress = 0;
+            playhead.style.left = progress + '%';
+        }, 100);
+
+        function toggleWidget() {
+            isMinimized = !isMinimized;
+            if (isMinimized) {
+                widget.classList.add('minimized');
+            } else {
+                widget.classList.remove('minimized');
+            }
+        }
+
+        function sendReaction(type, emoji, color) {
+            // 1. Update Counter
+            totalReactions++;
+            countDisplay.innerText = totalReactions;
+
+            // 2. Spawn Floating Visual
+            spawnFloatingEmoji(emoji, widget.getBoundingClientRect());
+
+            // 3. Add to Timeline
+            addTimelineDot(color);
+
+            // 4. Update Log Text
+            const messages = {
+                'insight': '「なるほど」と感じました！',
+                'question': '疑問点が記録されました',
+                'important': '重要ポイントをマークしました'
+            };
+            recentLog.innerText = messages[type];
+            recentLog.style.animation = 'none';
+            recentLog.offsetHeight; /* trigger reflow */
+            recentLog.style.animation = 'fadeIn 0.5s';
+        }
+
+        function spawnFloatingEmoji(emoji, rect) {
+            const el = document.createElement('div');
+            el.classList.add('floating-reaction');
+            el.innerText = emoji;
+            
+            // Randomize start position slightly around the center of the widget
+            const randomX = (Math.random() - 0.5) * 50;
+            
+            // Position based on widget location (bottom right generally)
+            // Using fixed positioning relative to viewport
+            if (isMinimized) {
+                 el.style.left = (rect.left + 20) + 'px';
+                 el.style.top = (rect.top) + 'px';
+            } else {
+                 // Center of the widget area
+                 el.style.left = (rect.left + rect.width / 2 + randomX) + 'px';
+                 el.style.top = (rect.top) + 'px';
+            }
+
+            document.getElementById('reaction-area').appendChild(el);
+
+            // Cleanup
+            setTimeout(() => {
+                el.remove();
+            }, 2000);
+        }
+
+        function addTimelineDot(color) {
+            const dot = document.createElement('div');
+            dot.classList.add('timeline-dot');
+            dot.style.backgroundColor = color;
+            
+            // Place at current "progress" (simulated)
+            dot.style.left = progress + '%';
+            
+            timeline.appendChild(dot);
+
+            // Optional: Limit number of dots in DOM
+            if (timeline.children.length > 50) {
+                timeline.removeChild(timeline.children[1]); // keep playhead (index 0)
+            }
+        }
+    </script>
+</body>
+</html>

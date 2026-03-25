@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Disaster Alert Overlay</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background-color: transparent !important;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: 'Noto Sans JP', sans-serif;
+        }
+
+        /* Glassmorphism & Shadows for Visibility */
+        .glass-panel {
+            backdrop-filter: blur(4px);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+        }
+
+        /* Text Shadow for readability against video */
+        .text-glow {
+            text-shadow: 0 2px 4px rgba(0,0,0,0.9);
+        }
+
+        /* Animations */
+        @keyframes flashRed {
+            0%, 100% { background-color: rgba(220, 38, 38, 0.95); }
+            50% { background-color: rgba(185, 28, 28, 0.95); }
+        }
+
+        @keyframes flashPurple {
+            0%, 100% { background-color: #aa00aa; }
+            50% { background-color: #ff00ff; }
+        }
+
+        @keyframes pulseBorder {
+            0% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7); }
+            70% { box-shadow: 0 0 0 20px rgba(255, 0, 0, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 0, 0, 0); }
+        }
+
+        @keyframes popIn {
+            0% { transform: scale(0.8) translateY(-20px); opacity: 0; }
+            100% { transform: scale(1) translateY(0); opacity: 1; }
+        }
+
+        .animate-flash-red {
+            animation: flashRed 1s infinite;
+        }
+
+        .animate-flash-purple {
+            animation: flashPurple 0.8s infinite;
+        }
+
+        .animate-pop-in {
+            animation: popIn 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+
+        /* Custom Grid Pattern for Tech Feel */
+        .bg-grid-pattern {
+            background-image: linear-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255, 255, 255, 0.1) 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
+        /* Hidden Initial State */
+        #alert-container {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Alert Container: Positioned Top Right -->
+    <div id="alert-container" class="fixed top-4 right-4 z-50 w-[90%] max-w-md md:w-auto flex flex-col items-end gap-2">
+        
+        <!-- Dynamic Content injected via JS -->
+        <div id="alert-content" class="w-full md:w-96 rounded-lg overflow-hidden border-2 border-white/50 shadow-2xl animate-pop-in">
+            <!-- Content goes here -->
+        </div>
+
+    </div>
+
+    <script>
+        // Configuration
+        const START_DELAY_MS = 10000; // 10 seconds initial wait
+        const TSUNAMI_DELAY_MS = 30000; // 30 seconds after earthquake
+
+        const container = document.getElementById('alert-container');
+        const content = document.getElementById('alert-content');
+
+        // Template: Earthquake (J-Alert Style)
+        const earthquakeTemplate = `
+            <div class="animate-flash-red p-4 md:p-5 text-white bg-grid-pattern">
+                <div class="flex items-center justify-between border-b-2 border-white/40 pb-2 mb-2">
+                    <span class="text-yellow-300 font-black text-xl md:text-2xl tracking-widest text-glow">緊急地震速報</span>
+                    <span class="bg-yellow-400 text-red-900 text-xs md:text-sm font-bold px-2 py-1 rounded animate-pulse">速報</span>
+                </div>
+                <div class="flex flex-col gap-1">
+                    <div class="flex items-center gap-2">
+                        <svg class="w-8 h-8 md:w-10 md:h-10 text-yellow-300 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                        <span class="text-2xl md:text-4xl font-black tracking-tighter text-glow">強い揺れに警戒</span>
+                    </div>
+                    <p class="text-sm md:text-lg font-bold mt-1 text-white/90 text-glow">千葉県沖で地震発生。身の安全を確保してください。</p>
+                </div>
+            </div>
+        `;
+
+        // Template: Tsunami (NHK Purple/Magenta Style)
+        const tsunamiTemplate = `
+            <div class="animate-flash-purple border-4 border-yellow-400 p-4 md:p-6 text-white">
+                <div class="flex flex-col items-center justify-center text-center">
+                    <div class="bg-yellow-400 text-black font-black text-xl md:text-3xl px-4 py-1 mb-3 rounded-full shadow-lg tracking-widest">
+                        津波警報
+                    </div>
+                    <div class="flex flex-col gap-2">
+                        <h1 class="text-4xl md:text-6xl font-black tracking-tighter text-glow leading-none">
+                            すぐに逃げて！
+                        </h1>
+                        <h2 class="text-xl md:text-3xl font-bold bg-black/50 px-2 rounded text-yellow-300">
+                            TSUNAMI WARNING
+                        </h2>
+                        <p class="text-base md:text-xl font-bold mt-2 text-white text-glow">
+                            高い所へ避難してください！海岸から離れて！
+                        </p>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // Helper: Play sound effect (Visual simulation via console/DOM for this context)
+        function playAlertEffect() {
+            // In a real scenario, an Audio object would be played here.
+            // Since we can't bundle audio files reliably in a text response,
+            // we rely on the aggressive CSS animations.
+            console.log("Playing Alert Sound Effect");
+        }
+
+        // Function: Show Earthquake Alert
+        function triggerEarthquake() {
+            container.style.display = 'flex';
+            content.innerHTML = earthquakeTemplate;
+            playAlertEffect();
+
+            // Schedule Tsunami Alert
+            setTimeout(triggerTsunami, TSUNAMI_DELAY_MS);
+        }
+
+        // Function: Show Tsunami Alert
+        function triggerTsunami() {
+            // Transition Effect
+            content.style.opacity = '0';
+            setTimeout(() => {
+                content.innerHTML = tsunamiTemplate;
+                content.style.opacity = '1';
+                content.classList.remove('animate-pop-in'); // Reset animation
+                void content.offsetWidth; // Trigger reflow
+                content.classList.add('animate-pop-in'); // Re-run animation
+                playAlertEffect();
+            }, 200);
+        }
+
+        // Main Timeline
+        window.onload = () => {
+            setTimeout(triggerEarthquake, START_DELAY_MS);
+        };
+
+    </script>
+</body>
+</html>

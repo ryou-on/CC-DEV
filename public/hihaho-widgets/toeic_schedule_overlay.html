@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TOEIC Calendar Widget</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            background: transparent !important;
+            font-family: 'Noto Sans JP', sans-serif;
+            overflow: hidden;
+            height: 100%;
+            width: 100%;
+        }
+
+        /* Glassmorphism Utilities */
+        .glass-panel {
+            background: rgba(20, 20, 30, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+        }
+
+        .glass-btn {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0));
+            backdrop-filter: blur(4px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+        }
+
+        .glass-btn:hover {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.05));
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0,0,0,0.2);
+            border-color: rgba(255, 255, 255, 0.6);
+        }
+
+        /* Calendar Leaf Style */
+        .date-card {
+            transition: transform 0.2s, background 0.2s;
+            cursor: pointer;
+        }
+        .date-card:hover {
+            transform: scale(1.05);
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        /* Text Shadows for readability over video */
+        .text-shadow {
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0,0,0,0.1);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.3);
+            border-radius: 3px;
+        }
+
+        /* Animations */
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-slide-up {
+            animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+    </style>
+</head>
+<body class="pointer-events-none flex flex-col justify-end items-end p-4 sm:p-8">
+
+    <!-- Main Layout Container (Allows clicking only on elements) -->
+    <div class="pointer-events-auto relative z-50 flex flex-col items-end gap-4">
+
+        <!-- Calendar Modal (Hidden by default) -->
+        <div id="calendarModal" class="hidden origin-bottom-right transition-all duration-300 transform scale-95 opacity-0">
+            <div class="glass-panel rounded-2xl p-6 w-[90vw] max-w-md max-h-[70vh] flex flex-col text-white animate-slide-up">
+                
+                <!-- Header -->
+                <div class="flex justify-between items-center mb-4 border-b border-white/20 pb-2">
+                    <div>
+                        <h2 class="text-xl font-bold flex items-center gap-2">
+                            <i class="fa-regular fa-calendar-check text-yellow-400"></i>
+                            <span class="text-shadow">TOEIC 試験日程</span>
+                        </h2>
+                        <p class="text-xs text-gray-300 mt-1">2026年2月以降 (予測含む)</p>
+                    </div>
+                    <button onclick="toggleCalendar()" class="text-white/70 hover:text-white transition-colors p-1">
+                        <i class="fa-solid fa-xmark text-xl"></i>
+                    </button>
+                </div>
+
+                <!-- Content Area -->
+                <div class="overflow-y-auto pr-1 space-y-3" id="scheduleContainer">
+                    <!-- JS will populate this -->
+                </div>
+
+                <!-- Footer CTA -->
+                <div class="mt-4 pt-3 border-t border-white/20 text-center">
+                    <a href="https://www.iibc-global.org/toeic/test/lr/guide01/schedule.html" target="_blank" class="text-xs text-blue-300 hover:text-blue-100 underline decoration-dotted">
+                        公式サイトで最新情報を確認 <i class="fa-solid fa-external-link-alt ml-1"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Trigger Button -->
+        <button id="toggleBtn" onclick="toggleCalendar()" class="glass-btn rounded-full px-6 py-3 flex items-center gap-3 text-white font-bold group">
+            <div class="bg-yellow-500 text-black rounded-full w-8 h-8 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                <i class="fa-solid fa-calendar-days"></i>
+            </div>
+            <div class="flex flex-col items-start">
+                <span class="text-xs uppercase tracking-wider opacity-80">Check Schedule</span>
+                <span class="text-sm text-shadow">試験日程を見る</span>
+            </div>
+        </button>
+
+    </div>
+
+    <script>
+        // Mock Data: Since we cannot scrape in real-time within this static file generation,
+        // we are simulating the extraction of dates from 2026/02 onwards based on typical TOEIC Sunday schedules.
+        const toeicData = [
+            { date: '2026-02-22', type: '第3xx回', color: 'border-l-4 border-blue-400' },
+            { date: '2026-03-15', type: '第3xx回', color: 'border-l-4 border-green-400' },
+            { date: '2026-04-19', type: '第3xx回', color: 'border-l-4 border-pink-400' },
+            { date: '2026-05-24', type: '第3xx回', color: 'border-l-4 border-purple-400' },
+            { date: '2026-06-28', type: '第3xx回', color: 'border-l-4 border-orange-400' },
+            { date: '2026-07-26', type: '第3xx回', color: 'border-l-4 border-blue-400' },
+        ];
+
+        const container = document.getElementById('scheduleContainer');
+        const modal = document.getElementById('calendarModal');
+        const toggleBtn = document.getElementById('toggleBtn');
+        let isOpen = false;
+
+        // Helper to format date
+        function formatDate(dateStr) {
+            const d = new Date(dateStr);
+            const month = d.getMonth() + 1;
+            const day = d.getDate();
+            const weekDays = ['日', '月', '火', '水', '木', '金', '土'];
+            const w = weekDays[d.getDay()];
+            return { month, day, w };
+        }
+
+        // Render items
+        function renderSchedule() {
+            container.innerHTML = '';
+            toeicData.forEach(item => {
+                const { month, day, w } = formatDate(item.date);
+                
+                // URL Logic: Pointing to the specific schedule anchor if possible, or main page
+                const linkUrl = "https://www.iibc-global.org/toeic/test/lr/guide01/schedule.html";
+
+                const html = `
+                    <a href="${linkUrl}" target="_blank" class="block">
+                        <div class="date-card bg-white/5 p-3 rounded-lg flex items-center justify-between ${item.color} border-white/10 border-t border-b border-r">
+                            <div class="flex items-center gap-4">
+                                <!-- Calendar Leaf Icon Style -->
+                                <div class="flex flex-col items-center justify-center bg-white/10 rounded w-12 h-12 shadow-inner border border-white/10">
+                                    <span class="text-[10px] uppercase font-bold text-red-300 leading-none">${month}月</span>
+                                    <span class="text-xl font-black leading-none mt-1">${day}</span>
+                                </div>
+                                <div class="flex flex-col">
+                                    <span class="text-sm font-bold text-white">TOEIC L&R 公開テスト</span>
+                                    <span class="text-xs text-gray-300">${item.date.replace(/-/g, '/')} (${w})</span>
+                                </div>
+                            </div>
+                            <div class="text-white/50">
+                                <i class="fa-solid fa-chevron-right"></i>
+                            </div>
+                        </div>
+                    </a>
+                `;
+                container.innerHTML += html;
+            });
+        }
+
+        function toggleCalendar() {
+            isOpen = !isOpen;
+            if (isOpen) {
+                modal.classList.remove('hidden');
+                // Small delay to allow display:block to apply before opacity transition
+                setTimeout(() => {
+                    modal.classList.remove('scale-95', 'opacity-0');
+                    modal.classList.add('scale-100', 'opacity-100');
+                }, 10);
+                toggleBtn.classList.add('opacity-0', 'pointer-events-none');
+            } else {
+                modal.classList.remove('scale-100', 'opacity-100');
+                modal.classList.add('scale-95', 'opacity-0');
+                setTimeout(() => {
+                    modal.classList.add('hidden');
+                }, 300);
+                toggleBtn.classList.remove('opacity-0', 'pointer-events-none');
+            }
+        }
+
+        // Initialize
+        renderSchedule();
+
+    </script>
+</body>
+</html>

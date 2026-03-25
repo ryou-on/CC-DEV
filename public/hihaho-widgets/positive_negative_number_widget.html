@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>正負の数 HUD Widget</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background-color: transparent !important;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: 'Noto Sans JP', sans-serif;
+            /* Prevent selection for better touch experience */
+            user-select: none;
+        }
+
+        /* Custom Glassmorphism */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        /* High Contrast Text Shadow */
+        .text-glow {
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.5), 0 2px 4px rgba(0,0,0,0.9);
+        }
+
+        .number-tick {
+            position: relative;
+            height: 20px;
+            width: 2px;
+            background-color: rgba(255, 255, 255, 0.5);
+            transition: all 0.3s ease;
+        }
+
+        .number-tick.major {
+            height: 30px;
+            background-color: white;
+            width: 3px;
+        }
+
+        .player-marker {
+            transition: left 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+            filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.8));
+        }
+
+        /* Positive/Negative Area Highlights */
+        .zone-negative {
+            background: linear-gradient(90deg, rgba(59, 130, 246, 0.2) 0%, rgba(59, 130, 246, 0) 100%);
+        }
+        .zone-positive {
+            background: linear-gradient(90deg, rgba(239, 68, 68, 0) 0%, rgba(239, 68, 68, 0.2) 100%);
+        }
+
+        /* Button Press Effect */
+        .btn-press:active {
+            transform: scale(0.95);
+        }
+    </style>
+</head>
+<body class="w-full h-screen flex flex-col justify-end pb-8">
+
+    <!-- Main Widget Container -->
+    <div class="w-[95%] max-w-4xl mx-auto glass-panel rounded-2xl p-4 md:p-6 text-white relative overflow-visible">
+        
+        <!-- Header / Question Area -->
+        <div class="flex justify-between items-center mb-6">
+            <div class="flex flex-col">
+                <span class="text-xs md:text-sm text-cyan-300 uppercase tracking-widest font-bold mb-1 opacity-80">Current Mission</span>
+                <div id="question-display" class="text-2xl md:text-4xl font-black text-glow">
+                    0 からスタート！
+                </div>
+            </div>
+            <div class="text-right">
+                <div class="text-xs text-gray-300">現在地</div>
+                <div id="current-value" class="text-3xl md:text-5xl font-black text-yellow-400 text-glow">0</div>
+            </div>
+        </div>
+
+        <!-- Number Line Visual -->
+        <div class="relative w-full h-24 flex items-center mb-6">
+            <!-- Background Line -->
+            <div class="absolute w-full h-1 bg-gray-500 rounded flex">
+                <div class="w-1/2 h-full zone-negative rounded-l"></div>
+                <div class="w-1/2 h-full zone-positive rounded-r"></div>
+            </div>
+            
+            <!-- Ticks Container -->
+            <div class="absolute w-full h-full flex justify-between items-center px-4" id="ticks-container">
+                <!-- JS generated ticks will go here -->
+            </div>
+
+            <!-- Player Marker (Absolute positioned based on %) -->
+            <div id="player" class="player-marker absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-10 h-10 md:w-14 md:h-14 bg-white rounded-full border-4 border-indigo-600 z-20 flex items-center justify-center text-indigo-900 font-bold text-lg md:text-xl shadow-lg">
+                <span id="player-inner-text">0</span>
+            </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <button onclick="move(-1)" class="btn-press bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded-xl shadow-lg border-b-4 border-blue-800 transition flex items-center justify-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7" />
+                </svg>
+                -1 (左へ)
+            </button>
+            
+            <button onclick="move(1)" class="btn-press bg-red-600 hover:bg-red-500 text-white font-bold py-3 px-4 rounded-xl shadow-lg border-b-4 border-red-800 transition flex items-center justify-center gap-2">
+                +1 (右へ)
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                </svg>
+            </button>
+
+            <button onclick="generateProblem()" class="btn-press bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-4 rounded-xl shadow-lg border-b-4 border-emerald-800 transition md:col-start-4">
+                新しい問題
+            </button>
+             <button onclick="resetPosition()" class="btn-press bg-gray-600 hover:bg-gray-500 text-white font-bold py-3 px-4 rounded-xl shadow-lg border-b-4 border-gray-800 transition md:col-start-3">
+                リセット (0)
+            </button>
+        </div>
+
+        <!-- Visual Hints Overlay -->
+        <div id="message-toast" class="absolute top-2 left-1/2 -translate-x-1/2 bg-yellow-400 text-black px-4 py-1 rounded-full text-sm font-bold opacity-0 transition-opacity duration-300 pointer-events-none shadow-xl">
+            正解！
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const MIN = -10;
+        const MAX = 10;
+        let currentPos = 0;
+        let targetPos = null;
+        let isChallengeMode = false;
+
+        // DOM Elements
+        const playerEl = document.getElementById('player');
+        const playerInnerEl = document.getElementById('player-inner-text');
+        const currentValEl = document.getElementById('current-value');
+        const ticksContainer = document.getElementById('ticks-container');
+        const questionEl = document.getElementById('question-display');
+        const messageToast = document.getElementById('message-toast');
+
+        // Initialize Ticks
+        function initTicks() {
+            ticksContainer.innerHTML = '';
+            const range = MAX - MIN;
+            
+            for (let i = MIN; i <= MAX; i++) {
+                const tickWrapper = document.createElement('div');
+                tickWrapper.className = 'flex flex-col items-center justify-center h-full w-4 relative';
+                
+                // Position calculation
+                const percent = ((i - MIN) / range) * 100;
+                tickWrapper.style.position = 'absolute';
+                tickWrapper.style.left = `calc(${percent}% - 8px)`; // -8px to center width
+
+                const isZero = i === 0;
+                const isMajor = i % 5 === 0;
+
+                const line = document.createElement('div');
+                line.className = `number-tick ${isMajor ? 'major' : ''} ${isZero ? 'bg-yellow-400 h-10 w-1' : ''}`;
+                
+                const label = document.createElement('span');
+                label.innerText = i;
+                label.className = `absolute top-8 text-xs md:text-sm font-bold ${isZero ? 'text-yellow-400 text-base' : 'text-gray-300'}`;
+
+                tickWrapper.appendChild(line);
+                tickWrapper.appendChild(label);
+                ticksContainer.appendChild(tickWrapper);
+            }
+            updateVisuals();
+        }
+
+        // Core Logic
+        function move(amount) {
+            const nextPos = currentPos + amount;
+            if (nextPos >= MIN && nextPos <= MAX) {
+                currentPos = nextPos;
+                updateVisuals();
+                checkAnswer();
+            } else {
+                // Bump animation effect if out of bounds
+                playerEl.classList.add('scale-110', 'bg-red-500');
+                setTimeout(() => playerEl.classList.remove('scale-110', 'bg-red-500'), 150);
+            }
+        }
+
+        function resetPosition() {
+            currentPos = 0;
+            targetPos = null;
+            isChallengeMode = false;
+            questionEl.innerHTML = "0 からスタート！";
+            questionEl.className = "text-2xl md:text-4xl font-black text-glow text-white";
+            updateVisuals();
+        }
+
+        function updateVisuals() {
+            const range = MAX - MIN;
+            const percent = ((currentPos - MIN) / range) * 100;
+            
+            playerEl.style.left = `${percent}%`;
+            playerInnerEl.innerText = currentPos;
+            currentValEl.innerText = currentPos > 0 ? `+${currentPos}` : currentPos;
+
+            // Color coding based on positive/negative
+            if (currentPos > 0) {
+                currentValEl.className = "text-3xl md:text-5xl font-black text-red-400 text-glow";
+                playerEl.classList.replace('border-indigo-600', 'border-red-500');
+                playerEl.classList.replace('border-cyan-500', 'border-red-500');
+                playerEl.classList.replace('border-gray-400', 'border-red-500');
+            } else if (currentPos < 0) {
+                currentValEl.className = "text-3xl md:text-5xl font-black text-cyan-400 text-glow";
+                playerEl.classList.replace('border-indigo-600', 'border-cyan-500');
+                playerEl.classList.replace('border-red-500', 'border-cyan-500');
+                playerEl.classList.replace('border-gray-400', 'border-cyan-500');
+            } else {
+                currentValEl.className = "text-3xl md:text-5xl font-black text-yellow-400 text-glow";
+                playerEl.classList.remove('border-red-500', 'border-cyan-500');
+                playerEl.classList.add('border-gray-400');
+            }
+        }
+
+        function generateProblem() {
+            isChallengeMode = true;
+            // Generate a simple addition problem resulting within bounds
+            // Format: Start + Add = Result
+            const start = Math.floor(Math.random() * (MAX/2 - MIN/2 + 1)) + MIN/2; // roughly -5 to 5
+            currentPos = Math.floor(start);
+            
+            // Decide target
+            let moveAmount = 0;
+            do {
+                moveAmount = Math.floor(Math.random() * 10) - 5; // -5 to 5
+            } while (moveAmount === 0 || currentPos + moveAmount < MIN || currentPos + moveAmount > MAX);
+
+            targetPos = currentPos + moveAmount;
+            
+            // Format text: e.g. "(-3) + (+5) = ?"
+            const startStr = currentPos < 0 ? `(${currentPos})` : currentPos;
+            const moveStr = moveAmount < 0 ? `(${moveAmount})` : `(+${moveAmount})`;
+            
+            questionEl.innerHTML = `<span class="text-gray-300">${startStr}</span> + <span class="text-yellow-300">${moveStr}</span> = ?`;
+            questionEl.className = "text-2xl md:text-4xl font-black text-glow";
+            
+            updateVisuals();
+        }
+
+        function checkAnswer() {
+            if (isChallengeMode && currentPos === targetPos) {
+                showToast("正解！ Great Job!");
+                questionEl.innerHTML = questionEl.innerHTML.replace('?', `<span class="text-green-400">${currentPos}</span>`);
+                isChallengeMode = false; // Problem solved
+            }
+        }
+
+        function showToast(msg) {
+            messageToast.innerText = msg;
+            messageToast.style.opacity = '1';
+            messageToast.style.transform = 'translate(-50%, -10px)';
+            setTimeout(() => {
+                messageToast.style.opacity = '0';
+                messageToast.style.transform = 'translate(-50%, 0)';
+            }, 2000);
+        }
+
+        // Init
+        initTicks();
+        // Default starting styles
+        playerEl.classList.add('border-gray-400');
+
+    </script>
+</body>
+</html>

@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scratch Card Overlay</title>
+<style>
+  body, html {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent !important;
+    overflow: hidden;
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+  }
+  #widget-container {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+  }
+  canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    cursor: pointer;
+    touch-action: none;
+    z-index: 10;
+  }
+  #instruction {
+    position: absolute;
+    z-index: 20;
+    text-align: center;
+    pointer-events: none;
+    transition: opacity 0.5s ease;
+  }
+  .instruction-title {
+    color: #ffffff;
+    font-size: clamp(3rem, 8vw, 6rem);
+    font-weight: 900;
+    letter-spacing: 0.1em;
+    text-shadow: 0 4px 15px rgba(0,0,0,0.8), 0 0 20px rgba(255,255,255,0.4);
+    margin-bottom: 0.5rem;
+  }
+  .instruction-subtitle {
+    color: #ffffff;
+    font-size: clamp(1rem, 3vw, 1.5rem);
+    font-weight: bold;
+    text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+    background: rgba(0, 0, 0, 0.4);
+    padding: 0.5rem 1.5rem;
+    border-radius: 999px;
+    backdrop-filter: blur(4px);
+    display: inline-block;
+  }
+</style>
+</head>
+<body>
+
+<div id="widget-container">
+  <div id="instruction">
+    <div class="instruction-title">SCRATCH</div>
+    <div class="instruction-subtitle">画面をなぞって削ってください</div>
+  </div>
+  <canvas id="scratch-pad"></canvas>
+</div>
+
+<script>
+  const canvas = document.getElementById('scratch-pad');
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const instruction = document.getElementById('instruction');
+  let isDrawing = false;
+  let lastX = 0;
+  let lastY = 0;
+  let isCleared = false;
+  let brushSize = 80;
+
+  function initCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    canvas.style.transition = 'none';
+    canvas.style.opacity = '1';
+    canvas.style.pointerEvents = 'auto';
+    isCleared = false;
+    instruction.style.opacity = '1';
+
+    brushSize = Math.max(100, Math.min(canvas.width, canvas.height) * 0.2);
+
+    ctx.globalCompositeOperation = 'source-over';
+    const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+    gradient.addColorStop(0, '#9ca3af');
+    gradient.addColorStop(0.3, '#d1d5db');
+    gradient.addColorStop(0.5, '#f3f4f6');
+    gradient.addColorStop(0.7, '#d1d5db');
+    gradient.addColorStop(1, '#9ca3af');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+    for (let i = -canvas.height; i < canvas.width; i += 30) {
+      ctx.beginPath();
+      ctx.moveTo(i, 0);
+      ctx.lineTo(i + canvas.height, canvas.height);
+      ctx.stroke();
+    }
+
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = brushSize;
+  }
+
+  function getMousePos(e) {
+    const rect = canvas.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return {
+      x: clientX - rect.left,
+      y: clientY - rect.top
+    };
+  }
+
+  function startPosition(e) {
+    if (isCleared) return;
+    isDrawing = true;
+    const pos = getMousePos(e);
+    lastX = pos.x;
+    lastY = pos.y;
+    scratch(e);
+    instruction.style.opacity = '0'; 
+  }
+
+  function endPosition() {
+    if (!isDrawing) return;
+    isDrawing = false;
+    ctx.beginPath();
+    setTimeout(checkScratchPercentage, 50);
+  }
+
+  function scratch(e) {
+    if (!isDrawing || isCleared) return;
+    if (e.cancelable) e.preventDefault(); 
+    
+    const pos = getMousePos(e);
+    ctx.beginPath();
+    ctx.moveTo(lastX, lastY);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.stroke();
+    
+    lastX = pos.x;
+    lastY = pos.y;
+  }
+
+  function checkScratchPercentage() {
+    if (isCleared) return;
+    
+    const stride = 15; 
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const pixels = imageData.data;
+    let transparentCount = 0;
+    let totalSamples = 0;
+    
+    for (let i = 3; i < pixels.length; i += 4 * stride) {
+      if (pixels[i] < 128) {
+        transparentCount++;
+      }
+      totalSamples++;
+    }
+    
+    const percentage = (transparentCount / totalSamples) * 100;
+    
+    if (percentage > 40) {
+      isCleared = true;
+      canvas.style.transition = 'opacity 1s ease-out';
+      canvas.style.opacity = '0';
+      canvas.style.pointerEvents = 'none'; 
+    }
+  }
+
+  let resizeTimer;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(initCanvas, 200);
+  });
+
+  canvas.addEventListener('mousedown', startPosition);
+  canvas.addEventListener('mouseup', endPosition);
+  canvas.addEventListener('mousemove', scratch);
+  canvas.addEventListener('mouseleave', endPosition);
+
+  canvas.addEventListener('touchstart', startPosition, { passive: false });
+  canvas.addEventListener('touchend', endPosition);
+  canvas.addEventListener('touchmove', scratch, { passive: false });
+  canvas.addEventListener('touchcancel', endPosition);
+
+  initCanvas();
+</script>
+</body>
+</html>

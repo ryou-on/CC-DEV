@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Shapes & Colors Game</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@700;900&display=swap" rel="stylesheet">
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: transparent !important;
+      overflow: hidden;
+      font-family: 'M PLUS Rounded 1c', sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    /* Text Styling for visibility over video */
+    .video-text {
+      color: white;
+      text-shadow: 3px 3px 0px #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
+    }
+    
+    /* Glassmorphism Panel */
+    .glass-panel {
+      background: rgba(255, 255, 255, 0.25);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 2px solid rgba(255, 255, 255, 0.6);
+      box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+    }
+
+    /* Shape Interactions */
+    .game-shape {
+      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+      cursor: pointer;
+      filter: drop-shadow(0px 5px 5px rgba(0,0,0,0.5));
+    }
+    .game-shape:active {
+      transform: scale(0.9);
+    }
+    .game-shape:hover {
+      transform: scale(1.1);
+    }
+
+    /* Animations */
+    @keyframes bounce-in {
+      0% { transform: scale(0); opacity: 0; }
+      60% { transform: scale(1.1); opacity: 1; }
+      100% { transform: scale(1); }
+    }
+    .animate-bounce-in {
+      animation: bounce-in 0.6s ease-out forwards;
+    }
+
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-10px); }
+      75% { transform: translateX(10px); }
+    }
+    .animate-shake {
+      animation: shake 0.3s ease-in-out;
+    }
+
+    @keyframes pop {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.4); }
+      100% { transform: scale(1); }
+    }
+    .animate-pop {
+      animation: pop 0.3s ease-in-out;
+    }
+
+    /* Confetti fallback simplified */
+    .confetti {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      background-color: #f00;
+      animation: fall linear forwards;
+    }
+    @keyframes fall {
+      to { transform: translateY(100vh) rotate(720deg); }
+    }
+  </style>
+</head>
+<body class="flex flex-col items-center justify-center relative pointer-events-none">
+
+  <!-- Main Game Container -->
+  <div id="game-container" class="w-full max-w-4xl h-full flex flex-col items-center justify-between p-4 pointer-events-auto">
+    
+    <!-- Header / Score -->
+    <div class="w-full flex justify-between items-start">
+      <div class="glass-panel rounded-full px-6 py-2 flex items-center gap-2">
+        <span class="text-3xl">⭐</span>
+        <span id="score" class="text-4xl font-black text-yellow-300 drop-shadow-md stroke-black">0</span>
+      </div>
+      <button onclick="resetGame()" class="glass-panel rounded-full p-2 active:scale-90 transition-transform">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-white drop-shadow-md" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+        </svg>
+      </button>
+    </div>
+
+    <!-- Question Area -->
+    <div id="question-area" class="flex flex-col items-center mt-4 transition-all duration-500">
+      <div class="glass-panel rounded-3xl px-8 py-6 mb-8 text-center animate-bounce-in">
+        <h2 id="question-text" class="video-text text-4xl md:text-6xl font-black tracking-wider leading-relaxed">
+          <!-- Question injected here -->
+          ロード中...
+        </h2>
+      </div>
+
+      <!-- Shapes Grid -->
+      <div id="shapes-grid" class="flex flex-wrap justify-center gap-6 md:gap-12">
+        <!-- Shapes injected via JS -->
+      </div>
+    </div>
+
+    <!-- Feedback Area (Win/Lose) -->
+    <div id="feedback-overlay" class="hidden fixed inset-0 flex items-center justify-center pointer-events-none z-50">
+      <div id="feedback-text" class="text-8xl md:text-9xl font-black text-white drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)] animate-pop">
+        せいかい！
+      </div>
+    </div>
+    
+    <!-- Bottom Spacer -->
+    <div class="h-12"></div>
+  </div>
+
+  <script>
+    // --- Game Data ---
+    const COLORS = {
+      red: { label: 'あかい', hex: '#EF4444', tailwind: 'text-red-500' },
+      blue: { label: 'あおい', hex: '#3B82F6', tailwind: 'text-blue-500' },
+      yellow: { label: 'きいろい', hex: '#FACC15', tailwind: 'text-yellow-400' },
+      green: { label: 'みどりの', hex: '#22C55E', tailwind: 'text-green-500' },
+    };
+
+    const SHAPES = {
+      circle: { label: 'まる', path: '<circle cx="50" cy="50" r="40" />' },
+      square: { label: 'しかく', path: '<rect x="15" y="15" width="70" height="70" rx="10" />' },
+      triangle: { label: 'さんかく', path: '<path d="M50 15 L85 80 L15 80 Z" stroke-linejoin="round" />' },
+      star: { label: 'ほし', path: '<path d="M50 10 L61 35 L88 39 L68 57 L73 84 L50 71 L27 84 L32 57 L12 39 L39 35 Z" stroke-linejoin="round" />' }
+    };
+
+    let score = 0;
+    let currentTarget = null;
+    let isAnimating = false;
+
+    // --- Game Logic ---
+
+    function initGame() {
+      score = 0;
+      updateScore();
+      nextRound();
+    }
+
+    function getRandomItem(obj) {
+      const keys = Object.keys(obj);
+      return keys[Math.floor(Math.random() * keys.length)];
+    }
+
+    function generateRoundData() {
+      // Pick target
+      const targetColorKey = getRandomItem(COLORS);
+      const targetShapeKey = getRandomItem(SHAPES);
+      
+      currentTarget = {
+        colorKey: targetColorKey,
+        shapeKey: targetShapeKey,
+        ...COLORS[targetColorKey],
+        ...SHAPES[targetShapeKey]
+      };
+
+      // Generate options (1 correct + 2 decoys)
+      const options = [];
+      options.push(currentTarget);
+
+      while (options.length < 3) {
+        const cKey = getRandomItem(COLORS);
+        const sKey = getRandomItem(SHAPES);
+        
+        // Ensure uniqueness
+        const isDuplicate = options.some(o => o.colorKey === cKey && o.shapeKey === sKey);
+        if (!isDuplicate) {
+          options.push({
+            colorKey: cKey,
+            shapeKey: sKey,
+            ...COLORS[cKey],
+            ...SHAPES[sKey]
+          });
+        }
+      }
+
+      // Shuffle options
+      return options.sort(() => Math.random() - 0.5);
+    }
+
+    function nextRound() {
+      const options = generateRoundData();
+      render(options);
+    }
+
+    function render(options) {
+      const questionEl = document.getElementById('question-text');
+      const gridEl = document.getElementById('shapes-grid');
+      
+      // Set Question Text with specific styling for color word
+      questionEl.innerHTML = `
+        <span class="${currentTarget.tailwind}" style="text-shadow: 2px 2px 0 #fff, -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff; filter: drop-shadow(0 2px 2px rgba(0,0,0,0.5));">
+          ${currentTarget.label}
+        </span> 
+        ${currentTarget.shape.label} 
+        は どれ？
+      `;
+
+      // Clear Grid
+      gridEl.innerHTML = '';
+
+      // Render Options
+      options.forEach((opt, index) => {
+        const isCorrect = (opt.colorKey === currentTarget.colorKey && opt.shapeKey === currentTarget.shapeKey);
+        const el = document.createElement('div');
+        el.className = 'game-shape animate-bounce-in';
+        el.style.animationDelay = `${index * 100}ms`;
+        el.innerHTML = createSvg(opt.shape.path, opt.hex);
+        
+        el.onclick = (e) => handleChoice(e, isCorrect, el);
+        gridEl.appendChild(el);
+      });
+    }
+
+    function createSvg(pathStr, color) {
+      return `
+        <svg width="140" height="140" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <!-- Thick white outline for visibility -->
+          <g stroke="white" stroke-width="12" fill="none">
+            ${pathStr}
+          </g>
+          <!-- Black subtle outline -->
+          <g stroke="rgba(0,0,0,0.3)" stroke-width="14" fill="none">
+             ${pathStr}
+          </g>
+          <!-- Main Colored Shape -->
+          <g fill="${color}">
+            ${pathStr}
+          </g>
+          <!-- Inner Highlight -->
+           <g stroke="rgba(255,255,255,0.4)" stroke-width="3" fill="none" transform="scale(0.8) translate(12,12)">
+            ${pathStr}
+          </g>
+        </svg>
+      `;
+    }
+
+    function handleChoice(e, isCorrect, element) {
+      if (isAnimating) return;
+
+      if (isCorrect) {
+        isAnimating = true;
+        score++;
+        updateScore();
+        playFeedback(true);
+        
+        // Happy animation on element
+        element.style.transform = "scale(1.2) rotate(10deg)";
+        
+        setTimeout(() => {
+          isAnimating = false;
+          nextRound();
+        }, 1500);
+      } else {
+        // Shake animation
+        element.classList.remove('animate-bounce-in');
+        void element.offsetWidth; // trigger reflow
+        element.classList.add('animate-shake');
+        playFeedback(false);
+      }
+    }
+
+    function updateScore() {
+      document.getElementById('score').innerText = score;
+    }
+
+    function playFeedback(isWin) {
+      const overlay = document.getElementById('feedback-overlay');
+      const text = document.getElementById('feedback-text');
+      
+      overlay.classList.remove('hidden');
+      text.innerText = isWin ? 'せいかい！⭕' : 'ちがうよ...❌';
+      text.className = isWin 
+        ? 'text-8xl md:text-9xl font-black text-red-500 drop-shadow-[0_5px_0_#fff] animate-pop'
+        : 'text-6xl md:text-8xl font-black text-blue-500 drop-shadow-[0_5px_0_#fff] animate-shake';
+
+      if (isWin) throwConfetti();
+
+      setTimeout(() => {
+        overlay.classList.add('hidden');
+      }, 1000);
+    }
+
+    function resetGame() {
+      score = 0;
+      updateScore();
+      nextRound();
+    }
+
+    function throwConfetti() {
+      for (let i = 0; i < 20; i++) {
+        const confetti = document.createElement('div');
+        confetti.className = 'confetti';
+        confetti.style.left = Math.random() * 100 + 'vw';
+        confetti.style.backgroundColor = ['#EF4444', '#3B82F6', '#FACC15', '#22C55E'][Math.floor(Math.random() * 4)];
+        confetti.style.animationDuration = (Math.random() * 1 + 1) + 's';
+        document.body.appendChild(confetti);
+        setTimeout(() => confetti.remove(), 2000);
+      }
+    }
+
+    // Start
+    window.onload = initGame;
+
+  </script>
+</body>
+</html>

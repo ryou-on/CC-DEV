@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Square Root Visualizer Overlay</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background: transparent !important;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: 'Noto Sans JP', sans-serif;
+            /* Prevent selection to avoid interfering with video interaction */
+            user-select: none;
+        }
+
+        /* Glassmorphism Panel */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+        }
+
+        /* High Contrast Text */
+        .text-glow {
+            text-shadow: 0 0 10px rgba(34, 211, 238, 0.5);
+        }
+
+        /* Grid Background for Math Visualization */
+        .math-grid {
+            background-image: 
+                linear-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.1) 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
+        /* Custom Range Slider */
+        input[type=range] {
+            -webkit-appearance: none;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #22d3ee;
+            cursor: pointer;
+            margin-top: -6px;
+            box-shadow: 0 0 10px rgba(34, 211, 238, 0.8);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: rgba(255,255,255,0.3);
+            border-radius: 2px;
+        }
+
+        /* Animations */
+        .fade-in-up {
+            animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        .fade-out-down {
+            animation: fadeOutDown 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px) scale(0.95); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes fadeOutDown {
+            from { opacity: 1; transform: translateY(0) scale(1); }
+            to { opacity: 0; transform: translateY(20px) scale(0.95); pointer-events: none; }
+        }
+
+        /* Square Transition */
+        #visual-square {
+            transition: width 0.5s cubic-bezier(0.34, 1.56, 0.64, 1), height 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+    </style>
+</head>
+<body class="w-full h-screen flex items-end justify-end p-6 pointer-events-none">
+
+    <!-- Main Widget Container -->
+    <div class="relative pointer-events-auto flex flex-col items-end gap-4">
+        
+        <!-- Toggle Button -->
+        <button id="toggleBtn" onclick="toggleWidget()" 
+            class="group flex items-center gap-3 bg-cyan-600 hover:bg-cyan-500 text-white px-5 py-3 rounded-full shadow-lg transition-all duration-300 transform hover:scale-105 active:scale-95 z-50">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 15h4l3 9 5-18 4 6h2"/>
+            </svg>
+            <span class="font-bold text-lg tracking-wider">平方根をまなぶ</span>
+        </button>
+
+        <!-- Learning Panel (Initially Hidden) -->
+        <div id="learningPanel" class="glass-panel hidden w-[90vw] max-w-[420px] rounded-2xl p-6 text-white origin-bottom-right transition-all duration-300">
+            
+            <!-- Header -->
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold flex items-center gap-2 text-glow">
+                    <span class="text-cyan-400 text-2xl">√</span> 平方根ビジュアライザー
+                </h2>
+                <button onclick="toggleWidget()" class="text-gray-400 hover:text-white transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+
+            <!-- Controls -->
+            <div class="space-y-4 mb-6">
+                <!-- Input Number -->
+                <div class="bg-slate-800/50 rounded-lg p-3 border border-slate-600">
+                    <label class="block text-xs text-cyan-300 mb-1 font-bold">正方形の面積 (数字を入力)</label>
+                    <div class="flex items-center gap-3">
+                        <input type="number" id="areaInput" value="9" min="1" max="100" 
+                            class="w-full bg-transparent text-3xl font-bold text-white outline-none border-none focus:ring-0"
+                            oninput="updateVisuals()">
+                        <span class="text-sm text-gray-400">cm²</span>
+                    </div>
+                </div>
+
+                <!-- Zoom Slider -->
+                <div>
+                    <div class="flex justify-between text-xs text-gray-400 mb-1">
+                        <span>縮小</span>
+                        <span>表示サイズ (ズーム)</span>
+                        <span>拡大</span>
+                    </div>
+                    <input type="range" id="zoomSlider" min="0.5" max="2" step="0.1" value="1" class="w-full" oninput="updateZoom()">
+                </div>
+            </div>
+
+            <!-- Visualization Area -->
+            <div class="relative w-full h-64 bg-slate-900/80 rounded-xl overflow-hidden border border-slate-700 flex items-center justify-center math-grid shadow-inner">
+                
+                <!-- The Square (Dynamic) -->
+                <div id="visualContainer" class="relative transition-transform duration-200">
+                    <div id="visual-square" class="bg-cyan-500/30 border-2 border-cyan-400 relative flex items-center justify-center shadow-[0_0_20px_rgba(34,211,238,0.3)]">
+                        <!-- Area Label (Center) -->
+                        <span class="text-white font-bold drop-shadow-md text-lg pointer-events-none">
+                            <span id="label-area">9</span>
+                        </span>
+
+                        <!-- Side Label (Bottom) -->
+                        <div class="absolute -bottom-8 left-0 right-0 text-center text-pink-400 font-bold text-sm whitespace-nowrap drop-shadow-md">
+                            辺 = <span id="label-side-bottom">3</span>
+                        </div>
+
+                        <!-- Side Label (Left) -->
+                        <div class="absolute -left-8 top-0 bottom-0 flex items-center justify-center">
+                             <span class="text-pink-400 font-bold text-sm whitespace-nowrap -rotate-90 drop-shadow-md">
+                                辺 = <span id="label-side-left">3</span>
+                             </span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Grid Overlay Hint -->
+                <div class="absolute bottom-2 right-2 text-[10px] text-gray-500 bg-black/40 px-2 py-1 rounded">
+                    1マス = 1単位
+                </div>
+            </div>
+
+            <!-- Explanation Text -->
+            <div class="mt-4 text-sm text-gray-200 bg-slate-800/50 p-3 rounded-lg border-l-4 border-pink-500">
+                <p class="leading-relaxed">
+                    面積が <span id="text-area" class="text-cyan-300 font-bold">9</span> の正方形の一辺の長さは
+                    <span class="text-pink-400 font-bold text-lg">√<span id="text-root">9</span> = <span id="text-result">3</span></span> です。
+                </p>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        const toggleBtn = document.getElementById('toggleBtn');
+        const learningPanel = document.getElementById('learningPanel');
+        const areaInput = document.getElementById('areaInput');
+        const zoomSlider = document.getElementById('zoomSlider');
+        const visualContainer = document.getElementById('visualContainer');
+        const visualSquare = document.getElementById('visual-square');
+        
+        // Text Elements
+        const labelArea = document.getElementById('label-area');
+        const labelSideBottom = document.getElementById('label-side-bottom');
+        const labelSideLeft = document.getElementById('label-side-left');
+        const textArea = document.getElementById('text-area');
+        const textRoot = document.getElementById('text-root');
+        const textResult = document.getElementById('text-result');
+
+        let isOpen = false;
+        const basePixelSize = 30; // 1 unit = 30px
+
+        function toggleWidget() {
+            isOpen = !isOpen;
+            if (isOpen) {
+                // Show
+                toggleBtn.classList.add('hidden');
+                learningPanel.classList.remove('hidden', 'fade-out-down');
+                learningPanel.classList.add('fade-in-up');
+                updateVisuals(); // Ensure visuals are correct on open
+            } else {
+                // Hide
+                learningPanel.classList.remove('fade-in-up');
+                learningPanel.classList.add('fade-out-down');
+                setTimeout(() => {
+                    learningPanel.classList.add('hidden');
+                    toggleBtn.classList.remove('hidden');
+                }, 300);
+            }
+        }
+
+        function updateZoom() {
+            const zoom = zoomSlider.value;
+            visualContainer.style.transform = `scale(${zoom})`;
+        }
+
+        function updateVisuals() {
+            let area = parseFloat(areaInput.value);
+            
+            // Validation and Constraints
+            if (isNaN(area) || area < 0) area = 0;
+            if (area > 1000) area = 1000; // Cap purely for visual sanity
+
+            const side = Math.sqrt(area);
+            
+            // Determine display precision
+            const sideDisplay = Number.isInteger(side) ? side : side.toFixed(3);
+
+            // Update Visual Dimensions (Scaling logic)
+            // We use a base unit size. If area is huge, the box might overflow,
+            // but the user can use the zoom slider to fix it.
+            const pxSize = side * basePixelSize;
+            
+            visualSquare.style.width = `${pxSize}px`;
+            visualSquare.style.height = `${pxSize}px`;
+
+            // Update Text Labels
+            labelArea.textContent = area;
+            labelSideBottom.textContent = sideDisplay;
+            labelSideLeft.textContent = sideDisplay;
+            
+            // Update Explanation Text
+            textArea.textContent = area;
+            textRoot.textContent = area;
+            textResult.textContent = sideDisplay;
+        }
+
+        // Initialize
+        updateVisuals();
+        updateZoom();
+    </script>
+</body>
+</html>

@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DNA</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; }
+  body, html { width: 100%; height: 100%; overflow: hidden; background: transparent; }
+  canvas { display: block; width: 100% !important; height: 100% !important; cursor: grab; }
+  canvas:active { cursor: grabbing; }
+  #zoom-bar {
+    position: fixed;
+    right: 16px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 10;
+    pointer-events: auto;
+  }
+  #zoom-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 140px;
+    height: 4px;
+    background: linear-gradient(90deg, rgba(255,255,255,0.08), rgba(255,255,255,0.2));
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+    transform: rotate(-90deg);
+    transform-origin: center center;
+  }
+  #zoom-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 40% 35%, rgba(255,255,255,0.95), rgba(180,200,220,0.7));
+    box-shadow: 0 0 12px rgba(255,255,255,0.15), 0 2px 6px rgba(0,0,0,0.4);
+    cursor: pointer;
+    transition: box-shadow 0.2s;
+  }
+  #zoom-slider::-webkit-slider-thumb:hover {
+    box-shadow: 0 0 18px rgba(255,255,255,0.25), 0 2px 8px rgba(0,0,0,0.5);
+  }
+  #zoom-slider::-moz-range-track {
+    height: 4px;
+    background: linear-gradient(90deg, rgba(255,255,255,0.08), rgba(255,255,255,0.2));
+    border-radius: 2px;
+    border: none;
+  }
+  #zoom-slider::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 40% 35%, rgba(255,255,255,0.95), rgba(180,200,220,0.7));
+    box-shadow: 0 0 12px rgba(255,255,255,0.15), 0 2px 6px rgba(0,0,0,0.4);
+    border: none;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+<div id="zoom-bar">
+  <input type="range" id="zoom-slider" min="3" max="14" step="0.1" value="7">
+</div>
+<script>
+(function() {
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 100);
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setClearColor(0x000000, 0);
+  document.body.appendChild(renderer.domElement);
+
+  scene.add(new THREE.AmbientLight(0x8899bb, 0.6));
+  const d1 = new THREE.DirectionalLight(0xffffff, 0.9); d1.position.set(5, 8, 5); scene.add(d1);
+  const d2 = new THREE.DirectionalLight(0x4ea8ff, 0.3); d2.position.set(-3, -2, 4); scene.add(d2);
+  const d3 = new THREE.DirectionalLight(0xff8a4e, 0.2); d3.position.set(0, 5, -5); scene.add(d3);
+
+  // === Model: DNA ===
+  const group = new THREE.Group();
+  const turns = 2, steps = 50, rad = 1.5, height = 6, pairs = 12;
+  const strandColors = [0x4ea8ff, 0xff8a4e];
+  const baseColors = [0x22c55e, 0xef4444, 0xeab308, 0x8b5cf6];
+
+  for (let s = 0; s < 2; s++) {
+    const off = s * Math.PI;
+    const pts = [];
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const a = t * turns * Math.PI * 2 + off;
+      pts.push(new THREE.Vector3(rad * Math.cos(a), t * height - height / 2, rad * Math.sin(a)));
+    }
+    const curve = new THREE.CatmullRomCurve3(pts);
+    group.add(new THREE.Mesh(
+      new THREE.TubeGeometry(curve, 80, 0.1, 8, false),
+      new THREE.MeshPhysicalMaterial({ color: strandColors[s], metalness: 0.1, roughness: 0.4 })
+    ));
+
+    // Backbone spheres at intervals
+    for (let i = 0; i <= steps; i += 5) {
+      const t = i / steps;
+      const a = t * turns * Math.PI * 2 + off;
+      const sp = new THREE.Mesh(
+        new THREE.SphereGeometry(0.14, 12, 12),
+        new THREE.MeshPhysicalMaterial({ color: strandColors[s], metalness: 0.1, roughness: 0.3 })
+      );
+      sp.position.set(rad * Math.cos(a), t * height - height / 2, rad * Math.sin(a));
+      group.add(sp);
+    }
+  }
+
+  // Base pairs
+  for (let i = 0; i < pairs; i++) {
+    const t = (i + 0.5) / pairs;
+    const a1 = t * turns * Math.PI * 2;
+    const y = t * height - height / 2;
+    const s = new THREE.Vector3(rad * Math.cos(a1), y, rad * Math.sin(a1));
+    const e = new THREE.Vector3(rad * Math.cos(a1 + Math.PI), y, rad * Math.sin(a1 + Math.PI));
+    const dv = new THREE.Vector3().subVectors(e, s);
+    const mesh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.07, 0.07, dv.length(), 8),
+      new THREE.MeshPhysicalMaterial({ color: baseColors[i % 4], metalness: 0.1, roughness: 0.5, transparent: true, opacity: 0.8 })
+    );
+    mesh.position.addVectors(s, e).multiplyScalar(0.5);
+    mesh.lookAt(e);
+    mesh.rotateX(Math.PI / 2);
+    group.add(mesh);
+  }
+
+  scene.add(group);
+
+  // === Orbit ===
+  let theta = 0.5, phi = 1.2, radius = 7;
+  let tT = theta, tP = phi, tR = radius;
+  let drag = false, px = 0, py = 0;
+
+  function updateCam() {
+    camera.position.set(radius * Math.sin(phi) * Math.cos(theta), radius * Math.cos(phi), radius * Math.sin(phi) * Math.sin(theta));
+    camera.lookAt(0, 0, 0);
+  }
+  updateCam();
+
+  const el = renderer.domElement;
+  el.addEventListener('mousedown', e => { drag = true; px = e.clientX; py = e.clientY; });
+  el.addEventListener('mousemove', e => { if (!drag) return; tT -= (e.clientX - px) * 0.008; tP = Math.max(0.15, Math.min(Math.PI - 0.15, tP + (e.clientY - py) * 0.008)); px = e.clientX; py = e.clientY; });
+  el.addEventListener('mouseup', () => drag = false);
+  el.addEventListener('mouseleave', () => drag = false);
+  el.addEventListener('wheel', e => { e.preventDefault(); tR = Math.max(3, Math.min(14, tR + e.deltaY * 0.005)); slider.value = tR; }, { passive: false });
+
+  // Zoom slider
+  const slider = document.getElementById('zoom-slider');
+  slider.addEventListener('input', () => { tR = parseFloat(slider.value); });
+
+  let td = 0;
+  el.addEventListener('touchstart', e => { e.preventDefault(); if (e.touches.length === 1) { drag = true; px = e.touches[0].clientX; py = e.touches[0].clientY; } else if (e.touches.length === 2) td = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); }, { passive: false });
+  el.addEventListener('touchmove', e => { e.preventDefault(); if (e.touches.length === 1 && drag) { tT -= (e.touches[0].clientX - px) * 0.008; tP = Math.max(0.15, Math.min(Math.PI - 0.15, tP + (e.touches[0].clientY - py) * 0.008)); px = e.touches[0].clientX; py = e.touches[0].clientY; } else if (e.touches.length === 2) { const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); tR = Math.max(3, Math.min(14, tR - (d - td) * 0.02)); slider.value = tR; td = d; } }, { passive: false });
+  el.addEventListener('touchend', () => drag = false);
+
+  window.addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+
+  (function loop() {
+    requestAnimationFrame(loop);
+    if (!drag) tT += 0.003;
+    theta += (tT - theta) * 0.08;
+    phi += (tP - phi) * 0.08;
+    radius += (tR - radius) * 0.08;
+    updateCam();
+    renderer.render(scene, camera);
+  })();
+})();
+</script>
+</body>
+</html>

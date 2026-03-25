@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Gemini Overlay Widget Responsive</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 3px;
+        }
+        
+        /* Glassmorphism */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+            transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1), height 0.4s ease;
+            overflow: hidden;
+        }
+
+        .glass-button {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(4px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.2s ease;
+            white-space: nowrap;
+            cursor: pointer;
+        }
+
+        .glass-button:hover {
+            background: rgba(255, 255, 255, 0.15);
+            border-color: rgba(255, 255, 255, 0.3);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        }
+
+        .glass-button.active {
+            background: rgba(56, 189, 248, 0.2);
+            border-color: rgba(56, 189, 248, 0.5);
+            color: #38bdf8;
+            box-shadow: 0 0 15px rgba(56, 189, 248, 0.15);
+        }
+
+        body {
+            background: transparent !important;
+            margin: 0;
+            padding: 0;
+        }
+
+        .text-shadow {
+            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+        }
+
+        /* --- FIXED: Sidebar Expansion Logic (Clean Closed State) --- */
+        .sidebar-text {
+            opacity: 0;
+            width: 0;
+            margin-left: 0;
+            overflow: hidden;
+            white-space: nowrap;
+            transform: translateX(-10px);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        /* Only expand on desktop hover */
+        @media (min-width: 769px) {
+            .glass-panel:hover .sidebar-text {
+                opacity: 1;
+                width: auto;
+                margin-left: 0.75rem; /* ml-3 equivalent */
+                transform: translateX(0);
+            }
+        }
+
+        /* --- RESPONSIVE DESIGN (Mobile < 768px) --- */
+        @media (max-width: 768px) {
+            /* Main Layout Stack: Content Top, Nav Bottom */
+            .main-layout {
+                flex-direction: column-reverse !important;
+            }
+
+            /* Transform Sidebar to Bottom Navigation Bar */
+            nav.glass-panel {
+                width: 100% !important;
+                height: auto !important;
+                min-height: 80px;
+                flex-direction: row !important;
+                padding: 0.5rem 1rem !important;
+                border-right: none;
+                border-top: 1px solid rgba(255, 255, 255, 0.1);
+                justify-content: space-between;
+                align-items: center;
+                box-shadow: 0 -4px 20px rgba(0,0,0,0.4);
+                z-index: 100;
+            }
+
+            /* Hide Header (Widget Title) on Mobile to save space */
+            .nav-header {
+                display: none !important;
+            }
+            
+            /* Hide Footer (Info) on Mobile */
+            .nav-footer {
+                display: none !important;
+            }
+
+            /* Navigation Items Container */
+            .nav-items {
+                flex-direction: row !important;
+                width: 100%;
+                justify-content: space-evenly;
+                gap: 0.5rem !important;
+            }
+
+            /* Button Styling for Touch Targets */
+            .glass-button {
+                flex: 1;
+                flex-direction: column !important;
+                justify-content: center;
+                align-items: center;
+                padding: 0.75rem 0.25rem !important;
+                gap: 4px !important;
+                border-radius: 12px;
+                min-height: 64px;
+            }
+
+            /* Larger Icons for Touch */
+            .glass-button > div:first-child {
+                width: 3rem !important; /* 48px */
+                height: 3rem !important;
+                margin-bottom: 2px;
+            }
+            
+            .glass-button i {
+                font-size: 1.4rem !important; /* 22px+ */
+            }
+
+            /* Text labels on mobile */
+            .sidebar-text {
+                opacity: 1 !important;
+                width: auto !important;
+                transform: none !important;
+                margin: 0 !important;
+                font-size: 0.8rem !important;
+                text-align: center;
+                display: block;
+            }
+
+            /* Adjust Floating Action Button position */
+            .floating-fab {
+                bottom: 6rem !important; /* Move above bottom nav */
+                right: 1rem !important;
+            }
+
+            .floating-fab a {
+                padding: 1rem 1.5rem !important;
+                font-size: 1rem !important;
+            }
+        }
+    </style>
+</head>
+<body class="h-screen w-screen overflow-hidden text-white font-sans">
+
+    <!-- Main Layout Container -->
+    <div class="main-layout flex h-full w-full">
+        
+        <!-- Navigation (Sidebar on Desktop, Bottom Bar on Mobile) -->
+        <nav class="w-16 hover:w-64 glass-panel flex-none flex flex-col p-2 shadow-2xl z-50 group transition-all duration-300">
+            
+            <!-- Header -->
+            <div class="nav-header mb-6 mt-2 px-1 flex items-center justify-center group-hover:justify-start group-hover:px-2 h-10 transition-all overflow-hidden">
+                <i class="fa-solid fa-layer-group text-sky-400 text-xl flex-none"></i>
+                <span class="sidebar-text text-xl font-bold tracking-wider text-white text-shadow">
+                    WIDGET
+                </span>
+            </div>
+
+            <!-- Menu Items -->
+            <div class="nav-items flex-1 flex flex-col gap-3">
+                <!-- Menu Item 1 -->
+                <button onclick="switchTab(0)" id="tab-0" class="glass-button w-full p-2 rounded-lg flex items-center gap-0 group-hover:gap-3 justify-center group-hover:justify-start active">
+                    <div class="w-8 h-8 flex-none rounded bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center shadow-lg transition-transform">
+                        <i class="fa-solid fa-code text-white text-sm"></i>
+                    </div>
+                    <span class="sidebar-text font-medium text-sm tracking-wide text-shadow">
+                        アプリ生成
+                    </span>
+                </button>
+
+                <!-- Menu Item 2 -->
+                <button onclick="switchTab(1)" id="tab-1" class="glass-button w-full p-2 rounded-lg flex items-center gap-0 group-hover:gap-3 justify-center group-hover:justify-start">
+                    <div class="w-8 h-8 flex-none rounded bg-gradient-to-br from-purple-500 to-pink-400 flex items-center justify-center shadow-lg transition-transform">
+                        <i class="fa-solid fa-project-diagram text-white text-sm"></i>
+                    </div>
+                    <span class="sidebar-text font-medium text-sm tracking-wide text-shadow">
+                        ユースケース
+                    </span>
+                </button>
+
+                <!-- Menu Item 3 (Gemini) -->
+                <button onclick="switchTab(2)" id="tab-2" class="glass-button w-full p-2 rounded-lg flex items-center gap-0 group-hover:gap-3 justify-center group-hover:justify-start">
+                    <div class="w-8 h-8 flex-none rounded bg-gradient-to-br from-indigo-500 to-blue-600 flex items-center justify-center shadow-lg transition-transform">
+                        <i class="fa-solid fa-wand-magic-sparkles text-white text-sm"></i>
+                    </div>
+                    <span class="sidebar-text font-medium text-sm tracking-wide text-shadow">
+                        Gemini
+                    </span>
+                </button>
+            </div>
+
+            <!-- Footer Info -->
+            <div class="nav-footer mt-auto pt-4 border-t border-white/10 text-[10px] text-slate-400 text-center opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap overflow-hidden">
+                Overlay Mode Active
+            </div>
+        </nav>
+
+        <!-- Main Content Area -->
+        <main class="flex-1 relative bg-black/20 overflow-hidden">
+            
+            <!-- Floating Action Button (Responsive Position) -->
+            <div class="floating-fab absolute bottom-8 right-8 z-40">
+                <a id="external-link-btn" href="#" target="_blank" class="glass-button bg-black/60 hover:bg-black/80 text-white px-5 py-3 rounded-full flex items-center gap-2 text-sm font-medium shadow-xl transition-all hover:scale-105 hover:bg-sky-600/30">
+                    <span>別タブで開く</span>
+                    <i class="fa-solid fa-arrow-up-right-from-square text-sky-400"></i>
+                </a>
+            </div>
+
+            <!-- Iframe Container -->
+            <div class="w-full h-full relative">
+                <!-- Loading / Placeholder -->
+                <div id="loader" class="absolute inset-0 flex items-center justify-center z-0 pointer-events-none">
+                    <i class="fa-solid fa-spinner fa-spin text-4xl text-white/20"></i>
+                </div>
+
+                <!-- The Iframe -->
+                <iframe 
+                    id="main-frame" 
+                    src="" 
+                    class="w-full h-full border-none relative z-10 bg-white/95"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowfullscreen>
+                </iframe>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // Configuration
+        const sites = [
+            {
+                url: "https://html-generator-pro-230846873036.us-west1.run.app",
+                title: "アプリ生成"
+            },
+            {
+                url: "https://usecase-architect-230846873036.us-west1.run.app",
+                title: "ユースケース生成"
+            },
+            {
+                url: "https://gemini.google.com/app?hl=ja",
+                title: "Gemini"
+            }
+        ];
+
+        const iframe = document.getElementById('main-frame');
+        const externalLinkBtn = document.getElementById('external-link-btn');
+        const buttons = document.querySelectorAll('button[id^="tab-"]');
+
+        function switchTab(index) {
+            const site = sites[index];
+            
+            // Update Iframe
+            iframe.src = site.url;
+            
+            // Update External Link
+            externalLinkBtn.href = site.url;
+            
+            // Update UI State
+            buttons.forEach((btn, i) => {
+                if (i === index) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+        }
+
+        // Initialize with first tab
+        switchTab(0);
+
+    </script>
+</body>
+</html>

@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+  <title>USD/JPY リアルタイム表示（切替：日・月・年）</title>
+
+  <!-- Tailwind (CDN) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Google Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700;900&display=swap" rel="stylesheet">
+
+  <style>
+    body{
+      background: transparent !important;
+      font-family: "M PLUS Rounded 1c", sans-serif;
+      margin:0;
+      overflow:hidden;
+    }
+    /* nicer focus without outline jump */
+    button:focus-visible { outline: 2px solid rgba(255,255,255,.8); outline-offset: 2px; }
+  </style>
+</head>
+
+<body class="h-screen w-screen flex items-center justify-center pointer-events-none">
+  <div class="pointer-events-auto w-[92%] max-w-xl bg-slate-900/60 backdrop-blur-md border border-white/15 rounded-3xl shadow-2xl p-5 sm:p-6">
+    <!-- Header -->
+    <div class="flex items-start justify-between gap-3">
+      <div>
+        <div class="text-white font-black tracking-widest text-xl sm:text-2xl drop-shadow">
+          USD/JPY
+          <span class="text-xs sm:text-sm font-bold opacity-80 tracking-normal ml-2">（ドル円）</span>
+        </div>
+        <div id="subStatus" class="text-xs text-white/70 mt-1">
+          取得元：—
+        </div>
+      </div>
+
+      <div class="text-right">
+        <div class="text-xs text-white/70">現在値</div>
+        <div class="text-white font-black text-3xl sm:text-4xl drop-shadow">
+          <span id="price">--.--</span>
+          <span class="text-base sm:text-lg font-bold opacity-80 ml-1">JPY</span>
+        </div>
+        <div class="text-xs text-white/70 mt-1">
+          更新：<span id="updatedAt">--:--:--</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Range Switch -->
+    <div class="mt-4 flex items-center justify-between gap-3">
+      <div class="inline-flex bg-white/10 rounded-2xl p-1 border border-white/10">
+        <button id="btnDay"  class="px-3 py-1.5 rounded-xl text-sm font-bold text-white/90 hover:text-white transition">日</button>
+        <button id="btnMonth"class="px-3 py-1.5 rounded-xl text-sm font-bold text-white/90 hover:text-white transition">月</button>
+        <button id="btnYear" class="px-3 py-1.5 rounded-xl text-sm font-bold text-white/90 hover:text-white transition">年</button>
+      </div>
+
+      <div class="text-xs text-white/70 text-right leading-snug">
+        <div>キーあり：分足＋準リアルタイム</div>
+        <div>キーなし：日次（参考）</div>
+      </div>
+    </div>
+
+    <!-- Chart -->
+    <div class="mt-4 bg-black/25 rounded-2xl border border-white/10 p-3">
+      <div class="flex items-center justify-between mb-2">
+        <div class="text-xs text-white/70">推移</div>
+        <div class="text-xs text-white/70">
+          <span id="rangeLabel">日</span> /
+          <span id="pointsLabel">--</span>
+        </div>
+      </div>
+      <canvas id="chart" height="180" class="w-full"></canvas>
+      <div class="mt-2 flex items-center justify-between text-xs text-white/60">
+        <div>最小：<span id="minVal">--</span></div>
+        <div>最大：<span id="maxVal">--</span></div>
+        <div>変動：<span id="chgVal">--</span></div>
+      </div>
+    </div>
+
+    <!-- Footer / Notice -->
+    <div class="mt-4 text-xs text-white/70 leading-relaxed">
+      <div class="flex items-start gap-2">
+        <div class="mt-[2px] h-2 w-2 rounded-full bg-emerald-400 shadow"></div>
+        <div>
+          ブラウザからAPIを直接呼ぶため、<span class="text-white/90 font-bold">CORS / API制限</span>の影響を受けます。
+          有料・専用用途は、サーバー経由（キャッシュ/署名/レート制限）がおすすめです。
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+/**
+ * ==========================
+ * 設定
+ * ==========================
+ *
+ * Twelve Data を使う場合：
+ *  - APIキーが必要です（空欄なら Frankfurter にフォールバック）
+ *  - 例：quote（現在値） / time_series（履歴）
+ *
+ * Frankfurter（キー不要）：
+ *  - 日次の参照レート（更新は原則「営業日・日次」）
+ *  - 日・月・年もすべて「日次」になります（=厳密なリアルタイムではありません）
+ */
+const TWELVE_API_KEY = "";     // ← Twelve Data のAPIキーを入れる（任意）
+const POLL_MS = 10_000;        // 現在値の更新間隔（キーありのときに主に使用）
+const DAY_INTRADAY_INTERVAL = "1min"; // 日表示の分足（キーありのとき）
+const DAY_INTRADAY_OUTPUTSIZE = 180;  // 日表示で取得する最新データ点数（例：180分=約3時間）
+const MONTH_DAYS = 31;         // 月の表示期間（直近31日）
+const YEAR_DAYS  = 365;        // 年の表示期間（直近365日）
+
+/** UI elements */
+const elPrice = document.getElementById("price");
+const elUpdatedAt = document.getElementById("updatedAt");
+const elSubStatus = document.getElementById("subStatus");
+
+const elRangeLabel = document.getElementById("rangeLabel");
+const elPointsLabel = document.getElementById("pointsLabel");
+const elMinVal = document.getElementById("minVal");
+const elMaxVal = document.getElementById("maxVal");
+const elChgVal = document.getElementById("chgVal");
+
+const btnDay = document.getElementById("btnDay");
+const btnMonth = document.getElementById("btnMonth");
+const btnYear = document.getElementById("btnYear");
+
+const canvas = document.getElementById("chart");
+const ctx = canvas.getContext("2d");
+
+/** state */
+let currentRange = "day"; // day | month | year
+let pollingTimer = null;
+let series = []; // { t: number, label: string, v: number }
+let lastPrice = null;
+
+function fmtNum(n, digits=3){
+  if (n === null || n === undefined || Number.isNaN(n)) return "--";
+  return Number(n).toFixed(digits);
+}
+function nowTimeStr(){
+  const d = new Date();
+  return d.toLocaleTimeString("ja-JP", { hour12:false });
+}
+function ymd(d){
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,"0");
+  const day = String(d.getDate()).padStart(2,"0");
+  return `${y}-${m}-${day}`;
+}
+function daysAgo(n){
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d;
+}
+
+/**
+ * ==========================
+ * API: Frankfurter（日次・キー不要）
+ * ==========================
+ */
+async function frankfurterLatestUSDJPY(){
+  // USDを基準にJPY
+  const url = "https://api.frankfurter.dev/v1/latest?base=USD&symbols=JPY";
+  const r = await fetch(url, { cache: "no-store" });
+  if (!r.ok) throw new Error("Frankfurter latest failed");
+  const j = await r.json();
+  const rate = j?.rates?.JPY;
+  if (!rate) throw new Error("Frankfurter latest missing JPY");
+  return { price: Number(rate), source: "Frankfurter（日次）", at: j?.date || null };
+}
+
+async function frankfurterSeriesUSDJPY(startYMD, endYMD){
+  // 期間指定：/v1/START..END?base=USD&symbols=JPY
+  const url = `https://api.frankfurter.dev/v1/${startYMD}..${endYMD}?base=USD&symbols=JPY`;
+  const r = await fetch(url, { cache: "no-store" });
+  if (!r.ok) throw new Error("Frankfurter series failed");
+  const j = await r.json();
+  const rates = j?.rates;
+  if (!rates) throw new Error("Frankfurter series missing rates");
+
+  // rates: { "YYYY-MM-DD": { "JPY": 149.5 }, ... }
+  const out = [];
+  const keys = Object.keys(rates).sort(); // ascending
+  for (const k of keys){
+    const v = rates[k]?.JPY;
+    if (typeof v === "number"){
+      out.push({ t: Date.parse(k), label: k.slice(5), v });
+    }
+  }
+  return { points: out, source: "Frankfurter（日次）" };
+}
+
+/**
+ * ==========================
+ * API: Twelve Data（キーあり時）
+ * ==========================
+ *
+ * note:
+ * - ここではブラウザ直呼びで CORS が通る前提。環境によってはブロックされます。
+ * - 仕様は Twelve Data のドキュメントに従ってください（必要ならサーバー経由推奨）。
+ */
+async function twelveQuoteUSDJPY(){
+  // quote: 現在値
+  const url = `https://api.twelvedata.com/quote?symbol=USD/JPY&apikey=${encodeURIComponent(TWELVE_API_KEY)}`;
+  const r = await fetch(url, { cache:"no-store" });
+  if (!r.ok) throw new Error("Twelve quote failed");
+  const j = await r.json();
+  if (j?.status === "error") throw new Error(j?.message || "Twelve quote error");
+
+  // 多くの例で price が返る想定
+  const price = Number(j?.price);
+  if (!Number.isFinite(price)) throw new Error("Twelve quote missing price");
+  return { price, source: "Twelve Data（準リアルタイム）", at: j?.datetime || null };
+}
+
+async function twelveTimeSeriesUSDJPY(interval, outputsize){
+  const url = `https://api.twelvedata.com/time_series?symbol=USD/JPY&interval=${encodeURIComponent(interval)}&outputsize=${encodeURIComponent(outputsize)}&apikey=${encodeURIComponent(TWELVE_API_KEY)}`;
+  const r = await fetch(url, { cache:"no-store" });
+  if (!r.ok) throw new Error("Twelve time_series failed");
+  const j = await r.json();
+  if (j?.status === "error") throw new Error(j?.message || "Twelve time_series error");
+
+  // values: [{datetime, open, high, low, close}, ...] desc
+  const values = Array.isArray(j?.values) ? j.values : [];
+  const out = [];
+  for (let i = values.length - 1; i >= 0; i--){
+    const row = values[i];
+    const dt = row?.datetime;
+    const close = Number(row?.close);
+    if (!dt || !Number.isFinite(close)) continue;
+
+    // Twelve Data の datetime は "YYYY-MM-DD HH:mm:ss" 系を想定
+    const t = Date.parse(dt.replace(" ", "T") + "Z"); // 安全側にUTC扱い
+    out.push({ t, label: dt.slice(11,16), v: close });
+  }
+  return { points: out, source: "Twelve Data（履歴）" };
+}
+
+/**
+ * ==========================
+ * チャート描画（Canvas / ライブラリなし）
+ * ==========================
+ */
+function resizeCanvasToCSS(){
+  // CSS上の表示幅に合わせて内部解像度を調整
+  const rect = canvas.getBoundingClientRect();
+  const dpr = Math.max(1, window.devicePixelRatio || 1);
+  const w = Math.round(rect.width * dpr);
+  const h = Math.round(rect.height * dpr);
+  if (canvas.width !== w || canvas.height !== h){
+    canvas.width = w;
+    canvas.height = h;
+  }
+}
+
+function drawChart(points){
+  resizeCanvasToCSS();
+  ctx.clearRect(0,0,canvas.width, canvas.height);
+
+  // Background grid
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = "rgba(0,0,0,0)";
+  ctx.fillRect(0,0,canvas.width, canvas.height);
+
+  const pad = 14 * (window.devicePixelRatio || 1);
+  const W = canvas.width, H = canvas.height;
+  const innerW = W - pad*2;
+  const innerH = H - pad*2;
+
+  if (!points || points.length < 2){
+    // empty state
+    ctx.fillStyle = "rgba(255,255,255,0.65)";
+    ctx.font = `${14*(window.devicePixelRatio||1)}px "M PLUS Rounded 1c"`;
+    ctx.fillText("データ取得中…", pad, pad + 18*(window.devicePixelRatio||1));
+    return;
+  }
+
+  let min = Infinity, max = -Infinity;
+  for (const p of points){
+    min = Math.min(min, p.v);
+    max = Math.max(max, p.v);
+  }
+  // pad y-range
+  const range = (max - min) || (max || 1) * 0.001;
+  const yMin = min - range*0.08;
+  const yMax = max + range*0.08;
+
+  // axes/grid
+  ctx.strokeStyle = "rgba(255,255,255,0.12)";
+  ctx.lineWidth = 1;
+  for (let i=0;i<=4;i++){
+    const y = pad + (innerH*(i/4));
+    ctx.beginPath();
+    ctx.moveTo(pad, y);
+    ctx.lineTo(pad + innerW, y);
+    ctx.stroke();
+  }
+
+  // line
+  ctx.strokeStyle = "rgba(250,204,21,0.95)"; // tailwind yellow-300-ish
+  ctx.lineWidth = 2 * (window.devicePixelRatio || 1);
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+
+  const xStep = innerW / (points.length - 1);
+
+  ctx.beginPath();
+  for (let i=0;i<points.length;i++){
+    const x = pad + xStep*i;
+    const v = points[i].v;
+    const y = pad + innerH*(1 - (v - yMin)/(yMax - yMin));
+    if (i===0) ctx.moveTo(x,y);
+    else ctx.lineTo(x,y);
+  }
+  ctx.stroke();
+
+  // last dot
+  const last = points[points.length-1];
+  const lx = pad + xStep*(points.length-1);
+  const ly = pad + innerH*(1 - (last.v - yMin)/(yMax - yMin));
+
+  ctx.fillStyle = "rgba(250,204,21,1)";
+  ctx.beginPath();
+  ctx.arc(lx, ly, 3.2*(window.devicePixelRatio||1), 0, Math.PI*2);
+  ctx.fill();
+
+  // update stats
+  elMinVal.textContent = fmtNum(min, 3);
+  elMaxVal.textContent = fmtNum(max, 3);
+  const chg = points[points.length-1].v - points[0].v;
+  const chgPct = (points[0].v ? (chg / points[0].v) * 100 : 0);
+  elChgVal.textContent = `${chg>=0?"+":""}${fmtNum(chg,3)}（${chg>=0?"+":""}${fmtNum(chgPct,2)}%）`;
+  elPointsLabel.textContent = `${points.length}点`;
+}
+
+/**
+ * ==========================
+ * データ取得 & UI更新
+ * ==========================
+ */
+function setActiveButton(){
+  const base = "px-3 py-1.5 rounded-xl text-sm font-bold transition";
+  const active = " bg-white/20 text-white shadow";
+  const idle = " text-white/90 hover:text-white";
+
+  btnDay.className   = base + (currentRange==="day"  ? active : idle);
+  btnMonth.className = base + (currentRange==="month"? active : idle);
+  btnYear.className  = base + (currentRange==="year" ? active : idle);
+
+  elRangeLabel.textContent = currentRange==="day" ? "日" : (currentRange==="month" ? "月" : "年");
+}
+
+function setPriceUI(p, sourceLabel){
+  lastPrice = p;
+  elPrice.textContent = fmtNum(p, 3);
+  elUpdatedAt.textContent = nowTimeStr();
+  elSubStatus.textContent = `取得元：${sourceLabel}${TWELVE_API_KEY ? "（キーあり）" : "（キーなし）"}`;
+}
+
+async function loadSeriesForRange(range){
+  currentRange = range;
+  setActiveButton();
+
+  // stop polling while switching (re-start as needed)
+  if (pollingTimer){
+    clearInterval(pollingTimer);
+    pollingTimer = null;
+  }
+
+  // reset stats
+  elMinVal.textContent = "--";
+  elMaxVal.textContent = "--";
+  elChgVal.textContent = "--";
+  elPointsLabel.textContent = "--";
+
+  // fetch history
+  try{
+    if (TWELVE_API_KEY){
+      if (range === "day"){
+        const ts = await twelveTimeSeriesUSDJPY(DAY_INTRADAY_INTERVAL, DAY_INTRADAY_OUTPUTSIZE);
+        series = ts.points;
+        elSubStatus.textContent = `取得元：${ts.source} + quote（現在値）`;
+        // current price (quote)
+        const q = await twelveQuoteUSDJPY();
+        setPriceUI(q.price, q.source);
+        // append quote to series if newer
+        pushPointNow(q.price);
+        startPollingQuote();
+      } else if (range === "month"){
+        // daily points: ~31 days
+        // Twelve Data daily interval is usually "1day"
+        const ts = await twelveTimeSeriesUSDJPY("1day", MONTH_DAYS);
+        series = ts.points.map(p => ({...p, label: p.label})); // label already time; but keep
+        elSubStatus.textContent = `取得元：${ts.source}（日足）`;
+        const q = await twelveQuoteUSDJPY();
+        setPriceUI(q.price, "Twelve Data（準リアルタイム）");
+      } else {
+        // year: weekly points to reduce size
+        const weeks = Math.ceil(YEAR_DAYS/7);
+        const ts = await twelveTimeSeriesUSDJPY("1week", weeks);
+        series = ts.points;
+        elSubStatus.textContent = `取得元：${ts.source}（週足）`;
+        const q = await twelveQuoteUSDJPY();
+        setPriceUI(q.price, "Twelve Data（準リアルタイム）");
+      }
+    } else {
+      // Frankfurter fallback (daily only)
+      const end = ymd(new Date());
+      let start;
+      if (range === "day"){
+        // "日" でも日次しかないので 14日程度にして負荷軽く
+        start = ymd(daysAgo(14));
+        elSubStatus.textContent = "取得元：Frankfurter（日次） ※日表示も日次の参考推移";
+      } else if (range === "month"){
+        start = ymd(daysAgo(MONTH_DAYS));
+        elSubStatus.textContent = "取得元：Frankfurter（日次）";
+      } else {
+        start = ymd(daysAgo(YEAR_DAYS));
+        elSubStatus.textContent = "取得元：Frankfurter（日次）";
+      }
+      const s = await frankfurterSeriesUSDJPY(start, end);
+      series = s.points;
+      const latest = await frankfurterLatestUSDJPY();
+      setPriceUI(latest.price, latest.source);
+
+      // polling for daily data is pointless; but we can refresh latest occasionally
+      startPollingFrankfurterLatest();
+    }
+
+    drawChart(series);
+  }catch(e){
+    console.error(e);
+    // graceful UI
+    elSubStatus.textContent = `取得失敗：${String(e.message || e)}`;
+    series = [];
+    drawChart(series);
+  }
+}
+
+function pushPointNow(price){
+  const t = Date.now();
+  // label for intraday
+  const d = new Date();
+  const label = d.toLocaleTimeString("ja-JP", {hour:"2-digit", minute:"2-digit"});
+  series.push({ t, label, v: price });
+
+  // keep size reasonable (for day intraday)
+  if (currentRange === "day" && series.length > 360){
+    series = series.slice(series.length - 360);
+  }
+}
+
+function startPollingQuote(){
+  // only for Twelve Data day view
+  pollingTimer = setInterval(async () => {
+    try{
+      const q = await twelveQuoteUSDJPY();
+      setPriceUI(q.price, q.source);
+      pushPointNow(q.price);
+      drawChart(series);
+    }catch(e){
+      console.warn("poll quote failed", e);
+      elSubStatus.textContent = `取得元：Twelve Data（エラー：${String(e.message || e)}）`;
+    }
+  }, POLL_MS);
+}
+
+function startPollingFrankfurterLatest(){
+  pollingTimer = setInterval(async () => {
+    try{
+      const latest = await frankfurterLatestUSDJPY();
+      setPriceUI(latest.price, latest.source);
+      // 日次なので series は更新しない（必要なら日付が変わったタイミングで再取得）
+    }catch(e){
+      console.warn("poll frankfurter failed", e);
+    }
+  }, 60_000); // 1分に1回で十分
+}
+
+/**
+ * ==========================
+ * UI Events
+ * ==========================
+ */
+btnDay.addEventListener("click", () => loadSeriesForRange("day"));
+btnMonth.addEventListener("click", () => loadSeriesForRange("month"));
+btnYear.addEventListener("click", () => loadSeriesForRange("year"));
+
+window.addEventListener("resize", () => drawChart(series));
+
+/**
+ * Initial
+ */
+setActiveButton();
+loadSeriesForRange("day");
+</script>
+</body>
+</html>

@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mini TV YouTube Overlay</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: transparent !important;
+            margin: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        /* Glassmorphism Container */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+        }
+
+        /* TV Frame Effect */
+        .tv-frame {
+            position: relative;
+            background: #000;
+            border-radius: 8px;
+            padding: 4px;
+            box-shadow: inset 0 0 20px rgba(255, 255, 255, 0.1);
+            border: 2px solid #333;
+        }
+
+        /* Scanline effect overlay for retro feel (optional, kept subtle) */
+        .tv-screen::after {
+            content: " ";
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            right: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%);
+            background-size: 100% 4px;
+            z-index: 2;
+            pointer-events: none;
+            border-radius: 4px;
+        }
+
+        /* Range Slider Styling */
+        input[type=range] {
+            -webkit-appearance: none;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 14px;
+            width: 14px;
+            border-radius: 50%;
+            background: #3b82f6;
+            cursor: pointer;
+            margin-top: -5px;
+            box-shadow: 0 0 5px #3b82f6;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 2px;
+        }
+        
+        /* Hide scrollbars */
+        ::-webkit-scrollbar {
+            display: none;
+        }
+
+        .text-glow {
+            text-shadow: 0 0 5px rgba(59, 130, 246, 0.8);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Main Widget Container: Fixed Bottom Right, approx 20% width -->
+    <div id="widget-root" class="fixed bottom-4 right-4 flex flex-col gap-2 transition-all duration-300 ease-in-out" 
+         style="width: 25vw; min-width: 300px; max-width: 480px; z-index: 9999;">
+
+        <!-- Header / Close Bar -->
+        <div class="glass-panel rounded-t-lg px-3 py-2 flex justify-between items-center">
+            <div class="flex items-center gap-2 text-blue-400">
+                <i class="fas fa-tv"></i>
+                <span class="text-xs font-bold tracking-wider text-glow">MINI TV</span>
+            </div>
+            <button onclick="toggleWidget()" class="text-gray-400 hover:text-white transition-colors">
+                <i class="fas fa-minus"></i>
+            </button>
+        </div>
+
+        <!-- Content Area -->
+        <div id="main-content" class="glass-panel rounded-b-lg p-3 flex flex-col gap-3">
+            
+            <!-- Input State -->
+            <div id="input-section" class="flex flex-col gap-2">
+                <label class="text-gray-300 text-xs font-semibold ml-1">YouTube URLを入力</label>
+                <div class="flex gap-2">
+                    <input type="text" id="yt-url" placeholder="https://youtu.be/..." 
+                           class="flex-1 bg-gray-800 border border-gray-600 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-blue-500 placeholder-gray-500">
+                    <button onclick="loadVideo()" 
+                            class="bg-blue-600 hover:bg-blue-500 text-white text-sm px-3 py-1 rounded shadow transition-all font-bold">
+                        Play
+                    </button>
+                </div>
+            </div>
+
+            <!-- Player State (Initially Hidden) -->
+            <div id="player-section" class="hidden flex flex-col gap-2">
+                <!-- TV Screen Container -->
+                <div class="tv-frame aspect-video relative group">
+                    <div id="player-placeholder" class="w-full h-full bg-black rounded flex items-center justify-center text-gray-500 text-xs">
+                        Loading...
+                    </div>
+                    <!-- Overlays to prevent raw clicks if needed, though we want controls -->
+                    <div class="tv-screen absolute inset-0 pointer-events-none rounded"></div>
+                </div>
+
+                <!-- Controls -->
+                <div class="flex items-center justify-between mt-1 px-1">
+                    <button onclick="resetPlayer()" class="text-xs text-gray-400 hover:text-red-400 flex items-center gap-1 transition-colors">
+                        <i class="fas fa-arrow-left"></i> BACK
+                    </button>
+                    
+                    <div class="flex items-center gap-3">
+                        <!-- Mute Toggle -->
+                        <button id="mute-btn" onclick="toggleMute()" class="text-gray-300 hover:text-blue-400 w-6 text-center transition-colors">
+                            <i class="fas fa-volume-up"></i>
+                        </button>
+                        
+                        <!-- Volume Slider -->
+                        <div class="flex items-center gap-1">
+                            <input type="range" id="volume-slider" min="0" max="100" value="100" 
+                                   oninput="setVolume(this.value)" class="w-20">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Minimized State Button (Hidden by default) -->
+    <button id="restore-btn" onclick="toggleWidget()" 
+            class="hidden fixed bottom-4 right-4 glass-panel p-3 rounded-full text-blue-400 hover:text-white hover:bg-blue-600 transition-all shadow-lg z-50">
+        <i class="fas fa-tv"></i>
+    </button>
+
+    <!-- YouTube IFrame API -->
+    <script src="https://www.youtube.com/iframe_api"></script>
+
+    <script>
+        let player;
+        let isApiReady = false;
+        let currentVideoId = '';
+
+        // Initialize YouTube API
+        function onYouTubeIframeAPIReady() {
+            isApiReady = true;
+        }
+
+        // Helper: Extract Video ID from URL
+        function extractVideoID(url) {
+            const regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#&?]*).*/;
+            const match = url.match(regExp);
+            return (match && match[7].length == 11) ? match[7] : false;
+        }
+
+        // Load Video Logic
+        function loadVideo() {
+            const urlInput = document.getElementById('yt-url').value;
+            const videoId = extractVideoID(urlInput);
+
+            if (!videoId) {
+                alert('有効なYouTube URLを入力してください');
+                return;
+            }
+
+            currentVideoId = videoId;
+            
+            // UI Transition
+            document.getElementById('input-section').classList.add('hidden');
+            document.getElementById('player-section').classList.remove('hidden');
+
+            if (player) {
+                player.loadVideoById(videoId);
+            } else {
+                createPlayer(videoId);
+            }
+        }
+
+        function createPlayer(videoId) {
+            if (!isApiReady) return;
+            
+            player = new YT.Player('player-placeholder', {
+                height: '100%',
+                width: '100%',
+                videoId: videoId,
+                playerVars: {
+                    'playsinline': 1,
+                    'controls': 1, // Keep youtube controls as backup, or 0 to hide
+                    'modestbranding': 1,
+                    'rel': 0
+                },
+                events: {
+                    'onReady': onPlayerReady,
+                    'onStateChange': onPlayerStateChange
+                }
+            });
+        }
+
+        function onPlayerReady(event) {
+            event.target.playVideo();
+            setVolume(document.getElementById('volume-slider').value);
+        }
+
+        function onPlayerStateChange(event) {
+            // Optional: Handle video ending
+        }
+
+        // Audio Controls
+        function toggleMute() {
+            if (!player) return;
+            const btn = document.getElementById('mute-btn');
+            const icon = btn.querySelector('i');
+            
+            if (player.isMuted()) {
+                player.unMute();
+                icon.className = 'fas fa-volume-up';
+                // Restore volume slider visual if needed
+            } else {
+                player.mute();
+                icon.className = 'fas fa-volume-mute';
+            }
+        }
+
+        function setVolume(val) {
+            if (!player) return;
+            player.setVolume(val);
+            
+            // Update icon based on volume level
+            const icon = document.getElementById('mute-btn').querySelector('i');
+            if (val == 0) {
+                icon.className = 'fas fa-volume-mute';
+            } else if (val < 50) {
+                icon.className = 'fas fa-volume-down';
+            } else {
+                icon.className = 'fas fa-volume-up';
+            }
+        }
+
+        // UI Logic
+        function resetPlayer() {
+            if (player) {
+                player.stopVideo();
+            }
+            document.getElementById('player-section').classList.add('hidden');
+            document.getElementById('input-section').classList.remove('hidden');
+            document.getElementById('yt-url').value = '';
+        }
+
+        function toggleWidget() {
+            const root = document.getElementById('widget-root');
+            const restoreBtn = document.getElementById('restore-btn');
+            
+            if (root.classList.contains('hidden')) {
+                root.classList.remove('hidden');
+                restoreBtn.classList.add('hidden');
+            } else {
+                root.classList.add('hidden');
+                restoreBtn.classList.remove('hidden');
+            }
+        }
+    </script>
+</body>
+</html>

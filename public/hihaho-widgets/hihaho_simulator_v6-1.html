@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>hihaho 料金シミュレーション＆予約フォーム</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: { DEFAULT: '#37a641', dark: '#226627', accent: '#50f25d', light: '#eaf6ec' }
+                    },
+                    fontFamily: { sans: ['Inter', 'Noto Sans JP', 'sans-serif'] }
+                }
+            }
+        }
+    </script>
+    <style>
+        .view-section { display: none; }
+        .view-section.active { display: block; animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .toggle-checkbox:checked { right: 0; border-color: #37a641; }
+        .toggle-checkbox:checked + .toggle-label { background-color: #37a641; }
+        .toggle-checkbox { right: 4px; z-index: 1; border-color: #e5e7eb; transition: all 0.3s; }
+        .toggle-label { transition: all 0.3s; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .icon-spin { display: inline-block; animation: spin 1s linear infinite; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 font-sans antialiased">
+    <header class="bg-white border-b border-gray-200 sticky top-0 z-50">
+        <div class="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <div class="w-8 h-8 bg-brand rounded-lg flex items-center justify-center text-white font-bold text-xl">h</div>
+                <h1 class="text-xl font-bold tracking-tight text-gray-900">hihaho 予約シミュレーター</h1>
+            </div>
+            <div class="text-sm text-gray-500 hidden sm:block">2026年2月版仕様</div>
+        </div>
+    </header>
+    <main class="max-w-6xl mx-auto px-4 py-8">
+        <section id="view-input" class="view-section active">
+            <div class="mb-8 flex items-center justify-center space-x-4 text-sm font-medium">
+                <div class="flex items-center text-brand"><span class="w-6 h-6 rounded-full bg-brand text-white flex items-center justify-center mr-2">1</span> 入力・シミュレーション</div>
+                <div class="w-8 border-t-2 border-gray-200"></div>
+                <div class="flex items-center text-gray-400"><span class="w-6 h-6 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center mr-2">2</span> 確認</div>
+                <div class="w-8 border-t-2 border-gray-200"></div>
+                <div class="flex items-center text-gray-400"><span class="w-6 h-6 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center mr-2">3</span> 完了</div>
+            </div>
+            <div class="flex flex-col lg:flex-row gap-8">
+                <div class="flex-1 space-y-8">
+
+                    <!-- 支払い方法トグル（通常プランのみ表示） -->
+                    <div id="payment-toggle-section" class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center justify-center" style="display:none;">
+                        <h2 class="text-lg font-bold mb-4">お支払いサイクルの選択</h2>
+                        <div class="flex items-center space-x-6">
+                            <span class="text-sm font-medium transition-colors" id="label-monthly">月払い <span class="text-xs text-red-500 block text-center">(20%割高)</span></span>
+                            <div class="relative inline-block w-14 align-middle select-none transition duration-200 ease-in mt-[-10px]">
+                                <input type="checkbox" name="toggle" id="payment-toggle" class="toggle-checkbox absolute block w-7 h-7 rounded-full bg-white border-4 appearance-none cursor-pointer" checked/>
+                                <label for="payment-toggle" class="toggle-label block overflow-hidden h-7 rounded-full bg-gray-300 cursor-pointer"></label>
+                            </div>
+                            <span class="text-sm font-bold text-brand transition-colors" id="label-annual">年一括払い <span class="text-xs text-brand block text-center">(推奨・ベース価格)</span></span>
+                        </div>
+                    </div>
+
+                    <!-- アカデミック系: 年払い固定表示 -->
+                    <div id="annual-only-notice" class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center justify-center">
+                        <h2 class="text-lg font-bold mb-2">お支払いサイクル</h2>
+                        <div class="flex items-center gap-2 text-brand font-bold"><span>&#10003;</span><span>年一括払いのみ</span></div>
+                        <p class="text-xs text-gray-500 mt-2">アカデミックプランは年額一括払い専用です</p>
+                    </div>
+
+                    <!-- プラン選択タブ -->
+                    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                        <div class="flex border-b border-gray-200 bg-gray-50">
+                            <button id="tab-academic" class="flex-1 py-4 text-center text-sm font-bold transition-colors text-brand border-b-2 border-brand bg-white" onclick="setTab('academic')">&#127891; アカデミック</button>
+                            <button id="tab-academic_offer" class="flex-1 py-4 text-center text-sm font-bold transition-colors text-gray-500 border-b-2 border-transparent hover:text-gray-700 hover:bg-gray-100 relative" onclick="setTab('academic_offer')">&#127873; 特別オファー<span class="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold animate-pulse">3/31迄</span></button>
+                            <button id="tab-normal" class="flex-1 py-4 text-center text-sm font-bold transition-colors text-gray-500 border-b-2 border-transparent hover:text-gray-700 hover:bg-gray-100" onclick="setTab('normal')">&#127970; 通常プラン</button>
+                        </div>
+                        <div class="p-6">
+                            <h2 class="text-lg font-bold mb-4 text-gray-800" id="plan-section-title">アカデミックプランの選択</h2>
+                            <div id="plans-container" class="space-y-3"></div>
+                        </div>
+                    </div>
+
+                    <!-- 専任サポートプラン（なし / 半年 / 1年） -->
+                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                        <h2 class="text-lg font-bold mb-2">追加オプション：専任サポートプラン</h2>
+                        <p class="text-sm text-gray-500 mb-4">動画作成の伴走支援、個別レクチャー、月次レポート作成等のフルサポートを提供します。</p>
+                        <div class="space-y-3" id="support-options">
+                            <div class="p-4 border rounded-xl cursor-pointer transition-all duration-200 border-brand bg-green-50 ring-1 ring-brand" id="support-card-none" onclick="setSupport('none')">
+                                <div class="flex justify-between items-center">
+                                    <div class="flex items-center">
+                                        <span class="w-4 h-4 rounded-full border mr-2 flex items-center justify-center border-brand bg-brand" id="support-radio-none"><div class="w-1.5 h-1.5 bg-white rounded-full"></div></span>
+                                        <span class="font-bold text-gray-800">利用しない</span>
+                                    </div>
+                                    <span class="text-sm text-gray-400">—</span>
+                                </div>
+                            </div>
+                            <div class="p-4 border rounded-xl cursor-pointer transition-all duration-200 border-gray-200 bg-white hover:border-brand/50" id="support-card-6month" onclick="setSupport('6month')">
+                                <div class="flex justify-between items-center">
+                                    <div class="flex items-center">
+                                        <span class="w-4 h-4 rounded-full border mr-2 flex items-center justify-center border-gray-300" id="support-radio-6month"></span>
+                                        <span class="font-bold text-gray-800">半年プラン<span class="text-xs text-gray-500 font-normal ml-2">（6ヶ月契約）</span></span>
+                                    </div>
+                                    <div class="text-right">
+                                        <span class="font-bold text-brand">240,000円<span class="text-xs text-gray-500 font-normal">/半年</span></span>
+                                        <span class="text-[10px] text-gray-400 block">（40,000円/月あたり・税別）</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="p-4 border rounded-xl cursor-pointer transition-all duration-200 border-gray-200 bg-white hover:border-brand/50" id="support-card-12month" onclick="setSupport('12month')">
+                                <div class="flex justify-between items-center">
+                                    <div class="flex items-center">
+                                        <span class="w-4 h-4 rounded-full border mr-2 flex items-center justify-center border-gray-300" id="support-radio-12month"></span>
+                                        <span class="font-bold text-gray-800">1年プラン<span class="text-xs text-gray-500 font-normal ml-2">（12ヶ月契約）</span></span>
+                                    </div>
+                                    <div class="text-right">
+                                        <span class="font-bold text-brand">480,000円<span class="text-xs text-gray-500 font-normal">/年</span></span>
+                                        <span class="text-[10px] text-gray-400 block">（40,000円/月あたり・税別）</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 顧客情報 -->
+                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                        <h2 class="text-lg font-bold mb-4 border-b pb-2">お客様情報</h2>
+                        <div class="space-y-4">
+                            <div><label class="block text-sm font-medium text-gray-700 mb-1">会社・学校名 <span class="text-red-500 text-xs ml-1">必須</span></label><input type="text" id="company" class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent" placeholder="例: ○○大学 / 株式会社hihaho"></div>
+                            <div><label class="block text-sm font-medium text-gray-700 mb-1">担当者名 <span class="text-red-500 text-xs ml-1">必須</span></label><input type="text" id="name" class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent" placeholder="例: 山田 太郎"></div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div><label class="block text-sm font-medium text-gray-700 mb-1">電話番号 <span class="text-red-500 text-xs ml-1">必須</span></label><input type="tel" id="tel" class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent" placeholder="例: 03-1234-5678"></div>
+                                <div><label class="block text-sm font-medium text-gray-700 mb-1">メールアドレス <span class="text-red-500 text-xs ml-1">必須</span></label><input type="email" id="email" class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent" placeholder="例: info@example.com"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 右カラム: シミュレーター -->
+                <div class="lg:w-96 relative">
+                    <div class="sticky top-24 bg-brand-light p-6 rounded-2xl shadow-xl border border-brand/20 text-gray-800">
+                        <div class="flex items-center justify-between mb-4 pb-4 border-b border-brand/20">
+                            <h3 class="text-lg font-bold text-brand-dark">&#128202; お見積り概算</h3>
+                            <span class="text-xs bg-white text-brand px-2 py-1 rounded-full font-bold shadow-sm" id="sim-badge-payment">年一括払い</span>
+                        </div>
+                        <div class="space-y-4 mb-6">
+                            <div class="flex justify-between items-center">
+                                <span class="text-sm font-medium text-gray-600">初期導入費用<br><span class="text-[10px] text-gray-400" id="sim-initial-note">アカデミック価格</span></span>
+                                <span class="text-lg font-bold" id="sim-initial">&#165;0</span>
+                            </div>
+                            <div class="flex justify-between items-start">
+                                <span class="text-sm font-medium text-gray-600" id="sim-plan-name-label">プラン料金</span>
+                                <div class="text-right"><div class="text-lg font-bold" id="sim-plan-price">&#165;0</div><div class="text-[10px] text-gray-400" id="sim-plan-price-sub"></div></div>
+                            </div>
+                            <div class="flex justify-between items-start">
+                                <span class="text-sm font-medium text-gray-600" id="sim-support-label">サポート料金</span>
+                                <div class="text-right"><div class="text-lg font-bold" id="sim-support-price">なし</div></div>
+                            </div>
+                        </div>
+                        <div class="bg-white p-4 rounded-xl border border-brand/10 mb-6">
+                            <div class="flex justify-between items-end mb-2">
+                                <span class="text-sm font-bold text-gray-600" id="cycle-label-1">年額 お支払い合計(税別)</span>
+                                <span class="text-2xl font-bold text-brand" id="sim-cycle-total">&#165;0</span>
+                            </div>
+                            <div class="flex justify-between items-end pt-2 border-t border-gray-100">
+                                <span class="text-xs font-bold text-gray-500">初年度 合計(税別)</span>
+                                <span class="text-xl font-bold text-gray-800" id="sim-first-year">&#165;0</span>
+                            </div>
+                            <p class="text-[10px] text-gray-400 mt-2 text-right">※表示価格はすべて税別です</p>
+                        </div>
+                        <button onclick="goToConfirm()" class="w-full bg-brand hover:bg-brand-dark text-white font-bold py-4 px-6 rounded-xl shadow-lg transition-all transform hover:-translate-y-1 flex justify-center items-center">確認画面へ進む &#8594;</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- STEP 2: 確認画面 -->
+        <section id="view-confirm" class="view-section max-w-3xl mx-auto">
+            <div class="mb-8 flex items-center justify-center space-x-4 text-sm font-medium">
+                <div class="flex items-center text-brand"><span class="w-6 h-6 rounded-full bg-brand text-white flex items-center justify-center mr-2">&#10003;</span> 入力</div>
+                <div class="w-8 border-t-2 border-brand"></div>
+                <div class="flex items-center text-brand"><span class="w-6 h-6 rounded-full bg-brand text-white flex items-center justify-center mr-2">2</span> 確認</div>
+                <div class="w-8 border-t-2 border-gray-200"></div>
+                <div class="flex items-center text-gray-400"><span class="w-6 h-6 rounded-full bg-gray-200 text-gray-500 flex items-center justify-center mr-2">3</span> 完了</div>
+            </div>
+            <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mb-8">
+                <div class="bg-gray-50 px-6 py-4 border-b border-gray-200"><h2 class="text-lg font-bold text-gray-800">&#128203; ご予約内容の確認</h2></div>
+                <div class="p-6 space-y-6">
+                    <div>
+                        <h3 class="text-sm font-bold text-gray-500 mb-3 uppercase tracking-wider">ご契約プラン</h3>
+                        <div class="bg-brand-light p-4 rounded-xl border border-brand/20 space-y-3">
+                            <div class="flex justify-between border-b border-brand/10 pb-2"><span class="text-gray-600">お支払い方法</span><span class="font-bold text-gray-900" id="conf-payment"></span></div>
+                            <div class="flex justify-between border-b border-brand/10 pb-2"><span class="text-gray-600" id="conf-plan-name"></span><span class="font-bold text-gray-900" id="conf-plan-price"></span></div>
+                            <div class="flex justify-between border-b border-brand/10 pb-2"><span class="text-gray-600">サポートプラン</span><span class="font-bold text-gray-900" id="conf-support-price"></span></div>
+                            <div class="flex justify-between pt-1"><span class="text-gray-600">初期導入費用</span><span class="font-bold text-gray-900" id="conf-initial"></span></div>
+                        </div>
+                    </div>
+                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-200 flex justify-between items-center">
+                        <span class="font-bold text-gray-700">初年度 お支払い合計(税別)</span>
+                        <span class="text-3xl font-bold text-brand" id="conf-total"></span>
+                    </div>
+                    <div>
+                        <h3 class="text-sm font-bold text-gray-500 mb-3 uppercase tracking-wider">お客様情報</h3>
+                        <div class="grid grid-cols-3 gap-y-4 border-t border-gray-100 pt-4 text-sm">
+                            <div class="col-span-1 text-gray-500">会社・学校名</div><div class="col-span-2 font-medium" id="conf-company"></div>
+                            <div class="col-span-1 text-gray-500">担当者名</div><div class="col-span-2 font-medium" id="conf-name"></div>
+                            <div class="col-span-1 text-gray-500">電話番号</div><div class="col-span-2 font-medium" id="conf-tel"></div>
+                            <div class="col-span-1 text-gray-500">メールアドレス</div><div class="col-span-2 font-medium" id="conf-email"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="flex flex-col-reverse sm:flex-row justify-center gap-4">
+                <button onclick="goBack()" class="px-8 py-4 border border-gray-300 text-gray-700 font-bold rounded-xl hover:bg-gray-50 transition-colors">修正する</button>
+                <button id="submit-btn" onclick="submitData()" class="px-10 py-4 bg-brand hover:bg-brand-dark text-white font-bold rounded-xl shadow-lg transition-all flex items-center justify-center">&#9993; 予約を確定する</button>
+            </div>
+        </section>
+
+        <!-- STEP 3: 完了画面 -->
+        <section id="view-thanks" class="view-section text-center max-w-2xl mx-auto py-12">
+            <div class="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6 text-4xl text-brand">&#10003;</div>
+            <h2 class="text-3xl font-bold text-gray-800 mb-4">ご予約ありがとうございます</h2>
+            <p class="text-gray-600 mb-8 leading-relaxed">お見積りおよびご予約内容を送信いたしました。<br>ご入力いただいたメールアドレス宛に控えをお送りしております。<br>担当者より3営業日以内にご連絡させていただきます。</p>
+            <div class="bg-gray-50 p-6 rounded-xl border border-gray-200 inline-block text-left w-full mb-8">
+                <p class="text-sm text-gray-500 mb-2">お問い合わせ番号: <span class="font-mono text-gray-800 font-bold" id="thanks-id"></span></p>
+                <p class="text-sm text-gray-500">お急ぎの場合は、上記番号を添えてお電話にてお問い合わせください。</p>
+            </div>
+            <button onclick="location.reload()" class="px-8 py-3 bg-gray-800 hover:bg-gray-900 text-white font-bold rounded-xl transition-colors">トップページへ戻る</button>
+        </section>
+    </main>
+
+    <script>
+        var plansData = {
+            academic: [
+                { id:'a1', name:'学校法人特別版', priceAnnual:10000, desc:'学校内での利用に限定(アップロード4GB迄)\n公開本数: 1本 / 視聴回数: 10,000回 / 50名まで' },
+                { id:'a2', name:'標準プラン', priceAnnual:960000, desc:'学部単位におすすめ\n公開本数: 15本 / 視聴回数: 200,000回 / 無制限' },
+                { id:'a3', name:'学校・企業向けプラン', priceAnnual:1800000, desc:'学校単位におすすめ\n公開本数: 無制限 / 視聴回数: 200,000回 / 無制限' }
+            ],
+            academic_offer: [
+                { id:'ao1', name:'特別オファープラン', priceAnnual:50000, desc:'【2025年3月31日までの期間限定】\n★ 動画 5本 まで公開可能 ★\n視聴回数: 200,000回 / 無制限\n導入費6万円OFF！初年度17万円・2年目以降5万円/年' }
+            ],
+            normal: [
+                { id:'n0', name:'Free プラン', priceMonthly:0, desc:'検証・社内説明用\n公開不可（プレビューのみ） / ユーザー数: 1 / 500MB/動画' },
+                { id:'n1', name:'Starter プラン', priceMonthly:30000, desc:'小規模導入\n公開本数: 3本 / 4,000回/動画/月 / ユーザー数: 3 / 4GB/動画' },
+                { id:'n2', name:'Standard プラン', priceMonthly:100000, desc:'本格導入\n公開本数: 15本 / 10,000回/動画/月 / ユーザー数: 10 / 4GB/動画' },
+                { id:'n3', name:'Enterprise プラン', priceMonthly:300000, desc:'全社展開\n公開本数: 100本 / 40,000回/全体/月 / ユーザー数: 30 / 4GB/動画' },
+                { id:'n4', name:'Custom プラン', priceMonthly:-1, desc:'大規模配信・事業利用\nすべて応相談（公開本数・視聴回数・ユーザー数）' }
+            ]
+        };
+        var initialFees = { normal:160000, academic:160000, academic_offer:120000 };
+        var supportMonthlyFee = 40000;
+        var monthlyPenaltyRate = 1.2;
+        var annualOnlyTabs = ['academic','academic_offer'];
+        var state = { tab:'academic', paymentMode:'annual', selectedPlanId:'a1', support:'none' };
+        var calcResult = {};
+
+        function fmt(v){ return new Intl.NumberFormat('ja-JP',{style:'currency',currency:'JPY'}).format(Math.round(v)); }
+        function isAO(){ return annualOnlyTabs.indexOf(state.tab) >= 0; }
+
+        window.onload = function() {
+            document.getElementById('payment-toggle').addEventListener('change', function(e) {
+                if(isAO()){e.target.checked=true;return;}
+                state.paymentMode = e.target.checked ? 'annual' : 'monthly';
+                updatePaymentUI(); calc();
+            });
+            setTab('academic');
+        };
+
+        function setSupport(val) {
+            state.support = val;
+            var keys = ['none','6month','12month'];
+            for(var i=0; i<keys.length; i++) {
+                var k = keys[i];
+                var card = document.getElementById('support-card-'+k);
+                var radio = document.getElementById('support-radio-'+k);
+                if(k === val) {
+                    card.className = 'p-4 border rounded-xl cursor-pointer transition-all duration-200 border-brand bg-green-50 ring-1 ring-brand';
+                    radio.className = 'w-4 h-4 rounded-full border mr-2 flex items-center justify-center border-brand bg-brand';
+                    radio.innerHTML = '<div class="w-1.5 h-1.5 bg-white rounded-full"></div>';
+                } else {
+                    card.className = 'p-4 border rounded-xl cursor-pointer transition-all duration-200 border-gray-200 bg-white hover:border-brand/50';
+                    radio.className = 'w-4 h-4 rounded-full border mr-2 flex items-center justify-center border-gray-300';
+                    radio.innerHTML = '';
+                }
+            }
+            calc();
+        }
+
+        function setTab(t) {
+            state.tab = t;
+            state.selectedPlanId = plansData[t][0].id;
+            var ac = "flex-1 py-4 text-center text-sm font-bold transition-colors text-brand border-b-2 border-brand bg-white";
+            var ic = "flex-1 py-4 text-center text-sm font-bold transition-colors text-gray-500 border-b-2 border-transparent hover:text-gray-700 hover:bg-gray-100";
+            document.getElementById('tab-academic').className = t==='academic' ? ac : ic;
+            document.getElementById('tab-academic_offer').className = t==='academic_offer' ? (ac+" relative") : (ic+" relative");
+            document.getElementById('tab-normal').className = t==='normal' ? ac : ic;
+            var titles = {academic:'アカデミックプランの選択',academic_offer:'アカデミック特別オファー【3月31日まで】',normal:'ライセンスプランの選択'};
+            document.getElementById('plan-section-title').innerText = titles[t];
+            var notes = {academic:'アカデミック価格',academic_offer:'特別オファー価格（6万円OFF）',normal:'通常価格'};
+            document.getElementById('sim-initial-note').innerText = notes[t];
+            if(isAO()) {
+                state.paymentMode='annual';
+                document.getElementById('payment-toggle').checked=true;
+                document.getElementById('payment-toggle-section').style.display='none';
+                document.getElementById('annual-only-notice').style.display='';
+            } else {
+                document.getElementById('payment-toggle-section').style.display='';
+                document.getElementById('annual-only-notice').style.display='none';
+            }
+            updatePaymentUI(); renderPlans(); calc();
+        }
+
+        function updatePaymentUI() {
+            var a = state.paymentMode==='annual';
+            var la = document.getElementById('label-annual'), lm = document.getElementById('label-monthly');
+            if(a) {
+                la.classList.add('text-brand','font-bold'); la.classList.remove('text-gray-600');
+                lm.classList.add('text-gray-600'); lm.classList.remove('text-red-600','font-bold');
+                document.getElementById('sim-badge-payment').innerText='年一括払い';
+            } else {
+                lm.classList.add('text-red-600','font-bold'); lm.classList.remove('text-gray-600');
+                la.classList.add('text-gray-600'); la.classList.remove('text-brand','font-bold');
+                document.getElementById('sim-badge-payment').innerText='月払い';
+            }
+            renderPlans();
+        }
+
+        function renderPlans() {
+            var c = document.getElementById('plans-container');
+            c.innerHTML = '';
+            var plans = plansData[state.tab];
+            for(var i=0; i<plans.length; i++) {
+                var p = plans[i];
+                var sel = state.selectedPlanId === p.id;
+                var cust = p.priceMonthly === -1;
+                var card = document.createElement('div');
+                card.className = 'p-4 border rounded-xl cursor-pointer transition-all duration-200 ' + (sel ? 'border-brand bg-green-50 shadow-sm ring-1 ring-brand' : 'border-gray-200 bg-white hover:border-brand/50');
+                (function(pid){ card.onclick = function(){ state.selectedPlanId=pid; renderPlans(); calc(); }; })(p.id);
+
+                var lines = p.desc.split('\n');
+                var dh = '';
+                for(var j=0; j<lines.length; j++) {
+                    var line = lines[j];
+                    if(state.tab==='academic_offer') {
+                        line = line.replace(/(5本)/g,'<span class="font-bold text-brand text-sm">$1</span>');
+                        if(line.indexOf('\u2605') >= 0) { dh += '<p class="text-sm font-bold text-red-600 mt-1 bg-red-50 px-2 py-1 rounded">'+line+'</p>'; continue; }
+                    }
+                    dh += '<p class="text-xs text-gray-500 mt-1">'+line+'</p>';
+                }
+
+                var ph;
+                if(cust) {
+                    ph = '<span class="text-lg font-bold '+(sel?'text-brand':'text-gray-800')+'">応相談</span><span class="text-xs text-gray-500 block">お問い合わせください</span>';
+                } else if(isAO()) {
+                    var y=p.priceAnnual, m=Math.round(y/12);
+                    ph = '<span class="text-lg font-bold '+(sel?'text-brand':'text-gray-800')+'">'+fmt(y)+'</span><span class="text-xs text-gray-500 block">/年</span><span class="text-[10px] text-gray-400 block mt-0.5">（'+fmt(m)+'/月あたり）</span>';
+                } else {
+                    var mb = p.priceMonthly;
+                    if(state.paymentMode==='monthly') mb *= monthlyPenaltyRate;
+                    var yp = mb * 12;
+                    ph = '<span class="text-lg font-bold '+(sel?'text-brand':'text-gray-800')+'">'+fmt(yp)+'</span><span class="text-xs text-gray-500 block">/年</span><span class="text-[10px] text-gray-400 block mt-0.5">（'+fmt(mb)+'/月あたり）</span>';
+                }
+                var badge = state.tab==='academic_offer' ? '<span class="inline-block ml-2 bg-red-500 text-white text-[10px] px-2 py-0.5 rounded-full font-bold animate-pulse">動画5本</span>' : '';
+
+                card.innerHTML = '<div class="flex justify-between items-start"><div class="pr-4"><h3 class="font-bold text-gray-800 flex items-center"><span class="w-4 h-4 rounded-full border mr-2 flex items-center justify-center '+(sel?'border-brand bg-brand':'border-gray-300')+'">'+(sel?'<div class="w-1.5 h-1.5 bg-white rounded-full"></div>':'')+'</span>'+p.name+badge+'</h3><div class="ml-6 mt-1">'+dh+'</div></div><div class="text-right flex-shrink-0">'+ph+'</div></div>';
+                c.appendChild(card);
+            }
+        }
+
+        function calc() {
+            var p = null;
+            var plans = plansData[state.tab];
+            for(var i=0; i<plans.length; i++) { if(plans[i].id===state.selectedPlanId) { p=plans[i]; break; } }
+            var mo = state.paymentMode==='monthly';
+            var acad = isAO();
+            var cust = p.priceMonthly === -1;
+
+            var aP, mE;
+            if(cust) { aP=0; mE=0; }
+            else if(acad) { aP=p.priceAnnual; mE=Math.round(p.priceAnnual/12); }
+            else { var m=p.priceMonthly; if(mo)m*=monthlyPenaltyRate; aP=m*12; mE=m; }
+
+            var init = initialFees[state.tab];
+            var supMonths = state.support==='6month' ? 6 : state.support==='12month' ? 12 : 0;
+            var sA = supportMonthlyFee * supMonths;
+            var sM = supMonths > 0 ? supportMonthlyFee : 0;
+            var supPeriod = state.support==='6month' ? '半年' : state.support==='12month' ? '1年' : '';
+
+            var cyc = aP + sA;
+            if(mo && !acad) { cyc = mE + (sM * monthlyPenaltyRate); }
+
+            var fyP = cust ? 0 : (acad ? p.priceAnnual : p.priceMonthly * 12);
+            var fyT = init + fyP + sA;
+
+            calcResult = {
+                planName: p.name,
+                paymentModeStr: acad ? '年一括払い' : (mo ? '月払い (20%割高)' : '年一括払い'),
+                initial: init,
+                planPriceStr: cust ? '応相談' : fmt(aP)+'/年（'+fmt(mE)+'/月あたり）',
+                supportPriceStr: supMonths > 0 ? supPeriod+'プラン '+fmt(sA)+'（'+fmt(sM)+'/月あたり）' : 'なし',
+                firstYearTotalStr: cust ? '応相談' : fmt(fyT)
+            };
+
+            document.getElementById('sim-initial').innerText = fmt(init);
+            document.getElementById('sim-plan-name-label').innerText = p.name+' 料金';
+            if(cust) {
+                document.getElementById('sim-plan-price').innerText = '応相談';
+                document.getElementById('sim-plan-price-sub').innerText = '';
+            } else {
+                document.getElementById('sim-plan-price').innerText = fmt(aP)+' /年';
+                document.getElementById('sim-plan-price-sub').innerText = '（'+fmt(mE)+'/月あたり）';
+            }
+            if(supMonths > 0) {
+                document.getElementById('sim-support-label').innerText = 'サポート（'+supPeriod+'）';
+                document.getElementById('sim-support-price').innerText = fmt(sA)+' /'+supPeriod;
+            } else {
+                document.getElementById('sim-support-label').innerText = 'サポート料金';
+                document.getElementById('sim-support-price').innerText = 'なし';
+            }
+            document.getElementById('cycle-label-1').innerText = mo ? '月額 お支払い合計(税別)' : '年額 お支払い合計(税別)';
+            document.getElementById('sim-cycle-total').innerText = cust ? '応相談' : fmt(cyc);
+            document.getElementById('sim-first-year').innerText = calcResult.firstYearTotalStr;
+        }
+
+        function validateForm() {
+            var c=document.getElementById('company').value.trim();
+            var n=document.getElementById('name').value.trim();
+            var t=document.getElementById('tel').value.trim();
+            var e=document.getElementById('email').value.trim();
+            if(!c||!n||!t||!e){ alert("必須項目が入力されていません。"); return false; }
+            return {company:c,name:n,tel:t,email:e};
+        }
+        function goToConfirm() {
+            var cu=validateForm(); if(!cu)return;
+            document.getElementById('conf-payment').innerText=calcResult.paymentModeStr;
+            document.getElementById('conf-plan-name').innerText=calcResult.planName;
+            document.getElementById('conf-plan-price').innerText=calcResult.planPriceStr;
+            document.getElementById('conf-support-price').innerText=calcResult.supportPriceStr;
+            document.getElementById('conf-initial').innerText=fmt(calcResult.initial);
+            document.getElementById('conf-total').innerText=calcResult.firstYearTotalStr;
+            document.getElementById('conf-company').innerText=cu.company;
+            document.getElementById('conf-name').innerText=cu.name;
+            document.getElementById('conf-tel').innerText=cu.tel;
+            document.getElementById('conf-email').innerText=cu.email;
+            document.getElementById('view-input').classList.remove('active');
+            document.getElementById('view-confirm').classList.add('active');
+            window.scrollTo(0,0);
+        }
+        function goBack() {
+            document.getElementById('view-confirm').classList.remove('active');
+            document.getElementById('view-input').classList.add('active');
+            window.scrollTo(0,0);
+        }
+        // GAS WebアプリURLをここに貼る
+        var GAS_URL = "https://script.google.com/macros/s/AKfycbxc2Ds5hSwRIyCW3aRT8sGB7eYVYiUz9bkNvcXxuwccOnwb97unP3fmlKfpq_3sPmdbGA/exec";
+
+        function submitData() {
+            var b = document.getElementById('submit-btn');
+            b.disabled = true;
+            b.innerHTML = '<svg class="icon animate-spin mr-2" viewBox="0 0 24 24" fill="white"><path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/></svg> 送信中...';
+            var catMap = { academic:'アカデミック', academic_offer:'特別オファー', normal:'通常プラン' };
+            var payload = {
+                category: catMap[state.tab] || state.tab,
+                planName: calcResult.planName,
+                paymentMode: calcResult.paymentModeStr,
+                planPrice: calcResult.planPriceStr,
+                supportPrice: calcResult.supportPriceStr,
+                initial: fmt(calcResult.initial),
+                firstYearTotal: calcResult.firstYearTotalStr,
+                company: document.getElementById('company').value.trim(),
+                name: document.getElementById('name').value.trim(),
+                tel: document.getElementById('tel').value.trim(),
+                email: document.getElementById('email').value.trim()
+            };
+            if (!GAS_URL) {
+                console.warn("GAS_URL未設定のためデモモード");
+                console.log("送信データ:", JSON.stringify(payload, null, 2));
+                setTimeout(function(){
+                    document.getElementById('thanks-id').innerText = "DEMO-" + Math.floor(100000 + Math.random() * 900000);
+                    document.getElementById('view-confirm').classList.remove('active');
+                    document.getElementById('view-thanks').classList.add('active');
+                    window.scrollTo(0, 0);
+                }, 1000);
+                return;
+            }
+            fetch(GAS_URL, { method:'POST', body:JSON.stringify(payload) })
+            .then(function(r){ return r.json(); })
+            .then(function(res){
+                if(res.status==='ok') {
+                    document.getElementById('thanks-id').innerText = res.id;
+                    document.getElementById('view-confirm').classList.remove('active');
+                    document.getElementById('view-thanks').classList.add('active');
+                    window.scrollTo(0, 0);
+                } else { throw new Error(res.message||'送信失敗'); }
+            })
+            .catch(function(err){
+                alert("送信エラー: "+err.message);
+                b.disabled=false;
+                b.innerHTML='<svg class="icon mr-2" viewBox="0 0 24 24" fill="white"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg> 予約を確定する';
+            });
+        }
+    </script>
+</body>
+</html>

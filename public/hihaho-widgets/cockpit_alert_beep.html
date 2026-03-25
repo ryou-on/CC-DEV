@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cockpit Energy Warning HUD</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background: transparent !important;
+            overflow: hidden;
+        }
+
+        /* HUD Design Styles */
+        .font-hud {
+            font-family: 'Orbitron', sans-serif;
+        }
+        .font-mono-hud {
+            font-family: 'Share Tech Mono', monospace;
+        }
+
+        .neon-text-red {
+            color: #ff003c;
+            text-shadow: 0 0 5px rgba(255, 0, 60, 0.7), 0 0 10px rgba(255, 0, 60, 0.5);
+        }
+
+        .neon-border-red {
+            box-shadow: 0 0 10px rgba(255, 0, 60, 0.4), inset 0 0 10px rgba(255, 0, 60, 0.1);
+            border-color: #ff003c;
+        }
+
+        .hud-panel {
+            background: rgba(10, 0, 0, 0.65);
+            backdrop-filter: blur(4px);
+            clip-path: polygon(
+                0 0, 
+                100% 0, 
+                100% 70%, 
+                90% 100%, 
+                10% 100%, 
+                0 70%
+            );
+        }
+
+        /* Animations */
+        @keyframes flash-warning {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.98); }
+        }
+
+        @keyframes scanline {
+            0% { transform: translateY(-100%); }
+            100% { transform: translateY(100%); }
+        }
+
+        .animate-flash {
+            animation: flash-warning 0.8s infinite ease-in-out;
+        }
+
+        .scanline-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to bottom, transparent 50%, rgba(0, 0, 0, 0.3) 51%);
+            background-size: 100% 4px;
+            pointer-events: none;
+            z-index: 10;
+            opacity: 0.3;
+        }
+
+        /* Energy Bar Segments */
+        .energy-segment {
+            transition: all 0.2s ease;
+        }
+        .energy-segment.active {
+            background-color: #ff003c;
+            box-shadow: 0 0 8px #ff003c;
+        }
+        .energy-segment.inactive {
+            background-color: #33000c;
+            box-shadow: none;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center h-screen w-screen">
+
+    <!-- Main HUD Container -->
+    <div class="relative z-50 w-full max-w-lg mx-4">
+        
+        <!-- Top bracket decoration -->
+        <div class="flex justify-between items-end mb-1 opacity-80">
+            <div class="h-4 w-16 border-t-2 border-l-2 border-red-600 neon-border-red"></div>
+            <div class="text-xs font-mono-hud text-red-500 tracking-widest">SYSTEM ALERT // ERR_209</div>
+            <div class="h-4 w-16 border-t-2 border-r-2 border-red-600 neon-border-red"></div>
+        </div>
+
+        <!-- Main Warning Panel -->
+        <div class="hud-panel border-2 border-red-600 neon-border-red p-8 text-center relative overflow-hidden">
+            <!-- Background Grid decoration -->
+            <div class="absolute inset-0 opacity-10" 
+                 style="background-image: radial-gradient(#ff003c 1px, transparent 1px); background-size: 20px 20px;"></div>
+            
+            <!-- Scanline effect -->
+            <div class="scanline-overlay"></div>
+
+            <!-- Warning Icon / Text -->
+            <div class="relative z-20">
+                <div class="inline-block mb-4">
+                   <svg class="w-16 h-16 text-red-600 animate-flash filter drop-shadow-[0_0_8px_rgba(255,0,60,0.8)]" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                   </svg>
+                </div>
+
+                <h1 class="text-4xl md:text-5xl font-hud font-black uppercase tracking-tighter neon-text-red mb-2 animate-flash">
+                    WARNING
+                </h1>
+                <h2 class="text-xl md:text-2xl font-hud font-bold text-red-400 tracking-widest uppercase mb-6">
+                    ENERGY CRITICAL
+                </h2>
+
+                <!-- Dynamic Energy Bar -->
+                <div class="w-full flex justify-between gap-1 mb-2 h-6" id="energy-bar-container">
+                    <!-- JS will populate segments -->
+                </div>
+                
+                <div class="flex justify-between font-mono-hud text-red-400 text-sm mt-1">
+                    <span class="opacity-70">E-CELL: <span id="ecell-val">04%</span></span>
+                    <span class="font-bold text-red-500 animate-pulse">RECHARGE REQUIRED</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom bracket decoration -->
+        <div class="flex justify-between items-start mt-1 opacity-80">
+            <div class="h-4 w-16 border-b-2 border-l-2 border-red-600 neon-border-red"></div>
+            <div class="text-xs font-mono-hud text-red-500 tracking-widest" id="sys-id">ID: AX-99</div>
+            <div class="h-4 w-16 border-b-2 border-r-2 border-red-600 neon-border-red"></div>
+        </div>
+
+    </div>
+
+    <script>
+        // Configuration
+        const segmentCount = 20;
+        const initialLevel = 3; // Start very low
+        const container = document.getElementById('energy-bar-container');
+        const ecellVal = document.getElementById('ecell-val');
+        const sysId = document.getElementById('sys-id');
+
+        // Create Segments
+        let segments = [];
+        for (let i = 0; i < segmentCount; i++) {
+            const seg = document.createElement('div');
+            seg.className = `h-full flex-1 energy-segment ${i < initialLevel ? 'active' : 'inactive'}`;
+            // Slight skew for sci-fi look
+            seg.style.transform = 'skewX(-20deg)';
+            container.appendChild(seg);
+            segments.push(seg);
+        }
+
+        // Audio Context Setup (Web Audio API for Beep)
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        const audioCtx = new AudioContext();
+
+        function playAlarmSound() {
+            try {
+                // Resume context if suspended (browser policy)
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+
+                const osc = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+
+                // Sci-fi Alarm: Square wave dropping in pitch
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(880, audioCtx.currentTime); // A5 High
+                osc.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.1); // Drop to A4
+
+                // Envelope to avoid clicking
+                gainNode.gain.setValueAtTime(0.05, audioCtx.currentTime); // Keep volume reasonable
+                gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.1);
+
+                osc.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.1);
+            } catch (e) {
+                console.log("Audio playback requires user interaction.");
+            }
+        }
+
+        // Unlock audio context on any user interaction (for strict browsers)
+        document.body.addEventListener('click', () => {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+        }, { once: true });
+
+        // Animation Logic: Fluctuate between low levels (0-4)
+        setInterval(() => {
+            // Randomize low energy level
+            const currentLevel = Math.floor(Math.random() * 5); // 0 to 4
+            
+            // Update Bar
+            segments.forEach((seg, index) => {
+                if (index < currentLevel) {
+                    seg.classList.remove('inactive');
+                    seg.classList.add('active');
+                } else {
+                    seg.classList.remove('active');
+                    seg.classList.add('inactive');
+                }
+            });
+
+            // Update Text Percentage (approx 5% per segment)
+            ecellVal.innerText = `0${currentLevel * 5 + Math.floor(Math.random()*4)}%`;
+            
+            // Random Sys ID flicker
+            if(Math.random() > 0.9) {
+                sysId.innerText = "ID: AX-" + Math.floor(Math.random() * 99);
+            }
+
+            // Trigger Alarm Sound Sync
+            playAlarmSound();
+
+        }, 800);
+
+    </script>
+</body>
+</html>

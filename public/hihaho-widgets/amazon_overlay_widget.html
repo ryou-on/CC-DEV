@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Amazon Random Recommendation Overlay</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background: transparent !important;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        /* Glassmorphism Card */
+        .glass-card {
+            background: rgba(20, 20, 20, 0.75);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+            border-radius: 12px;
+            transition: all 0.3s ease;
+        }
+
+        .glass-card:hover {
+            background: rgba(30, 30, 30, 0.85);
+            transform: translateY(-2px);
+            border-color: rgba(255, 153, 0, 0.5);
+        }
+
+        /* Text Styles */
+        .text-shadow {
+            text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+        }
+
+        /* Amazon Orange Button */
+        .btn-amazon {
+            background: linear-gradient(to bottom, #f0c14b, #f7dfa5);
+            border-color: #a88734 #9c7e31 #846a29;
+            color: #111;
+        }
+        .btn-amazon:hover {
+            background: linear-gradient(to bottom, #f5d78e, #eebb52);
+        }
+
+        /* Animations */
+        @keyframes fade-in-up {
+            0% { opacity: 0; transform: translateY(20px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+        
+        .animate-enter {
+            animation: fade-in-up 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+
+        .line-clamp-2 {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        /* Loading Spinner */
+        .loader {
+            border: 3px solid rgba(255,255,255,0.1);
+            border-left-color: #f0c14b;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+    <!-- Main Widget Container -->
+    <!-- Positioned bottom-right with margin for video controls -->
+    <div id="widget-container" class="fixed bottom-4 right-4 w-[340px] max-w-[90vw] animate-enter z-50">
+        
+        <!-- Header / Controls -->
+        <div class="flex justify-between items-center mb-2 px-1">
+            <div class="flex items-center space-x-2">
+                <span class="bg-orange-500 text-white text-[10px] font-bold px-2 py-0.5 rounded shadow-sm tracking-wider uppercase">Recommended</span>
+            </div>
+            <button onclick="renderRandomProduct()" class="text-white/80 hover:text-white transition-colors text-sm bg-black/30 hover:bg-black/50 rounded-full p-1.5 w-7 h-7 flex items-center justify-center">
+                <i class="fas fa-sync-alt"></i>
+            </button>
+        </div>
+
+        <!-- Product Card -->
+        <div class="glass-card p-3 flex gap-3 group relative">
+            <!-- Image Container -->
+            <div class="w-24 h-24 flex-shrink-0 bg-white rounded-md overflow-hidden flex items-center justify-center relative">
+                <img id="p-image" src="" alt="Product Image" class="object-contain w-full h-full p-1 transition-transform duration-300 group-hover:scale-110">
+                <div class="absolute top-0 left-0 bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-br hidden" id="p-sale">SALE</div>
+            </div>
+
+            <!-- Info Container -->
+            <div class="flex flex-col justify-between flex-grow min-w-0">
+                <div>
+                    <h3 id="p-title" class="text-white font-semibold text-sm leading-tight line-clamp-2 text-shadow mb-1">Loading...</h3>
+                    
+                    <!-- Rating -->
+                    <div class="flex items-center space-x-1 mb-1">
+                        <div id="p-stars" class="text-yellow-400 text-xs flex"></div>
+                        <span id="p-reviews" class="text-gray-300 text-[10px]">(0)</span>
+                    </div>
+                </div>
+
+                <div class="flex justify-between items-end">
+                    <div class="flex flex-col">
+                        <span class="text-gray-400 text-[10px] line-through" id="p-old-price"></span>
+                        <div class="flex items-baseline">
+                            <span class="text-xs text-white mr-0.5">¥</span>
+                            <span id="p-price" class="text-xl font-bold text-white text-shadow tracking-tight">0</span>
+                        </div>
+                    </div>
+                    
+                    <a id="p-link" href="#" target="_blank" class="btn-amazon px-3 py-1.5 rounded text-xs font-bold shadow-md transform active:scale-95 transition-transform no-underline flex items-center">
+                        見る <i class="fas fa-chevron-right ml-1 text-[10px]"></i>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Mock Data: Since we cannot call Amazon API directly from a static file without a backend proxy,
+        // we use a hardcoded list of realistic mock products to demonstrate functionality.
+        const products = [
+            { id: 1, title: "Sony WH-1000XM5 ワイヤレスノイズキャンセリングヘッドホン", price: 49500, oldPrice: 59400, rating: 4.5, reviews: 1250, image: "https://images.unsplash.com/photo-1618366712010-f4ae9c647dcb?auto=format&fit=crop&w=300&q=80", category: "Electronics" },
+            { id: 2, title: "Kindle Paperwhite (16GB) 6.8インチディスプレイ 色調調節ライト搭載", price: 19980, rating: 4.7, reviews: 8500, image: "https://images.unsplash.com/photo-1592496001020-d31bd830651f?auto=format&fit=crop&w=300&q=80", category: "Device" },
+            { id: 3, title: "Anker Nebula Capsule II モバイルプロジェクター", price: 69990, rating: 4.4, reviews: 340, image: "https://images.unsplash.com/photo-1535016120720-40c6874c3b13?auto=format&fit=crop&w=300&q=80", category: "Electronics" },
+            { id: 4, title: "Apple AirPods Pro (第2世代) MagSafe充電ケース (USB-C)", price: 39800, rating: 4.8, reviews: 2100, image: "https://images.unsplash.com/photo-1603351154351-5cf233081e35?auto=format&fit=crop&w=300&q=80", category: "Electronics" },
+            { id: 5, title: "Logicool G ゲーミングマウス G502 HERO", price: 7800, oldPrice: 9800, rating: 4.6, reviews: 5600, image: "https://images.unsplash.com/photo-1527864550417-7fd91fc51a46?auto=format&fit=crop&w=300&q=80", category: "Gaming" },
+            { id: 6, title: "サーモス 真空断熱タンブラー 420ml ステンレス", price: 1500, rating: 4.5, reviews: 12000, image: "https://images.unsplash.com/photo-1574069811565-d05178696611?auto=format&fit=crop&w=300&q=80", category: "Home" },
+            { id: 7, title: "Fire TV Stick 4K Max - Alexa対応音声認識リモコン(第3世代)付属", price: 6980, rating: 4.6, reviews: 45000, image: "https://images.unsplash.com/photo-1560169897-fc0cdbdfa4d5?auto=format&fit=crop&w=300&q=80", category: "Device" },
+            { id: 8, title: "NIKE エアマックス 90 メンズ スニーカー", price: 14300, rating: 4.3, reviews: 450, image: "https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=300&q=80", category: "Fashion" },
+            { id: 9, title: "Canon デジタル一眼レフカメラ EOS Kiss X10 ダブルズームキット", price: 115000, rating: 4.7, reviews: 890, image: "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&w=300&q=80", category: "Camera" },
+            { id: 10, title: "ルンバ i3+ ロボット掃除機 アイロボット", price: 49800, oldPrice: 79800, rating: 4.4, reviews: 1100, image: "https://images.unsplash.com/photo-1518640467707-6811f4a6ab73?auto=format&fit=crop&w=300&q=80", category: "Home" },
+            { id: 11, title: "Yogibo Max ヨギボー マックス ビーズクッション", price: 32780, rating: 4.2, reviews: 200, image: "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&w=300&q=80", category: "Home" },
+            { id: 12, title: "ザバス(SAVAS) ホエイプロテイン100 リッチショコラ味 1kg", price: 4200, rating: 4.5, reviews: 8000, image: "https://images.unsplash.com/photo-1579722820308-d74e571900a9?auto=format&fit=crop&w=300&q=80", category: "Health" },
+            { id: 13, title: "Apple MacBook Air M2チップ搭載 13.6インチ", price: 164800, rating: 4.9, reviews: 300, image: "https://images.unsplash.com/photo-1517336714731-489689fd1ca4?auto=format&fit=crop&w=300&q=80", category: "PC" },
+            { id: 14, title: "Nintendo Switch (有機ELモデル) Joy-Con(L)/(R) ホワイト", price: 37980, rating: 4.8, reviews: 12000, image: "https://images.unsplash.com/photo-1629013593026-44754b50c182?auto=format&fit=crop&w=300&q=80", category: "Gaming" },
+            { id: 15, title: "HHKB Professional HYBRID Type-S 英語配列／墨", price: 36850, rating: 4.8, reviews: 500, image: "https://images.unsplash.com/photo-1587829741301-dc798b91a603?auto=format&fit=crop&w=300&q=80", category: "PC" },
+            { id: 16, title: "コカ・コーラ 500mlPET×24本", price: 2100, oldPrice: 2800, rating: 4.6, reviews: 3000, image: "https://images.unsplash.com/photo-1622483767028-3f66f32aef97?auto=format&fit=crop&w=300&q=80", category: "Food" },
+            { id: 17, title: "BOSE SoundLink Flex Bluetooth speaker", price: 19800, rating: 4.7, reviews: 900, image: "https://images.unsplash.com/photo-1608043152269-423dbba4e7e1?auto=format&fit=crop&w=300&q=80", category: "Audio" },
+            { id: 18, title: "無印良品 体にフィットするソファ", price: 9990, rating: 4.3, reviews: 600, image: "https://images.unsplash.com/photo-1551298370-9d3d53740c72?auto=format&fit=crop&w=300&q=80", category: "Home" },
+            { id: 19, title: "GoPro HERO11 Black アクションカメラ", price: 54800, rating: 4.5, reviews: 350, image: "https://images.unsplash.com/photo-1565849904461-04a58ad377e0?auto=format&fit=crop&w=300&q=80", category: "Camera" },
+            { id: 20, title: "アイリスオーヤマ 天然水 500ml ×24本", price: 1280, rating: 4.4, reviews: 2500, image: "https://images.unsplash.com/photo-1616118132534-381148898bb8?auto=format&fit=crop&w=300&q=80", category: "Food" }
+        ];
+
+        function formatPrice(price) {
+            return new Intl.NumberFormat('ja-JP').format(price);
+        }
+
+        function generateStars(rating) {
+            const fullStars = Math.floor(rating);
+            const halfStar = rating % 1 >= 0.5;
+            let html = '';
+            for (let i = 0; i < 5; i++) {
+                if (i < fullStars) {
+                    html += '<i class="fas fa-star"></i>';
+                } else if (i === fullStars && halfStar) {
+                    html += '<i class="fas fa-star-half-alt"></i>';
+                } else {
+                    html += '<i class="far fa-star"></i>';
+                }
+            }
+            return html;
+        }
+
+        function renderRandomProduct() {
+            // Animation reset
+            const container = document.getElementById('widget-container');
+            container.classList.remove('animate-enter');
+            void container.offsetWidth; // Trigger reflow
+            container.classList.add('animate-enter');
+
+            // Select Logic
+            const randomIndex = Math.floor(Math.random() * products.length);
+            const product = products[randomIndex];
+
+            // Update DOM
+            document.getElementById('p-title').textContent = product.title;
+            document.getElementById('p-image').src = product.image;
+            document.getElementById('p-price').textContent = formatPrice(product.price);
+            document.getElementById('p-reviews').textContent = `(${product.reviews})`;
+            document.getElementById('p-stars').innerHTML = generateStars(product.rating);
+            
+            // Old Price / Sale logic
+            const oldPriceEl = document.getElementById('p-old-price');
+            const saleBadge = document.getElementById('p-sale');
+            
+            if (product.oldPrice && product.oldPrice > product.price) {
+                oldPriceEl.textContent = `参考価格: ¥${formatPrice(product.oldPrice)}`;
+                oldPriceEl.classList.remove('hidden');
+                saleBadge.classList.remove('hidden');
+                const discount = Math.round((1 - product.price / product.oldPrice) * 100);
+                saleBadge.textContent = `-${discount}%`;
+            } else {
+                oldPriceEl.classList.add('hidden');
+                saleBadge.classList.add('hidden');
+            }
+
+            // Link (Simulated)
+            document.getElementById('p-link').href = `https://www.amazon.co.jp/s?k=${encodeURIComponent(product.title)}`;
+        }
+
+        // Auto-refresh every 30 seconds to keep content dynamic (Optional)
+        let autoInterval = setInterval(renderRandomProduct, 30000);
+
+        // Initialize
+        window.onload = renderRandomProduct;
+    </script>
+</body>
+</html>

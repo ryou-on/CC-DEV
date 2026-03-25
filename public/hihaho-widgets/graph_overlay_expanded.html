@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Math Overlay Widget - Dynamic Graphs Extended</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background-color: transparent !important;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: 'Noto Sans JP', sans-serif;
+        }
+
+        /* Glassmorphism Effect */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.95); 
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+        }
+
+        .text-shadow {
+            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 3px;
+        }
+        
+        /* Graph Grid Pattern */
+        .graph-bg {
+            background-image: linear-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255, 255, 255, 0.1) 1px, transparent 1px);
+            background-size: 20px 20px;
+            background-position: center center;
+        }
+
+        /* Smooth transitions for graph elements */
+        #prop-line, #inv-path-pos, #inv-path-neg {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* Graph Labels */
+        .axis-label {
+            position: absolute;
+            font-size: 10px;
+            color: rgba(255,255,255,0.5);
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+
+        /* Fullscreen Mode Class */
+        .graph-expanded {
+            position: fixed !important;
+            top: 5vh !important;
+            left: 2vw !important;
+            width: 96vw !important;
+            height: 80vh !important;
+            z-index: 9999 !important;
+            border-radius: 12px;
+            box-shadow: 0 0 50px rgba(0,0,0,0.8);
+            cursor: default !important;
+            background-color: rgba(15, 23, 42, 0.98) !important;
+            border: 2px solid rgba(255,255,255,0.3) !important;
+        }
+        
+        .graph-expanded .close-btn {
+            display: block !important;
+        }
+        
+        /* Hide placeholder when not needed */
+        .graph-placeholder {
+            display: none;
+        }
+        .graph-expanded + .graph-placeholder {
+            display: block;
+            height: 10rem; /* h-40 equivalent */
+            width: 100%;
+        }
+    </style>
+</head>
+<body class="w-full h-screen flex flex-col justify-end items-end p-4 pointer-events-none">
+
+    <!-- Main Widget Container -->
+    <div id="widget-app" class="pointer-events-auto relative z-50 flex flex-col items-end gap-3">
+
+        <!-- Content Panel -->
+        <div id="math-panel" class="glass-panel rounded-2xl w-80 sm:w-96 overflow-hidden transition-all duration-300 origin-bottom-right transform scale-0 opacity-0 mb-2">
+            <!-- Header -->
+            <div class="flex justify-between items-center p-4 border-b border-white/10 bg-white/5">
+                <h2 class="text-white font-bold text-lg flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    </svg>
+                    関数グラフ <span class="text-xs text-cyan-200 bg-cyan-900/50 px-2 py-0.5 rounded border border-cyan-700/50">Pro</span>
+                </h2>
+                <button onclick="togglePanel()" class="text-gray-400 hover:text-white transition-colors p-1 hover:bg-white/10 rounded-full">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Tabs -->
+            <div class="flex p-2 gap-2">
+                <button id="tab-proportional" onclick="switchTab('proportional')" class="flex-1 py-2 text-sm font-bold rounded-lg bg-indigo-500 text-white shadow-lg transition-all border border-indigo-400/30">
+                    比例 (y=ax)
+                </button>
+                <button id="tab-inverse" onclick="switchTab('inverse')" class="flex-1 py-2 text-sm font-bold rounded-lg bg-gray-700 text-gray-300 hover:bg-gray-600 transition-all border border-transparent">
+                    反比例 (y=a/x)
+                </button>
+            </div>
+
+            <!-- Content Area -->
+            <div class="p-5 pt-2">
+                
+                <!-- Proportional Section -->
+                <div id="content-proportional" class="block">
+                    
+                    <!-- Visual Concept Area (Clickable) -->
+                    <div id="graph-container-prop" onclick="toggleGraphFullscreen('prop')" class="group relative h-40 w-full bg-slate-900/80 rounded-lg border border-white/10 graph-bg overflow-hidden flex items-center justify-center cursor-pointer hover:border-indigo-400/50 transition-all">
+                        
+                        <!-- Close Button for Fullscreen -->
+                        <button onclick="event.stopPropagation(); toggleGraphFullscreen('prop')" class="close-btn hidden absolute top-4 right-4 z-[100] bg-red-500/80 hover:bg-red-500 text-white rounded-full p-2 shadow-lg transition">
+                             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+
+                        <!-- Axes -->
+                        <div class="absolute w-full h-px bg-white/40"></div>
+                        <div class="absolute h-full w-px bg-white/40"></div>
+                        
+                        <!-- Scale Labels (Percentage based: Center 50%, Scale 4%/unit) -->
+                        <!-- X Axis -->
+                        <span class="axis-label" style="top: 52%; left: 50%; color: #fff;">0</span>
+                        <span class="axis-label" style="top: 52%; left: 70%;">5</span>
+                        <span class="axis-label" style="top: 52%; left: 90%;">10</span>
+                        <span class="axis-label" style="top: 52%; left: 30%;">-5</span>
+                        <span class="axis-label" style="top: 52%; left: 10%;">-10</span>
+                        <span class="axis-label font-bold text-white" style="top: 52%; right: 2%;">x</span>
+                        
+                        <!-- Y Axis -->
+                        <span class="axis-label" style="top: 30%; left: 52%;">5</span>
+                        <span class="axis-label" style="top: 10%; left: 52%;">10</span>
+                        <span class="axis-label" style="top: 70%; left: 52%;">-5</span>
+                        <span class="axis-label" style="top: 90%; left: 52%;">-10</span>
+                        <span class="axis-label font-bold text-white" style="top: 5%; left: 53%;">y</span>
+
+                        <!-- Graph Line Representation -->
+                        <svg class="absolute w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                             <!-- Center is 50,50. Range approx +/- 12 -->
+                             <line id="prop-line" x1="0" y1="100" x2="100" y2="0" stroke="#818cf8" stroke-width="3" stroke-linecap="round" />
+                        </svg>
+                        <div class="absolute bottom-1 right-2 text-[10px] text-indigo-300 bg-black/60 px-2 py-1 rounded backdrop-blur-sm pointer-events-none group-hover:bg-indigo-900/80 transition-colors">
+                            クリックで拡大
+                        </div>
+                        
+                        <!-- Dynamic Coordinate Point -->
+                        <div id="prop-point" class="absolute w-3 h-3 bg-yellow-400 rounded-full border-2 border-white shadow shadow-yellow-500/50 transition-all duration-300" style="top: 50%; left: 50%; transform: translate(-50%, -50%);"></div>
+                    </div>
+                    <!-- Placeholder to prevent layout shift when expanded -->
+                    <div class="graph-placeholder"></div>
+
+                    <div class="text-center mb-4 mt-3">
+                        <div class="text-2xl font-bold text-white font-mono">
+                            y = <span id="prop-display-a" class="text-indigo-400">a</span>x
+                        </div>
+                    </div>
+
+                    <div class="space-y-3 bg-white/5 p-3 rounded-lg border border-white/5">
+                        <div class="flex justify-between items-center">
+                            <label class="text-indigo-400 text-sm font-bold">定数 a (傾き)</label>
+                            <input type="number" id="prop-a" value="2" step="0.5" class="w-20 bg-gray-900 text-white text-center rounded border border-gray-600 focus:border-indigo-500 focus:outline-none p-1 font-mono" oninput="calcProp()">
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <label class="text-gray-300 text-sm">値 x</label>
+                            <input type="number" id="prop-x" value="3" step="1" class="w-20 bg-gray-900 text-white text-center rounded border border-gray-600 focus:border-indigo-500 focus:outline-none p-1 font-mono" oninput="calcProp()">
+                        </div>
+                        <div class="h-px bg-gray-600 my-2"></div>
+                        <div class="flex justify-between items-center">
+                            <label class="text-white font-bold">答え y</label>
+                            <span id="prop-result" class="text-2xl font-bold text-yellow-400 text-shadow font-mono">6</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Inverse Section -->
+                <div id="content-inverse" class="hidden">
+                     <!-- Visual Concept Area -->
+                     <div id="graph-container-inv" onclick="toggleGraphFullscreen('inv')" class="group relative h-40 w-full bg-slate-900/80 rounded-lg border border-white/10 graph-bg overflow-hidden flex items-center justify-center cursor-pointer hover:border-pink-400/50 transition-all">
+                        
+                        <!-- Close Button -->
+                        <button onclick="event.stopPropagation(); toggleGraphFullscreen('inv')" class="close-btn hidden absolute top-4 right-4 z-[100] bg-red-500/80 hover:bg-red-500 text-white rounded-full p-2 shadow-lg transition">
+                             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+
+                        <!-- Axes -->
+                        <div class="absolute w-full h-px bg-white/40"></div>
+                        <div class="absolute h-full w-px bg-white/40"></div>
+                        
+                        <!-- Scale Labels -->
+                        <span class="axis-label" style="top: 52%; left: 50%; color: #fff;">0</span>
+                        <span class="axis-label" style="top: 52%; left: 70%;">5</span>
+                        <span class="axis-label" style="top: 52%; left: 90%;">10</span>
+                        <span class="axis-label" style="top: 52%; left: 30%;">-5</span>
+                        <span class="axis-label" style="top: 52%; left: 10%;">-10</span>
+                        <span class="axis-label font-bold text-white" style="top: 52%; right: 2%;">x</span>
+                        
+                        <span class="axis-label" style="top: 30%; left: 52%;">5</span>
+                        <span class="axis-label" style="top: 10%; left: 52%;">10</span>
+                        <span class="axis-label" style="top: 70%; left: 52%;">-5</span>
+                        <span class="axis-label" style="top: 90%; left: 52%;">-10</span>
+                        <span class="axis-label font-bold text-white" style="top: 5%; left: 53%;">y</span>
+
+                        <!-- Graph Curve Representation -->
+                        <svg class="absolute w-full h-full" viewBox="0 0 100 100" fill="none">
+                            <!-- Positive x curve -->
+                            <path id="inv-path-pos" d="" stroke="#ec4899" stroke-width="3" stroke-linecap="round" />
+                            <!-- Negative x curve -->
+                            <path id="inv-path-neg" d="" stroke="#ec4899" stroke-width="3" stroke-linecap="round" opacity="0.6" />
+                        </svg>
+                        <div class="absolute bottom-1 right-2 text-[10px] text-pink-300 bg-black/60 px-2 py-1 rounded backdrop-blur-sm pointer-events-none group-hover:bg-pink-900/80 transition-colors">クリックで拡大</div>
+                        
+                         <!-- Dynamic Coordinate Point -->
+                         <div id="inv-point" class="absolute w-3 h-3 bg-yellow-400 rounded-full border-2 border-white shadow shadow-yellow-500/50 transition-all duration-300 opacity-0" style="top: 50%; left: 50%; transform: translate(-50%, -50%);"></div>
+                    </div>
+                    <div class="graph-placeholder"></div>
+
+                    <div class="text-center mb-4 mt-3">
+                        <div class="text-2xl font-bold text-white font-mono">
+                            y = <span id="inv-display-a" class="text-pink-400">a</span> / x
+                        </div>
+                    </div>
+
+                    <div class="space-y-3 bg-white/5 p-3 rounded-lg border border-white/5">
+                        <div class="flex justify-between items-center">
+                            <label class="text-pink-400 text-sm font-bold">定数 a</label>
+                            <input type="number" id="inv-a" value="12" step="1" class="w-20 bg-gray-900 text-white text-center rounded border border-gray-600 focus:border-pink-500 focus:outline-none p-1 font-mono" oninput="calcInv()">
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <label class="text-gray-300 text-sm">値 x</label>
+                            <input type="number" id="inv-x" value="4" step="0.5" class="w-20 bg-gray-900 text-white text-center rounded border border-gray-600 focus:border-pink-500 focus:outline-none p-1 font-mono" oninput="calcInv()">
+                        </div>
+                        <div class="h-px bg-gray-600 my-2"></div>
+                        <div class="flex justify-between items-center">
+                            <label class="text-white font-bold">答え y</label>
+                            <span id="inv-result" class="text-2xl font-bold text-yellow-400 text-shadow font-mono">3</span>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Toggle Button -->
+        <button onclick="togglePanel()" id="toggle-btn" class="group flex items-center gap-2 glass-panel hover:bg-indigo-600/30 text-white px-6 py-3 rounded-full transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-[0_0_20px_rgba(99,102,241,0.6)]">
+            <div class="relative w-6 h-6">
+                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 absolute transition-all duration-300 group-hover:opacity-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                </svg>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 absolute opacity-0 transition-all duration-300 group-hover:opacity-100" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                </svg>
+            </div>
+            <span class="font-bold tracking-wide text-sm md:text-base">グラフウィジェット</span>
+        </button>
+
+    </div>
+
+    <script>
+        let isOpen = false;
+        const panel = document.getElementById('math-panel');
+        const toggleBtn = document.getElementById('toggle-btn');
+
+        // Constants for Graphing
+        // SVG is 100x100. Center is (50, 50). 
+        // Range is approx +/- 12.5. Scale = 4 pixels per unit.
+        const CX = 50;
+        const CY = 50;
+        const SCALE = 4; 
+        const VIEW_LIMIT = 15; // Max value before visual clamping
+
+        function togglePanel() {
+            isOpen = !isOpen;
+            if (isOpen) {
+                panel.classList.remove('scale-0', 'opacity-0');
+                panel.classList.add('scale-100', 'opacity-100');
+                toggleBtn.classList.add('opacity-0', 'pointer-events-none', 'translate-y-4'); 
+            } else {
+                panel.classList.remove('scale-100', 'opacity-100');
+                panel.classList.add('scale-0', 'opacity-0');
+                toggleBtn.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-4');
+                // Close fullscreen if open
+                document.getElementById('graph-container-prop').classList.remove('graph-expanded');
+                document.getElementById('graph-container-inv').classList.remove('graph-expanded');
+            }
+        }
+
+        function toggleGraphFullscreen(type) {
+            const id = 'graph-container-' + type;
+            const el = document.getElementById(id);
+            el.classList.toggle('graph-expanded');
+        }
+
+        function switchTab(type) {
+            const propTab = document.getElementById('tab-proportional');
+            const invTab = document.getElementById('tab-inverse');
+            const propContent = document.getElementById('content-proportional');
+            const invContent = document.getElementById('content-inverse');
+
+            // Reset fullscreen when switching tabs
+            document.getElementById('graph-container-prop').classList.remove('graph-expanded');
+            document.getElementById('graph-container-inv').classList.remove('graph-expanded');
+
+            if (type === 'proportional') {
+                propTab.classList.replace('bg-gray-700', 'bg-indigo-500');
+                propTab.classList.replace('text-gray-300', 'text-white');
+                propTab.classList.add('shadow-lg', 'border-indigo-400/30');
+                
+                invTab.classList.replace('bg-pink-500', 'bg-gray-700');
+                invTab.classList.replace('text-white', 'text-gray-300');
+                invTab.classList.remove('shadow-lg', 'border-pink-400/30');
+                
+                propContent.classList.remove('hidden');
+                invContent.classList.add('hidden');
+            } else {
+                invTab.classList.remove('bg-gray-700', 'text-gray-300');
+                invTab.classList.add('bg-pink-500', 'text-white', 'shadow-lg', 'border-pink-400/30');
+                
+                propTab.classList.replace('bg-indigo-500', 'bg-gray-700');
+                propTab.classList.replace('text-white', 'text-gray-300');
+                propTab.classList.remove('shadow-lg', 'border-indigo-400/30');
+
+                invContent.classList.remove('hidden');
+                propContent.classList.add('hidden');
+            } 
+        }
+
+        // --- Graph Logic Helper ---
+        function toSvgX(val) {
+            return CX + (val * SCALE);
+        }
+        function toSvgY(val) {
+            return CY - (val * SCALE);
+        }
+
+        // --- Proportional Logic ---
+        function calcProp() {
+            const aInput = document.getElementById('prop-a');
+            const xInput = document.getElementById('prop-x');
+            
+            let a = parseFloat(aInput.value);
+            let x = parseFloat(xInput.value);
+            
+            if (isNaN(a)) a = 1;
+            if (isNaN(x)) x = 0;
+
+            const y = a * x;
+            
+            // Update Text
+            document.getElementById('prop-display-a').innerText = a;
+            document.getElementById('prop-result').innerText = parseFloat(y.toFixed(2));
+
+            // Update Graph Line (Extended range to fill box)
+            const x1 = -20;
+            const y1 = a * x1;
+            const x2 = 20;
+            const y2 = a * x2;
+
+            const line = document.getElementById('prop-line');
+            line.setAttribute('x1', toSvgX(x1));
+            line.setAttribute('y1', toSvgY(y1));
+            line.setAttribute('x2', toSvgX(x2));
+            line.setAttribute('y2', toSvgY(y2));
+
+            // Update Point Position
+            const pt = document.getElementById('prop-point');
+            if (Math.abs(x) > VIEW_LIMIT || Math.abs(y) > VIEW_LIMIT) {
+                pt.style.opacity = '0.3'; 
+            } else {
+                pt.style.opacity = '1';
+            }
+            
+            // DIV position is % based. 50% is center. 4% per unit.
+            const leftPct = 50 + (x * 4);
+            const topPct = 50 - (y * 4);
+            
+            pt.style.left = `${leftPct}%`;
+            pt.style.top = `${topPct}%`;
+        }
+
+        // --- Inverse Logic ---
+        function calcInv() {
+            const aInput = document.getElementById('inv-a');
+            const xInput = document.getElementById('inv-x');
+            
+            let a = parseFloat(aInput.value);
+            let x = parseFloat(xInput.value);
+
+            if (isNaN(a)) a = 12;
+            if (isNaN(x)) x = 4;
+
+            let y = 0;
+            let resText = "-";
+            
+            if (x !== 0) {
+                y = a / x;
+                resText = parseFloat(y.toFixed(2));
+            }
+
+            // Update Text
+            document.getElementById('inv-display-a').innerText = a;
+            document.getElementById('inv-result').innerText = resText;
+
+            // Draw Curves
+            drawInverseCurve('inv-path-pos', a, 0.2, 25, 0.2);
+            drawInverseCurve('inv-path-neg', a, -25, -0.2, 0.2);
+
+            // Update Point
+            const pt = document.getElementById('inv-point');
+            if (x === 0 || Math.abs(x) > VIEW_LIMIT || Math.abs(y) > VIEW_LIMIT) {
+                pt.style.opacity = '0';
+            } else {
+                pt.style.opacity = '1';
+                const leftPct = 50 + (x * 4);
+                const topPct = 50 - (y * 4);
+                pt.style.left = `${leftPct}%`;
+                pt.style.top = `${topPct}%`;
+            }
+        }
+
+        function drawInverseCurve(id, a, minX, maxX, step) {
+            const pathEl = document.getElementById(id);
+            let d = "";
+            
+            let first = true;
+            for (let val = minX; val <= maxX; val += step) {
+                if (Math.abs(val) < 0.1) continue;
+
+                let graphY = a / val;
+                if (Math.abs(graphY) > 50) continue;
+
+                const sx = toSvgX(val);
+                const sy = toSvgY(graphY);
+
+                if (first) {
+                    d += `M ${sx} ${sy}`;
+                    first = false;
+                } else {
+                    d += ` L ${sx} ${sy}`;
+                }
+            }
+            pathEl.setAttribute('d', d);
+        }
+
+        // Init
+        calcProp();
+        calcInv();
+    </script>
+</body>
+</html>

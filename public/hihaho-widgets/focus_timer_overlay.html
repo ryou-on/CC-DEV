@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Focus Overlay Widget</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background: transparent !important;
+            overflow: hidden;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        /* Glassmorphism Base */
+        .glass {
+            background: rgba(20, 20, 20, 0.6);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        /* Text Styles */
+        .text-glow {
+            text-shadow: 0 0 10px rgba(0, 243, 255, 0.7), 0 2px 4px rgba(0,0,0,0.8);
+        }
+        .text-shadow {
+            text-shadow: 0 2px 4px rgba(0,0,0,0.9);
+        }
+
+        /* Animations */
+        @keyframes pulse-red {
+            0% { box-shadow: 0 0 0 0 rgba(255, 82, 82, 0.7); }
+            70% { box-shadow: 0 0 0 20px rgba(255, 82, 82, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 82, 82, 0); }
+        }
+        .animate-alarm {
+            animation: pulse-red 1s infinite;
+            border-color: #ff5252;
+        }
+
+        /* Transition logic for minimizing */
+        #main-container {
+            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        /* Setup State: Centered Large */
+        .state-setup {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 90%;
+            max-width: 400px;
+            border-radius: 1.5rem;
+            padding: 2rem;
+        }
+
+        /* Running State: Bottom Right Small */
+        .state-running {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            transform: translate(0, 0);
+            width: auto;
+            min-width: 140px;
+            border-radius: 9999px;
+            padding: 0.75rem 1.5rem;
+            background: rgba(0, 0, 0, 0.7) !important;
+            border-color: rgba(0, 243, 255, 0.4);
+        }
+
+        /* Finished State: Centered Large again */
+        .state-finished {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 90%;
+            max-width: 450px;
+            border-radius: 1.5rem;
+            padding: 2.5rem;
+            background: rgba(0, 0, 0, 0.85) !important;
+            border-color: #ff5252;
+        }
+
+        /* Range Slider Styling */
+        input[type=range] {
+            -webkit-appearance: none;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 24px;
+            width: 24px;
+            border-radius: 50%;
+            background: #00f3ff;
+            margin-top: -10px;
+            cursor: pointer;
+            box-shadow: 0 0 10px rgba(0, 243, 255, 0.8);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 2px;
+        }
+
+        .hidden-el { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <!-- Main Widget Container -->
+    <div id="main-container" class="glass state-setup flex flex-col items-center justify-center text-white transition-all">
+        
+        <!-- SETUP VIEW -->
+        <div id="view-setup" class="w-full flex flex-col items-center">
+            <h1 class="text-3xl font-bold mb-6 text-glow tracking-wider uppercase">Focus Mode</h1>
+            
+            <div class="w-full mb-8">
+                <label class="flex justify-between text-sm font-semibold mb-2 text-shadow">
+                    <span>DURATION</span>
+                    <span id="duration-display" class="text-cyan-400">25 min</span>
+                </label>
+                <input type="range" id="time-input" min="1" max="120" value="25" class="w-full">
+                <div class="flex justify-between text-xs text-gray-400 mt-2">
+                    <span>1m</span>
+                    <span>60m</span>
+                    <span>120m</span>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-3 gap-2 w-full mb-6">
+                <button onclick="setPreset(15)" class="bg-white/10 hover:bg-white/20 py-2 rounded text-sm transition">15m</button>
+                <button onclick="setPreset(25)" class="bg-white/10 hover:bg-white/20 py-2 rounded text-sm transition border border-cyan-400/30">25m</button>
+                <button onclick="setPreset(45)" class="bg-white/10 hover:bg-white/20 py-2 rounded text-sm transition">45m</button>
+            </div>
+
+            <button id="btn-start" class="w-full bg-cyan-500 hover:bg-cyan-400 text-black font-bold py-3 px-6 rounded-xl shadow-[0_0_15px_rgba(0,243,255,0.5)] transition transform hover:scale-105">
+                START FOCUS
+            </button>
+        </div>
+
+        <!-- RUNNING VIEW (Minimized) -->
+        <div id="view-running" class="hidden-el flex flex-row items-center justify-between w-full h-full">
+            <div class="flex items-center space-x-3">
+                <div class="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
+                <span id="timer-display" class="text-2xl font-mono font-bold text-shadow tracking-widest text-white">25:00</span>
+            </div>
+            <!-- Stop Button (X) -->
+            <button id="btn-stop" class="ml-4 text-gray-400 hover:text-white transition p-1" title="Cancel">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
+
+        <!-- FINISHED VIEW -->
+        <div id="view-finished" class="hidden-el flex flex-col items-center text-center">
+            <h2 class="text-4xl font-bold mb-2 text-white text-shadow">TIME IS UP!</h2>
+            <p class="text-gray-300 mb-6">Great focus session.</p>
+            <button id="btn-reset" class="bg-white text-black font-bold py-2 px-8 rounded-full hover:bg-gray-200 transition shadow-lg">
+                Start New Session
+            </button>
+        </div>
+
+    </div>
+
+    <!-- Beep Sound (Generated via JS AudioContext, fallback is silent visual) -->
+
+    <script>
+        // Elements
+        const container = document.getElementById('main-container');
+        const viewSetup = document.getElementById('view-setup');
+        const viewRunning = document.getElementById('view-running');
+        const viewFinished = document.getElementById('view-finished');
+        
+        const timeInput = document.getElementById('time-input');
+        const durationDisplay = document.getElementById('duration-display');
+        const timerDisplay = document.getElementById('timer-display');
+        
+        const btnStart = document.getElementById('btn-start');
+        const btnStop = document.getElementById('btn-stop');
+        const btnReset = document.getElementById('btn-reset');
+
+        // State
+        let totalSeconds = 25 * 60;
+        let remainingSeconds = 0;
+        let timerInterval = null;
+        let audioCtx = null;
+
+        // Setup Logic
+        timeInput.addEventListener('input', (e) => {
+            const val = e.target.value;
+            durationDisplay.textContent = `${val} min`;
+            totalSeconds = val * 60;
+        });
+
+        function setPreset(min) {
+            timeInput.value = min;
+            durationDisplay.textContent = `${min} min`;
+            totalSeconds = min * 60;
+        }
+
+        // Helper: Format Time
+        function formatTime(sec) {
+            const m = Math.floor(sec / 60);
+            const s = sec % 60;
+            return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        }
+
+        // Helper: Play Beep
+        function playAlarm() {
+            try {
+                if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const oscillator = audioCtx.createOscillator();
+                const gainNode = audioCtx.createGain();
+                
+                oscillator.connect(gainNode);
+                gainNode.connect(audioCtx.destination);
+                
+                oscillator.type = 'sine';
+                oscillator.frequency.setValueAtTime(880, audioCtx.currentTime); // A5
+                oscillator.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.5);
+                
+                gainNode.gain.setValueAtTime(0.5, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+                
+                oscillator.start();
+                oscillator.stop(audioCtx.currentTime + 0.5);
+            } catch (e) {
+                console.log('Audio playback failed', e);
+            }
+        }
+
+        // Start Timer
+        btnStart.addEventListener('click', () => {
+            // Init Audio Context on user gesture
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            
+            remainingSeconds = totalSeconds;
+            timerDisplay.textContent = formatTime(remainingSeconds);
+
+            // Transition UI
+            viewSetup.classList.add('hidden-el');
+            viewRunning.classList.remove('hidden-el');
+            
+            container.classList.remove('state-setup');
+            container.classList.add('state-running');
+
+            // Start Interval
+            timerInterval = setInterval(() => {
+                remainingSeconds--;
+                timerDisplay.textContent = formatTime(remainingSeconds);
+
+                if (remainingSeconds <= 0) {
+                    finishTimer();
+                }
+            }, 1000);
+        });
+
+        // Stop/Cancel Timer
+        btnStop.addEventListener('click', () => {
+            clearInterval(timerInterval);
+            resetUI();
+        });
+
+        // Finish Timer Logic
+        function finishTimer() {
+            clearInterval(timerInterval);
+            
+            // Visual Alarm
+            container.classList.add('animate-alarm');
+            playAlarm();
+            // Pulse sound or wait a bit
+            setTimeout(playAlarm, 600);
+            setTimeout(playAlarm, 1200);
+
+            // Transition UI
+            container.classList.remove('state-running');
+            container.classList.add('state-finished');
+            
+            viewRunning.classList.add('hidden-el');
+            viewFinished.classList.remove('hidden-el');
+        }
+
+        // Reset to Start
+        btnReset.addEventListener('click', () => {
+            container.classList.remove('animate-alarm');
+            resetUI();
+        });
+
+        function resetUI() {
+            clearInterval(timerInterval);
+            
+            viewFinished.classList.add('hidden-el');
+            viewRunning.classList.add('hidden-el');
+            viewSetup.classList.remove('hidden-el');
+            
+            container.classList.remove('state-running', 'state-finished');
+            container.classList.add('state-setup');
+        }
+    </script>
+</body>
+</html>

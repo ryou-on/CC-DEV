@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Floating Video Notifications</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            background: transparent !important;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        /* Custom scrollbar hidden */
+        ::-webkit-scrollbar {
+            display: none;
+        }
+
+        /* Animations */
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateX(-50px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        @keyframes slideOut {
+            to {
+                opacity: 0;
+                transform: translateX(-20px);
+                height: 0;
+                margin-bottom: 0;
+                padding: 0;
+            }
+        }
+
+        .notification-enter {
+            animation: slideIn 0.4s ease-out forwards;
+        }
+
+        .notification-exit {
+            animation: slideOut 0.4s ease-in forwards;
+        }
+
+        /* Text Shadow for visibility on video */
+        .text-shadow {
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
+        }
+    </style>
+</head>
+<body class="w-full h-full pointer-events-none">
+
+    <!-- Notification Container: Positioned bottom-left -->
+    <div id="notification-area" class="fixed bottom-8 left-4 w-72 md:w-96 flex flex-col gap-3 pointer-events-auto p-2">
+        <!-- Notifications will be injected here by JS -->
+    </div>
+
+    <script>
+        const notificationArea = document.getElementById('notification-area');
+
+        const icons = {
+            info: `<svg class="w-6 h-6 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>`,
+            success: `<svg class="w-6 h-6 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>`,
+            warning: `<svg class="w-6 h-6 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>`
+        };
+
+        /**
+         * Add a new floating notification
+         * @param {string} title - The title of the notification
+         * @param {string} message - The body text
+         * @param {string} type - 'info', 'success', or 'warning'
+         */
+        function addNotification(title, message, type = 'info') {
+            const id = 'notif-' + Date.now();
+            const el = document.createElement('div');
+            
+            // Glassmorphism Styles + Flex Layout
+            el.className = `
+                notification-enter 
+                relative flex items-start gap-3 
+                bg-black/60 backdrop-blur-md 
+                border-l-4 
+                ${type === 'info' ? 'border-cyan-500' : type === 'success' ? 'border-green-500' : 'border-yellow-500'}
+                rounded-r-lg p-4 shadow-lg 
+                text-white transition-all duration-300
+            `;
+            el.id = id;
+
+            el.innerHTML = `
+                <div class="shrink-0 mt-0.5 drop-shadow-md">
+                    ${icons[type]}
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h3 class="font-bold text-sm text-shadow tracking-wide uppercase text-gray-100">${title}</h3>
+                    <p class="text-sm text-shadow text-gray-200 mt-1 leading-snug">${message}</p>
+                </div>
+                <button onclick="dismissNotification('${id}')" class="text-gray-400 hover:text-white transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            `;
+
+            // Insert at the top of the stack (or bottom if preferred, here we append to stack up)
+            notificationArea.appendChild(el);
+
+            // Auto dismiss after 5 seconds
+            setTimeout(() => {
+                dismissNotification(id);
+            }, 5000);
+        }
+
+        function dismissNotification(id) {
+            const el = document.getElementById(id);
+            if (el) {
+                el.classList.remove('notification-enter');
+                el.classList.add('notification-exit');
+                el.addEventListener('animationend', () => {
+                    el.remove();
+                });
+            }
+        }
+
+        // --- DEMO: Simulate incoming events ---
+        setTimeout(() => addNotification('System Ready', 'Widget initialized successfully.', 'success'), 500);
+        
+        const demoData = [
+            { title: 'New Donation', msg: 'User123 donated $50! "Great stream!"', type: 'success' },
+            { title: 'Update Available', msg: 'Version 2.0 is ready to install.', type: 'info' },
+            { title: 'High Latency', msg: 'Network jitter detected over 100ms.', type: 'warning' },
+            { title: 'New Subscriber', msg: 'Welcome Kenta to the squad!', type: 'success' }
+        ];
+
+        let index = 0;
+        setInterval(() => {
+            const data = demoData[index % demoData.length];
+            addNotification(data.title, data.msg, data.type);
+            index++;
+        }, 3500);
+
+    </script>
+</body>
+</html>

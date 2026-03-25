@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ICD-11 Side Tab Widget (Expandable)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* Core transparency and reset */
+        body, html {
+            background-color: transparent !important;
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            pointer-events: none;
+        }
+
+        /* 
+           Widget Container 
+           - Fixed to the Right side, Vertically Centered.
+           - Uses translateX to hide the content panel, leaving only the tab visible.
+           - Hovering slides the whole unit left to reveal content.
+           - Added transition for width/height for the expand feature.
+        */
+        #widget-root {
+            position: absolute;
+            top: 50%;
+            right: 0;
+            transform: translateY(-50%) translateX(calc(100% - 48px)); /* 48px is the tab width */
+            display: flex;
+            flex-direction: row;
+            align-items: stretch;
+            pointer-events: auto;
+            z-index: 9999;
+            
+            /* Default Dimensions */
+            height: 80vh;
+            width: 600px;
+            max-width: 90vw; 
+            max-height: 90vh;
+
+            /* Smooth Animation for Slide AND Resize */
+            transition: 
+                transform 0.4s cubic-bezier(0.25, 1, 0.5, 1),
+                width 0.4s cubic-bezier(0.25, 1, 0.5, 1),
+                height 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+        }
+
+        /* EXPANDED STATE (New Feature) */
+        #widget-root.expanded {
+            width: 96vw;
+            height: 96vh;
+            max-width: 1600px;
+            max-height: none;
+        }
+
+        /* 
+           Hover Interaction 
+           - When mouse enters #widget-root, slide to position 0 (fully visible)
+           - Also active if class 'active' is added (for mobile tap support)
+        */
+        #widget-root:hover, #widget-root.active {
+            transform: translateY(-50%) translateX(0);
+        }
+
+        /* The Tab Handle */
+        .tab-handle {
+            width: 48px;
+            background: linear-gradient(180deg, #005c87 0%, #0093d5 100%);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-right: none;
+            box-shadow: -4px 0 15px rgba(0, 0, 0, 0.3);
+            border-radius: 12px 0 0 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: white;
+            position: relative;
+            z-index: 10001;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+
+        /* Vertical Text in Tab */
+        .vertical-text {
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+            letter-spacing: 0.15em;
+            font-weight: 700;
+            font-size: 0.85rem;
+            margin-top: 1rem;
+            text-transform: uppercase;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        }
+
+        /* Glassmorphism Content Panel */
+        .content-panel {
+            flex: 1;
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-left: none; /* Merged with tab */
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+            border-radius: 0 0 0 12px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        /* Iframe styling */
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: white;
+            display: block;
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.2);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+        }
+
+        /* Animation for icon on hover */
+        #widget-root:hover .tab-icon {
+            animation: pulse-custom 2s infinite;
+        }
+
+        @keyframes pulse-custom {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.2); opacity: 0.8; }
+        }
+
+        /* Tooltip-like hints for buttons */
+        .btn-hint:hover {
+            background-color: rgba(255,255,255,0.1);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 
+      Main Widget Container 
+      Contains the [Tab Handle] and the [Content Panel] side-by-side.
+    -->
+    <div id="widget-root" onmouseleave="resetState()">
+        
+        <!-- 1. The Tab Handle (Always Visible) -->
+        <div class="tab-handle" onclick="toggleMobile()" title="Hover to slide out">
+            <i class="fa-solid fa-chevron-left text-white/50 mb-4 animate-bounce"></i>
+            <i class="fa-solid fa-book-medical text-xl tab-icon"></i>
+            <span class="vertical-text">ICD-11</span>
+        </div>
+
+        <!-- 2. The Content Panel (Revealed on Hover) -->
+        <div class="content-panel">
+            <!-- Header -->
+            <div class="flex justify-between items-center p-3 border-b border-white/10 bg-white/5 shrink-0">
+                <div class="flex items-center gap-3 overflow-hidden">
+                    <div class="bg-blue-500/20 p-1.5 rounded shrink-0">
+                        <i class="fa-solid fa-stethoscope text-blue-400"></i>
+                    </div>
+                    <div class="flex flex-col overflow-hidden">
+                        <span class="font-bold text-white tracking-wide text-sm whitespace-nowrap">Quick Browser</span>
+                        <span class="text-[10px] text-white/50 uppercase tracking-wider truncate">Official WHO Database</span>
+                    </div>
+                </div>
+                
+                <!-- Controls Area -->
+                <div class="flex items-center gap-2">
+                    <!-- Expand/Compress Button (New Feature) -->
+                    <button onclick="toggleExpand()" class="btn-hint text-xs text-blue-200 hover:text-white transition-colors flex items-center justify-center w-8 h-8 rounded border border-blue-500/30 bg-blue-900/20" title="Toggle Fullscreen View">
+                        <i id="expand-icon" class="fa-solid fa-expand"></i>
+                    </button>
+
+                    <!-- External Link -->
+                    <a href="https://icd.who.int/en/" target="_blank" class="btn-hint text-xs text-blue-300 hover:text-white transition-colors flex items-center gap-1 bg-blue-900/30 px-3 py-1.5 rounded border border-blue-500/30 whitespace-nowrap">
+                        <i class="fa-solid fa-arrow-up-right-from-square"></i> Open
+                    </a>
+                </div>
+            </div>
+
+            <!-- Main Content Area -->
+            <div class="flex-1 relative bg-white w-full h-full overflow-hidden group">
+                <!-- Loading Placeholder -->
+                <div class="absolute inset-0 flex flex-col items-center justify-center text-slate-500 z-0 p-6 text-center">
+                    <i class="fa-solid fa-circle-notch fa-spin text-3xl mb-3 text-blue-500"></i>
+                    <p class="text-xs text-slate-400 font-medium">Loading External Content...</p>
+                </div>
+                
+                <!-- The Iframe -->
+                <iframe src="https://icd.who.int/en/" loading="lazy" title="ICD-11 Browser"></iframe>
+                
+                <!-- 
+                  Overlay to capture mouse events - Keeps menu open during interaction attempt if iframe steals focus.
+                  Note: For full interactivity, users usually click into iframe, which is allowed by pointer-events:auto on parent.
+                -->
+                <div class="absolute inset-0 pointer-events-none z-20 shadow-[inset_0_0_20px_rgba(0,0,0,0.1)]"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const widget = document.getElementById('widget-root');
+        const expandIcon = document.getElementById('expand-icon');
+        let isExpanded = false;
+
+        // Toggle between standard and expanded size
+        function toggleExpand() {
+            isExpanded = !isExpanded;
+            
+            if (isExpanded) {
+                widget.classList.add('expanded');
+                // Change icon to compress
+                expandIcon.classList.remove('fa-expand');
+                expandIcon.classList.add('fa-compress');
+                // Force active state so it doesn't slide back while working in big mode
+                widget.classList.add('active');
+            } else {
+                widget.classList.remove('expanded');
+                // Change icon back to expand
+                expandIcon.classList.remove('fa-compress');
+                expandIcon.classList.add('fa-expand');
+                // Do not remove active immediately to prevent jarring close, 
+                // but allow normal hover logic to resume
+            }
+        }
+
+        // Mobile Support: Click to toggle 'active' class since hover doesn't exist
+        function toggleMobile() {
+            widget.classList.toggle('active');
+        }
+
+        // Reset state when mouse leaves, unless we are in strictly expanded mode (optional UX choice),
+        // Here we adhere to the "hover to reveal" logic. If expanded, it still hides if you leave the area completely,
+        // but since the area is huge (96vw), you likely won't leave it accidentally.
+        function resetState() {
+            if (!isExpanded) {
+                widget.classList.remove('active');
+            } else {
+                // If expanded, we might want to keep it open until manually closed or collapsed,
+                // but strict hover rules say: if mouse leaves, it hides. 
+                // Let's allow hiding even if expanded to keep the UI clean.
+                // Remove this else block if you want it sticky when expanded.
+                // widget.classList.remove('active'); 
+            }
+        }
+    </script>
+</body>
+</html>

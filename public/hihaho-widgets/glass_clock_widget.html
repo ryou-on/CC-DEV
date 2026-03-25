@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modern Glassmorphism Clock Widget</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --glass-bg: rgba(255, 255, 255, 0.15);
+            --glass-border: rgba(255, 255, 255, 0.2);
+            --text-color: #ffffff;
+            --shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background: var(--bg-gradient);
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+        }
+
+        /* Abstract background shapes */
+        .blob {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(80px);
+            z-index: 0;
+            opacity: 0.6;
+            animation: float 10s infinite ease-in-out;
+        }
+        .blob-1 {
+            top: -10%;
+            left: -10%;
+            width: 500px;
+            height: 500px;
+            background: #ff6b6b;
+            animation-delay: 0s;
+        }
+        .blob-2 {
+            bottom: -10%;
+            right: -10%;
+            width: 400px;
+            height: 400px;
+            background: #4ecdc4;
+            animation-delay: -5s;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translate(0, 0); }
+            50% { transform: translate(30px, 50px); }
+        }
+
+        .widget-container {
+            position: relative;
+            z-index: 1;
+            background: var(--glass-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            padding: 40px 60px;
+            box-shadow: var(--shadow);
+            text-align: center;
+            color: var(--text-color);
+            transition: transform 0.3s ease;
+            min-width: 320px;
+        }
+
+        .widget-container:hover {
+            transform: translateY(-5px);
+        }
+
+        .date-display {
+            font-size: 1.2rem;
+            font-weight: 600;
+            letter-spacing: 1px;
+            margin-bottom: 10px;
+            opacity: 0.9;
+            text-transform: uppercase;
+        }
+
+        .time-display {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 4.5rem;
+            font-weight: 700;
+            line-height: 1;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            display: flex;
+            justify-content: center;
+            align-items: baseline;
+        }
+
+        .seconds {
+            font-size: 1.5rem;
+            margin-left: 10px;
+            opacity: 0.8;
+            font-weight: 500;
+        }
+
+        .toggle-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            padding: 8px 16px;
+            border-radius: 20px;
+            color: white;
+            font-size: 0.8rem;
+            margin-top: 20px;
+            cursor: pointer;
+            transition: background 0.2s;
+            font-family: 'Inter', sans-serif;
+        }
+
+        .toggle-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .toggle-btn:focus {
+            outline: 2px solid rgba(255, 255, 255, 0.5);
+        }
+
+        /* Mobile Responsiveness */
+        @media (max-width: 480px) {
+            .widget-container {
+                padding: 30px;
+                min-width: 280px;
+                width: 90%;
+            }
+            .time-display {
+                font-size: 3rem;
+            }
+            .seconds {
+                font-size: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Background Elements -->
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+
+    <!-- Widget -->
+    <main class="widget-container" aria-label="時計ウィジェット">
+        <div class="date-display" id="date">Loading...</div>
+        <div class="time-display">
+            <span id="time">00:00</span>
+            <span class="seconds" id="seconds">00</span>
+        </div>
+        <button class="toggle-btn" id="formatToggle" aria-label="時間表示形式を切り替え">24H表示</button>
+    </main>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const timeEl = document.getElementById('time');
+            const secondsEl = document.getElementById('seconds');
+            const dateEl = document.getElementById('date');
+            const toggleBtn = document.getElementById('formatToggle');
+
+            let is24Hour = true;
+
+            // Days of the week in Japanese
+            const days = ['日', '月', '火', '水', '木', '金', '土'];
+
+            function updateClock() {
+                const now = new Date();
+
+                // Date Formatting
+                const year = now.getFullYear();
+                const month = now.getMonth() + 1;
+                const date = now.getDate();
+                const day = days[now.getDay()];
+                
+                dateEl.textContent = `${year}年 ${month}月 ${date}日 (${day})`;
+
+                // Time Formatting
+                let hours = now.getHours();
+                const minutes = String(now.getMinutes()).padStart(2, '0');
+                const seconds = String(now.getSeconds()).padStart(2, '0');
+                let period = '';
+
+                if (!is24Hour) {
+                    period = hours >= 12 ? '' : ''; // Usually AM/PM, but for minimal design keeping it clean or imply via context if needed. 
+                    // Let's actually adjust hours for 12h format correctly.
+                    hours = hours % 12;
+                    hours = hours ? hours : 12; // the hour '0' should be '12'
+                }
+
+                // Pad hours for 24h, but maybe not for 12h (aesthetic choice)
+                const hoursStr = is24Hour ? String(hours).padStart(2, '0') : String(hours);
+
+                timeEl.textContent = `${hoursStr}:${minutes}`;
+                secondsEl.textContent = seconds;
+                
+                // Update button text for clarity
+                toggleBtn.textContent = is24Hour ? '12H形式へ切替' : '24H形式へ切替';
+            }
+
+            // Event Listener for Toggle
+            toggleBtn.addEventListener('click', () => {
+                is24Hour = !is24Hour;
+                updateClock();
+            });
+
+            // Initial Call and Interval
+            updateClock();
+            setInterval(updateClock, 1000);
+        });
+    </script>
+</body>
+</html>

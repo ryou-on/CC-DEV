@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quadratic Equation Learning Overlay</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background: transparent !important;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: 'Noto Sans JP', sans-serif;
+            /* Ensure clicks pass through empty areas */
+            pointer-events: none;
+        }
+
+        /* Custom Range Slider Styling for High Contrast */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #00ffff;
+            cursor: pointer;
+            margin-top: -6px;
+            box-shadow: 0 0 10px rgba(0, 255, 255, 0.8);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 2px;
+        }
+
+        /* Glassmorphism */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.6);
+        }
+
+        /* Text Shadows */
+        .text-glow {
+            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+        }
+
+        /* Scrollbar for content if needed */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.4);
+            border-radius: 3px;
+        }
+
+        /* Interactive Elements Pointer Events */
+        .interactive {
+            pointer-events: auto;
+        }
+    </style>
+</head>
+<body class="w-full h-screen flex flex-col justify-center items-center relative">
+
+    <!-- Main Widget Container (Hidden by default) -->
+    <div id="widget-container" class="interactive glass-panel rounded-2xl p-6 flex flex-col gap-4 text-white transition-all duration-300 transform scale-100 opacity-0 absolute hidden" style="width: 90%; max-width: 800px; max-height: 90vh;">
+        
+        <!-- Header -->
+        <div class="flex justify-between items-center border-b border-white/20 pb-2">
+            <div class="flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                </svg>
+                <h2 class="text-xl font-bold text-glow">二次方程式グラフィカル学習</h2>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="resetView()" class="text-xs bg-white/10 hover:bg-white/20 px-3 py-1 rounded transition">リセット</button>
+                <button onclick="toggleWidget()" class="text-gray-300 hover:text-white transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Content Grid -->
+        <div class="flex flex-col md:flex-row gap-6 overflow-y-auto custom-scrollbar">
+            
+            <!-- Controls Side -->
+            <div class="flex-1 space-y-4 min-w-[250px]">
+                <!-- Equation Display -->
+                <div class="bg-black/40 p-4 rounded-lg text-center">
+                    <div class="text-2xl font-mono text-cyan-300 text-glow">
+                        <!-- FIX: Removed hardcoded '+' signs. The JS appends +/- dynamically. -->
+                        y = <span id="val-a">1</span>x² <span id="val-b">+ 0</span>x <span id="val-c">+ 0</span>
+                    </div>
+                </div>
+
+                <!-- Sliders -->
+                <div class="space-y-4 bg-white/5 p-4 rounded-lg">
+                    <div class="flex items-center justify-between">
+                        <label class="text-sm font-bold text-cyan-400 w-8">a</label>
+                        <input type="range" id="input-a" min="-5" max="5" step="0.1" value="1" class="flex-1 mx-2">
+                        <span class="text-sm w-10 text-right font-mono" id="disp-a">1.0</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <label class="text-sm font-bold text-purple-400 w-8">b</label>
+                        <input type="range" id="input-b" min="-10" max="10" step="0.5" value="0" class="flex-1 mx-2">
+                        <span class="text-sm w-10 text-right font-mono" id="disp-b">0.0</span>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <label class="text-sm font-bold text-yellow-400 w-8">c</label>
+                        <input type="range" id="input-c" min="-10" max="10" step="0.5" value="0" class="flex-1 mx-2">
+                        <span class="text-sm w-10 text-right font-mono" id="disp-c">0.0</span>
+                    </div>
+                </div>
+
+                <!-- Solutions -->
+                <div class="bg-white/5 p-4 rounded-lg space-y-2">
+                    <h3 class="text-sm font-bold text-gray-300 border-b border-gray-600 pb-1">解の公式 (Roots)</h3>
+                    <p class="text-xs text-gray-400">判別式 D = b² - 4ac</p>
+                    <div id="discriminant-display" class="text-sm font-mono">D = 0</div>
+                    <div id="roots-display" class="text-lg font-bold text-pink-400 text-glow mt-2">x = 0</div>
+                </div>
+
+                <!-- UI Scale -->
+                <div class="pt-2 border-t border-white/10">
+                     <div class="flex items-center justify-between">
+                        <label class="text-xs text-gray-400">UIサイズ</label>
+                        <input type="range" id="ui-scale" min="0.7" max="1.3" step="0.05" value="1" class="w-32">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Graph Side -->
+            <div class="flex-1 bg-black/50 rounded-lg relative overflow-hidden flex flex-col items-center justify-center" style="min-height: 300px;">
+                <canvas id="graphCanvas" class="w-full h-full"></canvas>
+                
+                <!-- Graph Zoom Controls Overlay -->
+                <div class="absolute bottom-2 right-2 flex gap-1 bg-black/60 rounded p-1">
+                    <button onclick="zoomGraph(1.1)" class="p-1 hover:text-cyan-400 text-white font-bold">+</button>
+                    <button onclick="zoomGraph(0.9)" class="p-1 hover:text-cyan-400 text-white font-bold">-</button>
+                </div>
+                <div class="absolute top-2 left-2 text-xs text-gray-400 bg-black/60 px-2 rounded pointer-events-none">
+                    グラフ表示
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Trigger Button -->
+    <button onclick="toggleWidget()" id="trigger-btn" class="interactive fixed bottom-8 right-8 bg-cyan-600 hover:bg-cyan-500 text-white px-6 py-3 rounded-full shadow-[0_0_15px_rgba(0,255,255,0.5)] flex items-center gap-2 transition transform hover:scale-105 font-bold z-50 animate-bounce-slow">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+        </svg>
+        二次方程式を学ぶ
+    </button>
+
+    <script>
+        // State
+        let state = {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            scale: 20, // pixels per unit
+            uiScale: 1.0
+        };
+
+        // Elements
+        const canvas = document.getElementById('graphCanvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('widget-container');
+        const triggerBtn = document.getElementById('trigger-btn');
+        
+        const inputs = {
+            a: document.getElementById('input-a'),
+            b: document.getElementById('input-b'),
+            c: document.getElementById('input-c')
+        };
+        
+        const displays = {
+            a: document.getElementById('disp-a'),
+            b: document.getElementById('disp-b'),
+            c: document.getElementById('disp-c'),
+            valA: document.getElementById('val-a'),
+            valB: document.getElementById('val-b'),
+            valC: document.getElementById('val-c')
+        };
+
+        // Initialization
+        function init() {
+            resizeCanvas();
+            window.addEventListener('resize', () => {
+                resizeCanvas();
+                draw();
+            });
+
+            // Input Listeners
+            Object.keys(inputs).forEach(key => {
+                inputs[key].addEventListener('input', (e) => {
+                    state[key] = parseFloat(e.target.value);
+                    updateUI();
+                    draw();
+                });
+            });
+
+            document.getElementById('ui-scale').addEventListener('input', (e) => {
+                state.uiScale = parseFloat(e.target.value);
+                container.style.transform = `scale(${state.uiScale})`;
+            });
+
+            updateUI();
+            draw();
+        }
+
+        // Toggle Visibility
+        function toggleWidget() {
+            const isHidden = container.classList.contains('hidden');
+            if (isHidden) {
+                container.classList.remove('hidden');
+                // Small timeout to allow display:block to apply before opacity transition
+                setTimeout(() => {
+                    container.classList.remove('opacity-0');
+                }, 10);
+                triggerBtn.classList.add('opacity-0', 'pointer-events-none');
+                resizeCanvas(); // Ensure canvas size is correct when shown
+                draw();
+            } else {
+                container.classList.add('opacity-0');
+                setTimeout(() => {
+                    container.classList.add('hidden');
+                    triggerBtn.classList.remove('opacity-0', 'pointer-events-none');
+                }, 300);
+            }
+        }
+
+        // Reset
+        function resetView() {
+            state.a = 1;
+            state.b = 0;
+            state.c = 0;
+            state.scale = 20;
+            inputs.a.value = 1;
+            inputs.b.value = 0;
+            inputs.c.value = 0;
+            updateUI();
+            draw();
+        }
+
+        // Zoom Logic for Graph
+        function zoomGraph(factor) {
+            state.scale *= factor;
+            if (state.scale < 5) state.scale = 5;
+            if (state.scale > 100) state.scale = 100;
+            draw();
+        }
+
+        // Update UI Text & Calculations
+        function updateUI() {
+            // Update numbers
+            displays.a.textContent = state.a.toFixed(1);
+            displays.b.textContent = state.b.toFixed(1);
+            displays.c.textContent = state.c.toFixed(1);
+
+            // Format equation strings
+            // The Javascript handles the sign (+/-) dynamically.
+            // We removed the hardcoded '+' in HTML to avoid double signs (e.g. ++2 or +-2)
+            displays.valA.textContent = state.a;
+            displays.valB.textContent = state.b >= 0 ? `+ ${state.b}` : `- ${Math.abs(state.b)}`;
+            displays.valC.textContent = state.c >= 0 ? `+ ${state.c}` : `- ${Math.abs(state.c)}`;
+
+            // Calculate Roots
+            const D = (state.b * state.b) - (4 * state.a * state.c);
+            const dDisp = document.getElementById('discriminant-display');
+            const rDisp = document.getElementById('roots-display');
+
+            dDisp.textContent = `D = ${D.toFixed(2)}`;
+
+            if (state.a === 0) {
+                // Linear equation bx + c = 0 -> x = -c/b
+                if (state.b === 0) {
+                    rDisp.textContent = state.c === 0 ? "全ての数 (All)" : "解なし (None)";
+                } else {
+                    rDisp.textContent = `x = ${(-state.c / state.b).toFixed(2)}`;
+                }
+            } else {
+                if (D > 0) {
+                    const x1 = (-state.b + Math.sqrt(D)) / (2 * state.a);
+                    const x2 = (-state.b - Math.sqrt(D)) / (2 * state.a);
+                    rDisp.textContent = `x = ${x1.toFixed(2)}, ${x2.toFixed(2)}`;
+                } else if (D === 0) {
+                    const x = -state.b / (2 * state.a);
+                    rDisp.textContent = `x = ${x.toFixed(2)}`;
+                } else {
+                    rDisp.textContent = "実数解なし (No Real Roots)";
+                }
+            }
+        }
+
+        // Canvas Drawing
+        function resizeCanvas() {
+            const parent = canvas.parentElement;
+            if(parent) {
+                canvas.width = parent.clientWidth;
+                canvas.height = parent.clientHeight;
+            }
+        }
+
+        function draw() {
+            const w = canvas.width;
+            const h = canvas.height;
+            const cx = w / 2;
+            const cy = h / 2;
+            
+            ctx.clearRect(0, 0, w, h);
+
+            // Draw Grid
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            
+            const gridSize = state.scale;
+            
+            // Vertical grid lines
+            for (let x = cx % gridSize; x < w; x += gridSize) {
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, h);
+            }
+            // Horizontal grid lines
+            for (let y = cy % gridSize; y < h; y += gridSize) {
+                ctx.moveTo(0, y);
+                ctx.lineTo(w, y);
+            }
+            ctx.stroke();
+
+            // Draw Axes
+            ctx.strokeStyle = "#ffffff";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(0, cy); ctx.lineTo(w, cy); // X axis
+            ctx.moveTo(cx, 0); ctx.lineTo(cx, h); // Y axis
+            ctx.stroke();
+
+            // Plot Parabola
+            ctx.strokeStyle = "#00ffff";
+            ctx.lineWidth = 3;
+            ctx.shadowColor = "#00ffff";
+            ctx.shadowBlur = 10;
+            ctx.beginPath();
+
+            // We iterate pixels across the width and map to graph coordinates
+            let firstPoint = true;
+            for (let px = 0; px <= w; px+=2) {
+                const x = (px - cx) / state.scale;
+                const y = (state.a * x * x) + (state.b * x) + (state.c);
+                const py = cy - (y * state.scale);
+
+                if (firstPoint) {
+                    ctx.moveTo(px, py);
+                    firstPoint = false;
+                } else {
+                    // Avoid drawing lines across infinity/huge jumps
+                    if (Math.abs(py) < h * 10) {
+                        ctx.lineTo(px, py);
+                    }
+                } दरम्यान
+            }
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+
+            // Highlight Roots (if visible)
+            // Solve ax^2+bx+c=0
+            const D = (state.b * state.b) - (4 * state.a * state.c);
+            if (state.a !== 0 && D >= 0) {
+                const roots = [];
+                if (D > 0) {
+                    roots.push((-state.b + Math.sqrt(D)) / (2 * state.a));
+                    roots.push((-state.b - Math.sqrt(D)) / (2 * state.a));
+                } else {
+                    roots.push(-state.b / (2 * state.a));
+                }
+
+                ctx.fillStyle = "#ff00ff";
+                roots.forEach(r => {
+                    const rPx = cx + (r * state.scale);
+                    const rPy = cy; // y=0 on axis
+                    
+                    // Draw point
+                    ctx.beginPath();
+                    ctx.arc(rPx, rPy, 5, 0, Math.PI * 2);
+                    ctx.fill();
+                });
+            }
+            
+            // Highlight Vertex (-b/2a)
+            if (state.a !== 0) {
+                const vx = -state.b / (2 * state.a);
+                const vy = (state.a * vx * vx) + (state.b * vx) + state.c;
+                const vPx = cx + (vx * state.scale);
+                const vPy = cy - (vy * state.scale);
+
+                ctx.fillStyle = "#ffff00";
+                ctx.beginPath();
+                ctx.arc(vPx, vPy, 4, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // Run
+        init();
+
+    </script>
+</body>
+</html>

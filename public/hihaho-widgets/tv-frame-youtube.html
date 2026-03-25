@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Retro TV YouTube Overlay</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Rule 1: Transparent Background */
+        body {
+            background: transparent !important;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        /* TV Frame Styling */
+        .tv-frame {
+            background: #2a2a2a;
+            border-radius: 24px;
+            box-shadow: 
+                inset 0 0 20px #000, /* Inner depth */
+                0 0 0 4px #1a1a1a,   /* Bezel edge */
+                0 20px 50px rgba(0,0,0,0.6); /* Drop shadow */
+            position: relative;
+            padding: 16px 16px 40px 16px; /* Extra bottom padding for chin */
+            transition: transform 0.3s ease;
+            width: 100%;
+            max-width: 800px;
+        }
+
+        /* Screen Container (16:9 Aspect Ratio) */
+        .screen-wrapper {
+            position: relative;
+            width: 100%;
+            padding-top: 56.25%; /* 16:9 */
+            background: #111;
+            border-radius: 4px;
+            overflow: hidden;
+            box-shadow: inset 0 0 15px rgba(0,0,0,0.9);
+            border: 2px solid #000;
+        }
+
+        /* The actual video iframe */
+        iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: none;
+            opacity: 0;
+            transition: opacity 0.5s ease-in;
+        }
+
+        iframe.active {
+            opacity: 1;
+        }
+
+        /* CRT Scanline Effect Overlay */
+        .scanlines {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%), 
+                        linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
+            background-size: 100% 3px, 4px 100%;
+            pointer-events: none;
+            z-index: 10;
+            border-radius: 4px;
+        }
+
+        /* Screen Reflection/Glare */
+        .glare {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0) 40%);
+            pointer-events: none;
+            z-index: 11;
+            border-radius: 4px;
+        }
+
+        /* TV Branding & Power Light */
+        .tv-chin {
+            position: absolute;
+            bottom: 12px;
+            left: 20px;
+            right: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .brand-logo {
+            color: #555;
+            font-weight: bold;
+            letter-spacing: 2px;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            text-shadow: 0 1px 0 rgba(255,255,255,0.1);
+        }
+
+        .power-light {
+            width: 8px;
+            height: 8px;
+            background: #444;
+            border-radius: 50%;
+            box-shadow: inset 0 1px 2px rgba(0,0,0,0.5);
+            transition: all 0.3s ease;
+        }
+
+        .power-light.on {
+            background: #00ff00;
+            box-shadow: 0 0 8px #00ff00, 0 0 15px #00ff00;
+        }
+
+        /* Control Panel (Glassmorphism) */
+        .control-panel {
+            margin-top: 1rem;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(12px);
+            padding: 0.75rem;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.1);
+            display: flex;
+            gap: 0.5rem;
+            width: 100%;
+            max-width: 500px;
+            transition: opacity 0.3s, transform 0.3s;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        }
+
+        /* Hiding controls when not hovering (optional interaction) */
+        .wrapper:not(:hover) .control-panel {
+            opacity: 0.3;
+            transform: translateY(10px);
+        }
+        .wrapper:hover .control-panel {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* Custom Input */
+        .url-input {
+            flex: 1;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 6px;
+            outline: none;
+            font-size: 0.9rem;
+        }
+        .url-input::placeholder {
+            color: rgba(255,255,255,0.4);
+        }
+        .url-input:focus {
+            background: rgba(255,255,255,0.15);
+            border-color: #3b82f6;
+        }
+
+        /* Custom Button */
+        .play-btn {
+            background: #ef4444;
+            color: white;
+            border: none;
+            padding: 0 20px;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+            transition: background 0.2s;
+        }
+        .play-btn:hover {
+            background: #dc2626;
+        }
+
+        /* Noise static for empty channel */
+        .static-noise {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-image: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMjAwIj48ZmlsdGVyIGlkPSJnoiPjxmZVR1cmJ1bGVuY2UgdHlwZT0iZnJhY3RhbE5vaXNlIiBiYXNlRnJlcXVlbmN5PSIwLjY1IiBudW1PY3RhdmVzPSIzIiBzdGl0Y2hUaWxlcz0ic3RpdGNoIi8+PC9maWx0ZXI+PHJlY3Qgd2lkdGg9IjEwMCUiIGhlaWdodD0iMTAwJSIgZmlsdGVyPSJ1cmwoI2cpIiBvcGFjaXR5PSIwLjE1Ii8+PC9zdmc+');
+            opacity: 0.3;
+            z-index: 1;
+            animation: noise-anim 0.5s steps(5) infinite;
+            display: block;
+        }
+        .static-noise.hidden {
+            display: none;
+        }
+
+        @keyframes noise-anim {
+            0% { background-position: 0 0; }
+            100% { background-position: 100px 100px; }
+        }
+        
+        /* Screen ON Animation */
+        @keyframes turnOnScale {
+            0% { transform: scale(1, 0.01); filter: brightness(0); }
+            50% { transform: scale(1, 0.01); filter: brightness(1); }
+            100% { transform: scale(1, 1); }
+        }
+        .animate-on {
+            animation: turnOnScale 0.4s ease-out forwards;
+        }
+
+    </style>
+</head>
+<body>
+    <div class="wrapper min-h-screen flex flex-col items-center justify-center p-4">
+        
+        <!-- TV Frame Widget -->
+        <div class="tv-frame">
+            <div class="screen-wrapper" id="screenContainer">
+                <!-- Static Noise (Default State) -->
+                <div class="static-noise" id="staticNoise"></div>
+                
+                <!-- Effects -->
+                <div class="scanlines"></div>
+                <div class="glare"></div>
+                
+                <!-- Video Player Placeholder -->
+                <div id="playerContainer" class="w-full h-full absolute inset-0 z-0"></div>
+            </div>
+
+            <!-- TV Chin (Brand + LED) -->
+            <div class="tv-chin">
+                <div class="brand-logo">RETRO TUBE</div>
+                <div class="power-light" id="powerLight"></div>
+            </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="control-panel">
+            <input type="text" id="urlInput" class="url-input" placeholder="YouTube URLを貼り付け (例: https://youtu.be/...)">
+            <button class="play-btn" onclick="loadVideo()">再生</button>
+        </div>
+    </div>
+
+    <script>
+        let player;
+        // Load YouTube IFrame API
+        const tag = document.createElement('script');
+        tag.src = "https://www.youtube.com/iframe_api";
+        const firstScriptTag = document.getElementsByTagName('script')[0];
+        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+
+        function onYouTubeIframeAPIReady() {
+            // API is ready
+        }
+
+        function extractVideoID(url) {
+            const regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#&?]*).*/;
+            const match = url.match(regExp);
+            return (match && match[7].length == 11) ? match[7] : false;
+        }
+
+        function loadVideo() {
+            const input = document.getElementById('urlInput');
+            const url = input.value.trim();
+            const videoId = extractVideoID(url);
+            const staticNoise = document.getElementById('staticNoise');
+            const powerLight = document.getElementById('powerLight');
+            const playerContainer = document.getElementById('playerContainer');
+
+            if (videoId) {
+                // 1. Turn on LED
+                powerLight.classList.add('on');
+                
+                // 2. Hide Static
+                staticNoise.classList.add('hidden');
+
+                // 3. Clear previous player if any
+                playerContainer.innerHTML = '<div id="youtube-player"></div>';
+
+                // 4. Initialize Player
+                player = new YT.Player('youtube-player', {
+                    height: '100%',
+                    width: '100%',
+                    videoId: videoId,
+                    playerVars: {
+                        'playsinline': 1,
+                        'autoplay': 1,
+                        'controls': 1,
+                        'modestbranding': 1,
+                        'rel': 0
+                    },
+                    events: {
+                        'onReady': onPlayerReady
+                    }
+                });
+
+            } else {
+                alert('無効なYouTube URLです。');
+                powerLight.classList.remove('on');
+                staticNoise.classList.remove('hidden');
+            }
+        }
+
+        function onPlayerReady(event) {
+            // Add turn-on animation effect to the iframe
+            const iframe = event.target.getIframe();
+            iframe.classList.add('animate-on', 'active');
+            event.target.playVideo();
+        }
+
+        // Allow Enter key to trigger play
+        document.getElementById('urlInput').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                loadVideo();
+            }
+        });
+    </script>
+</body>
+</html>

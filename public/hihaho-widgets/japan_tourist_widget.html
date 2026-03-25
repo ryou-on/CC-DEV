@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Japan Travel Widget</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            background: transparent !important;
+            overflow: hidden;
+            font-family: 'Hiragino Kaku Gothic ProN', 'Meiryo', sans-serif;
+        }
+
+        /* Glassmorphism Card */
+        .glass-panel {
+            background: rgba(20, 20, 20, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        /* Text Shadow for Visibility */
+        .text-shadow {
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
+        }
+
+        /* Progress Bar Animation */
+        .progress-bar {
+            width: 0%;
+            height: 4px;
+            background: linear-gradient(90deg, #ff0080, #7928ca);
+            transition: width linear;
+        }
+
+        /* Fade Transition */
+        .fade-enter {
+            opacity: 0;
+            transform: scale(0.98);
+        }
+        .fade-enter-active {
+            opacity: 1;
+            transform: scale(1);
+            transition: opacity 500ms ease-out, transform 500ms ease-out;
+        }
+        .fade-exit {
+            opacity: 1;
+            transform: scale(1);
+        }
+        .fade-exit-active {
+            opacity: 0;
+            transform: scale(1.02);
+            transition: opacity 500ms ease-in, transform 500ms ease-in;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Widget Container: Positioned Bottom Right (Standard Overlay Spot) -->
+    <div class="fixed bottom-4 right-4 w-96 max-w-[90vw] glass-panel rounded-xl overflow-hidden text-white flex flex-col group">
+        
+        <!-- Image Area (Min 300px requirement handled via aspect ratio/height) -->
+        <div class="relative h-[300px] w-full overflow-hidden bg-gray-900">
+            <!-- Image Element -->
+            <img id="spot-image" src="" alt="Tourist Spot" class="w-full h-full object-cover transition-transform duration-[8000ms] ease-linear scale-100 group-hover:scale-110">
+            
+            <!-- Gradient Overlay for Text Visibility -->
+            <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent"></div>
+
+            <!-- Content Overlay -->
+            <div class="absolute bottom-0 left-0 p-5 w-full">
+                <div class="flex items-center space-x-2 mb-1">
+                    <span class="bg-red-600 text-xs font-bold px-2 py-0.5 rounded shadow-sm">JAPAN</span>
+                    <span id="spot-pref" class="text-xs font-medium text-gray-300 uppercase tracking-wider text-shadow"></span>
+                </div>
+                <h2 id="spot-name" class="text-2xl font-bold leading-tight mb-1 text-shadow"></h2>
+                <p id="spot-desc" class="text-sm text-gray-200 line-clamp-2 text-shadow opacity-90"></p>
+            </div>
+        </div>
+
+        <!-- Progress Bar -->
+        <div class="w-full bg-gray-700/50 h-1">
+            <div id="progress" class="h-full bg-gradient-to-r from-cyan-400 to-blue-500"></div>
+        </div>
+
+        <!-- Controls (Hidden by default, visible on hover) -->
+        <button onclick="forceNext()" class="absolute top-2 right-2 bg-black/50 hover:bg-white/20 p-2 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+            </svg>
+        </button>
+    </div>
+
+    <script>
+        // 20 Famous Japanese Tourist Spots Data
+        const spots = [
+            { name: "富士山", pref: "Shizuoka / Yamanashi", desc: "日本の象徴であり、世界遺産にも登録されている活火山。", keyword: "mount,fuji" },
+            { name: "金閣寺", pref: "Kyoto", desc: "正式名称は鹿苑寺。黄金に輝く舎利殿が美しい禅寺。", keyword: "kinkakuji" },
+            { name: "東京タワー", pref: "Tokyo", desc: "東京のシンボル。赤と白のコントラストが美しい電波塔。", keyword: "tokyo,tower" },
+            { name: "伏見稲荷大社", pref: "Kyoto", desc: "千本鳥居で世界的に有名な神社。商売繁盛の神様。", keyword: "fushimi,inari" },
+            { name: "姫路城", pref: "Hyogo", desc: "白鷺城とも呼ばれる、美しい白壁の国宝・世界遺産。", keyword: "himeji,castle" },
+            { name: "道頓堀", pref: "Osaka", desc: "グリコの看板や巨大なカニなど、大阪の活気を象徴する繁華街。", keyword: "dotonbori,osaka" },
+            { name: "厳島神社", pref: "Hiroshima", desc: "海上に浮かぶ大鳥居が幻想的な、安芸の宮島にある神社。", keyword: "itsukushima,shrine" },
+            { name: "白川郷", pref: "Gifu", desc: "合掌造りの集落。冬の雪景色は特に幻想的。", keyword: "shirakawago" },
+            { name: "奈良公園", pref: "Nara", desc: "野生のシカと触れ合える公園。東大寺も隣接している。", keyword: "nara,deer" },
+            { name: "浅草寺 (雷門)", pref: "Tokyo", desc: "巨大な提灯が目印の、都内最古の寺院。仲見世通りも人気。", keyword: "sensoji,temple" },
+            { name: "嵐山 竹林の小径", pref: "Kyoto", desc: "高く伸びた竹が空を覆う、静寂と美の世界。", keyword: "arashiyama,bamboo" },
+            { name: "大阪城", pref: "Osaka", desc: "豊臣秀吉が築いた巨城。現在は歴史博物館として親しまれている。", keyword: "osaka,castle" },
+            { name: "原爆ドーム", pref: "Hiroshima", desc: "核兵器の悲惨さを伝える世界遺産。平和記念公園内にある。", keyword: "atomic,bomb,dome" },
+            { name: "東大寺 (大仏)", pref: "Nara", desc: "世界最大級の木造建築・大仏殿と巨大な大仏で知られる。", keyword: "todaiji" },
+            { name: "地獄谷野猿公苑", pref: "Nagano", desc: "温泉に入る「スノーモンキー」が見られる世界的スポット。", keyword: "snow,monkey" },
+            { name: "兼六園", pref: "Ishikawa", desc: "日本三名園の一つ。四季折々の美しさを楽しめる日本庭園。", keyword: "kenrokuen" },
+            { name: "日光東照宮", pref: "Tochigi", desc: "徳川家康を祀る神社。豪華絢爛な彫刻「陽明門」が有名。", keyword: "nikko,toshogu" },
+            { name: "渋谷スクランブル交差点", pref: "Tokyo", desc: "世界で最も混雑する交差点の一つ。都市のダイナミズムを体感。", keyword: "shibuya,crossing" },
+            { name: "直島", pref: "Kagawa", desc: "現代アートの聖地。草間彌生のカボチャなどが有名。", keyword: "naoshima,art" },
+            { name: "沖縄のビーチ", pref: "Okinawa", desc: "透き通るような青い海と白い砂浜。南国のリゾート。", keyword: "okinawa,beach" }
+        ];
+
+        let currentIndex = -1;
+        let timerInterval;
+        let progressInterval;
+        const DURATION = 8000; // 8 seconds
+        const UPDATE_FREQ = 50; // Update progress bar every 50ms
+
+        const els = {
+            img: document.getElementById('spot-image'),
+            name: document.getElementById('spot-name'),
+            pref: document.getElementById('spot-pref'),
+            desc: document.getElementById('spot-desc'),
+            progress: document.getElementById('progress')
+        };
+
+        // Helper to get random image URL that is distinct
+        function getImageUrl(keyword, index) {
+            // Using loremflickr with lock to ensure image consistency per keyword/index combo but variety across spots
+            // Adding random query to bypass cache during development if needed, but 'lock' handles consistency
+            return `https://loremflickr.com/600/450/${keyword.replace(/,/g, ',')}?lock=${index + 1}`;
+        }
+
+        function updateSpot() {
+            // Choose a random index that isn't the current one
+            let nextIndex;
+            do {
+                nextIndex = Math.floor(Math.random() * spots.length);
+            } while (nextIndex === currentIndex && spots.length > 1);
+            
+            currentIndex = nextIndex;
+            const spot = spots[currentIndex];
+
+            // Preload image
+            const tempImg = new Image();
+            const newSrc = getImageUrl(spot.keyword, currentIndex);
+            
+            tempImg.onload = () => {
+                // Apply fade out effect
+                els.img.parentElement.classList.add('opacity-50');
+                
+                setTimeout(() => {
+                    // Update Content
+                    els.img.src = newSrc;
+                    els.name.textContent = spot.name;
+                    els.pref.textContent = spot.pref;
+                    els.desc.textContent = spot.desc;
+
+                    // Reset opacity
+                    els.img.parentElement.classList.remove('opacity-50');
+                    
+                    // Reset Progress Bar
+                    resetProgress();
+                }, 200);
+            };
+            
+            // Fallback just in case onload hangs
+            tempImg.src = newSrc;
+        }
+
+        function resetProgress() {
+            let startTime = Date.now();
+            clearInterval(progressInterval);
+            
+            progressInterval = setInterval(() => {
+                const elapsed = Date.now() - startTime;
+                const percent = Math.min((elapsed / DURATION) * 100, 100);
+                els.progress.style.width = `${percent}%`;
+
+                if (elapsed >= DURATION) {
+                    clearInterval(progressInterval);
+                    updateSpot();
+                }
+            }, UPDATE_FREQ);
+        }
+
+        function forceNext() {
+            clearInterval(progressInterval);
+            updateSpot();
+        }
+
+        // Initialize
+        window.onload = () => {
+            updateSpot();
+        };
+
+    </script>
+</body>
+</html>

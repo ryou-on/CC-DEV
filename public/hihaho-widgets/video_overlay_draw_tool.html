@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Video Overlay Drawing App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background: transparent !important;
+            overflow: hidden;
+            /* Prevent pull-to-refresh on mobile */
+            overscroll-behavior: none;
+        }
+
+        /* Canvas layer */
+        #drawingCanvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            cursor: crosshair;
+            touch-action: none; /* Crucial for drawing on touch devices */
+        }
+
+        /* UI Layer */
+        .ui-layer {
+            position: absolute;
+            bottom: 2rem;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 20;
+            width: 90%;
+            max-width: 400px;
+            pointer-events: none; /* Let clicks pass through around the UI */
+        }
+
+        .interactive-panel {
+            pointer-events: auto;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+
+        .tool-btn {
+            transition: all 0.2s;
+            position: relative;
+        }
+        .tool-btn:active {
+            transform: scale(0.9);
+        }
+        .tool-btn.active::after {
+            content: '';
+            position: absolute;
+            bottom: -5px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 6px;
+            height: 6px;
+            background-color: #38bdf8;
+            border-radius: 50%;
+        }
+
+        /* Custom Range Slider */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #ffffff;
+            cursor: pointer;
+            margin-top: -6px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: rgba(255,255,255,0.3);
+            border-radius: 2px;
+        }
+
+        .color-swatch {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.2);
+            cursor: pointer;
+        }
+        .color-swatch.active {
+            transform: scale(1.2);
+            border-color: #fff;
+            box-shadow: 0 0 8px rgba(255,255,255,0.5);
+        }
+
+        /* Minimize state styles */
+        .minimized {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            overflow: hidden;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0, 0, 0, 0.7);
+        }
+        .minimized .controls-content {
+            opacity: 0;
+            pointer-events: none;
+            position: absolute;
+        }
+        .minimized .toggle-icon {
+            display: block;
+        }
+        .expanded .toggle-icon {
+            display: none;
+        }
+
+        /* Floating Toggle Button (visible when minimized) */
+        .toggle-icon {
+            display: none;
+            color: white;
+            font-size: 1.5rem;
+        }
+        
+        /* Text contrast */
+        .text-shadow {
+            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Drawing Canvas -->
+    <canvas id="drawingCanvas"></canvas>
+
+    <!-- UI Container -->
+    <div class="ui-layer">
+        <!-- Main Control Panel -->
+        <div id="controlPanel" class="interactive-panel expanded p-4 flex flex-col gap-4">
+            
+            <!-- Header / Close Button -->
+            <div class="controls-content flex justify-between items-center w-full">
+                <span class="text-white font-bold text-sm tracking-wider text-shadow">DRAWING TOOL</span>
+                <button onclick="toggleUI()" class="text-white/70 hover:text-white p-1">
+                    <!-- Chevron Down -->
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                </button>
+            </div>
+
+            <!-- Tools Row -->
+            <div class="controls-content grid grid-cols-5 gap-2 items-center w-full">
+                <!-- Pen Tool -->
+                <button id="btnPen" onclick="setMode('pen')" class="tool-btn active flex justify-center items-center h-10 w-10 bg-white/10 rounded-xl text-white">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>
+                </button>
+                <!-- Eraser Tool -->
+                <button id="btnEraser" onclick="setMode('eraser')" class="tool-btn flex justify-center items-center h-10 w-10 bg-white/10 rounded-xl text-white">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/></svg>
+                </button>
+                
+                <!-- Color Swatches -->
+                <div class="col-span-2 flex justify-center gap-3">
+                    <div class="color-swatch active" style="background: #ffffff;" onclick="setColor('#ffffff', this)"></div>
+                    <div class="color-swatch" style="background: #ef4444;" onclick="setColor('#ef4444', this)"></div>
+                    <div class="color-swatch" style="background: #3b82f6;" onclick="setColor('#3b82f6', this)"></div>
+                </div>
+
+                <!-- Clear All -->
+                <button onclick="clearCanvas()" class="tool-btn flex justify-center items-center h-10 w-10 bg-red-500/80 rounded-xl text-white">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                </button>
+            </div>
+
+            <!-- Size Slider -->
+            <div class="controls-content flex items-center gap-3 px-2 pb-1">
+                <div class="w-2 h-2 rounded-full bg-white"></div>
+                <input type="range" id="sizeSlider" min="1" max="20" value="5" oninput="updateSize(this.value)" class="flex-1">
+                <div class="w-5 h-5 rounded-full bg-white"></div>
+            </div>
+
+            <!-- Toggle Icon (Visible only when minimized) -->
+            <div class="toggle-icon" onclick="toggleUI()">
+                 <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const canvas = document.getElementById('drawingCanvas');
+        const ctx = canvas.getContext('2d');
+        const panel = document.getElementById('controlPanel');
+        
+        // State
+        let isDrawing = false;
+        let currentMode = 'pen'; // 'pen' or 'eraser'
+        let currentColor = '#ffffff';
+        let currentSize = 5;
+        let lastX = 0;
+        let lastY = 0;
+
+        // Initialize Canvas Size
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Drawing Functions
+        function startDrawing(e) {
+            isDrawing = true;
+            const { x, y } = getCoordinates(e);
+            lastX = x;
+            lastY = y;
+            draw(e); // Draw a dot immediately
+        }
+
+        function stopDrawing() {
+            isDrawing = false;
+            ctx.beginPath(); // Reset path to prevent connecting separate lines
+        }
+
+        function draw(e) {
+            if (!isDrawing) return;
+            
+            // Prevent scrolling on touch devices while drawing
+            if(e.type === 'touchmove') e.preventDefault();
+
+            const { x, y } = getCoordinates(e);
+
+            ctx.lineWidth = currentSize;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            if (currentMode === 'eraser') {
+                ctx.globalCompositeOperation = 'destination-out';
+                ctx.strokeStyle = 'rgba(0,0,0,1)'; // Color doesn't matter for destination-out
+            } else {
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.strokeStyle = currentColor;
+            }
+
+            ctx.beginPath();
+            ctx.moveTo(lastX, lastY);
+            ctx.lineTo(x, y);
+            ctx.stroke();
+
+            lastX = x;
+            lastY = y;
+        }
+
+        function getCoordinates(e) {
+            if (e.touches && e.touches[0]) {
+                return {
+                    x: e.touches[0].clientX,
+                    y: e.touches[0].clientY
+                };
+            }
+            return {
+                x: e.clientX,
+                y: e.clientY
+            };
+        }
+
+        // Event Listeners for Drawing
+        canvas.addEventListener('mousedown', startDrawing);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseup', stopDrawing);
+        canvas.addEventListener('mouseout', stopDrawing);
+
+        canvas.addEventListener('touchstart', startDrawing, { passive: false });
+        canvas.addEventListener('touchmove', draw, { passive: false });
+        canvas.addEventListener('touchend', stopDrawing);
+
+        // UI Logic
+        function setMode(mode) {
+            currentMode = mode;
+            // Update UI
+            document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.remove('active'));
+            if(mode === 'pen') document.getElementById('btnPen').classList.add('active');
+            if(mode === 'eraser') document.getElementById('btnEraser').classList.add('active');
+        }
+
+        function setColor(color, element) {
+            currentColor = color;
+            setMode('pen'); // Switch back to pen if picking a color
+            document.querySelectorAll('.color-swatch').forEach(el => el.classList.remove('active'));
+            element.classList.add('active');
+        }
+
+        function updateSize(size) {
+            currentSize = size;
+        }
+
+        function clearCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        function toggleUI() {
+            panel.classList.toggle('expanded');
+            panel.classList.toggle('minimized');
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>16:9 Video Overlay (Hologram + Particles)</title>
+  <style>
+    :root{
+      --glow: rgba(64, 220, 255, 0.85);
+      --glow2: rgba(64, 220, 255, 0.25);
+      --bgGlass: rgba(10, 25, 35, 0.35);
+      --border: rgba(120, 240, 255, 0.35);
+      --text: rgba(235, 252, 255, 0.95);
+      --muted: rgba(235, 252, 255, 0.72);
+    }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+      background: #070b10;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans JP", "Hiragino Sans", "Yu Gothic", sans-serif;
+      color: var(--text);
+    }
+
+    .stage {
+      width: min(1200px, 96vw);
+      aspect-ratio: 16 / 9;
+      margin: 24px auto;
+      position: relative;
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow:
+        0 20px 60px rgba(0,0,0,.55),
+        0 0 0 1px rgba(255,255,255,.06) inset;
+      background: #000;
+    }
+
+    .underlay {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      background: #000;
+    }
+
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
+
+    .overlay {
+      position: absolute;
+      inset: 0;
+      pointer-events: none; /* video stays clickable */
+      transform-style: preserve-3d;
+    }
+
+    #fx {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      opacity: .9;
+      mix-blend-mode: screen;
+      filter: saturate(1.05);
+    }
+
+    .scanlines {
+      position: absolute;
+      inset: 0;
+      background:
+        linear-gradient(to bottom,
+          rgba(255,255,255,0.02),
+          rgba(255,255,255,0.00) 35%,
+          rgba(255,255,255,0.02) 70%,
+          rgba(255,255,255,0.00)
+        ),
+        repeating-linear-gradient(
+          to bottom,
+          rgba(0,0,0,0.00) 0px,
+          rgba(0,0,0,0.00) 2px,
+          rgba(0,0,0,0.06) 3px
+        ),
+        radial-gradient(ellipse at center, rgba(0,0,0,0.00) 45%, rgba(0,0,0,0.38) 100%);
+      opacity: .8;
+      pointer-events: none;
+    }
+
+    .hud {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      grid-template-columns: 1fr;
+      align-items: end;
+      padding: 18px;
+      gap: 10px;
+    }
+
+    .panel {
+      width: min(520px, 56%);
+      margin-left: auto;
+      margin-bottom: 10px;
+      border-radius: 14px;
+      background: linear-gradient(135deg, rgba(10,25,35,.32), rgba(10,25,35,.10));
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(120, 240, 255, 0.28);
+      box-shadow:
+        0 0 0 1px rgba(255,255,255,0.06) inset,
+        0 10px 30px rgba(0,0,0,0.35),
+        0 0 38px rgba(64,220,255,0.10);
+      overflow: hidden;
+      transform: translateZ(0);
+      opacity: .98;
+    }
+
+    .panel::before{
+      content:"";
+      position:absolute;
+      inset:-2px;
+      background: radial-gradient(600px 220px at 20% 10%, rgba(64,220,255,.22), transparent 55%),
+                  radial-gradient(600px 220px at 80% 90%, rgba(64,220,255,.14), transparent 55%);
+      filter: blur(10px);
+      opacity:.9;
+      pointer-events:none;
+    }
+
+    .panelHeader{
+      position: relative;
+      padding: 12px 14px 10px;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap: 10px;
+      border-bottom: 1px solid rgba(120,240,255,.18);
+    }
+
+    .badge{
+      font-size: 12px;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: rgba(235,252,255,.9);
+      display:flex;
+      align-items:center;
+      gap:8px;
+    }
+
+    .dot{
+      width:8px;height:8px;border-radius:50%;
+      background: var(--glow);
+      box-shadow: 0 0 16px var(--glow);
+    }
+
+    .time{
+      font-variant-numeric: tabular-nums;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .panelBody{
+      position: relative;
+      padding: 12px 14px 14px;
+    }
+
+    .title{
+      margin: 0 0 6px;
+      font-size: 16px;
+      line-height: 1.2;
+      letter-spacing: .02em;
+      text-shadow: 0 0 18px rgba(64,220,255,.18);
+    }
+
+    .desc{
+      margin: 0 0 12px;
+      font-size: 12.5px;
+      line-height: 1.45;
+      color: var(--muted);
+    }
+
+    .bars{
+      display:grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+
+    .barRow{
+      display:grid;
+      grid-template-columns: 70px 1fr 44px;
+      gap: 10px;
+      align-items:center;
+      font-size: 12px;
+      color: rgba(235,252,255,.78);
+    }
+
+    .barTrack{
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.08);
+      overflow:hidden;
+      position:relative;
+    }
+
+    .barFill{
+      height: 100%;
+      width: 40%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, rgba(64,220,255,.95), rgba(64,220,255,.25));
+      box-shadow: 0 0 18px rgba(64,220,255,.25);
+      position: relative;
+    }
+
+    .barFill::after{
+      content:"";
+      position:absolute;
+      inset:-6px;
+      background: radial-gradient(120px 12px at 80% 50%, rgba(64,220,255,.55), transparent 60%);
+      filter: blur(6px);
+      opacity: .8;
+    }
+
+    .barPct{
+      text-align:right;
+      font-variant-numeric: tabular-nums;
+      color: rgba(235,252,255,.86);
+    }
+
+    .brackets{
+      position:absolute;
+      inset: 0;
+      pointer-events:none;
+    }
+    .corner{
+      position:absolute;
+      width: 28px; height: 28px;
+      border: 2px solid rgba(64,220,255,.42);
+      filter: drop-shadow(0 0 10px rgba(64,220,255,.22));
+      opacity: .9;
+    }
+    .tl{ top:12px; left:12px; border-right:none; border-bottom:none; border-radius: 10px 0 0 0; }
+    .tr{ top:12px; right:12px; border-left:none; border-bottom:none; border-radius: 0 10px 0 0; }
+    .bl{ bottom:12px; left:12px; border-right:none; border-top:none; border-radius: 0 0 0 10px; }
+    .br{ bottom:12px; right:12px; border-left:none; border-top:none; border-radius: 0 0 10px 0; }
+
+    .hint{
+      position:absolute;
+      left: 18px;
+      bottom: 18px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(120,240,255,.18);
+      background: rgba(10,25,35,.22);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      box-shadow: 0 0 26px rgba(64,220,255,0.08);
+      font-size: 12px;
+      color: rgba(235,252,255,.82);
+      opacity: .9;
+    }
+
+    .note{
+      width: min(1200px, 96vw);
+      margin: 0 auto 28px;
+      color: rgba(235,252,255,.70);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .kbd{
+      display:inline-block;
+      padding: 2px 6px;
+      border-radius: 6px;
+      border: 1px solid rgba(255,255,255,.16);
+      background: rgba(255,255,255,.06);
+      font-variant-numeric: tabular-nums;
+      margin: 0 2px;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="stage" id="stage">
+    <div class="underlay">
+      <!-- Replace <video> with your <iframe> if embedding hihaho/Qumu/etc -->
+      <video id="vid" autoplay muted loop playsinline>
+        <source src="https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4" type="video/mp4">
+      </video>
+    </div>
+
+    <div class="overlay" id="overlay">
+      <canvas id="fx"></canvas>
+
+      <div class="brackets" aria-hidden="true">
+        <div class="corner tl"></div>
+        <div class="corner tr"></div>
+        <div class="corner bl"></div>
+        <div class="corner br"></div>
+      </div>
+
+      <div class="hud">
+        <div class="panel" id="panel" aria-hidden="true">
+          <div class="panelHeader">
+            <div class="badge"><span class="dot"></span> hologram layer</div>
+            <div class="time" id="clock">--:--:--</div>
+          </div>
+          <div class="panelBody">
+            <h3 class="title" id="headline">ポイントが現れる“未来UI”</h3>
+            <p class="desc" id="subline">動画の進行や外部イベントに合わせて、注目ポイント・KPI・解説を滑らかに表示できます。</p>
+
+            <div class="bars" id="bars">
+              <div class="barRow">
+                <div>理解度</div>
+                <div class="barTrack"><div class="barFill" style="width: 62%"></div></div>
+                <div class="barPct">62%</div>
+              </div>
+              <div class="barRow">
+                <div>集中度</div>
+                <div class="barTrack"><div class="barFill" style="width: 78%"></div></div>
+                <div class="barPct">78%</div>
+              </div>
+              <div class="barRow">
+                <div>到達</div>
+                <div class="barTrack"><div class="barFill" style="width: 45%"></div></div>
+                <div class="barPct">45%</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="scanlines" aria-hidden="true"></div>
+
+      <div class="hint" aria-hidden="true">
+        デモ操作: マウス移動で奥行き感 / <span class="kbd">H</span>でHUD表示切替 / <span class="kbd">P</span>で粒子増減
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    使い方メモ：このHTMLは「16:9の動画（またはiframe）」の上に、<b>Canvas粒子</b>＋<b>ホログラムHUD</b>を重ねます。<br/>
+    hihaho等の埋め込みに使う場合は、<code>&lt;video&gt;</code> を削除し、<code>&lt;iframe&gt;</code> に差し替えてください（下のJSはそのままでOK）。<br/>
+    HUDをクリック可能にしたい場合は、<code>.overlay</code> の <code>pointer-events: none;</code> を外し、必要な要素だけ <code>pointer-events: auto;</code> を付けます。
+  </div>
+
+  <script>
+    // 1) Clock
+    const clockEl = document.getElementById('clock');
+    function tickClock(){
+      const d = new Date();
+      const hh = String(d.getHours()).padStart(2,'0');
+      const mm = String(d.getMinutes()).padStart(2,'0');
+      const ss = String(d.getSeconds()).padStart(2,'0');
+      clockEl.textContent = `${hh}:${mm}:${ss}`;
+    }
+    tickClock();
+    setInterval(tickClock, 1000);
+
+    // 2) Parallax tilt (mouse)
+    const stage = document.getElementById('stage');
+    const panel = document.getElementById('panel');
+    const overlay = document.getElementById('overlay');
+
+    let targetX = 0, targetY = 0, curX = 0, curY = 0;
+
+    stage.addEventListener('mousemove', (e) => {
+      const r = stage.getBoundingClientRect();
+      const nx = (e.clientX - r.left) / r.width;   // 0..1
+      const ny = (e.clientY - r.top) / r.height;  // 0..1
+      targetX = (nx - 0.5) * 10; // degrees
+      targetY = (0.5 - ny) * 8;  // degrees
+    });
+
+    stage.addEventListener('mouseleave', () => {
+      targetX = 0;
+      targetY = 0;
+    });
+
+    function animateTilt(){
+      curX += (targetX - curX) * 0.06;
+      curY += (targetY - curY) * 0.06;
+      overlay.style.transform = `perspective(900px) rotateY(${curX}deg) rotateX(${curY}deg)`;
+      requestAnimationFrame(animateTilt);
+    }
+    animateTilt();
+
+    // 3) Particle FX (Canvas)
+    const canvas = document.getElementById('fx');
+    const ctx = canvas.getContext('2d');
+
+    function resizeCanvas(){
+      const r = stage.getBoundingClientRect();
+      const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+      canvas.width  = Math.floor(r.width * dpr);
+      canvas.height = Math.floor(r.height * dpr);
+      canvas.style.width = r.width + 'px';
+      canvas.style.height = r.height + 'px';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    let particles = [];
+    let particleCount = 110;
+
+    const rand = (min, max) => Math.random() * (max - min) + min;
+
+    function spawnParticle(w, h){
+      const edge = Math.floor(Math.random() * 4);
+      let x, y, vx, vy;
+      const speed = rand(0.25, 1.0);
+
+      if(edge === 0){ x = rand(0, w); y = -10; vx = rand(-0.3, 0.3); vy = speed; }
+      if(edge === 1){ x = w + 10; y = rand(0, h); vx = -speed; vy = rand(-0.3, 0.3); }
+      if(edge === 2){ x = rand(0, w); y = h + 10; vx = rand(-0.3, 0.3); vy = -speed; }
+      if(edge === 3){ x = -10; y = rand(0, h); vx = speed; vy = rand(-0.3, 0.3); }
+
+      return {
+        x, y, vx, vy,
+        life: rand(2.0, 5.5),
+        age: 0,
+        r: rand(1.1, 2.2),
+        glow: rand(0.15, 0.55)
+      };
+    }
+
+    function ensureParticles(){
+      const w = stage.clientWidth;
+      const h = stage.clientHeight;
+      while(particles.length < particleCount){
+        particles.push(spawnParticle(w, h));
+      }
+    }
+
+    function draw(){
+      const w = stage.clientWidth;
+      const h = stage.clientHeight;
+
+      ctx.clearRect(0, 0, w, h);
+      ctx.globalCompositeOperation = 'lighter';
+
+      const g = ctx.createRadialGradient(w*0.7, h*0.2, 10, w*0.7, h*0.2, w*0.9);
+      g.addColorStop(0, 'rgba(64,220,255,0.08)');
+      g.addColorStop(1, 'rgba(64,220,255,0.0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0,0,w,h);
+
+      for(let i = particles.length - 1; i >= 0; i--){
+        const p = particles[i];
+        p.age += 0.016;
+        p.x += p.vx * 2.2;
+        p.y += p.vy * 2.2;
+
+        const cx = w * 0.5, cy = h * 0.5;
+        const dx = (cx - p.x), dy = (cy - p.y);
+        const dist = Math.max(60, Math.hypot(dx, dy));
+        p.vx += (dx / dist) * 0.01;
+        p.vy += (dy / dist) * 0.01;
+
+        const alpha = Math.max(0, 1 - (p.age / p.life));
+        ctx.beginPath();
+        ctx.fillStyle = `rgba(64,220,255,${alpha * p.glow})`;
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.strokeStyle = `rgba(64,220,255,${alpha * 0.10})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(p.x - p.vx * 12, p.y - p.vy * 12);
+        ctx.stroke();
+
+        if(p.age > p.life || p.x < -60 || p.x > w + 60 || p.y < -60 || p.y > h + 60){
+          particles.splice(i, 1);
+        }
+      }
+
+      for(let i=0;i<particles.length;i++){
+        for(let j=i+1;j<particles.length;j++){
+          const a = particles[i], b = particles[j];
+          const d = Math.hypot(a.x-b.x, a.y-b.y);
+          if(d < 80){
+            const t = (1 - d/80) * 0.06;
+            ctx.strokeStyle = `rgba(64,220,255,${t})`;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, b.y);
+            ctx.stroke();
+          }
+        }
+      }
+
+      ctx.globalCompositeOperation = 'source-over';
+      ensureParticles();
+      requestAnimationFrame(draw);
+    }
+
+    const ro = new ResizeObserver(() => resizeCanvas());
+    ro.observe(stage);
+    window.addEventListener('resize', resizeCanvas, {passive:true});
+
+    resizeCanvas();
+    ensureParticles();
+    requestAnimationFrame(draw);
+
+    // 4) Keyboard toggles (demo)
+    let hudVisible = true;
+    window.addEventListener('keydown', (e) => {
+      const k = (e.key || '').toLowerCase();
+      if(k === 'h'){
+        hudVisible = !hudVisible;
+        panel.style.display = hudVisible ? '' : 'none';
+      }
+      if(k === 'p'){
+        particleCount = (particleCount > 60) ? 60 : 140;
+      }
+    });
+
+    // 5) External control example (postMessage)
+    function setBars(vals){
+      const rows = document.querySelectorAll('.barRow');
+      vals.forEach((v, idx) => {
+        if(!rows[idx]) return;
+        const fill = rows[idx].querySelector('.barFill');
+        const pct  = rows[idx].querySelector('.barPct');
+        const clamped = Math.max(0, Math.min(100, Number(v)));
+        fill.style.width = clamped + '%';
+        pct.textContent = clamped + '%';
+      });
+    }
+
+    window.addEventListener('message', (ev) => {
+      const d = ev.data;
+      if(!d || typeof d !== 'object') return;
+      if(d.type !== 'overlay') return;
+
+      if(typeof d.headline === 'string') document.getElementById('headline').textContent = d.headline;
+      if(typeof d.subline === 'string') document.getElementById('subline').textContent  = d.subline;
+      if(Array.isArray(d.progress)) setBars(d.progress);
+
+      particleCount = Math.min(180, particleCount + 30);
+      setTimeout(() => { particleCount = Math.max(60, particleCount - 30); }, 900);
+    });
+  </script>
+</body>
+</html>

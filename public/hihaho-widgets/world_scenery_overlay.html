@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>World Scenery Widget</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body, html {
+            background-color: transparent !important;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            width: 100%;
+            height: 100%;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        /* Custom Text Shadow for visibility against any video background */
+        .text-shadow-strong {
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
+        }
+
+        /* Glassmorphism Card */
+        .glass-card {
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        /* Progress Bar Animation */
+        @keyframes progress {
+            from { width: 100%; }
+            to { width: 0%; }
+        }
+
+        .animate-progress {
+            animation: progress 8s linear forwards;
+        }
+
+        /* Fade Transition */
+        .fade-enter {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+        .fade-enter-active {
+            opacity: 1;
+            transform: translateY(0);
+            transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+        }
+    </style>
+</head>
+<body class="flex items-end justify-start p-6">
+
+    <!-- Widget Container -->
+    <div id="widget" class="glass-card rounded-2xl p-4 max-w-sm w-full flex items-center gap-4 relative overflow-hidden transition-all hover:scale-105 duration-300">
+        
+        <!-- Image Circle -->
+        <div class="shrink-0">
+            <img id="scene-image" src="" alt="Scenery" class="w-16 h-16 rounded-full object-cover border-2 border-white/50 shadow-lg">
+        </div>
+
+        <!-- Text Content -->
+        <div class="flex-1 min-w-0">
+            <p id="scene-country" class="text-xs font-bold text-yellow-400 uppercase tracking-wider text-shadow-strong mb-0.5">LOADING...</p>
+            <h2 id="scene-name" class="text-lg font-bold text-white truncate text-shadow-strong leading-tight">Please wait</h2>
+            <p id="scene-desc" class="text-xs text-gray-200 truncate text-shadow-strong opacity-90">Loading world data...</p>
+        </div>
+
+        <!-- Progress Bar (Bottom) -->
+        <div class="absolute bottom-0 left-0 h-1 bg-gradient-to-r from-blue-400 to-purple-500" id="progress-bar"></div>
+    </div>
+
+    <script>
+        // Configuration
+        const INTERVAL_MS = 8000;
+
+        // Data Source (Curated Unsplash Images)
+        const locations = [
+            {
+                country: "JAPAN",
+                name: "Kyoto Arashiyama",
+                desc: "Serene bamboo groves and temples.",
+                img: "https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?auto=format&fit=crop&w=150&q=80"
+            },
+            {
+                country: "ITALY",
+                name: "Amalfi Coast",
+                desc: "Colorful cliffs overlooking the sea.",
+                img: "https://images.unsplash.com/photo-1533105079780-92b9be482077?auto=format&fit=crop&w=150&q=80"
+            },
+            {
+                country: "ICELAND",
+                name: "Kirkjufell",
+                desc: "The famous arrow-shaped mountain.",
+                img: "https://images.unsplash.com/photo-1476610182048-b716b8518aae?auto=format&fit=crop&w=150&q=80"
+            },
+            {
+                country: "PERU",
+                name: "Machu Picchu",
+                desc: "Ancient Incan citadel in the Andes.",
+                img: "https://images.unsplash.com/photo-1526392060635-9d6019884377?auto=format&fit=crop&w=150&q=80"
+            },
+            {
+                country: "CANADA",
+                name: "Banff National Park",
+                desc: "Turquoise lakes and snowy peaks.",
+                img: "https://images.unsplash.com/photo-1503614472-8c93d56e92ce?auto=format&fit=crop&w=150&q=80"
+            },
+            {
+                country: "NEW ZEALAND",
+                name: "Milford Sound",
+                desc: "Fiords, waterfalls and rainforests.",
+                img: "https://images.unsplash.com/photo-1469521669194-babb45599def?auto=format&fit=crop&w=150&q=80"
+            }
+        ];
+
+        let currentIndex = 0;
+        const elImage = document.getElementById('scene-image');
+        const elCountry = document.getElementById('scene-country');
+        const elName = document.getElementById('scene-name');
+        const elDesc = document.getElementById('scene-desc');
+        const elProgress = document.getElementById('progress-bar');
+        const elWidget = document.getElementById('widget');
+
+        function updateContent() {
+            const data = locations[currentIndex];
+
+            // Fade out effect by removing enter class temporarily if needed, 
+            // but we will just swap content and re-trigger animation for simplicity in overlays.
+            
+            // Update DOM
+            elImage.src = data.img;
+            elCountry.textContent = data.country;
+            elName.textContent = data.name;
+            elDesc.textContent = data.desc;
+
+            // Trigger Fade In Animation
+            elWidget.classList.remove('fade-enter-active');
+            elWidget.classList.add('fade-enter');
+            
+            // Force reflow
+            void elWidget.offsetWidth;
+            
+            elWidget.classList.remove('fade-enter');
+            elWidget.classList.add('fade-enter-active');
+
+            // Reset Progress Bar
+            elProgress.classList.remove('animate-progress');
+            void elProgress.offsetWidth; // Force reflow
+            elProgress.classList.add('animate-progress');
+
+            // Increment Index
+            currentIndex = (currentIndex + 1) % locations.length;
+        }
+
+        // Preload images to prevent flickering
+        locations.forEach(loc => {
+            const img = new Image();
+            img.src = loc.img;
+        });
+
+        // Initialize
+        updateContent();
+
+        // Set Interval
+        setInterval(updateContent, INTERVAL_MS);
+
+    </script>
+</body>
+</html>

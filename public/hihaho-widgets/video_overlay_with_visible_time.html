@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Feedback Overlay - Time Labels</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        body, html {
+            background-color: transparent !important;
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        /* Glassmorphism Base */
+        .glass {
+            background: rgba(20, 20, 20, 0.9);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+            color: white;
+        }
+
+        /* High Contrast Text */
+        .text-shadow {
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
+        }
+
+        /* Markers on Video */
+        .marker {
+            position: absolute;
+            width: 36px;
+            height: 36px;
+            border: 2px solid white;
+            border-radius: 50%;
+            transform: translate(-50%, -50%) scale(0.9);
+            cursor: pointer;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 30;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        /* Category Colors */
+        .marker.type-fix { background: rgba(239, 68, 68, 0.9); box-shadow: 0 0 15px rgba(239, 68, 68, 0.6); }
+        .marker.type-confirm { background: rgba(34, 197, 94, 0.9); box-shadow: 0 0 15px rgba(34, 197, 94, 0.6); }
+        .marker.type-question { background: rgba(234, 179, 8, 0.9); box-shadow: 0 0 15px rgba(234, 179, 8, 0.6); }
+        .marker.type-other { background: rgba(107, 114, 128, 0.9); box-shadow: 0 0 15px rgba(107, 114, 128, 0.6); }
+
+        .marker.visible {
+            opacity: 1;
+            transform: translate(-50%, -50%) scale(1);
+            pointer-events: auto;
+        }
+
+        .marker:hover {
+            transform: translate(-50%, -50%) scale(1.15);
+            background: #fff !important;
+            z-index: 40;
+        }
+        .marker:hover i {
+            color: #000 !important;
+        }
+        .marker:hover .marker-time {
+            background: #fff;
+            color: #000;
+            border-color: rgba(0,0,0,0.2);
+        }
+
+        .marker i {
+            color: white;
+            font-size: 16px;
+        }
+
+        /* NEW: Time Label attached to Marker */
+        .marker-time {
+            position: absolute;
+            top: -24px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.85);
+            color: cyan;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-family: monospace;
+            font-weight: bold;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            white-space: nowrap;
+            pointer-events: none;
+            transition: all 0.2s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        }
+
+        /* Hide time label when parent has .hide-times class applied implicitly or explicit toggle */
+        .markers-no-time .marker-time {
+            opacity: 0;
+            visibility: hidden;
+        }
+
+        /* Tooltip (Simplified Comment on Hover) */
+        .tooltip {
+            visibility: hidden;
+            position: absolute;
+            bottom: 44px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0, 0, 0, 0.95);
+            color: #fff;
+            padding: 6px 10px;
+            border-radius: 6px;
+            white-space: pre-wrap;
+            font-size: 12px;
+            z-index: 50;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            opacity: 0;
+            transition: opacity 0.2s;
+            pointer-events: none;
+            width: max-content;
+            max-width: 200px;
+            line-height: 1.4;
+            text-align: center;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        }
+
+        .marker:hover .tooltip {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        /* Animation */
+        @keyframes popIn {
+            from { transform: scale(0); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+
+        .animate-pop {
+            animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 4px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(255,255,255,0.05);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.3);
+            border-radius: 2px;
+        }
+
+        input[type="text"], input[type="number"], select {
+            appearance: none;
+            -moz-appearance: none;
+            -webkit-appearance: none;
+            background-color: transparent;
+        }
+        
+        .emoji-btn:hover {
+            transform: scale(1.2);
+        }
+
+        /* Active Toggle State */
+        .btn-active {
+            background-color: rgba(6, 182, 212, 0.3) !important;
+            border-color: rgba(6, 182, 212, 0.6) !important;
+            color: white !important;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Click Capture Layer -->
+    <div id="click-layer" class="absolute inset-0 z-10 cursor-crosshair"></div>
+
+    <!-- Container for Markers -->
+    <div id="markers-container" class="absolute inset-0 pointer-events-none z-20"></div>
+
+    <!-- Input/Edit Modal (Floating) -->
+    <div id="input-modal" class="hidden fixed z-50 glass rounded-xl p-4 w-80 animate-pop flex-col gap-3 border-t border-white/20">
+        <div class="flex justify-between items-center pb-2 border-b border-white/10">
+            <div class="flex items-center gap-2">
+                <i class="far fa-clock text-cyan-400"></i>
+                <input type="text" id="modal-time-input" class="bg-transparent border-b border-gray-600 text-cyan-300 font-mono text-base w-16 focus:outline-none focus:border-cyan-400 text-center font-bold" value="00:00">
+            </div>
+            <button id="close-modal" class="text-gray-400 hover:text-white transition"><i class="fas fa-times"></i></button>
+        </div>
+
+        <!-- Category Selection -->
+        <div class="flex gap-1 bg-black/40 p-1 rounded-lg">
+            <button type="button" class="category-select flex-1 py-1 text-xs rounded text-gray-400 hover:bg-white/10 transition border border-transparent" data-value="fix">
+                <i class="fas fa-tools text-red-400 mb-1 block text-sm"></i>修正
+            </button>
+            <button type="button" class="category-select flex-1 py-1 text-xs rounded text-gray-400 hover:bg-white/10 transition border border-transparent" data-value="confirm">
+                <i class="fas fa-check text-green-400 mb-1 block text-sm"></i>確認
+            </button>
+            <button type="button" class="category-select flex-1 py-1 text-xs rounded text-gray-400 hover:bg-white/10 transition border border-transparent" data-value="question">
+                <i class="fas fa-question text-yellow-400 mb-1 block text-sm"></i>質問
+            </button>
+            <button type="button" class="category-select flex-1 py-1 text-xs rounded text-gray-400 hover:bg-white/10 transition border border-transparent" data-value="other">
+                <i class="fas fa-comment-dots text-gray-400 mb-1 block text-sm"></i>他
+            </button>
+        </div>
+
+        <!-- Text Area -->
+        <textarea id="comment-input" class="w-full bg-black/40 border border-gray-600 rounded p-3 text-white text-sm focus:outline-none focus:border-cyan-400 placeholder-gray-500 resize-none" rows="3" placeholder="コメントを入力..."></textarea>
+
+        <!-- Emoji Toolbar -->
+        <div class="flex gap-3 px-1">
+            <button class="emoji-btn text-lg transition" onclick="insertEmoji('👍')">👍</button>
+            <button class="emoji-btn text-lg transition" onclick="insertEmoji('👀')">👀</button>
+            <button class="emoji-btn text-lg transition" onclick="insertEmoji('✅')">✅</button>
+            <button class="emoji-btn text-lg transition" onclick="insertEmoji('🙏')">🙏</button>
+            <button class="emoji-btn text-lg transition" onclick="insertEmoji('🎨')">🎨</button>
+        </div>
+
+        <button id="save-comment" class="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white py-2 rounded-lg text-sm font-bold transition shadow-lg border border-white/10">
+            保存
+        </button>
+    </div>
+
+    <!-- Main Control Panel -->
+    <div class="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-96 glass rounded-2xl p-5 z-40 flex flex-col gap-4 transition-all duration-300" id="control-panel">
+        
+        <!-- Header / Time Control -->
+        <div class="flex justify-between items-end">
+            <div class="flex items-center gap-4">
+                <button id="toggle-play" class="w-12 h-12 rounded-full bg-gradient-to-br from-cyan-600 to-blue-700 hover:from-cyan-500 hover:to-blue-600 flex items-center justify-center text-white transition shadow-lg border border-white/20">
+                    <i class="fas fa-play ml-1" id="play-icon"></i>
+                </button>
+                
+                <div class="flex flex-col">
+                    <label class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Time</label>
+                    <input type="text" id="current-time-input" value="00:00" class="bg-transparent border-b-2 border-gray-600 hover:border-gray-400 focus:border-cyan-400 text-3xl font-mono font-bold text-white text-shadow w-28 focus:outline-none transition-colors placeholder-gray-700">
+                </div>
+            </div>
+
+            <!-- Settings -->
+            <div class="flex flex-col items-end gap-2">
+                 <!-- Display Settings Toggles -->
+                 <div class="flex gap-1">
+                    <button id="toggle-time-labels" class="btn-active w-7 h-7 flex items-center justify-center rounded bg-gray-800 border border-gray-600 text-gray-400 hover:text-white text-xs transition" title="時間表示の切り替え">
+                        <i class="fas fa-clock"></i>
+                    </button>
+                    <button id="toggle-all-markers" class="w-7 h-7 flex items-center justify-center rounded bg-gray-800 border border-gray-600 text-gray-400 hover:text-white text-xs transition" title="全マーカー表示/同期">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                 </div>
+                
+                <!-- Duration Setting -->
+                <div class="flex items-center gap-2">
+                    <label class="text-[10px] text-gray-400">表示(秒):</label>
+                    <input type="number" id="duration-input" value="10" min="1" class="w-12 bg-black/30 border border-gray-600 rounded px-2 py-1 text-right text-white text-xs focus:outline-none">
+                </div>
+            </div>
+        </div>
+
+        <!-- Tools Row -->
+        <div class="flex items-center gap-2 border-t border-gray-700 pt-3">
+             <button id="toggle-list" class="p-2 text-gray-400 hover:text-white transition" title="リスト表示">
+                <i class="fas fa-list"></i>
+            </button>
+            <div class="h-4 w-px bg-gray-700 mx-1"></div>
+            
+            <!-- JSON Actions -->
+            <button id="export-json" class="text-xs bg-gray-800 hover:bg-gray-700 text-white py-1 px-3 rounded flex items-center gap-2 transition border border-gray-600">
+                <i class="fas fa-download"></i> 出力
+            </button>
+            <label class="text-xs bg-gray-800 hover:bg-gray-700 text-white py-1 px-3 rounded flex items-center gap-2 cursor-pointer transition border border-gray-600">
+                <i class="fas fa-upload"></i> 読込
+                <input type="file" id="import-json" accept=".json" class="hidden">
+            </label>
+            
+            <div class="flex-grow"></div>
+            <button id="clear-all" class="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 transition">
+                <i class="fas fa-trash"></i> クリア
+            </button>
+        </div>
+
+        <!-- Comment List (Collapsible) -->
+        <div id="comment-list-container" class="hidden flex-col gap-2 max-h-48 overflow-y-auto mt-2 bg-black/20 rounded-lg p-2 custom-scrollbar">
+            <!-- Dynamic Content -->
+        </div>
+    </div>
+
+    <script>
+        // --- State ---
+        let isPlaying = false;
+        let currentTime = 0;
+        let playInterval = null;
+        let feedbacks = [];
+        let displayDuration = 10;
+        let defaultCategory = 'fix';
+        
+        // View State
+        let showTimeLabels = true;
+        let showAllMarkers = false;
+
+        // Temp state for editing/adding
+        let currentEditId = null;
+        let tempClickData = null;
+        let selectedCategory = 'fix';
+
+        // --- DOM Elements ---
+        const clickLayer = document.getElementById('click-layer');
+        const markersContainer = document.getElementById('markers-container');
+        
+        // Modal
+        const inputModal = document.getElementById('input-modal');
+        const commentInput = document.getElementById('comment-input');
+        const modalTimeInput = document.getElementById('modal-time-input');
+        const saveBtn = document.getElementById('save-comment');
+        const closeModalBtn = document.getElementById('close-modal');
+        const categoryButtons = document.querySelectorAll('.category-select');
+        
+        // Main Control
+        const currentTimeInput = document.getElementById('current-time-input');
+        const togglePlayBtn = document.getElementById('toggle-play');
+        const playIcon = document.getElementById('play-icon');
+        const durationInput = document.getElementById('duration-input');
+        
+        // Toggles
+        const toggleTimeLabelsBtn = document.getElementById('toggle-time-labels');
+        const toggleAllMarkersBtn = document.getElementById('toggle-all-markers');
+
+        // Tools
+        const exportBtn = document.getElementById('export-json');
+        const importInput = document.getElementById('import-json');
+        const listContainer = document.getElementById('comment-list-container');
+        const toggleListBtn = document.getElementById('toggle-list');
+        const clearBtn = document.getElementById('clear-all');
+
+        // --- Config ---
+        const categoryConfig = {
+            fix: { label: '修正', color: 'text-red-400', bg: 'bg-red-500/20', border: 'border-red-500/50', icon: 'fa-tools' },
+            confirm: { label: '確認', color: 'text-green-400', bg: 'bg-green-500/20', border: 'border-green-500/50', icon: 'fa-check' },
+            question: { label: '質問', color: 'text-yellow-400', bg: 'bg-yellow-500/20', border: 'border-yellow-500/50', icon: 'fa-question' },
+            other: { label: '他', color: 'text-gray-300', bg: 'bg-gray-500/20', border: 'border-gray-500/50', icon: 'fa-comment-dots' }
+        };
+
+        // --- Utilities ---
+        const formatTime = (seconds) => {
+            const m = Math.floor(seconds / 60).toString().padStart(2, '0');
+            const s = Math.floor(seconds % 60).toString().padStart(2, '0');
+            return `${m}:${s}`;
+        };
+
+        const parseTime = (timeStr) => {
+            if (!timeStr) return 0;
+            const parts = timeStr.toString().split(':');
+            if (parts.length === 2) {
+                return parseInt(parts[0]) * 60 + parseInt(parts[1]);
+            }
+            return parseInt(timeStr) || 0;
+        };
+
+        window.insertEmoji = (emoji) => {
+            commentInput.value += emoji;
+            commentInput.focus();
+        };
+
+        // --- View Toggles ---
+        toggleTimeLabelsBtn.addEventListener('click', () => {
+            showTimeLabels = !showTimeLabels;
+            toggleTimeLabelsBtn.classList.toggle('btn-active', showTimeLabels);
+            if(showTimeLabels) {
+                markersContainer.classList.remove('markers-no-time');
+            } else {
+                markersContainer.classList.add('markers-no-time');
+            }
+        });
+
+        toggleAllMarkersBtn.addEventListener('click', () => {
+            showAllMarkers = !showAllMarkers;
+            toggleAllMarkersBtn.classList.toggle('btn-active', showAllMarkers);
+            updateVisibility();
+        });
+
+        durationInput.addEventListener('change', (e) => {
+            const val = parseInt(e.target.value);
+            if(val > 0) {
+                displayDuration = val;
+                updateVisibility();
+            }
+        });
+
+        // --- Time Control ---
+        const updateTime = (newTime) => {
+            currentTime = newTime;
+            if (document.activeElement !== currentTimeInput) {
+                currentTimeInput.value = formatTime(currentTime);
+            }
+            updateVisibility();
+        };
+
+        const togglePlay = () => {
+            if (isPlaying) {
+                clearInterval(playInterval);
+                isPlaying = false;
+                playIcon.classList.remove('fa-pause');
+                playIcon.classList.add('fa-play', 'ml-1');
+                togglePlayBtn.classList.remove('shadow-[0_0_15px_rgba(0,255,255,0.5)]');
+            } else {
+                playInterval = setInterval(() => {
+                    updateTime(currentTime + 1);
+                }, 1000);
+                isPlaying = true;
+                playIcon.classList.remove('fa-play', 'ml-1');
+                playIcon.classList.add('fa-pause');
+                togglePlayBtn.classList.add('shadow-[0_0_15px_rgba(0,255,255,0.5)]');
+            }
+        };
+
+        togglePlayBtn.addEventListener('click', togglePlay);
+
+        currentTimeInput.addEventListener('change', () => {
+            const seconds = parseTime(currentTimeInput.value);
+            currentTime = seconds;
+            currentTimeInput.value = formatTime(seconds);
+            updateVisibility();
+        });
+
+        currentTimeInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') currentTimeInput.blur();
+        });
+
+        // --- Modal & Editing Logic ---
+        const selectCategoryInModal = (cat) => {
+            selectedCategory = cat;
+            categoryButtons.forEach(btn => {
+                if(btn.dataset.value === cat) {
+                    btn.classList.add('bg-white/20', 'border-white/40', 'text-white');
+                    btn.classList.remove('border-transparent', 'text-gray-400');
+                } else {
+                    btn.classList.remove('bg-white/20', 'border-white/40', 'text-white');
+                    btn.classList.add('border-transparent', 'text-gray-400');
+                }
+            });
+        };
+
+        categoryButtons.forEach(btn => {
+            btn.addEventListener('click', () => selectCategoryInModal(btn.dataset.value));
+        });
+
+        const openModal = (x, y, existingData = null) => {
+            if(isPlaying) togglePlay();
+
+            inputModal.classList.remove('hidden');
+            inputModal.classList.add('flex');
+
+            let targetX, targetY;
+            if (x && y) {
+               targetX = (x / 100) * window.innerWidth;
+               targetY = (y / 100) * window.innerHeight;
+            } else {
+               targetX = window.innerWidth / 2 - 150;
+               targetY = window.innerHeight / 2 - 100;
+            }
+
+            const modalW = 320; 
+            const modalH = 300;
+            const left = Math.min(Math.max(targetX + 20, 10), window.innerWidth - modalW - 20);
+            const top = Math.min(Math.max(targetY - 50, 10), window.innerHeight - modalH - 20);
+
+            inputModal.style.left = left + 'px';
+            inputModal.style.top = top + 'px';
+
+            if (existingData) {
+                currentEditId = existingData.id;
+                modalTimeInput.value = formatTime(existingData.time);
+                commentInput.value = existingData.text;
+                selectCategoryInModal(existingData.category || 'fix');
+                tempClickData = { x: existingData.x, y: existingData.y };
+            } else {
+                currentEditId = null;
+                modalTimeInput.value = formatTime(currentTime);
+                commentInput.value = '';
+                selectCategoryInModal(defaultCategory);
+            }
+            commentInput.focus();
+        };
+
+        const closeModal = () => {
+            inputModal.classList.add('hidden');
+            inputModal.classList.remove('flex');
+            tempClickData = null;
+            currentEditId = null;
+        };
+
+        closeModalBtn.addEventListener('click', closeModal);
+
+        clickLayer.addEventListener('click', (e) => {
+            const rect = clickLayer.getBoundingClientRect();
+            const x = ((e.clientX - rect.left) / rect.width) * 100;
+            const y = ((e.clientY - rect.top) / rect.height) * 100;
+            tempClickData = { x, y };
+            openModal(x, y);
+        });
+
+        saveBtn.addEventListener('click', () => {
+            const text = commentInput.value.trim();
+            if (!text) return;
+            const timeVal = parseTime(modalTimeInput.value);
+
+            if (currentEditId) {
+                const idx = feedbacks.findIndex(f => f.id === currentEditId);
+                if (idx > -1) {
+                    feedbacks[idx] = {
+                        ...feedbacks[idx],
+                        time: timeVal,
+                        text: text,
+                        category: selectedCategory
+                    };
+                }
+            } else {
+                const feedback = {
+                    id: Date.now().toString(),
+                    time: timeVal,
+                    x: tempClickData.x,
+                    y: tempClickData.y,
+                    text: text,
+                    category: selectedCategory
+                };
+                feedbacks.push(feedback);
+            }
+
+            renderMarkers();
+            renderList();
+            closeModal();
+        });
+
+        // --- Rendering ---
+        const renderMarkers = () => {
+            markersContainer.innerHTML = '';
+            feedbacks.forEach(fb => {
+                const el = document.createElement('div');
+                const cat = fb.category || 'fix'; 
+                el.className = `marker type-${cat}`;
+                el.dataset.id = fb.id;
+                el.style.left = `${fb.x}%`;
+                el.style.top = `${fb.y}%`;
+                
+                const iconClass = categoryConfig[cat]?.icon || 'fa-comment';
+                
+                // HTML Structure: Icon + Time Label + Tooltip
+                el.innerHTML = `
+                    <i class="fas ${iconClass}"></i>
+                    <span class="marker-time">${formatTime(fb.time)}</span>
+                    <div class="tooltip">
+                        ${fb.text}
+                    </div>
+                `;
+                
+                el.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    openModal(fb.x, fb.y, fb);
+                });
+
+                markersContainer.appendChild(el);
+            });
+            updateVisibility();
+        };
+
+        const updateVisibility = () => {
+            const markers = document.querySelectorAll('.marker');
+            markers.forEach(el => {
+                const id = el.dataset.id;
+                const fb = feedbacks.find(f => f.id === id);
+                if (!fb) return;
+
+                const isInRange = currentTime >= fb.time && currentTime <= (fb.time + displayDuration);
+                
+                if (showAllMarkers || isInRange) {
+                    el.classList.add('visible');
+                } else {
+                    el.classList.remove('visible');
+                }
+            });
+        };
+
+        const renderList = () => {
+            listContainer.innerHTML = '';
+            if (feedbacks.length === 0) {
+                listContainer.innerHTML = '<p class="text-center text-gray-500 text-xs py-2">コメントなし</p>';
+                return;
+            }
+
+            const sorted = [...feedbacks].sort((a, b) => a.time - b.time);
+
+            sorted.forEach(fb => {
+                const cat = fb.category || 'fix';
+                const conf = categoryConfig[cat];
+                
+                const item = document.createElement('div');
+                item.className = 'bg-white/5 border border-white/10 p-2 rounded text-xs flex justify-between items-start hover:bg-white/10 transition group mb-1';
+                
+                item.innerHTML = `
+                    <div class="flex gap-2 w-full overflow-hidden">
+                        <div class="flex flex-col gap-1 items-center min-w-[50px]">
+                            <span class="text-cyan-400 font-mono font-bold whitespace-nowrap">${formatTime(fb.time)}</span>
+                            <span class="text-[10px] px-1 rounded border ${conf.border} ${conf.color} ${conf.bg}">
+                                ${conf.label}
+                            </span>
+                        </div>
+                        <div class="text-gray-200 line-clamp-2 break-all flex-1 cursor-pointer" onclick="jumpTo(${fb.time})">${fb.text}</div>
+                    </div>
+                    <div class="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition pl-2">
+                        <button class="text-blue-400 hover:text-blue-300" onclick="openEdit('${fb.id}')" title="編集">
+                            <i class="fas fa-pen"></i>
+                        </button>
+                        <button class="text-red-400 hover:text-red-300" onclick="deleteFeedback('${fb.id}')" title="削除">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                `;
+                listContainer.appendChild(item);
+            });
+        };
+
+        // --- Global Actions ---
+        window.jumpTo = (time) => {
+            updateTime(time);
+        };
+        
+        window.openEdit = (id) => {
+            const fb = feedbacks.find(f => f.id === id);
+            if(fb) openModal(fb.x, fb.y, fb);
+        };
+
+        window.deleteFeedback = (id) => {
+            if(!confirm('削除しますか？')) return;
+            feedbacks = feedbacks.filter(f => f.id !== id);
+            renderMarkers();
+            renderList();
+        };
+
+        toggleListBtn.addEventListener('click', () => {
+            listContainer.classList.toggle('hidden');
+            listContainer.classList.toggle('flex');
+        });
+
+        clearBtn.addEventListener('click', () => {
+            if(confirm('全てのデータをクリアしますか？')) {
+                feedbacks = [];
+                renderMarkers();
+                renderList();
+                updateTime(0);
+                if(isPlaying) togglePlay();
+            }
+        });
+
+        // --- JSON I/O ---
+        exportBtn.addEventListener('click', () => {
+            const data = {
+                meta: {
+                    created: Date.now(),
+                    durationSetting: displayDuration,
+                    defaultCategory: defaultCategory
+                },
+                comments: feedbacks
+            };
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `video_feedback_${Date.now()}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        });
+
+        importInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const json = JSON.parse(event.target.result);
+                    let newFeedbacks = [];
+                    if (Array.isArray(json)) {
+                        newFeedbacks = json;
+                    } else if (json.comments && Array.isArray(json.comments)) {
+                        newFeedbacks = json.comments;
+                    }
+                    if (newFeedbacks.length > 0) {
+                        feedbacks = newFeedbacks;
+                        renderMarkers();
+                        renderList();
+                        alert(`${feedbacks.length}件のコメントを読み込みました。`);
+                    } else {
+                        alert('データなし');
+                    }
+                } catch (err) {
+                    console.error(err);
+                    alert('読込エラー');
+                }
+            };
+            reader.readAsText(file);
+            e.target.value = '';
+        });
+    </script>
+</body>
+</html>

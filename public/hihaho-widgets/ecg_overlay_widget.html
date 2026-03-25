@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ECG Monitor Widget</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: transparent !important;
+            overflow: hidden;
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        /* Glassmorphism Container */
+        .monitor-card {
+            background: rgba(16, 24, 32, 0.85);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(0, 255, 128, 0.3);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+            border-radius: 12px;
+            padding: 1rem;
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 300px;
+            color: #00ff88;
+            transition: all 0.3s ease;
+            z-index: 50;
+        }
+
+        /* Header Styles */
+        .monitor-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+            text-shadow: 0 0 5px rgba(0, 255, 136, 0.5);
+        }
+
+        .label {
+            font-size: 0.85rem;
+            font-weight: 700;
+            opacity: 0.9;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .bpm-display {
+            font-size: 1.25rem;
+            font-weight: bold;
+            color: #fff;
+        }
+
+        .bpm-unit {
+            font-size: 0.75rem;
+            color: #00ff88;
+        }
+
+        /* Blinking Indicator */
+        .status-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            background-color: #ff3333;
+            border-radius: 50%;
+            margin-right: 8px;
+            box-shadow: 0 0 8px #ff3333;
+            animation: blink 1s infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(0.9); }
+        }
+
+        /* Canvas */
+        canvas {
+            display: block;
+            width: 100%;
+            height: 120px;
+            border-top: 1px solid rgba(0, 255, 128, 0.2);
+            border-bottom: 1px solid rgba(0, 255, 128, 0.2);
+            background: radial-gradient(circle, rgba(0,20,10,0.3) 0%, rgba(0,0,0,0.2) 100%);
+        }
+
+        /* Grid Overlay on Canvas */
+        .grid-overlay {
+            position: absolute;
+            top: 3.5rem; /* Adjust based on header height */
+            left: 1rem;
+            right: 1rem;
+            height: 120px;
+            background-image: 
+                linear-gradient(rgba(0, 255, 128, 0.1) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 255, 128, 0.1) 1px, transparent 1px);
+            background-size: 20px 20px;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        /* Mobile Responsiveness */
+        @media (max-width: 768px) {
+            .monitor-card {
+                width: auto;
+                left: 10px;
+                right: 10px;
+                top: 10px;
+                padding: 1.25rem;
+            }
+
+            .label {
+                font-size: 1rem;
+            }
+
+            .bpm-display {
+                font-size: 1.5rem;
+            }
+
+            canvas, .grid-overlay {
+                height: 150px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="monitor-card">
+        <div class="monitor-header">
+            <div class="label">
+                <span class="status-dot"></span>
+                Heart Rate
+            </div>
+            <div class="bpm-display">
+                <span id="bpmValue">72</span> <span class="bpm-unit">BPM</span>
+            </div>
+        </div>
+        
+        <div class="grid-overlay"></div>
+        <canvas id="ecgCanvas"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('ecgCanvas');
+        const ctx = canvas.getContext('2d');
+        const bpmElement = document.getElementById('bpmValue');
+
+        // Configuration
+        let width, height;
+        const lineColor = '#00ff88';
+        const lineWidth = 2;
+        const scanSpeed = 2;
+        
+        // Data Buffer
+        let dataPoints = [];
+        let x = 0;
+        let lastY = 0;
+
+        // Heartbeat Simulation Variables
+        let angle = 0;
+        let heartbeatTimer = 0;
+        const heartbeatInterval = 60; // Frames between beats roughly
+        let isBeating = false;
+
+        function resize() {
+            const rect = canvas.getBoundingClientRect();
+            width = rect.width;
+            height = rect.height;
+            
+            // Handle high DPI displays
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = width * dpr;
+            canvas.height = height * dpr;
+            ctx.scale(dpr, dpr);
+            
+            // Reset background
+            dataPoints = new Array(Math.ceil(width / scanSpeed)).fill(height / 2);
+            x = 0;
+        }
+
+        // Basic Gaussian noise
+        function noise() {
+            return (Math.random() - 0.5) * 4;
+        }
+
+        function updateBPM() {
+            // Fluctuate BPM slightly for realism
+            const base = 72;
+            const fluctuation = Math.floor(Math.random() * 6) - 3;
+            bpmElement.innerText = base + fluctuation;
+        }
+
+        setInterval(updateBPM, 2000);
+
+        function draw() {
+            // Clear canvas slightly for trail effect? No, simpler to redraw buffer or clear rect.
+            // We will use a scanline approach (redraw entire array shifting left) 
+            // OR a cursor approach (drawing rightwards and wrapping).
+            // Let's use the 'Cursor' approach where we clear a bar ahead of the pen.
+
+            // 1. Calculate next Y point
+            const centerY = height / 2;
+            let y = centerY + noise();
+
+            heartbeatTimer++;
+            
+            // Simulate P-QRS-T complex
+            if (heartbeatTimer > heartbeatInterval) {
+                // Start a beat
+                isBeating = true;
+                heartbeatTimer = 0;
+                angle = 0;
+            }
+
+            if (isBeating) {
+                // A simple mathematical approximation of a heartbeat shape
+                angle += 0.2; // Speed of the drawing of the complex
+                if (angle > Math.PI * 4) {
+                    isBeating = false;
+                } else {
+                    // P wave (small bump), QRS (sharp spike down-up-down), T (medium bump)
+                    // This is a simplified parametric function
+                    const pWave = Math.sin(angle) * 5 * (angle < Math.PI ? 1 : 0);
+                    const qrsComplex = 
+                        (angle > Math.PI && angle < Math.PI * 2) 
+                        ? Math.sin((angle - Math.PI) * 4) * -30 // The big spike
+                        : 0;
+                    const tWave = 
+                        (angle > Math.PI * 2.5) 
+                        ? Math.sin(angle - Math.PI * 2.5) * 8 
+                        : 0;
+                    
+                    y += pWave + qrsComplex + tWave;
+                }
+            }
+
+            // 2. Draw Logic
+            // We clear a small rectangle ahead of the current x
+            ctx.clearRect(x, 0, scanSpeed + 5, height);
+            
+            ctx.beginPath();
+            ctx.strokeStyle = lineColor;
+            ctx.lineWidth = lineWidth;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.shadowBlur = 4;
+            ctx.shadowColor = lineColor;
+
+            if (x === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.moveTo(x - scanSpeed, lastY);
+                ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+
+            // Store lastY
+            lastY = y;
+
+            // Move X
+            x += scanSpeed;
+            if (x >= width) {
+                x = 0;
+                lastY = y; // Reset start point to avoid line jumping across screen
+            }
+
+            requestAnimationFrame(draw);
+        }
+
+        // Initialize
+        window.addEventListener('resize', resize);
+        resize();
+        requestAnimationFrame(draw);
+
+    </script>
+</body>
+</html>

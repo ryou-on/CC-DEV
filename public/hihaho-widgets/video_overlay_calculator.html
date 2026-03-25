@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Overlay Scientific Calculator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body, html {
+            background: transparent !important;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        /* Glassmorphism Effect */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+        }
+
+        .btn-glass {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            transition: all 0.2s ease;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+        }
+
+        .btn-glass:hover {
+            background: rgba(255, 255, 255, 0.15);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+        }
+
+        .btn-glass:active {
+            transform: translateY(1px);
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-accent {
+            background: rgba(56, 189, 248, 0.2);
+            border-color: rgba(56, 189, 248, 0.3);
+            color: #38bdf8;
+        }
+
+        .btn-accent:hover {
+            background: rgba(56, 189, 248, 0.4);
+        }
+
+        .btn-operator {
+            background: rgba(244, 114, 182, 0.2);
+            border-color: rgba(244, 114, 182, 0.3);
+            color: #f472b6;
+        }
+
+        .btn-operator:hover {
+            background: rgba(244, 114, 182, 0.4);
+        }
+
+        /* Custom Scrollbar for Display */
+        #display::-webkit-scrollbar {
+            height: 6px;
+        }
+        #display::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.2);
+            border-radius: 3px;
+        }
+
+        .text-glow {
+            text-shadow: 0 0 10px rgba(255,255,255,0.3);
+        }
+        
+        /* Draggable Handle Cursor */
+        .drag-handle {
+            cursor: grab;
+        }
+        .drag-handle:active {
+            cursor: grabbing;
+        }
+    </style>
+</head>
+<body class="pointer-events-none flex items-end justify-end p-4 sm:p-8">
+
+    <!-- Widget Container (Pointer events auto to allow interaction) -->
+    <div id="calculator-widget" class="pointer-events-auto fixed right-4 bottom-4 w-[320px] sm:w-[360px] flex flex-col items-end transition-all duration-300 z-50">
+        
+        <!-- Toggle Button (Always visible when calc is hidden) -->
+        <button id="toggle-btn" class="glass-panel rounded-full w-14 h-14 flex items-center justify-center text-white hover:text-cyan-400 text-2xl mb-4 transition-transform hover:scale-110 focus:outline-none" onclick="toggleCalculator()">
+            <i class="fas fa-calculator"></i>
+        </button>
+
+        <!-- Calculator Body -->
+        <div id="calculator-body" class="glass-panel rounded-2xl overflow-hidden w-full hidden transform origin-bottom-right transition-all duration-300 scale-95 opacity-0">
+            
+            <!-- Header / Drag Handle -->
+            <div id="drag-header" class="bg-white/5 p-3 flex justify-between items-center drag-handle select-none border-b border-white/10">
+                <span class="text-xs font-bold text-white/70 uppercase tracking-wider"><i class="fas fa-flask mr-2"></i>Sci-Calc</span>
+                <div class="flex space-x-2">
+                    <button onclick="clearDisplay()" class="text-xs text-white/50 hover:text-white" title="Reset">
+                        <i class="fas fa-rotate-right"></i>
+                    </button>
+                    <button onclick="toggleCalculator()" class="text-xs text-white/50 hover:text-red-400" title="Close">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Display Screen -->
+            <div class="p-4 bg-black/40">
+                <div class="text-right text-white/60 text-sm h-5 overflow-hidden whitespace-nowrap" id="history"></div>
+                <input type="text" id="display" readonly 
+                    class="w-full bg-transparent text-right text-3xl font-mono text-white text-glow outline-none placeholder-white/20 overflow-x-auto" 
+                    placeholder="0" value="">
+            </div>
+
+            <!-- Keypad -->
+            <div class="p-3 grid grid-cols-5 gap-2">
+                <!-- Scientific Row 1 -->
+                <button onclick="appendFunc('Math.sin(')" class="btn-glass rounded text-xs py-2 text-white/80">sin</button>
+                <button onclick="appendFunc('Math.cos(')" class="btn-glass rounded text-xs py-2 text-white/80">cos</button>
+                <button onclick="appendFunc('Math.tan(')" class="btn-glass rounded text-xs py-2 text-white/80">tan</button>
+                <button onclick="appendValue('(')" class="btn-glass rounded text-xs py-2 text-white/80">(</button>
+                <button onclick="appendValue(')')" class="btn-glass rounded text-xs py-2 text-white/80">)</button>
+
+                <!-- Scientific Row 2 -->
+                <button onclick="appendFunc('Math.sqrt(')" class="btn-glass rounded text-xs py-2 text-white/80">√</button>
+                <button onclick="appendValue('**')" class="btn-glass rounded text-xs py-2 text-white/80">^</button>
+                <button onclick="appendValue('Math.PI')" class="btn-glass rounded text-xs py-2 text-white/80">π</button>
+                <button onclick="appendFunc('Math.log10(')" class="btn-glass rounded text-xs py-2 text-white/80">log</button>
+                <button onclick="appendFunc('Math.log(')" class="btn-glass rounded text-xs py-2 text-white/80">ln</button>
+
+                <!-- Numbers & Ops -->
+                <button onclick="clearDisplay()" class="btn-glass btn-operator rounded text-sm font-bold py-3 col-span-1">AC</button>
+                <button onclick="deleteLast()" class="btn-glass btn-operator rounded text-sm font-bold py-3 col-span-1">DEL</button>
+                <button onclick="appendValue('%')" class="btn-glass btn-operator rounded text-sm font-bold py-3">%</button>
+                <button onclick="appendValue('/')" class="btn-glass btn-operator rounded text-lg font-bold py-3">÷</button>
+                <button onclick="appendValue('*')" class="btn-glass btn-operator rounded text-lg font-bold py-3">×</button>
+
+                <button onclick="appendValue('7')" class="btn-glass rounded text-lg font-bold text-white py-3">7</button>
+                <button onclick="appendValue('8')" class="btn-glass rounded text-lg font-bold text-white py-3">8</button>
+                <button onclick="appendValue('9')" class="btn-glass rounded text-lg font-bold text-white py-3">9</button>
+                <button onclick="appendValue('-')" class="btn-glass btn-operator rounded text-lg font-bold text-white py-3 col-span-2">−</button>
+
+                <button onclick="appendValue('4')" class="btn-glass rounded text-lg font-bold text-white py-3">4</button>
+                <button onclick="appendValue('5')" class="btn-glass rounded text-lg font-bold text-white py-3">5</button>
+                <button onclick="appendValue('6')" class="btn-glass rounded text-lg font-bold text-white py-3">6</button>
+                <button onclick="appendValue('+')" class="btn-glass btn-operator rounded text-lg font-bold text-white py-3 col-span-2">+</button>
+
+                <button onclick="appendValue('1')" class="btn-glass rounded text-lg font-bold text-white py-3">1</button>
+                <button onclick="appendValue('2')" class="btn-glass rounded text-lg font-bold text-white py-3">2</button>
+                <button onclick="appendValue('3')" class="btn-glass rounded text-lg font-bold text-white py-3">3</button>
+                <button onclick="calculate()" class="btn-glass btn-accent rounded text-xl font-bold text-white py-3 row-span-2 col-span-2 shadow-lg flex items-center justify-center bg-cyan-500/30">=</button>
+
+                <button onclick="appendValue('0')" class="btn-glass rounded text-lg font-bold text-white py-3 col-span-2">0</button>
+                <button onclick="appendValue('.')" class="btn-glass rounded text-lg font-bold text-white py-3">.</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const display = document.getElementById('display');
+        const history = document.getElementById('history');
+        const calculatorBody = document.getElementById('calculator-body');
+        const toggleBtn = document.getElementById('toggle-btn');
+        const widget = document.getElementById('calculator-widget');
+
+        let isOpen = false;
+
+        // Toggle Visibility
+        function toggleCalculator() {
+            isOpen = !isOpen;
+            if (isOpen) {
+                calculatorBody.classList.remove('hidden');
+                // Small delay to allow transition
+                setTimeout(() => {
+                    calculatorBody.classList.remove('scale-95', 'opacity-0');
+                    calculatorBody.classList.add('scale-100', 'opacity-100');
+                }, 10);
+                toggleBtn.innerHTML = '<i class="fas fa-chevron-down"></i>';
+            } else {
+                calculatorBody.classList.remove('scale-100', 'opacity-100');
+                calculatorBody.classList.add('scale-95', 'opacity-0');
+                setTimeout(() => {
+                    calculatorBody.classList.add('hidden');
+                }, 300);
+                toggleBtn.innerHTML = '<i class="fas fa-calculator"></i>';
+            }
+        }
+
+        // Calculator Logic
+        function appendValue(val) {
+            if(display.value === 'Error') clearDisplay();
+            display.value += val;
+            display.scrollLeft = display.scrollWidth;
+        }
+
+        function appendFunc(val) {
+            if(display.value === 'Error') clearDisplay();
+            display.value += val;
+        }
+
+        function clearDisplay() {
+            display.value = '';
+            history.innerText = '';
+        }
+
+        function deleteLast() {
+            display.value = display.value.slice(0, -1);
+        }
+
+        function calculate() {
+            try {
+                const expression = display.value;
+                if (!expression) return;
+                
+                // History update
+                history.innerText = expression + ' =';
+                
+                // Safer evaluation using Function constructor constrained to Math context mostly
+                // Replacing UI symbols with JS operators if needed (though we used standard JS mostly)
+                let evalString = expression;
+                
+                // Safe eval wrapper
+                const result = new Function('return ' + evalString)();
+                
+                // Formatting result
+                if (!isFinite(result) || isNaN(result)) {
+                     display.value = 'Error';
+                } else {
+                     // Round to reasonable decimals if float
+                     display.value = Number.isInteger(result) ? result : parseFloat(result.toFixed(8));
+                }
+            } catch (e) {
+                display.value = 'Error';
+            }
+        }
+
+        // Draggable Logic (Simple implementation for the widget container)
+        // Note: Since we are using a fixed container aligned bottom-right, standard dragging 
+        // conflicts with the "Toggle" concept unless we switch to absolute positioning on drag.
+        // We will enable dragging of the *widget container* relative to the viewport.
+        
+        const dragHeader = document.getElementById('drag-header');
+        let isDragging = false;
+        let currentX;
+        let currentY;
+        let initialX;
+        let initialY;
+        let xOffset = 0;
+        let yOffset = 0;
+
+        dragHeader.addEventListener("mousedown", dragStart);
+        document.addEventListener("mouseup", dragEnd);
+        document.addEventListener("mousemove", drag);
+
+        function dragStart(e) {
+            initialX = e.clientX - xOffset;
+            initialY = e.clientY - yOffset;
+
+            if (e.target === dragHeader || dragHeader.contains(e.target)) {
+                // Only drag if clicking header, not buttons inside it
+                if (e.target.tagName !== 'BUTTON' && e.target.tagName !== 'I') {
+                    isDragging = true;
+                }
+            }
+        }
+
+        function dragEnd(e) {
+            initialX = currentX;
+            initialY = currentY;
+            isDragging = false;
+        }
+
+        function drag(e) {
+            if (isDragging) {
+                e.preventDefault();
+                currentX = e.clientX - initialX;
+                currentY = e.clientY - initialY;
+
+                xOffset = currentX;
+                yOffset = currentY;
+
+                setTranslate(currentX, currentY, widget);
+            }
+        }
+
+        function setTranslate(xPos, yPos, el) {
+            el.style.transform = "translate3d(" + xPos + "px, " + yPos + "px, 0)";
+        }
+        
+        // Keyboard support (Optional but good for UX)
+        document.addEventListener('keydown', (e) => {
+            if (!isOpen) return;
+            
+            const key = e.key;
+            if (/[0-9.]/.test(key)) appendValue(key);
+            if (['+', '-', '*', '/', '(', ')', '%'].includes(key)) appendValue(key);
+            if (key === 'Enter') calculate();
+            if (key === 'Backspace') deleteLast();
+            if (key === 'Escape') toggleCalculator();
+        });
+
+    </script>
+</body>
+</html>

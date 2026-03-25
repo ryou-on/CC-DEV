@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Image Analyzer Overlay</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background: transparent !important;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        /* Glassmorphism Base */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        /* Tab Animation */
+        .slide-tab {
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .slide-tab:hover {
+            transform: translateX(5px);
+        }
+
+        /* Modal Animation */
+        .modal-enter {
+            opacity: 0;
+            transform: scale(0.95);
+        }
+        .modal-enter-active {
+            opacity: 1;
+            transform: scale(1);
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+        .modal-exit {
+            opacity: 1;
+            transform: scale(1);
+        }
+        .modal-exit-active {
+            opacity: 0;
+            transform: scale(0.95);
+            transition: opacity 0.2s ease, transform 0.2s ease;
+        }
+
+        /* Scanning Effect */
+        .scanner-line {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: #00f0ff;
+            box-shadow: 0 0 10px #00f0ff;
+            animation: scan 2s infinite linear;
+            display: none;
+        }
+
+        @keyframes scan {
+            0% { top: 0; opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { top: 100%; opacity: 0; }
+        }
+
+        /* Text Styles */
+        .neon-text {
+            color: #e2e8f0;
+            text-shadow: 0 0 5px rgba(0, 240, 255, 0.5);
+        }
+        .neon-accent {
+            color: #00f0ff;
+            text-shadow: 0 0 10px rgba(0, 240, 255, 0.8);
+        }
+
+        /* Drop Zone */
+        .drop-zone {
+            transition: all 0.3s ease;
+            border: 2px dashed rgba(255, 255, 255, 0.3);
+        }
+        .drop-zone.drag-over {
+            background: rgba(0, 240, 255, 0.1);
+            border-color: #00f0ff;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0,0,0,0.1);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.2);
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255,255,255,0.4);
+        }
+    </style>
+</head>
+<body class="pointer-events-none">
+
+    <!-- Main Container -->
+    <div class="relative w-full h-full flex items-center justify-center pointer-events-none">
+
+        <!-- Side Tab (Trigger) -->
+        <div id="triggerTab" 
+             class="fixed left-0 top-1/2 -translate-y-1/2 pointer-events-auto cursor-pointer slide-tab z-50 flex items-center group" 
+             onclick="toggleApp()">
+            <div class="glass-panel py-6 px-3 rounded-r-xl border-l-0 flex flex-col items-center gap-4 text-white hover:bg-slate-800/90 transition-colors">
+                <i class="fa-solid fa-camera-retro text-2xl neon-accent"></i>
+                <span class="writing-vertical-rl text-sm font-bold tracking-widest uppercase neon-text transform rotate-180" style="writing-mode: vertical-rl;">Image Analyzer</span>
+            </div>
+        </div>
+
+        <!-- Main Application Modal -->
+        <div id="appModal" class="hidden fixed inset-0 z-40 flex items-center justify-center p-4 pointer-events-auto bg-black/40 backdrop-blur-sm">
+            <div class="glass-panel w-full max-w-4xl h-[80vh] rounded-2xl flex flex-col overflow-hidden relative shadow-2xl">
+                
+                <!-- Header -->
+                <div class="flex justify-between items-center p-4 border-b border-white/10 bg-slate-900/50">
+                    <div class="flex items-center gap-3">
+                        <i class="fa-solid fa-brain text-cyan-400 text-xl"></i>
+                        <h2 class="text-xl font-bold text-white tracking-wide">AI VISION <span class="text-cyan-400">PRO</span></h2>
+                    </div>
+                    <button onclick="toggleApp()" class="text-gray-400 hover:text-white transition-colors">
+                        <i class="fa-solid fa-xmark text-2xl"></i>
+                    </button>
+                </div>
+
+                <!-- Content Area -->
+                <div class="flex flex-col md:flex-row h-full overflow-hidden">
+                    
+                    <!-- Left: Upload & Preview -->
+                    <div class="w-full md:w-1/2 p-6 flex flex-col gap-4 border-b md:border-b-0 md:border-r border-white/10 bg-slate-900/30">
+                        
+                        <!-- Drop Zone / Preview Container -->
+                        <div id="dropZone" 
+                             class="drop-zone relative flex-1 rounded-xl flex items-center justify-center overflow-hidden cursor-pointer group"
+                             onclick="document.getElementById('fileInput').click()">
+                            
+                            <input type="file" id="fileInput" class="hidden" accept="image/*" onchange="handleFileSelect(event)">
+                            
+                            <!-- Empty State -->
+                            <div id="emptyState" class="text-center p-6">
+                                <div class="w-20 h-20 rounded-full bg-white/5 mx-auto mb-4 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                                    <i class="fa-solid fa-cloud-arrow-up text-4xl text-cyan-400"></i>
+                                </div>
+                                <p class="text-lg text-white font-medium mb-1">Upload Image</p>
+                                <p class="text-sm text-gray-400">Drag & Drop or Click to Browse</p>
+                            </div>
+
+                            <!-- Image Preview -->
+                            <img id="imagePreview" class="hidden absolute inset-0 w-full h-full object-contain bg-black/50" alt="Preview">
+                            
+                            <!-- Scanner Overlay -->
+                            <div id="scannerOverlay" class="absolute inset-0 hidden pointer-events-none">
+                                <div class="scanner-line"></div>
+                                <div class="absolute inset-0 border-2 border-cyan-400/50 box-border animate-pulse"></div>
+                            </div>
+                        </div>
+
+                        <!-- Analyze Button -->
+                        <button id="analyzeBtn" 
+                                onclick="startAnalysis()" 
+                                disabled
+                                class="w-full py-3 px-6 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold tracking-wider transition-all shadow-lg shadow-cyan-500/20">
+                            <i class="fa-solid fa-microchip mr-2"></i> ANALYZE IMAGE
+                        </button>
+                    </div>
+
+                    <!-- Right: Analysis Results -->
+                    <div class="w-full md:w-1/2 p-6 flex flex-col overflow-y-auto bg-slate-900/20">
+                        <h3 class="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4 border-l-2 border-cyan-400 pl-3">
+                            Analysis Logs
+                        </h3>
+                        
+                        <!-- Console Output -->
+                        <div id="consoleOutput" class="font-mono text-sm space-y-3">
+                            <div class="text-gray-500">Waiting for input...</div>
+                        </div>
+
+                        <!-- Loading Indicator -->
+                        <div id="loadingIndicator" class="hidden mt-4 flex items-center gap-3">
+                            <div class="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"></div>
+                            <span class="text-cyan-400 animate-pulse">Processing neural network layers...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const imagePreview = document.getElementById('imagePreview');
+        const emptyState = document.getElementById('emptyState');
+        const analyzeBtn = document.getElementById('analyzeBtn');
+        const scannerOverlay = document.getElementById('scannerOverlay');
+        const consoleOutput = document.getElementById('consoleOutput');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const triggerTab = document.getElementById('triggerTab');
+        const appModal = document.getElementById('appModal');
+
+        let isProcessing = false;
+
+        // Toggle App Visibility
+        function toggleApp() {
+            const isHidden = appModal.classList.contains('hidden');
+            if (isHidden) {
+                appModal.classList.remove('hidden');
+                triggerTab.classList.add('hidden');
+                // Add enter animation
+                appModal.firstElementChild.classList.remove('modal-exit', 'modal-exit-active');
+                appModal.firstElementChild.classList.add('modal-enter');
+                setTimeout(() => {
+                    appModal.firstElementChild.classList.add('modal-enter-active');
+                }, 10);
+            } else {
+                // Exit animation
+                appModal.firstElementChild.classList.remove('modal-enter', 'modal-enter-active');
+                appModal.firstElementChild.classList.add('modal-exit');
+                setTimeout(() => {
+                    appModal.firstElementChild.classList.add('modal-exit-active');
+                }, 10);
+                setTimeout(() => {
+                    appModal.classList.add('hidden');
+                    triggerTab.classList.remove('hidden');
+                }, 200);
+            }
+        }
+
+        // Drag & Drop Handlers
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.add('drag-over'), false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.remove('drag-over'), false);
+        });
+
+        dropZone.addEventListener('drop', handleDrop, false);
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            handleFiles(files);
+        }
+
+        function handleFileSelect(e) {
+            const files = e.target.files;
+            handleFiles(files);
+        }
+
+        function handleFiles(files) {
+            if (files.length > 0 && files[0].type.startsWith('image/')) {
+                const file = files[0];
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    imagePreview.src = e.target.result;
+                    imagePreview.classList.remove('hidden');
+                    emptyState.classList.add('hidden');
+                    analyzeBtn.disabled = false;
+                    resetAnalysis();
+                    logMessage(`Image loaded: ${file.name} (${formatSize(file.size)})`, 'info');
+                }
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function formatSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        // Analysis Simulation
+        function startAnalysis() {
+            if (isProcessing) return;
+            isProcessing = true;
+            analyzeBtn.disabled = true;
+            scannerOverlay.classList.remove('hidden');
+            loadingIndicator.classList.remove('hidden');
+            
+            // Clear previous results
+            consoleOutput.innerHTML = '';
+            logMessage('Initializing computer vision module...', 'system');
+
+            // Simulated Analysis Steps
+            setTimeout(() => logMessage('Scanning image metrics...', 'process'), 800);
+            setTimeout(() => logMessage('Detecting objects and vectors...', 'process'), 1600);
+            setTimeout(() => logMessage('Running natural language synthesis...', 'process'), 2400);
+
+            setTimeout(() => {
+                completeAnalysis();
+            }, 3500);
+        }
+
+        function completeAnalysis() {
+            isProcessing = false;
+            scannerOverlay.classList.add('hidden');
+            loadingIndicator.classList.add('hidden');
+            analyzeBtn.disabled = false;
+            analyzeBtn.innerHTML = '<i class="fa-solid fa-rotate-right mr-2"></i> RE-ANALYZE';
+
+            // Mock Results based on random selection to look "real"
+            const objects = ['Person', 'Outdoor Scenery', 'Digital Interface', 'Text Overlay', 'Modern Architecture', 'Vehicle'];
+            const sentiments = ['Neutral', 'Professional', 'Vibrant', 'Calm', 'Dynamic'];
+            
+            const detected = [
+                objects[Math.floor(Math.random() * objects.length)],
+                objects[Math.floor(Math.random() * objects.length)]
+            ];
+            
+            const resultHTML = `
+                <div class="mt-4 p-4 rounded bg-cyan-900/20 border border-cyan-500/30">
+                    <h4 class="text-cyan-400 font-bold mb-2"><i class="fa-solid fa-check-circle mr-2"></i>ANALYSIS COMPLETE</h4>
+                    <p class="text-white mb-2 leading-relaxed">
+                        The image has been successfully processed. The visual content appears to feature high-fidelity graphics.
+                    </p>
+                    <ul class="text-sm text-gray-300 space-y-1 ml-4 list-disc">
+                        <li>Primary Subject: <span class="text-white">${detected[0]}</span></li>
+                        <li>Secondary Element: <span class="text-white">${detected[1]}</span></li>
+                        <li>Color Grading: <span class="text-white">${sentiments[Math.floor(Math.random() * sentiments.length)]}</span></li>
+                        <li>Confidence Score: <span class="text-emerald-400">${(95 + Math.random() * 4).toFixed(1)}%</span></li>
+                    </ul>
+                </div>
+            `;
+            
+            const container = document.createElement('div');
+            container.innerHTML = resultHTML;
+            consoleOutput.appendChild(container);
+            consoleOutput.scrollTop = consoleOutput.scrollHeight;
+        }
+
+        function resetAnalysis() {
+            consoleOutput.innerHTML = '<div class="text-gray-500">Ready for analysis...</div>';
+            analyzeBtn.innerHTML = '<i class="fa-solid fa-microchip mr-2"></i> ANALYZE IMAGE';
+        }
+
+        function logMessage(text, type) {
+            const div = document.createElement('div');
+            const time = new Date().toLocaleTimeString([], { hour12: false });
+            
+            let colorClass = 'text-gray-300';
+            if (type === 'system') colorClass = 'text-purple-400';
+            if (type === 'process') colorClass = 'text-yellow-400';
+            if (type === 'info') colorClass = 'text-blue-400';
+
+            div.className = `flex gap-3 ${colorClass}`;
+            div.innerHTML = `<span class="opacity-50 font-mono text-xs mt-1">[${time}]</span> <span>${text}</span>`;
+            
+            consoleOutput.appendChild(div);
+            consoleOutput.scrollTop = consoleOutput.scrollHeight;
+        }
+    </script>
+</body>
+</html>

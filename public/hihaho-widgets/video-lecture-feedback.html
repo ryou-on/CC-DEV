@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Video Feedback Widget</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* Base Rules for Video Overlay */
+    html, body {
+      background: transparent !important;
+      margin: 0;
+      padding: 0;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      /* Prevent double-tap zoom on tablets */
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* Pointer Events Control: Only interactive UI blocks underlying video clicks */
+    .pointer-events-none { pointer-events: none; }
+    .pointer-events-auto { pointer-events: auto; }
+
+    /* Glassmorphism Design */
+    .glass-panel {
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-left: 1px solid rgba(255, 255, 255, 0.15);
+      box-shadow: -8px 0 32px rgba(0, 0, 0, 0.6);
+    }
+
+    /* High Contrast Text */
+    .text-shadow {
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
+    }
+    
+    .btn-shadow {
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    }
+
+    /* Custom Scrollbar for Panel */
+    ::-webkit-scrollbar {
+      width: 4px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.3);
+      border-radius: 4px;
+    }
+    
+    .vertical-text {
+      writing-mode: vertical-rl;
+      text-orientation: upright;
+    }
+  </style>
+</head>
+<body class="pointer-events-none">
+
+  <!-- Main Overlay Container -->
+  <div class="fixed inset-0 flex items-center justify-end z-50">
+    
+    <!-- Trigger Tab -->
+    <div id="trigger-tab"
+         class="pointer-events-auto cursor-pointer bg-blue-600/90 hover:bg-blue-500 backdrop-blur-md text-white py-4 px-2 rounded-l-xl shadow-[0_0_20px_rgba(0,0,0,0.6)] transition-all duration-300 flex flex-col items-center gap-3 group border border-r-0 border-white/20 translate-x-0"
+         onmouseenter="openPanel()" 
+         onclick="openPanel()">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white group-hover:scale-110 transition-transform filter drop-shadow-md" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+      </svg>
+      <span class="vertical-text text-sm font-bold tracking-widest text-shadow opacity-90">フィードバック</span>
+    </div>
+
+    <!-- Feedback Panel -->
+    <div id="feedback-panel"
+         class="pointer-events-auto glass-panel h-full w-[90vw] max-w-[380px] absolute right-0 top-0 transform translate-x-full transition-transform duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)] flex flex-col">
+      
+      <!-- Header -->
+      <div class="flex justify-between items-center p-5 border-b border-white/10">
+        <h2 class="text-white font-bold text-lg text-shadow flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+          </svg>
+          授業フィードバック
+        </h2>
+        <button onclick="closePanel()" class="text-gray-400 hover:text-white hover:bg-white/10 transition p-2 rounded-full focus:outline-none">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Content Scrollable Area -->
+      <div class="flex-1 overflow-y-auto p-5 flex flex-col gap-8" id="panel-content">
+        
+        <!-- Rating Section -->
+        <div class="flex flex-col gap-4">
+          <p class="text-white text-sm font-medium text-shadow tracking-wide">
+            今の解説や進行はどうでしたか？
+          </p>
+          <div class="grid grid-cols-2 gap-4">
+            <button onclick="selectRating('good')" id="btn-good"
+                    class="flex flex-col items-center justify-center py-6 px-2 rounded-2xl border border-white/20 bg-white/5 hover:bg-white/10 transition-all gap-3 group text-white shadow-lg focus:outline-none">
+               <span class="text-4xl group-hover:scale-110 group-active:scale-95 transition-transform filter drop-shadow-md">👍</span>
+               <span class="text-sm font-bold text-shadow">分かりやすい</span>
+            </button>
+            <button onclick="selectRating('bad')" id="btn-bad"
+                    class="flex flex-col items-center justify-center py-6 px-2 rounded-2xl border border-white/20 bg-white/5 hover:bg-white/10 transition-all gap-3 group text-white shadow-lg focus:outline-none">
+               <span class="text-4xl group-hover:scale-110 group-active:scale-95 transition-transform filter drop-shadow-md">🤔</span>
+               <span class="text-sm font-bold text-shadow">分かりにくい</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Reasons Section (Hidden by default) -->
+        <div id="reason-section" class="flex flex-col gap-4 opacity-0 hidden transition-opacity duration-300">
+          <div class="bg-white/5 p-4 rounded-xl border border-white/10">
+            <p class="text-white text-sm font-medium text-shadow mb-4">
+              どの点が分かりにくかったですか？<br><span class="text-xs text-gray-400 font-normal">（複数選択可 / タップで選択）</span>
+            </p>
+            <div class="flex flex-wrap gap-2.5" id="reason-tags">
+              <!-- Generated by JS -->
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Footer / Submit Action -->
+      <div class="p-5 border-t border-white/10 mt-auto bg-black/40">
+        <button id="submit-btn" onclick="submitFeedback()" disabled
+                class="w-full py-4 px-4 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-bold text-lg transition-all btn-shadow text-shadow flex items-center justify-center gap-2 focus:outline-none active:scale-[0.98]">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" />
+          </svg>
+          送信する
+        </button>
+      </div>
+      
+      <!-- Success Message Overlay -->
+      <div id="success-overlay"
+           class="absolute inset-0 bg-slate-900/95 backdrop-blur-xl flex flex-col items-center justify-center opacity-0 pointer-events-none transition-opacity duration-300 z-10 rounded-l-xl">
+        <div class="text-6xl mb-6 animate-bounce filter drop-shadow-lg">✨</div>
+        <h3 class="text-white font-bold text-2xl text-shadow mb-3">送信完了</h3>
+        <p class="text-gray-300 text-sm text-center px-8 leading-relaxed">
+          フィードバックありがとうございます。<br>今後の授業改善の分析に役立てます。
+        </p>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    // Data config
+    const reasons = [
+      { id: 'speed_fast', label: '進行が早すぎる' },
+      { id: 'speed_slow', label: '進行が遅すぎる' },
+      { id: 'hard_explain', label: '説明が難解' },
+      { id: 'hard_see', label: '板書や資料が見づらい' },
+      { id: 'audio_issue', label: '音声が聞き取りにくい' },
+      { id: 'other', label: 'その他' }
+    ];
+
+    // State management
+    let state = {
+      isOpen: false,
+      triggeredAt: null,
+      rating: null,
+      selectedReasons: new Set()
+    };
+
+    function initReasons() {
+      const container = document.getElementById('reason-tags');
+      reasons.forEach(r => {
+        const btn = document.createElement('button');
+        // Touch-friendly sizing for tablets (py-2.5 px-4 ensures minimum height)
+        btn.className = 'py-2.5 px-4 rounded-full border border-white/20 bg-white/5 text-gray-200 text-sm font-medium hover:bg-white/10 transition-colors select-none focus:outline-none shadow-sm';
+        btn.innerText = r.label;
+        btn.onclick = () => toggleReason(r.id, btn);
+        container.appendChild(btn);
+      });
+    }
+
+    function openPanel() {
+      if (state.isOpen) return;
+      state.isOpen = true;
+      
+      // [CRITICAL FOR ANALYSIS] Capture the exact moment the user felt the need to give feedback
+      state.triggeredAt = new Date().toISOString(); 
+      
+      document.getElementById('feedback-panel').classList.remove('translate-x-full');
+      document.getElementById('trigger-tab').classList.add('translate-x-full', 'opacity-0');
+    }
+
+    function closePanel() {
+      state.isOpen = false;
+      document.getElementById('feedback-panel').classList.add('translate-x-full');
+      document.getElementById('trigger-tab').classList.remove('translate-x-full', 'opacity-0');
+      
+      // Reset state after animation ends
+      setTimeout(resetState, 500);
+    }
+
+    function selectRating(rating) {
+      state.rating = rating;
+      
+      const btnGood = document.getElementById('btn-good');
+      const btnBad = document.getElementById('btn-bad');
+      
+      // Visual feedback for selected rating
+      if (rating === 'good') {
+        btnGood.classList.add('bg-blue-600/60', 'border-blue-400');
+        btnGood.classList.remove('bg-white/5');
+        btnBad.classList.remove('bg-red-600/60', 'border-red-400');
+        btnBad.classList.add('bg-white/5');
+        
+        hideReasons();
+        enableSubmit();
+      } else {
+        btnBad.classList.add('bg-red-600/60', 'border-red-400');
+        btnBad.classList.remove('bg-white/5');
+        btnGood.classList.remove('bg-blue-600/60', 'border-blue-400');
+        btnGood.classList.add('bg-white/5');
+        
+        showReasons();
+        checkSubmitConditions();
+      }
+    }
+
+    function toggleReason(id, btnElement) {
+      if (state.selectedReasons.has(id)) {
+        state.selectedReasons.delete(id);
+        btnElement.classList.remove('bg-red-500/90', 'border-red-400', 'text-white');
+        btnElement.classList.add('bg-white/5', 'text-gray-200');
+      } else {
+        state.selectedReasons.add(id);
+        btnElement.classList.add('bg-red-500/90', 'border-red-400', 'text-white');
+        btnElement.classList.remove('bg-white/5', 'text-gray-200');
+      }
+      checkSubmitConditions();
+    }
+
+    function showReasons() {
+      const section = document.getElementById('reason-section');
+      section.classList.remove('hidden');
+      // Trigger reflow to ensure animation plays
+      void section.offsetWidth;
+      section.classList.remove('opacity-0');
+    }
+
+    function hideReasons() {
+      const section = document.getElementById('reason-section');
+      section.classList.add('opacity-0');
+      setTimeout(() => {
+        if(state.rating !== 'bad') section.classList.add('hidden');
+      }, 300);
+    }
+
+    function checkSubmitConditions() {
+      // For bad ratings, require at least one reason to improve data analysis quality
+      if (state.rating === 'bad' && state.selectedReasons.size > 0) {
+        enableSubmit();
+      } else if (state.rating === 'good') {
+        enableSubmit();
+      } else {
+        disableSubmit();
+      }
+    }
+
+    function enableSubmit() {
+      const btn = document.getElementById('submit-btn');
+      btn.disabled = false;
+    }
+
+    function disableSubmit() {
+      const btn = document.getElementById('submit-btn');
+      btn.disabled = true;
+    }
+
+    function submitFeedback() {
+      // Construct analysis-friendly JSON payload
+      const payload = {
+        event: "lecture_feedback_submitted",
+        data: {
+          // triggeredAt: The exact time they clicked the widget (correlates to video timestamp)
+          triggeredAt: state.triggeredAt,
+          submittedAt: new Date().toISOString(),
+          rating: state.rating,
+          reasons: Array.from(state.selectedReasons),
+          /* NOTE: In a real implementation, inject video metadata here:
+             videoId: "XYZ",
+             videoCurrentTimeSec: window.player.getCurrentTime()
+          */
+        }
+      };
+      
+      // Log the structured data (Simulating API call)
+      console.log("Feedback Data for Analysis:", JSON.stringify(payload, null, 2));
+      
+      // Show success overlay
+      const overlay = document.getElementById('success-overlay');
+      overlay.classList.remove('pointer-events-none');
+      overlay.classList.add('opacity-100', 'pointer-events-auto');
+      
+      // Auto-close after a few seconds
+      setTimeout(() => {
+        overlay.classList.remove('opacity-100', 'pointer-events-auto');
+        overlay.classList.add('pointer-events-none');
+        closePanel();
+      }, 2500);
+    }
+
+    function resetState() {
+      state.rating = null;
+      state.selectedReasons.clear();
+      
+      // Reset UI elements
+      document.getElementById('btn-good').className = "flex flex-col items-center justify-center py-6 px-2 rounded-2xl border border-white/20 bg-white/5 hover:bg-white/10 transition-all gap-3 group text-white shadow-lg focus:outline-none";
+      document.getElementById('btn-bad').className = "flex flex-col items-center justify-center py-6 px-2 rounded-2xl border border-white/20 bg-white/5 hover:bg-white/10 transition-all gap-3 group text-white shadow-lg focus:outline-none";
+      
+      hideReasons();
+      disableSubmit();
+      
+      // Rebuild tags completely to reset styles safely
+      const container = document.getElementById('reason-tags');
+      container.innerHTML = '';
+      initReasons();
+    }
+
+    // Initialize on load
+    window.onload = initReasons;
+  </script>
+</body>
+</html>

@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Stats Overlay V2</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body, html {
+            background: transparent !important;
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            pointer-events: none;
+        }
+
+        #overlay-widget {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 320px;
+            pointer-events: auto;
+            background: rgba(15, 23, 42, 0.8);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.6);
+            border-radius: 16px;
+            color: white;
+            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), height 0.3s cubic-bezier(0.4, 0, 0.2, 1), border-radius 0.3s ease;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            z-index: 50;
+        }
+
+        #overlay-widget.minimized {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #overlay-widget.minimized .widget-content,
+        #overlay-widget.minimized .widget-header-text,
+        #overlay-widget.minimized .minimize-btn-icon {
+            display: none;
+        }
+
+        #overlay-widget.minimized .maximize-icon {
+            display: block;
+        }
+
+        .widget-header {
+            padding: 12px 16px;
+            cursor: grab;
+            background: rgba(255, 255, 255, 0.05);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .widget-content {
+            padding: 16px;
+        }
+
+        .text-shadow {
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+        }
+
+        .maximize-icon {
+            display: none;
+            color: #38bdf8;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.1); opacity: 0.8; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        .no-scroll {
+            touch-action: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="overlay-widget">
+        <div class="widget-header no-scroll" id="drag-handle">
+            <div class="flex items-center space-x-2 widget-header-text">
+                <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                <span class="font-bold text-sm text-shadow tracking-wide uppercase">Live Stats</span>
+            </div>
+            
+            <button id="toggle-btn" class="text-gray-300 hover:text-white p-1">
+                <svg class="w-5 h-5 minimize-btn-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"></path>
+                </svg>
+            </button>
+
+            <div class="maximize-icon pointer-events-none">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 4l-5-5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+                </svg>
+            </div>
+        </div>
+
+        <div class="widget-content">
+            <div class="space-y-4">
+                <div class="flex justify-between items-center border-b border-white/10 pb-2">
+                    <span class="text-gray-300 text-xs font-medium uppercase">Active Viewers</span>
+                    <span id="viewer-count" class="text-xl font-bold text-cyan-400 text-shadow">---</span>
+                </div>
+                
+                <div>
+                    <div class="flex justify-between text-xs mb-1">
+                        <span class="text-gray-300">Goal Progress</span>
+                        <span id="progress-text" class="text-white font-mono">--%</span>
+                    </div>
+                    <div class="w-full bg-gray-700/50 rounded-full h-2">
+                        <div id="progress-bar" class="bg-gradient-to-r from-cyan-500 to-blue-500 h-2 rounded-full transition-all duration-500" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <div class="bg-white/5 p-3 rounded-lg border border-white/5">
+                    <p class="text-xs text-gray-200 leading-relaxed">
+                        <span class="text-yellow-400 font-bold">STATUS:</span> Auto-sync active
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const widget = document.getElementById('overlay-widget');
+        const header = document.getElementById('drag-handle');
+        const toggleBtn = document.getElementById('toggle-btn');
+        
+        // 表示要素
+        const viewerDisplay = document.getElementById('viewer-count');
+        const progressText = document.getElementById('progress-text');
+        const progressBar = document.getElementById('progress-bar');
+        
+        const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSHI5EOG9VnLCz8o4LW5SIFCtn_KTK-6_9kRxPe_BNlnqWYuyaRJamI9S90-U5Oj6so7VbtggBFAXJg/pub?output=csv';
+
+        async function fetchSpreadsheetData() {
+            try {
+                const response = await fetch(`${SHEET_URL}&t=${new Date().getTime()}`);
+                if (!response.ok) throw new Error('Fetch failed');
+                
+                const csvText = await response.text();
+                const rows = csvText.split('\n');
+                const firstRow = rows[0].split(',');
+
+                // 1. A1セルの処理 (Active Viewers)
+                const rawA1 = firstRow[0]?.replace(/"/g, '').trim();
+                const numA1 = parseFloat(rawA1?.replace(/,/g, ''));
+                viewerDisplay.innerText = !isNaN(numA1) ? numA1.toLocaleString() : (rawA1 || '---');
+
+                // 2. B1セルの処理 (Goal Progress)
+                const rawB1 = firstRow[1]?.replace(/"/g, '').replace('%', '').trim();
+                const numB1 = parseFloat(rawB1);
+                
+                if (!isNaN(numB1)) {
+                    const percent = Math.min(Math.max(numB1, 0), 100); // 0-100の間に制限
+                    progressText.innerText = `${percent}%`;
+                    progressBar.style.width = `${percent}%`;
+                }
+            } catch (error) {
+                console.error('Update Error:', error);
+            }
+        }
+
+        // 30秒ごとに更新
+        fetchSpreadsheetData();
+        setInterval(fetchSpreadsheetData, 30000);
+
+        // --- ドラッグ & UIロジック ---
+        let isDragging = false, currentX, currentY, initialX, initialY, xOffset = 0, yOffset = 0;
+
+        const dragStart = (e) => {
+            if (e.target.closest('#toggle-btn')) return;
+            const cX = e.type === "touchstart" ? e.touches[0].clientX : e.clientX;
+            const cY = e.type === "touchstart" ? e.touches[0].clientY : e.clientY;
+            initialX = cX - xOffset;
+            initialY = cY - yOffset;
+            if (e.target === header || header.contains(e.target) || widget.classList.contains('minimized')) isDragging = true;
+        };
+
+        const drag = (e) => {
+            if (!isDragging) return;
+            e.preventDefault();
+            const cX = e.type === "touchmove" ? e.touches[0].clientX : e.clientX;
+            const cY = e.type === "touchmove" ? e.touches[0].clientY : e.clientY;
+            currentX = cX - initialX;
+            currentY = cY - initialY;
+            xOffset = currentX;
+            yOffset = currentY;
+            widget.style.transform = `translate3d(${currentX}px, ${currentY}px, 0)`;
+        };
+
+        document.addEventListener("mousedown", dragStart);
+        document.addEventListener("touchstart", dragStart, { passive: false });
+        document.addEventListener("mouseup", () => isDragging = false);
+        document.addEventListener("touchend", () => isDragging = false);
+        document.addEventListener("mousemove", drag);
+        document.addEventListener("touchmove", drag, { passive: false });
+
+        toggleBtn.addEventListener('click', (e) => { e.stopPropagation(); widget.classList.toggle('minimized'); });
+        widget.addEventListener('click', () => widget.classList.contains('minimized') && widget.classList.remove('minimized'));
+    </script>
+</body>
+</html>

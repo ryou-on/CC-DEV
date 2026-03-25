@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>角度学習ウィジェット</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700;900&display=swap');
+
+        body {
+            background-color: transparent !important;
+            margin: 0;
+            padding: 0;
+            font-family: 'M PLUS Rounded 1c', sans-serif;
+            overflow: hidden;
+            /* Ensuring the body is click-through where empty, but children are interactive */
+            height: 100vh;
+            width: 100vw;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Glassmorphism Card */
+        .widget-card {
+            background: rgba(15, 23, 42, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+            border-radius: 2rem;
+            padding: 1.5rem;
+            width: 90%;
+            max-width: 400px;
+            text-align: center;
+            color: white;
+            position: relative;
+            transition: transform 0.2s;
+            user-select: none;
+        }
+
+        /* SVG Elements */
+        .angle-arc {
+            fill: rgba(250, 204, 21, 0.4);
+            stroke: #facc15;
+            stroke-width: 2;
+        }
+
+        .base-line {
+            stroke: rgba(255, 255, 255, 0.5);
+            stroke-width: 4;
+            stroke-linecap: round;
+        }
+
+        .active-line {
+            stroke: #38bdf8;
+            stroke-width: 4;
+            stroke-linecap: round;
+        }
+
+        .handle {
+            fill: #38bdf8;
+            stroke: #fff;
+            stroke-width: 3;
+            cursor: grab;
+            filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.8));
+            transition: r 0.2s;
+        }
+        .handle:active {
+            cursor: grabbing;
+            r: 14;
+        }
+
+        .tick-mark {
+            stroke: rgba(255, 255, 255, 0.3);
+            stroke-width: 1;
+        }
+
+        .angle-text {
+            font-size: 3rem;
+            font-weight: 900;
+            text-shadow: 0 4px 8px rgba(0,0,0,0.8);
+            line-height: 1;
+        }
+
+        .angle-type {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: #facc15;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+            margin-bottom: 0.5rem;
+            min-height: 1.8rem;
+        }
+
+        /* Button styles */
+        .preset-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 999px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .preset-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: scale(1.05);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="widget-card">
+        <div class="flex justify-between items-center mb-2">
+            <h2 class="text-lg font-bold opacity-80">かくどをあそぼう！</h2>
+            <div class="text-xs bg-white/10 px-2 py-1 rounded">ドラッグしてね</div>
+        </div>
+
+        <!-- Angle Display -->
+        <div class="angle-type" id="angleType">鋭角 (えいかく)</div>
+        <div class="angle-text" id="angleValue">45°</div>
+
+        <!-- SVG Visualization -->
+        <div class="relative flex justify-center my-4">
+            <svg width="240" height="240" viewBox="0 0 240 240" id="angleSvg">
+                <!-- Ticks -->
+                <g id="ticks"></g>
+
+                <!-- Center Point -->
+                <circle cx="120" cy="120" r="5" fill="white" />
+
+                <!-- Base Line (0 degrees) -->
+                <line x1="120" y1="120" x2="220" y2="120" class="base-line" />
+
+                <!-- Arc Area -->
+                <path id="arcPath" class="angle-arc" d="" />
+
+                <!-- Active Line -->
+                <line id="activeLine" x1="120" y1="120" x2="190" y2="50" class="active-line" />
+
+                <!-- Draggable Handle -->
+                <circle id="handle" cx="190" cy="50" r="12" class="handle" />
+            </svg>
+        </div>
+
+        <!-- Controls -->
+        <div class="flex justify-center gap-2 mt-2">
+            <button class="preset-btn" onclick="setAngle(45)">45°</button>
+            <button class="preset-btn" onclick="setAngle(90)">90°</button>
+            <button class="preset-btn" onclick="setAngle(180)">180°</button>
+            <button class="preset-btn" onclick="setAngle(270)">270°</button>
+        </div>
+    </div>
+
+    <script>
+        const svg = document.getElementById('angleSvg');
+        const handle = document.getElementById('handle');
+        const activeLine = document.getElementById('activeLine');
+        const arcPath = document.getElementById('arcPath');
+        const angleValueDisplay = document.getElementById('angleValue');
+        const angleTypeDisplay = document.getElementById('angleType');
+        const ticksGroup = document.getElementById('ticks');
+
+        const centerX = 120;
+        const centerY = 120;
+        const radius = 100; // Handle radius
+        let isDragging = false;
+
+        // Draw tick marks
+        for (let i = 0; i < 360; i += 30) {
+            const rad = (i * Math.PI) / 180;
+            const x1 = centerX + (radius - 10) * Math.cos(rad);
+            const y1 = centerY + (radius - 10) * Math.sin(rad);
+            const x2 = centerX + (radius + 5) * Math.cos(rad);
+            const y2 = centerY + (radius + 5) * Math.sin(rad);
+            
+            const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+            line.setAttribute("x1", x1);
+            line.setAttribute("y1", y1);
+            line.setAttribute("x2", x2);
+            line.setAttribute("y2", y2);
+            line.setAttribute("class", "tick-mark");
+            ticksGroup.appendChild(line);
+        }
+
+        function getAngleFromEvent(e) {
+            const rect = svg.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            
+            const dx = clientX - rect.left - centerX;
+            const dy = clientY - rect.top - centerY;
+            
+            // Calculate angle in radians, then degrees
+            let angle = Math.atan2(dy, dx) * (180 / Math.PI);
+            
+            // Normalize to 0-360 range
+            if (angle < 0) angle += 360;
+            
+            return Math.round(angle);
+        }
+
+        function updateVisuals(angle) {
+            // Convert to radians for SVG calculations
+            const rad = angle * (Math.PI / 180);
+            
+            // Calculate handle position
+            const handleX = centerX + radius * Math.cos(rad);
+            const handleY = centerY + radius * Math.sin(rad);
+
+            // Update Handle and Line
+            handle.setAttribute('cx', handleX);
+            handle.setAttribute('cy', handleY);
+            activeLine.setAttribute('x2', handleX);
+            activeLine.setAttribute('y2', handleY);
+
+            // Update Text
+            angleValueDisplay.innerText = `${angle}°`;
+            
+            // Update Description (Japanese Elementary School Terms)
+            let type = "";
+            if (angle === 0 || angle === 360) type = "一周 (いっしゅう)";
+            else if (angle > 0 && angle < 90) type = "鋭角 (えいかく)";
+            else if (angle === 90) type = "直角 (ちょっかく)";
+            else if (angle > 90 && angle < 180) type = "鈍角 (どんかく)";
+            else if (angle === 180) type = "平角 (へいかく)";
+            else if (angle > 180 && angle < 360) type = "優角 (ゆうかく)";
+            
+            // Add playful color for special angles
+            if (angle === 90 || angle === 180 || angle === 360) {
+                 angleValueDisplay.style.color = '#facc15';
+            } else {
+                 angleValueDisplay.style.color = '#ffffff';
+            }
+            angleTypeDisplay.innerText = type;
+
+            // Update Arc Path (The Sector)
+            // Flag for large arc (if > 180 degrees)
+            const largeArcFlag = angle > 180 ? 1 : 0;
+            const sweepFlag = 1; // Always sweep clockwise
+
+            // Starting point is always (centerX + radius, centerY) i.e., 0 degrees
+            const startX = centerX + (radius * 0.4);
+            const startY = centerY;
+            
+            // End point for the smaller filled arc
+            const arcRadius = radius * 0.4;
+            const endX = centerX + arcRadius * Math.cos(rad);
+            const endY = centerY + arcRadius * Math.sin(rad);
+
+            if (angle === 360 || angle === 0) {
+                 // Full circle case
+                 arcPath.setAttribute('d', `M ${centerX} ${centerY} m -${arcRadius}, 0 a ${arcRadius},${arcRadius} 0 1,0 ${arcRadius * 2},0 a ${arcRadius},${arcRadius} 0 1,0 -${arcRadius * 2},0`);
+            } else {
+                const d = [
+                    "M", centerX, centerY,
+                    "L", startX, startY,
+                    "A", arcRadius, arcRadius, 0, largeArcFlag, sweepFlag, endX, endY,
+                    "Z"
+                ].join(" ");
+                arcPath.setAttribute('d', d);
+            }
+        }
+
+        function setAngle(deg) {
+            updateVisuals(deg);
+        }
+
+        // Interaction Logic
+        function onMove(e) {
+            if (!isDragging) return;
+            e.preventDefault();
+            const angle = getAngleFromEvent(e);
+            updateVisuals(angle);
+        }
+
+        function onStart(e) {
+            isDragging = true;
+            // Initial snap to click position
+            // const angle = getAngleFromEvent(e);
+            // updateVisuals(angle);
+        }
+
+        function onEnd() {
+            isDragging = false;
+        }
+
+        // Event Listeners
+        handle.addEventListener('mousedown', onStart);
+        handle.addEventListener('touchstart', onStart, {passive: false});
+        
+        // Allow dragging even if mouse leaves the handle, as long as it's within the window
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('touchmove', onMove, {passive: false});
+        
+        window.addEventListener('mouseup', onEnd);
+        window.addEventListener('touchend', onEnd);
+
+        // Initialize at 45 degrees
+        setAngle(45);
+
+    </script>
+</body>
+</html>

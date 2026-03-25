@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Customer Support Chat Overlay</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body, html {
+            background: transparent !important;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            height: 100%;
+            width: 100%;
+            pointer-events: none; /* Allows clicks to pass through empty areas */
+        }
+
+        /* Enable pointer events only on interactive elements */
+        .interactive-widget {
+            pointer-events: auto;
+        }
+
+        /* Glassmorphism Effect */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        /* Animation for chat window */
+        .chat-enter {
+            animation: slideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+        .chat-exit {
+            animation: slideOut 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(20px) scale(0.95); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes slideOut {
+            from { opacity: 1; transform: translateY(0) scale(1); }
+            to { opacity: 0; transform: translateY(20px) scale(0.95); }
+        }
+
+        /* Pulse animation for the trigger button to catch attention */
+        @keyframes subtlePulse {
+            0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+        }
+        .pulse-effect {
+            animation: subtlePulse 2s infinite;
+        }
+    </style>
+</head>
+<body class="flex flex-col justify-end items-end p-4 sm:p-6">
+
+    <!-- Chat Window (Hidden by default) -->
+    <div id="chat-window" class="interactive-widget glass-panel rounded-2xl w-72 sm:w-80 mb-4 hidden flex-col overflow-hidden transition-all origin-bottom-right">
+        <!-- Header -->
+        <div class="bg-blue-600/90 p-4 flex justify-between items-center">
+            <div class="flex items-center space-x-2">
+                <div class="w-2 h-2 rounded-full bg-green-400 animate-pulse"></div>
+                <h3 class="text-white font-bold text-sm drop-shadow-md">サポートチーム</h3>
+            </div>
+            <button onclick="toggleChat()" class="text-white hover:text-gray-200 transition">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd" />
+                </svg>
+            </button>
+        </div>
+
+        <!-- Body -->
+        <div class="p-4 h-64 overflow-y-auto space-y-3 flex flex-col">
+            <div class="self-start bg-gray-700/80 text-white text-xs p-3 rounded-tr-xl rounded-bl-xl rounded-br-xl max-w-[85%]">
+                こんにちは！何かお困りですか？ビデオの内容についてご質問があればどうぞ。
+            </div>
+            <div class="self-end bg-blue-600/80 text-white text-xs p-3 rounded-tl-xl rounded-bl-xl rounded-br-xl max-w-[85%]">
+                プランについて知りたいです。
+            </div>
+            <div class="self-start bg-gray-700/80 text-white text-xs p-3 rounded-tr-xl rounded-bl-xl rounded-br-xl max-w-[85%]">
+                承知いたしました。担当者にお繋ぎしますね。
+            </div>
+        </div>
+
+        <!-- Input Area -->
+        <div class="p-3 border-t border-gray-600/50 bg-gray-800/50">
+            <div class="flex items-center space-x-2">
+                <input type="text" placeholder="メッセージを入力..." class="w-full bg-gray-700/50 text-white text-sm rounded-full px-3 py-2 outline-none focus:ring-2 focus:ring-blue-500 placeholder-gray-400 transition">
+                <button class="p-2 bg-blue-600 hover:bg-blue-500 rounded-full text-white transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Trigger Button -->
+    <button id="chat-trigger" onclick="toggleChat()" class="interactive-widget group flex items-center justify-center w-14 h-14 bg-blue-600 hover:bg-blue-500 text-white rounded-full shadow-lg transition-all transform hover:scale-110 active:scale-95 pulse-effect z-50">
+        <!-- Icon: Chat Bubble -->
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+        </svg>
+        <!-- Tooltip -->
+        <span class="absolute right-full mr-3 bg-gray-900/80 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+            質問する
+        </span>
+    </button>
+
+    <script>
+        const chatWindow = document.getElementById('chat-window');
+        const chatTrigger = document.getElementById('chat-trigger');
+        let isOpen = false;
+
+        function toggleChat() {
+            isOpen = !isOpen;
+            if (isOpen) {
+                chatWindow.classList.remove('hidden');
+                chatWindow.classList.remove('chat-exit');
+                chatWindow.classList.add('chat-enter');
+                // Stop pulsing when open to reduce distraction
+                chatTrigger.classList.remove('pulse-effect');
+            } else {
+                chatWindow.classList.remove('chat-enter');
+                chatWindow.classList.add('chat-exit');
+                
+                // Wait for animation to finish before hiding
+                setTimeout(() => {
+                    if (!isOpen) chatWindow.classList.add('hidden');
+                }, 200);
+                
+                // Restart pulsing
+                chatTrigger.classList.add('pulse-effect');
+            }
+        }
+    </script>
+</body>
+</html>

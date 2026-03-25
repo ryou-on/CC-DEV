@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>News Style Video Overlay Widget (Japanese)</title>
+    <!-- Google Fonts for professional Japanese typography -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Core Transparency & Overlay Settings */
+        body, html {
+            background-color: transparent !important;
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Noto Sans JP', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        /* Ticker Animation */
+        @keyframes marquee {
+            0% { transform: translateX(100%); }
+            100% { transform: translateX(-100%); }
+        }
+        .animate-marquee {
+            display: inline-block;
+            white-space: nowrap;
+            animation: marquee 25s linear infinite; /* Slightly slower for Japanese reading speed */
+        }
+        .ticker-pause:hover .animate-marquee {
+            animation-play-state: paused;
+        }
+
+        /* Scrollbar styling for panel */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: rgba(0,0,0,0.1);
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.3);
+            border-radius: 3px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: rgba(255,255,255,0.5);
+        }
+
+        /* Utility for Text Shadows */
+        .text-hud {
+            text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+        }
+    </style>
+</head>
+<body class="pointer-events-none">
+
+    <!-- Main Overlay Container -->
+    <div id="app-container" class="relative w-full h-full flex flex-col justify-between pointer-events-none">
+
+        <!-- TOP BAR (M1) -->
+        <header class="w-full flex items-center justify-between px-4 py-2 bg-gradient-to-b from-black/80 to-transparent pointer-events-auto transition-opacity duration-300 hover:opacity-100">
+            <div class="flex items-center gap-4">
+                <!-- Status Badge -->
+                <div class="flex items-center gap-2 bg-red-600 text-white px-3 py-1 rounded shadow-lg animate-pulse">
+                    <div class="w-2 h-2 bg-white rounded-full"></div>
+                    <span class="font-bold text-sm tracking-wider">LIVE</span>
+                </div>
+                <!-- Title -->
+                <div class="hidden md:block">
+                    <h1 class="text-white font-bold text-lg text-hud tracking-tight">2026年 戦略的パートナーシップ発表会</h1>
+                    <p class="text-gray-300 text-xs text-hud">テックコープ株式会社 & フューチャーメディア・ホールディングス</p>
+                </div>
+            </div>
+
+            <!-- Top Tools -->
+            <div class="flex items-center gap-2">
+                <button onclick="copyCurrentUrl()" class="text-white/80 hover:text-white bg-black/40 hover:bg-black/60 px-3 py-1 rounded text-sm backdrop-blur-sm border border-white/10 transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 inline mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" /></svg>
+                    共有
+                </button>
+                <button id="menu-toggle" onclick="togglePanel()" class="text-white bg-blue-600 hover:bg-blue-500 px-3 py-1 rounded text-sm font-bold shadow-lg transition">
+                    情報 [M]
+                </button>
+            </div>
+        </header>
+
+        <!-- RIGHT INFO PANEL (M2) -->
+        <!-- Takes up full height minus top/bottom bars, slides in from right -->
+        <aside id="info-panel" class="absolute top-14 bottom-12 right-0 w-full md:w-[400px] bg-slate-900/85 backdrop-blur-md border-l border-white/10 transform translate-x-full transition-transform duration-300 pointer-events-auto flex flex-col z-50">
+            
+            <!-- Panel Header -->
+            <div class="flex items-center justify-between p-4 border-b border-white/10">
+                <h2 class="text-white font-bold text-lg">メディアキット & 資料</h2>
+                <button onclick="togglePanel()" class="text-gray-400 hover:text-white">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+            </div>
+
+            <!-- Tabs -->
+            <div class="flex border-b border-white/10 text-sm">
+                <button onclick="switchTab('summary')" class="tab-btn flex-1 py-3 text-center text-gray-300 hover:bg-white/5 hover:text-white transition active-tab border-b-2 border-blue-500 text-white font-bold" data-target="summary">概要</button>
+                <button onclick="switchTab('assets')" class="tab-btn flex-1 py-3 text-center text-gray-300 hover:bg-white/5 hover:text-white transition border-b-2 border-transparent" data-target="assets">素材</button>
+                <button onclick="switchTab('contact')" class="tab-btn flex-1 py-3 text-center text-gray-300 hover:bg-white/5 hover:text-white transition border-b-2 border-transparent" data-target="contact">連絡先</button>
+            </div>
+
+            <!-- Tab Contents -->
+            <div class="flex-1 overflow-y-auto custom-scrollbar p-4">
+                
+                <!-- SUMMARY TAB -->
+                <div id="tab-summary" class="tab-content space-y-6">
+                    <!-- Fact Card -->
+                    <div class="bg-white/5 p-4 rounded border border-white/10">
+                        <h3 class="text-blue-400 text-xs font-bold uppercase mb-2">主要ポイント</h3>
+                        <ul class="text-gray-200 text-sm list-disc pl-4 space-y-2">
+                            <li>AIの民主化を目指したグローバル・パートナーシップ。</li>
+                            <li>3年間で総額<strong class="text-white">5億ドル(約750億円)</strong>の投資。</li>
+                            <li>2026年第3四半期に「プロジェクト・ノヴァ」を開始予定。</li>
+                        </ul>
+                    </div>
+
+                    <!-- Quote Card -->
+                    <div class="bg-white/5 p-4 rounded border border-white/10 relative group">
+                        <h3 class="text-green-400 text-xs font-bold uppercase mb-2">公式コメント</h3>
+                        <blockquote class="text-white italic text-sm mb-3 border-l-2 border-green-500 pl-3">
+                            「この提携は、企業セクターにおける生成AIの認識を変える歴史的な転換点となるでしょう。」
+                        </blockquote>
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs text-gray-400">- ジェーン・ドウ, CEO</span>
+                            <button onclick="copyText(this, 'この提携は、企業セクターにおける生成AIの認識を変える歴史的な転換点となるでしょう。')" class="text-xs bg-white/10 hover:bg-white/20 text-white px-2 py-1 rounded transition flex items-center gap-1">
+                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
+                                コピー
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Chapters -->
+                    <div>
+                        <h3 class="text-gray-400 text-xs font-bold uppercase mb-2">トピックへ移動</h3>
+                        <div class="space-y-1">
+                            <button class="w-full text-left text-sm text-gray-300 hover:text-white hover:bg-white/10 px-2 py-1.5 rounded transition flex justify-between">
+                                <span>はじめに</span> <span class="text-gray-500">00:00</span>
+                            </button>
+                            <button class="w-full text-left text-sm text-gray-300 hover:text-white hover:bg-white/10 px-2 py-1.5 rounded transition flex justify-between">
+                                <span>市場分析</span> <span class="text-gray-500">05:30</span>
+                            </button>
+                            <button class="w-full text-left text-sm text-gray-300 hover:text-white hover:bg-white/10 px-2 py-1.5 rounded transition flex justify-between">
+                                <span>新製品の発表</span> <span class="text-gray-500">12:15</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ASSETS TAB (M5, M6) -->
+                <div id="tab-assets" class="tab-content hidden space-y-4">
+                    <div class="bg-yellow-500/10 border border-yellow-500/20 p-3 rounded">
+                        <p class="text-yellow-200 text-xs">
+                            ⚠ 報道目的での使用に限ります。<br>クレジット表記: 「出典: TechCorp」
+                        </p>
+                    </div>
+
+                    <!-- Asset Item -->
+                    <div class="flex items-center justify-between p-3 bg-white/5 rounded hover:bg-white/10 transition">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 bg-red-500/20 text-red-400 rounded flex items-center justify-center font-bold text-xs">PDF</div>
+                            <div>
+                                <div class="text-sm text-white font-medium">プレスリリース (日本語)</div>
+                                <div class="text-xs text-gray-400">1.2 MB</div>
+                            </div>
+                        </div>
+                        <button onclick="showDownloadConsent('プレスリリース PDF')" class="text-blue-400 hover:text-blue-300">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                        </button>
+                    </div>
+
+                    <!-- Asset Item -->
+                    <div class="flex items-center justify-between p-3 bg-white/5 rounded hover:bg-white/10 transition">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 bg-blue-500/20 text-blue-400 rounded flex items-center justify-center font-bold text-xs">IMG</div>
+                            <div>
+                                <div class="text-sm text-white font-medium">高解像度ロゴセット</div>
+                                <div class="text-xs text-gray-400">15.4 MB (ZIP)</div>
+                            </div>
+                        </div>
+                        <button onclick="showDownloadConsent('ロゴセット ZIP')" class="text-blue-400 hover:text-blue-300">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- CONTACT TAB (M7) -->
+                <div id="tab-contact" class="tab-content hidden space-y-4">
+                    <p class="text-sm text-gray-300">報道関係者からのお問い合わせを優先します。<br>回答目安: 2時間以内。</p>
+                    <form onsubmit="event.preventDefault(); alert('送信完了！担当者より近日中にご連絡いたします。');" class="space-y-3">
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">お問い合わせ種別</label>
+                            <select class="w-full bg-black/40 text-white border border-white/20 rounded px-2 py-2 text-sm focus:border-blue-500 outline-none">
+                                <option>取材依頼 (インタビュー等)</option>
+                                <option>事実確認・ファクトチェック</option>
+                                <option>素材提供依頼</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs text-gray-400 mb-1">メッセージ内容</label>
+                            <textarea class="w-full bg-black/40 text-white border border-white/20 rounded px-2 py-2 text-sm focus:border-blue-500 outline-none h-24" placeholder="掲載予定日、具体的な質問事項など..."></textarea>
+                        </div>
+                        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded shadow-lg transition">送信する</button>
+                    </form>
+
+                    <div class="pt-4 border-t border-white/10">
+                         <h4 class="text-xs text-gray-400 mb-2">直通連絡先</h4>
+                         <div class="flex items-center gap-2 text-sm text-white">
+                             <span class="bg-green-500/20 text-green-400 px-1.5 rounded text-xs">TEL</span>
+                             03-1234-5678
+                         </div>
+                         <div class="flex items-center gap-2 text-sm text-white mt-2">
+                             <span class="bg-blue-500/20 text-blue-400 px-1.5 rounded text-xs">MAIL</span>
+                             pr@techcorp.example.jp
+                         </div>
+                    </div>
+                </div>
+
+            </div>
+        </aside>
+
+        <!-- Download Consent Modal (Hidden by default) -->
+        <div id="consent-modal" class="hidden absolute inset-0 z-[60] bg-black/80 backdrop-blur-sm flex items-center justify-center pointer-events-auto">
+            <div class="bg-slate-800 border border-white/20 p-6 rounded-lg w-11/12 max-w-sm shadow-2xl">
+                <h3 class="text-white font-bold text-lg mb-4">ダウンロード利用規約</h3>
+                <div class="space-y-3 mb-6">
+                    <label class="flex items-start gap-3 cursor-pointer">
+                        <input type="checkbox" id="check-credit" class="mt-1">
+                        <span class="text-sm text-gray-300">クレジット表記「出典: TechCorp」を含めることに同意します。</span>
+                    </label>
+                    <label class="flex items-start gap-3 cursor-pointer">
+                        <input type="checkbox" id="check-dist" class="mt-1">
+                        <span class="text-sm text-gray-300">生データを商用目的で再配布しないことに同意します。</span>
+                    </label>
+                </div>
+                <div class="flex gap-3">
+                    <button onclick="document.getElementById('consent-modal').classList.add('hidden')" class="flex-1 py-2 text-gray-400 hover:text-white">キャンセル</button>
+                    <button onclick="confirmDownload()" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 rounded">ダウンロード</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- BOTTOM TICKER (M3) -->
+        <footer class="w-full bg-black/90 text-white h-10 flex items-center border-t border-blue-500/50 pointer-events-auto ticker-pause relative overflow-hidden">
+            <div class="bg-blue-700 px-3 h-full flex items-center z-10 font-bold text-sm shadow-md whitespace-nowrap">
+                ニュース速報
+            </div>
+            <div class="overflow-hidden w-full relative">
+                <div class="animate-marquee whitespace-nowrap py-1">
+                    <span class="mx-4 text-sm font-light tracking-wide">🚀 <span class="font-bold">速報:</span> プロジェクト・ノヴァの詳細は日本時間10:00に発表予定。</span>
+                    <span class="mx-4 text-blue-400">|</span>
+                    <span class="mx-4 text-sm font-light tracking-wide">📈 <span class="font-bold">市場:</span> テックコープ株価、時間外取引で4.5%上昇を記録。</span>
+                    <span class="mx-4 text-blue-400">|</span>
+                    <span class="mx-4 text-sm font-light tracking-wide">⚠️ <span class="font-bold">解禁日時:</span> 詳細仕様に関する情報解禁日時を厳守してください。</span>
+                    <span class="mx-4 text-blue-400">|</span>
+                    <span class="mx-4 text-sm font-light tracking-wide">📥 <span class="font-bold">素材:</span> 高解像度画像は情報パネル [Mキー] から入手可能です。</span>
+                </div>
+            </div>
+            
+            <!-- Floating Action (D) -->
+            <div class="absolute bottom-12 right-4 z-40">
+                <button onclick="togglePanel(); switchTab('assets')" class="bg-blue-600 hover:bg-blue-500 text-white p-3 rounded-full shadow-lg shadow-blue-500/30 transition hover:scale-110">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                </button>
+            </div>
+        </footer>
+
+        <!-- Toast Notification -->
+        <div id="toast" class="absolute bottom-14 left-1/2 transform -translate-x-1/2 bg-black/80 text-white px-4 py-2 rounded-full text-sm opacity-0 transition-opacity duration-300 pointer-events-none whitespace-nowrap">
+            クリップボードにコピーしました！
+        </div>
+
+    </div>
+
+    <script>
+        // State Management
+        let isPanelOpen = false;
+        const panel = document.getElementById('info-panel');
+        let currentDownloadItem = '';
+
+        // Toggle Panel Function
+        function togglePanel() {
+            isPanelOpen = !isPanelOpen;
+            if (isPanelOpen) {
+                panel.classList.remove('translate-x-full');
+                panel.classList.add('translate-x-0');
+            } else {
+                panel.classList.add('translate-x-full');
+                panel.classList.remove('translate-x-0');
+            }
+        }
+
+        // Tab Switching
+        function switchTab(tabId) {
+            // Remove active styles from all buttons
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('border-blue-500', 'text-white', 'font-bold');
+                btn.classList.add('border-transparent', 'text-gray-300');
+            });
+
+            // Add active styles to clicked button
+            const activeBtn = document.querySelector(`button[data-target="${tabId}"]`);
+            activeBtn.classList.remove('border-transparent', 'text-gray-300');
+            activeBtn.classList.add('border-blue-500', 'text-white', 'font-bold');
+
+            // Hide all content
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.add('hidden');
+            });
+
+            // Show target content
+            document.getElementById(`tab-${tabId}`).classList.remove('hidden');
+        }
+
+        // Copy to Clipboard Utility
+        function copyText(btnElement, text) {
+            navigator.clipboard.writeText(text).then(() => {
+                const originalHTML = btnElement.innerHTML;
+                btnElement.innerHTML = `<span class="text-green-400">コピー完了!</span>`;
+                setTimeout(() => {
+                    btnElement.innerHTML = originalHTML;
+                }, 2000);
+
+                showToast('テキストをコピーしました');
+            });
+        }
+
+        function copyCurrentUrl() {
+            navigator.clipboard.writeText(window.location.href);
+            showToast('URLをコピーしました');
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            toast.textContent = msg;
+            toast.classList.remove('opacity-0');
+            setTimeout(() => toast.classList.add('opacity-0'), 2000);
+        }
+
+        // Download Flow
+        function showDownloadConsent(itemName) {
+            currentDownloadItem = itemName;
+            // Reset checkboxes
+            document.getElementById('check-credit').checked = false;
+            document.getElementById('check-dist').checked = false;
+            document.getElementById('consent-modal').classList.remove('hidden');
+        }
+
+        function confirmDownload() {
+            const c1 = document.getElementById('check-credit').checked;
+            const c2 = document.getElementById('check-dist').checked;
+
+            if (!c1 || !c2) {
+                alert("ダウンロードするには規約への同意が必要です。");
+                return;
+            }
+
+            // Log Logic would go here (fetch POST)
+            console.log(`Downloading ${currentDownloadItem} with consent.`);
+            
+            document.getElementById('consent-modal').classList.add('hidden');
+            showToast(`${currentDownloadItem} をダウンロード中...`);
+        }
+
+        // Keyboard Shortcuts (Journalist Mode)
+        document.addEventListener('keydown', (e) => {
+            // Ignore if typing in input
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+            switch(e.key.toLowerCase()) {
+                case 'm': // Menu
+                    togglePanel();
+                    break;
+                case 'd': // Downloads
+                    if (!isPanelOpen) togglePanel();
+                    switchTab('assets');
+                    break;
+                case 'c': // Contact / Chapters (Context dependant, default contact)
+                    if (!isPanelOpen) togglePanel();
+                    switchTab('contact');
+                    break;
+                case 'escape':
+                    if (isPanelOpen) togglePanel();
+                    document.getElementById('consent-modal').classList.add('hidden');
+                    break;
+            }
+        });
+    </script>
+</body>
+</html>

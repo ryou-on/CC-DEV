@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Retro TV YouTube Widget</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            background: transparent !important;
+            overflow: hidden;
+            height: 100%;
+            width: 100%;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        /* Custom Glassmorphism */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+        }
+
+        /* TV Frame Styling */
+        .tv-frame {
+            background: #222;
+            border-radius: 12px;
+            padding: 8px 8px 12px 8px;
+            box-shadow: 
+                0 0 0 2px #444,
+                0 10px 20px rgba(0,0,0,0.6);
+            position: relative;
+        }
+        
+        .tv-screen {
+            position: relative;
+            padding-bottom: 56.25%; /* 16:9 Aspect Ratio */
+            height: 0;
+            overflow: hidden;
+            background: #000;
+            border-radius: 4px;
+            border: 1px solid #333;
+        }
+
+        .tv-screen iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* LED Power Indicator */
+        .power-led {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background-color: #ef4444; /* Red (Off/Standby) */
+            box-shadow: 0 0 4px #ef4444;
+            transition: background-color 0.3s ease, box-shadow 0.3s ease;
+        }
+        .power-led.on {
+            background-color: #22c55e; /* Green (On) */
+            box-shadow: 0 0 8px #22c55e;
+        }
+
+        /* Transition Styles */
+        .fade-enter {
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .fade-enter-active {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Widget Container: Bottom Right, approx 1/5 width (min 300px) -->
+    <div id="widget-container" class="fixed bottom-6 right-6 w-[20vw] min-w-[320px] max-w-[480px] z-50 flex flex-col items-end">
+
+        <!-- Input Panel -->
+        <div id="input-panel" class="glass-panel rounded-xl p-4 w-full fade-enter-active">
+            <div class="flex justify-between items-center mb-2">
+                <h2 class="text-white text-sm font-bold tracking-wider uppercase text-shadow">YouTube TV</h2>
+                <div class="power-led" id="panel-led"></div>
+            </div>
+            
+            <div class="space-y-2">
+                <input type="text" id="yt-url" placeholder="YouTube URLを貼り付け..." 
+                    class="w-full bg-slate-800/50 text-white text-xs px-3 py-2 rounded border border-slate-600 focus:border-blue-400 focus:outline-none transition-colors placeholder-slate-400">
+                
+                <button onclick="loadVideo()" 
+                    class="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-2 rounded shadow transition-transform active:scale-95">
+                    WATCH NOW
+                </button>
+            </div>
+        </div>
+
+        <!-- TV Player Panel (Hidden by default) -->
+        <div id="player-panel" class="hidden w-full fade-enter">
+            <div class="tv-frame">
+                <!-- Screen -->
+                <div class="tv-screen">
+                    <div id="youtube-player"></div>
+                </div>
+
+                <!-- TV Controls -->
+                <div class="flex justify-between items-center mt-3 px-1">
+                    <div class="flex items-center gap-2">
+                        <div class="power-led on"></div>
+                        <span class="text-[10px] text-gray-400 font-mono tracking-widest">CH.01</span>
+                    </div>
+
+                    <div class="flex gap-2">
+                        <!-- Mute Toggle -->
+                        <button id="mute-btn" onclick="toggleSound()" 
+                            class="group flex items-center justify-center w-8 h-8 rounded-full bg-gray-800 hover:bg-gray-700 border border-gray-600 text-white transition-all active:scale-90">
+                            <!-- Icons handled by JS -->
+                            <svg id="icon-mute" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="hidden"><path d="M11 5L6 9H2v6h4l5 4V5z"></path><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
+                            <svg id="icon-sound" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+                        </button>
+
+                        <!-- Close/Eject -->
+                        <button onclick="resetWidget()" 
+                            class="flex items-center justify-center w-8 h-8 rounded-full bg-red-900/80 hover:bg-red-700 border border-red-800 text-white transition-all active:scale-90">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect><path d="M9 9h6v6H9z"></path></svg>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        let player;
+        let isMuted = false;
+        let videoId = '';
+
+        // 1. Load YouTube IFrame API
+        var tag = document.createElement('script');
+        tag.src = "https://www.youtube.com/iframe_api";
+        var firstScriptTag = document.getElementsByTagName('script')[0];
+        firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+
+        // 2. Setup Player Callback (called automatically by API)
+        function onYouTubeIframeAPIReady() {
+            // API is ready, waiting for user input
+            console.log("YouTube API Ready");
+        }
+
+        // 3. Helper to extract Video ID
+        function extractVideoID(url) {
+            const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+            const match = url.match(regExp);
+            return (match && match[2].length === 11) ? match[2] : null;
+        }
+
+        // 4. Main Function to Load Video
+        function loadVideo() {
+            const urlInput = document.getElementById('yt-url').value;
+            const extractedId = extractVideoID(urlInput);
+
+            if (!extractedId) {
+                alert("有効なYouTube URLを入力してください");
+                return;
+            }
+            videoId = extractedId;
+
+            // UI Switch
+            document.getElementById('input-panel').classList.add('hidden');
+            const playerPanel = document.getElementById('player-panel');
+            playerPanel.classList.remove('hidden');
+            playerPanel.classList.add('fade-enter-active');
+
+            if (player) {
+                player.loadVideoById(videoId);
+            } else {
+                player = new YT.Player('youtube-player', {
+                    height: '100%',
+                    width: '100%',
+                    videoId: videoId,
+                    playerVars: {
+                        'playsinline': 1,
+                        'controls': 0, // Hide default controls for "TV" feel
+                        'modestbranding': 1,
+                        'rel': 0
+                    },
+                    events: {
+                        'onReady': onPlayerReady
+                    }
+                });
+            }
+        }
+
+        function onPlayerReady(event) {
+            event.target.playVideo();
+            // Start unmuted if possible, but browsers might block autoplay with sound
+            // We default to whatever the browser allows, usually unmuted works if user interacted with DOM
+            updateVolumeIcon(false);
+        }
+
+        // 5. Sound Toggle Logic
+        function toggleSound() {
+            if (!player) return;
+            
+            if (player.isMuted()) {
+                player.unMute();
+                isMuted = false;
+            } else {
+                player.mute();
+                isMuted = true;
+            }
+            updateVolumeIcon(isMuted);
+        }
+
+        function updateVolumeIcon(muted) {
+            const iconMute = document.getElementById('icon-mute');
+            const iconSound = document.getElementById('icon-sound');
+            const btn = document.getElementById('mute-btn');
+
+            if (muted) {
+                iconMute.classList.remove('hidden');
+                iconSound.classList.add('hidden');
+                btn.classList.add('bg-red-900/50', 'border-red-800');
+                btn.classList.remove('bg-gray-800', 'border-gray-600');
+            } else {
+                iconMute.classList.add('hidden');
+                iconSound.classList.remove('hidden');
+                btn.classList.remove('bg-red-900/50', 'border-red-800');
+                btn.classList.add('bg-gray-800', 'border-gray-600');
+            }
+        }
+
+        // 6. Reset/Stop
+        function resetWidget() {
+            if (player) {
+                player.stopVideo();
+            }
+            document.getElementById('player-panel').classList.remove('fade-enter-active');
+            document.getElementById('player-panel').classList.add('hidden');
+            document.getElementById('input-panel').classList.remove('hidden');
+            document.getElementById('yt-url').value = '';
+        }
+
+        // Allow Enter key in input
+        document.getElementById('yt-url').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                loadVideo();
+            }
+        });
+    </script>
+</body>
+</html>

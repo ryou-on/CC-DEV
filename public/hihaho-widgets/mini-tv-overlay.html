@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mini TV YouTube Player</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      background: transparent !important;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    
+    /* Custom Scrollbar for cleaner look if needed */
+    ::-webkit-scrollbar {
+      width: 4px;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.3);
+      border-radius: 2px;
+    }
+
+    /* Glassmorphism Panel */
+    .glass-panel {
+      background: rgba(20, 20, 20, 0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+    }
+
+    /* TV Frame Effect */
+    .tv-frame {
+      background: #000;
+      border-radius: 12px;
+      padding: 8px;
+      box-shadow: inset 0 0 20px rgba(255,255,255,0.05), 0 10px 20px rgba(0,0,0,0.5);
+      border: 2px solid #333;
+      position: relative;
+      transition: all 0.3s ease;
+    }
+
+    /* Range Slider Styling */
+    input[type=range] {
+      -webkit-appearance: none;
+      background: transparent;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      height: 12px;
+      width: 12px;
+      border-radius: 50%;
+      background: #3b82f6;
+      cursor: pointer;
+      margin-top: -4px;
+    }
+    input[type=range]::-webkit-slider-runnable-track {
+      width: 100%;
+      height: 4px;
+      cursor: pointer;
+      background: rgba(255, 255, 255, 0.3);
+      border-radius: 2px;
+    }
+
+    /* Hover text visibility */
+    .text-shadow {
+      text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+    }
+
+    /* Animation for entering */
+    @keyframes slideUp {
+      from { transform: translateY(20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    .animate-enter {
+      animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+  </style>
+</head>
+<body class="h-screen w-screen flex items-end justify-end pointer-events-none">
+
+  <!-- Main Widget Container (Bottom Right) -->
+  <!-- pointer-events-auto is crucial to allow interaction only on the widget -->
+  <div id="widget-root" class="pointer-events-auto mr-4 mb-4 w-[280px] sm:w-[320px] md:w-[20vw] min-w-[260px] animate-enter flex flex-col items-end">
+    
+    <!-- INPUT STATE -->
+    <div id="input-state" class="glass-panel w-full p-4 rounded-xl flex flex-col gap-3 transition-all duration-300">
+      <label class="text-white text-xs font-bold uppercase tracking-wider text-shadow">YouTube URL</label>
+      <div class="flex gap-2">
+        <input id="yt-url" type="text" placeholder="https://youtu.be/..." 
+               class="flex-1 bg-white/10 border border-white/20 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-blue-400 placeholder-gray-400" />
+        <button onclick="loadVideo()" 
+                class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded text-sm font-medium transition-colors">
+          TV ON
+        </button>
+      </div>
+    </div>
+
+    <!-- PLAYER STATE (Hidden by default) -->
+    <div id="player-state" class="hidden flex-col items-end w-full relative">
+      
+      <!-- Subtle Close Button (Outside frame) -->
+      <button onclick="closePlayer()" class="mb-1 mr-1 text-white/50 hover:text-white transition-colors p-1">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="15" y1="9" x2="9" y2="15"></line>
+          <line x1="9" y1="9" x2="15" y2="15"></line>
+        </svg>
+      </button>
+
+      <!-- TV Frame -->
+      <div class="tv-frame w-full aspect-video flex flex-col">
+        <!-- YouTube Iframe Container -->
+        <div class="relative w-full h-full bg-black overflow-hidden rounded-md">
+           <div id="player"></div>
+           <!-- Overlay for interactions if needed, but here we let YT handle it mostly -->
+        </div>
+        
+        <!-- Controls Panel -->
+        <div class="mt-2 flex items-center justify-between gap-2">
+          <!-- Sound Toggle -->
+          <button id="mute-btn" onclick="toggleMute()" class="text-gray-300 hover:text-white focus:outline-none">
+            <!-- Speaker Icon -->
+            <svg id="icon-vol-on" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path></svg>
+            <!-- Mute Icon (Hidden initially) -->
+            <svg id="icon-vol-off" class="w-5 h-5 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2"></path></svg>
+          </button>
+
+          <!-- Volume Slider -->
+          <input id="vol-slider" type="range" min="0" max="100" value="50" oninput="setVolume(this.value)" class="flex-1 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer">
+          
+          <!-- Power LED (Decorative) -->
+          <div class="w-2 h-2 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // Load YouTube IFrame API
+    var tag = document.createElement('script');
+    tag.src = "https://www.youtube.com/iframe_api";
+    var firstScriptTag = document.getElementsByTagName('script')[0];
+    firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
+
+    var player;
+    var isMuted = false;
+    var currentVideoId = '';
+
+    // Parse YouTube ID
+    function getYouTubeID(url) {
+      const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+      const match = url.match(regExp);
+      return (match && match[2].length === 11) ? match[2] : null;
+    }
+
+    // Initialize Player (called by API)
+    function onYouTubeIframeAPIReady() {
+      // API is ready, waiting for user input
+    }
+
+    function loadVideo() {
+      const urlInput = document.getElementById('yt-url').value;
+      const videoId = getYouTubeID(urlInput);
+
+      if (!videoId) {
+        alert('有効なYouTube URLを入力してください');
+        return;
+      }
+
+      currentVideoId = videoId;
+
+      // UI Switch
+      document.getElementById('input-state').classList.add('hidden');
+      document.getElementById('player-state').classList.remove('hidden');
+      document.getElementById('player-state').classList.add('flex');
+
+      if (player) {
+        player.loadVideoById(videoId);
+      } else {
+        player = new YT.Player('player', {
+          height: '100%',
+          width: '100%',
+          videoId: videoId,
+          playerVars: {
+            'playsinline': 1,
+            'controls': 0, // Hide default controls to use ours
+            'modestbranding': 1,
+            'rel': 0
+          },
+          events: {
+            'onReady': onPlayerReady
+          }
+        });
+      }
+    }
+
+    function onPlayerReady(event) {
+      event.target.playVideo();
+      event.target.setVolume(50);
+      updateMuteIcon();
+    }
+
+    // Close / Reset
+    function closePlayer() {
+      if(player) {
+        player.stopVideo();
+      }
+      document.getElementById('player-state').classList.add('hidden');
+      document.getElementById('player-state').classList.remove('flex');
+      document.getElementById('input-state').classList.remove('hidden');
+      document.getElementById('yt-url').value = '';
+    }
+
+    // Volume Controls
+    function toggleMute() {
+      if (!player) return;
+      if (player.isMuted()) {
+        player.unMute();
+        isMuted = false;
+      } else {
+        player.mute();
+        isMuted = true;
+      }
+      updateMuteIcon();
+    }
+
+    function setVolume(val) {
+      if (!player) return;
+      player.setVolume(val);
+      if (val > 0 && isMuted) {
+        player.unMute();
+        isMuted = false;
+        updateMuteIcon();
+      }
+    }
+
+    function updateMuteIcon() {
+      const onIcon = document.getElementById('icon-vol-on');
+      const offIcon = document.getElementById('icon-vol-off');
+      
+      // Double check actual player state if possible
+      const actuallyMuted = player && player.isMuted ? player.isMuted() : isMuted;
+
+      if (actuallyMuted) {
+        onIcon.classList.add('hidden');
+        offIcon.classList.remove('hidden');
+      } else {
+        onIcon.classList.remove('hidden');
+        offIcon.classList.add('hidden');
+      }
+    }
+
+    // Optional: Allow Enter key to trigger play
+    document.getElementById('yt-url').addEventListener('keypress', function (e) {
+      if (e.key === 'Enter') {
+        loadVideo();
+      }
+    });
+  </script>
+</body>
+</html>

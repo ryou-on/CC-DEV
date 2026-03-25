@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ECG Monitor Widget - VF Transition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: transparent !important;
+            overflow: hidden;
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        /* Glassmorphism Container */
+        .monitor-card {
+            background: rgba(16, 24, 32, 0.85);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(0, 255, 128, 0.3);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+            border-radius: 12px;
+            padding: 1rem;
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 300px;
+            color: #00ff88;
+            transition: all 0.3s ease;
+            z-index: 50;
+        }
+
+        /* Warning/VF State Styles */
+        .monitor-card.vf-state {
+            border-color: rgba(255, 0, 0, 0.6);
+            box-shadow: 0 0 20px rgba(255, 0, 0, 0.4);
+        }
+
+        /* Header Styles */
+        .monitor-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.5rem;
+            text-shadow: 0 0 5px rgba(0, 255, 136, 0.5);
+        }
+
+        .label {
+            font-size: 0.85rem;
+            font-weight: 700;
+            opacity: 0.9;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .bpm-display {
+            font-size: 1.25rem;
+            font-weight: bold;
+            color: #fff;
+            min-width: 80px;
+            text-align: right;
+        }
+
+        .bpm-unit {
+            font-size: 0.75rem;
+            color: #00ff88;
+        }
+
+        .vf-state .bpm-display,
+        .vf-state .bpm-unit,
+        .vf-state .label {
+            color: #ff3333;
+            text-shadow: 0 0 5px rgba(255, 51, 51, 0.6);
+        }
+
+        /* Blinking Indicator */
+        .status-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            background-color: #00ff88;
+            border-radius: 50%;
+            margin-right: 8px;
+            box-shadow: 0 0 8px #00ff88;
+            animation: pulse 2s infinite;
+        }
+
+        .vf-state .status-dot {
+            background-color: #ff3333;
+            box-shadow: 0 0 10px #ff3333;
+            animation: blink-fast 0.2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 0.6; transform: scale(0.9); }
+            50% { opacity: 1; transform: scale(1.1); }
+            100% { opacity: 0.6; transform: scale(0.9); }
+        }
+
+        @keyframes blink-fast {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.2; }
+        }
+
+        /* Canvas */
+        canvas {
+            display: block;
+            width: 100%;
+            height: 120px;
+            border-top: 1px solid rgba(0, 255, 128, 0.2);
+            border-bottom: 1px solid rgba(0, 255, 128, 0.2);
+            background: radial-gradient(circle, rgba(0,20,10,0.3) 0%, rgba(0,0,0,0.2) 100%);
+        }
+
+        .vf-state canvas {
+            border-color: rgba(255, 50, 50, 0.3);
+            background: radial-gradient(circle, rgba(40,10,10,0.3) 0%, rgba(0,0,0,0.2) 100%);
+        }
+
+        /* Grid Overlay on Canvas */
+        .grid-overlay {
+            position: absolute;
+            top: 3.5rem; /* Adjust based on header height */
+            left: 1rem;
+            right: 1rem;
+            height: 120px;
+            background-image: 
+                linear-gradient(rgba(0, 255, 128, 0.1) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 255, 128, 0.1) 1px, transparent 1px);
+            background-size: 20px 20px;
+            pointer-events: none;
+            z-index: 10;
+        }
+        
+        .vf-state .grid-overlay {
+             background-image: 
+                linear-gradient(rgba(255, 50, 50, 0.1) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 50, 50, 0.1) 1px, transparent 1px);
+        }
+
+        /* Mobile Responsiveness */
+        @media (max-width: 768px) {
+            .monitor-card {
+                width: auto;
+                left: 10px;
+                right: 10px;
+                top: 10px;
+                padding: 1.25rem;
+            }
+
+            .label {
+                font-size: 1.1rem;
+            }
+
+            .bpm-display {
+                font-size: 2rem;
+            }
+
+            .status-dot {
+                width: 14px;
+                height: 14px;
+            }
+
+            canvas, .grid-overlay {
+                height: 180px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="monitor-card" id="monitorCard">
+        <div class="monitor-header">
+            <div class="label">
+                <span class="status-dot"></span>
+                HEART RATE
+            </div>
+            <div class="bpm-display">
+                <span id="bpmValue">72</span> <span class="bpm-unit">BPM</span>
+            </div>
+        </div>
+        
+        <div class="grid-overlay"></div>
+        <canvas id="ecgCanvas"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('ecgCanvas');
+        const ctx = canvas.getContext('2d');
+        const bpmElement = document.getElementById('bpmValue');
+        const monitorCard = document.getElementById('monitorCard');
+
+        // Configuration
+        let width, height;
+        let lineColor = '#00ff88';
+        const lineWidth = 2;
+        const scanSpeed = 2;
+        
+        // State Tracking
+        const startTime = Date.now();
+        let isVF = false;
+        let dataPoints = [];
+        let x = 0;
+        let lastY = 0;
+
+        // Heartbeat Simulation Variables (Normal Sinus)
+        let angle = 0;
+        let heartbeatTimer = 0;
+        const heartbeatInterval = 60;
+        let isBeating = false;
+        
+        // VF Simulation Variables
+        let vfOffset = 0;
+
+        function resize() {
+            const rect = canvas.getBoundingClientRect();
+            width = rect.width;
+            height = rect.height;
+            
+            // Handle high DPI displays
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = width * dpr;
+            canvas.height = height * dpr;
+            ctx.scale(dpr, dpr);
+            
+            x = 0;
+            lastY = height / 2;
+        }
+
+        // Basic Gaussian noise
+        function noise() {
+            return (Math.random() - 0.5) * 4;
+        }
+
+        function updateBPM() {
+            if (isVF) {
+                // In VF, heart rate is often not countable or erratic
+                // We display a warning or high erratic numbers
+                bpmElement.innerText = "VFIB";
+                return;
+            }
+            // Normal fluctuation
+            const base = 72;
+            const fluctuation = Math.floor(Math.random() * 6) - 3;
+            bpmElement.innerText = base + fluctuation;
+        }
+
+        setInterval(updateBPM, 2000);
+
+        function getNormalWaveY(centerY) {
+            let y = centerY + noise();
+            heartbeatTimer++;
+            
+            if (heartbeatTimer > heartbeatInterval) {
+                isBeating = true;
+                heartbeatTimer = 0;
+                angle = 0;
+            }
+
+            if (isBeating) {
+                angle += 0.2;
+                if (angle > Math.PI * 4) {
+                    isBeating = false;
+                } else {
+                    // P-QRS-T Logic
+                    const pWave = Math.sin(angle) * 5 * (angle < Math.PI ? 1 : 0);
+                    const qrsComplex = 
+                        (angle > Math.PI && angle < Math.PI * 2) 
+                        ? Math.sin((angle - Math.PI) * 4) * -35
+                        : 0;
+                    const tWave = 
+                        (angle > Math.PI * 2.5) 
+                        ? Math.sin(angle - Math.PI * 2.5) * 8 
+                        : 0;
+                    
+                    y += pWave + qrsComplex + tWave;
+                }
+            }
+            return y;
+        }
+
+        function getVFWaveY(centerY) {
+            // Ventricular Fibrillation: Chaotic, irregular, variable amplitude
+            vfOffset += 0.1; // Move the sine waves
+            
+            // Sum of multiple sine waves with different frequencies and amplitudes
+            const chaotic1 = Math.sin(vfOffset * 2.5) * 15;
+            const chaotic2 = Math.sin(vfOffset * 4.3) * 10;
+            const chaotic3 = Math.sin(vfOffset * 1.2 + Math.random()) * 8;
+            
+            // Significant random noise
+            const jitter = (Math.random() - 0.5) * 15;
+            
+            return centerY + chaotic1 + chaotic2 + chaotic3 + jitter;
+        }
+
+        function draw() {
+            const elapsed = Date.now() - startTime;
+            
+            // Check for State Change (20 seconds)
+            if (elapsed > 20000 && !isVF) {
+                isVF = true;
+                lineColor = '#ff3333'; // Change line color to red
+                monitorCard.classList.add('vf-state');
+                bpmElement.innerText = "!!!";
+            }
+
+            const centerY = height / 2;
+            let y;
+
+            if (!isVF) {
+                y = getNormalWaveY(centerY);
+            } else {
+                y = getVFWaveY(centerY);
+            }
+
+            // Draw Logic: Clear bar ahead
+            ctx.clearRect(x, 0, scanSpeed + 6, height);
+            
+            ctx.beginPath();
+            ctx.strokeStyle = lineColor;
+            ctx.lineWidth = lineWidth;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.shadowBlur = isVF ? 8 : 4; // Glow more in VF
+            ctx.shadowColor = lineColor;
+
+            if (x === 0) {
+                ctx.moveTo(x, y);
+            } else {
+                ctx.moveTo(x - scanSpeed, lastY);
+                ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+
+            lastY = y;
+            x += scanSpeed;
+            
+            if (x >= width) {
+                x = 0;
+                lastY = y; 
+            }
+
+            requestAnimationFrame(draw);
+        }
+
+        window.addEventListener('resize', resize);
+        resize();
+        requestAnimationFrame(draw);
+
+    </script>
+</body>
+</html>

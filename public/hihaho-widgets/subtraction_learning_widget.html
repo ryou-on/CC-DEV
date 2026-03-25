@@ -1,0 +1,259 @@
+DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visual Subtraction Overlay</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background-color: transparent !important;
+            margin: 0;
+            padding: 0;
+            font-family: 'M PLUS Rounded 1c', sans-serif;
+            overflow: hidden;
+            /* Center content for overlay */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        .text-outline {
+            text-shadow: 3px 3px 0px rgba(0, 0, 0, 1), -1px -1px 0 #000;
+        }
+
+        .glass-panel {
+            background: rgba(30, 41, 59, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+        }
+
+        .item-anim {
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        
+        .item-removed {
+            opacity: 0.3;
+            transform: scale(0.8) rotate(15deg);
+            filter: grayscale(100%);
+            position: relative;
+        }
+        
+        .item-removed::after {
+            content: '❌';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 1.2em;
+            text-shadow: none;
+        }
+
+        .btn-press:active {
+            transform: scale(0.95);
+        }
+        
+        @keyframes popIn {
+            0% { transform: scale(0); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        
+        .animate-pop {
+            animation: popIn 0.5s ease-out forwards;
+        }
+
+        /* Confetti Animation */
+        .confetti {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background-color: #f00;
+            animation: fall linear forwards;
+        }
+        @keyframes fall {
+            to {
+                transform: translateY(100vh) rotate(720deg);
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Main Widget Container -->
+    <div class="glass-panel rounded-3xl p-6 w-[90%] max-w-lg text-center relative overflow-hidden">
+        
+        <!-- Header / Progress -->
+        <div class="flex justify-between items-center mb-4">
+            <div class="bg-white/10 px-3 py-1 rounded-full border border-white/20">
+                <span class="text-yellow-400 font-bold text-outline">⭐ Score: <span id="score">0</span></span>
+            </div>
+            <button onclick="resetGame()" class="text-white/70 hover:text-white text-sm font-bold bg-black/30 px-2 py-1 rounded hover:bg-black/50 transition">リセット</button>
+        </div>
+
+        <!-- Question Section -->
+        <div class="mb-6">
+            <h1 class="text-5xl md:text-6xl font-black text-white text-outline tracking-wider">
+                <span id="num1" class="text-blue-400">5</span> 
+                <span class="mx-2">-</span> 
+                <span id="num2" class="text-red-400">2</span> 
+                <span class="mx-2">=</span> 
+                <span id="answer-placeholder" class="text-yellow-300">?</span>
+            </h1>
+            <p class="text-white/90 text-sm mt-2 font-bold drop-shadow-md">りんごをタップして <span id="text-num2" class="text-red-300 text-lg">2</span> 個とってみよう！</p>
+        </div>
+
+        <!-- Visual Interactive Area -->
+        <div id="visual-container" class="flex flex-wrap justify-center gap-4 mb-8 min-h-[80px]">
+            <!-- Items injected by JS -->
+        </div>
+
+        <!-- Answer Options -->
+        <div id="options-container" class="grid grid-cols-3 gap-4">
+            <!-- Buttons injected by JS -->
+        </div>
+
+        <!-- Feedback Message -->
+        <div id="feedback" class="absolute inset-0 bg-black/80 flex flex-col justify-center items-center hidden z-20">
+            <div class="text-6xl mb-4">🎉</div>
+            <h2 class="text-4xl font-bold text-white text-outline mb-6">せいかい！</h2>
+            <button onclick="nextQuestion()" class="bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-8 rounded-full border-b-4 border-green-700 active:border-b-0 active:mt-1 transition-all text-xl shadow-lg">
+                つぎのもんだい ➡
+            </button>
+        </div>
+        
+        <!-- Incorrect Feedback -->
+        <div id="feedback-wrong" class="absolute inset-0 bg-black/80 flex flex-col justify-center items-center hidden z-20">
+            <div class="text-6xl mb-4">😢</div>
+            <h2 class="text-4xl font-bold text-white text-outline mb-6">おしい！</h2>
+            <button onclick="retry()" class="bg-orange-500 hover:bg-orange-600 text-white font-bold py-3 px-8 rounded-full border-b-4 border-orange-700 active:border-b-0 active:mt-1 transition-all text-xl shadow-lg">
+                もういちど
+            </button>
+        </div>
+
+    </div>
+
+    <script>
+        let currentProblem = {};
+        let score = 0;
+        let removedCount = 0;
+
+        function generateProblem() {
+            // Basic Subtraction Logic (Minuend up to 9, Result >= 0)
+            const minuend = Math.floor(Math.random() * 8) + 2; // 2 to 9
+            const subtrahend = Math.floor(Math.random() * (minuend - 0)) + 1; // 1 to minuend
+            
+            return {
+                minuend,
+                subtrahend,
+                answer: minuend - subtrahend
+            };
+        }
+
+        function renderVisuals(total) {
+            const container = document.getElementById('visual-container');
+            container.innerHTML = '';
+            removedCount = 0;
+
+            for (let i = 0; i < total; i++) {
+                const item = document.createElement('div');
+                item.className = 'item-anim text-5xl cursor-pointer select-none hover:scale-110 active:scale-95 animate-pop';
+                item.innerHTML = '🍎';
+                item.onclick = () => toggleItem(item);
+                // Stagger animation
+                item.style.animationDelay = `${i * 0.1}s`;
+                container.appendChild(item);
+            }
+        }
+
+        function toggleItem(element) {
+            if (element.classList.contains('item-removed')) {
+                element.classList.remove('item-removed');
+                removedCount--;
+            } else {
+                element.classList.add('item-removed');
+                removedCount++;
+            }
+        }
+
+        function renderOptions(correctAnswer) {
+            const container = document.getElementById('options-container');
+            container.innerHTML = '';
+            
+            // Generate unique options
+            let options = new Set([correctAnswer]);
+            while(options.size < 3) {
+                let r = Math.floor(Math.random() * 10);
+                if (r !== correctAnswer) options.add(r);
+            }
+            
+            // Shuffle and Render
+            Array.from(options).sort(() => Math.random() - 0.5).forEach(num => {
+                const btn = document.createElement('button');
+                btn.className = 'btn-press bg-white text-slate-900 font-black text-2xl py-3 rounded-xl shadow-lg border-b-4 border-slate-300 hover:bg-blue-50 active:border-b-0 active:mt-1 transition-all';
+                btn.innerText = num;
+                btn.onclick = () => checkAnswer(num);
+                container.appendChild(btn);
+            });
+        }
+
+        function initGame() {
+            currentProblem = generateProblem();
+            
+            document.getElementById('num1').innerText = currentProblem.minuend;
+            document.getElementById('num2').innerText = currentProblem.subtrahend;
+            document.getElementById('text-num2').innerText = currentProblem.subtrahend;
+            document.getElementById('answer-placeholder').innerText = '?';
+            document.getElementById('feedback').classList.add('hidden');
+            document.getElementById('feedback-wrong').classList.add('hidden');
+
+            renderVisuals(currentProblem.minuend);
+            renderOptions(currentProblem.answer);
+        }
+
+        function checkAnswer(selected) {
+            if (selected === currentProblem.answer) {
+                score += 10;
+                document.getElementById('score').innerText = score;
+                document.getElementById('answer-placeholder').innerText = selected;
+                document.getElementById('feedback').classList.remove('hidden');
+                createConfetti();
+            } else {
+                document.getElementById('feedback-wrong').classList.remove('hidden');
+            }
+        }
+
+        function nextQuestion() {
+            initGame();
+        }
+
+        function retry() {
+            document.getElementById('feedback-wrong').classList.add('hidden');
+        }
+
+        function resetGame() {
+            score = 0;
+            document.getElementById('score').innerText = score;
+            initGame();
+        }
+
+        function createConfetti() {
+            for(let i=0; i<30; i++) {
+                const conf = document.createElement('div');
+                conf.classList.add('confetti');
+                conf.style.left = Math.random() * 100 + '%';
+                conf.style.backgroundColor = `hsl(${Math.random() * 360}, 100%, 50%)`;
+                conf.style.animationDuration = (Math.random() * 2 + 1) + 's';
+                document.body.appendChild(conf);
+                setTimeout(() => conf.remove(), 3000);
+            }
+        }
+
+        // Start
+        initGame();
+    </script>
+</body>
+</html>

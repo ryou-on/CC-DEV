@@ -1,0 +1,555 @@
+<!-- 
+  Coloring Book Overlay Widget 
+  Target: Kindergarteners (Hiragana only, simple UI)
+  Style: Transparent, Glassmorphism, Responsive
+-->
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>どうぶつ ぬりえ オーバーレイ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body, html {
+            background: transparent !important;
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Hiragino Maru Gothic Pro', 'Round', sans-serif;
+        }
+
+        /* Glassmorphism for UI Panels */
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.85);
+            backdrop-filter: blur(8px);
+            border: 2px solid rgba(255, 255, 255, 0.9);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            border-radius: 20px;
+        }
+
+        /* Text Styles */
+        .text-shadow {
+            text-shadow: 1px 1px 0 #fff, 2px 2px 0 rgba(0,0,0,0.1);
+        }
+
+        /* Canvas Layers */
+        #app-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 10;
+            touch-action: none; /* Prevent scrolling while drawing */
+            cursor: crosshair;
+        }
+
+        #outline-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 20;
+            pointer-events: none; /* Let clicks pass through to canvas */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #outline-svg {
+            width: 90%;
+            height: 90%;
+            max-width: 1200px;
+            filter: drop-shadow(0px 0px 2px rgba(255,255,255,0.8));
+        }
+
+        /* Controls */
+        .controls {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 30;
+            display: flex;
+            gap: 10px;
+            padding: 10px 20px;
+            width: 90%;
+            max-width: 800px;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .color-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: 3px solid #fff;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            transition: transform 0.1s;
+            cursor: pointer;
+        }
+        .color-btn:active, .color-btn.active {
+            transform: scale(1.2);
+            border-color: #333;
+        }
+
+        .tool-btn {
+            background: #fff;
+            border: 2px solid #ddd;
+            border-radius: 12px;
+            padding: 8px 16px;
+            font-weight: bold;
+            color: #444;
+            cursor: pointer;
+            font-size: 1rem;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .tool-btn:hover {
+            background: #f0f9ff;
+            transform: translateY(-2px);
+        }
+        .tool-btn:active {
+            transform: translateY(0);
+        }
+
+        /* Custom Range Slider */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100px;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            background: #ff6b6b;
+            cursor: pointer;
+            margin-top: -8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 6px;
+            cursor: pointer;
+            background: #ddd;
+            border-radius: 3px;
+        }
+
+        /* Color Mixer Input */
+        #color-picker-input {
+            opacity: 0;
+            position: absolute;
+            width: 0;
+            height: 0;
+        }
+        .mixer-label {
+            background: linear-gradient(45deg, red, orange, yellow, green, blue, indigo, violet);
+        }
+
+        /* SVG Outline Styles */
+        .svg-outline-path {
+            fill: none;
+            stroke: #000;
+            stroke-width: 3;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+        .svg-fill-white {
+            fill: rgba(255,255,255,0.01); /* Mostly transparent to see video, but allows slight texture */
+        }
+
+        /* Responsive Adjustments */
+        @media (max-width: 640px) {
+            .controls {
+                bottom: 10px;
+                padding: 10px;
+                gap: 5px;
+            }
+            .tool-btn {
+                font-size: 0.8rem;
+                padding: 6px 10px;
+            }
+            .color-btn {
+                width: 30px;
+                height: 30px;
+            }
+            input[type=range] {
+                width: 60px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="app-container">
+        
+        <!-- Drawing Layer (Bottom) -->
+        <canvas id="drawing-canvas"></canvas>
+
+        <!-- Outline Layer (Top - Pointer Events None) -->
+        <div id="outline-layer">
+            <!-- Complex SVG simulating the coloring book page -->
+            <!-- Using a composite SVG to represent Elephant, Giraffe, Nature -->
+            <svg id="outline-svg" viewBox="0 0 800 450" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <filter id="glow">
+                        <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
+                        <feMerge>
+                            <feMergeNode in="coloredBlur"/>
+                            <feMergeNode in="SourceGraphic"/>
+                        </feMerge>
+                    </filter>
+                </defs>
+                
+                <!-- Background Elements (Sun, Clouds) -->
+                <path d="M100,80 Q120,60 140,80 Q160,60 180,80" class="svg-outline-path" />
+                <path d="M600,60 Q630,30 660,60 Q690,30 720,60 Q750,30 780,60" class="svg-outline-path" />
+                <circle cx="700" cy="100" r="30" class="svg-outline-path" />
+                <g transform="translate(700,100)">
+                    <line x1="0" y1="-40" x2="0" y2="-50" class="svg-outline-path" />
+                    <line x1="0" y1="40" x2="0" y2="50" class="svg-outline-path" />
+                    <line x1="-40" y1="0" x2="-50" y2="0" class="svg-outline-path" />
+                    <line x1="40" y1="0" x2="50" y2="0" class="svg-outline-path" />
+                </g>
+
+                <!-- Ground -->
+                <path d="M0,400 Q200,380 400,400 Q600,420 800,400" class="svg-outline-path" />
+
+                <!-- ELEPHANT (Main) -->
+                <g transform="translate(250, 150) scale(1.2)">
+                    <!-- Ears -->
+                    <path d="M50,50 C-10,30 -10,130 50,110" class="svg-outline-path" fill="transparent"/>
+                    <path d="M150,50 C210,30 210,130 150,110" class="svg-outline-path" fill="transparent"/>
+                    <!-- Head & Trunk -->
+                    <path d="M50,50 C50,-10 150,-10 150,50 C150,100 130,120 100,120 C70,120 50,150 20,130 C10,120 30,100 50,90" class="svg-outline-path" fill="transparent"/>
+                    <!-- Body -->
+                    <path d="M60,110 C40,180 40,200 40,200 L80,200 L80,180 L120,180 L120,200 L160,200 C160,200 160,180 140,110" class="svg-outline-path" fill="transparent"/>
+                    <!-- Eyes -->
+                    <circle cx="80" cy="50" r="3" fill="black"/>
+                    <circle cx="120" cy="50" r="3" fill="black"/>
+                    <!-- Crown -->
+                    <path d="M80,10 L90,25 L100,5 L110,25 L120,10" class="svg-outline-path" />
+                </g>
+
+                <!-- GIRAFFE (Left) -->
+                <g transform="translate(50, 100)">
+                    <path d="M60,200 L70,100 L50,40 C50,20 90,20 90,40 L90,60 C90,60 110,70 110,90 C110,110 90,110 90,110 L100,200" class="svg-outline-path" fill="transparent"/>
+                    <circle cx="70" cy="50" r="2" fill="black"/>
+                    <path d="M60,30 L55,20 M80,30 L85,20" class="svg-outline-path" />
+                    <!-- Spots -->
+                    <circle cx="80" cy="130" r="5" class="svg-outline-path"/>
+                    <circle cx="75" cy="160" r="6" class="svg-outline-path"/>
+                </g>
+
+                <!-- PANDA/BEAR (Right) -->
+                <g transform="translate(550, 220) scale(0.8)">
+                    <circle cx="50" cy="50" r="40" class="svg-outline-path" fill="transparent"/>
+                    <circle cx="20" cy="20" r="15" class="svg-outline-path" fill="transparent"/>
+                    <circle cx="80" cy="20" r="15" class="svg-outline-path" fill="transparent"/>
+                    <path d="M10,90 Q50,130 90,90" class="svg-outline-path" fill="transparent"/>
+                    <circle cx="35" cy="45" r="4" fill="black"/>
+                    <circle cx="65" cy="45" r="4" fill="black"/>
+                    <ellipse cx="50" cy="60" rx="5" ry="3" fill="black"/>
+                </g>
+            </svg>
+        </div>
+
+        <!-- Controls Panel -->
+        <div class="glass-panel controls">
+            
+            <!-- Color Palette -->
+            <div class="flex gap-2 items-center">
+                <div class="color-btn active" style="background: #ff4757;" data-color="#ff4757"></div>
+                <div class="color-btn" style="background: #ffa502;" data-color="#ffa502"></div>
+                <div class="color-btn" style="background: #eccc68;" data-color="#eccc68"></div>
+                <div class="color-btn" style="background: #2ed573;" data-color="#2ed573"></div>
+                <div class="color-btn" style="background: #1e90ff;" data-color="#1e90ff"></div>
+                <div class="color-btn" style="background: #3742fa;" data-color="#3742fa"></div>
+                <div class="color-btn" style="background: #ffffff;" data-color="#ffffff"></div>
+            </div>
+
+            <!-- Color Mixer -->
+            <div class="relative">
+                <button class="tool-btn mixer-label text-white" onclick="document.getElementById('color-picker-input').click()">
+                    <span>🎨</span>
+                    <span class="hidden sm:inline">いろをつくる</span>
+                </button>
+                <input type="color" id="color-picker-input" value="#ff0000">
+            </div>
+
+            <!-- Brush Size -->
+            <div class="flex items-center gap-2 bg-white/50 px-2 py-1 rounded-lg">
+                <span class="text-xs text-gray-600">ふとさ</span>
+                <input type="range" id="brush-size" min="2" max="40" value="10">
+            </div>
+
+            <!-- Eraser -->
+            <button class="tool-btn" id="eraser-btn">
+                <span>🧹</span>
+                <span class="hidden sm:inline">けしごむ</span>
+            </button>
+
+            <!-- Actions -->
+            <div class="h-6 w-px bg-gray-400 mx-2"></div>
+
+            <button class="tool-btn" id="toggle-outline-btn">
+                <span>👁️</span>
+                <span class="hidden sm:inline">えをけす</span>
+            </button>
+
+            <button class="tool-btn" id="clear-btn">
+                <span>❌</span>
+                <span class="hidden sm:inline">ぜんぶけす</span>
+            </button>
+
+            <button class="tool-btn bg-yellow-100 border-yellow-300" id="save-btn">
+                <span>💾</span>
+                <span class="hidden sm:inline">ほぞん</span>
+            </button>
+
+            <button class="tool-btn bg-green-100 border-green-300" id="download-btn">
+                <span>📷</span>
+                <span class="hidden sm:inline">しゃしん</span>
+            </button>
+        </div>
+
+    </div>
+
+    <script>
+        /**
+         * Animal Coloring Book Logic
+         */
+        const canvas = document.getElementById('drawing-canvas');
+        const ctx = canvas.getContext('2d');
+        const outlineLayer = document.getElementById('outline-layer');
+        
+        // State
+        let isDrawing = false;
+        let currentColor = '#ff4757';
+        let currentSize = 10;
+        let isEraser = false;
+        let isOutlineVisible = true;
+
+        // Setup Canvas Size
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            // Redraw from storage if exists needed? 
+            // Simple resize clears canvas, so we restore if we have data
+            loadFromLocal();
+        }
+
+        window.addEventListener('resize', () => {
+            // Debounce resize to prevent lag
+            clearTimeout(window.resizeTimer);
+            window.resizeTimer = setTimeout(resizeCanvas, 100);
+        });
+
+        // Initial load
+        resizeCanvas();
+
+        // --- Drawing Logic ---
+        
+        function startDraw(e) {
+            isDrawing = true;
+            draw(e);
+        }
+
+        function endDraw() {
+            isDrawing = false;
+            ctx.beginPath(); // Reset path
+            saveToLocal(); // Auto-save on stroke end
+        }
+
+        function getPos(e) {
+            if (e.touches && e.touches.length > 0) {
+                return {
+                    x: e.touches[0].clientX,
+                    y: e.touches[0].clientY
+                };
+            }
+            return {
+                x: e.clientX,
+                y: e.clientY
+            };
+        }
+
+        function draw(e) {
+            if (!isDrawing) return;
+
+            const pos = getPos(e);
+
+            ctx.lineWidth = currentSize;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            if (isEraser) {
+                ctx.globalCompositeOperation = 'destination-out';
+                ctx.strokeStyle = 'rgba(0,0,0,1)'; // Color doesn't matter for eraser
+            } else {
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.strokeStyle = currentColor;
+            }
+
+            ctx.lineTo(pos.x, pos.y);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(pos.x, pos.y);
+        }
+
+        // Event Listeners (Mouse & Touch)
+        canvas.addEventListener('mousedown', startDraw);
+        canvas.addEventListener('mouseup', endDraw);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseout', endDraw);
+
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault(); // Prevent scroll
+            startDraw(e);
+        });
+        canvas.addEventListener('touchend', endDraw);
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            draw(e);
+        });
+
+        // --- UI Controls ---
+
+        // Color Buttons
+        document.querySelectorAll('.color-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                // Reset active class
+                document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                
+                // Set Color
+                currentColor = e.target.getAttribute('data-color');
+                isEraser = false;
+                document.getElementById('eraser-btn').classList.remove('bg-gray-200');
+            });
+        });
+
+        // Color Mixer
+        const colorPicker = document.getElementById('color-picker-input');
+        colorPicker.addEventListener('input', (e) => {
+            currentColor = e.target.value;
+            isEraser = false;
+            // Deselect presets
+            document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+        });
+
+        // Brush Size
+        document.getElementById('brush-size').addEventListener('input', (e) => {
+            currentSize = e.target.value;
+        });
+
+        // Eraser
+        document.getElementById('eraser-btn').addEventListener('click', (e) => {
+            isEraser = true;
+            document.querySelectorAll('.color-btn').forEach(b => b.classList.remove('active'));
+            e.currentTarget.classList.add('bg-gray-200');
+        });
+
+        // Toggle Outline
+        const outlineBtn = document.getElementById('toggle-outline-btn');
+        outlineBtn.addEventListener('click', () => {
+            isOutlineVisible = !isOutlineVisible;
+            outlineLayer.style.display = isOutlineVisible ? 'flex' : 'none';
+            outlineBtn.querySelector('span:not(.hidden)').innerText = isOutlineVisible ? 'えをけす' : 'えをみせる';
+        });
+
+        // Clear Canvas
+        document.getElementById('clear-btn').addEventListener('click', () => {
+            if(confirm('ほんとうに けしますか？')) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                saveToLocal();
+            }
+        });
+
+        // Save to LocalStorage
+        document.getElementById('save-btn').addEventListener('click', () => {
+            saveToLocal();
+            alert('ほぞんしました！');
+        });
+
+        function saveToLocal() {
+            localStorage.setItem('kidsColoringBook', canvas.toDataURL());
+        }
+
+        function loadFromLocal() {
+            const data = localStorage.getItem('kidsColoringBook');
+            if (data) {
+                const img = new Image();
+                img.onload = function() {
+                    ctx.drawImage(img, 0, 0);
+                };
+                img.src = data;
+            }
+        }
+
+        // Download as Image
+        document.getElementById('download-btn').addEventListener('click', () => {
+            // Create a temporary canvas to merge white background + drawing + outlines
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = canvas.width;
+            tempCanvas.height = canvas.height;
+            const tempCtx = tempCanvas.getContext('2d');
+
+            // 1. Fill White Background (for image export)
+            tempCtx.fillStyle = '#ffffff';
+            tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+
+            // 2. Draw User Artwork
+            tempCtx.drawImage(canvas, 0, 0);
+
+            // 3. Draw SVG Lines (Convert SVG to Image)
+            if (isOutlineVisible) {
+                const svgData = new XMLSerializer().serializeToString(document.getElementById('outline-svg'));
+                const blob = new Blob([svgData], {type: 'image/svg+xml;charset=utf-8'});
+                const url = URL.createObjectURL(blob);
+                const img = new Image();
+                img.onload = function() {
+                    // Draw outline scaled to canvas
+                    // Note: SVG in DOM is centered/sized via CSS. To map perfectly requires calculations.
+                    // Simplified for this widget: We assume 16:9 aspect match roughly or center draw.
+                    // To be precise for the widget snapshot:
+                    const svgRect = document.getElementById('outline-svg').getBoundingClientRect();
+                    tempCtx.drawImage(img, svgRect.left, svgRect.top, svgRect.width, svgRect.height);
+                    
+                    // Trigger Download
+                    const link = document.createElement('a');
+                    link.download = 'watashino-nurie.png';
+                    link.href = tempCanvas.toDataURL();
+                    link.click();
+                    URL.revokeObjectURL(url);
+                };
+                img.src = url;
+            } else {
+                // Just download drawing
+                const link = document.createElement('a');
+                link.download = 'watashino-e.png';
+                link.href = tempCanvas.toDataURL();
+                link.click();
+            }
+        });
+
+    </script>
+</body>
+</html>

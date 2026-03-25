@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Memo Widget</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background: transparent !important;
+            overflow: hidden;
+        }
+
+        /* Custom Scrollbar for the list */
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.5);
+        }
+
+        /* Text readability enhancements */
+        .text-shadow {
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+        }
+        
+        /* Animation for adding items */
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-slide-in {
+            animation: slideIn 0.3s ease-out forwards;
+        }
+    </style>
+</head>
+<body class="flex items-start justify-end p-4 pointer-events-none">
+
+    <!-- Main Widget Container (Pointer events auto to allow interaction) -->
+    <div id="widget-container" class="pointer-events-auto w-full max-w-xs sm:max-w-sm bg-black/60 backdrop-blur-md border border-white/20 rounded-xl shadow-2xl flex flex-col transition-all duration-300 overflow-hidden" style="max-height: 90vh;">
+        
+        <!-- Header -->
+        <div class="flex justify-between items-center p-3 border-b border-white/10 bg-white/5">
+            <div class="flex items-center gap-2 text-white font-bold text-shadow">
+                <i class="fa-solid fa-note-sticky text-yellow-400"></i>
+                <span>気になるメモ</span>
+            </div>
+            <button onclick="toggleMinimize()" class="text-white/70 hover:text-white transition-colors">
+                <i id="toggle-icon" class="fa-solid fa-chevron-down"></i>
+            </button>
+        </div>
+
+        <!-- Content Wrapper -->
+        <div id="widget-content" class="flex flex-col flex-1 overflow-hidden transition-all duration-300">
+            
+            <!-- Input Area -->
+            <div class="p-3 flex gap-2">
+                <input type="text" id="memo-input" placeholder="メモを入力..." 
+                    class="flex-1 bg-white/10 border border-white/20 rounded px-3 py-2 text-white placeholder-white/50 focus:outline-none focus:bg-white/20 focus:border-cyan-400 transition-colors text-shadow">
+                <button onclick="addMemo()" 
+                    class="bg-cyan-600 hover:bg-cyan-500 text-white px-3 py-2 rounded font-bold transition-colors shadow-lg border border-cyan-400/30 whitespace-nowrap">
+                    <i class="fa-solid fa-plus"></i>
+                </button>
+            </div>
+
+            <!-- Memo List -->
+            <ul id="memo-list" class="flex-1 overflow-y-auto custom-scrollbar px-3 space-y-2 mb-2 min-h-[100px]">
+                <!-- Items will be injected here -->
+            </ul>
+
+            <!-- Footer Actions -->
+            <div class="p-3 bg-white/5 border-t border-white/10 grid grid-cols-2 gap-2">
+                <button onclick="copyToClipboard()" class="flex items-center justify-center gap-2 bg-white/10 hover:bg-white/20 text-white text-sm py-2 rounded border border-white/10 transition-colors">
+                    <i class="fa-regular fa-copy"></i> コピー
+                </button>
+                <button onclick="downloadCSV()" class="flex items-center justify-center gap-2 bg-green-600/80 hover:bg-green-500/80 text-white text-sm py-2 rounded border border-green-400/30 transition-colors">
+                    <i class="fa-solid fa-file-csv"></i> CSV保存
+                </button>
+            </div>
+            
+            <!-- Status Toast -->
+            <div id="status-msg" class="h-0 overflow-hidden text-center text-xs font-bold transition-all duration-300 text-cyan-300">
+                <!-- Messages appear here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State management
+        let memos = [];
+        const STORAGE_KEY = 'video_overlay_memos';
+
+        // DOM Elements
+        const memoInput = document.getElementById('memo-input');
+        const memoList = document.getElementById('memo-list');
+        const statusMsg = document.getElementById('status-msg');
+        const widgetContent = document.getElementById('widget-content');
+        const toggleIcon = document.getElementById('toggle-icon');
+        let isMinimized = false;
+
+        // Initialize
+        window.addEventListener('DOMContentLoaded', () => {
+            loadMemos();
+            
+            // Allow Enter key to submit
+            memoInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') addMemo();
+            });
+        });
+
+        // Load from LocalStorage
+        function loadMemos() {
+            const stored = localStorage.getItem(STORAGE_KEY);
+            if (stored) {
+                try {
+                    memos = JSON.parse(stored);
+                    renderList();
+                } catch (e) {
+                    console.error('Failed to parse memos', e);
+                    localStorage.removeItem(STORAGE_KEY);
+                }
+            }
+        }
+
+        // Save to LocalStorage
+        function saveMemos() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(memos));
+        }
+
+        // Add new memo
+        function addMemo() {
+            const text = memoInput.value.trim();
+            if (!text) return;
+
+            const newMemo = {
+                id: Date.now(),
+                text: text,
+                timestamp: new Date().toISOString()
+            };
+
+            memos.push(newMemo);
+            saveMemos();
+            renderList();
+            memoInput.value = '';
+            showStatus('追加しました', 'text-cyan-300');
+            
+            // Scroll to bottom
+            setTimeout(() => {
+                memoList.scrollTop = memoList.scrollHeight;
+            }, 10);
+        }
+
+        // Delete memo
+        function deleteMemo(id) {
+            memos = memos.filter(m => m.id !== id);
+            saveMemos();
+            renderList();
+        }
+
+        // Render the list
+        function renderList() {
+            memoList.innerHTML = '';
+            if (memos.length === 0) {
+                memoList.innerHTML = '<li class="text-white/40 text-center text-sm italic py-4">メモはありません</li>';
+                return;
+            }
+
+            memos.forEach(memo => {
+                const li = document.createElement('li');
+                li.className = 'animate-slide-in flex justify-between items-center bg-white/10 rounded p-2 border-l-4 border-cyan-500';
+                
+                // Use textContent for security (XSS prevention)
+                const span = document.createElement('span');
+                span.className = 'text-white text-sm break-all mr-2 text-shadow';
+                span.textContent = memo.text;
+
+                const delBtn = document.createElement('button');
+                delBtn.className = 'text-red-400 hover:text-red-300 p-1 opacity-70 hover:opacity-100 transition-opacity';
+                delBtn.innerHTML = '<i class="fa-solid fa-trash"></i>';
+                delBtn.onclick = () => deleteMemo(memo.id);
+
+                li.appendChild(span);
+                li.appendChild(delBtn);
+                memoList.appendChild(li);
+            });
+        }
+
+        // Copy all memos to clipboard
+        async function copyToClipboard() {
+            if (memos.length === 0) return;
+            const text = memos.map(m => m.text).join('\n');
+            try {
+                await navigator.clipboard.writeText(text);
+                showStatus('コピーしました！', 'text-green-300');
+            } catch (err) {
+                showStatus('コピー失敗', 'text-red-400');
+            }
+        }
+
+        // Download as CSV
+        function downloadCSV() {
+            if (memos.length === 0) return;
+            
+            // BOM for Excel compatibility with UTF-8
+            const BOM = '\uFEFF';
+            const header = '"Timestamp","Memo"\n';
+            const rows = memos.map(m => {
+                // Escape quotes
+                const safeText = m.text.replace(/"/g, '""');
+                return `"${new Date(m.timestamp).toLocaleString()}","${safeText}"`;
+            }).join('\n');
+
+            const csvContent = BOM + header + rows;
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            
+            const link = document.createElement('a');
+            link.setAttribute('href', url);
+            link.setAttribute('download', `memos_${new Date().toISOString().slice(0,10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            showStatus('CSVをダウンロードしました', 'text-green-300');
+        }
+
+        // Show temporary status message
+        let statusTimeout;
+        function showStatus(msg, colorClass) {
+            statusMsg.textContent = msg;
+            statusMsg.className = `text-center text-xs font-bold transition-all duration-300 py-1 ${colorClass}`;
+            statusMsg.style.height = 'auto';
+            
+            clearTimeout(statusTimeout);
+            statusTimeout = setTimeout(() => {
+                statusMsg.style.height = '0';
+                statusMsg.textContent = '';
+            }, 2000);
+        }
+
+        // Toggle Minimize/Expand
+        function toggleMinimize() {
+            isMinimized = !isMinimized;
+            if (isMinimized) {
+                widgetContent.style.display = 'none';
+                toggleIcon.className = 'fa-solid fa-chevron-up';
+            } else {
+                widgetContent.style.display = 'flex';
+                toggleIcon.className = 'fa-solid fa-chevron-down';
+            }
+        }
+    </script>
+</body>
+</html>

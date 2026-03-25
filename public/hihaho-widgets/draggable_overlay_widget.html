@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Draggable Video Overlay</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Core transparency rules */
+        body, html {
+            background: transparent !important;
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            /* Allow clicks to pass through empty areas to the video below */
+            pointer-events: none;
+        }
+
+        /* The Widget Container */
+        #overlay-widget {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 320px;
+            /* Re-enable pointer events for the widget itself */
+            pointer-events: auto;
+            /* Glassmorphism styles */
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.6);
+            border-radius: 16px;
+            color: white;
+            transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), height 0.3s cubic-bezier(0.4, 0, 0.2, 1), border-radius 0.3s ease;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            z-index: 50;
+        }
+
+        /* Minimized State */
+        #overlay-widget.minimized {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+        }
+
+        #overlay-widget.minimized .widget-content,
+        #overlay-widget.minimized .widget-header-text,
+        #overlay-widget.minimized .minimize-btn-icon {
+            display: none;
+        }
+
+        #overlay-widget.minimized .maximize-icon {
+            display: block;
+        }
+
+        /* Header (Drag Handle) */
+        .widget-header {
+            padding: 12px 16px;
+            cursor: grab;
+            background: rgba(255, 255, 255, 0.05);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            user-select: none;
+        }
+        
+        .widget-header:active {
+            cursor: grabbing;
+        }
+
+        /* Content Area */
+        .widget-content {
+            padding: 16px;
+            opacity: 1;
+            transition: opacity 0.2s ease;
+        }
+
+        /* Text Visibility */
+        .text-shadow {
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+        }
+
+        /* Icons */
+        .maximize-icon {
+            display: none;
+            font-size: 24px;
+            color: #38bdf8;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.1); opacity: 0.8; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        /* Utility for touch devices to prevent scrolling the page while dragging */
+        .no-scroll {
+            touch-action: none;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Draggable Widget -->
+    <div id="overlay-widget">
+        <!-- Drag Handle / Header -->
+        <div class="widget-header no-scroll" id="drag-handle">
+            <div class="flex items-center space-x-2 widget-header-text">
+                <span class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span>
+                <span class="font-bold text-sm text-shadow tracking-wide uppercase">Live Stats</span>
+            </div>
+            
+            <!-- Minimize/Maximize Toggle -->
+            <button id="toggle-btn" class="text-gray-300 hover:text-white transition-colors focus:outline-none p-1">
+                <!-- Minus Icon (Minimize) -->
+                <svg class="w-5 h-5 minimize-btn-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"></path>
+                </svg>
+            </button>
+
+            <!-- Maximize Icon (Only visible when minimized) -->
+            <div class="maximize-icon pointer-events-none">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 4l-5-5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"></path>
+                </svg>
+            </div>
+        </div>
+
+        <!-- Content -->
+        <div class="widget-content">
+            <div class="space-y-4">
+                <!-- Sample Data Row -->
+                <div class="flex justify-between items-center border-b border-white/10 pb-2">
+                    <span class="text-gray-300 text-xs font-medium uppercase">Active Viewers</span>
+                    <span class="text-xl font-bold text-cyan-400 text-shadow">12,453</span>
+                </div>
+                
+                <!-- Sample Progress Bar -->
+                <div>
+                    <div class="flex justify-between text-xs mb-1">
+                        <span class="text-gray-300">Goal Progress</span>
+                        <span class="text-white font-mono">85%</span>
+                    </div>
+                    <div class="w-full bg-gray-700/50 rounded-full h-2">
+                        <div class="bg-gradient-to-r from-cyan-500 to-blue-500 h-2 rounded-full" style="width: 85%"></div>
+                    </div>
+                </div>
+
+                <!-- Sample Dynamic Text -->
+                <div class="bg-white/5 p-3 rounded-lg border border-white/5">
+                    <p class="text-xs text-gray-200 leading-relaxed">
+                        <span class="text-yellow-400 font-bold">NOTICE:</span> Event starts in 5 mins.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const widget = document.getElementById('overlay-widget');
+        const header = document.getElementById('drag-handle');
+        const toggleBtn = document.getElementById('toggle-btn');
+        
+        let isDragging = false;
+        let currentX;
+        let currentY;
+        let initialX;
+        let initialY;
+        let xOffset = 0;
+        let yOffset = 0;
+
+        // 1. Dragging Logic
+        // Using CSS translate instead of top/left for better performance
+        
+        header.addEventListener("mousedown", dragStart);
+        header.addEventListener("touchstart", dragStart, { passive: false });
+        document.addEventListener("mouseup", dragEnd);
+        document.addEventListener("touchend", dragEnd);
+        document.addEventListener("mousemove", drag);
+        document.addEventListener("touchmove", drag, { passive: false });
+
+        function dragStart(e) {
+            // Don't start drag if clicking the toggle button directly
+            if (e.target.closest('#toggle-btn')) return;
+            
+            // If minimized, the whole widget is the handle. If maximized, only header is handle.
+            // Logic handled by event target check or structured layout.
+
+            if (e.type === "touchstart") {
+                initialX = e.touches[0].clientX - xOffset;
+                initialY = e.touches[0].clientY - yOffset;
+            } else {
+                initialX = e.clientX - xOffset;
+                initialY = e.clientY - yOffset;
+            }
+
+            if (e.target === header || header.contains(e.target) || widget.classList.contains('minimized')) {
+                isDragging = true;
+            }
+        }
+
+        function dragEnd(e) {
+            initialX = currentX;
+            initialY = currentY;
+            isDragging = false;
+        }
+
+        function drag(e) {
+            if (isDragging) {
+                e.preventDefault();
+            
+                if (e.type === "touchmove") {
+                    currentX = e.touches[0].clientX - initialX;
+                    currentY = e.touches[0].clientY - initialY;
+                } else {
+                    currentX = e.clientX - initialX;
+                    currentY = e.clientY - initialY;
+                }
+
+                xOffset = currentX;
+                yOffset = currentY;
+
+                setTranslate(currentX, currentY, widget);
+            }
+        }
+
+        function setTranslate(xPos, yPos, el) {
+            el.style.transform = `translate3d(${xPos}px, ${yPos}px, 0)`;
+        }
+
+        // 2. Minimize/Maximize Logic
+        
+        const toggleWidget = (e) => {
+            // Prevent triggering if we just finished a drag
+            // (Simple heuristic: dragging moves distance, click doesn't. 
+            //  For simplicity here, we assume separate actions).
+            
+            e.stopPropagation();
+            widget.classList.toggle('minimized');
+        };
+
+        toggleBtn.addEventListener('click', toggleWidget);
+
+        // Allow clicking the minimized widget to expand it
+        widget.addEventListener('click', (e) => {
+            if (widget.classList.contains('minimized')) {
+                // Only expand if it wasn't a drag action (optional refinement)
+                widget.classList.remove('minimized');
+            }
+        });
+
+        // 3. Responsive Adjustments (Keep in bounds on resize - basic implementation)
+        window.addEventListener('resize', () => {
+            // Reset position if window gets too small or orientation changes
+            // Simpler approach: Just ensure it stays vaguely visible
+            const rect = widget.getBoundingClientRect();
+            if (rect.right < 0 || rect.left > window.innerWidth || rect.bottom < 0 || rect.top > window.innerHeight) {
+                xOffset = 0;
+                yOffset = 0;
+                setTranslate(0, 0, widget);
+            }
+        });
+
+    </script>
+</body>
+</html>

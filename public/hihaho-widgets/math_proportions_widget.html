@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Math Overlay Widget - Proportions</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background-color: transparent !important;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: 'Noto Sans JP', sans-serif;
+        }
+
+        /* Glassmorphism Effect */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.9); /* Slightly darker for better contrast */
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+        }
+
+        .text-shadow {
+            text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 3px;
+        }
+        
+        /* Graph Grid Pattern */
+        .graph-bg {
+            background-image: linear-gradient(rgba(255, 255, 255, 0.1) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255, 255, 255, 0.1) 1px, transparent 1px);
+            background-size: 20px 20px;
+            background-position: center center;
+        }
+    </style>
+</head>
+<body class="w-full h-screen flex flex-col justify-end items-end p-4 pointer-events-none">
+
+    <!-- Main Widget Container -->
+    <div id="widget-app" class="pointer-events-auto relative z-50 flex flex-col items-end gap-3">
+
+        <!-- Content Panel -->
+        <div id="math-panel" class="glass-panel rounded-2xl w-80 sm:w-96 overflow-hidden transition-all duration-300 origin-bottom-right transform scale-0 opacity-0 mb-2">
+            <!-- Header -->
+            <div class="flex justify-between items-center p-4 border-b border-white/10 bg-white/5">
+                <h2 class="text-white font-bold text-lg flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    </svg>
+                    関数マスター
+                </h2>
+                <button onclick="togglePanel()" class="text-gray-400 hover:text-white transition-colors p-1 hover:bg-white/10 rounded-full">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- Tabs -->
+            <div class="flex p-2 gap-2">
+                <button id="tab-proportional" onclick="switchTab('proportional')" class="flex-1 py-2 text-sm font-bold rounded-lg bg-indigo-500 text-white shadow-lg transition-all border border-indigo-400/30">
+                    比例 (y=ax)
+                </button>
+                <button id="tab-inverse" onclick="switchTab('inverse')" class="flex-1 py-2 text-sm font-bold rounded-lg bg-gray-700 text-gray-300 hover:bg-gray-600 transition-all border border-transparent">
+                    反比例 (y=a/x)
+                </button>
+            </div>
+
+            <!-- Content Area -->
+            <div class="p-5 pt-2">
+                
+                <!-- Proportional Section -->
+                <div id="content-proportional" class="block">
+                    <!-- Visual Concept Area -->
+                    <div class="mb-4 relative h-32 w-full bg-black/40 rounded-lg border border-white/10 graph-bg overflow-hidden flex items-center justify-center">
+                        <!-- Axes -->
+                        <div class="absolute w-full h-px bg-white/20"></div>
+                        <div class="absolute h-full w-px bg-white/20"></div>
+                        <!-- Graph Line Representation -->
+                        <svg class="absolute w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+                             <line x1="0" y1="100" x2="100" y2="0" stroke="#818cf8" stroke-width="2" />
+                        </svg>
+                        <div class="absolute bottom-1 right-2 text-[10px] text-indigo-300 bg-black/60 px-1 rounded">原点を通る直線</div>
+                    </div>
+
+                    <div class="text-center mb-4">
+                        <div class="text-2xl font-bold text-white font-mono">
+                            y = <span class="text-indigo-400">a</span>x
+                        </div>
+                        <p class="text-xs text-indigo-200 mt-1">xが2倍になると、yも2倍になる</p>
+                    </div>
+
+                    <div class="space-y-3 bg-white/5 p-3 rounded-lg border border-white/5">
+                        <div class="flex justify-between items-center">
+                            <label class="text-indigo-400 text-sm font-bold">定数 a</label>
+                            <input type="number" id="prop-a" value="2" class="w-20 bg-gray-900 text-white text-center rounded border border-gray-600 focus:border-indigo-500 focus:outline-none p-1" oninput="calcProp()">
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <label class="text-gray-300 text-sm">値 x</label>
+                            <input type="number" id="prop-x" value="3" class="w-20 bg-gray-900 text-white text-center rounded border border-gray-600 focus:border-indigo-500 focus:outline-none p-1" oninput="calcProp()">
+                        </div>
+                        <div class="h-px bg-gray-600 my-2"></div>
+                        <div class="flex justify-between items-center">
+                            <label class="text-white font-bold">答え y</label>
+                            <span id="prop-result" class="text-2xl font-bold text-yellow-400 text-shadow">6</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Inverse Section -->
+                <div id="content-inverse" class="hidden">
+                     <!-- Visual Concept Area -->
+                     <div class="mb-4 relative h-32 w-full bg-black/40 rounded-lg border border-white/10 graph-bg overflow-hidden flex items-center justify-center">
+                        <!-- Axes -->
+                        <div class="absolute w-full h-px bg-white/20"></div>
+                        <div class="absolute h-full w-px bg-white/20"></div>
+                        <!-- Graph Curve Representation -->
+                        <svg class="absolute w-full h-full" viewBox="0 0 100 100" fill="none">
+                            <path d="M52 2 Q 60 40 98 48" stroke="#ec4899" stroke-width="2" />
+                            <path d="M2 52 Q 40 60 48 98" stroke="#ec4899" stroke-width="2" opacity="0.5" />
+                        </svg>
+                        <div class="absolute bottom-1 right-2 text-[10px] text-pink-300 bg-black/60 px-1 rounded">双曲線（カーブ）</div>
+                    </div>
+
+                    <div class="text-center mb-4">
+                        <div class="text-2xl font-bold text-white font-mono">
+                            y = <span class="text-pink-400">a</span> / x
+                        </div>
+                        <p class="text-xs text-pink-200 mt-1">xが2倍になると、yは1/2になる</p>
+                    </div>
+
+                    <div class="space-y-3 bg-white/5 p-3 rounded-lg border border-white/5">
+                        <div class="flex justify-between items-center">
+                            <label class="text-pink-400 text-sm font-bold">定数 a</label>
+                            <input type="number" id="inv-a" value="12" class="w-20 bg-gray-900 text-white text-center rounded border border-gray-600 focus:border-pink-500 focus:outline-none p-1" oninput="calcInv()">
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <label class="text-gray-300 text-sm">値 x</label>
+                            <input type="number" id="inv-x" value="4" class="w-20 bg-gray-900 text-white text-center rounded border border-gray-600 focus:border-pink-500 focus:outline-none p-1" oninput="calcInv()">
+                        </div>
+                        <div class="h-px bg-gray-600 my-2"></div>
+                        <div class="flex justify-between items-center">
+                            <label class="text-white font-bold">答え y</label>
+                            <span id="inv-result" class="text-2xl font-bold text-yellow-400 text-shadow">3</span>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Toggle Button -->
+        <button onclick="togglePanel()" id="toggle-btn" class="group flex items-center gap-2 glass-panel hover:bg-indigo-600/30 text-white px-6 py-3 rounded-full transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-[0_0_20px_rgba(99,102,241,0.6)]">
+            <div class="relative w-6 h-6">
+                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 absolute transition-all duration-300 group-hover:opacity-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                </svg>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 absolute opacity-0 transition-all duration-300 group-hover:opacity-100" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                </svg>
+            </div>
+            <span class="font-bold tracking-wide text-sm md:text-base">比例・反比例</span>
+        </button>
+
+    </div>
+
+    <script>
+        let isOpen = false;
+        const panel = document.getElementById('math-panel');
+        const toggleBtn = document.getElementById('toggle-btn');
+
+        // Toggle Panel Visibility
+        function togglePanel() {
+            isOpen = !isOpen;
+            if (isOpen) {
+                panel.classList.remove('scale-0', 'opacity-0');
+                panel.classList.add('scale-100', 'opacity-100');
+                // We fade out the main button to avoid clutter, as per original design pattern
+                toggleBtn.classList.add('opacity-0', 'pointer-events-none', 'translate-y-4'); 
+            } else {
+                panel.classList.remove('scale-100', 'opacity-100');
+                panel.classList.add('scale-0', 'opacity-0');
+                toggleBtn.classList.remove('opacity-0', 'pointer-events-none', 'translate-y-4');
+            }
+        }
+
+        function switchTab(type) {
+            const propTab = document.getElementById('tab-proportional');
+            const invTab = document.getElementById('tab-inverse');
+            const propContent = document.getElementById('content-proportional');
+            const invContent = document.getElementById('content-inverse');
+
+            if (type === 'proportional') {
+                // Update Tab Styles
+                propTab.classList.replace('bg-gray-700', 'bg-indigo-500');
+                propTab.classList.replace('text-gray-300', 'text-white');
+                propTab.classList.add('shadow-lg', 'border-indigo-400/30');
+                
+                invTab.classList.replace('bg-pink-500', 'bg-gray-700');
+                invTab.classList.replace('text-white', 'text-gray-300');
+                invTab.classList.remove('shadow-lg', 'border-pink-400/30');
+                
+                // Show Content
+                propContent.classList.remove('hidden');
+                invContent.classList.add('hidden');
+            } else {
+                // Update Tab Styles
+                invTab.classList.remove('bg-gray-700', 'text-gray-300');
+                invTab.classList.add('bg-pink-500', 'text-white', 'shadow-lg', 'border-pink-400/30');
+                
+                propTab.classList.replace('bg-indigo-500', 'bg-gray-700');
+                propTab.classList.replace('text-white', 'text-gray-300');
+                propTab.classList.remove('shadow-lg', 'border-indigo-400/30');
+
+                // Show Content
+                invContent.classList.remove('hidden');
+                propContent.classList.add('hidden');
+            } 
+        }
+
+        function calcProp() {
+            const a = parseFloat(document.getElementById('prop-a').value) || 0;
+            const x = parseFloat(document.getElementById('prop-x').value) || 0;
+            const result = a * x;
+            document.getElementById('prop-result').innerText = parseFloat(result.toFixed(2));
+        }
+
+        function calcInv() {
+            const a = parseFloat(document.getElementById('inv-a').value) || 0;
+            const x = parseFloat(document.getElementById('inv-x').value) || 0;
+            
+            if (x === 0) {
+                document.getElementById('inv-result').innerText = "-"; 
+            } else {
+                const result = a / x;
+                document.getElementById('inv-result').innerText = parseFloat(result.toFixed(2));
+            }
+        }
+
+        // Init
+        calcProp();
+        calcInv();
+    </script>
+</body>
+</html>

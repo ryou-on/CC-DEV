@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>動物あてっこゲーム</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      background: transparent !important;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      font-family: "Hiragino Maru Gothic Pro", "Yu Gothic", sans-serif;
+      user-select: none;
+    }
+
+    /* Glassmorphism for containers */
+    .glass-panel {
+      background: rgba(255, 255, 255, 0.85);
+      backdrop-filter: blur(8px);
+      border: 4px solid #fff;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    }
+
+    /* Card Styles */
+    .animal-card {
+      transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s;
+      cursor: pointer;
+      background: white;
+      border-radius: 1rem;
+      border: 4px solid #e5e7eb;
+    }
+    
+    .animal-card:active {
+      transform: scale(0.9);
+    }
+
+    .animal-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+      border-color: #fbbf24; /* Amber hover */
+    }
+
+    /* Animations */
+    @keyframes bounceIn {
+      0% { transform: scale(0); opacity: 0; }
+      60% { transform: scale(1.1); opacity: 1; }
+      100% { transform: scale(1); }
+    }
+
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-10px) rotate(-5deg); }
+      75% { transform: translateX(10px) rotate(5deg); }
+    }
+
+    @keyframes celebrate {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.2) rotate(10deg); }
+      100% { transform: scale(1); }
+    }
+
+    .animate-bounce-in {
+      animation: bounceIn 0.5s ease-out forwards;
+    }
+
+    .animate-shake {
+      animation: shake 0.4s ease-in-out;
+      border-color: #ef4444 !important; /* Red error */
+      background-color: #fee2e2;
+    }
+
+    .animate-correct {
+      animation: celebrate 0.5s ease-in-out;
+      border-color: #22c55e !important; /* Green success */
+      background-color: #dcfce7;
+    }
+
+    /* Text Shadow for visibility over video */
+    .text-shadow {
+      text-shadow: 2px 2px 0px rgba(0,0,0,0.1);
+    }
+
+    /* Emoji sizing */
+    .emoji-icon {
+      font-size: clamp(3rem, 8vw, 5rem);
+      line-height: 1;
+    }
+  </style>
+</head>
+<body class="w-full h-screen flex flex-col items-center justify-center p-4">
+
+  <!-- Game Container -->
+  <div id="game-container" class="w-full max-w-4xl flex flex-col items-center gap-6">
+    
+    <!-- Header / Question -->
+    <div class="glass-panel rounded-full px-8 py-4 animate-bounce-in">
+      <h1 id="question-text" class="text-2xl md:text-4xl font-bold text-slate-800 text-center text-shadow">
+        ロード中...
+      </h1>
+    </div>
+
+    <!-- Cards Grid -->
+    <div id="cards-grid" class="grid grid-cols-2 md:grid-cols-4 gap-4 w-full">
+      <!-- Cards injected by JS -->
+    </div>
+
+    <!-- Feedback Message Overlay (Hidden by default) -->
+    <div id="feedback-overlay" class="fixed inset-0 flex items-center justify-center pointer-events-none opacity-0 transition-opacity duration-300 z-50">
+      <div class="bg-white/95 border-4 border-yellow-400 rounded-3xl p-8 shadow-2xl transform scale-0 transition-transform duration-300 flex flex-col items-center">
+        <span id="feedback-icon" class="text-8xl mb-4">🎉</span>
+        <h2 id="feedback-text" class="text-4xl font-black text-slate-800">せいかい！</h2>
+        <button id="next-btn" class="mt-6 bg-yellow-400 hover:bg-yellow-500 text-white font-bold py-3 px-8 rounded-full text-xl shadow-lg pointer-events-auto transform transition active:scale-95">
+          つぎへ
+        </button>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // Game Data
+    const animals = [
+      { id: 'lion', name: 'ライオン', emoji: '🦁' },
+      { id: 'elephant', name: 'ゾウ', emoji: '🐘' },
+      { id: 'rabbit', name: 'ウサギ', emoji: '🐰' },
+      { id: 'panda', name: 'パンダ', emoji: '🐼' },
+      { id: 'dog', name: 'イヌ', emoji: '🐶' },
+      { id: 'cat', name: 'ネコ', emoji: '🐱' },
+      { id: 'bear', name: 'クマ', emoji: '🐻' },
+      { id: 'tiger', name: 'トラ', emoji: '🐯' }
+    ];
+
+    let currentTarget = null;
+    let isLocked = false;
+
+    const questionText = document.getElementById('question-text');
+    const cardsGrid = document.getElementById('cards-grid');
+    const feedbackOverlay = document.getElementById('feedback-overlay');
+    const feedbackContent = feedbackOverlay.firstElementChild;
+    const feedbackIcon = document.getElementById('feedback-icon');
+    const feedbackText = document.getElementById('feedback-text');
+    const nextBtn = document.getElementById('next-btn');
+
+    // Utility to shuffle array
+    function shuffle(array) {
+      return array.sort(() => Math.random() - 0.5);
+    }
+
+    // Start a new round
+    function initRound() {
+      isLocked = false;
+      hideFeedback();
+      
+      // 1. Select 4 random animals for the options
+      const shuffledAnimals = shuffle([...animals]).slice(0, 4);
+      
+      // 2. Pick one as the target
+      currentTarget = shuffledAnimals[Math.floor(Math.random() * shuffledAnimals.length)];
+
+      // 3. Update Text
+      questionText.innerHTML = `<span class="text-pink-500">${currentTarget.name}</span> は どれかな？`;
+
+      // 4. Render Cards
+      cardsGrid.innerHTML = '';
+      shuffledAnimals.forEach((animal, index) => {
+        const card = document.createElement('div');
+        card.className = 'animal-card flex flex-col items-center justify-center p-4 aspect-square shadow-lg glass-panel';
+        card.style.animationDelay = `${index * 100}ms`; // Staggered entrance
+        card.classList.add('animate-bounce-in');
+        
+        card.innerHTML = `
+          <div class="emoji-icon">${animal.emoji}</div>
+        `;
+
+        card.addEventListener('click', () => handleCardClick(card, animal));
+        cardsGrid.appendChild(card);
+      });
+    }
+
+    function handleCardClick(cardElement, selectedAnimal) {
+      if (isLocked) return;
+
+      if (selectedAnimal.id === currentTarget.id) {
+        // Correct
+        isLocked = true;
+        cardElement.classList.add('animate-correct');
+        playSound('correct');
+        setTimeout(() => showFeedback(true), 600);
+      } else {
+        // Incorrect
+        cardElement.classList.add('animate-shake');
+        playSound('wrong');
+        setTimeout(() => {
+          cardElement.classList.remove('animate-shake');
+        }, 500);
+      }
+    }
+
+    function showFeedback(isSuccess) {
+      feedbackOverlay.classList.remove('opacity-0', 'pointer-events-none');
+      feedbackContent.classList.remove('scale-0');
+      
+      if (isSuccess) {
+        feedbackIcon.textContent = '🎉';
+        feedbackText.textContent = 'せいかい！';
+        feedbackText.className = 'text-4xl font-black text-green-500';
+      }
+    }
+
+    function hideFeedback() {
+      feedbackOverlay.classList.add('opacity-0', 'pointer-events-none');
+      feedbackContent.classList.add('scale-0');
+    }
+
+    // Simple sound simulation (optional, browser policy dependent)
+    function playSound(type) {
+      // In a real app, use Audio objects. Here just visual cues imply sound.
+      console.log(`Sound: ${type}`);
+    }
+
+    nextBtn.addEventListener('click', initRound);
+
+    // Start game on load
+    initRound();
+
+  </script>
+</body>
+</html>

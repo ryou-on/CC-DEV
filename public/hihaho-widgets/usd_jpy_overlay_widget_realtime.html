@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>USD/JPY Live Overlay</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background: transparent !important;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: 'Roboto Mono', monospace;
+        }
+
+        /* Glassmorphism Card */
+        .glass-card {
+            background: rgba(15, 23, 42, 0.65);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            border-radius: 12px;
+            transition: all 0.3s ease;
+        }
+
+        /* Text Shadows for readability over video */
+        .text-glow {
+            text-shadow: 0 0 10px rgba(0, 0, 0, 0.8);
+        }
+
+        /* Custom Scrollbar hide */
+        ::-webkit-scrollbar {
+            display: none;
+        }
+
+        /* Animation for Live Indicator */
+        @keyframes pulse-red {
+            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+        .live-dot {
+            animation: pulse-red 2s infinite;
+        }
+    </style>
+</head>
+<body class="w-full h-screen flex items-start justify-end p-4 sm:p-8">
+
+    <!-- Widget Container -->
+    <div class="glass-card w-full max-w-sm p-4 flex flex-col gap-2">
+        
+        <!-- Header Section -->
+        <div class="flex justify-between items-center">
+            <div class="flex items-center gap-2">
+                <span class="text-xs font-bold bg-white/10 text-white px-2 py-0.5 rounded border border-white/20 tracking-wider">USD/JPY</span>
+                <div class="flex items-center gap-1.5">
+                    <div class="w-2 h-2 rounded-full bg-red-500 live-dot"></div>
+                    <span class="text-[10px] text-red-400 font-bold tracking-widest uppercase">LIVE</span>
+                </div>
+            </div>
+            <div class="text-right">
+                <span id="timestamp" class="text-[10px] text-gray-400 font-light">--:--:--</span>
+            </div>
+        </div>
+
+        <!-- Price Display -->
+        <div class="flex flex-col">
+            <div class="flex items-baseline gap-3">
+                <h1 id="current-price" class="text-4xl font-bold text-white text-glow tracking-tighter">150.00</h1>
+                <span id="price-change" class="text-sm font-medium text-gray-400">0.00%</span>
+            </div>
+            <div class="flex justify-between text-[10px] text-gray-400 mt-1 px-1">
+                <span>H: <span id="high-price" class="text-gray-300">150.00</span></span>
+                <span>L: <span id="low-price" class="text-gray-300">150.00</span></span>
+            </div>
+        </div>
+
+        <!-- Chart Container -->
+        <div class="relative w-full h-32 mt-2">
+            <canvas id="priceChart"></canvas>
+        </div>
+
+        <!-- Footer / Attribution -->
+        <div class="mt-1 pt-2 border-t border-white/5 flex justify-between items-center">
+            <span class="text-[9px] text-gray-500">MARKET DATA</span>
+            <span class="text-[9px] text-blue-400/80">REALTIME FEED</span>
+        </div>
+    </div>
+
+    
+    <script>
+        /**
+         * USD/JPY リアルタイム取得（ポーリング）
+         * - 推奨: Twelve Data（要APIキー, リアルタイム系）
+         * - フォールバック: Frankfurter（無料/キー不要。ただし原則「日次更新」の参照レート）
+         *
+         * 使い方:
+         * 1) 下の TWELVE_API_KEY にキーを入れる（空なら自動で Frankfurter にフォールバック）
+         * 2) iframeで埋め込むだけ
+         */
+
+        // ====== 設定 ======
+        const POLL_MS = 5000;               // 5秒ごと更新（必要に応じて変更）
+        const MAX_DATA_POINTS = 60;         // チャートに保持する点数
+        const TWELVE_API_KEY = "";          // ← Twelve DataのAPIキー（空ならフォールバック）
+        const SYMBOL_TWELVE = "USD/JPY";    // Twelve Data: 通貨ペア表記（必要なら変更）
+
+        // ====== DOM ======
+        const priceEl = document.getElementById('current-price');
+        const changeEl = document.getElementById('price-change');
+        const highEl = document.getElementById('high-price');
+        const lowEl = document.getElementById('low-price');
+        const timeEl = document.getElementById('timestamp');
+
+        // ====== 内部状態 ======
+        let startPrice = null;
+        let sessionHigh = null;
+        let sessionLow = null;
+
+        // ====== Chart.js 初期化 ======
+        const ctx = document.getElementById('priceChart').getContext('2d');
+
+        function makeGradient(isUp) {
+            const g = ctx.createLinearGradient(0, 0, 0, 150);
+            if (isUp) {
+                g.addColorStop(0, 'rgba(74, 222, 128, 0.40)'); // green
+                g.addColorStop(1, 'rgba(74, 222, 128, 0.00)');
+            } else {
+                g.addColorStop(0, 'rgba(248, 113, 113, 0.40)'); // red
+                g.addColorStop(1, 'rgba(248, 113, 113, 0.00)');
+            }
+            return g;
+        }
+
+        const priceChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: Array(MAX_DATA_POINTS).fill(''),
+                datasets: [{
+                    label: 'USD/JPY',
+                    data: Array(MAX_DATA_POINTS).fill(null),
+                    borderColor: '#94a3b8', // slate-400
+                    backgroundColor: makeGradient(true),
+                    borderWidth: 2,
+                    pointRadius: 0,
+                    pointHoverRadius: 4,
+                    fill: true,
+                    tension: 0.35
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false }, tooltip: { enabled: false } },
+                scales: {
+                    x: { display: false },
+                    y: {
+                        display: true,
+                        position: 'right',
+                        grid: { color: 'rgba(255,255,255,0.05)', drawBorder: false },
+                        ticks: {
+                            color: 'rgba(255,255,255,0.5)',
+                            font: { size: 9, family: 'Roboto Mono' },
+                            callback: (v) => (typeof v === 'number' ? v.toFixed(2) : '')
+                        }
+                    }
+                },
+                animation: { duration: 0 }
+            }
+        });
+
+        // ====== データ取得（Twelve Data）=====
+        async function fetchFromTwelveData() {
+            // Twelve Data Quote endpoint（リアルタイム系）
+            // 例: https://api.twelvedata.com/quote?symbol=USD/JPY&apikey=YOUR_KEY
+            const url = `https://api.twelvedata.com/quote?symbol=${encodeURIComponent(SYMBOL_TWELVE)}&apikey=${encodeURIComponent(TWELVE_API_KEY)}`;
+            const res = await fetch(url, { cache: 'no-store' });
+            const json = await res.json();
+
+            // 失敗時の典型: { status:"error", message:"...", code:... }
+            if (!res.ok || (json && json.status === 'error')) {
+                const msg = json?.message || `HTTP ${res.status}`;
+                throw new Error(`TwelveData error: ${msg}`);
+            }
+
+            // 想定フィールド（提供側の仕様変更可能性あり）
+            // price, high, low, datetime など
+            const price = Number(json.price);
+            const high = json.high != null ? Number(json.high) : null;
+            const low  = json.low  != null ? Number(json.low)  : null;
+            const dt   = json.datetime || null;
+
+            if (!Number.isFinite(price)) throw new Error('TwelveData: invalid price');
+
+            return { price, high, low, timeLabel: dt };
+        }
+
+        // ====== データ取得（Frankfurter: フォールバック）=====
+        async function fetchFromFrankfurter() {
+            // Frankfurter: 最新営業日の参照レート（原則 日次更新）
+            // https://api.frankfurter.dev/v1/latest?base=USD&symbols=JPY
+            const url = 'https://api.frankfurter.dev/v1/latest?base=USD&symbols=JPY';
+            const res = await fetch(url, { cache: 'no-store' });
+            if (!res.ok) throw new Error(`Frankfurter HTTP ${res.status}`);
+            const json = await res.json();
+            const price = Number(json?.rates?.JPY);
+            if (!Number.isFinite(price)) throw new Error('Frankfurter: invalid rate');
+            const dt = json?.date || null;
+            return { price, high: null, low: null, timeLabel: dt };
+        }
+
+        // ====== UI更新 ======
+        function updateUI({ price, high, low, timeLabel }) {
+            // 初回
+            if (startPrice == null) {
+                startPrice = price;
+                sessionHigh = price;
+                sessionLow = price;
+            }
+
+            // High/Low: APIが返すなら優先、なければセッション内で推定
+            if (Number.isFinite(high)) sessionHigh = high;
+            else sessionHigh = Math.max(sessionHigh, price);
+
+            if (Number.isFinite(low)) sessionLow = low;
+            else sessionLow = Math.min(sessionLow, price);
+
+            // 変化率（初回値基準）
+            const pctChange = ((price - startPrice) / startPrice) * 100;
+            const isUp = pctChange >= 0;
+
+            // 価格表示
+            priceEl.textContent = price.toFixed(2);
+            highEl.textContent = sessionHigh.toFixed(2);
+            lowEl.textContent = sessionLow.toFixed(2);
+
+            // 色・バッジ
+            if (isUp) {
+                priceEl.classList.remove('text-red-400');
+                priceEl.classList.add('text-green-400');
+                changeEl.textContent = `+${pctChange.toFixed(3)}%`;
+                changeEl.className = 'text-xs font-bold text-green-400 bg-green-400/10 px-1.5 py-0.5 rounded';
+                priceChart.data.datasets[0].borderColor = '#4ade80';
+                priceChart.data.datasets[0].backgroundColor = makeGradient(true);
+            } else {
+                priceEl.classList.remove('text-green-400');
+                priceEl.classList.add('text-red-400');
+                changeEl.textContent = `${pctChange.toFixed(3)}%`;
+                changeEl.className = 'text-xs font-bold text-red-400 bg-red-400/10 px-1.5 py-0.5 rounded';
+                priceChart.data.datasets[0].borderColor = '#f87171';
+                priceChart.data.datasets[0].backgroundColor = makeGradient(false);
+            }
+
+            // タイムスタンプ
+            // timeLabel がAPI側の時刻/日付なら併記しつつ、ローカル時刻も表示
+            const now = new Date();
+            const local = now.toLocaleTimeString('ja-JP', { hour12: false });
+            timeEl.textContent = timeLabel ? `${local} (${timeLabel})` : local;
+
+            // チャート更新
+            const data = priceChart.data.datasets[0].data;
+
+            // 先頭nullが残る場合があるので、初回は埋める
+            if (data.every(v => v == null)) {
+                for (let i = 0; i < data.length; i++) data[i] = price;
+            } else {
+                data.push(price);
+                if (data.length > MAX_DATA_POINTS) data.shift();
+            }
+
+            priceChart.update();
+        }
+
+        // ====== 取得ループ ======
+        async function tick() {
+            try {
+                let payload;
+                if (TWELVE_API_KEY && TWELVE_API_KEY.trim().length > 0) {
+                    payload = await fetchFromTwelveData();
+                } else {
+                    payload = await fetchFromFrankfurter();
+                }
+                updateUI(payload);
+            } catch (e) {
+                // 取得失敗時は時刻だけ更新（見た目は止まるが、落ちない）
+                const now = new Date();
+                timeEl.textContent = now.toLocaleTimeString('ja-JP', { hour12: false }) + ' (data error)';
+                console.warn(e);
+            }
+        }
+
+        // 起動
+        tick();
+        setInterval(tick, POLL_MS);
+    </script>
+
+</body>
+</html>

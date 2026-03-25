@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scratch Overlay Widget</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background: transparent !important;
+            overflow: hidden;
+            touch-action: none;
+        }
+        #widget-container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        #scratch-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40' viewBox='0 0 40 40'%3E%3Cdefs%3E%3CradialGradient id='silver' cx='30%25' cy='30%25' r='70%25'%3E%3Cstop offset='0%25' stop-color='%23ffffff' /%3E%3Cstop offset='50%25' stop-color='%23cccccc' /%3E%3Cstop offset='100%25' stop-color='%23888888' /%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='20' cy='20' r='18' fill='url(%23silver)' stroke='%23666666' stroke-width='1.5' /%3E%3Ccircle cx='20' cy='20' r='15' fill='none' stroke='%23aaaaaa' stroke-width='1' stroke-dasharray='2,2'/%3E%3C/svg%3E") 20 20, crosshair;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="widget-container">
+        <canvas id="scratch-canvas"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('scratch-canvas');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+        let isDrawing = false;
+        let lastX = 0;
+        let lastY = 0;
+        let strokes = [];
+        let currentStroke = [];
+
+        function initCanvas() {
+            const dpr = window.devicePixelRatio || 1;
+            const rect = canvas.parentElement.getBoundingClientRect();
+            
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+            
+            canvas.style.width = `${rect.width}px`;
+            canvas.style.height = `${rect.height}px`;
+
+            drawCover(rect.width, rect.height);
+            redrawStrokes(rect.width, rect.height);
+        }
+
+        function drawCover(width, height) {
+            ctx.globalCompositeOperation = 'source-over';
+            
+            const gradient = ctx.createLinearGradient(0, 0, width, height);
+            gradient.addColorStop(0, '#e5e7eb');
+            gradient.addColorStop(0.3, '#f9fafb');
+            gradient.addColorStop(0.5, '#ffffff');
+            gradient.addColorStop(0.7, '#d1d5db');
+            gradient.addColorStop(1, '#9ca3af');
+            
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, width, height);
+
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.lineWidth = 1.5;
+            const step = 25;
+            const max = Math.max(width, height) * 2;
+            for (let i = -max; i < max; i += step) {
+                ctx.beginPath();
+                ctx.moveTo(i, 0);
+                ctx.lineTo(i + max, max);
+                ctx.stroke();
+            }
+            ctx.restore();
+
+            const centerX = width / 2;
+            const centerY = height / 2;
+            const scale = Math.min(width / 1280, 1.5);
+            const subFontSize = Math.max(Math.floor(32 * scale), 20);
+
+            ctx.save();
+            const subText = '画面をなぞってヒントをみる';
+            ctx.font = `bold ${subFontSize}px "Helvetica Neue", Arial, sans-serif`;
+            let textWidth = ctx.measureText(subText).width;
+            
+            const paddingX = 32 * scale;
+            const paddingY = 16 * scale;
+            const rectWidth = textWidth + paddingX * 2;
+            const rectHeight = subFontSize + paddingY * 2;
+            const rectX = centerX - rectWidth / 2;
+            const rectY = centerY - rectHeight / 2;
+            const radius = rectHeight / 2;
+
+            ctx.fillStyle = 'rgba(110, 115, 120, 0.85)';
+            ctx.beginPath();
+            ctx.moveTo(rectX + radius, rectY);
+            ctx.lineTo(rectX + rectWidth - radius, rectY);
+            ctx.quadraticCurveTo(rectX + rectWidth, rectY, rectX + rectWidth, rectY + radius);
+            ctx.lineTo(rectX + rectWidth, rectY + rectHeight - radius);
+            ctx.quadraticCurveTo(rectX + rectWidth, rectY + rectHeight, rectX + rectWidth - radius, rectY + rectHeight);
+            ctx.lineTo(rectX + radius, rectY + rectHeight);
+            ctx.quadraticCurveTo(rectX, rectY + rectHeight, rectX, rectY + rectHeight - radius);
+            ctx.lineTo(rectX, rectY + radius);
+            ctx.quadraticCurveTo(rectX, rectY, rectX + radius, rectY);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.fillStyle = '#ffffff';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(subText, centerX, centerY);
+            ctx.restore();
+        }
+
+        function getMousePos(e) {
+            const rect = canvas.parentElement.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            return {
+                x: clientX - rect.left,
+                y: clientY - rect.top
+            };
+        }
+
+        function savePoint(x, y) {
+            const rect = canvas.parentElement.getBoundingClientRect();
+            currentStroke.push({
+                rx: x / rect.width,
+                ry: y / rect.height
+            });
+        }
+
+        function getBrushSize(width) {
+            return Math.min(Math.max(60, width * 0.1), 150);
+        }
+
+        function scratch(x, y) {
+            ctx.globalCompositeOperation = 'destination-out';
+            const rect = canvas.parentElement.getBoundingClientRect();
+            ctx.lineWidth = getBrushSize(rect.width);
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            ctx.beginPath();
+            ctx.moveTo(lastX, lastY);
+            ctx.lineTo(x, y);
+            ctx.stroke();
+
+            lastX = x;
+            lastY = y;
+        }
+
+        function redrawStrokes(width, height) {
+            if (strokes.length === 0) return;
+            
+            ctx.globalCompositeOperation = 'destination-out';
+            ctx.lineWidth = getBrushSize(width);
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            strokes.forEach(stroke => {
+                if (stroke.length === 0) return;
+                ctx.beginPath();
+                ctx.moveTo(stroke[0].rx * width, stroke[0].ry * height);
+                for (let i = 1; i < stroke.length; i++) {
+                    ctx.lineTo(stroke[i].rx * width, stroke[i].ry * height);
+                }
+                ctx.stroke();
+            });
+        }
+
+        function startDrawing(e) {
+            isDrawing = true;
+            const pos = getMousePos(e);
+            lastX = pos.x;
+            lastY = pos.y;
+            currentStroke = [];
+            savePoint(pos.x, pos.y);
+            scratch(pos.x, pos.y);
+        }
+
+        function draw(e) {
+            if (!isDrawing) return;
+            const pos = getMousePos(e);
+            savePoint(pos.x, pos.y);
+            scratch(pos.x, pos.y);
+        }
+
+        function stopDrawing() {
+            if (isDrawing && currentStroke.length > 0) {
+                strokes.push(currentStroke);
+                currentStroke = [];
+            }
+            isDrawing = false;
+        }
+
+        canvas.addEventListener('mousedown', startDrawing);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseup', stopDrawing);
+        canvas.addEventListener('mouseout', stopDrawing);
+
+        canvas.addEventListener('touchstart', (e) => {
+            if(e.cancelable) e.preventDefault();
+            startDrawing(e);
+        }, { passive: false });
+        canvas.addEventListener('touchmove', (e) => {
+            if(e.cancelable) e.preventDefault();
+            draw(e);
+        }, { passive: false });
+        canvas.addEventListener('touchend', stopDrawing);
+
+        window.addEventListener('load', initCanvas);
+
+        let resizeTimer;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+                initCanvas();
+            }, 200);
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,378 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>hihaho 縦動画フローティングウィジェット</title>
+  <style>
+    /* =========================
+       基本（デモ用）
+    ========================= */
+    body{
+      margin:0;
+      font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+      min-height:200vh;
+      background:#f6f7f8;
+    }
+    .demo-page{
+      padding:24px;
+      max-width: 900px;
+      margin:0 auto;
+    }
+    .demo-card{
+      background:#fff;
+      border-radius:16px;
+      padding:20px;
+      box-shadow: 0 8px 20px rgba(0,0,0,.08);
+    }
+
+    /* =========================
+       1) 左下固定：ミニ縦動画（inner-video-wrapper相当）
+    ========================= */
+    .hihaho-float{
+      position: fixed;
+      left: 16px;
+      bottom: 16px;
+      z-index: 9999;
+      /* "閉じた"時のアニメ準備 */
+      transform: translateZ(0);
+    }
+
+    /* ミニラッパー */
+    .hihaho-mini-wrapper{
+      position: relative;
+    }
+
+    /* ミニ本体（クリック面） */
+    .hihaho-mini-surface{
+      all: unset;
+      cursor: pointer;
+      display:block;
+      position: relative;
+    }
+
+    /* 9:16 枠 */
+    .hihaho-mini-frame{
+      width: 190px;                 /* ← ここでミニサイズ調整 */
+      aspect-ratio: 9 / 16;
+      border-radius: 14px;
+      overflow: hidden;
+      background: #000;
+      position: relative;
+      box-shadow: 0 10px 26px rgba(0,0,0,.20);
+    }
+
+    /* サムネ（任意。無ければ黒背景のまま） */
+    .hihaho-mini-thumb{
+      width:100%;
+      height:100%;
+      object-fit: cover;
+      display:block;
+      transform: scale(1.02); /* 端の隙間防止 */
+      opacity: .95;
+    }
+
+    /* ホバー時オーバーレイ（PC向け） */
+    .hihaho-mini-hover{
+      position:absolute;
+      inset:0;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background: rgba(0,0,0,.45);
+      color:#fff;
+      font-weight: 700;
+      letter-spacing: .02em;
+      opacity:0;
+      transition: opacity .15s ease;
+      user-select:none;
+    }
+    @media (hover:hover){
+      .hihaho-mini-surface:hover .hihaho-mini-hover{ opacity:1; }
+    }
+
+    /* ミニ上の×（閉じる）と ∧（折りたたみ） */
+    .hihaho-mini-close,
+    .hihaho-mini-collapse{
+      position:absolute;
+      top: -10px;
+      width: 44px;
+      height: 44px;
+      border-radius: 999px;
+      border: 0;
+      cursor: pointer;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      box-shadow: 0 10px 20px rgba(0,0,0,.18);
+      background: rgba(0,0,0,.75);
+      color: #fff;
+      font-size: 20px;
+      line-height: 1;
+      z-index: 2;
+    }
+    .hihaho-mini-close{ right: -10px; }
+    .hihaho-mini-collapse{ left: -10px; font-size: 18px; }
+
+    /* 折りたたみ状態（小さくして端に寄せる） */
+    .hihaho-float[data-state="collapsed"]{
+      left: 8px;
+      bottom: 8px;
+    }
+    .hihaho-float[data-state="collapsed"] .hihaho-mini-frame{
+      width: 92px;
+      border-radius: 16px;
+    }
+    .hihaho-float[data-state="collapsed"] .hihaho-mini-hover{
+      display:none;
+    }
+
+    /* =========================
+       2) モーダル（クリックで起動）
+    ========================= */
+    .hihaho-modal{
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      display: none;
+    }
+    .hihaho-modal[aria-hidden="false"]{ display:block; }
+
+    .hihaho-backdrop{
+      position:absolute;
+      inset:0;
+      background: rgba(0,0,0,.55);
+      backdrop-filter: blur(2px);
+    }
+
+    .hihaho-modal-card{
+      position: relative;
+      width: min(440px, 92vw);
+      margin: 3vh auto;
+      background: #0f0f10;
+      border-radius: 18px;
+      padding: 12px;
+      box-shadow: 0 20px 70px rgba(0,0,0,.45);
+    }
+
+    /* スマホ縦向き対応 */
+    @media (max-width: 600px) and (orientation: portrait) {
+      .hihaho-modal-card{
+        margin: 2vh auto 3vh;
+        width: 85vw;
+        max-height: 94vh;
+      }
+    }
+
+    /* 右上× と ？ */
+    .hihaho-modal-close,
+    .hihaho-modal-help{
+      position: absolute;
+      top: -14px;
+      width: 48px;
+      height: 48px;
+      border-radius: 999px;
+      border: 0;
+      cursor: pointer;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background: rgba(255,255,255,.92);
+      color: #111;
+      font-size: 22px;
+      box-shadow: 0 14px 30px rgba(0,0,0,.35);
+    }
+    .hihaho-modal-close{ right: -14px; }
+    .hihaho-modal-help{ right: 44px; font-size: 20px; }
+
+    /* 動画枠（9:16） */
+    .hihaho-modal-frame{
+      aspect-ratio: 9 / 16;
+      border-radius: 14px;
+      overflow: hidden;
+      background: #000;
+    }
+    .hihaho-modal-frame iframe{
+      width: 100%;
+      height: 100%;
+      border: 0;
+      display:block;
+    }
+
+    /* ヘルプ（簡易） */
+    .hihaho-help-toast{
+      margin-top: 10px;
+      color: rgba(255,255,255,.88);
+      font-size: 13px;
+      line-height: 1.5;
+      display:none;
+    }
+    .hihaho-help-toast[data-show="true"]{ display:block; }
+
+    /* 省エネ：動作が苦手な環境向け */
+    @media (prefers-reduced-motion: reduce){
+      .hihaho-mini-hover{ transition:none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="demo-page">
+    <div class="demo-card">
+      <h1 style="margin:0 0 10px;">デモページ</h1>
+      <p style="margin:0; color:#444;">
+        左下の縦ミニ動画をクリックするとモーダルで hihaho を再生します。<br>
+        Escキー・背景クリック・×で閉じられます。<br>
+        ∧ボタンで折りたたみ、×ボタンでミニ表示自体を消します。
+      </p>
+    </div>
+  </div>
+
+  <!-- =========================
+       ミニウィジェット（左下固定）
+       ★ hihaho URL は data-hihaho-src に入れます
+       例: data-hihaho-src="https://....."
+  ========================= -->
+  <div class="hihaho-float" id="hihahoWidget" data-state="open">
+    <!-- tig-modal-open 相当 -->
+    <div class="hihaho-mini-wrapper">
+      <button class="hihaho-mini-collapse" id="miniCollapse" type="button" aria-label="折りたたみ">∧</button>
+      <button class="hihaho-mini-close" id="miniClose" type="button" aria-label="閉じる">×</button>
+      
+      <button
+        class="hihaho-mini-surface"
+        id="miniOpen"
+        type="button"
+        data-hihaho-src="https://player.hihaho.com/embed/91e0ce94-9d29-4d39-8811-e3e57cde1b83"
+        data-thumb-src="https://images.unsplash.com/photo-1525351484163-7529414344d8?q=80&w=800&auto=format&fit=crop"
+      >
+        <div class="hihaho-mini-frame">
+          <img class="hihaho-mini-thumb" id="miniThumb" alt="thumbnail">
+          <div class="hihaho-mini-hover"><span>拡大して表示</span></div>
+        </div>
+      </button>
+    </div>
+  </div>
+
+  <!-- =========================
+       モーダル
+  ========================= -->
+  <div class="hihaho-modal" id="hihahoModal" aria-hidden="true">
+    <div class="hihaho-backdrop" id="modalBackdrop"></div>
+
+    <div class="hihaho-modal-card" role="dialog" aria-modal="true" aria-label="hihaho video modal">
+      <button class="hihaho-modal-close" id="modalClose" type="button" aria-label="閉じる">×</button>
+      
+
+      <!-- tig-creator-embed 相当（クリック時に iframe を生成してここへ挿入） -->
+      <div class="hihaho-modal-frame" id="modalFrame"></div>
+
+      <div class="hihaho-help-toast" id="helpToast" data-show="false">
+        ・背景クリック / Esc / 右上×で閉じられます。<br>
+        ・閉じると再生停止のため iframe をDOMから削除します。<br>
+        ・ミニは ∧ で折りたたみ、×で非表示にできます。
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (() => {
+      const widget = document.getElementById("hihahoWidget");
+      const miniOpen = document.getElementById("miniOpen");
+      const miniThumb = document.getElementById("miniThumb");
+      const miniClose = document.getElementById("miniClose");
+      const miniCollapse = document.getElementById("miniCollapse");
+
+      const modal = document.getElementById("hihahoModal");
+      const modalFrame = document.getElementById("modalFrame");
+      const modalBackdrop = document.getElementById("modalBackdrop");
+      const modalClose = document.getElementById("modalClose");
+      const modalHelp = document.getElementById("modalHelp"); // この要素はHTMLに存在しない
+      const helpToast = document.getElementById("helpToast");
+
+      // 1) サムネ差し込み（任意）
+      const thumbSrc = miniOpen.dataset.thumbSrc;
+      if (thumbSrc) miniThumb.src = thumbSrc;
+
+      // 2) ★ここが「hihaho URL の差し込み場所」
+      //    miniOpen の data-hihaho-src に、hihaho の埋め込みURL（iframe用）を設定してください。
+      //    例）data-hihaho-src="https://player.hihaho.com/embed/0f955f79-824e-4a44-9269-4509e4c09ca1"
+      function getHihahoSrc() {
+        return (miniOpen.dataset.hihahoSrc || "https://player.hihaho.com/embed/91e0ce94-9d29-4d39-8811-e3e57cde1b83").trim();
+      }
+
+      // iframeを生成してモーダルへ挿入（遅延ロード）
+      function openModalWithIframe(src) {
+        if (!src) {
+          alert("hihaho URL が未設定です。data-hihaho-src を差し替えてください。");
+          return;
+        }
+
+        // 既存iframeを削除してから生成（確実に停止・再初期化）
+        modalFrame.innerHTML = "";
+
+        // もし「UIを消したい」などクエリ付与が必要ならここで行う
+        // const url = new URL(src);
+        // url.searchParams.set("kiosk", "true"); // ← hihaho側に同等パラメータがある場合
+        // src = url.toString();
+
+        const iframe = document.createElement("iframe");
+        iframe.src = src;
+        iframe.allow = "autoplay; fullscreen; clipboard-write";
+        iframe.allowFullscreen = true;
+
+        modalFrame.appendChild(iframe);
+
+        modal.setAttribute("aria-hidden", "false");
+        document.documentElement.style.overflow = "hidden";
+      }
+
+      function closeModal() {
+        modal.setAttribute("aria-hidden", "true");
+        modalFrame.innerHTML = ""; // 停止
+        document.documentElement.style.overflow = "";
+
+        // helpを戻す
+        helpToast.dataset.show = "false";
+      }
+
+      // ミニクリックで開く
+      miniOpen.addEventListener("click", () => openModalWithIframe(getHihahoSrc()));
+
+      // モーダル閉じる
+      modalClose.addEventListener("click", closeModal);
+      modalBackdrop.addEventListener("click", closeModal);
+
+      // ESCで閉じる
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && modal.getAttribute("aria-hidden") === "false") {
+          closeModal();
+        }
+      });
+
+      // ヘルプ（?）
+      if (modalHelp) {
+        modalHelp.addEventListener("click", () => {
+          helpToast.dataset.show = (helpToast.dataset.show === "true") ? "false" : "true";
+        });
+      }
+
+      // ミニを完全に消す（×）
+      miniClose.addEventListener("click", (e) => {
+        e.stopPropagation(); // モーダルが開かないように
+        closeModal();
+        widget.remove();
+      });
+
+      // ミニ折りたたみ（∧）
+      miniCollapse.addEventListener("click", (e) => {
+        e.stopPropagation(); // モーダルが開かないように
+        const cur = widget.dataset.state;
+        widget.dataset.state = (cur === "collapsed") ? "open" : "collapsed";
+      });
+
+      // 初期チェック
+      // console.log("hihaho src:", getHihahoSrc());
+    })();
+  </script>
+</body>
+</html>

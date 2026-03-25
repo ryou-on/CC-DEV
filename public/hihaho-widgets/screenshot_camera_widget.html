@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Screen Capture Widget</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background: transparent !important;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        /* Viewfinder Box */
+        #viewfinder {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            border: 2px solid #00ffcc;
+            box-shadow: 0 0 20px rgba(0, 255, 204, 0.5), inset 0 0 20px rgba(0, 255, 204, 0.2);
+            z-index: 10;
+            pointer-events: none;
+            display: none;
+            transition: width 0.2s, height 0.2s;
+        }
+
+        #viewfinder::after {
+            content: 'CAPTURE ZONE';
+            position: absolute;
+            top: -25px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #00ffcc;
+            font-weight: bold;
+            font-size: 12px;
+            background: rgba(0,0,0,0.8);
+            padding: 2px 8px;
+            border-radius: 4px;
+            white-space: nowrap;
+        }
+
+        /* Glassmorphism Control Panel */
+        #controls {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            padding: 16px;
+            z-index: 50;
+            color: white;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            width: 280px;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        input[type="number"] {
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: #fff;
+            padding: 4px 8px;
+            border-radius: 4px;
+            width: 70px;
+            text-align: center;
+        }
+
+        button {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            border: none;
+            padding: 8px 12px;
+            border-radius: 6px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.1s, box-shadow 0.2s;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+        }
+
+        button:hover {
+            background: linear-gradient(135deg, #60a5fa, #3b82f6);
+            box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        button.secondary {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        button.secondary:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        /* Flash Effect */
+        #flash {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: white;
+            opacity: 0;
+            pointer-events: none;
+            z-index: 100;
+            transition: opacity 0.1s ease-out;
+        }
+
+        /* Gallery Modal */
+        #gallery-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(5px);
+            z-index: 60;
+            display: none;
+            flex-direction: column;
+            padding: 20px;
+        }
+
+        #gallery-grid {
+            flex: 1;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+            gap: 16px;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .gallery-item {
+            position: relative;
+            border: 2px solid #334155;
+            border-radius: 8px;
+            overflow: hidden;
+            background: #1e293b;
+        }
+
+        .gallery-item img {
+            width: 100%;
+            height: 100px;
+            object-fit: cover;
+            display: block;
+        }
+
+        .delete-btn {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            background: red;
+            color: white;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            cursor: pointer;
+        }
+
+        /* Notification */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(16, 185, 129, 0.9);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            opacity: 0;
+            transition: opacity 0.3s;
+            pointer-events: none;
+            z-index: 70;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+        }
+
+        /* Helper Text */
+        .helper-text {
+            font-size: 0.75rem;
+            color: #94a3b8;
+            margin-top: 4px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Hidden Video Element for Stream Capture -->
+    <video id="captureStream" autoplay playsinline style="display:none;"></video>
+    <canvas id="processCanvas" style="display:none;"></canvas>
+
+    <!-- Visual Overlay Elements -->
+    <div id="viewfinder"></div>
+    <div id="flash"></div>
+    <div id="toast" class="toast">Screenshot Saved!</div>
+
+    <!-- Controls -->
+    <div id="controls">
+        <div class="flex justify-between items-center mb-2">
+            <h2 class="text-lg font-bold text-cyan-400 drop-shadow-md">Screen Cam</h2>
+            <div class="w-2 h-2 rounded-full bg-red-500" id="statusDot" title="Not Active"></div>
+        </div>
+
+        <div class="text-xs text-gray-300 mb-2">
+            1. Click "Start" & select tab/screen.<br>
+            2. Set size.<br>
+            3. Press <b class="text-white">ENTER</b> to capture.
+        </div>
+
+        <button id="btnStart" onclick="startCapture()">Start Camera</button>
+
+        <div class="input-group justify-between">
+            <div class="flex flex-col">
+                <label class="text-[10px] uppercase text-gray-400">Width</label>
+                <input type="number" id="uWidth" value="640" onchange="updateViewfinder()">
+            </div>
+            <div class="text-gray-500 pt-4">x</div>
+            <div class="flex flex-col">
+                <label class="text-[10px] uppercase text-gray-400">Height</label>
+                <input type="number" id="uHeight" value="360" onchange="updateViewfinder()">
+            </div>
+        </div>
+
+        <div class="flex gap-2 mt-2">
+            <button class="secondary flex-1" onclick="openGallery()">Gallery (<span id="count">0</span>)</button>
+        </div>
+    </div>
+
+    <!-- Gallery Modal -->
+    <div id="gallery-modal">
+        <div class="flex justify-between items-center border-b border-gray-700 pb-4">
+            <h2 class="text-xl font-bold text-white">Saved Screenshots</h2>
+            <div class="flex gap-2">
+                <button onclick="downloadAll()" class="bg-green-600 hover:bg-green-500">Download All</button>
+                <button onclick="closeGallery()" class="secondary">Close</button>
+            </div>
+        </div>
+        <div id="gallery-grid">
+            <!-- Items will be injected here -->
+        </div>
+        <div class="pt-2 text-center text-gray-400 text-xs">
+            Images are stored in browser LocalStorage.
+        </div>
+    </div>
+
+    <script>
+        const video = document.getElementById('captureStream');
+        const canvas = document.getElementById('processCanvas');
+        const viewfinder = document.getElementById('viewfinder');
+        const uWidth = document.getElementById('uWidth');
+        const uHeight = document.getElementById('uHeight');
+        const statusDot = document.getElementById('statusDot');
+        const btnStart = document.getElementById('btnStart');
+        const countSpan = document.getElementById('count');
+        const galleryModal = document.getElementById('gallery-modal');
+        const galleryGrid = document.getElementById('gallery-grid');
+        
+        let streamActive = false;
+        let savedImages = [];
+
+        // Load initial data
+        try {
+            const stored = localStorage.getItem('screen_captures');
+            if (stored) savedImages = JSON.parse(stored);
+            updateCount();
+        } catch (e) {
+            console.error("LocalStorage error", e);
+        }
+
+        // Start Screen Share
+        async function startCapture() {
+            try {
+                const stream = await navigator.mediaDevices.getDisplayMedia({
+                    video: { cursor: "always" },
+                    audio: false
+                });
+                video.srcObject = stream;
+                video.play();
+                
+                streamActive = true;
+                statusDot.classList.remove('bg-red-500');
+                statusDot.classList.add('bg-green-500', 'shadow-[0_0_8px_#10b981]');
+                btnStart.innerText = "Active";
+                btnStart.disabled = true;
+                
+                viewfinder.style.display = 'block';
+                updateViewfinder();
+
+                // Listen for Enter key
+                document.addEventListener('keydown', handleKeydown);
+
+                // Handle stream stop (user clicks 'Stop sharing' in browser UI)
+                stream.getVideoTracks()[0].onended = () => {
+                    stopCapture();
+                };
+            } catch (err) {
+                console.error("Error: " + err);
+                alert("Could not start screen capture. Please allow permissions.");
+            }
+        }
+
+        function stopCapture() {
+            streamActive = false;
+            statusDot.classList.remove('bg-green-500', 'shadow-[0_0_8px_#10b981]');
+            statusDot.classList.add('bg-red-500');
+            btnStart.innerText = "Start Camera";
+            btnStart.disabled = false;
+            viewfinder.style.display = 'none';
+            document.removeEventListener('keydown', handleKeydown);
+        }
+
+        function updateViewfinder() {
+            const w = parseInt(uWidth.value) || 300;
+            const h = parseInt(uHeight.value) || 200;
+            viewfinder.style.width = w + 'px';
+            viewfinder.style.height = h + 'px';
+        }
+
+        function handleKeydown(e) {
+            if (e.key === 'Enter' && streamActive) {
+                takeScreenshot();
+            }
+        }
+
+        function takeScreenshot() {
+            if (!streamActive) return;
+
+            // Visual feedback
+            const flash = document.getElementById('flash');
+            flash.style.opacity = 0.8;
+            setTimeout(() => flash.style.opacity = 0, 100);
+
+            const w = parseInt(uWidth.value) || video.videoWidth;
+            const h = parseInt(uHeight.value) || video.videoHeight;
+
+            // Set canvas to output size
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+
+            // Logic: We want to capture the CENTER of the video stream matching the viewfinder aspect
+            // Since we cannot know exact coordinates of the viewfinder relative to the video content 
+            // (because the video content is the whole screen/tab), we assume the user centers the subject.
+            // We will crop the center of the video stream to the requested WxH.
+            
+            const sourceX = (video.videoWidth - w) / 2;
+            const sourceY = (video.videoHeight - h) / 2;
+
+            ctx.drawImage(video, sourceX, sourceY, w, h, 0, 0, w, h);
+
+            try {
+                // Compress slightly to save LocalStorage space (0.8 quality jpeg)
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+                const timestamp = new Date().toLocaleString();
+                
+                savedImages.push({ id: Date.now(), url: dataUrl, time: timestamp });
+                saveToStorage();
+                showToast();
+                updateCount();
+            } catch (e) {
+                alert("Storage full! Delete some images.");
+            }
+        }
+
+        function saveToStorage() {
+            try {
+                localStorage.setItem('screen_captures', JSON.stringify(savedImages));
+            } catch(e) {
+                console.error("Quota exceeded");
+            }
+        }
+
+        function showToast() {
+            const toast = document.getElementById('toast');
+            toast.style.opacity = 1;
+            setTimeout(() => toast.style.opacity = 0, 2000);
+        }
+
+        function updateCount() {
+            countSpan.innerText = savedImages.length;
+        }
+
+        function openGallery() {
+            galleryModal.style.display = 'flex';
+            renderGallery();
+            // Pause event listener to prevent accidental captures while typing/viewing
+            document.removeEventListener('keydown', handleKeydown);
+        }
+
+        function closeGallery() {
+            galleryModal.style.display = 'none';
+            if (streamActive) document.addEventListener('keydown', handleKeydown);
+        }
+
+        function renderGallery() {
+            galleryGrid.innerHTML = '';
+            savedImages.forEach((img, index) => {
+                const div = document.createElement('div');
+                div.className = 'gallery-item';
+                div.innerHTML = `
+                    <img src="${img.url}" />
+                    <div class="p-2 text-[10px] text-gray-400 truncate">${img.time}</div>
+                    <div class="delete-btn" onclick="deleteImage(${index})">&times;</div>
+                `;
+                galleryGrid.appendChild(div);
+            });
+        }
+
+        function deleteImage(index) {
+            savedImages.splice(index, 1);
+            saveToStorage();
+            renderGallery();
+            updateCount();
+        }
+
+        function downloadAll() {
+            if (savedImages.length === 0) return;
+            
+            // Sequential download with delay to prevent browser blocking
+            let i = 0;
+            function downloadNext() {
+                if (i >= savedImages.length) return;
+                
+                const link = document.createElement('a');
+                link.href = savedImages[i].url;
+                link.download = `screenshot_${savedImages[i].id}.jpg`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                i++;
+                setTimeout(downloadNext, 300);
+            }
+            downloadNext();
+        }
+    </script>
+</body>
+</html>

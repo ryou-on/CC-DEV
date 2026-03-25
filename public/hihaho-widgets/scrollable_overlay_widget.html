@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ICD-11 Widget - Scrollable Loading State</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* Core transparency and reset */
+        body, html {
+            background-color: transparent !important;
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            pointer-events: none;
+        }
+
+        /* 
+           Widget Container 
+           - Inherits base positioning and animation logic.
+        */
+        #widget-root {
+            position: absolute;
+            top: 50%;
+            right: 0;
+            transform: translateY(-50%) translateX(calc(100% - 48px));
+            display: flex;
+            flex-direction: row;
+            align-items: stretch;
+            pointer-events: auto;
+            z-index: 9999;
+            
+            /* Dimensions */
+            height: 80vh;
+            width: 600px;
+            max-width: 90vw; 
+            max-height: 90vh;
+
+            /* Smooth Animation */
+            transition: 
+                transform 0.4s cubic-bezier(0.25, 1, 0.5, 1),
+                width 0.4s cubic-bezier(0.25, 1, 0.5, 1),
+                height 0.4s cubic-bezier(0.25, 1, 0.5, 1);
+        }
+
+        /* EXPANDED STATE */
+        #widget-root.expanded {
+            width: 96vw;
+            height: 96vh;
+            max-width: 1600px;
+            max-height: none;
+        }
+
+        /* Hover Interaction */
+        #widget-root:hover, #widget-root.active {
+            transform: translateY(-50%) translateX(0);
+        }
+
+        /* The Tab Handle */
+        .tab-handle {
+            width: 48px;
+            background: linear-gradient(180deg, #005c87 0%, #0093d5 100%);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-right: none;
+            box-shadow: -4px 0 15px rgba(0, 0, 0, 0.3);
+            border-radius: 12px 0 0 12px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: white;
+            position: relative;
+            z-index: 10001;
+            overflow: hidden;
+            flex-shrink: 0;
+        }
+
+        .vertical-text {
+            writing-mode: vertical-rl;
+            text-orientation: mixed;
+            letter-spacing: 0.15em;
+            font-weight: 700;
+            font-size: 0.85rem;
+            margin-top: 1rem;
+            text-transform: uppercase;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+        }
+
+        /* Content Panel - Glassmorphism */
+        .content-panel {
+            flex: 1;
+            background: rgba(15, 23, 42, 0.95);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-left: none;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+            border-radius: 0 0 0 12px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        /* 
+           SCROLLABLE CONTENT AREA
+           Crucial for the requirement "Scrollable during loading".
+           We set overflow-y: auto here to allow scrolling of the Skeleton or Iframe wrapper.
+        */
+        .scrollable-area {
+            flex: 1;
+            position: relative;
+            width: 100%;
+            height: 100%;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            background: #fff;
+        }
+
+        /* Custom Scrollbar Styling */
+        .scrollable-area::-webkit-scrollbar {
+            width: 8px;
+        }
+        .scrollable-area::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.05);
+        }
+        .scrollable-area::-webkit-scrollbar-thumb {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 4px;
+        }
+        .scrollable-area::-webkit-scrollbar-thumb:hover {
+            background: rgba(0, 0, 0, 0.4);
+        }
+
+        /* Loading Skeleton Styles */
+        .skeleton-loader {
+            padding: 1.5rem;
+            width: 100%;
+            box-sizing: border-box;
+            /* Ensure it's tall enough to demonstrate scrolling */
+            min-height: 120%; 
+        }
+        .sk-line {
+            height: 1rem;
+            background: #e2e8f0;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+            animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        .sk-block {
+            height: 8rem;
+            background: #f1f5f9;
+            border-radius: 8px;
+            margin-bottom: 1.5rem;
+            animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .5; }
+        }
+
+        /* Iframe Transition */
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            background: white;
+            display: block;
+            /* Initially hidden to show scrollable skeleton */
+            opacity: 0; 
+            transition: opacity 0.5s ease-in-out;
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none; /* Disable interaction until loaded */
+        }
+
+        iframe.loaded {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        /* Helper Classes */
+        .btn-hint:hover {
+            background-color: rgba(255,255,255,0.1);
+        }
+
+        #widget-root:hover .tab-icon {
+            animation: pulse-custom 2s infinite;
+        }
+        @keyframes pulse-custom {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.2); opacity: 0.8; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="widget-root" onmouseleave="resetState()">
+        
+        <!-- Tab Handle -->
+        <div class="tab-handle" onclick="toggleMobile()" title="Hover to slide out">
+            <i class="fa-solid fa-chevron-left text-white/50 mb-4 animate-bounce"></i>
+            <i class="fa-solid fa-book-medical text-xl tab-icon"></i>
+            <span class="vertical-text">ICD-11</span>
+        </div>
+
+        <!-- Content Panel -->
+        <div class="content-panel">
+            <!-- Header -->
+            <div class="flex justify-between items-center p-3 border-b border-white/10 bg-white/5 shrink-0 z-20 backdrop-blur-sm">
+                <div class="flex items-center gap-3 overflow-hidden">
+                    <div class="bg-blue-500/20 p-1.5 rounded shrink-0">
+                        <i class="fa-solid fa-stethoscope text-blue-400"></i>
+                    </div>
+                    <div class="flex flex-col overflow-hidden">
+                        <span class="font-bold text-white tracking-wide text-sm whitespace-nowrap">Quick Browser</span>
+                        <span class="text-[10px] text-white/50 uppercase tracking-wider truncate">Scrollable Container</span>
+                    </div>
+                </div>
+                
+                <!-- Controls -->
+                <div class="flex items-center gap-2">
+                    <button onclick="toggleExpand()" class="btn-hint text-xs text-blue-200 hover:text-white transition-colors flex items-center justify-center w-8 h-8 rounded border border-blue-500/30 bg-blue-900/20" title="Toggle Fullscreen">
+                        <i id="expand-icon" class="fa-solid fa-expand"></i>
+                    </button>
+                    <a href="https://icd.who.int/en/" target="_blank" class="btn-hint text-xs text-blue-300 hover:text-white transition-colors flex items-center gap-1 bg-blue-900/30 px-3 py-1.5 rounded border border-blue-500/30 whitespace-nowrap">
+                        <i class="fa-solid fa-arrow-up-right-from-square"></i> Open
+                    </a>
+                </div>
+            </div>
+
+            <!-- Main Scrollable Area -->
+            <div class="scrollable-area">
+                
+                <!-- 1. Skeleton Loader (Visible during load) -->
+                <!-- Provides immediate scrollability by having content taller than container -->
+                <div id="skeleton-container" class="skeleton-loader">
+                    <div class="flex items-center gap-3 mb-6">
+                        <div class="w-10 h-10 rounded-full bg-slate-200 animate-pulse"></div>
+                        <div class="flex-1 space-y-2">
+                            <div class="sk-line w-1/3"></div>
+                            <div class="sk-line w-1/4"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Fake Content Blocks to force scroll -->
+                    <div class="sk-line w-3/4"></div>
+                    <div class="sk-block"></div>
+                    <div class="sk-line w-1/2"></div>
+                    <div class="sk-line w-5/6"></div>
+                    <div class="sk-block"></div>
+                    <div class="sk-line w-2/3"></div>
+                    <div class="sk-line w-full"></div>
+                    <div class="sk-block"></div>
+                    
+                    <div class="text-center text-slate-400 text-sm mt-8 animate-pulse">
+                        <i class="fa-solid fa-circle-notch fa-spin mr-2"></i> Loading WHO Database...
+                    </div>
+                </div>
+
+                <!-- 2. Iframe (Overlays skeleton when loaded) -->
+                <!-- Using min-height: 100% to ensure it fills the scrollable area -->
+                <iframe id="content-iframe" src="https://icd.who.int/en/" loading="lazy" title="ICD-11 Browser"></iframe>
+                
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const widget = document.getElementById('widget-root');
+        const expandIcon = document.getElementById('expand-icon');
+        const iframe = document.getElementById('content-iframe');
+        const skeleton = document.getElementById('skeleton-container');
+        let isExpanded = false;
+
+        // Handle Iframe Load State
+        iframe.onload = function() {
+            // Add delay to show off the skeleton scroll capability (simulating network lag)
+            setTimeout(() => {
+                iframe.classList.add('loaded');
+                // Optionally hide skeleton to free DOM weight, but keeping it is fine for z-index layering
+                // skeleton.style.display = 'none'; 
+            }, 1500);
+        };
+
+        // Toggle Expanded View
+        function toggleExpand() {
+            isExpanded = !isExpanded;
+            
+            if (isExpanded) {
+                widget.classList.add('expanded');
+                expandIcon.classList.remove('fa-expand');
+                expandIcon.classList.add('fa-compress');
+                widget.classList.add('active');
+            } else {
+                widget.classList.remove('expanded');
+                expandIcon.classList.remove('fa-compress');
+                expandIcon.classList.add('fa-expand');
+            }
+        }
+
+        // Mobile Support
+        function toggleMobile() {
+            widget.classList.toggle('active');
+        }
+
+        // Reset on Mouse Leave
+        function resetState() {
+            if (!isExpanded) {
+                widget.classList.remove('active');
+            }
+        }
+    </script>
+</body>
+</html>

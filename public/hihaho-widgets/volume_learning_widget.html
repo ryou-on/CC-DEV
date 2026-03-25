@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Volume Learning Widget</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;800&display=swap" rel="stylesheet">
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      background: transparent !important;
+      font-family: 'M PLUS Rounded 1c', sans-serif;
+      overflow: hidden;
+    }
+
+    /* Glassmorphism Panel */
+    .glass-panel {
+      background: rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 16px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+    }
+
+    /* Text Styling for readability over video */
+    .text-shadow {
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
+    }
+    
+    .text-shadow-light {
+      text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+    }
+
+    /* 3D Scene Styling */
+    .scene {
+      perspective: 800px;
+      width: 100%;
+      height: 300px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .cube-wrapper {
+      position: relative;
+      transform-style: preserve-3d;
+      transform: rotateX(-20deg) rotateY(-30deg);
+      transition: transform 0.1s ease-out;
+    }
+
+    /* Cube Faces with Grid Pattern */
+    .face {
+      position: absolute;
+      background-color: rgba(255, 255, 255, 0.85);
+      border: 2px solid #333;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      opacity: 0.9;
+      box-shadow: inset 0 0 20px rgba(0,0,0,0.1);
+      /* Grid lines to represent unit blocks */
+      background-image: 
+        linear-gradient(#333 1px, transparent 1px),
+        linear-gradient(90deg, #333 1px, transparent 1px);
+      background-size: var(--unit-size) var(--unit-size);
+    }
+
+    /* Individual face transforms dependent on JS variables */
+    .front  { transform: translateZ(calc(var(--depth) * var(--unit-size) / 2)); width: calc(var(--width) * var(--unit-size)); height: calc(var(--height) * var(--unit-size)); }
+    .back   { transform: rotateY(180deg) translateZ(calc(var(--depth) * var(--unit-size) / 2)); width: calc(var(--width) * var(--unit-size)); height: calc(var(--height) * var(--unit-size)); }
+    .right  { transform: rotateY(90deg) translateZ(calc(var(--width) * var(--unit-size) / 2)); width: calc(var(--depth) * var(--unit-size)); height: calc(var(--height) * var(--unit-size)); }
+    .left   { transform: rotateY(-90deg) translateZ(calc(var(--width) * var(--unit-size) / 2)); width: calc(var(--depth) * var(--unit-size)); height: calc(var(--height) * var(--unit-size)); }
+    .top    { transform: rotateX(90deg) translateZ(calc(var(--height) * var(--unit-size) / 2)); width: calc(var(--width) * var(--unit-size)); height: calc(var(--depth) * var(--unit-size)); background-color: rgba(255, 235, 59, 0.9); }
+    .bottom { transform: rotateX(-90deg) translateZ(calc(var(--height) * var(--unit-size) / 2)); width: calc(var(--width) * var(--unit-size)); height: calc(var(--depth) * var(--unit-size)); }
+
+    /* Slider Styling */
+    input[type=range] {
+      -webkit-appearance: none;
+      width: 100%;
+      background: transparent;
+    }
+    input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      height: 20px;
+      width: 20px;
+      border-radius: 50%;
+      background: #fff;
+      cursor: pointer;
+      margin-top: -8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+    }
+    input[type=range]::-webkit-slider-runnable-track {
+      width: 100%;
+      height: 4px;
+      cursor: pointer;
+      border-radius: 2px;
+    }
+    /* Custom colors for sliders */
+    #range-w::-webkit-slider-runnable-track { background: #ef4444; }
+    #range-h::-webkit-slider-runnable-track { background: #22c55e; }
+    #range-d::-webkit-slider-runnable-track { background: #3b82f6; }
+
+    /* Responsive Adjustments */
+    :root {
+      --unit-size: 40px;
+    }
+    @media (max-width: 600px) {
+      :root {
+        --unit-size: 30px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Main Layout -->
+  <div class="flex flex-col h-full justify-between p-4">
+    
+    <!-- 3D Visualization Area -->
+    <div class="scene flex-grow pointer-events-none">
+      <div class="cube-wrapper" id="cube">
+        <div class="face front"></div>
+        <div class="face back"></div>
+        <div class="face right"></div>
+        <div class="face left"></div>
+        <div class="face top"></div>
+        <div class="face bottom"></div>
+      </div>
+    </div>
+
+    <!-- Controls & Stats HUD -->
+    <div class="glass-panel p-4 md:p-6 mx-auto w-full max-w-2xl transition-all">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+        
+        <!-- Controls -->
+        <div class="space-y-4">
+          <!-- Width Control -->
+          <div>
+            <div class="flex justify-between text-white font-bold text-shadow mb-1">
+              <span>よこ (幅)</span>
+              <span class="text-red-400" id="val-w">3 cm</span>
+            </div>
+            <input type="range" id="range-w" min="1" max="6" value="3" step="1">
+          </div>
+
+          <!-- Height Control -->
+          <div>
+            <div class="flex justify-between text-white font-bold text-shadow mb-1">
+              <span>たて (高さ)</span>
+              <span class="text-green-400" id="val-h">2 cm</span>
+            </div>
+            <input type="range" id="range-h" min="1" max="6" value="2" step="1">
+          </div>
+
+          <!-- Depth Control -->
+          <div>
+            <div class="flex justify-between text-white font-bold text-shadow mb-1">
+              <span>奥行き</span>
+              <span class="text-blue-400" id="val-d">2 cm</span>
+            </div>
+            <input type="range" id="range-d" min="1" max="6" value="2" step="1">
+          </div>
+        </div>
+
+        <!-- Formula & Result -->
+        <div class="text-center md:border-l md:border-white/20 md:pl-6">
+          <h2 class="text-xl text-white font-bold text-shadow mb-2">体積の求め方</h2>
+          <div class="bg-white/10 rounded-lg p-3 backdrop-blur-sm mb-3">
+            <p class="text-lg text-white font-mono font-bold">
+              <span class="text-red-400">よこ</span> × 
+              <span class="text-blue-400">奥</span> × 
+              <span class="text-green-400">たて</span>
+            </p>
+          </div>
+          <div class="flex items-center justify-center space-x-2 text-white font-bold">
+            <span class="text-2xl" id="calc-display">3 × 2 × 2</span>
+            <span class="text-2xl">=</span>
+            <span class="text-4xl text-yellow-300 text-shadow" id="result-vol">12</span>
+            <span class="text-xl">cm³</span>
+          </div>
+          <p class="text-sm text-gray-200 mt-2 text-shadow-light">
+            1cm³ のブロックが <span id="block-count" class="font-bold text-yellow-300">12</span> 個ぶん！
+          </p>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Variables
+    const root = document.documentElement;
+    const cube = document.getElementById('cube');
+    
+    // Inputs
+    const rangeW = document.getElementById('range-w');
+    const rangeH = document.getElementById('range-h');
+    const rangeD = document.getElementById('range-d');
+
+    // Display Elements
+    const valW = document.getElementById('val-w');
+    const valH = document.getElementById('val-h');
+    const valD = document.getElementById('val-d');
+    const calcDisplay = document.getElementById('calc-display');
+    const resultVol = document.getElementById('result-vol');
+    const blockCount = document.getElementById('block-count');
+
+    // State
+    let state = {
+      w: 3,
+      h: 2,
+      d: 2
+    };
+
+    function update() {
+      // Get values
+      state.w = parseInt(rangeW.value);
+      state.h = parseInt(rangeH.value);
+      state.d = parseInt(rangeD.value);
+
+      // Update CSS Variables for Cube Size
+      root.style.setProperty('--width', state.w);
+      root.style.setProperty('--height', state.h);
+      root.style.setProperty('--depth', state.d);
+
+      // Update Text Display
+      valW.textContent = `${state.w} cm`;
+      valH.textContent = `${state.h} cm`;
+      valD.textContent = `${state.d} cm`;
+
+      const volume = state.w * state.h * state.d;
+      
+      // Animate numbers lightly by resetting content
+      calcDisplay.textContent = `${state.w} × ${state.d} × ${state.h}`;
+      resultVol.textContent = volume;
+      blockCount.textContent = volume;
+    }
+
+    // Event Listeners for Sliders
+    [rangeW, rangeH, rangeD].forEach(input => {
+      input.addEventListener('input', update);
+    });
+
+    // Auto-rotate cube slightly based on mouse movement for better 3D perception
+    document.addEventListener('mousemove', (e) => {
+      const x = (window.innerWidth / 2 - e.pageX) / 20;
+      const y = (window.innerHeight / 2 - e.pageY) / 20;
+      // Base rotation (-20, -30) + mouse offset
+      cube.style.transform = `rotateX(${-20 + y}deg) rotateY(${-30 - x}deg)`;
+    });
+
+    // Initialize
+    update();
+
+  </script>
+</body>
+</html>

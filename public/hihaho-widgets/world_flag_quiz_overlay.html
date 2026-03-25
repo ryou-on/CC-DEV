@@ -1,0 +1,372 @@
+DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>World Flag Quiz Overlay</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* Custom Animations & Base Styles */
+        body {
+            background-color: transparent !important;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .glass-panel {
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+        }
+
+        .text-glow {
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.5), 0 2px 4px rgba(0,0,0,0.9);
+        }
+
+        .btn-option {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .btn-option:hover {
+            transform: translateY(-2px);
+            background: rgba(255, 255, 255, 0.2);
+            box-shadow: 0 0 15px rgba(255, 255, 255, 0.3);
+        }
+
+        .btn-option:active {
+            transform: scale(0.98);
+        }
+
+        /* Feedback Animations */
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+        .shake-anim {
+            animation: shake 0.3s ease-in-out;
+        }
+
+        @keyframes pop {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+        .pop-anim {
+            animation: pop 0.2s ease-out;
+        }
+    </style>
+</head>
+<body class="h-screen w-screen overflow-hidden flex items-center justify-center">
+
+    <!-- Main Game Widget -->
+    <div id="game-container" class="glass-panel rounded-2xl p-6 w-[90%] max-w-md text-white transition-all duration-300 relative">
+        
+        <!-- Close Button (Simulated) -->
+        <button onclick="minimizeWidget()" class="absolute top-2 right-3 text-white/50 hover:text-white transition">
+            <i class="fa-solid fa-minus"></i>
+        </button>
+
+        <!-- Header: Score & Round -->
+        <div class="flex justify-between items-center mb-4 text-sm font-bold tracking-wider">
+            <div class="bg-black/40 px-3 py-1 rounded-full border border-white/10">
+                <i class="fa-solid fa-trophy text-yellow-400 mr-2"></i><span id="score-display">0</span>
+            </div>
+            <div class="bg-black/40 px-3 py-1 rounded-full border border-white/10">
+                <span id="round-display">1/10</span>
+            </div>
+        </div>
+
+        <!-- SCREENS -->
+        
+        <!-- 1. Start Screen -->
+        <div id="start-screen" class="text-center py-4">
+            <h1 class="text-3xl font-black mb-2 text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-400 text-glow filter drop-shadow-lg">
+                FLAG MASTER
+            </h1>
+            <p class="text-gray-300 mb-6 text-sm">世界の国旗クイズ - タイムキリング決定版</p>
+            <button onclick="startGame()" class="w-full py-3 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 font-bold text-lg hover:from-blue-500 hover:to-purple-500 shadow-lg shadow-blue-500/30 transition transform hover:scale-105">
+                GAME START <i class="fa-solid fa-play ml-2"></i>
+            </button>
+        </div>
+
+        <!-- 2. Gameplay Screen -->
+        <div id="game-screen" class="hidden flex flex-col items-center">
+            <!-- Flag Display -->
+            <div class="w-full aspect-video bg-black/30 rounded-lg mb-4 flex items-center justify-center overflow-hidden border-2 border-white/10 shadow-inner relative">
+                <div id="loading-spinner" class="absolute inset-0 flex items-center justify-center bg-black/60 z-10 hidden">
+                    <i class="fa-solid fa-circle-notch fa-spin text-2xl"></i>
+                </div>
+                <img id="flag-img" src="" alt="Flag" class="w-full h-full object-cover transition-opacity duration-300 opacity-0" onload="this.classList.remove('opacity-0')">
+            </div>
+
+            <!-- Timer Bar -->
+            <div class="w-full h-1 bg-gray-700 rounded-full mb-4 overflow-hidden">
+                <div id="timer-bar" class="h-full bg-green-400 w-full transition-all duration-1000 ease-linear"></div>
+            </div>
+
+            <!-- Options Grid -->
+            <div id="options-grid" class="grid grid-cols-2 gap-3 w-full">
+                <!-- Buttons injected by JS -->
+            </div>
+        </div>
+
+        <!-- 3. Result Screen -->
+        <div id="result-screen" class="hidden text-center py-4">
+            <h2 class="text-2xl font-bold mb-2">RESULT</h2>
+            <div class="text-5xl font-black mb-2 text-yellow-400 text-glow" id="final-score">0</div>
+            <p class="text-gray-300 mb-6" id="feedback-text">Good Job!</p>
+            <div class="flex gap-3">
+                <button onclick="restartGame()" class="flex-1 py-3 rounded-xl bg-white/10 hover:bg-white/20 border border-white/30 font-bold transition">
+                    <i class="fa-solid fa-rotate-right mr-1"></i> もう一度
+                </button>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // Game Data (Simplified list of countries)
+        const countries = [
+            { code: 'jp', name: '日本' },
+            { code: 'us', name: 'アメリカ' },
+            { code: 'gb', name: 'イギリス' },
+            { code: 'fr', name: 'フランス' },
+            { code: 'de', name: 'ドイツ' },
+            { code: 'it', name: 'イタリア' },
+            { code: 'ca', name: 'カナダ' },
+            { code: 'br', name: 'ブラジル' },
+            { code: 'kr', name: '韓国' },
+            { code: 'cn', name: '中国' },
+            { code: 'au', name: 'オーストラリア' },
+            { code: 'in', name: 'インド' },
+            { code: 'es', name: 'スペイン' },
+            { code: 'ru', name: 'ロシア' },
+            { code: 'mx', name: 'メキシコ' },
+            { code: 'id', name: 'インドネシア' },
+            { code: 'tr', name: 'トルコ' },
+            { code: 'sa', name: 'サウジアラビア' },
+            { code: 'za', name: '南アフリカ' },
+            { code: 'ar', name: 'アルゼンチン' },
+            { code: 'se', name: 'スウェーデン' },
+            { code: 'ch', name: 'スイス' },
+            { code: 'th', name: 'タイ' },
+            { code: 'vn', name: 'ベトナム' }
+        ];
+
+        let currentRound = 0;
+        let score = 0;
+        let maxRounds = 10;
+        let currentQuestion = null;
+        let timerInterval;
+        let timeLeft = 10;
+        let isAnswering = false;
+
+        // DOM Elements
+        const screens = {
+            start: document.getElementById('start-screen'),
+            game: document.getElementById('game-screen'),
+            result: document.getElementById('result-screen')
+        };
+        const ui = {
+            score: document.getElementById('score-display'),
+            round: document.getElementById('round-display'),
+            flag: document.getElementById('flag-img'),
+            options: document.getElementById('options-grid'),
+            timer: document.getElementById('timer-bar'),
+            finalScore: document.getElementById('final-score'),
+            feedback: document.getElementById('feedback-text'),
+            spinner: document.getElementById('loading-spinner')
+        };
+
+        function switchScreen(screenName) {
+            Object.values(screens).forEach(el => el.classList.add('hidden'));
+            screens[screenName].classList.remove('hidden');
+        }
+
+        function startGame() {
+            score = 0;
+            currentRound = 0;
+            updateStats();
+            switchScreen('game');
+            nextRound();
+        }
+
+        function updateStats() {
+            ui.score.innerText = score;
+            ui.round.innerText = `${currentRound}/${maxRounds}`;
+        }
+
+        function generateQuestion() {
+            // Pick correct answer
+            const correct = countries[Math.floor(Math.random() * countries.length)];
+            
+            // Pick 3 wrong answers
+            const wrongOptions = [];
+            while (wrongOptions.length < 3) {
+                const wrong = countries[Math.floor(Math.random() * countries.length)];
+                if (wrong.code !== correct.code && !wrongOptions.includes(wrong)) {
+                    wrongOptions.push(wrong);
+                }
+            }
+
+            // Shuffle options
+            const options = [correct, ...wrongOptions].sort(() => Math.random() - 0.5);
+
+            return { correct, options };
+        }
+
+        function nextRound() {
+            if (currentRound >= maxRounds) {
+                endGame();
+                return;
+            }
+
+            currentRound++;
+            updateStats();
+            isAnswering = false;
+            
+            // Loading state
+            ui.flag.classList.add('opacity-0');
+            ui.spinner.classList.remove('hidden');
+
+            currentQuestion = generateQuestion();
+
+            // Set Image
+            const imgUrl = `https://flagcdn.com/w640/${currentQuestion.correct.code}.png`;
+            
+            // Preload image handling
+            const imgLoader = new Image();
+            imgLoader.onload = () => {
+                ui.flag.src = imgUrl;
+                ui.spinner.classList.add('hidden');
+                // Trigger reflow/anim
+                setTimeout(() => ui.flag.classList.remove('opacity-0'), 50);
+                startTimer();
+            };
+            imgLoader.src = imgUrl;
+
+            renderOptions();
+        }
+
+        function renderOptions() {
+            ui.options.innerHTML = '';
+            currentQuestion.options.forEach(opt => {
+                const btn = document.createElement('button');
+                btn.className = 'btn-option bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg py-3 text-sm font-semibold truncate px-2';
+                btn.innerText = opt.name;
+                btn.onclick = () => checkAnswer(opt, btn);
+                ui.options.appendChild(btn);
+            });
+        }
+
+        function startTimer() {
+            clearInterval(timerInterval);
+            timeLeft = 100;
+            ui.timer.style.width = '100%';
+            ui.timer.classList.remove('bg-red-500');
+            ui.timer.classList.add('bg-green-400');
+
+            timerInterval = setInterval(() => {
+                timeLeft -= 1;
+                ui.timer.style.width = `${timeLeft}%`;
+                
+                if (timeLeft < 30) {
+                    ui.timer.classList.remove('bg-green-400');
+                    ui.timer.classList.add('bg-red-500');
+                }
+
+                if (timeLeft <= 0) {
+                    clearInterval(timerInterval);
+                    handleTimeUp();
+                }
+            }, 100); // 10 seconds total (100 * 100ms)
+        }
+
+        function checkAnswer(selected, btnElement) {
+            if (isAnswering) return;
+            isAnswering = true;
+            clearInterval(timerInterval);
+
+            const isCorrect = selected.code === currentQuestion.correct.code;
+
+            if (isCorrect) {
+                score += Math.ceil((timeLeft / 10) * 10) + 10; // Speed bonus
+                btnElement.classList.replace('bg-white/10', 'bg-green-500');
+                btnElement.classList.replace('border-white/20', 'border-green-400');
+                playSound('correct');
+            } else {
+                btnElement.classList.replace('bg-white/10', 'bg-red-500');
+                btnElement.classList.replace('border-white/20', 'border-red-400');
+                btnElement.classList.add('shake-anim');
+                
+                // Highlight correct one
+                const buttons = Array.from(ui.options.children);
+                const correctBtn = buttons.find(b => b.innerText === currentQuestion.correct.name);
+                if (correctBtn) {
+                    correctBtn.classList.replace('bg-white/10', 'bg-green-500/50');
+                }
+                playSound('wrong');
+            }
+
+            setTimeout(() => {
+                nextRound();
+            }, 1200);
+        }
+
+        function handleTimeUp() {
+            if (isAnswering) return;
+            isAnswering = true;
+            
+            // Highlight correct one
+            const buttons = Array.from(ui.options.children);
+            const correctBtn = buttons.find(b => b.innerText === currentQuestion.correct.name);
+            if (correctBtn) {
+                correctBtn.classList.replace('bg-white/10', 'bg-green-500/50');
+                correctBtn.classList.add('pop-anim');
+            }
+            
+            setTimeout(nextRound, 1500);
+        }
+
+        function endGame() {
+            switchScreen('result');
+            ui.finalScore.innerText = score;
+            
+            if (score > 150) ui.feedback.innerText = "国旗マスター！素晴らしい！ 🏆";
+            else if (score > 80) ui.feedback.innerText = "ナイスチャレンジ！ 👍";
+            else ui.feedback.innerText = "次はもっといける！ 💪";
+        }
+
+        function restartGame() {
+            startGame();
+        }
+
+        function minimizeWidget() {
+            const container = document.getElementById('game-container');
+            if (container.style.opacity === '0') {
+                container.style.opacity = '1';
+                container.style.pointerEvents = 'auto';
+            } else {
+                container.style.opacity = '0';
+                container.style.pointerEvents = 'none';
+                // Add a small trigger to reopen if needed, or just hide it per user request logic
+                // For this demo, we just fade it out to simulate 'closing'
+                setTimeout(() => {
+                   // Reset for demo purposes if clicked accidentally
+                   container.style.opacity = '1';
+                   container.style.pointerEvents = 'auto';
+                }, 2000);
+            }
+        }
+
+        // Dummy Sound Functions (Real audio would require assets)
+        function playSound(type) {
+            // Placeholder for audio logic
+        }
+
+    </script>
+</body>
+</html>

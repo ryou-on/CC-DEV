@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>面積学習オーバーレイ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background: transparent !important;
+            font-family: 'M PLUS Rounded 1c', sans-serif;
+            margin: 0;
+            overflow: hidden;
+            color: white;
+        }
+
+        /* Custom Range Slider Styling */
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 100%;
+            background: transparent;
+        }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 24px;
+            width: 24px;
+            border-radius: 50%;
+            background: #ffffff;
+            cursor: pointer;
+            margin-top: -10px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+        }
+
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 6px;
+            cursor: pointer;
+            border-radius: 3px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        }
+        
+        /* Color specific tracks */
+        #widthRange::-webkit-slider-runnable-track {
+            background: #22d3ee; /* Cyan */
+        }
+        #heightRange::-webkit-slider-runnable-track {
+            background: #f472b6; /* Pink */
+        }
+
+        /* Grid Pattern for the box */
+        .grid-pattern {
+            background-size: 20px 20px;
+            background-image:
+                linear-gradient(to right, rgba(255, 255, 255, 0.3) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.3) 1px, transparent 1px);
+            border: 2px solid rgba(255,255,255,0.8);
+            box-shadow: 0 0 15px rgba(255,255,255,0.2);
+            transition: width 0.3s cubic-bezier(0.25, 0.8, 0.25, 1), height 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+
+        .text-glow {
+            text-shadow: 0 2px 4px rgba(0,0,0,0.9);
+        }
+        
+        /* Counting animation highlight */
+        .pop-anim {
+            animation: pop 0.3s ease-out;
+        }
+        @keyframes pop {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.3); }
+            100% { transform: scale(1); }
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center h-screen w-screen pointer-events-none">
+
+    <!-- Main Widget Container -->
+    <div class="pointer-events-auto bg-slate-900/60 backdrop-blur-md border border-white/20 rounded-3xl p-6 w-[90%] max-w-lg shadow-2xl transform transition-all hover:scale-[1.01]">
+        
+        <!-- Header -->
+        <div class="text-center mb-4">
+            <h1 class="text-2xl font-black text-white text-glow tracking-widest">面積(めんせき)メーカー</h1>
+            <p class="text-xs text-gray-200 mt-1 opacity-90">スライダーをうごかして、しかくをつくろう！</p>
+        </div>
+
+        <!-- Visualization Area -->
+        <div class="relative w-full h-64 bg-black/30 rounded-xl mb-6 flex items-end justify-start overflow-hidden border border-white/10 p-4">
+            <!-- The Resizable Box -->
+            <div id="areaBox" class="grid-pattern bg-white/20 absolute bottom-4 left-4 rounded-sm">
+                <!-- Dynamic Grid Count overlay (optional simplified visual) -->
+                <div class="absolute inset-0 flex items-center justify-center">
+                    <span id="boxLabel" class="text-2xl font-bold text-white text-glow drop-shadow-md opacity-80"></span>
+                </div>
+            </div>
+            
+            <!-- Axis Labels -->
+            <div class="absolute bottom-1 left-4 w-full text-xs text-cyan-300 font-bold tracking-widest">よこ (Width)</div>
+            <div class="absolute bottom-4 left-1 h-full flex items-end">
+                <span class="text-xs text-pink-300 font-bold tracking-widest -rotate-90 origin-bottom-left translate-x-2">たて (Height)</span>
+            </div>
+        </div>
+
+        <!-- Controls -->
+        <div class="space-y-4 mb-6">
+            <!-- Width Control -->
+            <div class="flex items-center gap-3">
+                <span class="text-cyan-300 font-bold text-lg w-12 text-glow">よこ</span>
+                <input type="range" id="widthRange" min="1" max="10" value="5" class="flex-1">
+                <span class="text-white font-mono font-bold text-xl w-14 text-right"><span id="widthVal">5</span>cm</span>
+            </div>
+
+            <!-- Height Control -->
+            <div class="flex items-center gap-3">
+                <span class="text-pink-400 font-bold text-lg w-12 text-glow">たて</span>
+                <input type="range" id="heightRange" min="1" max="10" value="3" class="flex-1">
+                <span class="text-white font-mono font-bold text-xl w-14 text-right"><span id="heightVal">3</span>cm</span>
+            </div>
+        </div>
+
+        <!-- Result Display -->
+        <div class="bg-white/10 rounded-xl p-4 flex flex-col items-center justify-center border border-white/10">
+            <div class="text-sm text-gray-300 mb-1">しき (Formula)</div>
+            <div class="text-2xl sm:text-3xl font-black text-glow flex items-baseline gap-2">
+                <span class="text-cyan-300" id="resW">5</span>
+                <span class="text-white text-xl">×</span>
+                <span class="text-pink-400" id="resH">3</span>
+                <span class="text-white text-xl">=</span>
+                <span class="text-yellow-300 text-4xl ml-2" id="resArea">15</span>
+                <span class="text-yellow-300 text-lg">cm²</span>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // Elements
+        const widthRange = document.getElementById('widthRange');
+        const heightRange = document.getElementById('heightRange');
+        const areaBox = document.getElementById('areaBox');
+        
+        const widthVal = document.getElementById('widthVal');
+        const heightVal = document.getElementById('heightVal');
+        const resW = document.getElementById('resW');
+        const resH = document.getElementById('resH');
+        const resArea = document.getElementById('resArea');
+        const boxLabel = document.getElementById('boxLabel');
+
+        // Constants for visualization
+        // The max value is 10, so 1 unit = 10% of the container roughly, adjusted for padding
+        // To keep it simple visually, we map 1cm to 20px for the grid pattern alignment
+        const UNIT_PIXELS = 20;
+
+        function update() {
+            const w = parseInt(widthRange.value);
+            const h = parseInt(heightRange.value);
+            const area = w * h;
+
+            // Update numbers
+            widthVal.textContent = w;
+            heightVal.textContent = h;
+            resW.textContent = w;
+            resH.textContent = h;
+            resArea.textContent = area;
+            boxLabel.textContent = area;
+
+            // Animation trigger for result
+            resArea.classList.remove('pop-anim');
+            void resArea.offsetWidth; // trigger reflow
+            resArea.classList.add('pop-anim');
+
+            // Update Box Size
+            // utilizing the grid-pattern size of 20px
+            areaBox.style.width = (w * UNIT_PIXELS) + 'px';
+            areaBox.style.height = (h * UNIT_PIXELS) + 'px';
+
+            // Change box color hint based on square/rectangle
+            if (w === h) {
+                areaBox.style.backgroundColor = 'rgba(250, 204, 21, 0.3)'; // Yellowish for square
+                areaBox.style.borderColor = 'rgba(250, 204, 21, 1)';
+            } else {
+                areaBox.style.backgroundColor = 'rgba(255, 255, 255, 0.2)'; // Default
+                areaBox.style.borderColor = 'rgba(255, 255, 255, 0.8)';
+            }
+        }
+
+        // Listeners
+        widthRange.addEventListener('input', update);
+        heightRange.addEventListener('input', update);
+
+        // Initial call
+        update();
+    </script>
+</body>
+</html>

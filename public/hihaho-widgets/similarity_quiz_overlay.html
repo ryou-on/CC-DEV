@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Similarity Quiz Overlay</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background: transparent !important;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        /* Glassmorphism Container */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            border-radius: 16px;
+            transition: all 0.3s ease;
+        }
+
+        .text-glow {
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+        }
+
+        /* Custom Scrollbar for explanation area if needed */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 3px;
+        }
+
+        /* Animations */
+        .fade-in {
+            animation: fadeIn 0.4s ease-out forwards;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .wiggle {
+            animation: wiggle 0.4s ease-in-out;
+        }
+        @keyframes wiggle {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center">
+
+    <!-- Main Widget Container -->
+    <div id="quiz-widget" class="glass-panel w-11/12 max-w-md p-6 text-white fade-in relative">
+        
+        <!-- Header: Progress Bar -->
+        <div class="flex justify-between items-center mb-4">
+            <h2 class="text-lg font-bold text-glow text-cyan-400">図形の相似マスター</h2>
+            <span id="progress-text" class="text-sm font-mono text-gray-300"></span>
+        </div>
+        <div class="w-full bg-gray-700 h-1.5 rounded-full mb-6">
+            <div id="progress-bar" class="bg-cyan-500 h-1.5 rounded-full transition-all duration-300" style="width: 0%"></div>
+        </div>
+
+        <!-- Start Screen -->
+        <div id="start-screen" class="text-center space-y-6">
+            <div class="bg-slate-800/50 p-4 rounded-lg border border-slate-600">
+                <p class="mb-2">全5問のクイズで図形の相似を学びましょう。</p>
+                <p class="text-sm text-yellow-300">間違えると解説が表示されます！</p>
+            </div>
+            <button onclick="startQuiz()" class="w-full py-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 rounded-lg font-bold shadow-lg transform active:scale-95 transition text-glow">
+                スタート
+            </button>
+        </div>
+
+        <!-- Question Screen -->
+        <div id="question-screen" class="hidden">
+            <!-- Visual Container (SVG) -->
+            <div id="visual-container" class="w-full h-32 bg-slate-800/50 rounded-lg mb-4 flex items-center justify-center border border-slate-700">
+                <!-- SVG injected via JS -->
+            </div>
+
+            <p id="question-text" class="text-lg font-medium mb-6 text-glow min-h-[3rem]">ここに問題文が表示されます</p>
+
+            <div id="options-container" class="space-y-3">
+                <!-- Options injected via JS -->
+            </div>
+
+            <!-- Explanation Panel (Hidden by default) -->
+            <div id="explanation-panel" class="hidden mt-4 p-4 bg-red-900/40 border border-red-500/50 rounded-lg fade-in">
+                <div class="flex items-start gap-3">
+                    <div class="text-2xl">💡</div>
+                    <div>
+                        <p class="font-bold text-red-300 mb-1">残念！解説をチェック：</p>
+                        <p id="explanation-text" class="text-sm text-gray-200 leading-relaxed"></p>
+                    </div>
+                </div>
+                <button onclick="nextQuestion()" class="mt-3 w-full py-2 bg-slate-700 hover:bg-slate-600 rounded text-sm font-bold transition">
+                    次へ進む
+                </button>
+            </div>
+        </div>
+
+        <!-- Result Screen -->
+        <div id="result-screen" class="hidden text-center">
+            <div class="mb-6">
+                <svg class="w-20 h-20 mx-auto text-yellow-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <h3 class="text-2xl font-bold mb-1">結果発表</h3>
+                <p class="text-4xl font-black text-cyan-400 my-4"><span id="final-score">0</span> / 5</p>
+                <p id="result-message" class="text-gray-300">お疲れ様でした！</p>
+            </div>
+            <button onclick="location.reload()" class="w-full py-3 bg-white text-slate-900 font-bold rounded-lg hover:bg-gray-100 shadow-lg transition">
+                もう一度挑戦する
+            </button>
+        </div>
+
+    </div>
+
+    <script>
+        // Quiz Data
+        const questions = [
+            {
+                id: 1,
+                text: "2つの三角形において、3組の角がそれぞれ等しいとき、2つの三角形の関係は？",
+                options: ["合同 (Congruent)", "相似 (Similar)", "関係ない"],
+                answer: 1,
+                explanation: "形が同じで大きさが違う図形は「相似」です。角度がすべて等しい三角形同士は相似の関係になります。",
+                svg: `<svg viewBox="0 0 200 100" class="w-full h-full" fill="none" stroke="white" stroke-width="2">
+                        <polygon points="20,80 50,20 80,80" fill="rgba(255,255,255,0.1)"/>
+                        <text x="35" y="95" font-size="10" fill="white" text-anchor="middle">A</text>
+                        <polygon points="110,80 155,10 190,80" fill="rgba(255,255,255,0.1)"/>
+                        <text x="150" y="95" font-size="10" fill="white" text-anchor="middle">B</text>
+                      </svg>`
+            },
+            {
+                id: 2,
+                text: "三角形Aと三角形Bは相似で、相似比は 1:2 です。面積の比はどうなる？",
+                options: ["1:2", "1:3", "1:4"],
+                answer: 2,
+                explanation: "相似比が a:b のとき、面積比は a²:b² になります。つまり 1²:2² = 1:4 です。",
+                svg: `<svg viewBox="0 0 200 100" class="w-full h-full" fill="none" stroke="cyan">
+                        <rect x="40" y="40" width="20" height="20" fill="rgba(0,255,255,0.2)"/>
+                        <text x="50" y="75" font-size="10" fill="white" text-anchor="middle">1</text>
+                        <rect x="110" y="20" width="40" height="40" fill="rgba(0,255,255,0.2)"/>
+                        <text x="130" y="75" font-size="10" fill="white" text-anchor="middle">4 (Area)</text>
+                      </svg>`
+            },
+            {
+                id: 3,
+                text: "次のうち、常に相似になる図形の組み合わせはどれ？",
+                options: ["2つの長方形", "2つのひし形", "2つの円"],
+                answer: 2,
+                explanation: "円は形が完全に決まっており、大きさしか変わらないため、常に相似になります。長方形やひし形は縦横比や角度が変わる可能性があります。",
+                svg: `<svg viewBox="0 0 200 100" class="w-full h-full" fill="none" stroke="yellow">
+                         <circle cx="60" cy="50" r="20" fill="rgba(255,255,0,0.1)" />
+                         <circle cx="140" cy="50" r="35" fill="rgba(255,255,0,0.1)" />
+                      </svg>`
+            },
+            {
+                id: 4,
+                text: "相似比が 2:3 の2つの立体があります。体積の比は？",
+                options: ["4:9", "8:27", "2:3"],
+                answer: 1,
+                explanation: "相似比が a:b のとき、体積比は a³:b³ になります。2³:3³ = 8:27 です。",
+                svg: `<svg viewBox="0 0 200 100" class="w-full h-full" fill="none" stroke="white">
+                        <path d="M40 60 L60 60 L60 40 L40 40 Z M40 40 L50 30 L70 30 L60 40 M70 30 L70 50 L60 60" stroke-width="1.5" />
+                        <text x="55" y="80" font-size="10" fill="white" text-anchor="middle">Small</text>
+                        <path d="M110 70 L150 70 L150 30 L110 30 Z M110 30 L130 10 L170 10 L150 30 M170 10 L170 50 L150 70" stroke-width="1.5" />
+                        <text x="140" y="90" font-size="10" fill="white" text-anchor="middle">Large</text>
+                      </svg>`
+            },
+            {
+                id: 5,
+                text: "三角形の2辺の中点を結んだ線分は、底辺と平行で長さはどうなる？（中点連結定理）",
+                options: ["底辺の2倍", "底辺と同じ", "底辺の半分"],
+                answer: 2,
+                explanation: "中点連結定理により、中点を結んだ線分は底辺の半分の長さになります。",
+                svg: `<svg viewBox="0 0 200 100" class="w-full h-full" fill="none" stroke="lime">
+                        <polygon points="100,20 60,90 140,90" stroke-width="2" />
+                        <line x1="80" y1="55" x2="120" y2="55" stroke="white" stroke-dasharray="4" />
+                        <circle cx="80" cy="55" r="2" fill="white"/>
+                        <circle cx="120" cy="55" r="2" fill="white"/>
+                      </svg>`
+            }
+        ];
+
+        let currentQuestionIndex = 0;
+        let score = 0;
+        let isAnswered = false;
+
+        const ui = {
+            start: document.getElementById('start-screen'),
+            question: document.getElementById('question-screen'),
+            result: document.getElementById('result-screen'),
+            visual: document.getElementById('visual-container'),
+            text: document.getElementById('question-text'),
+            options: document.getElementById('options-container'),
+            explanationPanel: document.getElementById('explanation-panel'),
+            explanationText: document.getElementById('explanation-text'),
+            progressBar: document.getElementById('progress-bar'),
+            progressText: document.getElementById('progress-text'),
+            finalScore: document.getElementById('final-score'),
+            resultMessage: document.getElementById('result-message')
+        };
+
+        function startQuiz() {
+            ui.start.classList.add('hidden');
+            ui.question.classList.remove('hidden');
+            loadQuestion();
+        }
+
+        function loadQuestion() {
+            isAnswered = false;
+            const q = questions[currentQuestionIndex];
+            
+            // Reset UI state
+            ui.explanationPanel.classList.add('hidden');
+            ui.options.innerHTML = '';
+            
+            // Update content
+            ui.text.textContent = `Q${currentQuestionIndex + 1}. ${q.text}`;
+            ui.visual.innerHTML = q.svg;
+            ui.progressText.textContent = `${currentQuestionIndex + 1}/${questions.length}`;
+            ui.progressBar.style.width = `${((currentQuestionIndex) / questions.length) * 100}%`;
+
+            // Generate options
+            q.options.forEach((opt, index) => {
+                const btn = document.createElement('button');
+                btn.className = "w-full p-3 text-left rounded-lg bg-slate-700/50 hover:bg-slate-600 border border-slate-600 hover:border-cyan-400 transition flex items-center group";
+                btn.onclick = () => checkAnswer(index, btn);
+                
+                const circle = document.createElement('span');
+                circle.className = "w-6 h-6 rounded-full border border-gray-400 mr-3 flex items-center justify-center text-xs group-hover:border-cyan-400 group-hover:bg-cyan-400/20";
+                circle.innerText = index + 1;
+
+                btn.appendChild(circle);
+                btn.appendChild(document.createTextNode(opt));
+                ui.options.appendChild(btn);
+            });
+        }
+
+        function checkAnswer(selectedIndex, btnElement) {
+            if (isAnswered) return;
+            isAnswered = true;
+
+            const q = questions[currentQuestionIndex];
+            const isCorrect = selectedIndex === q.answer;
+
+            if (isCorrect) {
+                score++;
+                btnElement.className = "w-full p-3 text-left rounded-lg bg-green-600/80 border border-green-400 shadow-[0_0_15px_rgba(34,197,94,0.5)] transition flex items-center";
+                // Auto advance for correct answer after short delay
+                setTimeout(nextQuestion, 1200);
+            } else {
+                btnElement.className = "w-full p-3 text-left rounded-lg bg-red-600/80 border border-red-400 shadow-[0_0_15px_rgba(239,68,68,0.5)] transition flex items-center wiggle";
+                // Show explanation for wrong answer
+                ui.explanationText.textContent = q.explanation;
+                ui.explanationPanel.classList.remove('hidden');
+                // Highlight correct answer slightly
+                const correctBtn = ui.options.children[q.answer];
+                correctBtn.classList.add('ring', 'ring-green-400', 'ring-opacity-50');
+            }
+        }
+
+        function nextQuestion() {
+            currentQuestionIndex++;
+            if (currentQuestionIndex < questions.length) {
+                loadQuestion();
+            } else {
+                showResults();
+            }
+        }
+
+        function showResults() {
+            ui.question.classList.add('hidden');
+            ui.result.classList.remove('hidden');
+            ui.progressBar.style.width = '100%';
+            ui.finalScore.textContent = score;
+            
+            if (score === 5) {
+                ui.resultMessage.textContent = "全問正解！素晴らしい図形マスターです！🏆";
+                ui.resultMessage.className = "text-yellow-300 font-bold";
+            } else if (score >= 3) {
+                ui.resultMessage.textContent = "惜しい！あと少しでマスターです。";
+            } else {
+                ui.resultMessage.textContent = "解説を読んで復習しましょう！";
+            }
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Shape & Color Game for Kids</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background: transparent !important;
+            overflow: hidden;
+            font-family: "M PLUS Rounded 1c", "Hiragino Maru Gothic Pro", sans-serif;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        /* Glassmorphism Container */
+        #game-container {
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 2px solid rgba(255, 255, 255, 0.4);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+            border-radius: 24px;
+        }
+
+        /* Text Styling for Video Overlay */
+        .text-shadow-pop {
+            text-shadow: 2px 2px 0px #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
+            color: white;
+        }
+
+        /* Shape Definitions */
+        .shape-base {
+            transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+            cursor: pointer;
+            filter: drop-shadow(0 4px 6px rgba(0,0,0,0.3));
+        }
+        .shape-base:active {
+            transform: scale(0.9);
+        }
+
+        .shape-circle {
+            border-radius: 50%;
+        }
+        .shape-square {
+            border-radius: 12px;
+        }
+        .shape-triangle {
+            clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+            border-radius: 0;
+        }
+        .shape-star {
+            clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+        }
+        .shape-heart {
+            clip-path: path('M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z');
+            /* Adjust aspect ratio for SVG path based clip-path scaling via JS/viewbox usually, 
+               but using a simpler polygon or radial approach is safer for pure CSS responsiveness.
+               Switching heart to a simpler CSS method below for robustness. */
+        }
+
+        /* Animations */
+        @keyframes popIn {
+            0% { opacity: 0; transform: scale(0); }
+            80% { transform: scale(1.1); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+        .animate-pop {
+            animation: popIn 0.5s ease-out forwards;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-10px) rotate(-5deg); }
+            75% { transform: translateX(10px) rotate(5deg); }
+        }
+        .animate-shake {
+            animation: shake 0.4s ease-in-out;
+        }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        .floating {
+            animation: float 3s ease-in-out infinite;
+        }
+
+        /* Confetti Canvas */
+        #confetti-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 50;
+        }
+
+        /* Hidden Helper */
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center">
+
+    <!-- Main Widget Container -->
+    <div id="game-container" class="relative w-[90vw] h-[80vh] max-w-4xl max-h-[600px] flex flex-col items-center justify-center p-4">
+        
+        <!-- Game Canvas for Confetti -->
+        <canvas id="confetti-canvas"></canvas>
+
+        <!-- Header / Progress -->
+        <div class="absolute top-4 w-full flex justify-between px-6 z-10">
+            <div class="bg-white/90 rounded-full px-4 py-1 font-bold text-gray-800 border-2 border-gray-800 shadow-md">
+                ⭐ <span id="score">0</span>
+            </div>
+            <div id="progress-dots" class="flex gap-2">
+                <!-- Dots injected via JS -->
+            </div>
+        </div>
+
+        <!-- START SCREEN -->
+        <div id="start-screen" class="flex flex-col items-center text-center space-y-6 z-20">
+            <h1 class="text-5xl md:text-6xl font-black text-shadow-pop tracking-wider text-yellow-300 floating">
+                かたち<br><span class="text-white">と</span><br>いろ
+            </h1>
+            <div class="p-4 bg-white/20 rounded-xl backdrop-blur-sm">
+                <p class="text-white font-bold text-xl text-shadow-pop mb-4">どの かたちが すき？</p>
+                <button onclick="startGame()" class="bg-green-400 hover:bg-green-300 text-white text-3xl font-black py-4 px-12 rounded-full border-b-8 border-green-600 active:border-b-0 active:translate-y-2 transition-all shadow-lg">
+                    あそぶ！
+                </button>
+            </div>
+        </div>
+
+        <!-- GAMEPLAY SCREEN -->
+        <div id="game-screen" class="hidden flex flex-col items-center w-full h-full z-20">
+            <!-- Question Area -->
+            <div class="mt-12 mb-4 text-center">
+                <h2 id="question-text" class="text-4xl md:text-5xl font-black text-white text-shadow-pop leading-relaxed tracking-wide">
+                    <!-- Question injected here -->
+                </h2>
+            </div>
+
+            <!-- Shapes Grid -->
+            <div id="shapes-grid" class="flex-1 w-full grid grid-cols-2 gap-4 place-items-center p-4">
+                <!-- Shapes injected here -->
+            </div>
+        </div>
+
+        <!-- FINISH SCREEN -->
+        <div id="finish-screen" class="hidden flex flex-col items-center text-center z-20">
+            <h2 class="text-6xl font-black text-yellow-300 text-shadow-pop mb-6 animate-pop">すごい！</h2>
+            <div class="text-white text-2xl font-bold text-shadow-pop mb-8">
+                ぜんぶ できたね！
+            </div>
+            <button onclick="resetGame()" class="bg-blue-400 hover:bg-blue-300 text-white text-2xl font-black py-3 px-8 rounded-full border-b-8 border-blue-600 active:border-b-0 active:translate-y-2 transition-all shadow-lg">
+                もういっかい
+            </button>
+        </div>
+
+    </div>
+
+    <script>
+        // Game Config
+        const SHAPES = [
+            { type: 'circle', label: 'まる', class: 'shape-circle' },
+            { type: 'square', label: 'しかく', class: 'shape-square' },
+            { type: 'triangle', label: 'さんかく', class: 'shape-triangle' },
+            { type: 'star', label: 'ほし', class: 'shape-star' }
+        ];
+        
+        const COLORS = [
+            { type: 'red', label: 'あかい', hex: '#ef4444', class: 'bg-red-500' },
+            { type: 'blue', label: 'あおい', hex: '#3b82f6', class: 'bg-blue-500' },
+            { type: 'green', label: 'みどりの', hex: '#22c55e', class: 'bg-green-500' },
+            { type: 'yellow', label: 'きいろい', hex: '#eab308', class: 'bg-yellow-500' }
+        ];
+
+        // Game State
+        let currentLevel = 0;
+        let score = 0;
+        const totalLevels = 5;
+        let currentQuestion = null;
+
+        // DOM Elements
+        const startScreen = document.getElementById('start-screen');
+        const gameScreen = document.getElementById('game-screen');
+        const finishScreen = document.getElementById('finish-screen');
+        const questionText = document.getElementById('question-text');
+        const shapesGrid = document.getElementById('shapes-grid');
+        const scoreEl = document.getElementById('score');
+        const progressContainer = document.getElementById('progress-dots');
+        const confettiCanvas = document.getElementById('confetti-canvas');
+        const ctx = confettiCanvas.getContext('2d');
+
+        // Initialize
+        function init() {
+            resizeCanvas();
+            window.addEventListener('resize', resizeCanvas);
+        }
+
+        function resizeCanvas() {
+            confettiCanvas.width = confettiCanvas.parentElement.offsetWidth;
+            confettiCanvas.height = confettiCanvas.parentElement.offsetHeight;
+        }
+
+        function startGame() {
+            score = 0;
+            currentLevel = 0;
+            scoreEl.innerText = score;
+            startScreen.classList.add('hidden');
+            finishScreen.classList.add('hidden');
+            gameScreen.classList.remove('hidden');
+            
+            renderProgress();
+            nextLevel();
+        }
+
+        function resetGame() {
+            startScreen.classList.remove('hidden');
+            finishScreen.classList.add('hidden');
+            gameScreen.classList.add('hidden');
+        }
+
+        function renderProgress() {
+            progressContainer.innerHTML = '';
+            for(let i=0; i<totalLevels; i++) {
+                const dot = document.createElement('div');
+                dot.className = `w-4 h-4 rounded-full border-2 border-white/50 ${i < currentLevel ? 'bg-yellow-400' : 'bg-transparent'}`;
+                progressContainer.appendChild(dot);
+            }
+        }
+
+        function nextLevel() {
+            if(currentLevel >= totalLevels) {
+                showFinish();
+                return;
+            }
+
+            renderProgress();
+            
+            // Generate Question
+            const targetShape = SHAPES[Math.floor(Math.random() * SHAPES.length)];
+            const targetColor = COLORS[Math.floor(Math.random() * COLORS.length)];
+            currentQuestion = { shape: targetShape, color: targetColor };
+
+            // Set Text
+            questionText.innerHTML = `<span style="color:${targetColor.hex}">${targetColor.label}</span> <span class="text-white">${targetShape.label}</span> は どれ？`;
+
+            // Generate Options (1 correct, 3 random incorrect)
+            let options = [];
+            options.push({ shape: targetShape, color: targetColor, isCorrect: true });
+
+            while (options.length < 4) {
+                const s = SHAPES[Math.floor(Math.random() * SHAPES.length)];
+                const c = COLORS[Math.floor(Math.random() * COLORS.length)];
+                // Prevent duplicates
+                const isDuplicate = options.some(opt => opt.shape.type === s.type && opt.color.type === c.type);
+                if (!isDuplicate) {
+                    options.push({ shape: s, color: c, isCorrect: false });
+                }
+            }
+
+            // Shuffle options
+            options.sort(() => Math.random() - 0.5);
+
+            // Render Grid
+            shapesGrid.innerHTML = '';
+            options.forEach((opt, index) => {
+                const el = document.createElement('div');
+                // Base styles
+                let classes = `shape-base w-24 h-24 md:w-32 md:h-32 ${opt.shape.class} ${opt.color.class} animate-pop`;
+                
+                // Triangle specific color handling (borders vs bg)
+                // CSS clip-path works with background-color, so we use bg for all shapes defined.
+                
+                el.className = classes;
+                // Animation delay for staggered entry
+                el.style.animationDelay = `${index * 0.1}s`;
+                
+                el.onclick = (e) => handleChoice(opt, el);
+                
+                shapesGrid.appendChild(el);
+            });
+        }
+
+        function handleChoice(option, element) {
+            if (option.isCorrect) {
+                // Correct
+                playConfetti(element.getBoundingClientRect());
+                score += 100;
+                scoreEl.innerText = score;
+                currentLevel++;
+                
+                // Visual feedback
+                element.style.transform = "scale(1.2) rotate(10deg)";
+                
+                setTimeout(() => {
+                    nextLevel();
+                }, 1000);
+            } else {
+                // Incorrect
+                element.classList.remove('animate-pop');
+                void element.offsetWidth; // trigger reflow
+                element.classList.add('animate-shake');
+            }
+        }
+
+        function showFinish() {
+            gameScreen.classList.add('hidden');
+            finishScreen.classList.remove('hidden');
+            fireworkConfetti();
+        }
+
+        // --- Simple Particle System ---
+        let particles = [];
+        function playConfetti(rect) {
+            const x = rect.left + rect.width / 2 - confettiCanvas.getBoundingClientRect().left;
+            const y = rect.top + rect.height / 2 - confettiCanvas.getBoundingClientRect().top;
+            
+            for (let i = 0; i < 30; i++) {
+                particles.push(createParticle(x, y));
+            }
+        }
+
+        function fireworkConfetti() {
+            const cx = confettiCanvas.width / 2;
+            const cy = confettiCanvas.height / 2;
+            for (let i = 0; i < 100; i++) {
+                particles.push(createParticle(cx, cy, true));
+            }
+        }
+
+        function createParticle(x, y, isBig = false) {
+            const colors = ['#ef4444', '#3b82f6', '#22c55e', '#eab308', '#ffffff'];
+            return {
+                x: x,
+                y: y,
+                vx: (Math.random() - 0.5) * (isBig ? 15 : 10),
+                vy: (Math.random() - 0.5) * (isBig ? 15 : 10),
+                life: 1.0,
+                color: colors[Math.floor(Math.random() * colors.length)],
+                size: Math.random() * 8 + 4
+            };
+        }
+
+        function updateParticles() {
+            if (particles.length === 0) return;
+            ctx.clearRect(0, 0, confettiCanvas.width, confettiCanvas.height);
+            
+            for (let i = particles.length - 1; i >= 0; i--) {
+                let p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.2; // gravity
+                p.life -= 0.02;
+                
+                ctx.fillStyle = p.color;
+                ctx.globalAlpha = p.life;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+
+                if (p.life <= 0) {
+                    particles.splice(i, 1);
+                }
+            }
+            ctx.globalAlpha = 1.0;
+        }
+
+        // Animation Loop
+        function animate() {
+            updateParticles();
+            requestAnimationFrame(animate);
+        }
+
+        init();
+        animate();
+
+    </script>
+</body>
+</html>

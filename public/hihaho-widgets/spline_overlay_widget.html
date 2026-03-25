@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Overlay Widget</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: transparent !important;
+            overflow: hidden;
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 3px;
+        }
+
+        /* Glassmorphism Base */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        .text-glow {
+            text-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
+        }
+
+        /* Tab Transition */
+        .tab-content {
+            opacity: 0;
+            transform: translateX(-10px);
+            transition: all 0.3s ease-in-out;
+            pointer-events: none;
+            display: none;
+        }
+        .tab-content.active {
+            opacity: 1;
+            transform: translateX(0);
+            pointer-events: auto;
+            display: flex;
+        }
+
+        /* Navigation Active State */
+        .nav-item.active {
+            background: linear-gradient(90deg, rgba(56, 189, 248, 0.2) 0%, transparent 100%);
+            border-left: 4px solid #38bdf8;
+            color: #38bdf8;
+        }
+
+        /* Mobile Adjustments */
+        @media (max-width: 768px) {
+            .widget-container {
+                width: 95vw;
+                height: 80vh;
+                top: 10vh;
+                left: 2.5vw;
+                flex-direction: column;
+            }
+            .sidebar {
+                width: 100% !important;
+                height: auto;
+                flex-direction: row;
+                overflow-x: auto;
+                padding-bottom: 5px;
+                border-right: none;
+                border-bottom: 1px solid rgba(255,255,255,0.1);
+            }
+            .nav-item {
+                flex-direction: column;
+                padding: 10px;
+                font-size: 0.8rem;
+                text-align: center;
+                border-left: none;
+                border-bottom: 3px solid transparent;
+                white-space: nowrap;
+            }
+            .nav-item.active {
+                border-left: none;
+                border-bottom: 3px solid #38bdf8;
+                background: linear-gradient(0deg, rgba(56, 189, 248, 0.1) 0%, transparent 100%);
+            }
+            .content-area {
+                width: 100% !important;
+                border-radius: 0 0 12px 12px;
+            }
+            /* Increase touch targets */
+            .glossary-nav-btn {
+                padding: 1rem !important;
+                min-width: 44px;
+                min-height: 44px;
+            }
+            .glossary-title {
+                font-size: 1.5rem !important;
+            }
+            p {
+                font-size: 1.1rem !important;
+                line-height: 1.6 !important;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Widget Wrapper -->
+    <div class="widget-container absolute top-8 left-8 flex h-[600px] max-h-[85vh] w-[800px] max-w-[90vw] glass-panel rounded-xl overflow-hidden">
+        
+        <!-- Sidebar Navigation -->
+        <nav class="sidebar w-48 bg-black/40 flex flex-col border-r border-white/10 shrink-0">
+            <div class="p-4 text-white font-bold text-xl tracking-wider flex items-center gap-2 mb-2">
+                <i class="fa-solid fa-layer-group text-cyan-400"></i>
+                <span>MENU</span>
+            </div>
+
+            <button onclick="switchTab('glossary')" class="nav-item active w-full text-left p-4 text-gray-300 hover:text-white hover:bg-white/5 transition-all flex items-center gap-3">
+                <i class="fa-solid fa-book w-6 text-center"></i>
+                <span class="font-medium">用語集リスト</span>
+            </button>
+
+            <button onclick="switchTab('map')" class="nav-item w-full text-left p-4 text-gray-300 hover:text-white hover:bg-white/5 transition-all flex items-center gap-3">
+                <i class="fa-solid fa-map-location-dot w-6 text-center"></i>
+                <span class="font-medium">Google Map</span>
+            </button>
+
+            <button onclick="switchTab('web')" class="nav-item w-full text-left p-4 text-gray-300 hover:text-white hover:bg-white/5 transition-all flex items-center gap-3">
+                <i class="fa-solid fa-globe w-6 text-center"></i>
+                <span class="font-medium">Webページ</span>
+            </button>
+
+            <button onclick="switchTab('3d')" class="nav-item w-full text-left p-4 text-gray-300 hover:text-white hover:bg-white/5 transition-all flex items-center gap-3">
+                <i class="fa-solid fa-cube w-6 text-center"></i>
+                <span class="font-medium">3Dモデル</span>
+            </button>
+        </nav>
+
+        <!-- Content Area -->
+        <main class="content-area flex-1 relative bg-gradient-to-br from-gray-900/50 to-black/50 overflow-hidden">
+
+            <!-- 1. Glossary Tab -->
+            <div id="tab-glossary" class="tab-content active w-full h-full flex flex-col p-6">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-2xl font-bold text-white text-glow"><i class="fa-solid fa-book-open mr-2"></i>用語集</h2>
+                    <span class="text-cyan-400 text-sm font-mono">GLOSSARY 1.0</span>
+                </div>
+
+                <div class="flex-1 flex flex-col justify-center items-center relative">
+                    <!-- Navigation Arrows -->
+                    <button onclick="changeGlossary(-1)" class="glossary-nav-btn absolute left-0 top-1/2 -translate-y-1/2 bg-white/10 hover:bg-cyan-500/20 text-white p-3 rounded-full backdrop-blur-sm transition-all border border-white/20 hover:border-cyan-400 z-10">
+                        <i class="fa-solid fa-chevron-left text-xl"></i>
+                    </button>
+                    
+                    <button onclick="changeGlossary(1)" class="glossary-nav-btn absolute right-0 top-1/2 -translate-y-1/2 bg-white/10 hover:bg-cyan-500/20 text-white p-3 rounded-full backdrop-blur-sm transition-all border border-white/20 hover:border-cyan-400 z-10">
+                        <i class="fa-solid fa-chevron-right text-xl"></i>
+                    </button>
+
+                    <!-- Card -->
+                    <div class="w-full max-w-[85%] bg-black/40 border border-white/10 rounded-xl p-6 md:p-8 shadow-2xl relative overflow-hidden">
+                         <!-- Decorative background elements -->
+                         <div class="absolute top-0 right-0 w-32 h-32 bg-cyan-500/10 rounded-full blur-3xl -mr-10 -mt-10"></div>
+
+                        <div id="glossary-content" class="relative z-10 text-white">
+                            <!-- Content injected via JS -->
+                        </div>
+
+                        <!-- Dots Indicator -->
+                        <div class="flex justify-center gap-2 mt-6" id="glossary-dots">
+                            <!-- Dots injected via JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. Google Map Tab -->
+            <div id="tab-map" class="tab-content w-full h-full flex-col relative">
+                <div class="absolute top-4 left-4 z-10 bg-black/80 backdrop-blur text-white px-4 py-2 rounded-lg border border-white/10 shadow-lg max-w-[90%]">
+                   <p class="font-bold text-cyan-400 text-sm">ADDRESS</p>
+                   <p class="text-sm md:text-base">東京都千代田区神田淡路町1-2-1 武蔵野ビル2階</p>
+                </div>
+                <iframe 
+                    class="w-full h-full opacity-90 hover:opacity-100 transition-opacity"
+                    frameborder="0" 
+                    style="border:0" 
+                    src="https://maps.google.com/maps?q=%E6%9D%B1%E4%BA%AC%E9%83%BD%E5%8D%83%E4%BB%A3%E7%94%B0%E5%8C%BA%E7%A5%9E%E7%94%B0%E6%B7%A1%E8%B7%AF%E7%94%BA1-2-1%E6%AD%A6%E8%94%B5%E9%87%8E%E3%83%93%E3%83%AB&t=&z=17&ie=UTF8&iwloc=&output=embed"
+                    allowfullscreen>
+                </iframe>
+            </div>
+
+            <!-- 3. Web Page Tab -->
+            <div id="tab-web" class="tab-content w-full h-full flex-col bg-white relative">
+                 <!-- Fallback/Open Button Overlay -->
+                <div class="absolute bottom-4 right-4 z-20">
+                    <a href="https://splineglobal.com" target="_blank" class="bg-blue-600 hover:bg-blue-500 text-white text-sm px-4 py-2 rounded shadow-lg flex items-center gap-2 transition-colors">
+                        <i class="fa-solid fa-external-link-alt"></i> 別タブで開く
+                    </a>
+                </div>
+                
+                <iframe 
+                    src="https://splineglobal.com" 
+                    class="w-full h-full"
+                    title="Spline Global Website"
+                    sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+                    style="background: #fff;"
+                ></iframe>
+            </div>
+
+            <!-- 4. 3D Model Tab -->
+            <div id="tab-3d" class="tab-content w-full h-full flex-col relative bg-gray-900">
+                <div class="absolute top-4 left-4 z-10 text-white bg-black/50 px-3 py-1 rounded backdrop-blur">
+                    <h3 class="font-bold text-cyan-400">3D VIEWER</h3>
+                    <p class="text-xs text-gray-300">Interactive WebGL Demo</p>
+                </div>
+                <!-- Container for Three.js -->
+                <div id="three-canvas-container" class="w-full h-full cursor-move"></div>
+            </div>
+
+        </main>
+    </div>
+
+    <script>
+        // --- Tab Switching Logic ---
+        function switchTab(tabName) {
+            // Update Nav
+            document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+            const activeBtn = document.querySelector(`button[onclick="switchTab('${tabName}')"]`);
+            if(activeBtn) activeBtn.classList.add('active');
+
+            // Update Content
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            const activeContent = document.getElementById(`tab-${tabName}`);
+            if(activeContent) activeContent.classList.add('active');
+
+            // Trigger resize for map/canvas if needed
+            if (tabName === '3d') {
+                initThreeJS();
+            }
+        }
+
+        // --- Glossary Data & Logic ---
+        const glossaryData = [
+            {
+                title: "デジタルツイン",
+                desc: "現実世界の環境や製品などを、デジタル空間上に双子（ツイン）のように再現する技術。",
+                example: "工場の生産ラインをデジタルツイン化し、効率的な配置をシミュレーションする。",
+                point: "リアルタイムデータとの連携が鍵。"
+            },
+            {
+                title: "点群データ (Point Cloud)",
+                desc: "レーザースキャナ等で計測した、3次元座標(X,Y,Z)と色情報を持つ無数の点の集合体。",
+                example: "文化財をスキャンして点群データとして保存し、修復作業に役立てる。",
+                point: "データ量が膨大になるため、軽量化処理が重要。"
+            },
+            {
+                title: "フォトグラメトリ",
+                desc: "複数の写真から被写体の3Dモデルを生成する技術。写真測量法とも呼ばれる。",
+                example: "ドローンで空撮した写真から、地形の3Dモデルを作成する。",
+                point: "テクスチャ（質感）の再現性が非常に高い。"
+            },
+            {
+                title: "BIM/CIM",
+                desc: "建設（Building）や土木（Construction）において、3Dモデルに属性情報を付与して管理する仕組み。",
+                example: "ビルの設計段階からBIMを導入し、配管の干渉チェックを自動化する。",
+                point: "ライフサイクル全体での情報共有が可能。"
+            },
+            {
+                title: "WebGL",
+                desc: "Webブラウザ上で、プラグインなしに3次元グラフィックスを表示させるための標準仕様。",
+                example: "ECサイトの商品ページで、スニーカーを360度回転させて閲覧できるようにする。",
+                point: "特別なアプリ不要で、誰でも閲覧できる。"
+            }
+        ];
+
+        let currentGlossaryIndex = 0;
+
+        function renderGlossary() {
+            const item = glossaryData[currentGlossaryIndex];
+            const container = document.getElementById('glossary-content');
+            const dotsContainer = document.getElementById('glossary-dots');
+
+            // Update Content with animation reset
+            container.style.opacity = 0;
+            setTimeout(() => {
+                container.innerHTML = `
+                    <h3 class="glossary-title text-3xl md:text-4xl font-black mb-4 text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 to-blue-500">${item.title}</h3>
+                    <div class="space-y-4">
+                        <div>
+                            <p class="text-xs text-cyan-400 font-bold tracking-widest mb-1">EXPLANATION</p>
+                            <p class="text-lg leading-relaxed">${item.desc}</p>
+                        </div>
+                        <div class="bg-white/5 p-3 rounded-lg border-l-2 border-yellow-400">
+                            <p class="text-xs text-yellow-400 font-bold tracking-widest mb-1">EXAMPLE</p>
+                            <p class="text-sm italic text-gray-300">「${item.example}」</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-pink-400 font-bold tracking-widest mb-1">POINT</p>
+                            <p class="text-sm font-bold text-pink-200">${item.point}</p>
+                        </div>
+                    </div>
+                `;
+                container.style.opacity = 1;
+            }, 200);
+
+            // Update Dots
+            dotsContainer.innerHTML = glossaryData.map((_, i) => 
+                `<div class="w-2 h-2 rounded-full transition-all ${i === currentGlossaryIndex ? 'bg-cyan-400 w-6' : 'bg-white/30'}"></div>`
+            ).join('');
+        }
+
+        function changeGlossary(direction) {
+            currentGlossaryIndex += direction;
+            if (currentGlossaryIndex >= glossaryData.length) currentGlossaryIndex = 0;
+            if (currentGlossaryIndex < 0) currentGlossaryIndex = glossaryData.length - 1;
+            renderGlossary();
+        }
+
+        // Initialize Glossary
+        renderGlossary();
+
+
+        // --- Three.js Logic (Simple Rotating Cube) ---
+        let scene, camera, renderer, cube, animationId;
+        let isThreeInitialized = false;
+
+        function initThreeJS() {
+            const container = document.getElementById('three-canvas-container');
+            if (isThreeInitialized || !container.clientWidth) return;
+
+            // Scene
+            scene = new THREE.Scene();
+            
+            // Camera
+            camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
+            camera.position.z = 2.5;
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            container.innerHTML = ''; // clear previous
+            container.appendChild(renderer.domElement);
+
+            // Geometry (Wireframe Cube to look "Tech")
+            const geometry = new THREE.IcosahedronGeometry(1, 1);
+            const material = new THREE.MeshBasicMaterial({ 
+                color: 0x38bdf8, 
+                wireframe: true, 
+                transparent: true, 
+                opacity: 0.8 
+            });
+            cube = new THREE.Mesh(geometry, material);
+            scene.add(cube);
+
+            // Inner core
+            const coreGeo = new THREE.IcosahedronGeometry(0.5, 0);
+            const coreMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            const core = new THREE.Mesh(coreGeo, coreMat);
+            cube.add(core);
+
+            // Resize handler
+            window.addEventListener('resize', onWindowResize, false);
+            
+            isThreeInitialized = true;
+            animate();
+        }
+
+        function onWindowResize() {
+            const container = document.getElementById('three-canvas-container');
+            if (!container || !camera || !renderer) return;
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            if (cube) {
+                cube.rotation.x += 0.005;
+                cube.rotation.y += 0.01;
+            }
+            renderer.render(scene, camera);
+        }
+
+        // Helper to ensure layout recalculations on mobile
+        window.addEventListener('resize', () => {
+           if(isThreeInitialized) onWindowResize();
+        });
+
+    </script>
+</body>
+</html>

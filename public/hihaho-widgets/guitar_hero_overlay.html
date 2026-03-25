@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Guitar Hero Practice Overlay</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Base Transparency Settings */
+        body, html {
+            background-color: transparent !important;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            height: 100%;
+            width: 100%;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        /* 3D Highway Perspective */
+        .highway-container {
+            perspective: 1000px;
+            transform-style: preserve-3d;
+            height: 100%;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: flex-end;
+            padding-bottom: 20px;
+        }
+
+        .fretboard {
+            width: 300px;
+            height: 120%; /* Extended height for perspective */
+            background: linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(20, 20, 20, 0.9) 100%);
+            transform: rotateX(60deg) translateY(-50px);
+            transform-origin: bottom center;
+            position: relative;
+            display: flex;
+            border-left: 2px solid rgba(255,255,255,0.3);
+            border-right: 2px solid rgba(255,255,255,0.3);
+            box-shadow: 0 0 50px rgba(0,0,0,0.5);
+        }
+
+        /* Lanes */
+        .lane {
+            flex: 1;
+            border-right: 1px solid rgba(255,255,255,0.1);
+            position: relative;
+        }
+        .lane:last-child {
+            border-right: none;
+        }
+
+        /* Hit Buttons (Targets) */
+        .hit-zone {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            height: 60px;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            z-index: 10;
+            /* Fix visual distortion from parent perspective if needed, or embrace it */
+        }
+
+        .target-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: 3px solid rgba(255,255,255,0.5);
+            background: rgba(0,0,0,0.3);
+            box-shadow: 0 0 10px rgba(255,255,255,0.2);
+            transition: all 0.1s;
+        }
+
+        .target-btn.active {
+            transform: scale(0.9);
+            box-shadow: 0 0 20px currentColor, inset 0 0 10px currentColor;
+            background: currentColor;
+            border-color: white;
+        }
+
+        /* Falling Notes */
+        .note {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            position: absolute;
+            top: -50px;
+            left: 50%;
+            transform: translateX(-50%);
+            box-shadow: 0 0 10px currentColor;
+            background: currentColor;
+            animation: fall 2s linear forwards;
+            opacity: 0.9;
+        }
+        
+        /* Inner bevel for 3D look on notes */
+        .note::after {
+            content: '';
+            position: absolute;
+            top: 5px; left: 5px; right: 5px; bottom: 5px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.4);
+        }
+
+        @keyframes fall {
+            0% { top: -50px; transform: translateX(-50%) scale(0.5); opacity: 0; }
+            10% { opacity: 1; }
+            100% { top: 100%; transform: translateX(-50%) scale(1.2); }
+        }
+
+        /* UI Overlay (Score, Combo) */
+        .ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            justify-content: space-between;
+            padding: 20px;
+            z-index: 20;
+        }
+
+        .hud-panel {
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(8px);
+            padding: 10px 20px;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.1);
+            color: white;
+            text-align: center;
+        }
+
+        .score-text {
+            font-size: 2rem;
+            font-weight: bold;
+            text-shadow: 0 0 10px rgba(0, 255, 255, 0.8);
+            font-family: 'Courier New', monospace;
+        }
+
+        .combo-text {
+            font-size: 1.2rem;
+            color: #fbbf24;
+            text-shadow: 0 0 5px rgba(251, 191, 36, 0.8);
+        }
+
+        /* Glow classes for JS */
+        .glow-green { color: #22c55e; box-shadow: 0 0 15px #22c55e; }
+        .glow-red { color: #ef4444; box-shadow: 0 0 15px #ef4444; }
+        .glow-yellow { color: #eab308; box-shadow: 0 0 15px #eab308; }
+        .glow-blue { color: #3b82f6; box-shadow: 0 0 15px #3b82f6; }
+        .glow-orange { color: #f97316; box-shadow: 0 0 15px #f97316; }
+
+        /* Help Key Hints */
+        .key-hint {
+            color: rgba(255,255,255,0.8);
+            font-size: 0.8rem;
+            margin-top: 50px;
+            text-align: center;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- UI HUD Layer -->
+    <div class="ui-layer">
+        <div class="hud-panel">
+            <div class="text-xs text-gray-300 uppercase tracking-widest">Score</div>
+            <div class="score-text" id="score">000000</div>
+        </div>
+        
+        <div class="hud-panel" style="text-align: right;">
+            <div class="text-xs text-gray-300 uppercase tracking-widest">Combo</div>
+            <div class="combo-text" id="combo">x1</div>
+            <div class="text-sm text-white mt-2 font-bold">CHORD: <span id="current-chord" class="text-cyan-400">Em</span></div>
+        </div>
+    </div>
+
+    <!-- 3D Game Highway -->
+    <div class="highway-container">
+        <div class="fretboard">
+            <!-- Lanes for Notes -->
+            <div class="lane" id="lane-0"></div>
+            <div class="lane" id="lane-1"></div>
+            <div class="lane" id="lane-2"></div>
+            <div class="lane" id="lane-3"></div>
+            <div class="lane" id="lane-4"></div>
+
+            <!-- Hit Targets (Bottom) -->
+            <div class="hit-zone">
+                <div class="target-btn" id="btn-0" style="color: #22c55e;"><div class="key-hint">A</div></div>
+                <div class="target-btn" id="btn-1" style="color: #ef4444;"><div class="key-hint">S</div></div>
+                <div class="target-btn" id="btn-2" style="color: #eab308;"><div class="key-hint">D</div></div>
+                <div class="target-btn" id="btn-3" style="color: #3b82f6;"><div class="key-hint">F</div></div>
+                <div class="target-btn" id="btn-4" style="color: #f97316;"><div class="key-hint">G</div></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Configuration
+        const keys = ['a', 's', 'd', 'f', 'g'];
+        const colors = ['#22c55e', '#ef4444', '#eab308', '#3b82f6', '#f97316'];
+        const chords = ['Em', 'G', 'C', 'D', 'Am', 'Fmaj7'];
+        let score = 0;
+        let combo = 0;
+        let gameActive = true;
+
+        // DOM Elements
+        const scoreEl = document.getElementById('score');
+        const comboEl = document.getElementById('combo');
+        const chordEl = document.getElementById('current-chord');
+        const buttons = keys.map((_, i) => document.getElementById(`btn-${i}`));
+        const lanes = keys.map((_, i) => document.getElementById(`lane-${i}`));
+
+        // Update UI
+        function updateScore(points) {
+            score += points * (Math.floor(combo / 10) + 1);
+            scoreEl.innerText = score.toString().padStart(6, '0');
+        }
+
+        function updateCombo(reset) {
+            if (reset) {
+                combo = 0;
+                comboEl.style.color = '#ef4444';
+            } else {
+                combo++;
+                comboEl.style.color = combo > 10 ? '#22c55e' : '#fbbf24';
+            }
+            comboEl.innerText = `x${combo}`;
+            
+            // Random Chord Change simulation
+            if(combo % 5 === 0) {
+                chordEl.innerText = chords[Math.floor(Math.random() * chords.length)];
+            }
+        }
+
+        // Input Handling
+        document.addEventListener('keydown', (e) => {
+            const index = keys.indexOf(e.key.toLowerCase());
+            if (index !== -1) {
+                const btn = buttons[index];
+                btn.classList.add('active');
+                
+                // Hit Logic (Simplified: Check if any note is near the bottom in this lane)
+                const lane = lanes[index];
+                const notes = lane.querySelectorAll('.note');
+                let hit = false;
+
+                notes.forEach(note => {
+                    // Get note position relative to lane
+                    const noteRect = note.getBoundingClientRect();
+                    const btnRect = btn.getBoundingClientRect();
+                    
+                    // Overlap check (Simulating hit window)
+                    // Since perspective transforms mess up standard rects slightly, we use approximate offsets or rely on animation timing.
+                    // Here we use a simpler visual check: is the animation almost done?
+                    // We can check the top/bottom relative to viewport.
+                    
+                    const distance = Math.abs(noteRect.top - btnRect.top);
+                    
+                    if (distance < 60) {
+                        // Hit!
+                        note.remove();
+                        createHitEffect(index);
+                        updateScore(100);
+                        updateCombo(false);
+                        hit = true;
+                    }
+                });
+
+                if (!hit) {
+                    // Miss fire logic (optional)
+                    // updateCombo(true);
+                }
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            const index = keys.indexOf(e.key.toLowerCase());
+            if (index !== -1) {
+                buttons[index].classList.remove('active');
+            }
+        });
+
+        // Visual FX
+        function createHitEffect(index) {
+            const btn = buttons[index];
+            // Flash the lane
+            const lane = lanes[index];
+            lane.style.background = `linear-gradient(to top, ${colors[index]}33, transparent)`;
+            setTimeout(() => { lane.style.background = 'transparent'; }, 100);
+        }
+
+        // Spawning Notes Loop
+        function spawnNote() {
+            if (!gameActive) return;
+
+            const laneIndex = Math.floor(Math.random() * 5);
+            const note = document.createElement('div');
+            note.classList.add('note');
+            note.style.color = colors[laneIndex];
+            
+            // Randomize timing slightly
+            const duration = 2000; // 2s fall
+            note.style.animationDuration = `${duration}ms`;
+
+            lanes[laneIndex].appendChild(note);
+
+            // Cleanup note after animation
+            setTimeout(() => {
+                if (note.parentNode) {
+                    note.remove();
+                    updateCombo(true); // Missed
+                }
+            }, duration);
+
+            // Next spawn time
+            const nextSpawn = 500 + Math.random() * 1000;
+            setTimeout(spawnNote, nextSpawn);
+        }
+
+        // Start Game
+        setTimeout(spawnNote, 1000);
+
+    </script>
+</body>
+</html>

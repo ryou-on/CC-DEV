@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Real Estate Estimator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background-color: transparent !important;
+            font-family: 'Noto Sans JP', sans-serif;
+            overflow: hidden;
+        }
+        /* Glassmorphism Base */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+        /* Text Visibility */
+        .text-shadow {
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+        }
+        /* Custom Animations */
+        @keyframes scan {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        .ai-thinking {
+            background: linear-gradient(270deg, #3b82f6, #8b5cf6, #ec4899);
+            background-size: 200% 200%;
+            animation: scan 2s ease infinite;
+        }
+        /* Input Styles */
+        .input-field {
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: white;
+            transition: all 0.3s ease;
+        }
+        .input-field:focus {
+            border-color: #60a5fa;
+            outline: none;
+            background: rgba(0, 0, 0, 0.7);
+            box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.3);
+        }
+        .result-glow {
+            text-shadow: 0 0 10px rgba(250, 204, 21, 0.6), 0 2px 4px rgba(0,0,0,0.9);
+        }
+    </style>
+</head>
+<body class="w-full h-screen flex items-end justify-center sm:items-center p-4">
+
+    <!-- Main Widget Container -->
+    <div class="glass-panel w-full max-w-[360px] rounded-2xl p-5 relative overflow-hidden transition-all duration-500 transform hover:scale-[1.01]">
+        
+        <!-- Header -->
+        <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-2">
+                <div class="w-2 h-8 bg-blue-500 rounded-full"></div>
+                <h1 class="text-white font-bold text-lg text-shadow tracking-wider">AI 不動産査定</h1>
+            </div>
+            <span class="text-xs text-blue-300 font-mono border border-blue-500/30 px-2 py-0.5 rounded">BETA v2.0</span>
+        </div>
+
+        <!-- Form Section -->
+        <div id="inputForm" class="space-y-4">
+            <!-- Prefecture -->
+            <div>
+                <label class="block text-xs text-gray-300 mb-1 ml-1">都道府県</label>
+                <select id="prefecture" class="input-field w-full rounded-lg p-2.5 text-sm appearance-none">
+                    <option value="" disabled selected>エリアを選択してください</option>
+                    <option value="1.5">東京都</option>
+                    <option value="1.2">神奈川県</option>
+                    <option value="1.1">大阪府</option>
+                    <option value="0.9">愛知県</option>
+                    <option value="0.8">福岡県</option>
+                    <option value="0.7">その他</option>
+                </select>
+            </div>
+
+            <!-- City/Ward (Free Text for simplicity in this demo) -->
+            <div>
+                <label class="block text-xs text-gray-300 mb-1 ml-1">市区町村</label>
+                <input type="text" id="city" placeholder="例: 世田谷区" class="input-field w-full rounded-lg p-2.5 text-sm placeholder-gray-500">
+            </div>
+
+            <!-- Size -->
+            <div>
+                <label class="block text-xs text-gray-300 mb-1 ml-1">土地面積 (m²)</label>
+                <div class="relative">
+                    <input type="number" id="size" placeholder="80" class="input-field w-full rounded-lg p-2.5 text-sm placeholder-gray-500 pr-10">
+                    <span class="absolute right-3 top-2.5 text-gray-400 text-sm">m²</span>
+                </div>
+            </div>
+
+            <!-- Calculate Button -->
+            <button onclick="calculatePrice()" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold py-3 rounded-xl shadow-lg transform transition active:scale-95 flex items-center justify-center gap-2 mt-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.384-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+                </svg>
+                AI査定を開始
+            </button>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loadingState" class="hidden py-8 text-center">
+            <div class="w-16 h-16 rounded-full mx-auto ai-thinking mb-4 flex items-center justify-center shadow-[0_0_20px_rgba(59,130,246,0.5)]">
+                <svg class="w-8 h-8 text-white animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"></path>
+                </svg>
+            </div>
+            <p class="text-blue-200 text-sm font-bold tracking-widest animate-pulse">AI ANALYZING...</p>
+            <p class="text-xs text-gray-400 mt-2">周辺価格データを照合中</p>
+        </div>
+
+        <!-- Result View -->
+        <div id="resultView" class="hidden text-center py-2">
+            <p class="text-gray-300 text-xs mb-1">AI推定価格</p>
+            <div class="text-4xl font-black text-white result-glow tracking-tighter mb-2">
+                <span id="priceDisplay">0</span>
+                <span class="text-xl ml-1">万円</span>
+            </div>
+            
+            <div class="flex justify-between items-center text-xs text-gray-400 border-t border-white/10 pt-3 mt-2">
+                <span>信頼度: <span class="text-green-400 font-bold">A</span></span>
+                <span>変動予測: <span class="text-red-400 font-bold">↗ 上昇</span></span>
+            </div>
+
+            <button onclick="resetForm()" class="mt-4 w-full py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm text-white transition">
+                もう一度調べる
+            </button>
+        </div>
+
+    </div>
+
+    <script>
+        function calculatePrice() {
+            const pref = document.getElementById('prefecture').value;
+            const city = document.getElementById('city').value;
+            const size = document.getElementById('size').value;
+
+            if (!pref || !city || !size) {
+                // Simple shake animation trigger logic could go here
+                const btn = document.querySelector('button');
+                btn.classList.add('bg-red-600');
+                setTimeout(() => btn.classList.remove('bg-red-600'), 200);
+                alert("すべての項目を入力してください");
+                return;
+            }
+
+            // UI Transitions
+            document.getElementById('inputForm').classList.add('hidden');
+            document.getElementById('loadingState').classList.remove('hidden');
+
+            // Simulate AI Processing
+            setTimeout(() => {
+                document.getElementById('loadingState').classList.add('hidden');
+                document.getElementById('resultView').classList.remove('hidden');
+                
+                // Mock Calculation Logic
+                // Base price roughly 500k yen per m2 * regional factor
+                const basePrice = 50;
+                const estimated = Math.floor(size * basePrice * parseFloat(pref));
+                
+                // Animate Number
+                animateValue("priceDisplay", 0, estimated, 1500);
+            }, 2000);
+        }
+
+        function resetForm() {
+            document.getElementById('resultView').classList.add('hidden');
+            document.getElementById('inputForm').classList.remove('hidden');
+            document.getElementById('prefecture').value = "";
+            document.getElementById('city').value = "";
+            document.getElementById('size').value = "";
+        }
+
+        function animateValue(id, start, end, duration) {
+            if (start === end) return;
+            const range = end - start;
+            let current = start;
+            const increment = end > start ? Math.ceil(range / (duration / 16)) : Math.floor(range / (duration / 16));
+            const obj = document.getElementById(id);
+            const stepTime = 16;
+            const timer = setInterval(function() {
+                current += increment;
+                if ((increment > 0 && current >= end) || (increment < 0 && current <= end)) {
+                    current = end;
+                    clearInterval(timer);
+                }
+                obj.innerHTML = current.toLocaleString();
+            }, stepTime);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ライブ天気＆リスクHUD（日本語・実データ）</title>
+
+  <!-- Tailwind -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Icons -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+
+  <!-- Font -->
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap" rel="stylesheet">
+
+  <style>
+    body {
+      background-color: transparent !important;
+      margin: 0;
+      padding: 0;
+      font-family: 'Noto Sans JP', sans-serif;
+      overflow: hidden;
+    }
+
+    /* HUD Glassmorphism */
+    .hud-glass {
+      background: rgba(15, 23, 42, 0.65);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+    }
+
+    /* Text Visibility */
+    .text-shadow-sm { text-shadow: 0 1px 2px rgba(0,0,0,0.8); }
+    .text-shadow-lg { text-shadow: 0 2px 4px rgba(0,0,0,0.9); }
+
+    /* Alert pulse for high risk */
+    @keyframes pulse-red {
+      0%   { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.65); border-color: rgba(239, 68, 68, 0.85); background: rgba(239, 68, 68, 0.22); }
+      70%  { box-shadow: 0 0 0 12px rgba(239, 68, 68, 0); border-color: rgba(239, 68, 68, 0.35); background: rgba(239, 68, 68, 0.12); }
+      100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); border-color: rgba(239, 68, 68, 0.85); background: rgba(239, 68, 68, 0.22); }
+    }
+    .animate-alert-pulse { animation: pulse-red 2s infinite; }
+
+    /* Layout positioning example: Top Right */
+    .widget-container {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      width: 320px;
+      max-width: 90vw;
+      z-index: 9999;
+    }
+  </style>
+</head>
+
+<body>
+  <!-- Main Widget Container -->
+  <div id="hud-widget" class="widget-container hud-glass rounded-xl overflow-hidden text-white transition-all duration-500">
+
+    <!-- Header: Location & Time -->
+    <div class="px-4 py-3 flex justify-between items-center border-b border-white/10 bg-black/20">
+      <div class="flex items-center space-x-2 min-w-0">
+        <i class="fa-solid fa-location-dot text-cyan-400 text-shadow-sm"></i>
+        <span id="location-name" class="font-bold text-sm tracking-wide text-shadow-sm truncate">位置情報を取得中…</span>
+      </div>
+      <div class="text-xs text-gray-300 font-mono text-shadow-sm">
+        <span id="current-time">--:--</span>
+      </div>
+    </div>
+
+    <!-- Body: Weather Info -->
+    <div class="p-4 flex items-center justify-between">
+      <div class="flex flex-col">
+        <div class="flex items-center">
+          <span id="temperature" class="text-4xl font-black text-shadow-lg tracking-tighter">--</span>
+          <span class="text-xl font-bold mt-1 ml-1">°C</span>
+        </div>
+        <span id="weather-desc" class="text-sm text-gray-200 font-medium text-shadow-sm">天気データを取得中…</span>
+      </div>
+      <div class="text-right">
+        <i id="weather-icon" class="fa-solid fa-circle-notch fa-spin text-4xl text-white/90 drop-shadow-md"></i>
+      </div>
+    </div>
+
+    <!-- Risk / Alert Section -->
+    <div id="risk-panel" class="bg-emerald-500/20 border-t border-white/10 px-4 py-2 flex items-center transition-colors duration-500">
+      <div id="risk-icon-container" class="mr-3 w-8 h-8 flex items-center justify-center rounded-full bg-emerald-500/80 shadow-lg">
+        <i id="risk-icon" class="fa-solid fa-shield-heart text-white text-sm"></i>
+      </div>
+      <div class="flex-1">
+        <h4 id="risk-title" class="text-xs font-bold uppercase tracking-wider text-emerald-100 text-shadow-sm">安全</h4>
+        <p id="risk-desc" class="text-xs text-white text-shadow-sm leading-tight">特に注意すべき気象リスクは見当たりません。</p>
+      </div>
+    </div>
+
+    <!-- Footer: Reload Timer -->
+    <div class="px-4 py-1 bg-black/40 flex justify-between items-center">
+      <span class="text-[10px] text-gray-400">出典: Open-Meteo</span>
+      <div class="flex items-center space-x-1">
+        <i class="fa-solid fa-rotate text-[10px] text-gray-400"></i>
+        <span id="next-update" class="text-[10px] text-gray-400 font-mono">--s</span>
+      </div>
+    </div>
+  </div>
+
+<script>
+  /**
+   * ==========================
+   * 設定
+   * ==========================
+   * - 天気取得：Open-Meteo（APIキー不要）
+   * - 位置表示：Open-Meteo Geocoding（APIキー不要）
+   *
+   * 更新間隔は必要に応じて調整してください。
+   */
+  const UPDATE_INTERVAL_MS = 60_000; // 1分
+  let countdown = Math.round(UPDATE_INTERVAL_MS / 1000);
+
+  // DOM Elements
+  const elLocation = document.getElementById('location-name');
+  const elTime = document.getElementById('current-time');
+  const elTemp = document.getElementById('temperature');
+  const elDesc = document.getElementById('weather-desc');
+  const elIcon = document.getElementById('weather-icon');
+  const elRiskPanel = document.getElementById('risk-panel');
+  const elRiskTitle = document.getElementById('risk-title');
+  const elRiskDesc = document.getElementById('risk-desc');
+  const elRiskIconBox = document.getElementById('risk-icon-container');
+  const elRiskIcon = document.getElementById('risk-icon');
+  const elNextUpdate = document.getElementById('next-update');
+  const elWidget = document.getElementById('hud-widget');
+
+  // Clock + countdown
+  function updateClock() {
+    const now = new Date();
+    elTime.textContent = now.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+
+    countdown--;
+    if (countdown < 0) countdown = Math.round(UPDATE_INTERVAL_MS / 1000);
+    elNextUpdate.textContent = countdown + "s";
+  }
+
+  function setWeatherIconAndColor(code) {
+    // default
+    let icon = "fa-cloud";
+    let color = "text-gray-200";
+
+    // Weather codes: https://open-meteo.com/en/docs (WMO weather interpretation codes)
+    if (code === 0) { icon = "fa-sun"; color = "text-yellow-300"; }
+    else if ([1,2].includes(code)) { icon = "fa-cloud-sun"; color = "text-yellow-200"; }
+    else if (code === 3) { icon = "fa-cloud"; color = "text-gray-200"; }
+    else if ([45,48].includes(code)) { icon = "fa-smog"; color = "text-gray-300"; }
+    else if ([51,53,55].includes(code)) { icon = "fa-cloud-rain"; color = "text-cyan-200"; }
+    else if ([56,57].includes(code)) { icon = "fa-cloud-meatball"; color = "text-cyan-200"; } // freezing drizzle
+    else if ([61,63,65].includes(code)) { icon = "fa-cloud-showers-heavy"; color = "text-blue-300"; }
+    else if ([66,67].includes(code)) { icon = "fa-cloud-showers-heavy"; color = "text-blue-300"; } // freezing rain
+    else if ([71,73,75,77].includes(code)) { icon = "fa-snowflake"; color = "text-sky-200"; }
+    else if ([80,81,82].includes(code)) { icon = "fa-cloud-showers-heavy"; color = "text-blue-300"; }
+    else if ([85,86].includes(code)) { icon = "fa-snowflake"; color = "text-sky-200"; }
+    else if ([95,96,99].includes(code)) { icon = "fa-bolt"; color = "text-purple-300"; }
+
+    elIcon.className = `fa-solid ${icon} text-4xl drop-shadow-md transition-colors duration-500 ${color}`;
+  }
+
+  function weatherCodeToJa(code) {
+    const map = new Map([
+      [0,"快晴"], [1,"晴れ時々くもり"], [2,"くもり時々晴れ"], [3,"くもり"],
+      [45,"霧"], [48,"着氷性の霧"],
+      [51,"弱い霧雨"], [53,"霧雨"], [55,"強い霧雨"],
+      [56,"弱い着氷性の霧雨"], [57,"強い着氷性の霧雨"],
+      [61,"弱い雨"], [63,"雨"], [65,"強い雨"],
+      [66,"弱い着氷性の雨"], [67,"強い着氷性の雨"],
+      [71,"弱い雪"], [73,"雪"], [75,"強い雪"], [77,"霧雪"],
+      [80,"弱いにわか雨"], [81,"にわか雨"], [82,"激しいにわか雨"],
+      [85,"弱いにわか雪"], [86,"強いにわか雪"],
+      [95,"雷雨"], [96,"ひょうを伴う雷雨"], [99,"激しいひょうを伴う雷雨"],
+    ]);
+    return map.get(code) ?? "不明";
+  }
+
+  function updateRiskUI(level, title, desc) {
+    // Reset
+    elRiskPanel.className = "px-4 py-2 flex items-center transition-all duration-500 border-t border-white/10";
+    elWidget.classList.remove('animate-alert-pulse');
+
+    elRiskTitle.textContent = title;
+    elRiskDesc.textContent = desc;
+
+    if (level === 'safe') {
+      elRiskPanel.classList.add('bg-emerald-500/20');
+      elRiskIconBox.className = "mr-3 w-8 h-8 flex items-center justify-center rounded-full bg-emerald-500/80 shadow-lg";
+      elRiskIcon.className = "fa-solid fa-check text-white text-sm";
+      elRiskTitle.className = "text-xs font-bold tracking-wider text-emerald-100 text-shadow-sm";
+    } else if (level === 'caution') {
+      elRiskPanel.classList.add('bg-yellow-500/20');
+      elRiskIconBox.className = "mr-3 w-8 h-8 flex items-center justify-center rounded-full bg-yellow-500/80 shadow-lg";
+      elRiskIcon.className = "fa-solid fa-exclamation text-black text-sm";
+      elRiskTitle.className = "text-xs font-bold tracking-wider text-yellow-100 text-shadow-sm";
+    } else if (level === 'warning') {
+      elRiskPanel.classList.add('bg-orange-600/30');
+      elRiskIconBox.className = "mr-3 w-8 h-8 flex items-center justify-center rounded-full bg-orange-500 shadow-lg";
+      elRiskIcon.className = "fa-solid fa-bolt text-white text-sm";
+      elRiskTitle.className = "text-xs font-bold tracking-wider text-orange-100 text-shadow-sm";
+    } else if (level === 'danger') {
+      elRiskPanel.classList.add('bg-red-600/40');
+      elRiskIconBox.className = "mr-3 w-8 h-8 flex items-center justify-center rounded-full bg-red-600 shadow-lg";
+      elRiskIcon.className = "fa-solid fa-triangle-exclamation text-white text-sm";
+      elRiskTitle.className = "text-xs font-bold tracking-wider text-red-100 text-shadow-sm";
+      elWidget.classList.add('animate-alert-pulse');
+    }
+  }
+
+  function deriveRisk({ weathercode, precipitation, windspeed }) {
+    // シンプルな「体感リスク」判定（気象警報そのものではありません）
+    // しきい値は用途に応じて調整してください。
+    if ([95,96,99].includes(weathercode)) {
+      return { level:"danger", title:"雷に注意", desc:"雷雨の可能性があります。屋外活動は十分注意してください。" };
+    }
+    if (precipitation >= 10) {
+      return { level:"danger", title:"大雨に注意", desc:"強い雨が予想されます。移動・屋外活動は十分注意してください。" };
+    }
+    if (precipitation >= 1) {
+      return { level:"caution", title:"雨に注意", desc:"雨が降る可能性があります。傘などの準備をおすすめします。" };
+    }
+    if (windspeed >= 15) {
+      return { level:"warning", title:"強風に注意", desc:"風が強くなる可能性があります。飛来物や転倒に注意してください。" };
+    }
+    return { level:"safe", title:"安全", desc:"特に注意すべき気象リスクは見当たりません。" };
+  }
+
+  async function reverseGeocode(lat, lon) {
+    // Open-Meteo Geocoding API
+    // 近い地点名を検索するため、緯度経度を「キーワード」化して近傍を探す方法を採ります（簡易）。
+    // 精度を上げたい場合は別のリバースジオコーディングAPIをサーバー経由で利用してください。
+    const url = `https://geocoding-api.open-meteo.com/v1/reverse?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}&language=ja`;
+    const r = await fetch(url, { cache:"no-store" });
+    if (!r.ok) throw new Error("reverse geocoding failed");
+    const j = await r.json();
+    const name = j?.name || j?.results?.[0]?.name;
+    const admin1 = j?.admin1 || j?.results?.[0]?.admin1;
+    const country = j?.country || j?.results?.[0]?.country;
+    const label = [admin1, name].filter(Boolean).join(" ") || [country, name].filter(Boolean).join(" ") || "現在地";
+    return label;
+  }
+
+  async function fetchWeather(lat, lon) {
+    // current_weather は気温・風・天気コードを返します
+    // さらに hourly で降水量を取得し、「現在時刻に最も近い時間」の値を採用します
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${encodeURIComponent(lat)}&longitude=${encodeURIComponent(lon)}&current_weather=true&hourly=precipitation,temperature_2m,weathercode,wind_speed_10m&timezone=auto`;
+    const r = await fetch(url, { cache:"no-store" });
+    if (!r.ok) throw new Error("weather fetch failed");
+    return await r.json();
+  }
+
+  function nearestHourlyValue(hourly, key, nowLocalIso) {
+    // hourly.time と nowLocalIso の最も近いindexを探す
+    const times = hourly?.time || [];
+    const arr = hourly?.[key] || [];
+    if (!times.length || !arr.length) return null;
+
+    // nowLocalIso 例: "2026-02-05T17:30"
+    const nowT = Date.parse(nowLocalIso);
+    let bestIdx = 0;
+    let bestDiff = Infinity;
+    for (let i=0;i<times.length;i++){
+      const t = Date.parse(times[i]);
+      const diff = Math.abs(t - nowT);
+      if (diff < bestDiff){
+        bestDiff = diff;
+        bestIdx = i;
+      }
+    }
+    const v = arr[bestIdx];
+    return (typeof v === "number") ? v : null;
+  }
+
+  async function refreshAll(lat, lon) {
+    countdown = Math.round(UPDATE_INTERVAL_MS / 1000);
+
+    try {
+      // Location label (Japanese)
+      try {
+        const loc = await reverseGeocode(lat, lon);
+        elLocation.textContent = loc;
+      } catch (e) {
+        // keep fallback
+        elLocation.textContent = "現在地";
+      }
+
+      // Weather
+      const data = await fetchWeather(lat, lon);
+      const cw = data?.current_weather;
+      if (!cw) throw new Error("current_weather missing");
+
+      const temp = cw.temperature;
+      const code = cw.weathercode;
+      const wind = cw.windspeed;
+
+      // current local time string from API timezone
+      // Open-Meteo returns local time in "current_weather.time" (already in timezone=auto)
+      const nowIso = cw.time || new Date().toISOString();
+
+      // precipitation from hourly nearest point
+      const precip = nearestHourlyValue(data?.hourly, "precipitation", nowIso) ?? 0;
+
+      // UI updates (Japanese)
+      elTemp.textContent = Math.round(temp);
+      const desc = weatherCodeToJa(code);
+      elDesc.textContent = `${desc} / 風 ${Math.round(wind)} km/h / 降水 ${precip.toFixed(1)} mm`;
+
+      setWeatherIconAndColor(code);
+
+      // Risk
+      const risk = deriveRisk({ weathercode: code, precipitation: precip, windspeed: wind });
+      updateRiskUI(risk.level, risk.title, risk.desc);
+
+    } catch (err) {
+      console.error(err);
+      elDesc.textContent = "天気データの取得に失敗しました。";
+      elIcon.className = "fa-solid fa-triangle-exclamation text-4xl text-red-300 drop-shadow-md";
+      updateRiskUI("warning", "取得エラー", "ネットワークやAPI制限により取得できませんでした。");
+    }
+  }
+
+  function getCoords() {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) reject(new Error("geolocation not supported"));
+      navigator.geolocation.getCurrentPosition(
+        (pos) => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+        (err) => reject(err),
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 60_000 }
+      );
+    });
+  }
+
+  // Init
+  window.onload = async () => {
+    // start clock
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    // coords: try geolocation, else fallback (Tokyo)
+    let coords = { lat: 35.6895, lon: 139.6917 };
+    try {
+      coords = await getCoords();
+    } catch (e) {
+      elLocation.textContent = "東京（位置情報なし）";
+    }
+
+    // initial fetch
+    await refreshAll(coords.lat, coords.lon);
+
+    // periodic refresh
+    setInterval(() => refreshAll(coords.lat, coords.lon), UPDATE_INTERVAL_MS);
+  };
+</script>
+</body>
+</html>

@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Draggable YouTube Widget</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            background: transparent !important;
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+        }
+
+        /* Custom Scrollbar for sleek look */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.3);
+            border-radius: 3px;
+        }
+
+        /* Glassmorphism Base */
+        .glass-panel {
+            background: rgba(15, 15, 15, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+        }
+
+        /* Animations */
+        .fade-in {
+            animation: fadeIn 0.3s ease-out forwards;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Prevent iframe from capturing mouse events during drag */
+        .pointer-events-none-iframe iframe {
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Draggable Widget Container -->
+    <div id="widget-container" class="glass-panel fixed top-8 left-8 w-80 md:w-96 rounded-2xl overflow-hidden flex flex-col transition-shadow duration-300 hover:shadow-red-900/20 fade-in" style="z-index: 9999;">
+        
+        <!-- Drag Handle / Header -->
+        <div id="drag-handle" class="bg-white/5 p-3 flex justify-between items-center cursor-move select-none border-b border-white/10 group">
+            <div class="flex items-center gap-2">
+                <svg class="w-4 h-4 text-red-500" fill="currentColor" viewBox="0 0 24 24"><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/></svg>
+                <span class="text-xs font-bold text-white/90 tracking-wider uppercase">YouTube Player</span>
+            </div>
+            <div class="flex items-center gap-2">
+                 <!-- Reset/Close Button -->
+                <button onclick="resetPlayer()" class="text-white/50 hover:text-white transition-colors p-1">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                </button>
+            </div>
+        </div>
+
+        <!-- Content Area -->
+        <div class="relative w-full bg-black/50">
+            
+            <!-- Input State -->
+            <div id="input-view" class="p-6 flex flex-col gap-4">
+                <div class="text-center">
+                    <p class="text-sm text-gray-300 mb-1">Paste Video URL</p>
+                </div>
+                <div class="relative">
+                    <input type="text" id="yt-url" placeholder="https://youtu.be/..." 
+                        class="w-full bg-white/10 border border-white/20 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500 transition-all placeholder-gray-500">
+                </div>
+                <button onclick="loadVideo()" 
+                    class="w-full bg-red-600 hover:bg-red-700 text-white text-sm font-bold py-2 px-4 rounded-lg shadow-lg shadow-red-900/30 transition-all transform active:scale-95 flex justify-center items-center gap-2">
+                    <span>Play Video</span>
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                </button>
+                <p id="error-msg" class="text-xs text-red-400 text-center hidden">Invalid URL format</p>
+            </div>
+
+            <!-- Player State (Initially Hidden) -->
+            <div id="player-view" class="hidden">
+                <div class="aspect-video w-full bg-black">
+                    <iframe id="yt-iframe" class="w-full h-full" src="" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Footer / Resizer Handle Hint -->
+        <div class="bg-white/5 h-1.5 w-full cursor-s-resize flex justify-center items-center">
+           <div class="w-8 h-0.5 bg-white/20 rounded-full"></div>
+        </div>
+    </div>
+
+    <script>
+        // --- Drag Functionality ---
+        const widget = document.getElementById('widget-container');
+        const handle = document.getElementById('drag-handle');
+        let isDragging = false;
+        let startX, startY, initialLeft, initialTop;
+
+        handle.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            
+            // Get current position (handling auto/percent values by using getComputedStyle)
+            const rect = widget.getBoundingClientRect();
+            initialLeft = rect.left;
+            initialTop = rect.top;
+
+            // Add class to disable pointer events on iframe (fixes drag lag over iframe)
+            widget.classList.add('pointer-events-none-iframe');
+            document.body.style.cursor = 'move';
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            
+            const dx = e.clientX - startX;
+            const dy = e.clientY - startY;
+            
+            widget.style.left = `${initialLeft + dx}px`;
+            widget.style.top = `${initialTop + dy}px`;
+            
+            // Remove 'right' or 'bottom' styles if they interfere
+            widget.style.right = 'auto';
+            widget.style.bottom = 'auto';
+        });
+
+        window.addEventListener('mouseup', () => {
+            isDragging = false;
+            widget.classList.remove('pointer-events-none-iframe');
+            document.body.style.cursor = 'default';
+        });
+
+        // --- YouTube Logic ---
+        function getYouTubeId(url) {
+            const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+            const match = url.match(regExp);
+            return (match && match[2].length === 11) ? match[2] : null;
+        }
+
+        function loadVideo() {
+            const input = document.getElementById('yt-url');
+            const url = input.value;
+            const videoId = getYouTubeId(url);
+            const errorMsg = document.getElementById('error-msg');
+
+            if (videoId) {
+                errorMsg.classList.add('hidden');
+                document.getElementById('input-view').classList.add('hidden');
+                document.getElementById('player-view').classList.remove('hidden');
+                
+                // Set iframe src with autoplay enabled
+                const iframe = document.getElementById('yt-iframe');
+                iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0`;
+            } else {
+                errorMsg.classList.remove('hidden');
+                // Shake animation
+                input.classList.add('ring-2', 'ring-red-500');
+                setTimeout(() => input.classList.remove('ring-2', 'ring-red-500'), 500);
+            }
+        }
+
+        function resetPlayer() {
+            document.getElementById('input-view').classList.remove('hidden');
+            document.getElementById('player-view').classList.add('hidden');
+            document.getElementById('yt-iframe').src = "";
+            document.getElementById('yt-url').value = "";
+        }
+
+        // Allow Enter key to submit
+        document.getElementById('yt-url').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                loadVideo();
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>hihaho Overlay Layer - Keyboard Dashboards</title>
+<style>
+  /* Transparent background for overlay-in-iframe usage */
+  html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    overflow: hidden;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans JP", "Hiragino Sans", "Yu Gothic", sans-serif;
+  }
+
+  :root{
+    --accent: 64, 220, 255;            /* default cyan */
+    --accent2: 120, 240, 255;
+    --text: 235, 252, 255;
+    --muted: 235, 252, 255;
+    --glass: 15, 35, 45;
+    --border: 120, 240, 255;
+    --shadow: 64, 220, 255;
+    --panelOpacity: 0.35;
+    --blur: 10px;
+  }
+
+  /* Theme presets (toggle with T) */
+  .theme-cyan { --accent: 64, 220, 255; --accent2: 120, 240, 255; --glass: 15, 35, 45; --shadow: 64, 220, 255; }
+  .theme-green{ --accent: 55, 166, 65;  --accent2: 120, 220, 140; --glass: 12, 28, 20; --shadow: 55, 166, 65; } /* Spline Green-ish */
+  .theme-magenta{ --accent: 255, 80, 210; --accent2: 255, 160, 235; --glass: 30, 12, 28; --shadow: 255, 80, 210; }
+  .theme-amber{ --accent: 255, 190, 60; --accent2: 255, 220, 140; --glass: 34, 24, 10; --shadow: 255, 190, 60; }
+
+  /* Root overlay */
+  .overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;  /* do not block video controls */
+  }
+
+  /* Canvas FX */
+  canvas#fx {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    mix-blend-mode: screen;
+    opacity: 0.9;
+  }
+
+  /* HUD container */
+  .hud {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  /* Panel base */
+  .panel {
+    position: absolute;
+    border-radius: 16px;
+    backdrop-filter: blur(var(--blur));
+    -webkit-backdrop-filter: blur(var(--blur));
+    background: rgba(var(--glass), var(--panelOpacity));
+    border: 1px solid rgba(var(--border), 0.30);
+    color: rgba(var(--text), 0.95);
+    box-shadow: 0 0 30px rgba(var(--shadow), 0.20);
+    overflow: hidden;
+    transform: translateZ(0);
+  }
+
+  .panel::before{
+    content:"";
+    position:absolute;
+    inset:-2px;
+    background:
+      radial-gradient(600px 220px at 20% 10%, rgba(var(--accent), .22), transparent 55%),
+      radial-gradient(600px 220px at 80% 90%, rgba(var(--accent), .14), transparent 55%);
+    filter: blur(10px);
+    opacity: .85;
+    pointer-events:none;
+  }
+
+  .panelHeader{
+    position: relative;
+    padding: 12px 14px 10px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap: 10px;
+    border-bottom: 1px solid rgba(var(--border), .18);
+  }
+
+  .badge{
+    font-size: 12px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: rgba(var(--text), .92);
+    display:flex;
+    align-items:center;
+    gap:8px;
+    white-space: nowrap;
+  }
+
+  .dot{
+    width:8px;height:8px;border-radius:50%;
+    background: rgba(var(--accent), 1);
+    box-shadow: 0 0 16px rgba(var(--accent), 0.9);
+  }
+
+  .time{
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+    color: rgba(var(--muted), .72);
+  }
+
+  .panelBody{
+    position: relative;
+    padding: 12px 14px 14px;
+  }
+
+  .title{
+    margin: 0 0 6px;
+    font-size: 16px;
+    line-height: 1.2;
+    letter-spacing: .02em;
+    text-shadow: 0 0 18px rgba(var(--accent), .18);
+  }
+
+  .desc{
+    margin: 0 0 12px;
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: rgba(var(--muted), .78);
+  }
+
+  .bars{
+    display:grid;
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .barRow{
+    display:grid;
+    grid-template-columns: 70px 1fr 44px;
+    gap: 10px;
+    align-items:center;
+    font-size: 12px;
+    color: rgba(var(--muted), .80);
+  }
+
+  .barTrack{
+    height: 8px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.10);
+    overflow:hidden;
+    position:relative;
+  }
+
+  .barFill{
+    height: 100%;
+    width: 40%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(var(--accent), .95), rgba(var(--accent), .25));
+    box-shadow: 0 0 18px rgba(var(--accent), .25);
+    position: relative;
+  }
+
+  .barFill::after{
+    content:"";
+    position:absolute;
+    inset:-6px;
+    background: radial-gradient(120px 12px at 80% 50%, rgba(var(--accent), .55), transparent 60%);
+    filter: blur(6px);
+    opacity: .8;
+  }
+
+  .barPct{
+    text-align:right;
+    font-variant-numeric: tabular-nums;
+    color: rgba(var(--text), .86);
+  }
+
+  /* Panel placements (match your screenshot style) */
+  #panelKPI { right: 2.0%; bottom: 7.5%; width: min(520px, 48vw); }
+  #panelSteps { left: 2.0%; bottom: 7.5%; width: min(460px, 44vw); }
+  #panelMini { right: 2.0%; top: 6.5%; width: min(380px, 34vw); }
+
+  /* Steps list */
+  .steps{
+    display:grid;
+    gap: 8px;
+    margin-top: 2px;
+  }
+  .step{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap: 10px;
+    font-size: 12.5px;
+    color: rgba(var(--muted), .80);
+  }
+  .pill{
+    padding: 4px 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(var(--border), .22);
+    background: rgba(255,255,255,.06);
+    color: rgba(var(--text), .90);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* Mini chart */
+  .sparkWrap{
+    margin-top: 8px;
+    height: 78px;
+    border-radius: 12px;
+    border: 1px solid rgba(var(--border), .14);
+    background: rgba(0,0,0,.10);
+    overflow:hidden;
+  }
+  svg{ display:block; width:100%; height:100%; }
+
+  /* Scanlines + vignette */
+  .scanlines {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+      repeating-linear-gradient(
+        to bottom,
+        rgba(0,0,0,0.00) 0px,
+        rgba(0,0,0,0.00) 2px,
+        rgba(0,0,0,0.06) 3px
+      ),
+      radial-gradient(ellipse at center, rgba(0,0,0,0.00) 45%, rgba(0,0,0,0.26) 100%);
+    opacity: .75;
+  }
+
+  /* Focus helper (must be clickable => pointer-events: auto) */
+  .focusHelper {
+    position: absolute;
+    left: 12px;
+    top: 12px;
+    padding: 9px 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(var(--border), .18);
+    background: rgba(var(--glass), 0.24);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    box-shadow: 0 0 18px rgba(var(--shadow), 0.10);
+    font-size: 12px;
+    color: rgba(var(--text), .82);
+    pointer-events: auto; /* enable click */
+    user-select: none;
+  }
+  .focusHelper b{ color: rgba(var(--text), .95); }
+
+  .kbd{
+    display:inline-block;
+    padding: 2px 6px;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,.16);
+    background: rgba(255,255,255,.06);
+    font-variant-numeric: tabular-nums;
+    margin: 0 2px;
+  }
+
+  /* Hidden state (toggled by keyboard) */
+  .is-hidden{ display:none !important; }
+
+  /* Reduce motion preference */
+  @media (prefers-reduced-motion: reduce){
+    canvas#fx{ display:none; }
+  }
+</style>
+</head>
+
+<body class="theme-cyan">
+  <div class="overlay" id="overlayRoot">
+    <canvas id="fx"></canvas>
+
+    <div class="hud" aria-hidden="true">
+      <!-- KPI panel (bottom-right, like your screenshot) -->
+      <section class="panel" id="panelKPI">
+        <div class="panelHeader">
+          <div class="badge"><span class="dot"></span> リアルタイム注目ポイント</div>
+          <div class="time" id="clock">--:--:--</div>
+        </div>
+        <div class="panelBody">
+          <h3 class="title" id="headline">ダッシュボード 1（KPI）</h3>
+          <p class="desc" id="subline">キーボードで表示切替・色変更。hihahoイベントに同期する拡張も可能です。</p>
+
+          <div class="bars" id="bars">
+            <div class="barRow">
+              <div>理解度</div>
+              <div class="barTrack"><div class="barFill" style="width: 62%"></div></div>
+              <div class="barPct">62%</div>
+            </div>
+            <div class="barRow">
+              <div>集中度</div>
+              <div class="barTrack"><div class="barFill" style="width: 78%"></div></div>
+              <div class="barPct">78%</div>
+            </div>
+            <div class="barRow">
+              <div>到達</div>
+              <div class="barTrack"><div class="barFill" style="width: 45%"></div></div>
+              <div class="barPct">45%</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Steps panel (bottom-left) -->
+      <section class="panel" id="panelSteps">
+        <div class="panelHeader">
+          <div class="badge"><span class="dot"></span> 学習フロー</div>
+          <div class="time" id="modeLabel">MODE: A</div>
+        </div>
+        <div class="panelBody">
+          <h3 class="title">ダッシュボード 2（ステップ）</h3>
+          <p class="desc">説明→問題→解説→次へ、のような進行や注目ポイントを表示できます。</p>
+          <div class="steps" id="steps">
+            <div class="step"><span>1. 導入</span><span class="pill">OK</span></div>
+            <div class="step"><span>2. 問題</span><span class="pill">IN</span></div>
+            <div class="step"><span>3. 解説</span><span class="pill">NEXT</span></div>
+            <div class="step"><span>4. まとめ</span><span class="pill">—</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Mini panel (top-right) -->
+      <section class="panel" id="panelMini">
+        <div class="panelHeader">
+          <div class="badge"><span class="dot"></span> ミニ分析</div>
+          <div class="time" id="themeLabel">THEME</div>
+        </div>
+        <div class="panelBody">
+          <h3 class="title">ダッシュボード 3（ミニチャート）</h3>
+          <p class="desc">短い折れ線・強調ポイントなど、画面の占有を最小にできます。</p>
+          <div class="sparkWrap">
+            <svg viewBox="0 0 300 80" preserveAspectRatio="none" aria-hidden="true">
+              <defs>
+                <linearGradient id="g" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0" stop-color="rgba(255,255,255,0.0)"/>
+                  <stop offset="1" stop-color="rgba(255,255,255,0.0)"/>
+                </linearGradient>
+              </defs>
+              <polyline id="spark" fill="none" stroke="rgba(255,255,255,0.85)" stroke-width="2"
+                points="0,60 30,55 60,58 90,42 120,45 150,30 180,34 210,22 240,28 270,18 300,24"/>
+            </svg>
+          </div>
+        </div>
+      </section>
+
+      <div class="scanlines" aria-hidden="true"></div>
+
+      <!-- Click once to ensure key events reach this iframe -->
+      <div class="focusHelper" id="focusHelper" title="クリックでこのオーバーレイにフォーカス">
+        <b>キーボード操作</b> を使うには一度ここをクリック<br/>
+        <span class="kbd">1</span><span class="kbd">2</span><span class="kbd">3</span> 表示切替 / <span class="kbd">0</span> 全OFF<br/>
+        <span class="kbd">T</span> テーマ / <span class="kbd">C</span> 色 / <span class="kbd">[</span><span class="kbd">]</span> 透明度
+      </div>
+    </div>
+  </div>
+
+<script>
+  // ----------------------------
+  // Clock
+  // ----------------------------
+  const clockEl = document.getElementById('clock');
+  function tickClock(){
+    const d = new Date();
+    const hh = String(d.getHours()).padStart(2,'0');
+    const mm = String(d.getMinutes()).padStart(2,'0');
+    const ss = String(d.getSeconds()).padStart(2,'0');
+    clockEl.textContent = `${hh}:${mm}:${ss}`;
+  }
+  tickClock();
+  setInterval(tickClock, 1000);
+
+  // ----------------------------
+  // Particles (Canvas) - gentle, not too heavy
+  // ----------------------------
+  const canvas = document.getElementById('fx');
+  const ctx = canvas.getContext('2d', { alpha: true });
+
+  let W = 0, H = 0, DPR = 1;
+  function resize(){
+    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    DPR = dpr;
+    W = Math.floor(innerWidth);
+    H = Math.floor(innerHeight);
+    canvas.width = Math.floor(W * dpr);
+    canvas.height = Math.floor(H * dpr);
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  addEventListener('resize', resize, { passive:true });
+  resize();
+
+  const particles = [];
+  let particleCount = 130;
+
+  const rand = (min,max)=>Math.random()*(max-min)+min;
+
+  function spawnParticle(){
+    // spawn around edges -> slight inward flow
+    const edge = (Math.random()*4)|0;
+    let x,y,vx,vy;
+    const speed = rand(0.25, 1.0);
+    if(edge===0){ x=rand(0,W); y=-10; vx=rand(-0.35,0.35); vy=speed; }
+    if(edge===1){ x=W+10; y=rand(0,H); vx=-speed; vy=rand(-0.35,0.35); }
+    if(edge===2){ x=rand(0,W); y=H+10; vx=rand(-0.35,0.35); vy=-speed; }
+    if(edge===3){ x=-10; y=rand(0,H); vx=speed; vy=rand(-0.35,0.35); }
+    return { x,y,vx,vy, life: rand(2.2, 6.0), age: 0, r: rand(1.0, 2.2), glow: rand(0.14, 0.55) };
+  }
+
+  function ensureParticles(){
+    while(particles.length < particleCount) particles.push(spawnParticle());
+  }
+
+  function getAccentRGBA(alpha){
+    const accent = getComputedStyle(document.body).getPropertyValue('--accent').trim() || '64,220,255';
+    return `rgba(${accent},${alpha})`;
+  }
+
+  function loop(){
+    ctx.clearRect(0,0,W,H);
+    ctx.globalCompositeOperation = 'lighter';
+
+    // soft haze
+    const g = ctx.createRadialGradient(W*0.65, H*0.25, 10, W*0.65, H*0.25, Math.max(W,H)*0.9);
+    g.addColorStop(0, getAccentRGBA(0.06));
+    g.addColorStop(1, getAccentRGBA(0.0));
+    ctx.fillStyle = g;
+    ctx.fillRect(0,0,W,H);
+
+    for(let i=particles.length-1;i>=0;i--){
+      const p = particles[i];
+      p.age += 0.016;
+      p.x += p.vx * 2.0;
+      p.y += p.vy * 2.0;
+
+      // swirl toward center (subtle)
+      const cx = W*0.5, cy = H*0.55;
+      const dx = (cx - p.x), dy = (cy - p.y);
+      const dist = Math.max(60, Math.hypot(dx,dy));
+      p.vx += (dx / dist) * 0.01;
+      p.vy += (dy / dist) * 0.01;
+
+      const a = Math.max(0, 1 - (p.age / p.life));
+      ctx.beginPath();
+      ctx.fillStyle = getAccentRGBA(a * p.glow);
+      ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+      ctx.fill();
+
+      // tiny trail
+      ctx.strokeStyle = getAccentRGBA(a * 0.10);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(p.x,p.y);
+      ctx.lineTo(p.x - p.vx*10, p.y - p.vy*10);
+      ctx.stroke();
+
+      if(p.age>p.life || p.x<-80 || p.x>W+80 || p.y<-80 || p.y>H+80) particles.splice(i,1);
+    }
+
+    // subtle connections
+    for(let i=0;i<particles.length;i++){
+      for(let j=i+1;j<particles.length;j++){
+        const a = particles[i], b = particles[j];
+        const d = Math.hypot(a.x-b.x, a.y-b.y);
+        if(d < 85){
+          const t = (1 - d/85) * 0.05;
+          ctx.strokeStyle = getAccentRGBA(t);
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(a.x,a.y);
+          ctx.lineTo(b.x,b.y);
+          ctx.stroke();
+        }
+      }
+    }
+
+    ctx.globalCompositeOperation = 'source-over';
+    ensureParticles();
+    requestAnimationFrame(loop);
+  }
+  ensureParticles();
+  requestAnimationFrame(loop);
+
+  // ----------------------------
+  // Keyboard controls
+  // Note: inside iframe, key events work when iframe is focused.
+  // We provide a small "focus helper" clickable hint.
+  // ----------------------------
+  const panelKPI = document.getElementById('panelKPI');
+  const panelSteps = document.getElementById('panelSteps');
+  const panelMini = document.getElementById('panelMini');
+  const modeLabel = document.getElementById('modeLabel');
+  const themeLabel = document.getElementById('themeLabel');
+
+  let themeIdx = 0;
+  const themes = ['theme-cyan','theme-green','theme-magenta','theme-amber'];
+
+  let colorIdx = 0;
+  const accentPresets = [
+    { a: '64,220,255',  b: '120,240,255' },  // cyan
+    { a: '55,166,65',   b: '120,220,140' },  // green
+    { a: '255,80,210',  b: '255,160,235' },  // magenta
+    { a: '255,190,60',  b: '255,220,140' },  // amber
+    { a: '140,120,255', b: '200,190,255' },  // violet
+  ];
+
+  function showOnly(n){
+    // n: 0 = all off, 1/2/3 show specific, 9 = all on
+    panelKPI.classList.toggle('is-hidden', !(n===1 || n===9));
+    panelSteps.classList.toggle('is-hidden', !(n===2 || n===9));
+    panelMini.classList.toggle('is-hidden', !(n===3 || n===9));
+  }
+
+  function togglePanel(el){
+    el.classList.toggle('is-hidden');
+  }
+
+  function cycleTheme(){
+    document.body.classList.remove(...themes);
+    themeIdx = (themeIdx + 1) % themes.length;
+    document.body.classList.add(themes[themeIdx]);
+    themeLabel.textContent = `THEME: ${themes[themeIdx].replace('theme-','').toUpperCase()}`;
+  }
+
+  function cycleAccent(){
+    colorIdx = (colorIdx + 1) % accentPresets.length;
+    document.body.style.setProperty('--accent', accentPresets[colorIdx].a);
+    document.body.style.setProperty('--accent2', accentPresets[colorIdx].b);
+    themeLabel.textContent = `COLOR: ${colorIdx+1}/${accentPresets.length}`;
+  }
+
+  function adjustOpacity(delta){
+    const st = getComputedStyle(document.body);
+    const cur = parseFloat(st.getPropertyValue('--panelOpacity')) || 0.35;
+    const next = Math.max(0.12, Math.min(0.75, cur + delta));
+    document.body.style.setProperty('--panelOpacity', next.toFixed(2));
+  }
+
+  function burstParticles(){
+    // short "impact" effect
+    particleCount = Math.min(220, particleCount + 40);
+    setTimeout(()=>{ particleCount = Math.max(90, particleCount - 40); }, 900);
+  }
+
+  // Focus helper
+  const focusHelper = document.getElementById('focusHelper');
+  focusHelper.addEventListener('click', () => {
+    // try to focus the iframe document
+    window.focus();
+    focusHelper.style.opacity = '0.15';
+    focusHelper.style.filter = 'blur(0px)';
+    modeLabel.textContent = 'MODE: FOCUSED';
+    burstParticles();
+  });
+
+  // Keybinds
+  window.addEventListener('keydown', (e) => {
+    const k = (e.key || '').toLowerCase();
+
+    if(k === '1'){ togglePanel(panelKPI); burstParticles(); }
+    if(k === '2'){ togglePanel(panelSteps); burstParticles(); }
+    if(k === '3'){ togglePanel(panelMini); burstParticles(); }
+
+    if(k === '0'){ showOnly(0); }
+    if(k === '9'){ showOnly(9); }
+
+    if(k === 't'){ cycleTheme(); burstParticles(); }
+    if(k === 'c'){ cycleAccent(); burstParticles(); }
+
+    if(k === '['){ adjustOpacity(-0.05); }
+    if(k === ']'){ adjustOpacity(+0.05); }
+
+    // optional: M toggles mode label for demo
+    if(k === 'm'){
+      const cur = modeLabel.textContent.includes('A') ? 'B' : 'A';
+      modeLabel.textContent = `MODE: ${cur}`;
+    }
+  });
+
+  // Default: show only KPI (like your screenshot)
+  showOnly(1);
+  themeLabel.textContent = 'THEME: CYAN';
+
+  // ----------------------------
+  // postMessage API (optional)
+  // Parent can control panels/colors/labels without relying on key focus.
+  //
+  // Example:
+  // iframeEl.contentWindow.postMessage({
+  //   type:'overlay',
+  //   show: 9, // 0 off, 1 KPI, 2 Steps, 3 Mini, 9 all
+  //   headline:'重要ポイント', subline:'ここを強調',
+  //   progress:[80,55,42],
+  //   theme:'green',  // cyan/green/magenta/amber
+  //   accent:'55,166,65',
+  //   opacity:0.40,
+  //   burst:true
+  // }, '*');
+  // ----------------------------
+  function setBars(vals){
+    const rows = document.querySelectorAll('#panelKPI .barRow');
+    vals.forEach((v, idx) => {
+      if(!rows[idx]) return;
+      const fill = rows[idx].querySelector('.barFill');
+      const pct  = rows[idx].querySelector('.barPct');
+      const clamped = Math.max(0, Math.min(100, Number(v)));
+      fill.style.width = clamped + '%';
+      pct.textContent = clamped + '%';
+    });
+  }
+
+  window.addEventListener('message', (ev) => {
+    const d = ev.data;
+    if(!d || typeof d !== 'object') return;
+    if(d.type !== 'overlay') return;
+
+    if(typeof d.show === 'number') showOnly(d.show);
+
+    if(typeof d.headline === 'string') document.getElementById('headline').textContent = d.headline;
+    if(typeof d.subline === 'string') document.getElementById('subline').textContent  = d.subline;
+    if(Array.isArray(d.progress)) setBars(d.progress);
+
+    if(typeof d.opacity === 'number'){
+      const next = Math.max(0.12, Math.min(0.75, d.opacity));
+      document.body.style.setProperty('--panelOpacity', next.toFixed(2));
+    }
+
+    if(typeof d.accent === 'string'){
+      document.body.style.setProperty('--accent', d.accent);
+    }
+
+    if(typeof d.theme === 'string'){
+      const name = 'theme-' + d.theme.toLowerCase();
+      if(themes.includes(name)){
+        document.body.classList.remove(...themes);
+        document.body.classList.add(name);
+        themeLabel.textContent = `THEME: ${d.theme.toUpperCase()}`;
+      }
+    }
+
+    if(d.burst) burstParticles();
+  });
+</script>
+</body>
+</html>

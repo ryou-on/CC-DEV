@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mini YouTube TV Overlay</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body, html {
+            background-color: transparent !important;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* Let clicks pass through empty areas */
+        }
+
+        /* Enable pointer events only on the widget */
+        #tv-widget-container {
+            pointer-events: auto;
+        }
+
+        /* TV Frame Styling */
+        .tv-frame {
+            background: #2a2a2a;
+            border-radius: 12px;
+            padding: 10px 10px 30px 10px; /* Extra bottom padding for controls */
+            box-shadow: 
+                0 10px 25px rgba(0,0,0,0.5),
+                inset 0 2px 5px rgba(255,255,255,0.1);
+            position: relative;
+            transition: transform 0.3s ease;
+        }
+
+        .tv-screen {
+            position: relative;
+            width: 100%;
+            padding-top: 56.25%; /* 16:9 Aspect Ratio */
+            background: #000;
+            border-radius: 4px;
+            overflow: hidden;
+            box-shadow: inset 0 0 10px rgba(0,0,0,0.8);
+        }
+
+        .tv-screen iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        /* Retro Power LED */
+        .power-led {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #333;
+            box-shadow: inset 0 1px 2px rgba(0,0,0,0.5);
+            position: absolute;
+            bottom: 12px;
+            right: 20px;
+            transition: background-color 0.3s;
+        }
+
+        .power-led.on {
+            background-color: #00ff41;
+            box-shadow: 0 0 6px #00ff41;
+        }
+
+        /* Glassmorphism Input Panel */
+        .glass-panel {
+            background: rgba(20, 20, 20, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            border-radius: 12px;
+        }
+
+        /* Scanline effect overlay for retro feel (optional, kept subtle) */
+        .scanlines {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(
+                to bottom,
+                rgba(255,255,255,0),
+                rgba(255,255,255,0) 50%,
+                rgba(0,0,0,0.1) 50%,
+                rgba(0,0,0,0.1)
+            );
+            background-size: 100% 4px;
+            pointer-events: none;
+            z-index: 10;
+            opacity: 0.3;
+        }
+        
+        /* Text Shadow for visibility */
+        .text-shadow-strong {
+            text-shadow: 0 2px 4px rgba(0,0,0,0.9);
+        }
+
+        /* Button styles */
+        .btn-retro {
+            background: #444;
+            border: 1px solid #555;
+            color: #ddd;
+            transition: all 0.2s;
+        }
+        .btn-retro:hover {
+            background: #555;
+            color: #fff;
+        }
+        .btn-retro:active {
+            background: #333;
+            transform: translateY(1px);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Main Container: Fixed Bottom Right, ~1/5 Screen Width (min 260px) -->
+    <div id="tv-widget-container" class="fixed bottom-6 right-6 flex flex-col items-end gap-2 z-50" style="width: 20vw; min-width: 280px; max-width: 400px;">
+        
+        <!-- Control Bar (Always visible to toggle input) -->
+        <div class="flex gap-2 mb-1">
+            <button onclick="toggleInput()" class="glass-panel px-3 py-1 text-xs font-bold text-white hover:bg-white/10 transition text-shadow-strong">
+                📺 CH INPUT
+            </button>
+            <button onclick="togglePower()" class="glass-panel px-3 py-1 text-xs font-bold text-red-400 hover:text-red-300 hover:bg-white/10 transition text-shadow-strong">
+                ⏻ OFF
+            </button>
+        </div>
+
+        <!-- Input Panel (Initially Visible) -->
+        <div id="input-panel" class="glass-panel w-full p-4 mb-2 flex flex-col gap-3 transition-all duration-300 origin-bottom-right">
+            <label class="text-white text-xs font-bold uppercase tracking-wider text-shadow-strong">YouTube URL</label>
+            <input type="text" id="yt-url" placeholder="https://youtu.be/..." 
+                class="w-full bg-black/50 border border-white/20 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-blue-400 placeholder-gray-500">
+            <button onclick="loadVideo()" 
+                class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-1.5 rounded text-sm shadow-lg transition">
+                WATCH NOW
+            </button>
+        </div>
+
+        <!-- TV Frame -->
+        <div id="tv-frame" class="tv-frame w-full hidden">
+            <div class="tv-screen">
+                <div class="scanlines"></div>
+                <iframe id="yt-iframe" src="" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+            </div>
+            <!-- Bottom Bezel Details -->
+            <div class="absolute bottom-2 left-4 text-[10px] text-gray-500 font-mono tracking-widest">
+                VIDEO-SYSTEM
+            </div>
+            <div id="power-led" class="power-led"></div>
+        </div>
+
+    </div>
+
+    <script>
+        const inputPanel = document.getElementById('input-panel');
+        const tvFrame = document.getElementById('tv-frame');
+        const iframe = document.getElementById('yt-iframe');
+        const urlInput = document.getElementById('yt-url');
+        const powerLed = document.getElementById('power-led');
+        let isPowerOn = false;
+
+        function toggleInput() {
+            if (inputPanel.style.display === 'none') {
+                inputPanel.style.display = 'flex';
+            } else {
+                inputPanel.style.display = 'none';
+            }
+        }
+
+        function togglePower() {
+            isPowerOn = !isPowerOn;
+            if (!isPowerOn) {
+                // Turn Off
+                tvFrame.classList.add('hidden');
+                inputPanel.style.display = 'flex';
+                iframe.src = '';
+                powerLed.classList.remove('on');
+            } else {
+                // If turning on without video, just show input
+                if (tvFrame.classList.contains('hidden')) {
+                    inputPanel.style.display = 'flex';
+                }
+            }
+        }
+
+        function extractVideoID(url) {
+            const regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#&?]*).*/;
+            const match = url.match(regExp);
+            return (match && match[7].length == 11) ? match[7] : false;
+        }
+
+        function loadVideo() {
+            const url = urlInput.value;
+            const videoId = extractVideoID(url);
+
+            if (videoId) {
+                // Hide input, Show TV
+                inputPanel.style.display = 'none';
+                tvFrame.classList.remove('hidden');
+                
+                // Add slight delay for effect
+                setTimeout(() => {
+                    iframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&controls=1`;
+                    powerLed.classList.add('on');
+                    isPowerOn = true;
+                }, 300);
+            } else {
+                alert('Invalid YouTube URL');
+            }
+        }
+
+        // Allow Enter key to submit
+        urlInput.addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') {
+                loadVideo();
+            }
+        });
+    </script>
+</body>
+</html>

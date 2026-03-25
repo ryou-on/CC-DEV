@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Prompt Master Overlay</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        /* Custom Scrollbar for Webkit */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.05);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.4);
+        }
+
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+        }
+
+        .text-glow {
+            text-shadow: 0 0 10px rgba(56, 189, 248, 0.5);
+        }
+
+        body {
+            background: transparent !important;
+            overflow: hidden;
+        }
+
+        /* Animations */
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(56, 189, 248, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); }
+        }
+        .animate-pulse-ring {
+            animation: pulse-ring 2s infinite;
+        }
+    </style>
+</head>
+<body class="h-screen w-full flex items-end justify-end p-4 sm:p-6 pointer-events-none">
+
+    <!-- Main Widget Container -->
+    <div id="prompt-widget" class="glass-panel w-full max-w-[400px] rounded-2xl overflow-hidden transition-all duration-300 pointer-events-auto flex flex-col max-h-[80vh]">
+        
+        <!-- Header -->
+        <div class="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-slate-900/50">
+            <div class="flex items-center gap-2">
+                <i class="fa-solid fa-robot text-cyan-400 text-lg"></i>
+                <h2 class="text-white font-bold text-sm tracking-wide">Prompt<span class="text-cyan-400">Lab</span></h2>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="toggleMinimize()" class="text-gray-400 hover:text-white transition-colors">
+                    <i id="min-icon" class="fa-solid fa-minus"></i>
+                </button>
+                <button onclick="closeWidget()" class="text-gray-400 hover:text-red-400 transition-colors">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Content Wrapper (Collapsible) -->
+        <div id="widget-content" class="flex flex-col flex-grow overflow-hidden transition-all duration-300">
+            
+            <!-- Navigation Tabs -->
+            <div class="flex p-1 bg-slate-800/50 m-3 rounded-lg">
+                <button onclick="switchTab('learn')" id="tab-learn" class="flex-1 py-1.5 text-xs font-semibold rounded-md text-white bg-cyan-600 shadow-sm transition-all">
+                    学ぶ (Learn)
+                </button>
+                <button onclick="switchTab('try')" id="tab-try" class="flex-1 py-1.5 text-xs font-semibold rounded-md text-gray-400 hover:text-white transition-all">
+                    試す (Try)
+                </button>
+            </div>
+
+            <!-- LEARN SECTION -->
+            <div id="view-learn" class="flex-grow overflow-y-auto px-4 pb-4 space-y-3">
+                <!-- Technique Selector -->
+                <div class="relative">
+                    <select id="tech-selector" onchange="loadTechnique()" class="w-full bg-slate-800 text-white text-sm rounded border border-white/10 px-3 py-2 outline-none focus:border-cyan-500">
+                        <option value="0">基本: Zero-shot (指示のみ)</option>
+                        <option value="1">応用: Few-shot (例示)</option>
+                        <option value="2">思考: Chain of Thought (論理)</option>
+                        <option value="3">役割: Role Play (なりきり)</option>
+                    </select>
+                </div>
+
+                <!-- Explanation Card -->
+                <div class="bg-white/5 rounded-lg p-3 border border-white/5">
+                    <h3 id="tech-title" class="text-cyan-300 font-bold text-sm mb-1">Zero-shot Prompting</h3>
+                    <p id="tech-desc" class="text-gray-300 text-xs leading-relaxed">
+                        AIに追加の背景情報や例を与えず、直接的な指示のみを行う最も基本的な手法です。
+                    </p>
+                </div>
+
+                <!-- Example Code -->
+                <div class="relative group">
+                    <div class="absolute -inset-0.5 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-lg opacity-20 group-hover:opacity-40 transition duration-200 blur"></div>
+                    <div class="relative bg-slate-900 rounded-lg p-3 border border-white/10">
+                        <div class="flex justify-between items-center mb-2">
+                            <span class="text-[10px] text-gray-400 uppercase tracking-wider">Example Prompt</span>
+                            <button onclick="copyToTry()" class="text-[10px] bg-cyan-500/20 hover:bg-cyan-500/40 text-cyan-300 px-2 py-0.5 rounded transition">
+                                <i class="fa-solid fa-flask mr-1"></i>試す
+                            </button>
+                        </div>
+                        <code id="tech-example" class="block text-xs text-green-300 font-mono bg-black/30 p-2 rounded">
+                            次の文章を要約してください：「...」
+                        </code>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TRY SECTION -->
+            <div id="view-try" class="hidden flex-grow flex flex-col px-4 pb-4 h-full">
+                <div class="flex-grow flex flex-col space-y-2">
+                    <label class="text-xs text-gray-400">プロンプトを入力:</label>
+                    <textarea id="user-input" class="w-full h-24 bg-slate-800/80 text-white text-sm rounded border border-white/10 p-3 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none resize-none" placeholder="ここにAIへの指示を入力..."></textarea>
+                    
+                    <button onclick="simulateAI()" class="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-sm font-bold py-2 rounded shadow-lg transform active:scale-95 transition-all flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-paper-plane"></i> 生成する
+                    </button>
+
+                    <!-- Output Area -->
+                    <div class="flex-grow min-h-[100px] bg-black/40 rounded border border-white/5 p-3 relative overflow-hidden">
+                        <div id="loading-indicator" class="hidden absolute inset-0 flex items-center justify-center bg-slate-900/80 z-10">
+                            <div class="flex flex-col items-center">
+                                <i class="fa-solid fa-circle-notch fa-spin text-cyan-400 text-xl mb-2"></i>
+                                <span class="text-xs text-cyan-200">AI思考中...</span>
+                            </div>
+                        </div>
+                        <div id="ai-output" class="text-xs text-gray-300 font-mono h-full overflow-y-auto">
+                            <span class="text-gray-600 italic">結果がここに表示されます...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // Data for Prompt Techniques
+        const techniques = [
+            {
+                title: "Zero-shot Prompting",
+                desc: "事前情報なしで、いきなりタスクを指示する方法。単純なタスクに有効です。",
+                example: "次の文章を小学生でもわかるように要約してください。\n[ここに難しい文章を入れる]"
+            },
+            {
+                title: "Few-shot Prompting",
+                desc: "いくつかの「例題」と「回答」のペアを見せて、AIにパタ―ンを学習させてから回答させる方法。",
+                example: "入力: 最高だね\n出力: ポジティブ\n\n入力: 最悪だ\n出力: ネガティブ\n\n入力: まあまあかな\n出力:"
+            },
+            {
+                title: "Chain of Thought (CoT)",
+                desc: "「ステップバイステップで考えて」と指示することで、AIに推論過程を出力させ、正答率を高める方法。",
+                example: "ジョンは5つのリンゴを持っています。2つ食べました。その後3つ買いました。今いくつ持っていますか？\nステップバイステップで考えてください。"
+            },
+            {
+                title: "Role Play Prompting",
+                desc: "AIに特定の役割（専門家、キャラクターなど）を与えることで、回答の質や口調を制御する方法。",
+                example: "あなたはプロのコピーライターです。以下の製品について、購買意欲をそそるキャッチコピーを3つ考えてください。\n製品：全自動コーヒーメーカー"
+            }
+        ];
+
+        // State
+        let currentTechIndex = 0;
+
+        // Initialize
+        window.onload = () => {
+            loadTechnique();
+        };
+
+        // Load content based on selection
+        function loadTechnique() {
+            const selector = document.getElementById('tech-selector');
+            currentTechIndex = selector.value;
+            const data = techniques[currentTechIndex];
+
+            document.getElementById('tech-title').innerText = data.title;
+            document.getElementById('tech-desc').innerText = data.desc;
+            document.getElementById('tech-example').innerText = data.example;
+        }
+
+        // Switch Tabs
+        function switchTab(tab) {
+            const btnLearn = document.getElementById('tab-learn');
+            const btnTry = document.getElementById('tab-try');
+            const viewLearn = document.getElementById('view-learn');
+            const viewTry = document.getElementById('view-try');
+
+            if (tab === 'learn') {
+                btnLearn.classList.replace('text-gray-400', 'text-white');
+                btnLearn.classList.add('bg-cyan-600', 'shadow-sm');
+                btnTry.classList.replace('text-white', 'text-gray-400');
+                btnTry.classList.remove('bg-cyan-600', 'shadow-sm');
+                
+                viewLearn.classList.remove('hidden');
+                viewTry.classList.add('hidden');
+            } else {
+                btnTry.classList.replace('text-gray-400', 'text-white');
+                btnTry.classList.add('bg-cyan-600', 'shadow-sm');
+                btnLearn.classList.replace('text-white', 'text-gray-400');
+                btnLearn.classList.remove('bg-cyan-600', 'shadow-sm');
+
+                viewTry.classList.remove('hidden');
+                viewLearn.classList.add('hidden');
+            }
+        }
+
+        // Copy template to Try tab
+        function copyToTry() {
+            const data = techniques[currentTechIndex];
+            document.getElementById('user-input').value = data.example;
+            switchTab('try');
+        }
+
+        // Simulate AI Generation
+        function simulateAI() {
+            const input = document.getElementById('user-input').value;
+            if (!input.trim()) return;
+
+            const outputDiv = document.getElementById('ai-output');
+            const loader = document.getElementById('loading-indicator');
+
+            loader.classList.remove('hidden');
+            outputDiv.innerHTML = '';
+
+            // Simulate network delay
+            setTimeout(() => {
+                loader.classList.add('hidden');
+                
+                // Mock response logic
+                let response = "AIからの回答シミュレーション:\n";
+                if (input.includes("ステップバイステップ")) {
+                    response += "1. まずジョンのリンゴは5個です。\n2. 2個食べたので、5 - 2 = 3個になります。\n3. 3個買ったので、3 + 3 = 6個になります。\n答え: 6個";
+                } else if (input.includes("キャッチコピー")) {
+                    response += "1. 『朝の1杯が、人生を変える。究極の全自動。』\n2. 『バリスタが家にいる贅沢。』\n3. 『ボタンひとつで、至高の香りを。』";
+                } else {
+                    response += "素晴らしいプロンプトですね！このテクニックを使えば、より正確な回答が得られるでしょう。実際のAPIを接続すれば、ここに本物の生成結果が表示されます。";
+                }
+
+                typeWriter(response, outputDiv);
+            }, 1500);
+        }
+
+        // Typewriter effect for output
+        function typeWriter(text, element) {
+            let i = 0;
+            element.innerHTML = "";
+            function type() {
+                if (i < text.length) {
+                    element.innerHTML += text.charAt(i) === '\n' ? '<br>' : text.charAt(i);
+                    i++;
+                    element.scrollTop = element.scrollHeight;
+                    setTimeout(type, 20);
+                }
+            }
+            type();
+        }
+
+        // Minimize/Maximize Widget
+        let isMinimized = false;
+        function toggleMinimize() {
+            const content = document.getElementById('widget-content');
+            const icon = document.getElementById('min-icon');
+            
+            if (isMinimized) {
+                content.classList.remove('h-0', 'opacity-0');
+                content.classList.add('flex-grow');
+                icon.classList.remove('fa-plus');
+                icon.classList.add('fa-minus');
+            } else {
+                content.classList.remove('flex-grow');
+                content.classList.add('h-0', 'opacity-0');
+                icon.classList.remove('fa-minus');
+                icon.classList.add('fa-plus');
+            }
+            isMinimized = !isMinimized;
+        }
+
+        // Close Widget
+        function closeWidget() {
+            const widget = document.getElementById('prompt-widget');
+            widget.style.opacity = '0';
+            widget.style.transform = 'scale(0.9)';
+            setTimeout(() => {
+                widget.remove();
+            }, 300);
+        }
+    </script>
+</body>
+</html>

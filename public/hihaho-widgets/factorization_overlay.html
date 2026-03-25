@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Factorization Overlay</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            background: transparent !important;
+            font-family: 'Zen Maru Gothic', sans-serif;
+            overflow: hidden;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* Glassmorphism Container */
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.75);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+            border-radius: 1.5rem;
+            transition: transform 0.2s ease;
+        }
+
+        /* Text Visibility */
+        .text-shadow-strong {
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.9);
+        }
+
+        /* Algebra Tile Colors */
+        .tile-x2 {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            border: 1px solid rgba(255,255,255,0.3);
+        }
+        .tile-x {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            border: 1px solid rgba(255,255,255,0.3);
+        }
+        .tile-1 {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            border: 1px solid rgba(255,255,255,0.3);
+        }
+
+        /* Grid Logic for Area Model */
+        .area-grid {
+            display: grid;
+            gap: 2px;
+            /* Columns and rows set dynamically via JS */
+        }
+
+        /* Custom Range Slider */
+        input[type=range] {
+            -webkit-appearance: none;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            background: #ffffff;
+            cursor: pointer;
+            margin-top: -8px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.5);
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            width: 100%;
+            height: 4px;
+            cursor: pointer;
+            background: rgba(255,255,255,0.3);
+            border-radius: 2px;
+        }
+
+        /* Responsive Animations */
+        .tile-anim {
+            animation: popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+            opacity: 0;
+            transform: scale(0.5);
+        }
+        @keyframes popIn {
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+    </style>
+</head>
+<body class="w-screen h-screen flex items-center justify-center">
+
+    <!-- Main Scalable Wrapper -->
+    <div id="scaler" class="relative transition-transform duration-100 ease-out origin-center">
+        
+        <div class="glass-panel p-6 md:p-8 w-[90vw] max-w-2xl text-white">
+            <!-- Header -->
+            <div class="flex justify-between items-start mb-6">
+                <div>
+                    <h1 class="text-2xl md:text-3xl font-bold text-shadow-strong mb-1">
+                        <span class="text-cyan-300">因数分解</span> 面積モデル
+                    </h1>
+                    <p class="text-sm text-gray-300 text-shadow-strong">スライダーを動かして式の意味を視覚化しよう</p>
+                </div>
+                <!-- Global Zoom Control -->
+                <div class="flex flex-col items-center bg-black/30 p-2 rounded-lg">
+                    <label for="zoom" class="text-xs mb-1">表示サイズ</label>
+                    <input id="zoom" type="range" min="0.5" max="1.5" step="0.1" value="1" class="w-24">
+                </div>
+            </div>
+
+            <!-- Formula Display -->
+            <div class="bg-black/40 rounded-xl p-4 mb-6 text-center border border-white/10">
+                <div class="text-xl md:text-2xl font-mono font-bold tracking-wider text-shadow-strong">
+                    <span class="text-gray-400">(</span>
+                    <span class="text-cyan-400">x</span>
+                    <span class="text-white"> + </span>
+                    <span class="text-pink-400" id="val-a">2</span>
+                    <span class="text-gray-400">)</span>
+                    
+                    <span class="text-gray-400">(</span>
+                    <span class="text-cyan-400">x</span>
+                    <span class="text-white"> + </span>
+                    <span class="text-yellow-400" id="val-b">3</span>
+                    <span class="text-gray-400">)</span>
+
+                    <span class="mx-2">=</span>
+
+                    <span class="inline-block">
+                        <span class="text-blue-400">x<sup class="text-sm">2</sup></span>
+                        <span class="text-white"> + </span>
+                        <span class="text-green-400"><span id="res-sum">5</span>x</span>
+                        <span class="text-white"> + </span>
+                        <span class="text-orange-400" id="res-prod">6</span>
+                    </span>
+                </div>
+            </div>
+
+            <!-- Interaction Area -->
+            <div class="flex flex-col md:flex-row gap-8">
+                
+                <!-- Visual Area Model (Grid) -->
+                <div class="flex-1 flex justify-center items-center bg-white/5 rounded-xl p-4 min-h-[300px]">
+                    <div id="grid-container" class="area-grid relative">
+                        <!-- Tiles will be injected here -->
+                    </div>
+                </div>
+
+                <!-- Controls -->
+                <div class="w-full md:w-48 flex flex-col justify-center gap-6">
+                    <!-- Slider A -->
+                    <div class="bg-pink-500/20 p-4 rounded-xl border border-pink-500/30">
+                        <div class="flex justify-between mb-2">
+                            <label class="font-bold text-pink-300">値 A</label>
+                            <span class="font-mono font-bold text-xl" id="disp-a">2</span>
+                        </div>
+                        <input id="input-a" type="range" min="1" max="5" value="2" class="w-full accent-pink-500">
+                    </div>
+
+                    <!-- Slider B -->
+                    <div class="bg-yellow-500/20 p-4 rounded-xl border border-yellow-500/30">
+                        <div class="flex justify-between mb-2">
+                            <label class="font-bold text-yellow-300">値 B</label>
+                            <span class="font-mono font-bold text-xl" id="disp-b">3</span>
+                        </div>
+                        <input id="input-b" type="range" min="1" max="5" value="3" class="w-full accent-yellow-500">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Explanation Footer -->
+            <div class="mt-4 text-xs text-gray-300 flex items-center justify-center gap-4">
+                <div class="flex items-center gap-2">
+                    <div class="w-3 h-3 bg-blue-500 rounded-sm"></div>
+                    <span>x² (面積)</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <div class="w-3 h-3 bg-green-500 rounded-sm"></div>
+                    <span>x (和)</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <div class="w-3 h-3 bg-orange-500 rounded-sm"></div>
+                    <span>1 (積)</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Elements
+        const inputA = document.getElementById('input-a');
+        const inputB = document.getElementById('input-b');
+        const zoomInput = document.getElementById('zoom');
+        
+        const dispA = document.getElementById('disp-a');
+        const dispB = document.getElementById('disp-b');
+        const valA = document.getElementById('val-a');
+        const valB = document.getElementById('val-b');
+        
+        const resSum = document.getElementById('res-sum');
+        const resProd = document.getElementById('res-prod');
+        
+        const gridContainer = document.getElementById('grid-container');
+        const scaler = document.getElementById('scaler');
+
+        // Constants for sizing visualizer
+        const SIZE_X = 100;
+        const SIZE_1 = 30;
+
+        // Zoom Logic
+        zoomInput.addEventListener('input', (e) => {
+            const scale = e.target.value;
+            scaler.style.transform = `scale(${scale})`;
+        });
+
+        // Main Logic
+        function update() {
+            const a = parseInt(inputA.value);
+            const b = parseInt(inputB.value);
+
+            // Update Text
+            dispA.innerText = a;
+            dispB.innerText = b;
+            valA.innerText = a;
+            valB.innerText = b;
+            
+            resSum.innerText = a + b;
+            resProd.innerText = a * b;
+
+            // Render Grid
+            renderGrid(a, b);
+        }
+
+        function renderGrid(a, b) {
+            gridContainer.innerHTML = '';
+
+            // Configure Grid Template
+            // Columns: First is Width X, then 'a' columns of Width 1
+            gridContainer.style.gridTemplateColumns = `${SIZE_X}px repeat(${a}, ${SIZE_1}px)`;
+            // Rows: First is Height X, then 'b' rows of Height 1
+            gridContainer.style.gridTemplateRows = `${SIZE_X}px repeat(${b}, ${SIZE_1}px)`;
+
+            // 1. Top-Left: x^2 tile
+            const x2 = createTile('tile-x2', 'x²');
+            gridContainer.appendChild(x2);
+
+            // 2. Top-Right: 'a' number of x tiles (Horizontal)
+            for (let i = 0; i < a; i++) {
+                const tile = createTile('tile-x', 'x');
+                // Add animation delay based on index
+                tile.style.animationDelay = `${i * 0.05}s`;
+                gridContainer.appendChild(tile);
+            }
+
+            // 3. Bottom-Left: 'b' number of x tiles (Vertical)
+            // Note: In CSS Grid flow, we need to be careful. 
+            // However, since we defined the grid structure precisely, we just append in order if we flow row by row?
+            // No, standard flow fills row 1, then row 2.
+            // We need to handle the vertical X tiles specifically.
+            // Actually, simpler logic: We just iterate row by row.
+
+            // Let's rewrite the loop strategy to fill cells linearly.
+            
+            // Row 1 already filled (x^2 + a horizontal x's)
+            
+            // Rows 2 to (1+b):
+            for (let row = 0; row < b; row++) {
+                // First column in this row is a vertical X tile
+                const vTile = createTile('tile-x', 'x');
+                vTile.style.writingMode = 'vertical-rl'; // visual flair
+                vTile.style.animationDelay = `${(row + a) * 0.05}s`;
+                gridContainer.appendChild(vTile);
+
+                // Subsequent columns are '1' tiles
+                for (let col = 0; col < a; col++) {
+                    const oneTile = createTile('tile-1', '1');
+                    oneTile.style.animationDelay = `${(row + a + col) * 0.03 + 0.2}s`;
+                    gridContainer.appendChild(oneTile);
+                }
+            }
+        }
+
+        function createTile(className, text) {
+            const div = document.createElement('div');
+            div.className = `tile-anim flex items-center justify-center font-bold text-white text-shadow-strong rounded-sm ${className}`;
+            div.innerText = text;
+            return div;
+        }
+
+        // Init
+        inputA.addEventListener('input', update);
+        inputB.addEventListener('input', update);
+        update();
+
+    </script>
+</body>
+</html>
