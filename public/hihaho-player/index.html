@@ -179,7 +179,7 @@ header { height: var(--header-h); background: var(--white); border-bottom: 1px s
 // ★ Cloudflare Worker の URL に書き換えてください
 // =========================================================
 const WORKER_URL = 'https://hihaho-proxy.jumpei-omote.workers.dev';
-const SHOW_FOLDER_IDS = [21078, 12452, 21334];
+
 
 // =========================================================
 // ステータス定義（APIレスポンスの status 値に対応）
@@ -222,13 +222,19 @@ async function apiFetch(path) {
 async function init() {
   log('初期化開始');
   try {
-    const [folderRes, videoRes] = await Promise.all([
-      apiFetch('/v2/video-container'),
-      apiFetch('/v2/video'),
-    ]);
+   const foldersRes = await apiFetch('/v2/video-container');
+allFolders = (foldersRes.data || []).filter(f => SHOW_FOLDER_IDS.includes(f.id));
+allFolders.sort((a, b) => SHOW_FOLDER_IDS.indexOf(a.id) - SHOW_FOLDER_IDS.indexOf(b.id));
 
-    allFolders = folderRes.data || [];
-    allVideos  = videoRes.data  || [];
+if (allFolders.length === 0) {
+  showError('表示できるフォルダがありません');
+  return;
+}
+
+const videoResults = await Promise.all(
+  allFolders.map(f => apiFetch(`/v2/video?video_container_id=${f.id}`))
+);
+allVideos = videoResults.flatMap(r => r.data || []);
     log(`フォルダ ${allFolders.length}件 / 動画 ${allVideos.length}件`);
 
     // 動画が存在するフォルダのみ
