@@ -7,6 +7,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Kaisei+Decol:wght@400;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
@@ -632,6 +633,8 @@ function ResultScreen({ scores }) {
   const [consoleLogs, setConsoleLogs] = useState([]);
   const [showModal, setShowModal] = useState(true); // 属性入力モーダル
   const [saved, setSaved] = useState(false);
+  const [capturing, setCapturing] = useState(false); // 画像キャプチャ中フラグ
+  const dashboardRef = React.useRef(null); // キャプチャ対象のref
 
   const avg = Object.values(scores).reduce((a, b) => a + b, 0) / 5;
   const level = getTotalLevel(avg);
@@ -744,12 +747,48 @@ AIタイプ: ${aiType.name}
     }
   };
 
-  // シェアテキスト生成
+
+
+  const SHARE_URL = 'https://cc-dev-ps7.web.app/ai-skill-check/';
+
+  // シェアテキスト生成（URL付き）
   const getShareText = () => {
     const lines = CATEGORIES.map(c => `${c.emoji}${c.label}: ${'⬛'.repeat(Math.round(scores[c.id]))}${'⬜'.repeat(5 - Math.round(scores[c.id]))} ${scores[c.id].toFixed(1)}`);
-    return `🤖 AI活用スキル診断 結果\n\n${aiType.emoji} タイプ: ${aiType.name}\n📈 総合: ${avg.toFixed(1)}/5.0 (${level.label})\n\n${lines.join('\n')}\n\n#AI活用スキル診断`;
+    return `🤖 AI活用スキル診断 結果\n\n${aiType.emoji} タイプ: ${aiType.name}\n📈 総合: ${avg.toFixed(1)}/5.0 (${level.label})\n\n${lines.join('\n')}\n\n#AI活用スキル診断\n${SHARE_URL}`;
   };
 
+  // 画像保存 → X投稿画面を開く
+  const handleShareWithImage = async () => {
+    if (!dashboardRef.current) return;
+    setCapturing(true);
+    addLog('html2canvas キャプチャ開始...');
+    try {
+      const canvas = await html2canvas(dashboardRef.current, {
+        backgroundColor: '#1a1a2e', // カード背景色
+        scale: 2, // 高解像度
+        useCORS: true,
+        logging: false,
+      });
+      addLog('✅ キャプチャ完了 → ダウンロード');
+      // 画像をダウンロード
+      const link = document.createElement('a');
+      link.download = `ai-skill-${aiType.name}-${avg.toFixed(1)}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+      // 少し待ってからX投稿画面を開く
+      setTimeout(() => {
+        const text = encodeURIComponent(getShareText());
+        window.open(`https://twitter.com/intent/tweet?text=${text}`, '_blank');
+        addLog('✅ X投稿画面を開きました');
+      }, 500);
+    } catch (err) {
+      addLog(`❌ キャプチャエラー: ${err.message}`);
+    } finally {
+      setCapturing(false);
+    }
+  };
+
+  // テキストのみシェア
   const handleShare = () => {
     const text = encodeURIComponent(getShareText());
     window.open(`https://twitter.com/intent/tweet?text=${text}`, '_blank');
@@ -780,7 +819,7 @@ AIタイプ: ${aiType.name}
       {showModal && (
         <AttributeModal
           onSave={handleSave}
-          onSkip={() => { setShowModal(false); fetchAIComment(); }}
+          onSkip={() => { handleSave('', ''); }} 
         />
       )}
 
@@ -876,8 +915,8 @@ AIタイプ: ${aiType.name}
         </div>
       </div>
 
-      {/* メインダッシュボード */}
-      <div style={{
+      {/* メインダッシュボード（画像キャプチャ対象） */}
+      <div ref={dashboardRef} style={{
         width: '100%', maxWidth: '760px',
         background: 'var(--card)',
         border: '1px solid var(--border)',
@@ -973,14 +1012,29 @@ AIタイプ: ${aiType.name}
         </div>
       )}
 
+
+
       {/* シェアボタン */}
       <div style={{
         display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'center',
-        marginBottom: '20px',
+        marginBottom: '12px',
         animation: 'fadeUp 0.6s ease 0.3s both',
       }}>
-        <button className="btn btn-primary" onClick={handleShare} style={{ padding: '12px 28px', fontSize: '15px' }}>
-          𝕏 でシェア
+        {/* メイン：画像保存＋X投稿 */}
+        <button className="btn btn-primary" onClick={handleShareWithImage} disabled={capturing}
+          style={{ padding: '12px 28px', fontSize: '15px', opacity: capturing ? 0.7 : 1 }}>
+          {capturing ? '📸 画像生成中...' : '🖼 画像保存 → 𝕏 でシェア'}
+        </button>
+      </div>
+      <p style={{ fontSize: '11px', color: '#4a4a7a', marginBottom: '16px', textAlign: 'center' }}>
+        ① 画像が自動保存されます　② X投稿画面が開くので画像を添付してポスト
+      </p>
+      <div style={{
+        display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'center',
+        marginBottom: '20px',
+      }}>
+        <button className="btn btn-ghost" onClick={handleShare}>
+          𝕏 テキストのみシェア
         </button>
         <button className="btn btn-ghost" onClick={handleCopyResult}>
           {copied ? '✓ コピー済み' : '📋 テキストコピー'}
@@ -989,8 +1043,6 @@ AIタイプ: ${aiType.name}
           🔄 コメント再生成
         </button>
       </div>
-
-      {/* もう一度ボタン */}
       <button className="btn btn-ghost" onClick={() => window.location.reload()} style={{ marginBottom: '40px' }}>
         ↺ もう一度診断する
       </button>
