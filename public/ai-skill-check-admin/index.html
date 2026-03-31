@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI活用スキル診断 | 管理画面</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.8.0/Recharts.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Kaisei+Decol:wght@400;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0a12; --card: #1a1a2e; --border: #2a2a45;
+      --accent1: #7c6aff; --accent2: #ff6ab0; --accent3: #6affda;
+      --text: #e8e8f5; --muted: #7a7a9a;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: var(--bg); color: var(--text); font-family: 'Noto Sans JP', sans-serif; min-height: 100vh; }
+    body::before {
+      content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background-image: linear-gradient(rgba(124,106,255,0.04) 1px, transparent 1px), linear-gradient(90deg, rgba(124,106,255,0.04) 1px, transparent 1px);
+      background-size: 40px 40px;
+    }
+    #root { position: relative; z-index: 1; }
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .btn { cursor: pointer; border: none; border-radius: 10px; font-family: 'Noto Sans JP', sans-serif; font-weight: 700; transition: all 0.2s; }
+    .btn:hover { transform: translateY(-2px); }
+    .btn-primary { background: linear-gradient(135deg, #7c6aff, #ff6ab0); color: white; padding: 12px 28px; font-size: 15px; }
+    .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--muted); padding: 8px 16px; font-size: 13px; }
+    .btn-ghost:hover { border-color: var(--accent1); color: var(--accent1); }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect } = React;
+
+/* Supabase設定 */
+const SUPABASE_URL = 'https://gzjaxemprmhcbfqhhpyb.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_8niI5FwhOG5376LJu4BJMQ_RCfTbJA7';
+const ADMIN_PASSWORD = 'xe3nizhbai';
+
+const CATEGORIES = [
+  { id: 'score_prompt',   label: 'プロンプト力', color: '#7c6aff' },
+  { id: 'score_automate', label: '自動化活用',   color: '#ff6ab0' },
+  { id: 'score_image',    label: '画像AI活用',   color: '#6affda' },
+  { id: 'score_analysis', label: 'データ分析',   color: '#ffb86a' },
+  { id: 'score_learning', label: 'AI学習力',     color: '#6aadff' },
+];
+
+/* Supabaseから全件取得 */
+async function fetchAll() {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/diagnoses?select=*&order=created_at.desc`,
+    { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
+  );
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+/* 平均計算 */
+const avg = (arr, key) => arr.length ? (arr.reduce((s, r) => s + (r[key] || 0), 0) / arr.length).toFixed(2) : 0;
+
+/* ==============================
+   ログイン画面
+============================== */
+function LoginScreen({ onLogin }) {
+  const [pw, setPw] = useState('');
+  const [err, setErr] = useState(false);
+
+  const handleLogin = () => {
+    if (pw === ADMIN_PASSWORD) { onLogin(); }
+    else { setErr(true); setTimeout(() => setErr(false), 1500); }
+  };
+
+  return (
+    <div style={{
+      minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px',
+    }}>
+      <div style={{
+        background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '24px',
+        padding: '40px', width: '100%', maxWidth: '360px', textAlign: 'center',
+        animation: 'fadeUp 0.5s ease',
+      }}>
+        <div style={{ fontSize: '40px', marginBottom: '12px' }}>🔐</div>
+        <h1 style={{
+          fontFamily: 'Kaisei Decol, serif', fontSize: '22px', marginBottom: '6px',
+          background: 'linear-gradient(135deg, #fff, #7c6aff)',
+          WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
+        }}>管理者ログイン</h1>
+        <p style={{ color: 'var(--muted)', fontSize: '13px', marginBottom: '28px' }}>AI活用スキル診断 統計ダッシュボード</p>
+
+        <input
+          type="password"
+          value={pw}
+          onChange={e => setPw(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleLogin()}
+          placeholder="パスワードを入力"
+          style={{
+            width: '100%', padding: '12px 16px', borderRadius: '10px', marginBottom: '12px',
+            background: 'rgba(255,255,255,0.05)', border: `1px solid ${err ? '#ff6ab0' : 'var(--border)'}`,
+            color: 'var(--text)', fontSize: '15px', fontFamily: 'inherit',
+            outline: 'none', transition: 'border 0.2s',
+          }}
+        />
+        {err && <p style={{ color: '#ff6ab0', fontSize: '13px', marginBottom: '12px' }}>パスワードが違います</p>}
+        <button className="btn btn-primary" onClick={handleLogin} style={{ width: '100%' }}>
+          ログイン
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ==============================
+   統計カード
+============================== */
+function StatCard({ label, value, sub, color }) {
+  return (
+    <div style={{
+      background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '16px',
+      padding: '20px 24px', flex: '1', minWidth: '140px',
+    }}>
+      <p style={{ fontSize: '12px', color: 'var(--muted)', marginBottom: '6px' }}>{label}</p>
+      <p style={{ fontSize: '28px', fontWeight: '700', color: color || 'var(--text)', fontFamily: 'Kaisei Decol, serif' }}>
+        {value}
+      </p>
+      {sub && <p style={{ fontSize: '12px', color: 'var(--muted)', marginTop: '4px' }}>{sub}</p>}
+    </div>
+  );
+}
+
+/* ==============================
+   シンプルバーチャート（recharts不使用・SVGで自作）
+============================== */
+function BarChart({ data, colorKey }) {
+  const max = Math.max(...data.map(d => d.value), 0.1);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      {data.map(d => (
+        <div key={d.label}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+            <span style={{ fontSize: '13px', color: '#c0c0e0' }}>{d.label}</span>
+            <span style={{ fontSize: '13px', fontWeight: '700', color: d.color || 'var(--accent1)' }}>
+              {typeof d.value === 'number' ? (Number.isInteger(d.value) ? d.value : d.value.toFixed(2)) : d.value}
+              {d.unit || ''}
+            </span>
+          </div>
+          <div style={{ height: '8px', background: 'rgba(255,255,255,0.06)', borderRadius: '4px', overflow: 'hidden' }}>
+            <div style={{
+              height: '100%', width: `${(d.value / max) * 100}%`,
+              background: d.color || 'var(--accent1)', borderRadius: '4px',
+              boxShadow: `0 0 8px ${d.color || 'var(--accent1)'}60`,
+              transition: 'width 0.8s ease',
+            }} />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ==============================
+   ドーナツ風チャート（分布）
+============================== */
+function PieSimple({ data }) {
+  const total = data.reduce((s, d) => s + d.count, 0);
+  if (total === 0) return <p style={{ color: 'var(--muted)', fontSize: '13px' }}>データなし</p>;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      {data.map(d => (
+        <div key={d.label} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: d.color, flexShrink: 0 }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+              <span style={{ fontSize: '12px', color: '#c0c0e0' }}>{d.label}</span>
+              <span style={{ fontSize: '12px', color: 'var(--muted)' }}>{d.count}件 ({Math.round(d.count / total * 100)}%)</span>
+            </div>
+            <div style={{ height: '4px', background: 'rgba(255,255,255,0.06)', borderRadius: '4px', overflow: 'hidden' }}>
+              <div style={{ height: '100%', width: `${(d.count / total) * 100}%`, background: d.color, borderRadius: '4px' }} />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ==============================
+   管理ダッシュボード
+============================== */
+function Dashboard() {
+  const [data, setData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+  const [consoleLogs, setConsoleLogs] = useState([]);
+  const [tab, setTab] = useState('overview'); // overview | detail
+
+  const addLog = (msg) => setConsoleLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
+
+  const load = async () => {
+    setLoading(true);
+    addLog('Supabaseからデータ取得中...');
+    try {
+      const rows = await fetchAll();
+      setData(rows);
+      addLog(`✅ ${rows.length}件取得完了`);
+    } catch (e) {
+      setErr(e.message);
+      addLog(`❌ エラー: ${e.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  /* 集計 */
+  const total = data.length;
+  const avgScore = total ? (data.reduce((s, r) => s + (r.score_avg || 0), 0) / total).toFixed(2) : 0;
+
+  // レベル分布
+  const levelColors = { 'LEVEL 5 / Expert': '#7c6aff', 'LEVEL 4 / Advanced': '#6aadff', 'LEVEL 3 / Intermediate': '#6affda', 'LEVEL 2 / Beginner': '#ffb86a', 'LEVEL 1 / Starter': '#ff6ab0' };
+  const levelDist = Object.entries(
+    data.reduce((acc, r) => { acc[r.level] = (acc[r.level] || 0) + 1; return acc; }, {})
+  ).map(([label, count]) => ({ label, count, color: levelColors[label] || '#999' }))
+    .sort((a, b) => b.count - a.count);
+
+  // AIタイプ分布
+  const typeColors = ['#7c6aff', '#ff6ab0', '#6affda', '#ffb86a', '#6aadff', '#ff9a6a', '#a86aff'];
+  const typeDist = Object.entries(
+    data.reduce((acc, r) => { acc[r.ai_type] = (acc[r.ai_type] || 0) + 1; return acc; }, {})
+  ).map(([label, count], i) => ({ label, count, color: typeColors[i % typeColors.length] }))
+    .sort((a, b) => b.count - a.count);
+
+  // 軸別平均
+  const catAvg = CATEGORIES.map(c => ({
+    label: c.label, value: parseFloat(avg(data, c.id)), color: c.color, unit: '/5',
+  }));
+
+  // 職種分布
+  const jobDist = Object.entries(
+    data.filter(r => r.job_type).reduce((acc, r) => { acc[r.job_type] = (acc[r.job_type] || 0) + 1; return acc; }, {})
+  ).map(([label, count], i) => ({ label, count, color: typeColors[i % typeColors.length] }))
+    .sort((a, b) => b.count - a.count);
+
+  // 年代分布
+  const ageDist = Object.entries(
+    data.filter(r => r.age_group).reduce((acc, r) => { acc[r.age_group] = (acc[r.age_group] || 0) + 1; return acc; }, {})
+  ).map(([label, count], i) => ({ label, count, color: typeColors[i % typeColors.length] }))
+    .sort((a, b) => {
+      const order = ['10代','20代','30代','40代','50代','60代以上'];
+      return order.indexOf(a.label) - order.indexOf(b.label);
+    });
+
+  // 日別件数（直近7日）
+  const dayDist = (() => {
+    const map = {};
+    data.forEach(r => {
+      const d = r.created_at ? r.created_at.slice(0, 10) : '不明';
+      map[d] = (map[d] || 0) + 1;
+    });
+    return Object.entries(map)
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .slice(-7)
+      .map(([label, count]) => ({ label: label.slice(5), value: count, color: '#7c6aff' }));
+  })();
+
+  const handleCopyConsole = () => navigator.clipboard.writeText(consoleLogs.join('\n'));
+
+  if (loading) return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ width: '40px', height: '40px', border: '3px solid #7c6aff', borderTopColor: 'transparent', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 16px' }} />
+        <p style={{ color: 'var(--muted)' }}>データ読み込み中...</p>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ maxWidth: '960px', margin: '0 auto', padding: '80px 20px 60px' }}>
+
+      {/* 固定ヘッダー */}
+      <div style={{
+        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '12px 24px',
+        background: 'rgba(10,10,18,0.9)', backdropFilter: 'blur(16px)',
+        borderBottom: '1px solid rgba(124,106,255,0.15)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{ width: '30px', height: '30px', borderRadius: '8px', background: 'linear-gradient(135deg, #7c6aff, #ff6ab0)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '15px' }}>🤖</div>
+          <div>
+            <div style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text)', lineHeight: 1.2 }}>AI活用スキル診断</div>
+            <div style={{ fontSize: '10px', color: 'var(--muted)', lineHeight: 1.2 }}>管理者ダッシュボード</div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <span style={{ fontSize: '12px', color: 'var(--muted)' }}>総件数: <strong style={{ color: 'var(--accent3)' }}>{total}</strong></span>
+          <button className="btn btn-ghost" onClick={load} style={{ fontSize: '12px', padding: '6px 12px' }}>🔄 更新</button>
+        </div>
+      </div>
+
+      {err && (
+        <div style={{ background: 'rgba(255,106,176,0.1)', border: '1px solid rgba(255,106,176,0.3)', borderRadius: '12px', padding: '12px 16px', marginBottom: '20px', color: '#ff6ab0', fontSize: '13px' }}>
+          ❌ エラー: {err}
+        </div>
+      )}
+
+      {/* タブ */}
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
+        {[['overview', '📊 概要'], ['detail', '📋 件数詳細']].map(([id, label]) => (
+          <button key={id} className="btn" onClick={() => setTab(id)} style={{
+            padding: '8px 18px', fontSize: '13px', borderRadius: '10px',
+            background: tab === id ? 'linear-gradient(135deg, #7c6aff, #ff6ab0)' : 'rgba(255,255,255,0.05)',
+            border: tab === id ? 'none' : '1px solid var(--border)',
+            color: 'var(--text)',
+          }}>{label}</button>
+        ))}
+      </div>
+
+      {tab === 'overview' && (
+        <>
+          {/* KPIカード */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', marginBottom: '24px' }}>
+            <StatCard label="総診断数" value={total} sub="件" color="#6affda" />
+            <StatCard label="平均スコア" value={avgScore} sub="/ 5.0" color="#7c6aff" />
+            <StatCard label="属性回答率" value={total ? Math.round(data.filter(r=>r.job_type).length/total*100)+'%' : '-'} sub="職種回答" color="#ffb86a" />
+            <StatCard label="平均パーセンタイル" value={total ? Math.round(data.reduce((s,r)=>s+(r.percentile||0),0)/total)+'%' : '-'} sub="上位" color="#6aadff" />
+          </div>
+
+          {/* 2カラムグリッド */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '16px', marginBottom: '16px' }}>
+
+            {/* 軸別平均スコア */}
+            <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '24px' }}>
+              <h3 style={{ fontSize: '14px', color: 'var(--muted)', marginBottom: '16px' }}>📊 軸別平均スコア</h3>
+              <BarChart data={catAvg} />
+            </div>
+
+            {/* AIタイプ分布 */}
+            <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '24px' }}>
+              <h3 style={{ fontSize: '14px', color: 'var(--muted)', marginBottom: '16px' }}>🤖 AIタイプ分布</h3>
+              <PieSimple data={typeDist} />
+            </div>
+
+            {/* レベル分布 */}
+            <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '24px' }}>
+              <h3 style={{ fontSize: '14px', color: 'var(--muted)', marginBottom: '16px' }}>📈 レベル分布</h3>
+              <PieSimple data={levelDist} />
+            </div>
+
+            {/* 日別件数 */}
+            <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '24px' }}>
+              <h3 style={{ fontSize: '14px', color: 'var(--muted)', marginBottom: '16px' }}>📅 日別件数（直近7日）</h3>
+              {dayDist.length > 0
+                ? <BarChart data={dayDist} />
+                : <p style={{ color: 'var(--muted)', fontSize: '13px' }}>データなし</p>}
+            </div>
+
+            {/* 職種分布 */}
+            <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '24px' }}>
+              <h3 style={{ fontSize: '14px', color: 'var(--muted)', marginBottom: '16px' }}>💼 職種分布</h3>
+              {jobDist.length > 0 ? <PieSimple data={jobDist} /> : <p style={{ color: 'var(--muted)', fontSize: '13px' }}>回答なし</p>}
+            </div>
+
+            {/* 年代分布 */}
+            <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '24px' }}>
+              <h3 style={{ fontSize: '14px', color: 'var(--muted)', marginBottom: '16px' }}>🎂 年代分布</h3>
+              {ageDist.length > 0 ? <PieSimple data={ageDist} /> : <p style={{ color: 'var(--muted)', fontSize: '13px' }}>回答なし</p>}
+            </div>
+
+          </div>
+        </>
+      )}
+
+      {tab === 'detail' && (
+        <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '24px', overflowX: 'auto' }}>
+          <h3 style={{ fontSize: '14px', color: 'var(--muted)', marginBottom: '16px' }}>📋 全件データ（新しい順）</h3>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                {['日時', 'スコア', 'レベル', 'タイプ', '職種', '年代'].map(h => (
+                  <th key={h} style={{ textAlign: 'left', padding: '8px 12px', color: 'var(--muted)', fontWeight: '700', whiteSpace: 'nowrap' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {data.map((r, i) => (
+                <tr key={r.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)' }}>
+                  <td style={{ padding: '8px 12px', color: 'var(--muted)', whiteSpace: 'nowrap' }}>
+                    {r.created_at ? new Date(r.created_at).toLocaleString('ja-JP', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'}
+                  </td>
+                  <td style={{ padding: '8px 12px', fontWeight: '700', color: '#7c6aff' }}>{r.score_avg}</td>
+                  <td style={{ padding: '8px 12px', color: 'var(--text)', whiteSpace: 'nowrap' }}>{r.level}</td>
+                  <td style={{ padding: '8px 12px', color: 'var(--text)', whiteSpace: 'nowrap' }}>{r.ai_type}</td>
+                  <td style={{ padding: '8px 12px', color: 'var(--muted)' }}>{r.job_type || '-'}</td>
+                  <td style={{ padding: '8px 12px', color: 'var(--muted)' }}>{r.age_group || '-'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {data.length === 0 && <p style={{ color: 'var(--muted)', textAlign: 'center', padding: '24px', fontSize: '14px' }}>データがまだありません</p>}
+        </div>
+      )}
+
+      {/* デバッグコンソール */}
+      <div style={{ marginTop: '24px', background: '#0a0a0a', border: '1px solid #2a2a2a', borderRadius: '12px', padding: '16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+          <span style={{ fontSize: '12px', color: '#4a4a6a', fontFamily: 'monospace' }}>🖥 DEBUG CONSOLE</span>
+          <button className="btn btn-ghost" onClick={handleCopyConsole} style={{ fontSize: '11px', padding: '4px 10px' }}>コピー</button>
+        </div>
+        <div style={{ fontFamily: 'monospace', fontSize: '12px', color: '#4aff8a', lineHeight: 1.7 }}>
+          {consoleLogs.map((log, i) => <div key={i}>{log}</div>)}
+        </div>
+      </div>
+
+    </div>
+  );
+}
+
+/* ==============================
+   メインアプリ
+============================== */
+function App() {
+  const [loggedIn, setLoggedIn] = useState(false);
+  if (!loggedIn) return <LoginScreen onLogin={() => setLoggedIn(true)} />;
+  return <Dashboard />;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
