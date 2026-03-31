@@ -514,6 +514,115 @@ function QuizScreen({ onComplete }) {
 }
 
 /* ==============================
+   Supabase設定
+============================== */
+const SUPABASE_URL = 'https://gzjaxemprmhcbfqhhpyb.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_8niI5FwhOG5376LJu4BJMQ_RCfTbJA7';
+
+// Supabaseにデータ保存
+async function saveToSupabase(data) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/diagnoses`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'apikey': SUPABASE_KEY,
+      'Authorization': `Bearer ${SUPABASE_KEY}`,
+      'Prefer': 'return=minimal',
+    },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Supabase error: ${err}`);
+  }
+}
+
+const JOB_TYPES = ['会社員（一般）', '会社員（管理職）', '経営者・役員', 'フリーランス', 'エンジニア・開発者', 'マーケター', '営業', '人事・総務', 'クリエイター', '学生', 'その他'];
+const AGE_GROUPS = ['10代', '20代', '30代', '40代', '50代', '60代以上'];
+
+/* ==============================
+   属性入力モーダル
+============================== */
+function AttributeModal({ onSave, onSkip }) {
+  const [jobType, setJobType] = useState('');
+  const [ageGroup, setAgeGroup] = useState('');
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 200,
+      background: 'rgba(0,0,0,0.7)',
+      backdropFilter: 'blur(8px)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: '20px',
+    }}>
+      <div style={{
+        background: '#1a1a2e',
+        border: '1px solid rgba(124,106,255,0.3)',
+        borderRadius: '24px',
+        padding: '32px',
+        width: '100%', maxWidth: '440px',
+        animation: 'fadeUp 0.3s ease',
+      }}>
+        <div style={{ fontSize: '28px', textAlign: 'center', marginBottom: '8px' }}>📋</div>
+        <h3 style={{
+          fontFamily: 'Kaisei Decol, serif',
+          fontSize: '20px', fontWeight: '700',
+          textAlign: 'center', marginBottom: '8px', color: '#e8e8f5',
+        }}>
+          あと少しだけ教えてください
+        </h3>
+        <p style={{ fontSize: '13px', color: '#7a7a9a', textAlign: 'center', marginBottom: '24px' }}>
+          統計データとして活用します（任意）
+        </p>
+
+        {/* 職種 */}
+        <div style={{ marginBottom: '16px' }}>
+          <label style={{ fontSize: '13px', color: '#7a7a9a', display: 'block', marginBottom: '8px' }}>
+            職種
+          </label>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            {JOB_TYPES.map(j => (
+              <button key={j} className="btn" onClick={() => setJobType(j)} style={{
+                padding: '6px 12px', fontSize: '12px', borderRadius: '8px',
+                background: jobType === j ? 'linear-gradient(135deg, #7c6aff, #ff6ab0)' : 'rgba(255,255,255,0.05)',
+                border: jobType === j ? 'none' : '1px solid rgba(255,255,255,0.1)',
+                color: '#e8e8f5',
+              }}>{j}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* 年代 */}
+        <div style={{ marginBottom: '28px' }}>
+          <label style={{ fontSize: '13px', color: '#7a7a9a', display: 'block', marginBottom: '8px' }}>
+            年代
+          </label>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            {AGE_GROUPS.map(a => (
+              <button key={a} className="btn" onClick={() => setAgeGroup(a)} style={{
+                padding: '6px 16px', fontSize: '12px', borderRadius: '8px',
+                background: ageGroup === a ? 'linear-gradient(135deg, #7c6aff, #ff6ab0)' : 'rgba(255,255,255,0.05)',
+                border: ageGroup === a ? 'none' : '1px solid rgba(255,255,255,0.1)',
+                color: '#e8e8f5',
+              }}>{a}</button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <button className="btn btn-ghost" onClick={onSkip} style={{ flex: 1 }}>
+            スキップ
+          </button>
+          <button className="btn btn-primary" onClick={() => onSave(jobType, ageGroup)} style={{ flex: 2 }}>
+            結果を保存して表示 →
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ==============================
    結果画面
 ============================== */
 function ResultScreen({ scores }) {
@@ -521,6 +630,8 @@ function ResultScreen({ scores }) {
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
   const [consoleLogs, setConsoleLogs] = useState([]);
+  const [showModal, setShowModal] = useState(true); // 属性入力モーダル
+  const [saved, setSaved] = useState(false);
 
   const avg = Object.values(scores).reduce((a, b) => a + b, 0) / 5;
   const level = getTotalLevel(avg);
@@ -529,8 +640,36 @@ function ResultScreen({ scores }) {
   // デバッグログ追加
   const addLog = (msg) => setConsoleLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
 
-  useEffect(() => {
+  // 属性入力完了 → Supabase保存 → 結果表示
+  const handleSave = async (jobType, ageGroup) => {
+    setShowModal(false);
+    const percentile = getPercentile(avg);
+    const data = {
+      score_prompt:   parseFloat(scores.prompt.toFixed(1)),
+      score_automate: parseFloat(scores.automate.toFixed(1)),
+      score_image:    parseFloat(scores.image.toFixed(1)),
+      score_analysis: parseFloat(scores.analysis.toFixed(1)),
+      score_learning: parseFloat(scores.learning.toFixed(1)),
+      score_avg:      parseFloat(avg.toFixed(1)),
+      level:          level.label,
+      ai_type:        aiType.name,
+      percentile,
+      job_type:  jobType  || null,
+      age_group: ageGroup || null,
+    };
+    addLog('Supabase保存開始...');
+    try {
+      await saveToSupabase(data);
+      setSaved(true);
+      addLog('✅ Supabase保存完了');
+    } catch (err) {
+      addLog(`❌ 保存エラー: ${err.message}`);
+    }
     fetchAIComment();
+  };
+
+  useEffect(() => {
+    // モーダルが閉じたあとにコメント取得（handleSave内で呼ぶ）
   }, []);
 
   const fetchAIComment = async () => {
@@ -636,6 +775,14 @@ AIタイプ: ${aiType.name}
       flexDirection: 'column',
       alignItems: 'center',
     }}>
+
+      {/* 属性入力モーダル */}
+      {showModal && (
+        <AttributeModal
+          onSave={handleSave}
+          onSkip={() => { setShowModal(false); fetchAIComment(); }}
+        />
+      )}
 
       {/* ───── 固定ヘッダーバー（ロゴ左・パーセンタイル右） ───── */}
       <div style={{
@@ -811,6 +958,20 @@ AIタイプ: ${aiType.name}
           ) : '')}
         </p>
       </div>
+
+      {/* 保存済みバッジ */}
+      {saved && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: '6px',
+          background: 'rgba(106,255,218,0.1)',
+          border: '1px solid rgba(106,255,218,0.3)',
+          borderRadius: '100px', padding: '6px 16px',
+          fontSize: '13px', color: '#6affda',
+          marginBottom: '16px',
+        }}>
+          ✅ 統計データとして保存されました
+        </div>
+      )}
 
       {/* シェアボタン */}
       <div style={{
