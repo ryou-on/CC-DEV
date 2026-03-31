@@ -1,0 +1,876 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI活用スキル診断</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Kaisei+Decol:wght@400;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0a12;
+      --surface: #12121e;
+      --card: #1a1a2e;
+      --border: #2a2a45;
+      --accent1: #7c6aff;
+      --accent2: #ff6ab0;
+      --accent3: #6affda;
+      --text: #e8e8f5;
+      --muted: #7a7a9a;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Noto Sans JP', sans-serif;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+    /* 背景グリッドエフェクト */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(124,106,255,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(124,106,255,0.04) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+    #root { position: relative; z-index: 1; }
+
+    /* アニメーション */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    @keyframes gradientShift {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+    .fade-up { animation: fadeUp 0.5s ease forwards; }
+
+    /* ボタン共通 */
+    .btn {
+      cursor: pointer;
+      border: none;
+      border-radius: 12px;
+      font-family: 'Noto Sans JP', sans-serif;
+      font-weight: 700;
+      transition: all 0.2s ease;
+    }
+    .btn:hover { transform: translateY(-2px); }
+    .btn:active { transform: translateY(0); }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent1), var(--accent2));
+      color: white;
+      padding: 14px 32px;
+      font-size: 16px;
+    }
+    .btn-ghost {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 10px 20px;
+      font-size: 14px;
+    }
+    .btn-ghost:hover { border-color: var(--accent1); color: var(--accent1); }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useEffect, useRef } = React;
+
+/* ==============================
+   診断データ定義
+============================== */
+const CATEGORIES = [
+  { id: 'prompt',   label: 'プロンプト力', color: '#7c6aff', emoji: '✍️' },
+  { id: 'automate', label: '自動化活用',   color: '#ff6ab0', emoji: '⚙️' },
+  { id: 'image',    label: '画像AI活用',   color: '#6affda', emoji: '🎨' },
+  { id: 'analysis', label: 'データ分析',   color: '#ffb86a', emoji: '📊' },
+  { id: 'learning', label: 'AI学習力',     color: '#6aadff', emoji: '🧠' },
+];
+
+const QUESTIONS = [
+  // プロンプト力
+  { id: 1, cat: 'prompt', text: 'AIへの指示を書くとき、役割・背景・出力形式を意識して書いている', },
+  { id: 2, cat: 'prompt', text: '欲しい結果が出なかったとき、プロンプトを試行錯誤して改善できる', },
+  // 自動化活用
+  { id: 3, cat: 'automate', text: 'AIを使って、繰り返し作業（メール・資料・コードなど）を自動化している', },
+  { id: 4, cat: 'automate', text: 'Make/Zapier/GASなど、AIと連携したワークフローを構築したことがある', },
+  // 画像AI活用
+  { id: 5, cat: 'image', text: 'Midjourney・DALL-E・Stable Diffusionなどの画像生成AIを使ったことがある', },
+  { id: 6, cat: 'image', text: '画像AIに、スタイルや構図を指定して思い通りの画像を生成できる', },
+  // データ分析
+  { id: 7, cat: 'analysis', text: 'ChatGPTやClaudeにデータを貼り付けて分析・要約させたことがある', },
+  { id: 8, cat: 'analysis', text: 'AIを使ってグラフ作成・データ整形・レポート生成を業務に活かしている', },
+  // AI学習力
+  { id: 9, cat: 'learning', text: '新しいAIツールが出たら、積極的に試して自分の仕事に使えるか検討する', },
+  { id: 10, cat: 'learning', text: 'AI関連の最新ニュースや手法をSNS・ブログ・動画などで定期的にキャッチアップしている', },
+];
+
+const SCORE_OPTIONS = [
+  { value: 1, label: 'まったくない', color: '#3a3a5a' },
+  { value: 2, label: 'あまりない',   color: '#4a3a6a' },
+  { value: 3, label: 'ときどき',     color: '#5a4a8a' },
+  { value: 4, label: 'よくある',     color: '#6a5aaa' },
+  { value: 5, label: 'いつも',       color: '#7c6aff' },
+];
+
+/* 上位パーセンタイル計算（正規分布近似：平均2.8, SD=0.75想定） */
+function getPercentile(avg) {
+  const mean = 2.8;
+  const sd = 0.75;
+  const z = (avg - mean) / sd;
+  // 標準正規分布の累積分布関数（近似）
+  const cdf = (z) => {
+    const t = 1 / (1 + 0.2316419 * Math.abs(z));
+    const poly = t * (0.319381530 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
+    const approx = 1 - (1 / Math.sqrt(2 * Math.PI)) * Math.exp(-z * z / 2) * poly;
+    return z >= 0 ? approx : 1 - approx;
+  };
+  // 上位%＝100 - 累積%
+  const top = Math.round((1 - cdf(z)) * 100);
+  return Math.max(1, Math.min(99, top)); // 1〜99%でクランプ
+}
+
+/* AIタイプ判定 */
+function getAIType(scores) {
+  const avg = Object.values(scores).reduce((a, b) => a + b, 0) / 5;
+  const top = Object.entries(scores).sort((a, b) => b[1] - a[1])[0][0];
+
+  if (avg >= 4.5) return { name: 'AI先駆者', desc: 'AIを完全に武器化した最前線人材', emoji: '🚀' };
+  if (avg >= 3.5) {
+    const types = {
+      prompt: { name: 'プロンプト職人', desc: 'AIへの言葉かけが抜群に上手い', emoji: '✍️' },
+      automate: { name: 'オートメーション魔人', desc: '自動化で時間を生み出す達人', emoji: '⚙️' },
+      image: { name: 'ビジュアルAI使い', desc: '画像AIで表現力が爆発的に高い', emoji: '🎨' },
+      analysis: { name: 'データアナリスト×AI', desc: 'AIで数字から洞察を生む人材', emoji: '📊' },
+      learning: { name: 'AIリサーチャー', desc: '最新動向を誰よりも早くキャッチ', emoji: '🧠' },
+    };
+    return types[top];
+  }
+  if (avg >= 2.5) return { name: 'AI見習い探索者', desc: '基礎はある。あとは実践あるのみ', emoji: '🌱' };
+  return { name: 'AIビギナー', desc: '今がチャンス。最初の一歩を踏み出そう', emoji: '🐣' };
+}
+
+function getTotalLevel(avg) {
+  if (avg >= 4.5) return { label: 'LEVEL 5 / Expert', color: '#7c6aff' };
+  if (avg >= 3.5) return { label: 'LEVEL 4 / Advanced', color: '#6aadff' };
+  if (avg >= 2.5) return { label: 'LEVEL 3 / Intermediate', color: '#6affda' };
+  if (avg >= 1.5) return { label: 'LEVEL 2 / Beginner', color: '#ffb86a' };
+  return { label: 'LEVEL 1 / Starter', color: '#ff6ab0' };
+}
+
+/* ==============================
+   レーダーチャート (SVG)
+============================== */
+function RadarChart({ scores }) {
+  const size = 260;
+  const cx = size / 2;
+  const cy = size / 2;
+  const r = 95;
+  const n = CATEGORIES.length;
+
+  const angleOf = i => (Math.PI * 2 * i) / n - Math.PI / 2;
+  const point = (i, ratio) => ({
+    x: cx + r * ratio * Math.cos(angleOf(i)),
+    y: cy + r * ratio * Math.sin(angleOf(i)),
+  });
+
+  // グリッド線（5段階）
+  const gridLevels = [0.2, 0.4, 0.6, 0.8, 1.0];
+
+  const gridPolygon = (ratio) =>
+    CATEGORIES.map((_, i) => {
+      const p = point(i, ratio);
+      return `${p.x},${p.y}`;
+    }).join(' ');
+
+  // スコアポリゴン
+  const dataPolygon = CATEGORIES.map((cat, i) => {
+    const val = (scores[cat.id] || 0) / 5;
+    const p = point(i, val);
+    return `${p.x},${p.y}`;
+  }).join(' ');
+
+  return (
+    <svg width={size} height={size} style={{ overflow: 'visible' }}>
+      <defs>
+        <radialGradient id="radarGrad" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="#7c6aff" stopOpacity="0.4" />
+          <stop offset="100%" stopColor="#ff6ab0" stopOpacity="0.1" />
+        </radialGradient>
+      </defs>
+
+      {/* グリッド */}
+      {gridLevels.map((ratio, ri) => (
+        <polygon
+          key={ri}
+          points={gridPolygon(ratio)}
+          fill="none"
+          stroke="rgba(124,106,255,0.15)"
+          strokeWidth="1"
+        />
+      ))}
+
+      {/* 軸線 */}
+      {CATEGORIES.map((_, i) => {
+        const p = point(i, 1);
+        return <line key={i} x1={cx} y1={cy} x2={p.x} y2={p.y} stroke="rgba(124,106,255,0.2)" strokeWidth="1" />;
+      })}
+
+      {/* データポリゴン */}
+      <polygon
+        points={dataPolygon}
+        fill="url(#radarGrad)"
+        stroke="#7c6aff"
+        strokeWidth="2"
+        opacity="0.9"
+      />
+
+      {/* データポイント */}
+      {CATEGORIES.map((cat, i) => {
+        const val = (scores[cat.id] || 0) / 5;
+        const p = point(i, val);
+        return (
+          <circle key={i} cx={p.x} cy={p.y} r="4" fill={cat.color} stroke="white" strokeWidth="1.5" />
+        );
+      })}
+
+      {/* ラベル */}
+      {CATEGORIES.map((cat, i) => {
+        const p = point(i, 1.28);
+        return (
+          <text
+            key={i}
+            x={p.x}
+            y={p.y}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fill={cat.color}
+            fontSize="11"
+            fontFamily="Noto Sans JP"
+            fontWeight="700"
+          >
+            {cat.emoji} {cat.label}
+          </text>
+        );
+      })}
+    </svg>
+  );
+}
+
+/* ==============================
+   スタート画面
+============================== */
+function StartScreen({ onStart }) {
+  return (
+    <div style={{
+      minHeight: '100vh', display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center',
+      padding: '40px 20px',
+      animation: 'fadeUp 0.6s ease'
+    }}>
+      {/* 固定ロゴバー */}
+      <div style={{
+        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
+        display: 'flex', alignItems: 'center',
+        padding: '12px 20px',
+        background: 'rgba(10,10,18,0.85)',
+        backdropFilter: 'blur(16px)',
+        borderBottom: '1px solid rgba(124,106,255,0.15)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{
+            width: '32px', height: '32px', borderRadius: '8px',
+            background: 'linear-gradient(135deg, #7c6aff, #ff6ab0)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '16px',
+          }}>🤖</div>
+          <div>
+            <div style={{ fontSize: '12px', fontWeight: '700', color: '#e8e8f5', lineHeight: 1.2 }}>AI活用スキル診断</div>
+            <div style={{ fontSize: '10px', color: '#7a7a9a', lineHeight: 1.2 }}>AI SKILL DIAGNOSIS 2025</div>
+          </div>
+        </div>
+      </div>
+
+      {/* ヘッダーバッジ */}
+      <div style={{
+        background: 'rgba(124,106,255,0.15)',
+        border: '1px solid rgba(124,106,255,0.4)',
+        borderRadius: '100px',
+        padding: '6px 16px',
+        fontSize: '12px',
+        color: '#7c6aff',
+        marginBottom: '24px',
+        letterSpacing: '0.05em'
+      }}>
+        ✦ AI SKILL DIAGNOSIS 2025
+      </div>
+
+      {/* タイトル */}
+      <h1 style={{
+        fontFamily: 'Kaisei Decol, serif',
+        fontSize: 'clamp(36px, 8vw, 64px)',
+        fontWeight: '700',
+        textAlign: 'center',
+        lineHeight: 1.2,
+        marginBottom: '12px',
+        background: 'linear-gradient(135deg, #fff 0%, #7c6aff 50%, #ff6ab0 100%)',
+        WebkitBackgroundClip: 'text',
+        WebkitTextFillColor: 'transparent',
+        backgroundClip: 'text',
+      }}>
+        あなたのAI活用<br/>スキル診断
+      </h1>
+
+      <p style={{ color: '#7a7a9a', fontSize: '15px', marginBottom: '40px', textAlign: 'center', lineHeight: 1.8 }}>
+        10問に答えるだけ。<br/>
+        <strong style={{ color: '#e8e8f5' }}>プロンプト・自動化・画像・分析・学習</strong>の<br/>
+        5軸でスキルを可視化します。
+      </p>
+
+      {/* 特徴カード */}
+      <div style={{ display: 'flex', gap: '12px', marginBottom: '40px', flexWrap: 'wrap', justifyContent: 'center' }}>
+        {['📊 レーダーチャートで可視化', '🤖 AIが結果をコメント', '🔗 SNSでシェアできる'].map(f => (
+          <div key={f} style={{
+            background: 'rgba(255,255,255,0.04)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            borderRadius: '10px',
+            padding: '8px 14px',
+            fontSize: '13px',
+            color: '#c0c0e0',
+          }}>
+            {f}
+          </div>
+        ))}
+      </div>
+
+      <button className="btn btn-primary" onClick={onStart} style={{ fontSize: '18px', padding: '16px 48px', borderRadius: '16px' }}>
+        診断スタート →
+      </button>
+
+      <p style={{ color: '#4a4a6a', fontSize: '12px', marginTop: '20px' }}>所要時間：約2分</p>
+    </div>
+  );
+}
+
+/* ==============================
+   質問画面
+============================== */
+function QuizScreen({ onComplete }) {
+  const [current, setCurrent] = useState(0);
+  const [answers, setAnswers] = useState({});
+  const [selected, setSelected] = useState(null);
+
+  const q = QUESTIONS[current];
+  const cat = CATEGORIES.find(c => c.id === q.cat);
+  const progress = ((current) / QUESTIONS.length) * 100;
+
+  const handleSelect = (val) => {
+    setSelected(val);
+    setTimeout(() => {
+      const newAnswers = { ...answers, [q.id]: val };
+      setAnswers(newAnswers);
+      setSelected(null);
+      if (current + 1 < QUESTIONS.length) {
+        setCurrent(current + 1);
+      } else {
+        // スコア集計
+        const catScores = {};
+        CATEGORIES.forEach(cat => {
+          const catQs = QUESTIONS.filter(q => q.cat === cat.id);
+          const total = catQs.reduce((sum, q) => sum + (newAnswers[q.id] || 0), 0);
+          catScores[cat.id] = total / catQs.length;
+        });
+        onComplete(catScores);
+      }
+    }, 300);
+  };
+
+  return (
+    <div style={{
+      minHeight: '100vh', display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center',
+      padding: '40px 20px',
+    }}>
+      {/* 固定ロゴバー */}
+      <div style={{
+        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
+        display: 'flex', alignItems: 'center',
+        padding: '12px 20px',
+        background: 'rgba(10,10,18,0.85)',
+        backdropFilter: 'blur(16px)',
+        borderBottom: '1px solid rgba(124,106,255,0.15)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{
+            width: '32px', height: '32px', borderRadius: '8px',
+            background: 'linear-gradient(135deg, #7c6aff, #ff6ab0)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '16px',
+          }}>🤖</div>
+          <div>
+            <div style={{ fontSize: '12px', fontWeight: '700', color: '#e8e8f5', lineHeight: 1.2 }}>AI活用スキル診断</div>
+            <div style={{ fontSize: '10px', color: '#7a7a9a', lineHeight: 1.2 }}>AI SKILL DIAGNOSIS 2025</div>
+          </div>
+        </div>
+      </div>
+
+      {/* プログレスバー */}
+      <div style={{ width: '100%', maxWidth: '560px', marginBottom: '32px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+          <span style={{ fontSize: '13px', color: '#7a7a9a' }}>
+            {cat.emoji} {cat.label}
+          </span>
+          <span style={{ fontSize: '13px', color: '#7a7a9a' }}>
+            {current + 1} / {QUESTIONS.length}
+          </span>
+        </div>
+        <div style={{ height: '4px', background: 'rgba(255,255,255,0.08)', borderRadius: '4px', overflow: 'hidden' }}>
+          <div style={{
+            height: '100%',
+            width: `${progress}%`,
+            background: 'linear-gradient(90deg, #7c6aff, #ff6ab0)',
+            borderRadius: '4px',
+            transition: 'width 0.4s ease'
+          }} />
+        </div>
+      </div>
+
+      {/* 質問カード */}
+      <div key={q.id} style={{
+        width: '100%', maxWidth: '560px',
+        background: 'var(--card)',
+        border: '1px solid var(--border)',
+        borderRadius: '20px',
+        padding: '36px',
+        marginBottom: '24px',
+        animation: 'fadeUp 0.3s ease'
+      }}>
+        <p style={{
+          fontSize: 'clamp(16px, 3vw, 20px)',
+          fontWeight: '500',
+          lineHeight: 1.7,
+          color: '#e8e8f5'
+        }}>
+          Q{current + 1}. {q.text}
+        </p>
+      </div>
+
+      {/* 選択肢 */}
+      <div style={{ width: '100%', maxWidth: '560px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        {SCORE_OPTIONS.map(opt => (
+          <button
+            key={opt.value}
+            className="btn"
+            onClick={() => handleSelect(opt.value)}
+            style={{
+              background: selected === opt.value
+                ? 'linear-gradient(135deg, #7c6aff, #ff6ab0)'
+                : 'rgba(255,255,255,0.04)',
+              border: `1px solid ${selected === opt.value ? 'transparent' : 'rgba(255,255,255,0.08)'}`,
+              color: '#e8e8f5',
+              padding: '14px 20px',
+              textAlign: 'left',
+              fontSize: '15px',
+              borderRadius: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <span style={{
+              width: '28px', height: '28px', borderRadius: '50%',
+              background: selected === opt.value ? 'rgba(255,255,255,0.2)' : opt.color,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '12px', fontWeight: '700', color: '#fff', flexShrink: 0
+            }}>
+              {opt.value}
+            </span>
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ==============================
+   結果画面
+============================== */
+function ResultScreen({ scores }) {
+  const [aiComment, setAiComment] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [copied, setCopied] = useState(false);
+  const [consoleLogs, setConsoleLogs] = useState([]);
+
+  const avg = Object.values(scores).reduce((a, b) => a + b, 0) / 5;
+  const level = getTotalLevel(avg);
+  const aiType = getAIType(scores);
+
+  // デバッグログ追加
+  const addLog = (msg) => setConsoleLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
+
+  useEffect(() => {
+    fetchAIComment();
+  }, []);
+
+  const fetchAIComment = async () => {
+    setLoading(true);
+    setAiComment('');
+    addLog('Claude API呼び出し開始...');
+
+    const scoreText = CATEGORIES.map(c =>
+      `${c.label}: ${scores[c.id].toFixed(1)}/5.0`
+    ).join('\n');
+
+    const prompt = `あなたはAI活用コーチです。以下のスキル診断結果を見て、その人へのフィードバックを日本語で書いてください。
+
+【診断結果】
+${scoreText}
+総合スコア: ${avg.toFixed(1)}/5.0
+AIタイプ: ${aiType.name}
+
+【出力形式】
+- 3〜4文の短いコメント
+- 褒める点1つ・成長できる点1つを含める
+- カジュアルで前向きなトーン
+- 絵文字を2〜3個使う
+- 「あなたは〜」で始める`;
+
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 1000,
+          stream: true,
+          messages: [{ role: 'user', content: prompt }]
+        })
+      });
+
+      addLog(`APIレスポンス: ${res.status}`);
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      // ストリーミング受信
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const data = line.slice(6).trim();
+          if (data === '[DONE]') continue;
+          try {
+            const json = JSON.parse(data);
+            if (json.type === 'content_block_delta' && json.delta?.text) {
+              setAiComment(prev => prev + json.delta.text);
+            }
+          } catch {}
+        }
+      }
+      addLog('ストリーミング完了');
+    } catch (err) {
+      addLog(`エラー: ${err.message}`);
+      setAiComment('診断結果が取得できませんでした。スコアを確認してみてください！');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // シェアテキスト生成
+  const getShareText = () => {
+    const lines = CATEGORIES.map(c => `${c.emoji}${c.label}: ${'⬛'.repeat(Math.round(scores[c.id]))}${'⬜'.repeat(5 - Math.round(scores[c.id]))} ${scores[c.id].toFixed(1)}`);
+    return `🤖 AI活用スキル診断 結果\n\n${aiType.emoji} タイプ: ${aiType.name}\n📈 総合: ${avg.toFixed(1)}/5.0 (${level.label})\n\n${lines.join('\n')}\n\n#AI活用スキル診断`;
+  };
+
+  const handleShare = () => {
+    const text = encodeURIComponent(getShareText());
+    window.open(`https://twitter.com/intent/tweet?text=${text}`, '_blank');
+  };
+
+  const handleCopyResult = () => {
+    navigator.clipboard.writeText(getShareText());
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleCopyConsole = () => {
+    navigator.clipboard.writeText(consoleLogs.join('\n'));
+  };
+
+  const percentile = getPercentile(avg);
+
+  return (
+    <div style={{
+      minHeight: '100vh',
+      padding: '40px 20px',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+    }}>
+
+      {/* ───── 固定ヘッダーバー（ロゴ左・パーセンタイル右） ───── */}
+      <div style={{
+        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '12px 20px',
+        background: 'rgba(10,10,18,0.85)',
+        backdropFilter: 'blur(16px)',
+        borderBottom: '1px solid rgba(124,106,255,0.15)',
+      }}>
+        {/* 左：ロゴ */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div style={{
+            width: '32px', height: '32px', borderRadius: '8px',
+            background: 'linear-gradient(135deg, #7c6aff, #ff6ab0)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '16px', flexShrink: 0,
+          }}>🤖</div>
+          <div>
+            <div style={{ fontSize: '12px', fontWeight: '700', color: '#e8e8f5', lineHeight: 1.2 }}>
+              AI活用スキル診断
+            </div>
+            <div style={{ fontSize: '10px', color: '#7a7a9a', lineHeight: 1.2 }}>
+              AI SKILL DIAGNOSIS 2025
+            </div>
+          </div>
+        </div>
+
+        {/* 右：パーセンタイルバッジ */}
+        <div style={{
+          display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px',
+        }}>
+          <div style={{
+            fontSize: '10px', color: '#7a7a9a', letterSpacing: '0.08em',
+          }}>
+            AI活用スキル
+          </div>
+          <div style={{
+            display: 'flex', alignItems: 'baseline', gap: '3px',
+          }}>
+            <span style={{ fontSize: '10px', color: '#c0c0e0' }}>上位</span>
+            <span style={{
+              fontSize: '22px', fontWeight: '700', lineHeight: 1,
+              fontFamily: 'Kaisei Decol, serif',
+              background: percentile <= 10
+                ? 'linear-gradient(135deg, #ffb86a, #ff6ab0)'
+                : percentile <= 30
+                  ? 'linear-gradient(135deg, #7c6aff, #6affda)'
+                  : 'linear-gradient(135deg, #6aadff, #6affda)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+            }}>{percentile}</span>
+            <span style={{ fontSize: '13px', color: '#c0c0e0', fontWeight: '700' }}>%</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ヘッダーバー分のスペーサー */}
+      <div style={{ height: '56px', width: '100%', flexShrink: 0 }} />
+
+      {/* ヘッダー */}
+      <div style={{ textAlign: 'center', marginBottom: '32px', animation: 'fadeUp 0.5s ease' }}>
+        <div style={{
+          fontSize: '48px', marginBottom: '12px'
+        }}>{aiType.emoji}</div>
+        <h2 style={{
+          fontFamily: 'Kaisei Decol, serif',
+          fontSize: 'clamp(24px, 5vw, 36px)',
+          fontWeight: '700',
+          background: 'linear-gradient(135deg, #fff, #7c6aff)',
+          WebkitBackgroundClip: 'text',
+          WebkitTextFillColor: 'transparent',
+          backgroundClip: 'text',
+          marginBottom: '6px',
+        }}>
+          {aiType.name}
+        </h2>
+        <p style={{ color: '#7a7a9a', fontSize: '14px' }}>{aiType.desc}</p>
+        <div style={{
+          display: 'inline-block',
+          marginTop: '12px',
+          padding: '6px 16px',
+          borderRadius: '100px',
+          border: `1px solid ${level.color}`,
+          color: level.color,
+          fontSize: '13px',
+          fontWeight: '700',
+        }}>
+          {level.label} — {avg.toFixed(1)} / 5.0
+        </div>
+      </div>
+
+      {/* メインダッシュボード */}
+      <div style={{
+        width: '100%', maxWidth: '760px',
+        background: 'var(--card)',
+        border: '1px solid var(--border)',
+        borderRadius: '24px',
+        padding: '32px',
+        marginBottom: '20px',
+        animation: 'fadeUp 0.6s ease 0.1s both',
+      }}>
+        <div style={{
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '32px',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+          {/* レーダーチャート */}
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <RadarChart scores={scores} />
+          </div>
+
+          {/* スコア一覧 */}
+          <div style={{ flex: 1, minWidth: '220px' }}>
+            <h3 style={{ fontSize: '13px', color: '#7a7a9a', marginBottom: '16px', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+              スコア詳細
+            </h3>
+            {CATEGORIES.map(cat => {
+              const score = scores[cat.id] || 0;
+              const pct = (score / 5) * 100;
+              return (
+                <div key={cat.id} style={{ marginBottom: '16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    <span style={{ fontSize: '13px', color: '#c0c0e0' }}>{cat.emoji} {cat.label}</span>
+                    <span style={{ fontSize: '13px', fontWeight: '700', color: cat.color }}>{score.toFixed(1)}</span>
+                  </div>
+                  <div style={{ height: '6px', background: 'rgba(255,255,255,0.06)', borderRadius: '4px', overflow: 'hidden' }}>
+                    <div style={{
+                      height: '100%',
+                      width: `${pct}%`,
+                      background: cat.color,
+                      borderRadius: '4px',
+                      transition: 'width 1s ease',
+                      boxShadow: `0 0 8px ${cat.color}80`
+                    }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* AIコメント */}
+      <div style={{
+        width: '100%', maxWidth: '760px',
+        background: 'linear-gradient(135deg, rgba(124,106,255,0.1), rgba(255,106,176,0.1))',
+        border: '1px solid rgba(124,106,255,0.3)',
+        borderRadius: '20px',
+        padding: '24px',
+        marginBottom: '20px',
+        animation: 'fadeUp 0.6s ease 0.2s both',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+          <span style={{ fontSize: '18px' }}>🤖</span>
+          <span style={{ fontSize: '13px', color: '#7c6aff', fontWeight: '700' }}>AIコーチからのコメント</span>
+          {loading && (
+            <span style={{
+              width: '14px', height: '14px', borderRadius: '50%',
+              border: '2px solid #7c6aff', borderTopColor: 'transparent',
+              display: 'inline-block', animation: 'spin 0.8s linear infinite'
+            }} />
+          )}
+        </div>
+        <p style={{ color: '#e8e8f5', lineHeight: 1.8, fontSize: '15px', minHeight: '60px' }}>
+          {aiComment || (loading ? (
+            <span style={{ color: '#4a4a7a', animation: 'pulse 1.5s ease infinite' }}>
+              生成中... ({aiComment.length}字)
+            </span>
+          ) : '')}
+        </p>
+      </div>
+
+      {/* シェアボタン */}
+      <div style={{
+        display: 'flex', gap: '12px', flexWrap: 'wrap', justifyContent: 'center',
+        marginBottom: '20px',
+        animation: 'fadeUp 0.6s ease 0.3s both',
+      }}>
+        <button className="btn btn-primary" onClick={handleShare} style={{ padding: '12px 28px', fontSize: '15px' }}>
+          𝕏 でシェア
+        </button>
+        <button className="btn btn-ghost" onClick={handleCopyResult}>
+          {copied ? '✓ コピー済み' : '📋 テキストコピー'}
+        </button>
+        <button className="btn btn-ghost" onClick={fetchAIComment}>
+          🔄 コメント再生成
+        </button>
+      </div>
+
+      {/* もう一度ボタン */}
+      <button className="btn btn-ghost" onClick={() => window.location.reload()} style={{ marginBottom: '40px' }}>
+        ↺ もう一度診断する
+      </button>
+
+      {/* デバッグコンソール */}
+      <div style={{
+        width: '100%', maxWidth: '760px',
+        background: '#0a0a0a',
+        border: '1px solid #2a2a2a',
+        borderRadius: '12px',
+        padding: '16px',
+        marginBottom: '40px',
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+          <span style={{ fontSize: '12px', color: '#4a4a6a', fontFamily: 'monospace' }}>🖥 DEBUG CONSOLE</span>
+          <button className="btn btn-ghost" onClick={handleCopyConsole} style={{ fontSize: '11px', padding: '4px 10px' }}>
+            コピー
+          </button>
+        </div>
+        <div style={{ fontFamily: 'monospace', fontSize: '12px', color: '#4aff8a', lineHeight: 1.7 }}>
+          {consoleLogs.map((log, i) => <div key={i}>{log}</div>)}
+          {consoleLogs.length === 0 && <span style={{ color: '#2a2a4a' }}>// ログなし</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ==============================
+   メインアプリ
+============================== */
+function App() {
+  const [screen, setScreen] = useState('start'); // start | quiz | result
+  const [scores, setScores] = useState(null);
+
+  if (screen === 'start') return <StartScreen onStart={() => setScreen('quiz')} />;
+  if (screen === 'quiz') return <QuizScreen onComplete={(s) => { setScores(s); setScreen('result'); }} />;
+  if (screen === 'result') return <ResultScreen scores={scores} />;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
