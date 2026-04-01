@@ -757,52 +757,157 @@ AIタイプ: ${aiType.name}
     return `🤖 AI活用スキル診断 結果\n\n${aiType.emoji} タイプ: ${aiType.name}\n📈 総合: ${avg.toFixed(1)}/5.0 (${level.label})\n\n${lines.join('\n')}\n\n#AI活用スキル診断\n${SHARE_URL}`;
   };
 
+  // Canvas直接描画で結果画像を生成
+  const generateResultImage = () => {
+    const W = 900, H = 500;
+    const canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext('2d');
+
+    // 背景
+    ctx.fillStyle = '#1a1a2e';
+    ctx.roundRect(0, 0, W, H, 20);
+    ctx.fill();
+
+    // タイトルバー
+    const grad = ctx.createLinearGradient(0, 0, W, 0);
+    grad.addColorStop(0, '#7c6aff22');
+    grad.addColorStop(1, '#ff6ab022');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, 56);
+
+    ctx.fillStyle = '#e8e8f5';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.fillText('🤖 AI活用スキル診断', 20, 36);
+    ctx.fillStyle = '#7a7a9a';
+    ctx.font = '12px sans-serif';
+    ctx.fillText('AI SKILL DIAGNOSIS 2025', 20, 52);
+
+    // AIタイプ・スコア
+    ctx.fillStyle = '#e8e8f5';
+    ctx.font = 'bold 28px sans-serif';
+    ctx.fillText(`${aiType.emoji} ${aiType.name}`, 20, 100);
+    ctx.fillStyle = '#7a7a9a';
+    ctx.font = '13px sans-serif';
+    ctx.fillText(aiType.desc, 20, 122);
+    ctx.fillStyle = level.color;
+    ctx.font = 'bold 13px sans-serif';
+    ctx.fillText(`${level.label}  ${avg.toFixed(1)} / 5.0`, 20, 148);
+
+    // レーダーチャート（簡易版）
+    const cx = 200, cy = 320, r = 130;
+    const n = CATEGORIES.length;
+    const angleOf = i => (Math.PI * 2 * i) / n - Math.PI / 2;
+
+    // グリッド
+    [0.2,0.4,0.6,0.8,1.0].forEach(ratio => {
+      ctx.beginPath();
+      CATEGORIES.forEach((_, i) => {
+        const x = cx + r * ratio * Math.cos(angleOf(i));
+        const y = cy + r * ratio * Math.sin(angleOf(i));
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      });
+      ctx.closePath();
+      ctx.strokeStyle = 'rgba(124,106,255,0.2)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    });
+
+    // 軸
+    CATEGORIES.forEach((_, i) => {
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + r * Math.cos(angleOf(i)), cy + r * Math.sin(angleOf(i)));
+      ctx.strokeStyle = 'rgba(124,106,255,0.2)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    });
+
+    // データポリゴン
+    ctx.beginPath();
+    CATEGORIES.forEach((cat, i) => {
+      const val = (scores[cat.id] || 0) / 5;
+      const x = cx + r * val * Math.cos(angleOf(i));
+      const y = cy + r * val * Math.sin(angleOf(i));
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    });
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(124,106,255,0.3)';
+    ctx.fill();
+    ctx.strokeStyle = '#7c6aff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    // データポイント
+    CATEGORIES.forEach((cat, i) => {
+      const val = (scores[cat.id] || 0) / 5;
+      const x = cx + r * val * Math.cos(angleOf(i));
+      const y = cy + r * val * Math.sin(angleOf(i));
+      ctx.beginPath();
+      ctx.arc(x, y, 5, 0, Math.PI * 2);
+      ctx.fillStyle = cat.color;
+      ctx.fill();
+    });
+
+    // ラベル
+    ctx.font = 'bold 12px sans-serif';
+    CATEGORIES.forEach((cat, i) => {
+      const x = cx + (r + 28) * Math.cos(angleOf(i));
+      const y = cy + (r + 28) * Math.sin(angleOf(i));
+      ctx.fillStyle = cat.color;
+      ctx.textAlign = 'center';
+      ctx.fillText(`${cat.emoji}${cat.label}`, x, y);
+    });
+    ctx.textAlign = 'left';
+
+    // スコアバー（右側）
+    const barX = 420, barStartY = 180, barW = 440, barH = 8, gap = 56;
+    ctx.font = 'bold 14px sans-serif';
+    ctx.fillStyle = '#7a7a9a';
+    ctx.fillText('スコア詳細', barX, 160);
+
+    CATEGORIES.forEach((cat, i) => {
+      const y = barStartY + i * gap;
+      const score = scores[cat.id] || 0;
+      const pct = score / 5;
+
+      // ラベル
+      ctx.font = '13px sans-serif';
+      ctx.fillStyle = '#c0c0e0';
+      ctx.fillText(`${cat.emoji} ${cat.label}`, barX, y);
+
+      // スコア数値
+      ctx.font = 'bold 14px sans-serif';
+      ctx.fillStyle = cat.color;
+      ctx.textAlign = 'right';
+      ctx.fillText(score.toFixed(1), barX + barW, y);
+      ctx.textAlign = 'left';
+
+      // バー背景
+      ctx.fillStyle = 'rgba(255,255,255,0.06)';
+      ctx.roundRect(barX, y + 8, barW, barH, 4);
+      ctx.fill();
+
+      // バー本体
+      ctx.fillStyle = cat.color;
+      ctx.roundRect(barX, y + 8, barW * pct, barH, 4);
+      ctx.fill();
+    });
+
+    // URL
+    ctx.font = '11px sans-serif';
+    ctx.fillStyle = '#4a4a7a';
+    ctx.fillText('cc-dev-ps7.web.app/ai-skill-check/', barX, H - 16);
+
+    return canvas;
+  };
+
   // 画像保存 → X投稿画面を開く
   const handleShareWithImage = async () => {
-    if (!dashboardRef.current) return;
     setCapturing(true);
-    addLog('html2canvas キャプチャ開始...');
+    addLog('Canvas描画開始...');
     try {
-      const el = dashboardRef.current;
-
-      // CSS変数を実値に置換（html2canvasはCSS変数を解決できないため）
-      const originalStyles = {};
-      const allEls = [el, ...el.querySelectorAll('*')];
-      allEls.forEach(node => {
-        const computed = window.getComputedStyle(node);
-        const bg = computed.backgroundColor;
-        const color = computed.color;
-        // rgba(0,0,0,0) = transparent → スキップ
-        if (bg && bg !== 'rgba(0, 0, 0, 0)') {
-          originalStyles[node] = { bg: node.style.background, color: node.style.color };
-          node.style.setProperty('background', bg, 'important');
-          node.style.setProperty('color', color, 'important');
-        }
-      });
-
-      const canvas = await html2canvas(el, {
-        backgroundColor: '#1a1a2e',
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        onclone: (doc) => {
-          // クローン内のCSS変数をすべて実値に展開
-          const style = doc.createElement('style');
-          style.innerHTML = `
-            * {
-              --bg: #0a0a12 !important;
-              --card: #1a1a2e !important;
-              --border: #2a2a45 !important;
-              --accent1: #7c6aff !important;
-              --accent2: #ff6ab0 !important;
-              --accent3: #6affda !important;
-              --text: #e8e8f5 !important;
-              --muted: #7a7a9a !important;
-            }
-          `;
-          doc.head.appendChild(style);
-        }
-      });
+      const canvas = generateResultImage();
       addLog('✅ キャプチャ完了 → ダウンロード');
       // 画像をダウンロード
       const link = document.createElement('a');
