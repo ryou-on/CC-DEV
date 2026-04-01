@@ -198,6 +198,7 @@ function Dashboard() {
   const [err, setErr] = useState('');
   const [consoleLogs, setConsoleLogs] = useState([]);
   const [tab, setTab] = useState('overview'); // overview | detail
+  const [selected, setSelected] = useState(new Set()); // 削除選択
 
   const addLog = (msg) => setConsoleLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
 
@@ -207,6 +208,7 @@ function Dashboard() {
     try {
       const rows = await fetchAll();
       setData(rows);
+      setSelected(new Set());
       addLog(`✅ ${rows.length}件取得完了`);
     } catch (e) {
       setErr(e.message);
@@ -217,6 +219,52 @@ function Dashboard() {
   };
 
   useEffect(() => { load(); }, []);
+
+  // CSV エクスポート
+  const handleExportCSV = () => {
+    const headers = ['id','created_at','score_prompt','score_automate','score_image','score_analysis','score_learning','score_avg','level','ai_type','percentile','job_type','age_group'];
+    const rows = data.map(r => headers.map(h => JSON.stringify(r[h] ?? '')).join(','));
+    const csv = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `ai-skill-diagnoses-${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    addLog(`✅ CSV エクスポート完了 (${data.length}件)`);
+  };
+
+  // 選択削除
+  const handleDeleteSelected = async () => {
+    if (selected.size === 0) return;
+    if (!confirm(`${selected.size}件を削除しますか？`)) return;
+    addLog(`削除開始: ${selected.size}件`);
+    try {
+      const ids = [...selected];
+      for (const id of ids) {
+        await fetch(`${SUPABASE_URL}/rest/v1/diagnoses?id=eq.${id}`, {
+          method: 'DELETE',
+          headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` },
+        });
+      }
+      addLog(`✅ ${ids.length}件削除完了`);
+      load();
+    } catch (e) {
+      addLog(`❌ 削除エラー: ${e.message}`);
+    }
+  };
+
+  // 全選択トグル
+  const toggleAll = () => {
+    if (selected.size === data.length) setSelected(new Set());
+    else setSelected(new Set(data.map(r => r.id)));
+  };
+
+  const toggleOne = (id) => {
+    const s = new Set(selected);
+    s.has(id) ? s.delete(id) : s.add(id);
+    setSelected(s);
+  };
 
   /* 集計 */
   const total = data.length;
@@ -300,6 +348,7 @@ function Dashboard() {
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           <span style={{ fontSize: '12px', color: 'var(--muted)' }}>総件数: <strong style={{ color: 'var(--accent3)' }}>{total}</strong></span>
+          <button className="btn btn-ghost" onClick={handleExportCSV} style={{ fontSize: '12px', padding: '6px 12px' }}>📥 CSV</button>
           <button className="btn btn-ghost" onClick={load} style={{ fontSize: '12px', padding: '6px 12px' }}>🔄 更新</button>
         </div>
       </div>
@@ -379,10 +428,24 @@ function Dashboard() {
 
       {tab === 'detail' && (
         <div style={{ background: 'var(--card)', border: '1px solid var(--border)', borderRadius: '16px', padding: '24px', overflowX: 'auto' }}>
-          <h3 style={{ fontSize: '14px', color: 'var(--muted)', marginBottom: '16px' }}>📋 全件データ（新しい順）</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <h3 style={{ fontSize: '14px', color: 'var(--muted)' }}>📋 全件データ（新しい順）</h3>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              {selected.size > 0 && (
+                <span style={{ fontSize: '12px', color: '#ff6ab0' }}>{selected.size}件選択中</span>
+              )}
+              <button className="btn btn-ghost" onClick={handleDeleteSelected} disabled={selected.size === 0}
+                style={{ fontSize: '12px', padding: '6px 12px', borderColor: selected.size > 0 ? '#ff6ab0' : undefined, color: selected.size > 0 ? '#ff6ab0' : undefined }}>
+                🗑 削除
+              </button>
+            </div>
+          </div>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid var(--border)' }}>
+                <th style={{ padding: '8px 12px', width: '32px' }}>
+                  <input type="checkbox" checked={selected.size === data.length && data.length > 0} onChange={toggleAll} />
+                </th>
                 {['日時', 'スコア', 'レベル', 'タイプ', '職種', '年代'].map(h => (
                   <th key={h} style={{ textAlign: 'left', padding: '8px 12px', color: 'var(--muted)', fontWeight: '700', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
@@ -390,7 +453,11 @@ function Dashboard() {
             </thead>
             <tbody>
               {data.map((r, i) => (
-                <tr key={r.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)' }}>
+                <tr key={r.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)', background: selected.has(r.id) ? 'rgba(255,106,176,0.06)' : i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)', cursor: 'pointer' }}
+                  onClick={() => toggleOne(r.id)}>
+                  <td style={{ padding: '8px 12px' }} onClick={e => e.stopPropagation()}>
+                    <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleOne(r.id)} />
+                  </td>
                   <td style={{ padding: '8px 12px', color: 'var(--muted)', whiteSpace: 'nowrap' }}>
                     {r.created_at ? new Date(r.created_at).toLocaleString('ja-JP', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'}
                   </td>
