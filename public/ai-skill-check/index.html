@@ -703,7 +703,7 @@ AIタイプ: ${aiType.name}
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-haiku-4-5',
+          model: 'claude-sonnet-4-5-20251001',
           max_tokens: 1000,
           stream: true,
           messages: [{ role: 'user', content: prompt }]
@@ -763,11 +763,45 @@ AIタイプ: ${aiType.name}
     setCapturing(true);
     addLog('html2canvas キャプチャ開始...');
     try {
-      const canvas = await html2canvas(dashboardRef.current, {
-        backgroundColor: '#1a1a2e', // カード背景色
-        scale: 2, // 高解像度
+      const el = dashboardRef.current;
+
+      // CSS変数を実値に置換（html2canvasはCSS変数を解決できないため）
+      const originalStyles = {};
+      const allEls = [el, ...el.querySelectorAll('*')];
+      allEls.forEach(node => {
+        const computed = window.getComputedStyle(node);
+        const bg = computed.backgroundColor;
+        const color = computed.color;
+        // rgba(0,0,0,0) = transparent → スキップ
+        if (bg && bg !== 'rgba(0, 0, 0, 0)') {
+          originalStyles[node] = { bg: node.style.background, color: node.style.color };
+          node.style.setProperty('background', bg, 'important');
+          node.style.setProperty('color', color, 'important');
+        }
+      });
+
+      const canvas = await html2canvas(el, {
+        backgroundColor: '#1a1a2e',
+        scale: 2,
         useCORS: true,
         logging: false,
+        onclone: (doc) => {
+          // クローン内のCSS変数をすべて実値に展開
+          const style = doc.createElement('style');
+          style.innerHTML = `
+            * {
+              --bg: #0a0a12 !important;
+              --card: #1a1a2e !important;
+              --border: #2a2a45 !important;
+              --accent1: #7c6aff !important;
+              --accent2: #ff6ab0 !important;
+              --accent3: #6affda !important;
+              --text: #e8e8f5 !important;
+              --muted: #7a7a9a !important;
+            }
+          `;
+          doc.head.appendChild(style);
+        }
       });
       addLog('✅ キャプチャ完了 → ダウンロード');
       // 画像をダウンロード
