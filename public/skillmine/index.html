@@ -1,0 +1,1192 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SkillMine β — あなたのスキルを発掘しよう</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, 'Hiragino Sans', 'Yu Gothic UI', sans-serif;
+      background: #090c15;
+      color: #e2e8f0;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ====================================================
+       画面遷移
+    ==================================================== */
+    .screen {
+      position: fixed; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      transition: opacity 0.4s ease, transform 0.4s ease;
+      overflow-y: auto;
+    }
+    .screen.out {
+      opacity: 0; pointer-events: none; transform: translateY(-12px);
+    }
+    .screen.hidden {
+      display: none;
+    }
+
+    /* ====================================================
+       ウェルカム
+    ==================================================== */
+    #s-welcome {
+      background: radial-gradient(ellipse at 50% 55%, #170d30 0%, #090c15 65%);
+    }
+    .welcome-wrap { text-align: center; padding: 2.5rem 1.5rem; max-width: 360px; }
+    .logo-icon {
+      font-size: 3.5rem;
+      animation: float 3s ease-in-out infinite;
+      display: block; margin-bottom: 1rem;
+    }
+    @keyframes float {
+      0%,100% { transform: translateY(0) rotate(-4deg); }
+      50%      { transform: translateY(-10px) rotate(4deg); }
+    }
+    .logo-title {
+      font-size: 2.4rem; font-weight: 900; letter-spacing: -1px;
+      background: linear-gradient(130deg,#fbbf24,#f97316);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .logo-sub { font-size: 0.72rem; color: #475569; letter-spacing: 2px; margin-top: 2px; }
+    .welcome-copy {
+      margin-top: 1.5rem; color: #94a3b8; font-size: 0.875rem; line-height: 1.9;
+    }
+    .welcome-copy strong { color: #e2e8f0; }
+    .welcome-copy em { font-style: normal; color: #fbbf24; }
+
+    .btn-primary {
+      display: inline-block; margin-top: 2rem;
+      padding: 0.85rem 2.4rem;
+      background: linear-gradient(135deg, #f59e0b, #ea580c);
+      color: #0a0d16; font-weight: 800; font-size: 1rem;
+      border: none; border-radius: 999px; cursor: pointer;
+      box-shadow: 0 0 28px rgba(245,158,11,0.35);
+      transition: transform 0.18s, box-shadow 0.18s;
+    }
+    .btn-primary:hover { transform: scale(1.06); box-shadow: 0 0 40px rgba(245,158,11,0.55); }
+    .welcome-note { margin-top: 0.875rem; color: #334155; font-size: 0.7rem; }
+
+    /* ====================================================
+       質問画面
+    ==================================================== */
+    .q-wrap { width: 100%; max-width: 420px; padding: 2rem 1.5rem; }
+    .progress-row { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 2rem; }
+    .progress-track {
+      flex: 1; height: 3px; background: #1e2533; border-radius: 999px; overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #fbbf24, #f97316);
+      border-radius: 999px;
+      transition: width 0.6s cubic-bezier(.4,0,.2,1);
+    }
+    .step-label { font-size: 0.7rem; color: #334155; white-space: nowrap; }
+
+    .q-eyebrow { font-size: 0.72rem; color: #f97316; font-weight: 700;
+      letter-spacing: 1px; margin-bottom: 0.4rem; }
+    .q-title { font-size: 1.2rem; font-weight: 800; line-height: 1.5; margin-bottom: 0.35rem; }
+    .q-title em { font-style: normal; color: #fbbf24; }
+    .q-hint { font-size: 0.78rem; color: #64748b; margin-bottom: 1.4rem; line-height: 1.6; }
+
+    /* テキスト入力 */
+    .q-input-wrap { position: relative; margin-bottom: 1rem; }
+    .q-input {
+      width: 100%;
+      padding: 1rem 1rem 1rem 1rem;
+      background: #111827; border: 1.5px solid #1e2d3d;
+      border-radius: 14px; color: #e2e8f0; font-size: 1rem;
+      font-family: inherit; resize: none; outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      line-height: 1.5;
+    }
+    .q-input:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
+    .q-input::placeholder { color: #334155; font-size: 0.82rem; }
+    .char-count {
+      position: absolute; right: 10px; bottom: 10px;
+      font-size: 0.65rem; color: #334155;
+    }
+
+    /* ヒントチップ */
+    .hint-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 1.4rem; }
+    .chip {
+      padding: 0.3rem 0.7rem; border-radius: 999px;
+      border: 1px solid #1e2d3d; background: #0f1520;
+      color: #64748b; font-size: 0.72rem; cursor: pointer;
+      transition: all 0.15s;
+    }
+    .chip:hover { border-color: #3b82f6; color: #93c5fd; background: #0f2040; }
+
+    .btn-next {
+      width: 100%; padding: 0.875rem;
+      background: linear-gradient(135deg, #f59e0b, #ea580c);
+      color: #0a0d16; font-weight: 800; font-size: 0.95rem;
+      border: none; border-radius: 12px; cursor: pointer;
+      transition: opacity 0.2s, transform 0.15s;
+      margin-top: 0.25rem;
+    }
+    .btn-next:hover { opacity: 0.9; transform: translateY(-1px); }
+    .btn-next:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+    .btn-back {
+      background: none; border: none; color: #334155;
+      font-size: 0.78rem; cursor: pointer; margin-top: 0.875rem;
+      display: block; padding: 0.2rem 0;
+    }
+    .btn-back:hover { color: #64748b; }
+
+    /* 選択肢ボタン (Q3) */
+    .q-opts { display: flex; flex-direction: column; gap: 0.55rem; }
+    .q-opt {
+      width: 100%; text-align: left; padding: 0.875rem 1rem;
+      background: #0f1520; border: 1.5px solid #1e2d3d;
+      border-radius: 12px; cursor: pointer; transition: all 0.18s;
+      display: flex; align-items: center; gap: 0.75rem;
+    }
+    .q-opt:hover { border-color: #f59e0b; background: #181200; transform: translateX(4px); }
+    .q-opt .oi { font-size: 1.5rem; flex-shrink: 0; }
+    .q-opt .ol { font-size: 0.88rem; font-weight: 600; color: #e2e8f0; }
+    .q-opt .od { font-size: 0.72rem; color: #475569; margin-top: 1px; }
+
+    /* ====================================================
+       ローディング
+    ==================================================== */
+    #s-loading { flex-direction: column; gap: 1.25rem; text-align: center; }
+    .ld-icon { font-size: 3rem; animation: dig 0.4s ease-in-out infinite alternate; }
+    @keyframes dig {
+      from { transform: rotate(-15deg) scale(0.92); }
+      to   { transform: rotate(12deg) scale(1.08); }
+    }
+    .ld-title { font-size: 1rem; font-weight: 700; color: #fbbf24; }
+    .ld-bar-wrap { width: 200px; height: 5px; background: #1e2533; border-radius: 999px; overflow: hidden; }
+    .ld-bar { height: 100%; width: 0%; background: linear-gradient(90deg,#fbbf24,#f97316);
+      border-radius: 999px; transition: width 0.22s ease; }
+    #ld-msg { font-size: 0.75rem; color: #334155; }
+
+    /* ====================================================
+       マップ画面
+    ==================================================== */
+    #s-map {
+      display: none;
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: flex-start;
+      overflow-y: auto;
+      opacity: 0;
+      transition: opacity 0.45s ease;
+    }
+
+    .map-header {
+      position: sticky; top: 0; z-index: 20;
+      background: rgba(9,12,21,0.92); backdrop-filter: blur(10px);
+      border-bottom: 1px solid #1a2030;
+      padding: 0.75rem 1rem;
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 0.5rem;
+    }
+    .map-header-l .core-eyebrow { font-size: 0.65rem; color: #334155; }
+    .map-header-l .core-title   { font-size: 1rem; font-weight: 900; color: #fbbf24; line-height: 1.3; max-width: 220px; }
+    .map-header-r { text-align: right; flex-shrink: 0; }
+    .map-header-r .stat-l { font-size: 0.65rem; color: #334155; }
+    .map-header-r .stat-v { font-size: 1rem; font-weight: 700; }
+    .vivid-count { color: #f59e0b; }
+
+    .map-hint {
+      text-align: center; padding: 0.5rem 1rem;
+      font-size: 0.78rem; color: rgba(251,191,36,0.75);
+      min-height: 2rem;
+      transition: color 0.3s;
+    }
+    .map-hint.alert { color: #f87171 !important; }
+
+    .map-grid-wrap { display: flex; justify-content: center; padding: 0 0.5rem 0.5rem; }
+    #grid {
+      display: grid;
+      grid-template-columns: repeat(9, 1fr);
+    }
+
+    /* ====================================================
+       グリッドセル
+    ==================================================== */
+    .cell {
+      aspect-ratio: 1;
+      perspective: 500px;
+      cursor: pointer;
+      position: relative;
+    }
+    .cell-inner {
+      width: 100%; height: 100%;
+      transform-style: preserve-3d;
+      transition: transform 0.5s cubic-bezier(0.175,0.885,0.32,1.275);
+      position: relative;
+    }
+    .cell.flipped .cell-inner { transform: rotateY(180deg); }
+
+    .cell-front, .cell-back {
+      position: absolute; inset: 0;
+      backface-visibility: hidden;
+      border-radius: 3px;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      overflow: hidden;
+    }
+    /* 表面 */
+    .cell-front {
+      background: #0f1520; border: 1px solid #171e2e;
+    }
+    .cell:hover:not(.cell-empty) .cell-front {
+      background: #161e30; border-color: #253044;
+    }
+    .cell-q { font-size: 0.6em; opacity: 0.15; color: #64748b; }
+
+    /* コアセル専用 */
+    .cell.cell-core .cell-front {
+      background: #150f00; border: 2px solid #7c4f00;
+      animation: core-pulse 2.5s ease-in-out infinite;
+    }
+    @keyframes core-pulse {
+      0%,100% { border-color: #7c4f00; box-shadow: 0 0 6px rgba(251,191,36,0.2); }
+      50%      { border-color: #fbbf24; box-shadow: 0 0 18px rgba(251,191,36,0.55); }
+    }
+    .core-front-content { text-align: center; padding: 2px; }
+    .core-front-icon { font-size: 1.3em; animation: float 2s ease-in-out infinite; }
+    .core-front-label { font-size: 0.38em; color: #7c4f00; margin-top: 2px; font-weight: 700; }
+
+    /* 裏面 */
+    .cell-back { transform: rotateY(180deg); padding: 2px; }
+
+    /* コアセル裏面 */
+    .cell-back.back-core {
+      background: linear-gradient(135deg, #241a00, #180f00);
+      border: 2px solid #fbbf24;
+      box-shadow: 0 0 16px rgba(251,191,36,0.45);
+    }
+    .core-back-emoji { font-size: 1.1em; }
+    .core-back-text { font-size: 0.36em; color: #fbbf24; font-weight: 800; text-align: center;
+      line-height: 1.25; margin-top: 2px; padding: 0 2px; }
+
+    /* プライマリセル裏面 */
+    .back-primary {
+      border: 1.5px solid;
+      position: relative;
+    }
+    .back-primary .cell-emoji { font-size: 0.95em; }
+    .back-primary .cell-label {
+      font-size: 0.44em; font-weight: 700;
+      text-align: center; line-height: 1.2; margin-top: 2px;
+      padding: 0 2px;
+    }
+    .back-primary .cell-from {
+      font-size: 0.3em; text-align: center; opacity: 0.65;
+      margin-top: 1px; line-height: 1.2; padding: 0 2px;
+    }
+
+    /* セカンダリセル裏面 */
+    .back-secondary {
+      border: 1px solid;
+    }
+    .back-secondary .cell-label {
+      font-size: 0.38em; font-weight: 600;
+      text-align: center; line-height: 1.25;
+      padding: 0 2px; color: inherit;
+    }
+
+    /* 空セル */
+    .cell-empty .cell-front { background: #090c15; border-color: #0d1020; cursor: default; }
+    .cell-empty:hover .cell-front { background: #090c15; border-color: #0d1020; }
+
+    /* カテゴリカラー */
+    .cat-tech     { background: #0c1c38; border-color: #2563eb !important; color: #93c5fd; }
+    .cat-creative { background: #170c30; border-color: #9333ea !important; color: #d8b4fe; }
+    .cat-growth   { background: #081c12; border-color: #16a34a !important; color: #86efac; }
+    .cat-publish  { background: #1c0e00; border-color: #ea580c !important; color: #fdba74; }
+    .cat-ai       { background: #031620; border-color: #0891b2 !important; color: #67e8f9; }
+    .cat-wild     { background: #1c0018; border-color: #db2777 !important; color: #f9a8d4; }
+
+    /* ====================================================
+       ビビッ！共鳴マーク
+    ==================================================== */
+    .cell.vivid .cell-back {
+      box-shadow: 0 0 0 2px #fbbf24, 0 0 20px rgba(251,191,36,0.5) !important;
+      border-color: #fbbf24 !important;
+    }
+    .vivid-badge {
+      position: absolute; top: -4px; right: -4px;
+      font-size: 0.6em; z-index: 10;
+      animation: badge-pop 0.3s cubic-bezier(0.175,0.885,0.32,1.275) forwards;
+    }
+    @keyframes badge-pop { 0%{transform:scale(0)} 100%{transform:scale(1)} }
+
+    /* ビビッボタン (マップ下部) */
+    .vivid-btn {
+      display: block; margin: 0 auto;
+      padding: 0.5rem 1.25rem;
+      background: none;
+      border: 1.5px solid #92400e;
+      color: #f59e0b; font-size: 0.8rem; font-weight: 700;
+      border-radius: 999px; cursor: pointer;
+      transition: all 0.2s;
+    }
+    .vivid-btn:hover { background: #1a1000; border-color: #fbbf24; }
+    .vivid-instructions {
+      text-align: center; padding: 0.4rem 1rem 0.8rem;
+      font-size: 0.72rem; color: #475569; line-height: 1.6;
+    }
+
+    /* ====================================================
+       凡例
+    ==================================================== */
+    .legend-row {
+      display: flex; flex-wrap: wrap; gap: 0.4rem;
+      padding: 0.5rem 1rem 0.75rem;
+    }
+    .legend-chip {
+      font-size: 0.65rem; padding: 2px 8px; border-radius: 999px;
+      border: 1px solid; font-weight: 600;
+    }
+
+    /* リセット */
+    .btn-reset {
+      display: block; margin: 0.25rem auto 1.5rem;
+      background: none; border: 1px solid #1a2030;
+      color: #334155; font-size: 0.72rem;
+      padding: 0.35rem 0.875rem; border-radius: 999px; cursor: pointer;
+    }
+    .btn-reset:hover { border-color: #253044; color: #64748b; }
+
+    /* ====================================================
+       完了バナー
+    ==================================================== */
+    #done-banner {
+      display: none;
+      margin: 0 1rem;
+      padding: 1rem;
+      background: linear-gradient(135deg, #1a1500, #120e00);
+      border: 1.5px solid #fbbf24;
+      border-radius: 14px;
+      text-align: center;
+    }
+    #done-banner.show { display: block; }
+    .done-title { font-size: 1rem; font-weight: 800; color: #fbbf24; margin-bottom: 0.4rem; }
+    .done-sub   { font-size: 0.78rem; color: #94a3b8; line-height: 1.7; }
+
+    /* ====================================================
+       スパークル
+    ==================================================== */
+    .sparkle {
+      position: fixed; pointer-events: none; z-index: 9999;
+      animation: spark-up 0.75s ease-out forwards;
+    }
+    @keyframes spark-up {
+      0%   { opacity: 1; transform: scale(0.6) translateY(0) rotate(0deg); }
+      100% { opacity: 0; transform: scale(1.8) translateY(-55px) rotate(200deg); }
+    }
+
+    /* デバッグ */
+    #dbg { position: fixed; bottom: 0.75rem; right: 0.75rem; z-index: 9999;
+      background: #111827; border: 1px solid #253044;
+      color: #334155; font-size: 0.62rem; padding: 0.25rem 0.6rem;
+      border-radius: 6px; cursor: pointer; }
+    #dbg:hover { color: #64748b; }
+  </style>
+</head>
+<body>
+
+<!-- ==================== ウェルカム ==================== -->
+<div id="s-welcome" class="screen">
+  <div class="welcome-wrap">
+    <span class="logo-icon">⛏️</span>
+    <div class="logo-title">SkillMine</div>
+    <div class="logo-sub">SKILL DISCOVERY MAP</div>
+    <p class="welcome-copy">
+      3つの質問に<em>あなたの言葉</em>で答えてください。<br>
+      その言葉から生まれたスキルの可能性が<br>
+      <strong>バババッと発掘</strong>されます。<br><br>
+      「これ、私のことだ」と感じたら<strong>ビビッ！</strong>を押してください。<br>
+      それが、あなたのスキルマップになります。
+    </p>
+    <button class="btn-primary" onclick="show('s-q1')">発掘を始める →</button>
+    <p class="welcome-note">所要時間 約1〜2分 · Phase 0 プロトタイプ</p>
+  </div>
+</div>
+
+<!-- ==================== Q1: 時間を忘れた作業 ==================== -->
+<div id="s-q1" class="screen hidden">
+  <div class="q-wrap">
+    <div class="progress-row">
+      <div class="progress-track"><div class="progress-fill" style="width:33%"></div></div>
+      <span class="step-label">1 / 3</span>
+    </div>
+    <div class="q-eyebrow">QUESTION 1</div>
+    <div class="q-title">最近、<em>時間を忘れて</em>やってしまったことは？</div>
+    <div class="q-hint">仕事でも趣味でも。「楽しかった」じゃなくても、気づいたら没頭していた作業を思い出してみてください。</div>
+
+    <div class="q-input-wrap">
+      <textarea id="q1-input" class="q-input" rows="3"
+        placeholder="例）コードを書いていたら夜になっていた / 資料を整理してたらめちゃくちゃ捗った / 友達の相談に乗っていた..."
+        maxlength="60" oninput="onQ1Input()"></textarea>
+      <span class="char-count" id="q1-count">0/60</span>
+    </div>
+
+    <div class="hint-chips" id="q1-chips">
+      <span class="chip" onclick="appendToQ1('コードを書く')">💻 コードを書く</span>
+      <span class="chip" onclick="appendToQ1('デザインを作る')">🎨 デザインを作る</span>
+      <span class="chip" onclick="appendToQ1('文章を書く')">✍️ 文章を書く</span>
+      <span class="chip" onclick="appendToQ1('データを分析する')">📊 データを分析する</span>
+      <span class="chip" onclick="appendToQ1('人の話を聞く')">🌱 人の話を聞く</span>
+      <span class="chip" onclick="appendToQ1('企画を考える')">💡 企画を考える</span>
+    </div>
+
+    <button class="btn-next" id="q1-next" onclick="nextToQ2()" disabled>次へ →</button>
+  </div>
+</div>
+
+<!-- ==================== Q2: 頼まれること ==================== -->
+<div id="s-q2" class="screen hidden">
+  <div class="q-wrap">
+    <div class="progress-row">
+      <div class="progress-track"><div class="progress-fill" style="width:66%"></div></div>
+      <span class="step-label">2 / 3</span>
+    </div>
+    <div class="q-eyebrow">QUESTION 2</div>
+    <div class="q-title">友達や同僚から<em>よく頼まれる・相談される</em>ことは？</div>
+    <div class="q-hint">「なんであなたに聞くの？」と思うかもしれない。でも、それがあなたが自然に与えている価値です。</div>
+
+    <div class="q-input-wrap">
+      <textarea id="q2-input" class="q-input" rows="3"
+        placeholder="例）パソコンのこと / デザインや色の相談 / 人間関係の話 / 論理的に整理してほしいとき..."
+        maxlength="60" oninput="onQ2Input()"></textarea>
+      <span class="char-count" id="q2-count">0/60</span>
+    </div>
+
+    <div class="hint-chips">
+      <span class="chip" onclick="appendToQ2('技術的な問題')">🔧 技術的な問題</span>
+      <span class="chip" onclick="appendToQ2('デザインや見た目')">🖌️ デザインや見た目</span>
+      <span class="chip" onclick="appendToQ2('文章や言葉のこと')">📝 文章や言葉</span>
+      <span class="chip" onclick="appendToQ2('悩みを聞いてほしい')">💬 悩みを聞いてほしい</span>
+      <span class="chip" onclick="appendToQ2('計画や整理のこと')">📋 計画や整理</span>
+    </div>
+
+    <button class="btn-next" id="q2-next" onclick="nextToQ3()" disabled>次へ →</button>
+    <button class="btn-back" onclick="show('s-q1')">← 戻る</button>
+  </div>
+</div>
+
+<!-- ==================== Q3: 5年後 ==================== -->
+<div id="s-q3" class="screen hidden">
+  <div class="q-wrap">
+    <div class="progress-row">
+      <div class="progress-track"><div class="progress-fill" style="width:100%"></div></div>
+      <span class="step-label">3 / 3</span>
+    </div>
+    <div class="q-eyebrow">QUESTION 3</div>
+    <div class="q-title">5年後、<em>何を語れる人</em>でありたいですか？</div>
+    <div class="q-hint">「すごいもの」を作った話？「深い専門性」を持った話？どんな姿が理想ですか？</div>
+
+    <div class="q-opts">
+      <button class="q-opt" onclick="pickQ3('creator')">
+        <span class="oi">🚀</span>
+        <div><div class="ol">「作ったもの」の話ができる人</div><div class="od">プロダクト・コンテンツ・ビジネス</div></div>
+      </button>
+      <button class="q-opt" onclick="pickQ3('expert')">
+        <span class="oi">🏆</span>
+        <div><div class="ol">「深い専門性」の話ができる人</div><div class="od">その道のプロ・職人・研究者</div></div>
+      </button>
+      <button class="q-opt" onclick="pickQ3('connector')">
+        <span class="oi">🌐</span>
+        <div><div class="ol">「つないだ人・場所」の話ができる人</div><div class="od">コミュニティ・マネジメント・橋渡し</div></div>
+      </button>
+      <button class="q-opt" onclick="pickQ3('free')">
+        <span class="oi">🦋</span>
+        <div><div class="ol">「多様な経験」の話ができる人</div><div class="od">マルチポテンシャル・越境・探求</div></div>
+      </button>
+    </div>
+    <button class="btn-back" onclick="show('s-q2')">← 戻る</button>
+  </div>
+</div>
+
+<!-- ==================== ローディング ==================== -->
+<div id="s-loading" class="screen hidden">
+  <div style="text-align:center;display:flex;flex-direction:column;align-items:center;gap:1rem">
+    <div class="ld-icon">⛏️</div>
+    <div class="ld-title">あなたの言葉から発掘中...</div>
+    <div class="ld-bar-wrap"><div id="lbar" class="ld-bar"></div></div>
+    <div id="ld-msg" style="font-size:0.75rem;color:#334155">言葉のパターンを解析中...</div>
+  </div>
+</div>
+
+<!-- ==================== マップ ==================== -->
+<div id="s-map">
+  <div class="map-header">
+    <div class="map-header-l">
+      <div class="core-eyebrow">あなたのコアワード</div>
+      <div id="core-title" class="core-title">—</div>
+    </div>
+    <div class="map-header-r">
+      <div class="stat-l">ビビッ！</div>
+      <div class="stat-v"><span id="vivid-count" class="vivid-count">0</span><span style="color:#1e2d3d;font-size:0.7rem"> / 探索中</span></div>
+    </div>
+  </div>
+
+  <div id="map-hint" class="map-hint">✨ 中心のセルをタップして発掘開始！</div>
+
+  <div class="map-grid-wrap">
+    <div id="grid"></div>
+  </div>
+
+  <div id="done-banner">
+    <div class="done-title">🎉 発掘完了！</div>
+    <div id="done-text" class="done-sub"></div>
+  </div>
+
+  <div class="vivid-instructions">
+    セルを開いたら → <strong style="color:#fbbf24">ビビッ！</strong> と感じたものをタップ<br>
+    それがあなたのスキルマップになります
+  </div>
+
+  <div class="legend-row">
+    <span class="legend-chip" style="background:#0c1c38;border-color:#2563eb;color:#93c5fd">💻 技術</span>
+    <span class="legend-chip" style="background:#170c30;border-color:#9333ea;color:#d8b4fe">🎨 創造</span>
+    <span class="legend-chip" style="background:#081c12;border-color:#16a34a;color:#86efac">🌱 成長</span>
+    <span class="legend-chip" style="background:#1c0e00;border-color:#ea580c;color:#fdba74">📢 発信</span>
+    <span class="legend-chip" style="background:#031620;border-color:#0891b2;color:#67e8f9">🤖 AI</span>
+    <span class="legend-chip" style="background:#1c0018;border-color:#db2777;color:#f9a8d4">✨ 意外性</span>
+  </div>
+
+  <button class="btn-reset" onclick="resetAll()">↺ 最初からやり直す</button>
+</div>
+
+<!-- デバッグ -->
+<button id="dbg" onclick="copyDbg()">📋 コンソールコピー</button>
+
+<script>
+/* ============================================================
+   状態管理
+============================================================ */
+const S = { q1: '', q2: '', q3: '' };
+let gridData  = [];   // 9×9 セルデータ
+let vividSet  = new Set();  // ビビッ！済みセルID
+let dbgLog    = [];
+
+function log(...a) {
+  const msg = a.map(x => typeof x === 'object' ? JSON.stringify(x) : x).join(' ');
+  dbgLog.push(`[${new Date().toLocaleTimeString()}] ${msg}`);
+}
+
+function copyDbg() {
+  navigator.clipboard.writeText(dbgLog.join('\n'))
+    .then(() => alert('コピーしました'))
+    .catch(() => prompt('ログ:', dbgLog.join('\n')));
+}
+
+/* ============================================================
+   画面遷移
+============================================================ */
+function show(id) {
+  document.querySelectorAll('.screen').forEach(s => {
+    if (s.id === id) {
+      s.classList.remove('hidden', 'out');
+      s.style.opacity = '0';
+      s.style.transform = 'translateY(16px)';
+      requestAnimationFrame(() => {
+        s.style.transition = 'opacity 0.4s ease, transform 0.4s ease';
+        s.style.opacity = '1';
+        s.style.transform = 'translateY(0)';
+      });
+    } else {
+      s.style.opacity = '0';
+      s.style.transform = 'translateY(-10px)';
+      setTimeout(() => s.classList.add('hidden'), 380);
+    }
+  });
+}
+
+function showMap() {
+  document.querySelectorAll('.screen').forEach(s => {
+    s.style.opacity = '0';
+    setTimeout(() => s.classList.add('hidden'), 380);
+  });
+  const el = document.getElementById('s-map');
+  setTimeout(() => {
+    el.style.display = 'flex';
+    requestAnimationFrame(() => { el.style.opacity = '1'; });
+  }, 430);
+}
+
+/* ============================================================
+   Q1 / Q2 テキスト入力ロジック
+============================================================ */
+function onQ1Input() {
+  const v = document.getElementById('q1-input').value;
+  document.getElementById('q1-count').textContent = `${v.length}/60`;
+  document.getElementById('q1-next').disabled = v.trim().length < 4;
+}
+function onQ2Input() {
+  const v = document.getElementById('q2-input').value;
+  document.getElementById('q2-count').textContent = `${v.length}/60`;
+  document.getElementById('q2-next').disabled = v.trim().length < 4;
+}
+
+function appendToQ1(text) {
+  const el = document.getElementById('q1-input');
+  el.value = text;
+  onQ1Input();
+  el.focus();
+}
+function appendToQ2(text) {
+  const el = document.getElementById('q2-input');
+  el.value = text;
+  onQ2Input();
+  el.focus();
+}
+
+function nextToQ2() {
+  S.q1 = document.getElementById('q1-input').value.trim();
+  show('s-q2');
+}
+function nextToQ3() {
+  S.q2 = document.getElementById('q2-input').value.trim();
+  show('s-q3');
+}
+function pickQ3(v) {
+  S.q3 = v;
+  startLoading();
+}
+
+/* ============================================================
+   キーワード → カテゴリ判定
+============================================================ */
+const KW_MAP = {
+  tech:     ['コード','プログラム','開発','エンジニア','技術','システム','アプリ','ウェブ','web','サーバー','データベース','インフラ','ハック'],
+  design:   ['デザイン','絵','イラスト','ui','ux','ビジュアル','写真','映像','動画','配色','フォント','figma','クリエイティブ','レイアウト'],
+  words:    ['書く','ライター','文章','言葉','話す','伝える','コミュニケーション','英語','翻訳','コピー','記事','ブログ','sns','プレゼン'],
+  analysis: ['分析','数字','データ','ロジック','戦略','計画','統計','エクセル','スプレッド','調査','ビジネス','財務','マーケ'],
+  support:  ['教える','サポート','コーチ','相談','助ける','育てる','教育','講師','人の話','聞く','メンタル','カウンセル','ファシリ'],
+};
+
+function detectCategory(text) {
+  const t = (text || '').toLowerCase();
+  let best = null, bestScore = 0;
+  for (const [cat, kws] of Object.entries(KW_MAP)) {
+    const score = kws.filter(k => t.includes(k)).length;
+    if (score > bestScore) { bestScore = score; best = cat; }
+  }
+  return best;
+}
+
+/* ============================================================
+   スキルデータ
+============================================================ */
+// primaryOrder: 中央ブロック内のローカル位置 (時計回り8個)
+const PO = [[0,0],[0,1],[0,2],[1,2],[2,2],[2,1],[2,0],[1,0]];
+// primary位置 → 外側ブロック位置
+const P2B = {'0,0':[0,0],'0,1':[0,1],'0,2':[0,2],'1,2':[1,2],'2,2':[2,2],'2,1':[2,1],'2,0':[2,0],'1,0':[1,0]};
+// ブロック内secondary順 (中心除く8マス)
+const SO = [[0,0],[0,1],[0,2],[1,0],[1,2],[2,0],[2,1],[2,2]];
+
+const CATS = {
+  tech:     'cat-tech',
+  creative: 'cat-creative',
+  growth:   'cat-growth',
+  publish:  'cat-publish',
+  ai:       'cat-ai',
+  wild:     'cat-wild',
+};
+
+/* スキルセット */
+const SKILL_SETS = {
+  tech: {
+    primaries: [
+      { label:'フロントエンド', emoji:'🖥️', cat:'tech',   from:'q1' },
+      { label:'バックエンド',   emoji:'⚙️', cat:'tech',   from:'q1' },
+      { label:'AI/ML活用',     emoji:'🤖', cat:'ai',     from:'q2' },
+      { label:'クラウド設計',   emoji:'☁️', cat:'tech',   from:'q1' },
+      { label:'UI/UX思考',     emoji:'🎨', cat:'creative',from:'wild' },
+      { label:'問題解決力',     emoji:'🧩', cat:'growth', from:'q2' },
+      { label:'技術発信',       emoji:'📢', cat:'publish', from:'wild' },
+      { label:'学習設計',       emoji:'📚', cat:'growth', from:'q2' },
+    ],
+    subs: [
+      ['React/Next.js','TypeScript','アニメーション','PWA開発','パフォーマンス最適化','アクセシビリティ','Chrome拡張','WebComponents'],
+      ['Node.js/Deno','GraphQL設計','DBモデリング','セキュリティ','マイクロSVC','API設計','認証設計','サーバーレス'],
+      ['プロンプトエンジニア','RAGシステム','AIエージェント','FineTuning','LLMアプリ','音声AI活用','画像生成AI','AI×業務自動化'],
+      ['AWS/GCP設計','CI/CDパイプライン','コンテナ化','監視・ロギング','IaC','コスト最適化','マルチクラウド','SRE実践'],
+      ['UXリサーチ','プロトタイピング','デザインシステム','ユーザーテスト','モーションUX','情報設計','インタラクション','ダークパターン解析'],
+      ['仮説思考','ロジカルシンキング','デバッグ戦略','根本原因分析','技術的負債解消','リファクタリング','要件定義','アーキ設計'],
+      ['技術ブログ','登壇・LT','OSS貢献','YouTube技術動画','ポートフォリオ設計','SNS技術発信','Zenn/Qiita','エンジニアメンター'],
+      ['コードレビュー文化','学習ロードマップ','ペアプログラミング','出力駆動学習','副業・受託開発','コミュニティ活動','OJT設計','輝くチーム構築'],
+    ],
+  },
+  design: {
+    primaries: [
+      { label:'UI設計',        emoji:'🖌️', cat:'creative', from:'q1' },
+      { label:'ブランディング', emoji:'💎', cat:'creative', from:'q1' },
+      { label:'イラスト',       emoji:'✏️', cat:'creative', from:'q1' },
+      { label:'動画・映像',     emoji:'🎬', cat:'creative', from:'q1' },
+      { label:'UXリサーチ',    emoji:'🔍', cat:'growth',   from:'q2' },
+      { label:'技術連携',       emoji:'💻', cat:'tech',    from:'wild' },
+      { label:'発信・展示',     emoji:'📢', cat:'publish',  from:'q2' },
+      { label:'写真・撮影',     emoji:'📷', cat:'creative', from:'q1' },
+    ],
+    subs: [
+      ['Figma','デザインシステム','コンポーネント設計','アニメーション','レスポンシブ設計','ダークモード設計','A11y','プロトタイプ'],
+      ['ロゴデザイン','カラーシステム','タイポグラフィ','トーン&マナー','ブランドガイド','パッケージ','Web制作','SNSビジュアル'],
+      ['キャラクターデザイン','デジタルイラスト','漫画・コミック','コンセプトアート','NFTアート','グッズ展開','SNSイラスト','絵本制作'],
+      ['YouTube編集','モーショングラフィックス','After Effects','ショート動画','プロモーション映像','配信演出','VTuber素材','映像コンサル'],
+      ['ユーザーインタビュー','アンケート設計','A/Bテスト','ペルソナ作成','ジャーニーマップ','競合分析','ヒューリスティック評価','デザインスプリント'],
+      ['CSS/HTML','React/Vue','Webflow','Framer','デザインシステム実装','A11y実装','SVGアニメーション','Three.js活用'],
+      ['Behance/Dribbble','SNSブランディング','デザインブログ','登壇・展示','デザインコンテスト','デザイン教育','ワークショップ','コミュニティ運営'],
+      ['商品撮影','ポートレート','建築写真','SNSマーケ用撮影','フォトレタッチ','映像×写真複合','フォトブック制作','写真教室運営'],
+    ],
+  },
+  words: {
+    primaries: [
+      { label:'ライティング',  emoji:'✍️', cat:'publish', from:'q1' },
+      { label:'コピー制作',    emoji:'💬', cat:'publish', from:'q1' },
+      { label:'講師・登壇',    emoji:'🎤', cat:'growth',  from:'q2' },
+      { label:'コーチング',    emoji:'🌱', cat:'growth',  from:'q2' },
+      { label:'SNS戦略',      emoji:'📱', cat:'publish', from:'q1' },
+      { label:'ブランド発信',  emoji:'🎯', cat:'publish', from:'wild' },
+      { label:'翻訳・通訳',   emoji:'🌏', cat:'publish', from:'wild' },
+      { label:'コミュニティ',  emoji:'🤝', cat:'growth',  from:'q2' },
+    ],
+    subs: [
+      ['SEOライティング','取材・インタビュー','オウンドメディア','書籍執筆','ニュースレター','noteマガジン','技術ライター','シナリオライター'],
+      ['広告コピー','LPライティング','メールマーケ','SNSコピー','プロダクト訴求文','ブランドメッセージ','ネーミング','スローガン制作'],
+      ['ウェビナー講師','YouTube講座','オンライン講師','企業研修設計','勉強会主催','ポッドキャスト','ライブ配信','eラーニング制作'],
+      ['1on1コーチング','キャリアコーチ','グループコーチング','感情サポート','ビジネスコーチ','ライフコーチ','認定資格取得','資格取得支援'],
+      ['Instagram運用','X戦略','TikTok活用','LinkedIn展開','コミュニティSNS','インフルエンサー分析','バイラル設計','UGC創出'],
+      ['パーソナルブランド構築','ビジョンストーリー','ミッション策定','社会発信','PR戦略','ポジショニング','媒体掲載','スポークスマン'],
+      ['英日翻訳','技術翻訳','ローカライズ','字幕・映像翻訳','同時通訳','多言語コンテンツ','語学教育','国際コミュニティ'],
+      ['Slackコミュ運営','Discord活用','勉強会主催','オフライン交流','ファンコミュ','サポーター育成','地域活動','NPO活動'],
+    ],
+  },
+  analysis: {
+    primaries: [
+      { label:'データ分析',     emoji:'📊', cat:'ai',     from:'q1' },
+      { label:'戦略設計',       emoji:'🧠', cat:'growth', from:'q2' },
+      { label:'PM思考',         emoji:'📋', cat:'growth', from:'q2' },
+      { label:'財務・会計',     emoji:'💰', cat:'ai',     from:'q1' },
+      { label:'業務自動化',     emoji:'⚡', cat:'tech',   from:'wild' },
+      { label:'AI業務活用',     emoji:'🤖', cat:'ai',     from:'q1' },
+      { label:'データ可視化',   emoji:'📈', cat:'publish', from:'wild' },
+      { label:'組織・HR',       emoji:'👥', cat:'growth', from:'q2' },
+    ],
+    subs: [
+      ['Python分析','SQLマスター','Tableau/BigQuery','統計学基礎','A/Bテスト設計','機械学習入門','データエンジニア','BI構築'],
+      ['事業計画策定','競合分析','SWOT分析','OKR設計','グロース戦略','M&A入門','スタートアップ戦略','組織変革'],
+      ['プロダクトロードマップ','ユーザーストーリー','スプリント管理','KPI設計','優先順位付け','要件定義','ステークホルダー調整','リリース管理'],
+      ['財務モデリング','P&L管理','投資分析','ユニットエコノミクス','予算管理','会計基礎','FP&A','資金調達資料'],
+      ['NoCode自動化','Zapier/Make活用','RPA設計','業務フロー改善','ツール選定','スクリプト自動化','AI業務適用','DX推進'],
+      ['LLM業務活用','AIエージェント構築','自動分析設計','予測モデル','異常検知','NLP活用','ChatGPT業務導入','データ収集自動化'],
+      ['ダッシュボード設計','経営報告自動化','インサイト抽出','データストーリーテリング','プレゼン資料設計','Notion活用','可視化フレームワーク','KPIツリー'],
+      ['採用設計','JD作成','オンボーディング','評価制度設計','組織文化醸成','エンゲージメント向上','リテンション戦略','人材育成'],
+    ],
+  },
+  support: {
+    primaries: [
+      { label:'ティーチング',  emoji:'👨‍🏫', cat:'growth', from:'q1' },
+      { label:'コーチング',    emoji:'🌱', cat:'growth', from:'q1' },
+      { label:'コミュニティ',  emoji:'🤝', cat:'growth', from:'q2' },
+      { label:'HR/採用',      emoji:'👥', cat:'growth', from:'q2' },
+      { label:'ファシリ',     emoji:'📋', cat:'growth', from:'q2' },
+      { label:'ブランド発信',  emoji:'📢', cat:'publish',from:'wild' },
+      { label:'仕組み設計',    emoji:'⚙️', cat:'tech',  from:'wild' },
+      { label:'カウンセリング',emoji:'💬', cat:'growth', from:'q1' },
+    ],
+    subs: [
+      ['オンライン講座設計','企業研修設計','インストラクター','カリキュラム設計','eラーニング開発','ワークショップ設計','教育コンテンツ','資格講座運営'],
+      ['1on1コーチング','チームコーチ','キャリアコーチ','目標設定支援','強み発掘','感情サポート','認定資格取得','グループコーチ'],
+      ['Slack/Discordコミュ','勉強会主催','ファンコミュ構築','オンラインサロン','コンテスト設計','ハッカソン運営','ネットワーク構築','地域コミュ'],
+      ['採用面接設計','JD作成','オンボーディング','評価制度設計','組織文化醸成','エンゲージメント','リテンション','人材育成'],
+      ['PMツール活用','スクラム実践','タスク管理設計','リスク管理','進捗報告設計','要件収集','ファシリテーション','デザインスプリント'],
+      ['個人ブランド構築','思想発信','メルマガ運営','書籍出版','YouTube教育','音声コンテンツ','SNS教育発信','登壇・イベント'],
+      ['業務フロー設計','マニュアル作成','KPI設計','チェックリスト','改善提案','NoCode活用','ツール導入','DX支援'],
+      ['傾聴スキル','メンタルヘルス支援','グリーフサポート','キャリア相談','EAP実践','産業カウンセラー','ピアサポート','危機対応'],
+    ],
+  },
+};
+
+/* ============================================================
+   パーソナル接続テキスト生成
+============================================================ */
+function personalFrom(fromKey, q1text, q2text) {
+  if (fromKey === 'q1') {
+    const kw = extractKeyword(q1text);
+    return kw ? `あなたの「${kw}」から` : 'Q1の強みから';
+  } else if (fromKey === 'q2') {
+    const kw = extractKeyword(q2text);
+    return kw ? `頼まれる「${kw}」から` : 'Q2の強みから';
+  } else {
+    return '意外な可能性 ✨';
+  }
+}
+
+function extractKeyword(text) {
+  if (!text) return null;
+  // 助詞や一般的な語を除去して最初の意味ある単語を返す
+  const stopWords = ['こと','もの','とき','から','まで','ため','こと','こ','が','を','は','に','で','と','も','の','や','が','その','この','あの','ある','いる','する','なる','できる','こんな','そんな','あんな','したら','なった','いた'];
+  const parts = text.replace(/[、。！？!?]/g, ' ').split(/[\s　]+/);
+  for (const p of parts) {
+    if (p.length >= 2 && !stopWords.includes(p)) {
+      return p.length > 8 ? p.slice(0, 8) : p;
+    }
+  }
+  return text.slice(0, 10);
+}
+
+/* ============================================================
+   コアタイプ生成
+============================================================ */
+function genCoreTitle(q1, q2, q3) {
+  const cat = detectCategory(q1) || detectCategory(q2) || 'tech';
+  // q1 の言葉をコアワードとして使う
+  const kw = extractKeyword(q1) || '探求';
+
+  const suffix = {
+    creator:   'から生まれる創造者',
+    expert:    'を極める専門家',
+    connector: 'でつながる架け橋人',
+    free:      'を超えていく越境者',
+  }[q3] || 'の発掘者';
+
+  return `「${kw}」${suffix}`;
+}
+
+/* ============================================================
+   グリッド初期化
+============================================================ */
+function initGrid(skillSet, coreTitle) {
+  gridData = [];
+  for (let r = 0; r < 9; r++) {
+    gridData[r] = [];
+    for (let c = 0; c < 9; c++) {
+      const bR = Math.floor(r/3), bC = Math.floor(c/3);
+      const lR = r%3, lC = c%3;
+      let type = 'empty', pi = -1, info = null;
+
+      if (bR === 1 && bC === 1) {
+        if (lR === 1 && lC === 1) {
+          type = 'core';
+        } else {
+          type = 'primary';
+          pi = PO.findIndex(p => p[0]===lR && p[1]===lC);
+          info = skillSet.primaries[pi] || null;
+        }
+      } else {
+        const found = PO.findIndex(p => {
+          const [pb0,pb1] = P2B[`${p[0]},${p[1]}`];
+          return pb0===bR && pb1===bC;
+        });
+        if (found >= 0) {
+          pi = found;
+          if (lR===1 && lC===1) {
+            type = 'primary_center';
+            info = skillSet.primaries[found] || null;
+          } else {
+            type = 'secondary';
+            const si = SO.findIndex(s => s[0]===lR && s[1]===lC);
+            const label = skillSet.subs[found]?.[si] || '可能性';
+            info = { label, cat: skillSet.primaries[found]?.cat || 'tech' };
+          }
+        }
+      }
+      gridData[r][c] = { type, revealed: false, pi, info, bR, bC, lR, lC };
+    }
+  }
+}
+
+/* ============================================================
+   グリッドレンダリング
+============================================================ */
+function renderGrid(skillSet, coreTitle) {
+  const gridEl = document.getElementById('grid');
+  gridEl.innerHTML = '';
+  const w = Math.min(window.innerWidth - 12, 520);
+  const sz = Math.floor((w - 8*2) / 9);
+  gridEl.style.width = w + 'px';
+
+  for (let r = 0; r < 9; r++) {
+    for (let c = 0; c < 9; c++) {
+      const cell = gridData[r][c];
+      const el = makeCellEl(r, c, cell, sz, coreTitle, skillSet);
+      // ブロック境界のスペーシング
+      if (c===2 || c===5) el.style.marginRight='3px';
+      if (r===2 || r===5) el.style.marginBottom='3px';
+      gridEl.appendChild(el);
+    }
+  }
+}
+
+function makeCellEl(r, c, cell, sz, coreTitle, skillSet) {
+  const el = document.createElement('div');
+  el.className = 'cell';
+  el.id = `c${r}_${c}`;
+  el.style.width = sz + 'px';
+  el.style.height = sz + 'px';
+
+  if (cell.type === 'empty') {
+    el.classList.add('cell-empty');
+    el.innerHTML = '<div class="cell-inner"><div class="cell-front"></div></div>';
+    return el;
+  }
+  if (cell.type === 'core') el.classList.add('cell-core');
+
+  const inner = document.createElement('div');
+  inner.className = 'cell-inner';
+
+  /* ── 表面 ── */
+  const front = document.createElement('div');
+  front.className = 'cell-front';
+  if (cell.type === 'core') {
+    front.innerHTML = `<div class="core-front-content"><div class="core-front-icon">⛏️</div><div class="core-front-label">TAP</div></div>`;
+  } else {
+    front.innerHTML = `<span class="cell-q">?</span>`;
+  }
+
+  /* ── 裏面 ── */
+  const back = document.createElement('div');
+  back.className = 'cell-back';
+
+  if (cell.type === 'core') {
+    back.classList.add('back-core');
+    // コアセル: ユーザーのq1の最初の2文字 + コアタイトル
+    const coreEmoji = S.q3 === 'creator' ? '🚀' : S.q3 === 'expert' ? '🏆' : S.q3 === 'connector' ? '🌐' : '🦋';
+    back.innerHTML = `<span class="core-back-emoji">${coreEmoji}</span>
+      <span class="core-back-text">${coreTitle.replace('「','').replace('」','').slice(0,12)}</span>`;
+  } else if (cell.type === 'primary' || cell.type === 'primary_center') {
+    const cat = cell.info?.cat || 'tech';
+    back.classList.add('back-primary', CATS[cat]||'cat-tech');
+    const fromText = cell.info?.from
+      ? personalFrom(cell.info.from, S.q1, S.q2)
+      : '';
+    back.innerHTML = `
+      <span class="cell-emoji">${cell.info?.emoji||'⭐'}</span>
+      <span class="cell-label">${cell.info?.label||''}</span>
+      ${fromText ? `<span class="cell-from">${fromText}</span>` : ''}`;
+
+    /* クリック → ブロック展開 */
+    back.addEventListener('click', e => { e.stopPropagation(); revealBlock(cell.pi); });
+  } else if (cell.type === 'secondary') {
+    const cat = cell.info?.cat || 'tech';
+    back.classList.add('back-secondary', CATS[cat]||'cat-tech');
+    back.innerHTML = `<span class="cell-label">${cell.info?.label||''}</span>`;
+  }
+
+  inner.appendChild(front);
+  inner.appendChild(back);
+  el.appendChild(inner);
+
+  /* セル全体クリックハンドラ */
+  el.addEventListener('click', () => {
+    const d = gridData[r][c];
+    if (!d.revealed) {
+      if (d.type === 'core') revealCore(coreTitle);
+      else if (d.type === 'primary') flashHint('まず中心のセルをタップして発掘を始めよう！');
+    } else {
+      /* 開封済み → ビビッ！トグル */
+      if (d.type !== 'core') toggleVivid(r, c, el);
+    }
+  });
+
+  return el;
+}
+
+/* ============================================================
+   開封ロジック
+============================================================ */
+function revealCell(r, c, delay = 0) {
+  const d = gridData[r]?.[c];
+  if (!d || d.revealed || d.type === 'empty') return;
+  setTimeout(() => {
+    d.revealed = true;
+    document.getElementById(`c${r}_${c}`)?.classList.add('flipped');
+    checkDone();
+  }, delay);
+}
+
+function revealCore(coreTitle) {
+  revealCell(4, 4);
+  const cEl = document.getElementById('c4_4');
+  if (cEl) spawnSparks(cEl);
+
+  /* 8 primaries を時差展開 */
+  PO.forEach(([lr,lc],i) => {
+    const d = [120,200,260,200,120,200,260,200];
+    revealCell(3+lr, 3+lc, d[i]+i*35);
+  });
+
+  document.getElementById('map-hint').textContent =
+    '✨ スキルをタップで展開 → ビビッ！と感じたらもう一度タップ';
+  log('revealCore');
+}
+
+function revealBlock(pi) {
+  if (pi < 0 || pi >= PO.length) return;
+  const [lr, lc] = PO[pi];
+  const [bR, bC] = P2B[`${lr},${lc}`];
+
+  /* ブロック中心 */
+  const cr = bR*3+1, cc = bC*3+1;
+  revealCell(cr, cc);
+  const cEl = document.getElementById(`c${cr}_${cc}`);
+  if (cEl) spawnSparks(cEl);
+
+  /* 周辺8マス スパイラル */
+  SO.forEach(([slr,slc],i) => {
+    revealCell(bR*3+slr, bC*3+slc, 70+i*50);
+  });
+
+  log(`revealBlock pi=${pi}`);
+}
+
+/* ============================================================
+   ビビッ！共鳴マーク
+============================================================ */
+function toggleVivid(r, c, el) {
+  const key = `${r}_${c}`;
+  if (vividSet.has(key)) {
+    vividSet.delete(key);
+    el.classList.remove('vivid');
+    el.querySelector('.vivid-badge')?.remove();
+  } else {
+    vividSet.add(key);
+    el.classList.add('vivid');
+    const badge = document.createElement('div');
+    badge.className = 'vivid-badge';
+    badge.textContent = '⭐';
+    el.appendChild(badge);
+    spawnSparks(el, 3);
+  }
+  updateVividCount();
+  log(`vivid toggle ${key} total=${vividSet.size}`);
+}
+
+function updateVividCount() {
+  document.getElementById('vivid-count').textContent = vividSet.size;
+  if (vividSet.size >= 5) checkDone();
+}
+
+/* ============================================================
+   完了チェック
+============================================================ */
+function checkDone() {
+  const totalRevealed = gridData.flat().filter(c => c.revealed).length;
+  if (totalRevealed >= 73 && vividSet.size >= 3) {
+    showDoneBanner();
+  }
+}
+
+function showDoneBanner() {
+  const banner = document.getElementById('done-banner');
+  if (banner.classList.contains('show')) return;
+
+  const vividLabels = [...vividSet].map(k => {
+    const [r,c] = k.split('_').map(Number);
+    return gridData[r]?.[c]?.info?.label || '';
+  }).filter(Boolean).slice(0,5).join(' · ');
+
+  document.getElementById('done-text').innerHTML = `
+    <strong style="color:#fbbf24">ビビッ！</strong> したスキルは<strong style="color:#fbbf24"> ${vividSet.size} </strong>個。<br>
+    特に共鳴した: <strong style="color:#e2e8f0">${vividLabels}</strong><br><br>
+    これがあなたの発掘されたスキルマップです。
+  `;
+  banner.classList.add('show');
+  log('done banner shown', [...vividSet]);
+}
+
+/* ============================================================
+   スパークル
+============================================================ */
+function spawnSparks(el, n=6) {
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  const cx = r.left + r.width/2, cy = r.top + r.height/2;
+  const sparks = ['✨','⭐','💫','🌟','⚡','🎯'];
+  for (let i = 0; i < n; i++) {
+    const s = document.createElement('div');
+    s.className = 'sparkle';
+    s.textContent = sparks[i%sparks.length];
+    s.style.left = (cx + (Math.random()-.5)*60) + 'px';
+    s.style.top  = (cy + (Math.random()-.5)*60) + 'px';
+    s.style.animationDelay = i*55+'ms';
+    s.style.fontSize = (.7+Math.random()*.7)+'rem';
+    document.body.appendChild(s);
+    setTimeout(()=>s.remove(), 1100);
+  }
+}
+
+/* ============================================================
+   ヒントバナー一時変更
+============================================================ */
+function flashHint(msg) {
+  const el = document.getElementById('map-hint');
+  const orig = el.textContent;
+  el.textContent = msg;
+  el.classList.add('alert');
+  setTimeout(() => { el.textContent = orig; el.classList.remove('alert'); }, 2200);
+}
+
+/* ============================================================
+   ローディング → マップ
+============================================================ */
+function startLoading() {
+  show('s-loading');
+  const msgs = [
+    `「${extractKeyword(S.q1)||'あなた'}」を解析中...`,
+    'スキルの繋がりを探索中...',
+    'マンダラグリッドを展開中...',
+    'パーソナルマップを完成中...',
+  ];
+  let pct=0, mi=0;
+  const bar=document.getElementById('lbar'), msg=document.getElementById('ld-msg');
+  const iv = setInterval(()=>{
+    pct += Math.random()*20+8;
+    if(pct>=100){ pct=100; clearInterval(iv); setTimeout(buildMap,400); }
+    bar.style.width = Math.min(pct,100)+'%';
+    msg.textContent = msgs[Math.min(mi,msgs.length-1)];
+    if(pct>mi*28) mi++;
+  }, 200);
+}
+
+function buildMap() {
+  const cat      = detectCategory(S.q1) || detectCategory(S.q2) || 'tech';
+  const skillSet = SKILL_SETS[cat];
+  const coreTitle = genCoreTitle(S.q1, S.q2, S.q3);
+
+  document.getElementById('core-title').textContent = coreTitle;
+  initGrid(skillSet, coreTitle);
+  renderGrid(skillSet, coreTitle);
+
+  log('buildMap', {cat, coreTitle, q1:S.q1, q2:S.q2, q3:S.q3});
+  showMap();
+}
+
+/* ============================================================
+   リセット
+============================================================ */
+function resetAll() {
+  S.q1=S.q2=S.q3='';
+  gridData=[];
+  vividSet.clear();
+  dbgLog=[];
+  document.getElementById('grid').innerHTML='';
+  document.getElementById('vivid-count').textContent='0';
+  document.getElementById('lbar').style.width='0%';
+  document.getElementById('done-banner').classList.remove('show');
+  document.getElementById('q1-input').value='';
+  document.getElementById('q2-input').value='';
+  document.getElementById('q1-count').textContent='0/60';
+  document.getElementById('q2-count').textContent='0/60';
+  document.getElementById('q1-next').disabled=true;
+  document.getElementById('q2-next').disabled=true;
+  const map=document.getElementById('s-map');
+  map.style.opacity='0';
+  setTimeout(()=>{ map.style.display='none'; show('s-welcome'); },400);
+  log('reset');
+}
+</script>
+</body>
+</html>
