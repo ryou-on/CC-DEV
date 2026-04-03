@@ -6,6 +6,9 @@
 <title>hihaho Player</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!-- Firebase SDK（サムネイル取得用） -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <style>
 :root {
   --bg: #f4f5f7;
@@ -340,6 +343,35 @@ header {
   animation: pulse 1.2s infinite;
 }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.25} }
+/* ソートバー */
+.sort-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.sort-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--white);
+  color: var(--text-sub);
+  font-family: var(--font);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.sort-btn:hover { border-color: var(--accent); color: var(--accent); }
+.sort-btn.active {
+  background: var(--accent-light);
+  color: var(--accent);
+  border-color: rgba(0,102,255,0.3);
+  font-weight: 600;
+}
 .empty { text-align: center; padding: 40px 12px; color: var(--text-muted); }
 .empty-icon { font-size: 30px; opacity: 0.35; margin-bottom: 10px; }
 .error-msg {
@@ -386,6 +418,8 @@ header {
     </div>
     <div class="video-list">
       <div class="list-label" id="listLabel">読み込み中...</div>
+      <!-- 並べ替えボタンバー -->
+      <div class="sort-bar" id="sortBar"></div>
       <div id="videoGrid">
         <div class="vrow-skeleton"><div class="skel-thumb"></div><div class="skel-info"><div class="skel-line" style="width:80%"></div><div class="skel-line" style="width:55%"></div><div class="skel-line" style="width:35%"></div></div></div>
         <div class="vrow-skeleton"><div class="skel-thumb"></div><div class="skel-info"><div class="skel-line" style="width:70%"></div><div class="skel-line" style="width:45%"></div><div class="skel-line" style="width:30%"></div></div></div>
@@ -412,6 +446,16 @@ header {
 // =========================================================
 const WORKER_URL = 'https://hihaho-proxy.jumpei-omote.workers.dev';
 
+// Firebase設定
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDPlsAhtxbJBihy-EAHck9P7XbuMdzV0ds",
+  authDomain: "cc-dev-ps7.firebaseapp.com",
+  projectId: "cc-dev-ps7",
+  storageBucket: "cc-dev-ps7.firebasestorage.app",
+  messagingSenderId: "1029579090333",
+  appId: "1:1029579090333:web:5a2ea499fec97c497f2774"
+};
+
 // 表示するフォルダID（指定順でタブに表示）
 const SHOW_FOLDER_IDS = [21078, 12452, 21334];
 
@@ -433,6 +477,20 @@ const STATUS = {
 };
 
 // =========================================================
+// ソート設定
+// =========================================================
+const SORT_OPTS = [
+  { key: 'new',          label: '📅 新しい順' },   // 作成日 降順
+  { key: 'old',          label: '📅 古い順' },     // 作成日 昇順
+  { key: 'upd_desc',     label: '🔄 更新↓' },      // 更新日 降順
+  { key: 'upd_asc',      label: '🔄 更新↑' },      // 更新日 昇順
+  { key: 'alpha_asc',    label: 'あ→ん' },         // あいうえお 昇順
+  { key: 'alpha_desc',   label: 'ん→あ' },         // あいうえお 降順
+  { key: 'random',       label: '🔀 ランダム' },   // ランダム
+];
+let currentSort = 'new'; // デフォルト: 新しい順
+
+// =========================================================
 // 状態管理
 // =========================================================
 let allFolders  = [];
@@ -441,6 +499,7 @@ let activeChId  = null;
 let activeVidId = null;
 let searchQ     = '';
 let clog        = [];
+let videoMeta   = {}; // uuid → { thumbnailUrl } のマップ（Firestore video_meta）
 
 const origLog = console.log.bind(console);
 console.log = (...a) => { origLog(...a); clog.push(a.join(' ')); };
@@ -450,20 +509,24 @@ const log = m => console.log(`[hihaho] ${m}`);
 
 // =========================================================
 // サムネイルURL生成
-// thumbs/{uuid}.jpg が存在すればそれを表示、なければ🎬フォールバック
+// 優先順位: ①Firestore video_meta → ②Firebase Hosting thumbs → ③🎬フォールバック
 // =========================================================
 function thumbHtml(uuid, cls) {
-  // imgのonerrorで画像がない場合はフォールバックを表示
+  // ①video_metaにURLがあればそれを使う
+  const metaUrl = videoMeta[uuid]?.thumbnailUrl;
+  // ②なければ静的ファイルパス（404時はonerrorでフォールバックへ）
+  const src = metaUrl || `${THUMB_BASE}/${uuid}.${THUMB_EXT}`;
+
   if (cls === 'vrow') {
     return `
-      <img src="${THUMB_BASE}/${uuid}.${THUMB_EXT}"
+      <img src="${src}"
            style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"
            onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
            loading="lazy">
       <div class="vrow-thumb-fb" style="display:none">🎬</div>`;
   } else {
     return `
-      <img src="${THUMB_BASE}/${uuid}.${THUMB_EXT}"
+      <img src="${src}"
            style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"
            onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
            loading="lazy">
@@ -488,6 +551,18 @@ async function apiFetch(path) {
 async function init() {
   log('初期化開始');
   try {
+    // Firebase初期化 + video_metaのサムネイルURLを一括取得
+    firebase.initializeApp(FIREBASE_CONFIG);
+    const db = firebase.firestore();
+    try {
+      const metaSnap = await db.collection('video_meta').get();
+      metaSnap.forEach(doc => { videoMeta[doc.id] = doc.data(); });
+      log(`video_meta: ${metaSnap.size}件取得`);
+    } catch (e) {
+      // video_meta取得失敗時は静的ファイルにフォールバック
+      console.error('video_meta取得失敗:', e.message);
+    }
+
     // フォルダ一覧取得 → 指定IDで絞り込み
     const foldersRes = await apiFetch('/v2/video-container');
     allFolders = (foldersRes.data || []).filter(f => SHOW_FOLDER_IDS.includes(f.id));
@@ -510,6 +585,7 @@ async function init() {
 
     activeChId = allFolders[0].id;
     renderTabs();
+    renderSortBar(); // ソートバーを初期描画
     renderSidebar();
     renderGrid();
     log('初期化完了');
@@ -681,16 +757,85 @@ function onSearch(q) {
 // ユーティリティ
 // =========================================================
 const curFolder   = () => allFolders.find(f => f.id === activeChId);
-const curChVideos = () => allVideos.filter(v => v.video_container_id === activeChId);
+// status=1（PUBLISHED）または status=2（INTERACTIVE）のみ表示
+// DRAFT(0)・ARCHIVED(4) は非表示
+const curChVideos = () => allVideos.filter(v =>
+  v.video_container_id === activeChId &&
+  (v.status === 1 || v.status === 2)
+);
+
+// 検索フィルタ＋ソートを適用して返す
 const filteredVideos = () => {
-  const vs = curChVideos();
-  if (!searchQ) return vs;
-  const q = searchQ.toLowerCase();
-  return vs.filter(v =>
-    v.display_name.toLowerCase().includes(q) ||
-    (v.description || '').toLowerCase().includes(q)
-  );
+  let vs = curChVideos();
+  // 検索フィルタ
+  if (searchQ) {
+    const q = searchQ.toLowerCase();
+    vs = vs.filter(v =>
+      v.display_name.toLowerCase().includes(q) ||
+      (v.description || '').toLowerCase().includes(q)
+    );
+  }
+  // ソート適用
+  return sortVideos(vs);
 };
+
+// =========================================================
+// ソート関数：元配列を変更しないようコピーしてソート
+// =========================================================
+function sortVideos(videos) {
+  const arr = [...videos];
+  switch (currentSort) {
+    case 'new':
+      // 作成日 新しい順（降順）
+      return arr.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    case 'old':
+      // 作成日 古い順（昇順）
+      return arr.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    case 'upd_desc':
+      // 更新日 新しい順（updated_at がなければ created_at で代替）
+      return arr.sort((a, b) =>
+        new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+    case 'upd_asc':
+      // 更新日 古い順
+      return arr.sort((a, b) =>
+        new Date(a.updated_at || a.created_at) - new Date(b.updated_at || b.created_at));
+    case 'alpha_asc':
+      // あいうえお 昇順（日本語対応）
+      return arr.sort((a, b) => a.display_name.localeCompare(b.display_name, 'ja'));
+    case 'alpha_desc':
+      // あいうえお 降順
+      return arr.sort((a, b) => b.display_name.localeCompare(a.display_name, 'ja'));
+    case 'random':
+      // ランダム（Fisher-Yates）
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    default:
+      return arr;
+  }
+}
+
+// =========================================================
+// ソートバー描画
+// =========================================================
+function renderSortBar() {
+  document.getElementById('sortBar').innerHTML = SORT_OPTS.map(o =>
+    `<button class="sort-btn ${o.key === currentSort ? 'active' : ''}" onclick="setSort('${o.key}')">${o.label}</button>`
+  ).join('');
+}
+
+// =========================================================
+// ソート変更
+// =========================================================
+function setSort(key) {
+  currentSort = key;
+  log(`ソート変更: ${key}`);
+  renderSortBar();
+  renderGrid();
+  renderSidebar();
+}
 const esc = s => String(s)
   .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
   .replace(/"/g,'&quot;').replace(/'/g,'&#x27;');
