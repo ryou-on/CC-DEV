@@ -456,8 +456,8 @@ const FIREBASE_CONFIG = {
   appId: "1:1029579090333:web:5a2ea499fec97c497f2774"
 };
 
-// 表示するフォルダID（指定順でタブに表示）
-const SHOW_FOLDER_IDS = [21078, 12452, 21334];
+// 表示するフォルダID（Firestoreから動的取得。フォールバック用）
+let SHOW_FOLDER_IDS = [];
 
 // ★ サムネイル設定
 // Firebase Hostingに画像を置く場合:
@@ -546,28 +546,55 @@ async function apiFetch(path) {
 }
 
 // =========================================================
-// 初期化：フォルダIDを指定して動画を個別取得
+// 初期化：URLの ?id= からFirestoreのプレイリストを取得してフォルダを絞り込む
 // =========================================================
 async function init() {
   log('初期化開始');
   try {
-    // Firebase初期化 + video_metaのサムネイルURLを一括取得
+    // Firebase初期化
     firebase.initializeApp(FIREBASE_CONFIG);
     const db = firebase.firestore();
+
+    // URLパラメータ ?id= からプレイリストIDを取得
+    const playlistId = new URLSearchParams(location.search).get('id');
+    if (!playlistId) {
+      showError('URLに ?id= が指定されていません');
+      return;
+    }
+
+    // FirestoreのplaylistsコレクションからfolderIdsを取得
+    const playlistDoc = await db.collection('playlists').doc(playlistId).get();
+    if (!playlistDoc.exists) {
+      showError(`プレイリストが見つかりません (id: ${playlistId})`);
+      return;
+    }
+    const playlistData = playlistDoc.data();
+    SHOW_FOLDER_IDS = playlistData.folderIds || [];
+    log(`プレイリスト: ${playlistData.name} / フォルダ${SHOW_FOLDER_IDS.length}件`);
+
+    if (SHOW_FOLDER_IDS.length === 0) {
+      showError('このプレイリストにはフォルダが設定されていません');
+      return;
+    }
+
+    // ページタイトルを更新
+    document.title = `hihaho Player – ${playlistData.name}`;
+
+    // video_metaのサムネイルURLを一括取得
     try {
       const metaSnap = await db.collection('video_meta').get();
       metaSnap.forEach(doc => { videoMeta[doc.id] = doc.data(); });
-      log(`video_meta: ${metaSnap.size}罖取得`);
+      log(`video_meta: ${metaSnap.size}볻取得`);
     } catch (e) {
       // video_meta取得失敗時は静的ファイルにフォールバック
       console.error('video_meta取得失敗:', e.message);
     }
 
-    // フォルダ一覧取得 → 指定IDで絞り込み
+    // フォルダ一覧取得 → プレイリスト指定IDで絞り込み
     const foldersRes = await apiFetch('/v2/video-container');
     allFolders = (foldersRes.data || []).filter(f => SHOW_FOLDER_IDS.includes(f.id));
 
-    // フォルダIDの指定順に並べ替え
+    // folderIdsの指定順に並べ替え
     allFolders.sort((a, b) => SHOW_FOLDER_IDS.indexOf(a.id) - SHOW_FOLDER_IDS.indexOf(b.id));
 
     if (allFolders.length === 0) {
@@ -581,7 +608,7 @@ async function init() {
     );
     allVideos = videoResults.flatMap(r => r.data || []);
 
-    log(`フォルダ: ${allFolders.length}罖 / 動画: ${allVideos.length}件`);
+    log(`フォルダ: ${allFolders.length}件 / 動画: ${allVideos.length}件`);
 
     activeChId = allFolders[0].id;
     renderTabs();
@@ -652,7 +679,7 @@ function renderSidebar() {
   const qp = document.getElementById('queuePanel');
   qp.innerHTML = `<div class="queue-label">ラインナップ</div>` +
     (videos.length === 0
-      ? `<div class="empty"><div class="empty-icon">🔍</div><p>動画が見つからませこ</p></div>`
+      ? `<div class="empty"><div class="empty-icon">🔍</div><p>動画が見つかりません</p></div>`
       : videos.map((v, i) => `
         <div class="qcard ${v.id === activeVidId ? 'playing' : ''}" style="animation-delay:${i*25}ms" onclick="play(${v.id})">
           <div class="qcard-thumb">
@@ -674,7 +701,7 @@ function renderGrid() {
   const videos = filteredVideos();
 
   document.getElementById('listLabel').textContent =
-    searchQ ? `「${searchQ}」 ${videos.length} 件` : `${folder.name} の動画一覧（${videos.length}櫌）`;
+    searchQ ? `「${searchQ}」 ${videos.length} 件` : `${folder.name} の動画一覧（${videos.length}本）`;
 
   const g = document.getElementById('videoGrid');
   if (!videos.length) {
@@ -800,10 +827,10 @@ function sortVideos(videos) {
       return arr.sort((a, b) =>
         new Date(a.updated_at || a.created_at) - new Date(b.updated_at || b.created_at));
     case 'alpha_asc':
-      // ういうえお 昇順（日本語対応）
+      // あいうえお 昇順（日本語対応）
       return arr.sort((a, b) => a.display_name.localeCompare(b.display_name, 'ja'));
     case 'alpha_desc':
-      // ういうえお 降順
+      // あいうえお 降順
       return arr.sort((a, b) => b.display_name.localeCompare(a.display_name, 'ja'));
     case 'random':
       // ランダム（Fisher-Yates）
