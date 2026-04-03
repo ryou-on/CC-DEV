@@ -465,7 +465,7 @@ function renderThumbFolderList(){
   el.innerHTML=filtered.map(f=>`
     <div class="tfl-item ${tabT===f.id?'active':''}" onclick="switchThumbFolder(${f.id})">
       <div class="tfl-initial">${f.name.charAt(0).toUpperCase()}</div>
-      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.name)}</span>
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.name)}</span><span style="font-size:10px;color:var(--text-muted);flex-shrink:0;font-family:var(--mono)">(${videos.filter(v=>v.video_container_id===f.id).length})</span>
     </div>`).join('');
 }
 
@@ -477,14 +477,30 @@ function filterThumbFolders(q){
 function switchThumbFolder(id){
   tabT=id;
   renderThumbFolderList();
-  renderThumbList();
+  loadThumbVideos(id);
 }
 
 // =========================================================
-// サムネイル設定：右動画リスト
+// サムネイル設定：フォルダIDで動画を個別取得
 // =========================================================
+async function loadThumbVideos(folderId){
+  const el=document.getElementById('thumbList');
+  el.innerHTML='<div class="load"><div class="spin"></div>読み込み中...</div>';
+  try{
+    const res=await api('/v2/video?video_container_id='+folderId);
+    const vs=res.data||[];
+    renderThumbListWithVideos(vs);
+  }catch(e){
+    el.innerHTML='<div class="emp"><div class="ei">⚠️</div><p>'+e.message+'</p></div>';
+  }
+}
+
 function renderThumbList(){
-  const vs=videos.filter(v=>v.video_container_id===tabT);
+  if(!tabT) return;
+  loadThumbVideos(tabT);
+}
+
+function renderThumbListWithVideos(vs){
   const el=document.getElementById('thumbList');
   if(!vs.length){
     el.innerHTML='<div class="emp"><div class="ei">🎬</div><p>このフォルダに動画はありません</p></div>';
