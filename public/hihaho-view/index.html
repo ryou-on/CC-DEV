@@ -203,9 +203,18 @@ header {
   z-index: 3;
   pointer-events: none;
   white-space: nowrap;
-  display: none; /* 取得完了まで非表示 */
+  display: block; /* 常に表示（取得前はローディング） */
+  min-width: 24px;
+  text-align: center;
 }
-.vrow-count-ov.loaded { display: block; }
+/* 取得完了済みバッジ */
+.vrow-count-ov.loaded { background: rgba(185, 28, 28, 0.88); }
+/* 取得中バッジ（薄いグレー） */
+.vrow-count-ov:not(.loaded) {
+  background: rgba(0,0,0,0.35);
+  letter-spacing: 0.1em;
+  animation: pulse 1.2s infinite;
+}
 .video-list {
   flex: 1; overflow-y: auto;
   padding: 14px 16px 20px;
@@ -684,49 +693,54 @@ async function apiFetch(path) {
 
 // =========================================================
 // 再生回数取得（Hihaho aggregated-statistics API）
-// レート制限対策: 100ms間隔で逐次リクエスト
+// 5並列バッチ処理・バッチ間200ms待機でレート制限対策
 // 取得完了ごとにDOM直接更新（グリッド全再描画なし）
 // =========================================================
+
+// 1件の再生回数を取得してバッジDOMを即時更新
+async function _fetchOnePlayCount(v) {
+  try {
+    const data = await apiFetch(`/v2/video/${v.id}/aggregated-statistics`);
+    const stats = data?.data?.aggregated_statistics;
+    const num = Number(stats?.views ?? stats?.play_count ?? stats?.plays ?? 0) || 0;
+    playCountMap.set(v.id, num);
+    log(`再生回数 [${v.id}] views=${num}`);
+    document.querySelectorAll(`.vrow-count-ov[data-vid="${v.id}"]`).forEach(el => {
+      el.textContent = num.toLocaleString();
+      el.classList.add('loaded');
+    });
+  } catch (e) {
+    console.error(`再生回数取得失敗 [${v.id}]: ${e.message}`);
+    playCountMap.set(v.id, 0);
+    document.querySelectorAll(`.vrow-count-ov[data-vid="${v.id}"]`).forEach(el => {
+      el.textContent = '0';
+      el.classList.add('loaded');
+    });
+  }
+}
+
 async function loadPlayCounts() {
   if (allVideos.length === 0) return;
-  log(`再生回数取得開始: ${allVideos.length}本（逐次200ms）`);
+  const BATCH = 5; // 1バッチあたりの同時リクエスト数
   const delay = ms => new Promise(r => setTimeout(r, ms));
+  log(`再生回数取得開始: ${allVideos.length}本（${BATCH}並列バッチ）`);
 
-  for (const v of allVideos) {
-    try {
-      const data = await apiFetch(`/v2/video/${v.id}/aggregated-statistics`);
-      // レスポンス: data.data.aggregated_statistics.views
-      const stats = data?.data?.aggregated_statistics;
-      const rawViews = stats?.views ?? stats?.play_count ?? stats?.plays ?? 0;
-      const num = Number(rawViews) || 0; // null/undefined/NaN → 0
-      playCountMap.set(v.id, num);
-      log(`再生回数 [${v.id}] views=${num}`);
-
-      // 取得完了ごとにDOM直接更新（全再描画せずバッジだけ出す）
-      document.querySelectorAll(`.vrow-count-ov[data-vid="${v.id}"]`).forEach(el => {
-        el.textContent = num.toLocaleString();
-        el.classList.add('loaded');
-      });
-    } catch (e) {
-      console.error(`再生回数取得失敗 [${v.id}]: ${e.message}`);
-      // エラー時は 0 として扱い、バッジは表示する
-      playCountMap.set(v.id, 0);
-      document.querySelectorAll(`.vrow-count-ov[data-vid="${v.id}"]`).forEach(el => {
-        el.textContent = '0';
-        el.classList.add('loaded');
-      });
-    }
-    await delay(200);
+  for (let i = 0; i < allVideos.length; i += BATCH) {
+    const batch = allVideos.slice(i, i + BATCH);
+    await Promise.all(batch.map(v => _fetchOnePlayCount(v)));
+    // バッチ間に200ms待機（レート制限対策）
+    if (i + BATCH < allVideos.length) await delay(200);
   }
   log('再生回数取得完了');
 }
 
 // 再生回数オーバーレイHTML（サムネイル内に埋め込む）
-// data-vid 属性で後からDOM直接更新できるようにする
+// 取得前: グレー「…」、取得後: 赤バッジに数値
 function playCountOverlay(videoId) {
   const count = playCountMap.get(videoId);
-  const loaded = playCountMap.has(videoId); // mapに存在すれば表示済み
-  return `<div class="vrow-count-ov${loaded?' loaded':''}" data-vid="${videoId}">${loaded?(Number(count)||0).toLocaleString():''}</div>`;
+  const loaded = playCountMap.has(videoId);
+  const text   = loaded ? (Number(count) || 0).toLocaleString() : '…';
+  return `<div class="vrow-count-ov${loaded?' loaded':''}" data-vid="${videoId}">${text}</div>`;
 }
 
 // =========================================================
