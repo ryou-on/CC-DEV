@@ -400,6 +400,32 @@ header {
   background: #fef2f2; color: #991b1b;
   border-color: #fca5a5; font-weight: 600;
 }
+/* ver-badge クリック可能 */
+.rn-trigger { cursor:pointer; text-decoration:underline dotted; text-underline-offset:2px; }
+.rn-trigger:hover { color: var(--accent) !important; }
+/* リリースノートモーダル */
+.rn-modal { position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:1000;display:flex;align-items:center;justify-content:center; }
+.rn-card { background:#fff;border-radius:12px;width:90%;max-width:480px;max-height:80vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.2); }
+.rn-header { display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border); }
+.rn-title  { font-size:13px;font-weight:700;color:var(--text); }
+.rn-close  { background:none;border:none;cursor:pointer;font-size:15px;color:var(--text-muted);padding:3px 7px;border-radius:4px; }
+.rn-close:hover { background:var(--bg); }
+.rn-filter-bar { display:flex;gap:4px;padding:10px 18px 0; }
+.rn-filter-btn { font-size:11px;padding:3px 9px;border-radius:10px;border:1px solid var(--border);background:var(--white);color:var(--text-sub);cursor:pointer;transition:all 0.12s; }
+.rn-filter-btn.active { background:var(--accent-light);color:var(--accent);border-color:rgba(0,102,255,0.3);font-weight:600; }
+.rn-body   { overflow-y:auto;padding:14px 18px; }
+.rn-entry  { margin-bottom:14px; }
+.rn-entry:last-child { margin-bottom:0; }
+.rn-ver    { display:flex;align-items:center;gap:7px;margin-bottom:5px; }
+.rn-ver-num { font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text); }
+.rn-ver-date { font-size:11px;color:var(--text-muted); }
+.rn-type-badge { font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;letter-spacing:0.4px; }
+.rn-type-player { background:#e0f2fe;color:#0369a1; }
+.rn-type-admin  { background:#f0fdf4;color:#166534; }
+.rn-type-both   { background:#fef3c7;color:#92400e; }
+.rn-changes { list-style:none;padding:0;margin:0; }
+.rn-changes li { font-size:12px;color:var(--text-sub);padding:2px 0 2px 12px;position:relative; }
+.rn-changes li::before { content:"·";position:absolute;left:0;color:var(--accent); }
 .empty { text-align: center; padding: 40px 12px; color: var(--text-muted); }
 .empty-icon { font-size: 30px; opacity: 0.35; margin-bottom: 10px; }
 .error-msg {
@@ -447,7 +473,7 @@ header {
 <body>
 
 <header>
-  <div class="logo"><div class="logo-bar"></div>hihaho Player<span class="ver-badge">v1.2.0</span></div>
+  <div class="logo"><div class="logo-bar"></div>hihaho Player<span class="ver-badge rn-trigger" onclick="showReleaseNotes()" title="リリースノート">v1.2.2</span></div>
   <div class="search-wrap">
     <span class="search-icon">🔍</span>
     <input type="text" id="searchInput" placeholder="動画を検索…" data-ph-ja="動画を検索…" data-ph-en="Search videos…" oninput="onSearch(this.value)">
@@ -1072,7 +1098,71 @@ function setLang(lang) {
 // 後方互換用（内部でsetLangを呼ぶラッパー）
 function toggleLang() { setLang(_currentLang === 'ja' ? 'en' : 'ja'); }
 
+// =========================================================
+// リリースノート
+// =========================================================
+const RELEASE_NOTES = [
+  { ver:'v1.2.2', date:'2026-04-05', type:'player',
+    ja:['サムネイルフィルタ[🖼あり/🚫なし/両方]ボタン追加','ソートに「🖼 サムネあり先」オプション追加'],
+    en:['Thumbnail filter [With/Without/Both] buttons added','Sort option "🖼 Thumb First" added'] },
+  { ver:'v1.2.1', date:'2026-04-05', type:'player',
+    ja:['JP/EN言語切替を[JP|EN]の2ボタン形式に変更（JP=赤・EN=青）'],
+    en:['Language toggle redesigned as [JP|EN] dual buttons (JP=red, EN=blue)'] },
+  { ver:'v1.2.0', date:'2026-04-04', type:'both',
+    ja:['バイリンガルUI（JP/EN切替）追加','MyMemory APIによる動画タイトル英語自動翻訳'],
+    en:['Bilingual UI (JP/EN toggle) added','Auto English translation via MyMemory API'] },
+  { ver:'v1.1.0', date:'2026-04-03', type:'player',
+    ja:['フォルダ別チャンネルタブ','キューサイドバー追加','ソートバー追加'],
+    en:['Folder-based channel tabs','Queue sidebar added','Sort bar added'] },
+  { ver:'v1.0.0', date:'2026-04-01', type:'both',
+    ja:['初回リリース: YouTubeライクL字UIプレイヤー','hihaho動画一覧・サムネイル対応'],
+    en:['Initial release: YouTube-like L-shaped UI player','Video list & thumbnail support'] },
+];
+const RN_TYPE_LABEL = { player:'PLAYER', admin:'ADMIN', both:'BOTH' };
+const RN_TYPE_CLS   = { player:'rn-type-player', admin:'rn-type-admin', both:'rn-type-both' };
+
+function showReleaseNotes(filterInit) {
+  const modal = document.getElementById('rnModal');
+  const body  = document.getElementById('rnBody');
+  if (!modal || !body) return;
+  modal._filter = filterInit || 'all';
+  _renderRnBody(modal._filter);
+  modal.style.display = 'flex';
+}
+function _renderRnBody(filter) {
+  const body = document.getElementById('rnBody');
+  const notes = RELEASE_NOTES.filter(r =>
+    filter === 'all' ? true :
+    filter === 'player' ? (r.type === 'player' || r.type === 'both') :
+    filter === 'admin'  ? (r.type === 'admin'  || r.type === 'both') : true
+  );
+  body.innerHTML = notes.map(r => {
+    const items = _currentLang === 'en' ? r.en : r.ja;
+    return `<div class="rn-entry">
+      <div class="rn-ver">
+        <span class="rn-ver-num">${r.ver}</span>
+        <span class="rn-type-badge ${RN_TYPE_CLS[r.type]}">${RN_TYPE_LABEL[r.type]}</span>
+        <span class="rn-ver-date">${r.date}</span>
+      </div>
+      <ul class="rn-changes">${items.map(c=>`<li>${c}</li>`).join('')}</ul>
+    </div>`;
+  }).join('');
+}
+function hideReleaseNotes() {
+  const m = document.getElementById('rnModal');
+  if (m) m.style.display = 'none';
+}
+
 init();
 </script>
+<div id="rnModal" class="rn-modal" style="display:none" onclick="if(event.target===this)hideReleaseNotes()">
+  <div class="rn-card">
+    <div class="rn-header">
+      <span class="rn-title">📋 リリースノート</span>
+      <button class="rn-close" onclick="hideReleaseNotes()">✕</button>
+    </div>
+    <div class="rn-body" id="rnBody"></div>
+  </div>
+</div>
 </body>
 </html>
