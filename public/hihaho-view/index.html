@@ -187,13 +187,25 @@ header {
 }
 .badge-draft { background: #fef3c7; color: #92400e; }
 .badge-published { background: #d1fae5; color: #065f46; }
-/* 再生回数バッジ（Hihaho実データ） */
-.badge-plays {
-  background: #f3f0ff; color: #6d28d9;
-  display: inline-flex; align-items: center; gap: 3px;
-  border-radius: 4px; font-size: 10px; font-weight: 700;
-  padding: 2px 6px; font-family: var(--mono);
+/* 再生回数バッジ（サムネイル左下オーバーレイ・YouTube風） */
+.vrow-count-ov {
+  position: absolute;
+  bottom: 4px;
+  left: 4px;
+  background: rgba(185, 28, 28, 0.88); /* 赤 */
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 3px;
+  z-index: 3;
+  pointer-events: none;
+  white-space: nowrap;
+  display: none; /* 取得完了まで非表示 */
 }
+.vrow-count-ov.loaded { display: block; }
 .video-list {
   flex: 1; overflow-y: auto;
   padding: 14px 16px 20px;
@@ -672,34 +684,49 @@ async function apiFetch(path) {
 
 // =========================================================
 // 再生回数取得（Hihaho aggregated-statistics API）
-// レート制限対策: 200ms間隔で逐次リクエスト
+// レート制限対策: 100ms間隔で逐次リクエスト
+// 取得完了ごとにDOM直接更新（グリッド全再描画なし）
 // =========================================================
 async function loadPlayCounts() {
   if (allVideos.length === 0) return;
   log(`再生回数取得開始: ${allVideos.length}本（逐次200ms）`);
   const delay = ms => new Promise(r => setTimeout(r, ms));
+
   for (const v of allVideos) {
     try {
       const data = await apiFetch(`/v2/video/${v.id}/aggregated-statistics`);
       // レスポンス: data.data.aggregated_statistics.views
-      const count = data.data?.aggregated_statistics?.views ?? null;
-      playCountMap.set(v.id, count !== null ? Number(count) : -1);
+      const stats = data?.data?.aggregated_statistics;
+      const rawViews = stats?.views ?? stats?.play_count ?? stats?.plays ?? 0;
+      const num = Number(rawViews) || 0; // null/undefined/NaN → 0
+      playCountMap.set(v.id, num);
+      log(`再生回数 [${v.id}] views=${num}`);
+
+      // 取得完了ごとにDOM直接更新（全再描画せずバッジだけ出す）
+      document.querySelectorAll(`.vrow-count-ov[data-vid="${v.id}"]`).forEach(el => {
+        el.textContent = num.toLocaleString();
+        el.classList.add('loaded');
+      });
     } catch (e) {
       console.error(`再生回数取得失敗 [${v.id}]: ${e.message}`);
-      playCountMap.set(v.id, -1);
+      // エラー時は 0 として扱い、バッジは表示する
+      playCountMap.set(v.id, 0);
+      document.querySelectorAll(`.vrow-count-ov[data-vid="${v.id}"]`).forEach(el => {
+        el.textContent = '0';
+        el.classList.add('loaded');
+      });
     }
     await delay(200);
   }
-  log('再生回数取得完了 → 再描画');
-  renderGrid();
+  log('再生回数取得完了');
 }
 
-// 再生回数バッジHTML
-function playCountBadge(videoId) {
-  if (!playCountMap.has(videoId)) return ''; // 未取得時は空（Loading表示なし）
+// 再生回数オーバーレイHTML（サムネイル内に埋め込む）
+// data-vid 属性で後からDOM直接更新できるようにする
+function playCountOverlay(videoId) {
   const count = playCountMap.get(videoId);
-  if (count < 0) return '';
-  return `<span class="badge-plays">👁 ${count.toLocaleString()}</span>`;
+  const loaded = playCountMap.has(videoId); // mapに存在すれば表示済み
+  return `<div class="vrow-count-ov${loaded?' loaded':''}" data-vid="${videoId}">${loaded?(Number(count)||0).toLocaleString():''}</div>`;
 }
 
 // =========================================================
@@ -867,6 +894,7 @@ function renderGrid() {
               <svg width="12" height="12" viewBox="0 0 12 12" fill="#333"><path d="M4 2.5l6 3.5-6 3.5z"/></svg>
             </div>
           </div>
+          ${playCountOverlay(v.id)}
         </div>
         <div class="vrow-info">
           <div class="vrow-title">${v.id===activeVidId?'<span class="now-dot"></span>':''}${esc(getTitle(v))}</div>
@@ -874,7 +902,6 @@ function renderGrid() {
             <span>${fmt(v.created_at)}</span>
             <div class="vrow-badges">
               ${st.cls?`<span class="${st.cls}">${st.label}</span>`:''}
-              ${playCountBadge(v.id)}
             </div>
           </div>
         </div>
