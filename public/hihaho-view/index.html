@@ -611,22 +611,23 @@ async function apiFetch(path) {
 
 // =========================================================
 // 再生回数取得（Hihaho aggregated-statistics API）
-// ※ 動画一覧描画後にバックグラウンドで並列取得し、完了後にグリッドを更新
+// レート制限対策: 200ms間隔で逐次リクエスト
 // =========================================================
 async function loadPlayCounts() {
   if (allVideos.length === 0) return;
-  log(`再生回数取得開始: ${allVideos.length}本`);
+  log(`再生回数取得開始: ${allVideos.length}本（逐次200ms間隔）`);
 
-  // 全動画を並列でリクエスト（レート制限対策でconcurrency制限なし）
-  const tasks = allVideos.map(async v => {
+  const delay = ms => new Promise(r => setTimeout(r, ms));
+
+  for (const v of allVideos) {
     try {
       const data = await apiFetch(`/v2/video/${v.id}/aggregated-statistics`);
       // Hihaho APIのレスポンスフィールド候補（変更可能性あり）
       const count =
-        data.total_plays   ??  // 最優先
-        data.play_count    ??
-        data.plays         ??
-        data.views         ??
+        data.total_plays       ??  // 最優先
+        data.play_count        ??
+        data.plays             ??
+        data.views             ??
         data.data?.total_plays ??
         data.data?.play_count  ??
         data.data?.plays       ??
@@ -638,10 +639,10 @@ async function loadPlayCounts() {
       console.error(`再生回数取得失敗 [${v.id}]: ${e.message}`);
       playCountMap.set(v.id, -1);
     }
-  });
+    // 1本取得するごとに200ms待ってレート制限を回避
+    await delay(200);
+  }
 
-  // 全動画の取得完了を待ってからグリッドを再描画
-  await Promise.all(tasks);
   log('再生回数取得完了 → グリッド再描画');
   renderGrid();
 }
