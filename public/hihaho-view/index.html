@@ -372,6 +372,34 @@ header {
   border-color: rgba(0,102,255,0.3);
   font-weight: 600;
 }
+/* サムネイルフィルタバー */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+.filter-label {
+  font-size: 10px; font-weight: 600; color: var(--text-muted);
+  letter-spacing: 0.05em; white-space: nowrap; margin-right: 2px;
+}
+.filter-btn {
+  display: inline-flex; align-items: center;
+  padding: 3px 9px; border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--white); color: var(--text-sub);
+  font-family: var(--font); font-size: 11px;
+  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+}
+.filter-btn:hover { border-color: var(--accent); color: var(--accent); }
+.filter-btn.active {
+  background: #f0fdf4; color: #166534;
+  border-color: #86efac; font-weight: 600;
+}
+.filter-btn.active-none {
+  background: #fef2f2; color: #991b1b;
+  border-color: #fca5a5; font-weight: 600;
+}
 .empty { text-align: center; padding: 40px 12px; color: var(--text-muted); }
 .empty-icon { font-size: 30px; opacity: 0.35; margin-bottom: 10px; }
 .error-msg {
@@ -454,6 +482,8 @@ header {
       <div class="list-label" id="listLabel">読み込み中...</div>
       <!-- 並べ替えボタンバー -->
       <div class="sort-bar" id="sortBar"></div>
+      <!-- サムネイルフィルタバー -->
+      <div class="filter-bar" id="filterBar"></div>
       <div id="videoGrid">
         <div class="vrow-skeleton"><div class="skel-thumb"></div><div class="skel-info"><div class="skel-line" style="width:80%"></div><div class="skel-line" style="width:55%"></div><div class="skel-line" style="width:35%"></div></div></div>
         <div class="vrow-skeleton"><div class="skel-thumb"></div><div class="skel-info"><div class="skel-line" style="width:70%"></div><div class="skel-line" style="width:45%"></div><div class="skel-line" style="width:30%"></div></div></div>
@@ -520,9 +550,11 @@ const SORT_OPTS = [
   { key: 'upd_asc',      labelJa: '🔄 更新↑',    labelEn: '🔄 Updated↑' },
   { key: 'alpha_asc',    labelJa: 'あ→ん',        labelEn: 'A→Z' },
   { key: 'alpha_desc',   labelJa: 'ん→あ',        labelEn: 'Z→A' },
-  { key: 'random',       labelJa: '🔀 ランダム',  labelEn: '🔀 Random' },
+  { key: 'random',       labelJa: '🔀 ランダム',    labelEn: '🔀 Random' },
+  { key: 'thumb_first',  labelJa: '🖼 サムネあり先', labelEn: '🖼 Thumb First' },
 ];
 let currentSort = 'new'; // デフォルト: 新しい順
+let thumbFilter = 'all'; // サムネイルフィルタ: 'all' | 'thumb' | 'no-thumb'
 
 // =========================================================
 // 状態管理
@@ -867,7 +899,10 @@ const curChVideos = () => allVideos.filter(v =>
   (v.status === 1 || v.status === 2)
 );
 
-// 検索フィルタ＋ソートを適用して返す
+// サムネイルの有無を判定（Firestore video_metaを参照）
+const hasThumbnail = v => !!(videoMeta[v.uuid]?.thumbnailUrl);
+
+// 検索フィルタ＋サムネイルフィルタ＋ソートを適用して返す
 const filteredVideos = () => {
   let vs = curChVideos();
   // 検索フィルタ
@@ -878,6 +913,9 @@ const filteredVideos = () => {
       (v.description || '').toLowerCase().includes(q)
     );
   }
+  // サムネイルフィルタ
+  if (thumbFilter === 'thumb')    vs = vs.filter(v =>  hasThumbnail(v));
+  if (thumbFilter === 'no-thumb') vs = vs.filter(v => !hasThumbnail(v));
   // ソート適用
   return sortVideos(vs);
 };
@@ -915,6 +953,13 @@ function sortVideos(videos) {
         [arr[i], arr[j]] = [arr[j], arr[i]];
       }
       return arr;
+    case 'thumb_first':
+      // サムネあり先（次点: 新しい順）
+      return arr.sort((a, b) => {
+        const aH = hasThumbnail(a), bH = hasThumbnail(b);
+        if (aH !== bH) return aH ? -1 : 1;
+        return new Date(b.created_at) - new Date(a.created_at);
+      });
     default:
       return arr;
   }
@@ -927,6 +972,39 @@ function renderSortBar() {
   document.getElementById('sortBar').innerHTML = SORT_OPTS.map(o =>
     `<button class="sort-btn ${o.key === currentSort ? 'active' : ''}" onclick="setSort('${o.key}')">${_currentLang === 'ja' ? o.labelJa : o.labelEn}</button>`
   ).join('');
+  renderFilterBar();
+}
+
+// =========================================================
+// サムネイルフィルタバー描画
+// =========================================================
+const FILTER_OPTS = [
+  { key: 'all',      labelJa: '両方',    labelEn: 'All',          cls: '' },
+  { key: 'thumb',    labelJa: '🖼 あり',  labelEn: '🖼 With',    cls: 'active' },
+  { key: 'no-thumb', labelJa: '🚫 なし',  labelEn: '🚫 Without', cls: 'active-none' },
+];
+function renderFilterBar() {
+  const el = document.getElementById('filterBar');
+  if (!el) return;
+  const labelText = _currentLang === 'ja' ? 'サムネ:' : 'Thumb:';
+  el.innerHTML = `<span class="filter-label">${labelText}</span>` +
+    FILTER_OPTS.map(o => {
+      const isActive = o.key === thumbFilter;
+      const cls = isActive ? `filter-btn ${o.cls || 'active'}` : 'filter-btn';
+      const label = _currentLang === 'ja' ? o.labelJa : o.labelEn;
+      return `<button class="${cls}" onclick="setThumbFilter('${o.key}')">${label}</button>`;
+    }).join('');
+}
+
+// =========================================================
+// サムネイルフィルタ変更
+// =========================================================
+function setThumbFilter(key) {
+  thumbFilter = key;
+  log(`サムネイルフィルタ: ${key}`);
+  renderFilterBar();
+  renderGrid();
+  renderSidebar();
 }
 
 // =========================================================
