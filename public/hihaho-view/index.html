@@ -398,14 +398,21 @@ header {
   vertical-align: middle; letter-spacing: 0.03em;
 }
 /* 言語トグルボタン */
+.lang-toggle {
+  display: flex; align-items: center; margin-right: 6px;
+  border: 1px solid var(--border); border-radius: 4px; overflow: hidden;
+}
 .lang-btn {
   font-size: 11px; font-weight: 700; padding: 3px 8px;
-  border-radius: 4px; border: 1px solid var(--border);
-  background: var(--bg-sub); color: var(--text-muted);
-  cursor: pointer; letter-spacing: 0.05em;
-  margin-right: 6px;
+  border: none; background: var(--bg-sub); color: var(--text-muted);
+  cursor: pointer; letter-spacing: 0.05em; transition: background 0.15s, color 0.15s;
 }
-.lang-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
+.lang-btn + .lang-btn { border-left: 1px solid var(--border); }
+/* JP選択中 → 赤 */
+.lang-btn.active-jp { background: #e53935; color: #fff; }
+/* EN選択中 → 青 */
+.lang-btn.active-en { background: #1565c0; color: #fff; }
+.lang-btn:not(.active-jp):not(.active-en):hover { background: var(--accent); color: #fff; }
 
 </style>
 </head>
@@ -422,7 +429,11 @@ header {
     <div class="ch-tab-skeleton"></div>
     <div class="ch-tab-skeleton"></div>
   </div>
-  <button class="lang-btn" id="langToggleBtn" onclick="toggleLang()">EN</button>
+  <!-- JP/EN 2ボタントグル -->
+  <div class="lang-toggle">
+    <button class="lang-btn active-jp" id="langBtnJp" onclick="setLang('ja')">JP</button>
+    <button class="lang-btn" id="langBtnEn" onclick="setLang('en')">EN</button>
+  </div>
   <button class="debug-btn" onclick="copyConsole()">📋 console</button>
 </header>
 
@@ -948,11 +959,15 @@ function copyConsole() {
 
 // ======== 言語切替 ========
 let _currentLang = 'ja';
-function toggleLang() {
-  _currentLang = _currentLang === 'ja' ? 'en' : 'ja';
+function setLang(lang) {
+  if (_currentLang === lang) return;
+  _currentLang = lang;
   document.documentElement.lang = _currentLang;
-  const btn = document.getElementById('langToggleBtn');
-  if (btn) btn.textContent = _currentLang === 'ja' ? 'EN' : '日本語';
+  // JP/ENボタンのアクティブ状態を更新
+  const jpBtn = document.getElementById('langBtnJp');
+  const enBtn = document.getElementById('langBtnEn');
+  if (jpBtn) { jpBtn.classList.toggle('active-jp', lang === 'ja'); }
+  if (enBtn) { enBtn.classList.toggle('active-en', lang === 'en'); }
   // 検索プレースホルダー更新
   const inp = document.getElementById('searchInput');
   if (inp) {
@@ -976,6 +991,8 @@ function toggleLang() {
   if (typeof renderGrid === 'function') renderGrid();
   if (typeof renderSidebar === 'function') renderSidebar();
 }
+// 後方互換用（内部でsetLangを呼ぶラッパー）
+function toggleLang() { setLang(_currentLang === 'ja' ? 'en' : 'ja'); }
 
 init();
 </script>
