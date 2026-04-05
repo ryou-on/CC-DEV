@@ -468,12 +468,15 @@ header {
 .lang-btn.active-en { background: #1565c0; color: #fff; }
 .lang-btn:not(.active-jp):not(.active-en):hover { background: var(--accent); color: #fff; }
 
+.hihaho-logo-img{height:20px;margin-right:5px;vertical-align:middle;border-radius:2px;}
+.play-count{font-size:11px;color:#9ca3af;margin-left:4px;}
+.play-count:empty{display:none;}
 </style>
 </head>
 <body>
 
 <header>
-  <div class="logo"><div class="logo-bar"></div>hihaho Player<span class="ver-badge rn-trigger" onclick="showReleaseNotes()" title="リリースノート">v1.2.2</span></div>
+  <div class="logo"><div class="logo-bar"></div><img src="https://hihaho.com/favicon.ico" class="hihaho-logo-img" onerror="this.style.display='none'" alt="hihaho">hihaho Player<span class="ver-badge rn-trigger" onclick="showReleaseNotes()" title="リリースノート">v1.2.4</span></div>
   <div class="search-wrap">
     <span class="search-icon">🔍</span>
     <input type="text" id="searchInput" placeholder="動画を検索…" data-ph-ja="動画を検索…" data-ph-en="Search videos…" oninput="onSearch(this.value)">
@@ -578,6 +581,7 @@ const SORT_OPTS = [
   { key: 'alpha_desc',   labelJa: 'ん→あ',        labelEn: 'Z→A' },
   { key: 'random',       labelJa: '🔀 ランダム',    labelEn: '🔀 Random' },
   { key: 'thumb_first',  labelJa: '🖼 サムネあり先', labelEn: '🖼 Thumb First' },
+  { key: 'plays', labelJa: '👁 再生多い順', labelEn: '👁 Most Played' },
 ];
 let currentSort = 'new'; // デフォルト: 新しい順
 let thumbFilter = 'all'; // サムネイルフィルタ: 'all' | 'thumb' | 'no-thumb'
@@ -680,12 +684,30 @@ async function apiFetch(path) {
 // =========================================================
 // 初期化：URLの ?id= からFirestoreのプレイリストを取得してフォルダを絞り込む
 // =========================================================
-async function init() {
+async // ── 再生回数グローバルキャッシュ ──
+window._playStats = {};
+
+// Firestoreから再生回数を非同期取得してDOMを更新
+async function loadPlayCounts() {
+  try {
+    const snap = await firebase.firestore().collection('playStats').get();
+    snap.forEach(doc => {
+      const cnt = doc.data().count || 0;
+      window._playStats[doc.id] = cnt;
+      document.querySelectorAll('.play-ct-' + doc.id).forEach(el => {
+        el.textContent = cnt > 0 ? '👁 ' + cnt : '';
+      });
+    });
+  } catch(e) { /* 権限エラー等は無視 */ }
+}
+
+function init() {
   log('初期化開始');
   try {
     // Firebase初期化
     firebase.initializeApp(FIREBASE_CONFIG);
     const db = firebase.firestore();
+    loadPlayCounts(); // 再生回数ロード
 
     // URLパラメータ ?id= からプレイリストIDを取得
     const playlistId = new URLSearchParams(location.search).get('id');
@@ -858,7 +880,7 @@ function renderGrid() {
         <div class="vrow-info">
           <div class="vrow-title">${v.id === activeVidId ? '<span class="now-dot"></span>' : ''}${esc(getTitle(v))}</div>
           <div class="vrow-meta">
-            <span>${fmt(v.created_at)}</span>
+            <span>${fmt(v.created_at)}</span><span class="play-count play-ct-${v.uuid}">${(window._playStats&&window._playStats[v.uuid])?"👁 "+window._playStats[v.uuid]:""}</span>
             ${st.cls ? `<span class="${st.cls}">${st.label}</span>` : ''}
           </div>
         </div>
@@ -872,6 +894,8 @@ function renderGrid() {
 function play(id) {
   const vid = allVideos.find(v => v.id === id);
   if (!vid) return;
+  // 再生回数を Firestore に記録（非同期・失敗しても継続）
+  try { firebase.firestore().collection('playStats').doc(vid.uuid).set({count:firebase.firestore.FieldValue.increment(1)},{merge:true}).then(()=>{window._playStats[vid.uuid]=(window._playStats[vid.uuid]||0)+1;document.querySelectorAll('.play-ct-'+vid.uuid).forEach(el=>el.textContent='👁 '+window._playStats[vid.uuid]);}); } catch(e){}
   activeVidId = id;
   log(`再生: ${vid.display_name} (uuid: ${vid.uuid})`);
 
@@ -986,6 +1010,8 @@ function sortVideos(videos) {
         if (aH !== bH) return aH ? -1 : 1;
         return new Date(b.created_at) - new Date(a.created_at);
       });
+    case 'plays':
+      return [...arr].sort((a,b)=>(window._playStats[b.uuid]||0)-(window._playStats[a.uuid]||0));
     default:
       return arr;
   }
@@ -1102,6 +1128,12 @@ function toggleLang() { setLang(_currentLang === 'ja' ? 'en' : 'ja'); }
 // リリースノート
 // =========================================================
 const RELEASE_NOTES = [
+  { ver:'v1.2.4', date:'2026-04-05', type:'player',
+    ja:['各動画の再生回数を表示（👁 N形式）','再生回数ソート追加（Firestore記録）'],
+    en:['Play count display per video (👁 N format)','Play count sort added (Firestore tracked)'] },
+  { ver:'v1.2.3', date:'2026-04-05', type:'player',
+    ja:['ヘッダ左肩にhihahoブランドロゴを追加'],
+    en:['hihaho brand logo added to header left shoulder'] },
   { ver:'v1.2.2', date:'2026-04-05', type:'player',
     ja:['サムネイルフィルタ[🖼あり/🚫なし/両方]ボタン追加','ソートに「🖼 サムネあり先」オプション追加'],
     en:['Thumbnail filter [With/Without/Both] buttons added','Sort option "🖼 Thumb First" added'] },
