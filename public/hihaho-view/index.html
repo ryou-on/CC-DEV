@@ -6,9 +6,6 @@
 <title>hihaho Player</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<!-- Firebase SDK（サムネイル取得用） -->
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <style>
 :root {
   --bg: #f4f5f7;
@@ -56,6 +53,77 @@ header {
   white-space: nowrap;
 }
 .logo-bar { width: 4px; height: 18px; border-radius: 2px; background: var(--accent); }
+
+/* バージョンバッジ */
+.ver-badge {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.ver-badge:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-light); }
+
+/* リリースノートモーダル */
+.modal-overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 9999;
+  align-items: center;
+  justify-content: center;
+}
+.modal-overlay.open { display: flex; }
+.modal-box {
+  background: var(--white);
+  border-radius: 12px;
+  padding: 24px 28px;
+  max-width: 440px;
+  width: 90%;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.18);
+  animation: fadeUp 0.18s ease both;
+}
+.modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 16px;
+}
+.modal-title { font-size: 15px; font-weight: 700; }
+.modal-close {
+  background: none; border: none; cursor: pointer;
+  color: var(--text-muted); font-size: 18px; line-height: 1;
+  padding: 2px 6px; border-radius: 4px;
+  transition: background 0.15s;
+}
+.modal-close:hover { background: var(--bg); }
+.rn-item {
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-light);
+}
+.rn-item:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+.rn-ver {
+  font-family: var(--mono); font-size: 11px; font-weight: 700;
+  color: var(--accent); margin-bottom: 4px;
+}
+.rn-date { font-size: 10px; color: var(--text-muted); margin-bottom: 6px; }
+.rn-list { list-style: none; padding: 0; }
+.rn-list li {
+  font-size: 12px; color: var(--text-sub);
+  padding: 2px 0 2px 14px;
+  position: relative;
+}
+.rn-list li::before {
+  content: '•'; position: absolute; left: 0;
+  color: var(--accent);
+}
+
 .search-wrap { flex: 1; max-width: 380px; position: relative; }
 .search-wrap input {
   width: 100%;
@@ -186,6 +254,20 @@ header {
 }
 .badge-draft { background: #fef3c7; color: #92400e; }
 .badge-published { background: #d1fae5; color: #065f46; }
+/* 再生回数バッジ */
+.badge-plays {
+  background: #f3f0ff; color: #6d28d9;
+  display: inline-flex; align-items: center; gap: 3px;
+  border-radius: 4px; font-size: 10px; font-weight: 700;
+  padding: 2px 6px; font-family: var(--mono);
+}
+.badge-plays-loading {
+  background: var(--bg); color: var(--text-muted);
+  display: inline-flex; align-items: center;
+  border-radius: 4px; font-size: 10px;
+  padding: 2px 6px; font-family: var(--mono);
+  animation: pulse 1.2s infinite;
+}
 .video-list {
   flex: 1; overflow-y: auto;
   padding: 14px 16px 20px;
@@ -275,6 +357,7 @@ header {
 }
 .vrow.playing .vrow-title { color: var(--accent); }
 .vrow-meta { font-size: 11px; color: var(--text-muted); display: flex; flex-direction: column; gap: 3px; }
+.vrow-badges { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-top: 2px; }
 .sidebar {
   width: var(--sidebar-w);
   flex-shrink: 0;
@@ -343,89 +426,6 @@ header {
   animation: pulse 1.2s infinite;
 }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.25} }
-/* ソートバー */
-.sort-bar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  margin-bottom: 12px;
-}
-.sort-btn {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 10px;
-  border-radius: 16px;
-  border: 1px solid var(--border);
-  background: var(--white);
-  color: var(--text-sub);
-  font-family: var(--font);
-  font-size: 11px;
-  cursor: pointer;
-  transition: all 0.15s;
-  white-space: nowrap;
-}
-.sort-btn:hover { border-color: var(--accent); color: var(--accent); }
-.sort-btn.active {
-  background: var(--accent-light);
-  color: var(--accent);
-  border-color: rgba(0,102,255,0.3);
-  font-weight: 600;
-}
-/* サムネイルフィルタバー */
-.filter-bar {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  margin-bottom: 10px;
-}
-.filter-label {
-  font-size: 10px; font-weight: 600; color: var(--text-muted);
-  letter-spacing: 0.05em; white-space: nowrap; margin-right: 2px;
-}
-.filter-btn {
-  display: inline-flex; align-items: center;
-  padding: 3px 9px; border-radius: 12px;
-  border: 1px solid var(--border);
-  background: var(--white); color: var(--text-sub);
-  font-family: var(--font); font-size: 11px;
-  cursor: pointer; transition: all 0.15s; white-space: nowrap;
-}
-.filter-btn:hover { border-color: var(--accent); color: var(--accent); }
-.filter-btn.active {
-  background: #f0fdf4; color: #166534;
-  border-color: #86efac; font-weight: 600;
-}
-.filter-btn.active-none {
-  background: #fef2f2; color: #991b1b;
-  border-color: #fca5a5; font-weight: 600;
-}
-/* ver-badge クリック可能 */
-.rn-trigger { cursor:pointer; text-decoration:underline dotted; text-underline-offset:2px; }
-.rn-trigger:hover { color: var(--accent) !important; }
-/* リリースノートモーダル */
-.rn-modal { position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:1000;display:flex;align-items:center;justify-content:center; }
-.rn-card { background:#fff;border-radius:12px;width:90%;max-width:480px;max-height:80vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.2); }
-.rn-header { display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border); }
-.rn-title  { font-size:13px;font-weight:700;color:var(--text); }
-.rn-close  { background:none;border:none;cursor:pointer;font-size:15px;color:var(--text-muted);padding:3px 7px;border-radius:4px; }
-.rn-close:hover { background:var(--bg); }
-.rn-filter-bar { display:flex;gap:4px;padding:10px 18px 0; }
-.rn-filter-btn { font-size:11px;padding:3px 9px;border-radius:10px;border:1px solid var(--border);background:var(--white);color:var(--text-sub);cursor:pointer;transition:all 0.12s; }
-.rn-filter-btn.active { background:var(--accent-light);color:var(--accent);border-color:rgba(0,102,255,0.3);font-weight:600; }
-.rn-body   { overflow-y:auto;padding:14px 18px; }
-.rn-entry  { margin-bottom:14px; }
-.rn-entry:last-child { margin-bottom:0; }
-.rn-ver    { display:flex;align-items:center;gap:7px;margin-bottom:5px; }
-.rn-ver-num { font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text); }
-.rn-ver-date { font-size:11px;color:var(--text-muted); }
-.rn-type-badge { font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;letter-spacing:0.4px; }
-.rn-type-player { background:#e0f2fe;color:#0369a1; }
-.rn-type-admin  { background:#f0fdf4;color:#166534; }
-.rn-type-both   { background:#fef3c7;color:#92400e; }
-.rn-changes { list-style:none;padding:0;margin:0; }
-.rn-changes li { font-size:12px;color:var(--text-sub);padding:2px 0 2px 12px;position:relative; }
-.rn-changes li::before { content:"·";position:absolute;left:0;color:var(--accent); }
 .empty { text-align: center; padding: 40px 12px; color: var(--text-muted); }
 .empty-icon { font-size: 30px; opacity: 0.35; margin-bottom: 10px; }
 .error-msg {
@@ -439,57 +439,58 @@ header {
 }
 .vrow  { animation: fadeUp 0.22s ease both; }
 .qcard { animation: fadeUp 0.22s ease both; }
-
-/* ======== 貀語切替 ======== */
-[lang="en"] .ja { display: none !important; }
-[lang="ja"] .en { display: none !important; }
-
-/* バージョンバッジ */
-.ver-badge {
-  font-size: 10px; font-weight: 600; color: var(--text-muted);
-  background: var(--bg-sub); border: 1px solid var(--border);
-  border-radius: 4px; padding: 1px 5px; margin-left: 6px;
-  vertical-align: middle; letter-spacing: 0.03em;
-}
-/* 言語トグルボタン */
-.lang-toggle {
-  display: flex; align-items: center; margin-right: 6px;
-  border: 1px solid var(--border); border-radius: 4px; overflow: hidden;
-}
-.lang-btn {
-  font-size: 11px; font-weight: 700; padding: 3px 8px;
-  border: none; background: var(--bg-sub); color: var(--text-muted);
-  cursor: pointer; letter-spacing: 0.05em; transition: background 0.15s, color 0.15s;
-}
-.lang-btn + .lang-btn { border-left: 1px solid var(--border); }
-/* JP選択中 → 赤 */
-.lang-btn.active-jp { background: #e53935; color: #fff; }
-/* EN選択中 → 青 */
-.lang-btn.active-en { background: #1565c0; color: #fff; }
-.lang-btn:not(.active-jp):not(.active-en):hover { background: var(--accent); color: #fff; }
-
-.hihaho-logo-img{height:20px;margin-right:5px;vertical-align:middle;border-radius:2px;}
-.play-count{font-size:11px;color:#9ca3af;margin-left:4px;}
-.play-count:empty{display:none;}
 </style>
 </head>
 <body>
 
+<!-- リリースノートモーダル -->
+<div class="modal-overlay" id="rnModal" onclick="closeModal(event)">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title">📋 リリースノート</span>
+      <button class="modal-close" onclick="document.getElementById('rnModal').classList.remove('open')">✕</button>
+    </div>
+    <div class="rn-item">
+      <div class="rn-ver">v1.2.5</div>
+      <div class="rn-date">2026-04-05</div>
+      <ul class="rn-list">
+        <li>Hihaho実再生数をAPIから取得して表示（aggregated-statistics）</li>
+        <li>再生回数バッジを動画一覧に追加</li>
+        <li>Cloudflare Worker に統計エンドポイントを追加</li>
+      </ul>
+    </div>
+    <div class="rn-item">
+      <div class="rn-ver">v1.2.4</div>
+      <div class="rn-date">2026-03</div>
+      <ul class="rn-list">
+        <li>サムネイル表示対応（Firebase Hosting）</li>
+        <li>フォルダタブUI改善</li>
+        <li>スケルトンローディング追加</li>
+      </ul>
+    </div>
+    <div class="rn-item">
+      <div class="rn-ver">v1.2.3</div>
+      <div class="rn-date">2026-02</div>
+      <ul class="rn-list">
+        <li>デバッグコンソールコピーボタン追加</li>
+        <li>検索機能追加</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
 <header>
-  <div class="logo"><div class="logo-bar"></div><img src="https://hihaho.com/favicon.ico" class="hihaho-logo-img" onerror="this.style.display='none'" alt="hihaho">hihaho Player<span class="ver-badge rn-trigger" onclick="showReleaseNotes()" title="リリースノート">v1.2.4</span></div>
+  <div class="logo"><div class="logo-bar"></div>hihaho Player</div>
+  <!-- バージョンバッジ：クリックでリリースノート表示 -->
+  <button class="ver-badge" onclick="document.getElementById('rnModal').classList.add('open')">v1.2.5</button>
   <div class="search-wrap">
     <span class="search-icon">🔍</span>
-    <input type="text" id="searchInput" placeholder="動画を検索…" data-ph-ja="動画を検索…" data-ph-en="Search videos…" oninput="onSearch(this.value)">
+    <input type="text" id="searchInput" placeholder="動画を検索…" oninput="onSearch(this.value)">
   </div>
   <div class="ch-tabs" id="chTabs">
     <div class="ch-tab-skeleton"></div>
     <div class="ch-tab-skeleton"></div>
     <div class="ch-tab-skeleton"></div>
-  </div>
-  <!-- JP/EN 2ボタントグル -->
-  <div class="lang-toggle">
-    <button class="lang-btn active-jp" id="langBtnJp" onclick="setLang('ja')">JP</button>
-    <button class="lang-btn" id="langBtnEn" onclick="setLang('en')">EN</button>
   </div>
   <button class="debug-btn" onclick="copyConsole()">📋 console</button>
 </header>
@@ -499,20 +500,16 @@ header {
     <div class="player-wrap" id="playerWrap">
       <div class="player-placeholder" id="placeholder">
         <div class="player-placeholder-icon">▶</div>
-        <p><span class="ja">動画を選択して再生</span><span class="en">Select a video to play</span></p>
+        <p>動画を選択して再生</p>
       </div>
       <div class="player-spinner" id="spinner"><div class="spinner-ring"></div></div>
     </div>
     <div class="info-bar">
-      <div class="info-title" id="nowTitle"><span class="ja">動画を選択してください</span><span class="en">Select a video</span></div>
+      <div class="info-title" id="nowTitle">動画を選択してください</div>
       <div class="info-meta" id="nowMeta"><span>—</span></div>
     </div>
     <div class="video-list">
       <div class="list-label" id="listLabel">読み込み中...</div>
-      <!-- 並べ替えボタンバー -->
-      <div class="sort-bar" id="sortBar"></div>
-      <!-- サムネイルフィルタバー -->
-      <div class="filter-bar" id="filterBar"></div>
       <div id="videoGrid">
         <div class="vrow-skeleton"><div class="skel-thumb"></div><div class="skel-info"><div class="skel-line" style="width:80%"></div><div class="skel-line" style="width:55%"></div><div class="skel-line" style="width:35%"></div></div></div>
         <div class="vrow-skeleton"><div class="skel-thumb"></div><div class="skel-info"><div class="skel-line" style="width:70%"></div><div class="skel-line" style="width:45%"></div><div class="skel-line" style="width:30%"></div></div></div>
@@ -539,18 +536,8 @@ header {
 // =========================================================
 const WORKER_URL = 'https://hihaho-proxy.jumpei-omote.workers.dev';
 
-// Firebase設定
-const FIREBASE_CONFIG = {
-  apiKey: "AIzaSyDPlsAhtxbJBihy-EAHck9P7XbuMdzV0ds",
-  authDomain: "cc-dev-ps7.firebaseapp.com",
-  projectId: "cc-dev-ps7",
-  storageBucket: "cc-dev-ps7.firebasestorage.app",
-  messagingSenderId: "1029579090333",
-  appId: "1:1029579090333:web:5a2ea499fec97c497f2774"
-};
-
-// 表示するフォルダID（Firestoreかり動的取得。フォールバック用）
-let SHOW_FOLDER_IDS = [];
+// 表示するフォルダID（指定順でタブに表示）
+const SHOW_FOLDER_IDS = [21078, 12452, 21334];
 
 // ★ サムネイル設定
 // Firebase Hostingに画像を置く場合:
@@ -570,23 +557,6 @@ const STATUS = {
 };
 
 // =========================================================
-// ソート設定
-// =========================================================
-const SORT_OPTS = [
-  { key: 'new',          labelJa: '📅 新しい順',  labelEn: '📅 Newest' },
-  { key: 'old',          labelJa: '📅 古い順',    labelEn: '📅 Oldest' },
-  { key: 'upd_desc',     labelJa: '🔄 更新↓',    labelEn: '🔄 Updated↓' },
-  { key: 'upd_asc',      labelJa: '🔄 更新↑',    labelEn: '🔄 Updated↑' },
-  { key: 'alpha_asc',    labelJa: 'あ→ん',        labelEn: 'A→Z' },
-  { key: 'alpha_desc',   labelJa: 'ん→あ',        labelEn: 'Z→A' },
-  { key: 'random',       labelJa: '🔀 ランダム',    labelEn: '🔀 Random' },
-  { key: 'thumb_first',  labelJa: '🖼 サムネあり先', labelEn: '🖼 Thumb First' },
-  { key: 'plays', labelJa: '👁 再生多い順', labelEn: '👁 Most Played' },
-];
-let currentSort = 'new'; // デフォルト: 新しい順
-let thumbFilter = 'all'; // サムネイルフィルタ: 'all' | 'thumb' | 'no-thumb'
-
-// =========================================================
 // 状態管理
 // =========================================================
 let allFolders  = [];
@@ -595,47 +565,9 @@ let activeChId  = null;
 let activeVidId = null;
 let searchQ     = '';
 let clog        = [];
-let videoMeta   = {}; // uuid → { thumbnailUrl } のマップ（Firestore video_meta）
 
-// =========================================================
-// 翻訳キャッシュ（vid.id → 英語タイトル）
-// MyMemory無料API使用（APIキー不要、1000word/day）
-// =========================================================
-const _translCache = {};
-
-// EN時に翻訳済みタイトルを返す（未翻訳ならJA表示しつつバックグラウンドで翻訳）
-function getTitle(vid) {
-  if (_currentLang === 'ja') return vid.display_name;
-  // Firestoreに英語名があればそれを使用
-  if (videoMeta[vid.uuid]?.display_name_en) return videoMeta[vid.uuid].display_name_en;
-  // キャッシュにあればキャッシュを返す
-  if (_translCache[vid.id]) return _translCache[vid.id];
-  // バックグラウンドで翻訳（翻訳完了後に再レンダリング）
-  if (!_translCache['_pending_' + vid.id]) {
-    _translCache['_pending_' + vid.id] = true;
-    translateTitle(vid);
-  }
-  return vid.display_name; // 翻訳完了まではJA表示
-}
-
-// MyMemory APIでタイトルを非同期翻訳
-async function translateTitle(vid) {
-  try {
-    const res = await fetch(
-      `https://api.mymemory.translated.net/get?q=${encodeURIComponent(vid.display_name)}&langpair=ja|en`
-    );
-    const data = await res.json();
-    if (data.responseStatus === 200 && data.responseData?.translatedText) {
-      _translCache[vid.id] = data.responseData.translatedText;
-      log(`翻訳完了: ${vid.display_name} → ${_translCache[vid.id]}`);
-      // 翻訳完了後に再レンダリング
-      if (_currentLang === 'en') { renderGrid(); renderSidebar(); }
-    }
-  } catch(e) {
-    // 翻訳失敗時はJA表示を維持（エラーログのみ）
-    console.error('翻訳エラー:', e.message);
-  }
-}
+// 再生回数マップ: videoId → 回数（null=未取得, -1=取得失敗）
+let playCountMap = new Map();
 
 const origLog = console.log.bind(console);
 console.log = (...a) => { origLog(...a); clog.push(a.join(' ')); };
@@ -645,24 +577,20 @@ const log = m => console.log(`[hihaho] ${m}`);
 
 // =========================================================
 // サムネイルURL生成
-// 優先順位: ①Firestore video_meta → ②Firebase Hosting thumbs → ③🎬フォールバック
+// thumbs/{uuid}.jpg が存在すればそれを表示、なければ🎬フォールバック
 // =========================================================
 function thumbHtml(uuid, cls) {
-  // ①video_metaにURLがあればそれを使う
-  const metaUrl = videoMeta[uuid]?.thumbnailUrl;
-  // ②なければ静的ファイルパス（404時はonerrorでフォールバックへ）
-  const src = metaUrl || `${THUMB_BASE}/${uuid}.${THUMB_EXT}`;
-
+  // imgのonerrorで画像がない場合はフォールバックを表示
   if (cls === 'vrow') {
     return `
-      <img src="${src}"
+      <img src="${THUMB_BASE}/${uuid}.${THUMB_EXT}"
            style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"
            onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
            loading="lazy">
       <div class="vrow-thumb-fb" style="display:none">🎬</div>`;
   } else {
     return `
-      <img src="${src}"
+      <img src="${THUMB_BASE}/${uuid}.${THUMB_EXT}"
            style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"
            onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
            loading="lazy">
@@ -682,77 +610,73 @@ async function apiFetch(path) {
 }
 
 // =========================================================
-// 初期化：URLの ?id= からFirestoreのプレイリストを取得してフォルダを絞り込む
+// 再生回数取得（Hihaho aggregated-statistics API）
+// ※ 動画一覧描画後にバックグラウンドで並列取得し、完了後にグリッドを更新
 // =========================================================
-// ── 再生回数グローバルキャッシュ ──
-window._playStats = {};
-
-// Firestoreから再生回数を非同期取得してDOMを更新
 async function loadPlayCounts() {
-  try {
-    const snap = await firebase.firestore().collection('playStats').get();
-    snap.forEach(doc => {
-      const cnt = doc.data().count || 0;
-      window._playStats[doc.id] = cnt;
-      document.querySelectorAll('.play-ct-' + doc.id).forEach(el => {
-        el.textContent = cnt > 0 ? '👁 ' + cnt : '';
-      });
-    });
-  } catch(e) { /* 権限エラー等は無視 */ }
+  if (allVideos.length === 0) return;
+  log(`再生回数取得開始: ${allVideos.length}本`);
+
+  // 全動画を並列でリクエスト（レート制限対策でconcurrency制限なし）
+  const tasks = allVideos.map(async v => {
+    try {
+      const data = await apiFetch(`/v2/video/${v.id}/aggregated-statistics`);
+      // Hihaho APIのレスポンスフィールド候補（変更可能性あり）
+      const count =
+        data.total_plays   ??  // 最優先
+        data.play_count    ??
+        data.plays         ??
+        data.views         ??
+        data.data?.total_plays ??
+        data.data?.play_count  ??
+        data.data?.plays       ??
+        data.data?.views       ??
+        null;
+      playCountMap.set(v.id, count !== null ? Number(count) : -1);
+      log(`再生回数 [${v.id}] ${JSON.stringify(data)}`);
+    } catch (e) {
+      console.error(`再生回数取得失敗 [${v.id}]: ${e.message}`);
+      playCountMap.set(v.id, -1);
+    }
+  });
+
+  // 全動画の取得完了を待ってからグリッドを再描画
+  await Promise.all(tasks);
+  log('再生回数取得完了 → グリッド再描画');
+  renderGrid();
 }
 
+// =========================================================
+// 再生回数バッジHTML生成
+// =========================================================
+function playCountBadge(videoId) {
+  if (!playCountMap.has(videoId)) {
+    // まだ取得中
+    return `<span class="badge-plays-loading">▶ …</span>`;
+  }
+  const count = playCountMap.get(videoId);
+  if (count === -1) {
+    // 取得失敗（エラー）
+    return '';
+  }
+  return `<span class="badge-plays">▶ ${count.toLocaleString()}</span>`;
+}
+
+// =========================================================
+// 初期化：フォルダIDを指定して動画を個別取得
+// =========================================================
 async function init() {
   log('初期化開始');
   try {
-    // Firebase初期化
-    firebase.initializeApp(FIREBASE_CONFIG);
-    const db = firebase.firestore();
-    loadPlayCounts(); // 再生回数ロード
-
-    // URLパラメータ ?id= からプレイリストIDを取得
-    const playlistId = new URLSearchParams(location.search).get('id');
-    if (!playlistId) {
-      showError((_currentLang==='ja'?'URLに ?id= が指定されていません':'No ?id= parameter in URL'));
-      return;
-    }
-
-    // FirestoreのplaylistsコレクションからfolderIdsを取得
-    const playlistDoc = await db.collection('playlists').doc(playlistId).get();
-    if (!playlistDoc.exists) {
-      showError((_currentLang==='ja'?`プレイリストが見つかりません (id: ${playlistId})`:`Playlist not found (id: ${playlistId})`));
-      return;
-    }
-    const playlistData = playlistDoc.data();
-    SHOW_FOLDER_IDS = playlistData.folderIds || [];
-    log(`プレイリスト: ${playlistData.name} / フォルダ${SHOW_FOLDER_IDS.length}件`);
-
-    if (SHOW_FOLDER_IDS.length === 0) {
-      showError((_currentLang==='ja'?'このプレイリストにはフォルダが設定されていません':'No folders in this playlist'));
-      return;
-    }
-
-    // ページタイトルを更新
-    document.title = `hihaho Player – ${playlistData.name}`;
-
-    // video_metaのサムネイルURLを一括取得
-    try {
-      const metaSnap = await db.collection('video_meta').get();
-      metaSnap.forEach(doc => { videoMeta[doc.id] = doc.data(); });
-      log(`video_meta: ${metaSnap.size}件取得`);
-    } catch (e) {
-      // video_meta取得失敗時は静的ファイルにフォールバック
-      console.error('video_meta取得失敗:', e.message);
-    }
-
-    // フォルダ一覧取得 → プレイリスト指定IDで絞り込み
+    // フォルダ一覧取得 → 指定IDで絞り込み
     const foldersRes = await apiFetch('/v2/video-container');
     allFolders = (foldersRes.data || []).filter(f => SHOW_FOLDER_IDS.includes(f.id));
 
-    // folderIdsの指定順に並べ替え
+    // フォルダIDの指定順に並べ替え
     allFolders.sort((a, b) => SHOW_FOLDER_IDS.indexOf(a.id) - SHOW_FOLDER_IDS.indexOf(b.id));
 
     if (allFolders.length === 0) {
-      showError((_currentLang==='ja'?'表示できるフォルダがありません':'No folders available'));
+      showError('表示できるフォルダがありません');
       return;
     }
 
@@ -766,10 +690,12 @@ async function init() {
 
     activeChId = allFolders[0].id;
     renderTabs();
-    renderSortBar(); // ソートバーを初期描画
     renderSidebar();
     renderGrid();
     log('初期化完了');
+
+    // 初期描画後にバックグラウンドで再生回数を取得
+    loadPlayCounts();
 
   } catch (e) {
     console.error(e.message);
@@ -828,19 +754,19 @@ function renderSidebar() {
         <div class="ch-info-id">ID: ${folder.id}</div>
       </div>
     </div>
-    <div class="ch-info-count">${curChVideos().length} ${_currentLang === 'ja' ? '本の動画' : 'videos'}</div>`;
+    <div class="ch-info-count">${curChVideos().length} 本の動画</div>`;
 
   const qp = document.getElementById('queuePanel');
-  qp.innerHTML = `<div class="queue-label">${_currentLang === 'ja' ? 'ラインナップ' : 'Lineup'}</div>` +
+  qp.innerHTML = `<div class="queue-label">ラインナップ</div>` +
     (videos.length === 0
-      ? `<div class="empty"><div class="empty-icon">🔍</div><p>${_currentLang === 'ja' ? '動画が見つかりません' : 'No videos found'}</p></div>`
+      ? `<div class="empty"><div class="empty-icon">🔍</div><p>動画が見つかりません</p></div>`
       : videos.map((v, i) => `
         <div class="qcard ${v.id === activeVidId ? 'playing' : ''}" style="animation-delay:${i*25}ms" onclick="play(${v.id})">
           <div class="qcard-thumb">
             ${thumbHtml(v.uuid, 'qcard')}
           </div>
           <div class="qcard-info">
-            <div class="qcard-title">${v.id === activeVidId ? '<span class="now-dot"></span>' : ''}${esc(getTitle(v))}</div>
+            <div class="qcard-title">${v.id === activeVidId ? '<span class="now-dot"></span>' : ''}${esc(v.display_name)}</div>
             <div class="qcard-meta">${fmt(v.created_at)}</div>
           </div>
         </div>`).join(''));
@@ -855,13 +781,11 @@ function renderGrid() {
   const videos = filteredVideos();
 
   document.getElementById('listLabel').textContent =
-    searchQ
-      ? `「${searchQ}」 ${videos.length} ${_currentLang === 'ja' ? '件' : 'results'}`
-      : `${folder.name} ${_currentLang === 'ja' ? 'の動画一覧' : '— Videos'} (${videos.length})`;
+    searchQ ? `「${searchQ}」 ${videos.length} 件` : `${folder.name} の動画一覧（${videos.length}本）`;
 
   const g = document.getElementById('videoGrid');
   if (!videos.length) {
-    g.innerHTML = `<div class="empty"><div class="empty-icon">🔍</div><p>${_currentLang === 'ja' ? '動画が見つかりませんでした' : 'No videos found'}</p></div>`;
+    g.innerHTML = `<div class="empty"><div class="empty-icon">🔍</div><p>動画が見つかりませんでした</p></div>`;
     return;
   }
 
@@ -878,10 +802,13 @@ function renderGrid() {
           </div>
         </div>
         <div class="vrow-info">
-          <div class="vrow-title">${v.id === activeVidId ? '<span class="now-dot"></span>' : ''}${esc(getTitle(v))}</div>
+          <div class="vrow-title">${v.id === activeVidId ? '<span class="now-dot"></span>' : ''}${esc(v.display_name)}</div>
           <div class="vrow-meta">
-            <span>${fmt(v.created_at)}</span><span class="play-count play-ct-${v.uuid}">${(window._playStats&&window._playStats[v.uuid])?"👁 "+window._playStats[v.uuid]:""}</span>
-            ${st.cls ? `<span class="${st.cls}">${st.label}</span>` : ''}
+            <span>${fmt(v.created_at)}</span>
+            <div class="vrow-badges">
+              ${st.cls ? `<span class="${st.cls}">${st.label}</span>` : ''}
+              ${playCountBadge(v.id)}
+            </div>
           </div>
         </div>
       </div>`;
@@ -894,14 +821,6 @@ function renderGrid() {
 function play(id) {
   const vid = allVideos.find(v => v.id === id);
   if (!vid) return;
-  // 再生回数をローカルに先更新（即座にDOMへ反映）
-  window._playStats[vid.uuid] = (window._playStats[vid.uuid]||0) + 1;
-  document.querySelectorAll('.play-ct-' + vid.uuid).forEach(el => {
-    el.textContent = '👁 ' + window._playStats[vid.uuid];
-    el.style.display = '';
-  });
-  // Firestoreへの保存（ルール許可時のみ記録・失敗はサイレント）
-  try { firebase.firestore().collection('playStats').doc(vid.uuid).set({count:firebase.firestore.FieldValue.increment(1)},{merge:true}).catch(()=>{}); } catch(e){}
   activeVidId = id;
   log(`再生: ${vid.display_name} (uuid: ${vid.uuid})`);
 
@@ -923,7 +842,7 @@ function play(id) {
 
   const st = STATUS[vid.status] || STATUS[0];
   document.getElementById('nowTitle').innerHTML =
-    `${esc(getTitle(vid))}${st.cls ? ` <span class="${st.cls}">${st.label}</span>` : ''}`;
+    `${esc(vid.display_name)}${st.cls ? ` <span class="${st.cls}">${st.label}</span>` : ''}`;
   document.getElementById('nowMeta').innerHTML =
     `<span>${curFolder()?.name || ''}</span>
      <span class="dot">·</span>
@@ -945,136 +864,28 @@ function onSearch(q) {
 }
 
 // =========================================================
+// モーダル（オーバーレイクリックで閉じる）
+// =========================================================
+function closeModal(e) {
+  if (e.target === document.getElementById('rnModal')) {
+    document.getElementById('rnModal').classList.remove('open');
+  }
+}
+
+// =========================================================
 // ユーティリティ
 // =========================================================
 const curFolder   = () => allFolders.find(f => f.id === activeChId);
-// status=1（PUBLISHED）または status=2（INTERACTIVE）のみ表示
-// DRAFT(0)・ARCHIVED(4) は非表示
-const curChVideos = () => allVideos.filter(v =>
-  v.video_container_id === activeChId &&
-  (v.status === 1 || v.status === 2)
-);
-
-// サムネイルの有無を判定（Firestore video_metaを参照）
-const hasThumbnail = v => !!(videoMeta[v.uuid]?.thumbnailUrl);
-
-// 検索フィルタ＋サムネイルフィルタ＋ソートを適用して返す
+const curChVideos = () => allVideos.filter(v => v.video_container_id === activeChId);
 const filteredVideos = () => {
-  let vs = curChVideos();
-  // 検索フィルタ
-  if (searchQ) {
-    const q = searchQ.toLowerCase();
-    vs = vs.filter(v =>
-      v.display_name.toLowerCase().includes(q) ||
-      (v.description || '').toLowerCase().includes(q)
-    );
-  }
-  // サムネイルフィルタ
-  if (thumbFilter === 'thumb')    vs = vs.filter(v =>  hasThumbnail(v));
-  if (thumbFilter === 'no-thumb') vs = vs.filter(v => !hasThumbnail(v));
-  // ソート適用
-  return sortVideos(vs);
+  const vs = curChVideos();
+  if (!searchQ) return vs;
+  const q = searchQ.toLowerCase();
+  return vs.filter(v =>
+    v.display_name.toLowerCase().includes(q) ||
+    (v.description || '').toLowerCase().includes(q)
+  );
 };
-
-// =========================================================
-// ソート関数：元配列を変更しないようコピーしてソート
-// =========================================================
-function sortVideos(videos) {
-  const arr = [...videos];
-  switch (currentSort) {
-    case 'new':
-      // 作成日 新しい順（降順）
-      return arr.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-    case 'old':
-      // 作成日 古い順（昇順）
-      return arr.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
-    case 'upd_desc':
-      // 更新日 新しい順（updated_at がなしれば created_at で代替）
-      return arr.sort((a, b) =>
-        new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
-    case 'upd_asc':
-      // 更新日 古い順
-      return arr.sort((a, b) =>
-        new Date(a.updated_at || a.created_at) - new Date(b.updated_at || b.created_at));
-    case 'alpha_asc':
-      // あいうえお 昇順（日本語対応）
-      return arr.sort((a, b) => a.display_name.localeCompare(b.display_name, 'ja'));
-    case 'alpha_desc':
-      // あいうえお 降順
-      return arr.sort((a, b) => b.display_name.localeCompare(a.display_name, 'ja'));
-    case 'random':
-      // ランダム（Fisher-Yates）
-      for (let i = arr.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [arr[i], arr[j]] = [arr[j], arr[i]];
-      }
-      return arr;
-    case 'thumb_first':
-      // サムネあり先（次点: 新しい順）
-      return arr.sort((a, b) => {
-        const aH = hasThumbnail(a), bH = hasThumbnail(b);
-        if (aH !== bH) return aH ? -1 : 1;
-        return new Date(b.created_at) - new Date(a.created_at);
-      });
-    case 'plays':
-      return [...arr].sort((a,b)=>(window._playStats[b.uuid]||0)-(window._playStats[a.uuid]||0));
-    default:
-      return arr;
-  }
-}
-
-// =========================================================
-// ソートバー描画
-// =========================================================
-function renderSortBar() {
-  document.getElementById('sortBar').innerHTML = SORT_OPTS.map(o =>
-    `<button class="sort-btn ${o.key === currentSort ? 'active' : ''}" onclick="setSort('${o.key}')">${_currentLang === 'ja' ? o.labelJa : o.labelEn}</button>`
-  ).join('');
-  renderFilterBar();
-}
-
-// =========================================================
-// サムネイルフィルタバー描画
-// =========================================================
-const FILTER_OPTS = [
-  { key: 'all',      labelJa: '両方',    labelEn: 'All',          cls: '' },
-  { key: 'thumb',    labelJa: '🖼 あり',  labelEn: '🖼 With',    cls: 'active' },
-  { key: 'no-thumb', labelJa: '🚫 なし',  labelEn: '🚫 Without', cls: 'active-none' },
-];
-function renderFilterBar() {
-  const el = document.getElementById('filterBar');
-  if (!el) return;
-  const labelText = _currentLang === 'ja' ? 'サムネ:' : 'Thumb:';
-  el.innerHTML = `<span class="filter-label">${labelText}</span>` +
-    FILTER_OPTS.map(o => {
-      const isActive = o.key === thumbFilter;
-      const cls = isActive ? `filter-btn ${o.cls || 'active'}` : 'filter-btn';
-      const label = _currentLang === 'ja' ? o.labelJa : o.labelEn;
-      return `<button class="${cls}" onclick="setThumbFilter('${o.key}')">${label}</button>`;
-    }).join('');
-}
-
-// =========================================================
-// サムネイルフィルタ変更
-// =========================================================
-function setThumbFilter(key) {
-  thumbFilter = key;
-  log(`サムネイルフィルタ: ${key}`);
-  renderFilterBar();
-  renderGrid();
-  renderSidebar();
-}
-
-// =========================================================
-// ソート変更
-// =========================================================
-function setSort(key) {
-  currentSort = key;
-  log(`ソート変更: ${key}`);
-  renderSortBar();
-  renderGrid();
-  renderSidebar();
-}
 const esc = s => String(s)
   .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
   .replace(/"/g,'&quot;').replace(/'/g,'&#x27;');
@@ -1092,118 +903,7 @@ function copyConsole() {
 // =========================================================
 // 起動
 // =========================================================
-
-// ======== 言語切替 ========
-let _currentLang = 'ja';
-function setLang(lang) {
-  if (_currentLang === lang) return;
-  _currentLang = lang;
-  document.documentElement.lang = _currentLang;
-  // JP/ENボタンのアクティブ状態を更新
-  const jpBtn = document.getElementById('langBtnJp');
-  const enBtn = document.getElementById('langBtnEn');
-  if (jpBtn) { jpBtn.classList.toggle('active-jp', lang === 'ja'); }
-  if (enBtn) { enBtn.classList.toggle('active-en', lang === 'en'); }
-  // 検索プレースホルダー更新
-  const inp = document.getElementById('searchInput');
-  if (inp) {
-    inp.placeholder = _currentLang === 'ja'
-      ? inp.dataset.phJa
-      : inp.dataset.phEn;
-  }
-  // EN切替時に全動画のタイトルを先読み翻訳（非同期）
-  if (_currentLang === 'en' && typeof allVideos !== 'undefined') {
-    allVideos.forEach(v => {
-      if (!_translCache[v.id] && !videoMeta[v.uuid]?.display_name_en) {
-        if (!_translCache['_pending_' + v.id]) {
-          _translCache['_pending_' + v.id] = true;
-          translateTitle(v);
-        }
-      }
-    });
-  }
-  // 並べ替えバー・グリッド再描画
-  if (typeof renderSortBar === 'function') renderSortBar();
-  if (typeof renderGrid === 'function') renderGrid();
-  if (typeof renderSidebar === 'function') renderSidebar();
-}
-// 後方互換用（内部でsetLangを呼ぶラッパー）
-function toggleLang() { setLang(_currentLang === 'ja' ? 'en' : 'ja'); }
-
-// =========================================================
-// リリースノート
-// =========================================================
-const RELEASE_NOTES = [
-  { ver:'v1.2.4f', date:'2026-04-05', type:'player',
-    ja:['再生回数カウントをローカル先更新に修正（Firestore失敗時も表示）'],
-    en:['Fixed play count to update locally first (shows even if Firestore fails)'] },
-  { ver:'v1.2.4', date:'2026-04-05', type:'player',
-    ja:['各動画の再生回数を表示（👁 N形式）','再生回数ソート追加（Firestore記録）'],
-    en:['Play count display per video (👁 N format)','Play count sort added (Firestore tracked)'] },
-  { ver:'v1.2.3', date:'2026-04-05', type:'player',
-    ja:['ヘッダ左肩にhihahoブランドロゴを追加'],
-    en:['hihaho brand logo added to header left shoulder'] },
-  { ver:'v1.2.2', date:'2026-04-05', type:'player',
-    ja:['サムネイルフィルタ[🖼あり/🚫なし/両方]ボタン追加','ソートに「🖼 サムネあり先」オプション追加'],
-    en:['Thumbnail filter [With/Without/Both] buttons added','Sort option "🖼 Thumb First" added'] },
-  { ver:'v1.2.1', date:'2026-04-05', type:'player',
-    ja:['JP/EN言語切替を[JP|EN]の2ボタン形式に変更（JP=赤・EN=青）'],
-    en:['Language toggle redesigned as [JP|EN] dual buttons (JP=red, EN=blue)'] },
-  { ver:'v1.2.0', date:'2026-04-04', type:'both',
-    ja:['バイリンガルUI（JP/EN切替）追加','MyMemory APIによる動画タイトル英語自動翻訳'],
-    en:['Bilingual UI (JP/EN toggle) added','Auto English translation via MyMemory API'] },
-  { ver:'v1.1.0', date:'2026-04-03', type:'player',
-    ja:['フォルダ別チャンネルタブ','キューサイドバー追加','ソートバー追加'],
-    en:['Folder-based channel tabs','Queue sidebar added','Sort bar added'] },
-  { ver:'v1.0.0', date:'2026-04-01', type:'both',
-    ja:['初回リリース: YouTubeライクL字UIプレイヤー','hihaho動画一覧・サムネイル対応'],
-    en:['Initial release: YouTube-like L-shaped UI player','Video list & thumbnail support'] },
-];
-const RN_TYPE_LABEL = { player:'PLAYER', admin:'ADMIN', both:'BOTH' };
-const RN_TYPE_CLS   = { player:'rn-type-player', admin:'rn-type-admin', both:'rn-type-both' };
-
-function showReleaseNotes(filterInit) {
-  const modal = document.getElementById('rnModal');
-  const body  = document.getElementById('rnBody');
-  if (!modal || !body) return;
-  modal._filter = filterInit || 'all';
-  _renderRnBody(modal._filter);
-  modal.style.display = 'flex';
-}
-function _renderRnBody(filter) {
-  const body = document.getElementById('rnBody');
-  const notes = RELEASE_NOTES.filter(r =>
-    filter === 'all' ? true :
-    filter === 'player' ? (r.type === 'player' || r.type === 'both') :
-    filter === 'admin'  ? (r.type === 'admin'  || r.type === 'both') : true
-  );
-  body.innerHTML = notes.map(r => {
-    const items = _currentLang === 'en' ? r.en : r.ja;
-    return `<div class="rn-entry">
-      <div class="rn-ver">
-        <span class="rn-ver-num">${r.ver}</span>
-        <span class="rn-type-badge ${RN_TYPE_CLS[r.type]}">${RN_TYPE_LABEL[r.type]}</span>
-        <span class="rn-ver-date">${r.date}</span>
-      </div>
-      <ul class="rn-changes">${items.map(c=>`<li>${c}</li>`).join('')}</ul>
-    </div>`;
-  }).join('');
-}
-function hideReleaseNotes() {
-  const m = document.getElementById('rnModal');
-  if (m) m.style.display = 'none';
-}
-
 init();
 </script>
-<div id="rnModal" class="rn-modal" style="display:none" onclick="if(event.target===this)hideReleaseNotes()">
-  <div class="rn-card">
-    <div class="rn-header">
-      <span class="rn-title">📋 リリースノート</span>
-      <button class="rn-close" onclick="hideReleaseNotes()">✕</button>
-    </div>
-    <div class="rn-body" id="rnBody"></div>
-  </div>
-</div>
 </body>
 </html>
