@@ -894,8 +894,14 @@ function renderGrid() {
 function play(id) {
   const vid = allVideos.find(v => v.id === id);
   if (!vid) return;
-  // 再生回数を Firestore に記録（非同期・失敗しても継続）
-  try { firebase.firestore().collection('playStats').doc(vid.uuid).set({count:firebase.firestore.FieldValue.increment(1)},{merge:true}).then(()=>{window._playStats[vid.uuid]=(window._playStats[vid.uuid]||0)+1;document.querySelectorAll('.play-ct-'+vid.uuid).forEach(el=>el.textContent='👁 '+window._playStats[vid.uuid]);}); } catch(e){}
+  // 再生回数をローカルに先更新（即座にDOMへ反映）
+  window._playStats[vid.uuid] = (window._playStats[vid.uuid]||0) + 1;
+  document.querySelectorAll('.play-ct-' + vid.uuid).forEach(el => {
+    el.textContent = '👁 ' + window._playStats[vid.uuid];
+    el.style.display = '';
+  });
+  // Firestoreへの保存（ルール許可時のみ記録・失敗はサイレント）
+  try { firebase.firestore().collection('playStats').doc(vid.uuid).set({count:firebase.firestore.FieldValue.increment(1)},{merge:true}).catch(()=>{}); } catch(e){}
   activeVidId = id;
   log(`再生: ${vid.display_name} (uuid: ${vid.uuid})`);
 
@@ -1128,6 +1134,9 @@ function toggleLang() { setLang(_currentLang === 'ja' ? 'en' : 'ja'); }
 // リリースノート
 // =========================================================
 const RELEASE_NOTES = [
+  { ver:'v1.2.4f', date:'2026-04-05', type:'player',
+    ja:['再生回数カウントをローカル先更新に修正（Firestore失敗時も表示）'],
+    en:['Fixed play count to update locally first (shows even if Firestore fails)'] },
   { ver:'v1.2.4', date:'2026-04-05', type:'player',
     ja:['各動画の再生回数を表示（👁 N形式）','再生回数ソート追加（Firestore記録）'],
     en:['Play count display per video (👁 N format)','Play count sort added (Firestore tracked)'] },
