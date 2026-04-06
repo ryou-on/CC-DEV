@@ -189,6 +189,12 @@ main{margin-left:var(--sw);margin-top:var(--hh);padding:24px;}
     <div class="card" id="videoSel" style="display:none">
       <div class="ct">③ 動画を選択</div>
       <div id="folderTabs" class="tabs"></div>
+      <div id="vThumbBar" style="display:none;gap:8px;align-items:center;padding:5px 0;flex-wrap:wrap;font-size:12px">
+        <span style="color:#6b7280;font-weight:600">サムネ絞込:</span>
+        <label style="display:flex;align-items:center;gap:3px;cursor:pointer"><input type="checkbox" id="vfWith" checked onchange="renderVList()"> サムネあり</label>
+        <label style="display:flex;align-items:center;gap:3px;cursor:pointer"><input type="checkbox" id="vfNone" checked onchange="renderVList()"> サムネなし</label>
+        <label style="display:flex;align-items:center;gap:3px;cursor:pointer;margin-left:4px"><input type="checkbox" id="vfSortFirst" onchange="renderVList()"> サムネありを先頭に</label>
+      </div>
       <div id="selectBar" class="sb" style="display:none">
         <span id="selectCount" style="font-weight:700">0件選択中</span>
         <button class="btn bsm" style="background:rgba(255,255,255,.2);color:#fff;border:none;margin-left:auto" onclick="clearSel()">クリア</button>
@@ -280,7 +286,7 @@ main{margin-left:var(--sw);margin-top:var(--hh);padding:24px;}
 
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-import { getFirestore, collection, doc, setDoc, getDocs, deleteDoc, serverTimestamp }
+import { getFirestore, collection, doc, setDoc, getDocs, deleteDoc, getDoc, updateDoc, serverTimestamp }
   from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 import { getStorage, ref, uploadBytes, getDownloadURL }
   from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js';
@@ -303,6 +309,7 @@ const TEXT   = 'jpg';
 
 let folders=[], videos=[], selF=new Set(), selV=new Set(), tabVideos=[];
 let mode=null, tabF=null, tabT=null, vmeta={}, clog=[];
+let editId=null; // 編集中プレイリストID
 let thumbFolderSearch='',thumbVideos=[],thumbSortKey='new',thumbSearchQ='',thumbThumbFilter='all'; // フォルダ検索クエリ
 
 const ol=console.log.bind(console);
@@ -310,7 +317,7 @@ console.log=(...a)=>{ol(...a);clog.push(a.join(' '));};
 const log=m=>console.log('[admin] '+m);
 
 Object.assign(window,{
-  showPage,setMode,toggleF,toggleV,switchFTab,
+  showPage,openEdit,setMode,toggleF,toggleV,switchFTab,
   clearSel,publishPlaylist,resetCreate,closeMo,copyPubUrl,openPubUrl,
   deletePlaylist,copyUrl,previewThumb,saveThumbs,clearThumb,
   switchThumbFolder, filterThumbFolders, uploadThumb,
@@ -378,6 +385,7 @@ async function renderPlaylists(){
           <div class="pa">
             <button class="btn bs bsm" onclick="window.open('${url}')">▶ 開く</button>
             <button class="btn bs bsm" onclick="copyUrl('${url}')">📋 コピー</button>
+            <button class="btn bs bsm" onclick="openEdit('${p.id}')">✏ 編集</button>
             <button class="btn bd bsm" onclick="deletePlaylist('${p.id}')">🗑 削除</button>
           </div>
         </div>
@@ -429,7 +437,7 @@ function renderVTabs(){
   renderVList();
 }
 
-async function loadTabVideos(fid){ const el=document.getElementById('videoList'); el.innerHTML='<div class="load"><div class="spin"></div>読み込み中...</div>'; try{ const res=await api('/v2/video?video_container_id='+fid); tabVideos=res.data||[]; renderVList(); }catch(e){ el.innerHTML='<div class="emp"><div class="ei">⚠️</div><p>'+e.message+'</p></div>'; } } function switchFTab(id){
+async function loadTabVideos(fid){ const el=document.getElementById('videoList'); el.innerHTML='<div class="load"><div class="spin"></div>読み込み中...</div>'; try{ const res=await api('/v2/video?video_container_id='+fid); tabVideos=res.data||[]; document.getElementById('vThumbBar').style.display='flex'; renderVList(); }catch(e){ el.innerHTML='<div class="emp"><div class="ei">⚠️</div><p>'+e.message+'</p></div>'; } } function switchFTab(id){
   tabF=id;
   document.querySelectorAll('#folderTabs .tab').forEach(t=>t.classList.remove('active'));
   event.currentTarget.classList.add('active');
@@ -437,7 +445,15 @@ async function loadTabVideos(fid){ const el=document.getElementById('videoList')
 }
 
 function renderVList(){
-  const vs=tabVideos;
+  let vs=[...tabVideos];
+  // サムネイルフィルター
+  const vfWith=document.getElementById('vfWith');
+  const vfNone=document.getElementById('vfNone');
+  const vfSort=document.getElementById('vfSortFirst');
+  const showWith=!vfWith||vfWith.checked;
+  const showNone=!vfNone||vfNone.checked;
+  if(!showWith||!showNone)vs=vs.filter(v=>{const hn=!!(vmeta[v.uuid]&&vmeta[v.uuid].thumbnailUrl);return showWith?hn:!hn;});
+  if(vfSort&&vfSort.checked)vs.sort((a,b)=>{const at=!!(vmeta[a.uuid]&&vmeta[a.uuid].thumbnailUrl);const bt=!!(vmeta[b.uuid]&&vmeta[b.uuid].thumbnailUrl);return (bt?1:0)-(at?1:0);});
   const sb=document.getElementById('selectBar');
   sb.style.display=selV.size>0?'flex':'none';
   document.getElementById('selectCount').textContent=selV.size+'件選択中';
@@ -474,17 +490,24 @@ async function publishPlaylist(){
   const btn=document.getElementById('publishBtn');
   btn.disabled=true;btn.textContent='発行中...';
   try{
-    const id=Math.random().toString(36).slice(2,10)+Date.now().toString(36);
-    const data={name,createdAt:serverTimestamp(),type:mode,playerName:document.getElementById('playerNameInput')?.value.trim()||'',logoUrl:document.getElementById('logoUrlInput')?.value.trim()||''};
-    if(mode==='folder'){
-      data.folderIds=[...selF];
-      data.videoIds=[];
+    if(editId){
+      // 編集モード
+      const upd={name,type:mode,playerName:document.getElementById('playerNameInput')?.value.trim()||'',logoUrl:document.getElementById('logoUrlInput')?.value.trim()||''};
+      if(mode==='folder'){upd.folderIds=[...selF];upd.videoIds=[];}else{upd.videoIds=[...selV];upd.folderIds=[];}
+      await updateDoc(doc(db,'playlists',editId),upd);
+      toast('更新しました！');
+      resetCreate();
+      await renderPlaylists();
+      showPage('playlists',document.querySelector('.nav-i'));
     }else{
-      data.videoIds=[...selV];data.folderIds=[];
+      // 新規作成
+      const id=Math.random().toString(36).slice(2,10)+Date.now().toString(36);
+      const data={name,createdAt:serverTimestamp(),type:mode,playerName:document.getElementById('playerNameInput')?.value.trim()||'',logoUrl:document.getElementById('logoUrlInput')?.value.trim()||''};
+      if(mode==='folder'){data.folderIds=[...selF];data.videoIds=[];}else{data.videoIds=[...selV];data.folderIds=[];}
+      await setDoc(doc(db,'playlists',id),data);
+      document.getElementById('pubUrlText').textContent=PLAYER+'?id='+id;
+      document.getElementById('pubModal').classList.add('open');
     }
-    await setDoc(doc(db,'playlists',id),data);
-    document.getElementById('pubUrlText').textContent=PLAYER+'?id='+id;
-    document.getElementById('pubModal').classList.add('open');
     resetCreate();
     log('発行: '+id);
   }catch(e){toast('発行エラー: '+e.message,'err');}
@@ -496,6 +519,8 @@ function copyPubUrl(){navigator.clipboard.writeText(document.getElementById('pub
 function openPubUrl(){window.open(document.getElementById('pubUrlText').textContent);closeMo();}
 
 function resetCreate(){
+  editId=null;
+  const pb=document.getElementById('publishBtn');if(pb)pb.textContent='🔗 発行データを発行';
   document.getElementById('playlistName').value='';
   const pni=document.getElementById('playerNameInput'); if(pni) pni.value='';
   const lui=document.getElementById('logoUrlInput'); if(lui) lui.value='';
@@ -513,6 +538,37 @@ async function deletePlaylist(id){
   if(!confirm('このプレイリストを削除しますか？\n公開URLが無効になります。')) return;
   try{await deleteDoc(doc(db,'playlists',id));toast('削除しました','suc');renderPlaylists();}
   catch(e){toast('削除エラー: '+e.message,'err');}
+}
+
+async function openEdit(id){
+  try{
+    const snap=await getDoc(doc(db,'playlists',id));
+    if(!snap.exists()){toast('データが見つかりません','err');return;}
+    const d=snap.data();
+    editId=id;
+    // フォーム入力
+    document.getElementById('playlistName').value=d.name||'';
+    const pni=document.getElementById('playerNameInput');if(pni)pni.value=d.playerName||'';
+    const lui=document.getElementById('logoUrlInput');if(lui)lui.value=d.logoUrl||'';
+    // 発行ボタンのテキスト変更
+    const pb=document.getElementById('publishBtn');if(pb)pb.textContent='✅ 更新する';
+    // モード設定
+    if(d.type==='folder'){
+      setMode('folder');
+      selF=new Set(d.folderIds||[]);
+      await loadFolders();
+      // 既存選択を反映
+      document.querySelectorAll('#folderGrid .fc').forEach(el=>{
+        const fid=parseInt(el.dataset.id);
+        if(selF.has(fid))el.classList.add('sel');
+      });
+    }else{
+      setMode('video');
+      selV=new Set(d.videoIds||[]);
+      await loadFolders(); // フォルダタブ読み込み
+    }
+    showPage('create',document.querySelector('.nav-i:nth-child(2)'));
+  }catch(e){toast('読み込みエラー: '+e.message,'err');}
 }
 
 function copyUrl(url){navigator.clipboard.writeText(url).then(()=>toast('URLをコピーしました','suc'));}
