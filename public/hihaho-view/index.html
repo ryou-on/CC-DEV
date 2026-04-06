@@ -647,7 +647,7 @@ header {
     <div class="logo-bar"></div>
     <img src="https://hihaho.com/favicon.ico" class="hihaho-logo-img" onerror="this.style.display='none'" alt="hihaho">
     hihaho Player
-    <span class="ver-badge" onclick="showReleaseNotes()" title="リリースノート">v1.3.1</span>
+    <span class="ver-badge" onclick="showReleaseNotes()" title="リリースノート">v1.3.2</span>
   </div>
   <div class="search-wrap">
     <span class="search-icon">🔍</span>
@@ -903,12 +903,21 @@ function thumbHtml(uuid, cls) {
 // =========================================================
 // API呼び出し（Cloudflare Worker経由）
 // =========================================================
-async function apiFetch(path) {
-  const res = await fetch(`${WORKER_URL}${path}`, {
-    headers: { 'Accept': 'application/json' }
-  });
-  if (!res.ok) throw new Error(`API error: ${res.status} ${path}`);
-  return res.json();
+async function apiFetch(path, retries = 3) {
+  for (let i = 0; i <= retries; i++) {
+    const res = await fetch(`${WORKER_URL}${path}`, {
+      headers: { 'Accept': 'application/json' }
+    });
+    // 429（レート制限）は指数バックオフでリトライ
+    if (res.status === 429 && i < retries) {
+      const wait = 1000 * Math.pow(2, i); // 1s, 2s, 4s
+      log(`429 rate limit: ${path} → ${wait}ms後にリトライ (${i+1}/${retries})`);
+      await new Promise(r => setTimeout(r, wait));
+      continue;
+    }
+    if (!res.ok) throw new Error(`API error: ${res.status} ${path}`);
+    return res.json();
+  }
 }
 
 // =========================================================
@@ -1015,10 +1024,13 @@ async function init() {
       return;
     }
 
-    // 各フォルダの動画を並列取得
-    const videoResults = await Promise.all(
-      allFolders.map(f => apiFetch(`/v2/video?video_container_id=${f.id}`))
-    );
+    // 各フォルダの動画を順次取得（並列だと429になるため100ms間隔）
+    const videoResults = [];
+    for (const f of allFolders) {
+      const r = await apiFetch(`/v2/video?video_container_id=${f.id}`);
+      videoResults.push(r);
+      if (allFolders.length > 1) await new Promise(r => setTimeout(r, 100));
+    }
     allVideos = videoResults.flatMap(r => r.data || []);
     log(`フォルダ: ${allFolders.length}件 / 動画: ${allVideos.length}件`);
 
@@ -1318,7 +1330,7 @@ function toggleLang() { setLang(_currentLang==='ja'?'en':'ja'); }
 // リリースノート
 // =========================================================
 const RELEASE_NOTES = [
-  { ver:'v1.3.1', date:'2026-04-06', type:'player',
+  { ver:'v1.3.2', date:'2026-04-06', type:'player',
     ja:['モバイルUI対応（スマホ・タブレット最適化）',
         'ボトムナビゲーションバー追加（チャンネル / ラインナップ / JP⇔EN）',
         'チャンネル選択をボトムシートで操作可能に',
