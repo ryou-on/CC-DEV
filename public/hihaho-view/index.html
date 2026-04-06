@@ -1024,6 +1024,7 @@ const FIREBASE_CONFIG = {
 // フォルダID（?id= URLパラメータからFirestore経由で取得。なければフォールバック）
 const FALLBACK_FOLDER_IDS = [21078, 12452, 21334];
 let SHOW_FOLDER_IDS = [];
+let SHOW_VIDEO_IDS = [];
 
 // ★ サムネイル設定
 const THUMB_BASE = 'https://cc-dev-ps7.web.app/hihaho-player/thumbs';
@@ -1224,6 +1225,7 @@ async function init() {
       }
       const pd = playlistDoc.data();
       SHOW_FOLDER_IDS = pd.folderIds || [];
+      SHOW_VIDEO_IDS = pd.videoIds || [];
       document.title = `hihaho Player – ${pd.name}`;
       log(`プレイリスト: ${pd.name} / フォルダ${SHOW_FOLDER_IDS.length}件`);
     } else {
@@ -1232,8 +1234,33 @@ async function init() {
       log(`フォールバックフォルダ: ${SHOW_FOLDER_IDS.join(',')}`);
     }
 
-    if (SHOW_FOLDER_IDS.length === 0) {
+    if (SHOW_FOLDER_IDS.length === 0 && SHOW_VIDEO_IDS.length === 0) {
       showError(_currentLang==='ja' ? 'フォルダが設定されていません' : 'No folders configured');
+      return;
+    }
+
+    // 個別動画モード（管理画面「動画を個別に選ぶ」で作成したプレイリスト）
+    if (SHOW_FOLDER_IDS.length === 0 && SHOW_VIDEO_IDS.length > 0) {
+      try {
+        const metaSnap2 = await db.collection('video_meta').get();
+        metaSnap2.forEach(doc => { videoMeta[doc.id] = doc.data(); });
+        log('video_meta: ' + metaSnap2.size + '件取得');
+      } catch (e) { /* 無視 */ }
+      const vRes = await Promise.all(
+        SHOW_VIDEO_IDS.map(id => apiFetch('/v2/video/' + id).catch(() => null))
+      );
+      allVideos = vRes
+        .filter(r => r && r.data)
+        .map(r => ({ ...r.data, video_container_id: 0 }));
+      allVideos.sort((a, b) => SHOW_VIDEO_IDS.indexOf(a.id) - SHOW_VIDEO_IDS.indexOf(b.id));
+      allFolders = [{ id: 0, name: document.title.replace(/^hihaho Player – /, '') }];
+      activeChId = 0;
+      log('個別動画: ' + allVideos.length + '件');
+      renderTabs();
+      renderSortBar();
+      renderSidebar();
+      renderGrid();
+      log('初期化完了（個別動画モード）');
       return;
     }
 
