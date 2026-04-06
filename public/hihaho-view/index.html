@@ -1,198 +1,9 @@
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>hihaho Player</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-<!-- Firebase SDK（プレイリスト・サムネイル取得用） -->
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
-<style>
-:root {
-  --bg: #f4f5f7;
-  --white: #ffffff;
-  --border: #e5e7eb;
-  --border-light: #f0f1f4;
-  --accent: #0066ff;
-  --accent-light: #e8f0ff;
-  --text: #111827;
-  --text-sub: #6b7280;
-  --text-muted: #9ca3af;
-  --header-h: 56px;
-  --sidebar-w: 296px;
-  --font: 'Noto Sans JP', sans-serif;
-  --mono: 'DM Mono', monospace;
-}
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body {
-  font-family: var(--font);
-  background: var(--bg);
-  color: var(--text);
-  height: 100vh;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-header {
-  height: var(--header-h);
-  background: var(--white);
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  padding: 0 16px;
-  gap: 12px;
-  flex-shrink: 0;
-}
-.logo {
-  font-family: var(--mono);
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text);
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  white-space: nowrap;
-}
-.logo-bar { width: 4px; height: 18px; border-radius: 2px; background: var(--accent); }
-.hihaho-logo-img { height:20px; margin-right:5px; vertical-align:middle; border-radius:2px; }
-.search-wrap { flex: 1; max-width: 380px; position: relative; }
-.search-wrap input {
-  width: 100%;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 7px 12px 7px 32px;
-  color: var(--text);
-  font-family: var(--font);
-  font-size: 13px;
-  outline: none;
-  transition: border-color 0.2s, box-shadow 0.2s;
-}
-.search-wrap input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(0,102,255,0.08);
-  background: var(--white);
-}
-.search-wrap input::placeholder { color: var(--text-muted); }
-.search-icon {
-  position: absolute; left: 10px; top: 50%;
-  transform: translateY(-50%);
-  color: var(--text-muted); font-size: 13px; pointer-events: none;
-}
-.ch-tabs {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  margin-left: auto;
-  overflow-x: auto;
-  scrollbar-width: none;
-  max-width: 600px;
-}
-.ch-tabs::-webkit-scrollbar { display: none; }
-.ch-tab {
-  display: flex; align-items: center; gap: 5px;
-  padding: 6px 11px;
-  border-radius: 20px;
-  border: 1px solid transparent;
-  background: transparent;
-  cursor: pointer;
-  font-family: var(--font);
-  font-size: 12px;
-  color: var(--text-sub);
-  transition: all 0.15s;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.ch-tab:hover { background: var(--bg); color: var(--text); }
-.ch-tab.active {
-  background: var(--accent-light);
-  color: var(--accent);
-  border-color: rgba(0,102,255,0.18);
-  font-weight: 600;
-}
-.ch-tab-skeleton {
-  width: 80px; height: 32px;
-  border-radius: 20px;
-  background: linear-gradient(90deg, #f0f1f4 25%, #e5e7eb 50%, #f0f1f4 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.2s infinite;
-  flex-shrink: 0;
-}
-@keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
-}
-.debug-btn {
-  background: none; border: 1px solid var(--border); border-radius: 6px;
-  color: var(--text-muted); font-size: 11px; padding: 5px 9px;
-  cursor: pointer; font-family: var(--mono); transition: all 0.2s; flex-shrink: 0;
-}
-.debug-btn:hover { color: var(--accent); border-color: var(--accent); }
-.layout { flex: 1; display: flex; overflow: hidden; }
-.main-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
-.player-wrap {
-  position: relative;
-  width: 100%;
-  background: #111;
-  aspect-ratio: 16 / 9;
-  max-height: 52vh;
-  flex-shrink: 0;
-}
-.player-wrap iframe {
-  position: absolute; inset: 0;
-  width: 100%; height: 100%; border: none;
-}
-.player-placeholder {
-  position: absolute; inset: 0;
-  display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
-  gap: 12px; color: #555;
-}
-.player-placeholder-icon { font-size: 40px; opacity: 0.4; }
-.player-placeholder p { font-size: 13px; }
-.player-spinner {
-  position: absolute; inset: 0;
-  display: none; align-items: center; justify-content: center;
-  background: #111;
-}
-.player-spinner.show { display: flex; }
-@keyframes spin { to { transform: rotate(360deg); } }
-.spinner-ring {
-  width: 32px; height: 32px;
-  border: 3px solid rgba(255,255,255,0.1);
-  border-top-color: #fff;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-.info-bar {
-  background: var(--white);
-  border-bottom: 1px solid var(--border);
-  padding: 11px 16px 10px;
-  flex-shrink: 0;
-}
-.info-title { font-size: 14px; font-weight: 600; line-height: 1.4; color: var(--text); }
-.info-meta {
-  display: flex; align-items: center; gap: 8px;
-  margin-top: 4px; font-size: 12px; color: var(--text-sub);
-}
-.info-meta .dot { color: var(--border); }
-.badge {
-  display: inline-flex; align-items: center;
-  background: var(--accent-light); color: var(--accent);
-  border-radius: 4px; font-size: 10px; font-weight: 700;
-  letter-spacing: 0.4px; padding: 2px 6px;
-  font-family: var(--mono);
-}
-.badge-draft { background: #fef3c7; color: #92400e; }
-.badge-published { background: #d1fae5; color: #065f46; }
-/* 再生回数バッジ（サムネイル左下オーバーレイ・YouTube風） */
+ ãã¤ã«å·¦ä¸ãªã¼ãã¼ã¬ã¤ã»YouTubeé¢¨ï¼ */
 .vrow-count-ov {
   position: absolute;
   bottom: 4px;
   left: 4px;
-  background: rgba(185, 28, 28, 0.88); /* 赤 */
+  background: rgba(185, 28, 28, 0.88); /* èµ¤ */
   color: #fff;
   font-family: var(--mono);
   font-size: 11px;
@@ -203,13 +14,13 @@ header {
   z-index: 3;
   pointer-events: none;
   white-space: nowrap;
-  display: block; /* 常に表示（取得前はローディング） */
+  display: block; /* å¸¸ã«è¡¨ç¤ºï¼åå¾åã¯ã­ã¼ãã£ã³ã°ï¼ */
   min-width: 24px;
   text-align: center;
 }
-/* 取得完了済みバッジ */
+/* åå¾å®äºæ¸ã¿ããã¸ */
 .vrow-count-ov.loaded { background: rgba(185, 28, 28, 0.88); }
-/* 取得中バッジ（薄いグレー） */
+/* åå¾ä¸­ããã¸ï¼èãã°ã¬ã¼ï¼ */
 .vrow-count-ov:not(.loaded) {
   background: rgba(0,0,0,0.35);
   letter-spacing: 0.1em;
@@ -227,7 +38,7 @@ header {
   color: var(--text-muted); text-transform: uppercase;
   margin-bottom: 10px;
 }
-/* ソートバー */
+/* ã½ã¼ããã¼ */
 .sort-bar {
   display: flex; align-items: center;
   gap: 6px; flex-wrap: wrap; margin-bottom: 12px;
@@ -244,7 +55,171 @@ header {
   background: var(--accent-light); color: var(--accent);
   border-color: rgba(0,102,255,0.3); font-weight: 600;
 }
-/* サムネイルフィルタバー */
+/* ãµã ãã¤ã«ãã£ã«ã¿ãã¼ */
+.filter-bar {
+  display: flex; align-items: center;
+  gap: 5px; margin-bottom: 10px;
+}
+.filter-label {
+  font-size: 10px; font-weight: 600; color: var(--text-muted);
+  letter-spacing: 0.05em; white-space: nowrap; margin-right: 2px;
+}
+.filter-btn {
+  display: inline-flex; align-items: center;
+  padding: 3px 9px; border-radius: 12px;
+  border: 1px solid var(--border); background: var(--white);
+  color: var(--text-sub); font-family: var(--font); font-size: 11px;
+  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+}
+.filter-btn:hover { border-color: var(--accent); color: var(--accent); }
+.filter-btn.active {
+  background: #f0fdf4; color: #166534;
+  border-color: #86efac; font-weight: 600;
+}
+.filter-btn.active-none {
+  background: #fef2f2; color: #991b1b;
+  border-color: #fca5a5; font-weight: 600;
+}
+.vrow {
+  display: flex; gap: 12px;
+  background: var(--white);
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  padding: 10px;
+  cursor: pointer;
+  margin-bottom: 8px;
+  transition: box-shadow 0.15s, border-color 0.15s;
+  align-items: flex-start;
+}
+.vrow:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.07); border-color: var(--border); }
+.vrow.playing { border-color: var(--accent); background: var(--accent-light); }
+.vrow-skeleton {
+  display: flex; gap: 12px;
+  background: var(--white);
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  padding: 10px;
+  margin-bottom: 8px;
+}
+.skel-thumb {
+  width: 128px; min-width: 128px;
+  aspect-ratio: 16/9;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #f0f1f4 25%, #e5e7eb 50%, #f0f1f4 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s infinite;
+}
+.skel-info { flex: 1; display: flex; flex-direction: column; gap: 8px; padding-top: 4px; }
+.skel-line {
+  height: 13px; border-radius: 4px;
+  background: linear-gradient(90deg, #f0f1f4 25%, #e5e7eb 50%, #f0f1f4 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s infinite;
+}
+.vrow-thumb {
+  position: relative; flex-shrink: 0;
+  width: 128px; aspect-ratio: 16/9;
+  border-radius: 6px; background: #dde0e6; overflow: hidden;
+}
+.vrow-thumb img {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%; object-fit: cover;
+}
+.vrow-thumb-fb {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; color: #b0b4bc;
+}
+.vrow-play-ov {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.28); opacity: 0;
+  transition: opacity 0.15s; border-radius: 6px; z-index: 2;
+}
+.vrow:hover .vrow-play-ov { opacity: 1; }
+.play-circle {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: rgba(255,255,255,0.92);
+  display: flex; align-items: center; justify-content: center;
+}
+.play-circle svg { margin-left: 2px; }
+.vrow-info { flex: 1; min-width: 0; }
+.vrow-title {
+  font-size: 13px; font-weight: 500; line-height: 1.45; color: var(--text);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; margin-bottom: 5px;
+}
+.vrow.playing .vrow-title { color: var(--accent); }
+.vrow-meta { font-size: 11px; color: var(--text-muted); display: flex; flex-direction: column; gap: 3px; }
+.vrow-badges { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-top: 2px; }
+.sidebar {
+  width: var(--sidebar-w); flex-shrink: 0;
+  background: var(--white); border-left: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.ch-info-panel { padding: 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.ch-info-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.ch-avatar {
+  width: 40px; height: 40px; border-radius: 10px;
+  background: var(--accent-light);
+  display: flex; align-items: center; justify-co ãã¤ã«å·¦ä¸ãªã¼ãã¼ã¬ã¤ã»YouTubeé¢¨ï¼ */
+.vrow-count-ov {
+  position: absolute;
+  bottom: 4px;
+  left: 4px;
+  background: rgba(185, 28, 28, 0.88); /* èµ¤ */
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 3px;
+  z-index: 3;
+  pointer-events: none;
+  white-space: nowrap;
+  display: block; /* å¸¸ã«è¡¨ç¤ºï¼åå¾åã¯ã­ã¼ãã£ã³ã°ï¼ */
+  min-width: 24px;
+  text-align: center;
+}
+/* åå¾å®äºæ¸ã¿ããã¸ */
+.vrow-count-ov.loaded { background: rgba(185, 28, 28, 0.88); }
+/* åå¾ä¸­ããã¸ï¼èãã°ã¬ã¼ï¼ */
+.vrow-count-ov:not(.loaded) {
+  background: rgba(0,0,0,0.35);
+  letter-spacing: 0.1em;
+  animation: pulse 1.2s infinite;
+}
+.video-list {
+  flex: 1; overflow-y: auto;
+  padding: 14px 16px 20px;
+  background: var(--bg);
+}
+.video-list::-webkit-scrollbar { width: 5px; }
+.video-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+.list-label {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.8px;
+  color: var(--text-muted); text-transform: uppercase;
+  margin-bottom: 10px;
+}
+/* ã½ã¼ããã¼ */
+.sort-bar {
+  display: flex; align-items: center;
+  gap: 6px; flex-wrap: wrap; margin-bottom: 12px;
+}
+.sort-btn {
+  display: inline-flex; align-items: center;
+  padding: 4px 10px; border-radius: 16px;
+  border: 1px solid var(--border); background: var(--white);
+  color: var(--text-sub); font-family: var(--font); font-size: 11px;
+  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+}
+.sort-btn:hover { border-color: var(--accent); color: var(--accent); }
+.sort-btn.active {
+  background: var(--accent-light); color: var(--accent);
+  border-color: rgba(0,102,255,0.3); font-weight: 600;
+}
+/* ãµã ãã¤ã«ãã£ã«ã¿ãã¼ */
 .filter-bar {
   display: flex; align-items: center;
   gap: 5px; margin-bottom: 10px;
@@ -415,11 +390,11 @@ header {
 .vrow  { animation: fadeUp 0.22s ease both; }
 .qcard { animation: fadeUp 0.22s ease both; }
 
-/* 言語切替 */
+/* è¨ èªåæ¿ */
 [lang="en"] .ja { display: none !important; }
 [lang="ja"] .en { display: none !important; }
 
-/* バージョンバッジ */
+/* ãã¼ã¸ã§ã³ããã¸ */
 .ver-badge {
   font-size: 10px; font-weight: 600; color: var(--text-muted);
   background: var(--bg); border: 1px solid var(--border);
@@ -430,7 +405,7 @@ header {
 }
 .ver-badge:hover { color: var(--accent) !important; }
 
-/* JP/ENトグル */
+/* JP/ENãã°ã« */
 .lang-toggle {
   display: flex; align-items: center; margin-right: 6px;
   border: 1px solid var(--border); border-radius: 4px; overflow: hidden;
@@ -445,7 +420,7 @@ header {
 .lang-btn.active-en { background: #1565c0; color: #fff; }
 .lang-btn:not(.active-jp):not(.active-en):hover { background: var(--accent); color: #fff; }
 
-/* リリースノートモーダル */
+/* ãªãªã¼ã¹ãã¼ãã¢ã¼ãã« */
 .rn-modal { position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:1000;display:flex;align-items:center;justify-content:center; }
 .rn-card { background:#fff;border-radius:12px;width:90%;max-width:480px;max-height:80vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.2); }
 .rn-header { display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border); }
@@ -467,7 +442,177 @@ header {
 .rn-type-both   { background:#fef3c7;color:#92400e; }
 .rn-changes { list-style:none;padding:0;margin:0; }
 .rn-changes li { font-size:12px;color:var(--text-sub);padding:2px 0 2px 12px;position:relative; }
-.rn-changes li::before { content:"·";position:absolute;left:0;color:var(--accent); }
+.rn-changes li::before { content:"Â·";position:absolute;left:0;color:var(--accent); }
+
+/* =========================================================
+   ã¢ãã¤ã«ã¬ã¤ã¢ã¦ãï¼768pxä»¥ä¸ï¼
+   ========================================================= */
+@media (max-width: 768px) {
+  /* ãããã¼: ã³ã³ãã¯ãã« */
+  :root { --header-h: 48px; }
+  header { padding: 0 10px; gap: 6px; flex-wrap: nowrap; }
+  .logo { font-size: 12px; gap: 5px; }
+  .hihaho-logo-img { height: 16px; }
+  .logo-bar { height: 14px; }
+
+  /* æ¤ç´¢æ¬: ä¼¸ç¸® */
+  .search-wrap { max-width: 100%; min-width: 0; }
+  .search-wrap input { font-size: 13px; padding: 6px 10px 6px 28px; }
+
+  /* ãã£ã³ãã«ã¿ã: ãããã¼ã§ã¯éè¡¨ç¤º â ããã ã·ã¼ãã§è¡¨ç¤º */
+  .ch-tabs { display: none; }
+
+  /* ãããã°ãã¿ã³: éè¡¨ç¤ºï¼ã³ã³ã½ã¼ã«ãã¢ãã¤ã«ã§ã¯ä½¿ããªãï¼ */
+  .debug-btn { display: none; }
+
+  /* è¨èªãã°ã«: å°åå */
+  .lang-toggle { margin-right: 0; }
+  .lang-btn { padding: 3px 7px; font-size: 10px; }
+
+  /* ã¬ã¤ã¢ã¦ã: ç¸¦ç©ã¿ */
+  .layout { flex-direction: column; overflow: visible; }
+
+  /* ãµã¤ããã¼: ããã ã·ã¼ãã«ç§»è¡ */
+  .sidebar { display: none; }
+
+  /* ãã¬ã¤ã¤ã¼: ãã«å¹ */
+  .player-wrap { max-height: none; border-radius: 0; }
+
+  /* info-bar */
+  .info-bar { padding: 8px 12px; }
+  .info-title { font-size: 13px; }
+  .info-meta { font-size: 11px; }
+
+  /* åç»ãªã¹ã */
+  .video-list {
+    flex: 1;
+    padding: 10px 10px 72px; /* ããã ããåã®ä½ç½ */
+    overflow-y: auto;
+  }
+
+  /* ã½ã¼ããã¼: æ¨ªã¹ã¯ã­ã¼ã« */
+  .sort-bar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .sort-bar::-webkit-scrollbar { display: none; }
+  .sort-btn { flex-shrink: 0; padding: 5px 11px; font-size: 11px; }
+
+  /* ãã£ã«ã¿ãã¼: æ¨ªã¹ã¯ã­ã¼ã« */
+  .filter-bar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .filter-bar::-webkit-scrollbar { display: none; }
+  .filter-btn { flex-shrink: 0; }
+
+  /* ãªã¹ãã«ã¼ã: ã¿ããã¿ã¼ã²ããæ¡å¤§ */
+  .vrow { padding: 8px 8px; margin-bottom: 6px; }
+  .vrow-thumb { width: 112px; }
+
+  /* body: ããã ããåãç¢ºä¿ */
+  body { overflow: auto; height: auto; min-height: 100vh; }
+}
+
+/* =========================================================
+   ã¢ãã¤ã«å°ç¨UIé¨å
+   ========================================================= */
+
+/* ããã ããã²ã¼ã·ã§ã³ãã¼ */
+.mobile-nav {
+  display: none; /* ãã¹ã¯ãããã§ã¯éè¡¨ç¤º */
+}
+@media (max-width: 768px) {
+  .mobile-nav {
+    display: flex;
+    position: fixed; bottom: 0; left: 0; right: 0;
+    height: 56px;
+    background: var(--white);
+    border-top: 1px solid var(--border);
+    z-index: 200;
+    justify-content: space-around;
+    align-items: stretch;
+  }
+}
+.mobile-nav-btn {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 3px; flex: 1;
+  background: none; border: none;
+  cursor: pointer; font-family: var(--font);
+  color: var(--text-muted); transition: color 0.15s;
+  padding: 4px 0; font-size: 10px; font-weight: 500;
+  -webkit-tap-highlight-color: transparent;
+}
+.mobile-nav-btn:hover, .mobile-nav-btn.active { color: var(--accent); }
+.mobile-nav-btn .nav-icon { font-size: 20px; line-height: 1; }
+
+/* ããã ã·ã¼ãå±é */
+.bottom-sheet-overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 300;
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+.bottom-sheet-overlay.show { opacity: 1; }
+.bottom-sheet {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  background: var(--white);
+  border-radius: 16px 16px 0 0;
+  max-height: 80vh;
+  transform: translateY(100%);
+  transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  display: flex; flex-direction: column;
+  box-shadow: 0 -4px 24px rgba(0,0,0,0.15);
+}
+.bottom-sheet-overlay.show .bottom-sheet { transform: translateY(0); }
+.bottom-sheet-handle {
+  width: 36px; height: 4px;
+  background: var(--border); border-radius: 2px;
+  margin: 10px auto 4px;
+  flex-shrink: 0;
+}
+.bottom-sheet-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 16px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.bottom-sheet-title { font-size: 13px; font-weight: 700; color: var(--text); }
+.bottom-sheet-close {
+  background: none; border: none; cursor: pointer;
+  font-size: 16px; color: var(--text-muted);
+  padding: 4px 8px; border-radius: 4px;
+  -webkit-tap-highlight-color: transparent;
+}
+.bottom-sheet-body { overflow-y: auto; flex: 1; -webkit-overflow-scrolling: touch; }
+
+/* ãã£ã³ãã«ã·ã¼ãåã®ã¿ã */
+.ch-sheet-tabs {
+  display: flex; flex-direction: column;
+  padding: 8px 0;
+}
+.ch-sheet-tab {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px;
+  cursor: pointer; transition: background 0.12s;
+  font-size: 14px; color: var(--text);
+  border: none; background: none; text-align: left;
+  font-family: var(--font);
+  -webkit-tap-highlight-color: transparent;
+}
+.ch-sheet-tab:hover, .ch-sheet-tab:active { background: var(--bg); }
+.ch-sheet-tab.active { color: var(--accent); background: var(--accent-light); font-weight: 600; }
+.ch-sheet-tab .ch-sheet-icon { font-size: 18px; width: 24px; text-align: center; }
+.ch-sheet-tab .ch-sheet-cnt {
+  margin-left: auto; font-size: 11px;
+  color: var(--text-muted); font-family: var(--mono);
+}
 </style>
 </head>
 <body>
@@ -477,12 +622,12 @@ header {
     <div class="logo-bar"></div>
     <img src="https://hihaho.com/favicon.ico" class="hihaho-logo-img" onerror="this.style.display='none'" alt="hihaho">
     hihaho Player
-    <span class="ver-badge" onclick="showReleaseNotes()" title="リリースノート">v1.2.5</span>
+    <span class="ver-badge" onclick="showReleaseNotes()" title="ãªãªã¼ã¹ãã¼ã">v1.3.0</span>
   </div>
   <div class="search-wrap">
-    <span class="search-icon">🔍</span>
+    <span class="search-icon">ð</span>
     <input type="text" id="searchInput"
-      placeholder="動画を検索…" data-ph-ja="動画を検索…" data-ph-en="Search videos…"
+      placeholder="åç»ãæ¤ç´¢â¦" data-ph-ja="åç»ãæ¤ç´¢â¦" data-ph-en="Search videosâ¦"
       oninput="onSearch(this.value)">
   </div>
   <div class="ch-tabs" id="chTabs">
@@ -490,34 +635,34 @@ header {
     <div class="ch-tab-skeleton"></div>
     <div class="ch-tab-skeleton"></div>
   </div>
-  <!-- JP/EN 2ボタントグル -->
+  <!-- JP/EN 2ãã¿ã³ãã°ã« -->
   <div class="lang-toggle">
     <button class="lang-btn active-jp" id="langBtnJp" onclick="setLang('ja')">JP</button>
     <button class="lang-btn" id="langBtnEn" onclick="setLang('en')">EN</button>
   </div>
-  <button class="debug-btn" onclick="copyConsole()">📋 console</button>
+  <button class="debug-btn" onclick="copyConsole()">ð console</button>
 </header>
 
 <div class="layout">
   <div class="main-area">
     <div class="player-wrap" id="playerWrap">
       <div class="player-placeholder" id="placeholder">
-        <div class="player-placeholder-icon">▶</div>
-        <p><span class="ja">動画を選択して再生</span><span class="en">Select a video to play</span></p>
+        <div class="player-placeholder-icon">â¶</div>
+        <p><span class="ja">åç»ãé¸æãã¦åç</span><span class="en">Select a video to play</span></p>
       </div>
       <div class="player-spinner" id="spinner"><div class="spinner-ring"></div></div>
     </div>
     <div class="info-bar">
       <div class="info-title" id="nowTitle">
-        <span class="ja">動画を選択してください</span><span class="en">Select a video</span>
+        <span class="ja">åç»ãé¸æãã¦ãã ãã</span><span class="en">Select a video</span>
       </div>
-      <div class="info-meta" id="nowMeta"><span>—</span></div>
+      <div class="info-meta" id="nowMeta"><span>â</span></div>
     </div>
     <div class="video-list">
-      <div class="list-label" id="listLabel">読み込み中...</div>
-      <!-- ソートバー -->
+      <div class="list-label" id="listLabel">èª­ã¿è¾¼ã¿ä¸­...</div>
+      <!-- ã½ã¼ããã¼ -->
       <div class="sort-bar" id="sortBar"></div>
-      <!-- サムネイルフィルタバー -->
+      <!-- ãµã ãã¤ã«ãã£ã«ã¿ãã¼ -->
       <div class="filter-bar" id="filterBar"></div>
       <div id="videoGrid">
         <div class="vrow-skeleton"><div class="skel-thumb"></div><div class="skel-info"><div class="skel-line" style="width:80%"></div><div class="skel-line" style="width:55%"></div><div class="skel-line" style="width:35%"></div></div></div>
@@ -529,25 +674,78 @@ header {
   <aside class="sidebar">
     <div class="ch-info-panel" id="chInfoPanel">
       <div class="ch-info-head">
-        <div class="ch-avatar">…</div>
-        <div><div class="ch-info-name">読み込み中</div><div class="ch-info-id">—</div></div>
+        <div class="ch-avatar">â¦</div>
+        <div><div class="ch-info-name">èª­ã¿è¾¼ã¿ä¸­</div><div class="ch-info-id">â</div></div>
       </div>
     </div>
     <div class="queue-panel" id="queuePanel">
-      <div class="queue-label">ラインナップ</div>
+      <div class="queue-label">ã©ã¤ã³ ããã</div>
     </div>
   </aside>
 </div>
 
-<!-- リリースノートモーダル -->
+<!-- ========== ã¢ãã¤ã«: ããã ããã²ã¼ã·ã§ã³ãã¢ã§ã(========== -->
+<nav class="mobile-nav" id="mobileNav">
+  <button class="mobile-nav-btn" id="mnavChannel" onclick="openChannelSheet()">
+    <span class="nav-icon">ðº</input type="text" id="searchInput"
+      placeholder="åç»ãæ¤ç´¢â¦" data-ph-ja="åç»ãæ¤ç´¢â¦" data-ph-en="Search videosâ¦"
+      oninput="onSearch(this.value)"> 
+   </span>
+    <span class="ja">ãã£ã³ãã«</span><span class="en">Channel</span>
+  </button>
+  <button class="mobile-nav-btn" id="mnavQueue" onclick="openQueueSheet()">
+    <span class="nav-icon">â°</span>
+    <span class="ja">ã©ã¤ã³ããã</span><span class="en">Lineup</span>
+  </button>
+  <button class="mobile-nav-btn" onclick="toggleLang()">
+    <span class="nav-icon" id="mnavLangIcon">ð¯ðµ</span>
+    <span id="mnavLangLabel">JP/EN</span>
+  </button>
+</nav>
+
+<!-- ========== ã¢ãã¤ã«: ãã£ã³ãã«é¸æããã ã·ã¼ã ========== -->
+<div class="bottom-sheet-overlay" id="channelSheetOverlay" onclick="if(event.target===this)closeChannelSheet()">
+  <div class="bottom-sheet">
+    <div class="bottom-sheet-handle"></div>
+    <div class="bottom-sheet-header">
+      <span class="bottom-sheet-title">
+        <span class="ja">ðº ãã£ã³ãã«</span><span class="en">ðº Channels</span>
+      </span>
+      <button class="bottom-sheet-close" onclick="closeChannelSheet()">â</button>
+    </div>
+    <div class="bottom-sheet-body">
+      <div class="ch-sheet-tabs" id="chSheetTabs">
+        <!-- JSã§åç®çæ -->
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== ã¢ãã¤ã«: ã©ã¤ã³ãªã³ã ãã¼ãã·ã·ç³ -->
+<div class="bottom-sheet-overlay" id="queueSheetOverlay" onclick="if(event.target===this)closeQueueSheet()">
+  <div class="bottom-sheet">
+    <div class="bottom-sheet-handle"></div>
+    <div class="bottom-sheet-header">
+      <span class="bottom-sheet-title" id="queueSheetTitle">
+        <span class="ja">â° ã©ã¤ã³ããã</span><span class="en">â° Lineup</span>
+      </span>
+      <button class="bottom-sheet-close" onclick="closeQueueSheet()">â</button>
+    </div>
+    <div class="bottom-sheet-body" id="queueSheetBody">
+      <!-- JSã§ãµã¤ããã¼ã®queuePanelããã©ã¼ -->
+    </div>
+  </div>
+</div>
+
+<!-- ãªãªã¼ã¹ãã¼ãã¢ã¼ãã« -->
 <div id="rnModal" class="rn-modal" style="display:none" onclick="if(event.target===this)hideReleaseNotes()">
   <div class="rn-card">
     <div class="rn-header">
-      <span class="rn-title">📋 リリースノート</span>
-      <button class="rn-close" onclick="hideReleaseNotes()">✕</button>
+      <span class="rn-title">ð ï£ªãªã¼ã¹ãã¼ã</span>
+      <button class="rn-close" onclick="hideReleaseNotes()">â</button>
     </div>
     <div class="rn-filter-bar">
-      <button class="rn-filter-btn active" id="rnf-all"    onclick="rnFilter('all')">すべて</button>
+      <button class="rn-filter-btn active" id="rnf-all"    onclick="rnFilter('all')">ãã¹ã¦</button>
       <button class="rn-filter-btn"        id="rnf-player" onclick="rnFilter('player')">PLAYER</button>
       <button class="rn-filter-btn"        id="rnf-admin"  onclick="rnFilter('admin')">ADMIN</button>
     </div>
@@ -557,11 +755,11 @@ header {
 
 <script>
 // =========================================================
-// ★ 設定
+// â è¨­å®
 // =========================================================
 const WORKER_URL = 'https://hihaho-proxy.jumpei-omote.workers.dev';
 
-// Firebase設定
+// Firebaseè¨­å®
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDPlsAhtxbJBihy-EAHck9P7XbuMdzV0ds",
   authDomain: "cc-dev-ps7.firebaseapp.com",
@@ -571,15 +769,15 @@ const FIREBASE_CONFIG = {
   appId: "1:1029579090333:web:5a2ea499fec97c497f2774"
 };
 
-// フォルダID（?id= URLパラメータからFirestore経由で取得。なければフォールバック）
+// ãã©ã«ãIDï¼?id= URLãã©ã¡ã¼ã¿ããFirestoreçµç±ã§åå¾ããªããã°ãã©ã¼ã«ããã°ï¼
 const FALLBACK_FOLDER_IDS = [21078, 12452, 21334];
 let SHOW_FOLDER_IDS = [];
 
-// ★ サムネイル設定
+// â ãµã ãã¤ã«è¨­å®
 const THUMB_BASE = 'https://cc-dev-ps7.web.app/hihaho-player/thumbs';
 const THUMB_EXT = 'jpg';
 
-// statusラベル
+// statusã©ãã«
 const STATUS = {
   0: { label: 'DRAFT',       cls: 'badge badge-draft' },
   1: { label: 'PUBLISHED',   cls: 'badge badge-published' },
@@ -588,24 +786,24 @@ const STATUS = {
 };
 
 // =========================================================
-// ソート設定
+// ã½ã¼ãè¨­å®
 // =========================================================
 const SORT_OPTS = [
-  { key: 'new',        labelJa: '📅 新しい順',      labelEn: '📅 Newest' },
-  { key: 'old',        labelJa: '📅 古い順',        labelEn: '📅 Oldest' },
-  { key: 'upd_desc',   labelJa: '🔄 更新↓',        labelEn: '🔄 Updated↓' },
-  { key: 'upd_asc',    labelJa: '🔄 更新↑',        labelEn: '🔄 Updated↑' },
-  { key: 'alpha_asc',  labelJa: 'あ→ん',            labelEn: 'A→Z' },
-  { key: 'alpha_desc', labelJa: 'ん→あ',            labelEn: 'Z→A' },
-  { key: 'random',     labelJa: '🔀 ランダム',       labelEn: '🔀 Random' },
-  { key: 'thumb_first',labelJa: '🖼 サムネあり先',   labelEn: '🖼 Thumb First' },
-  { key: 'plays',      labelJa: '👁 再生多い順',     labelEn: '👁 Most Played' },
+  { key: 'new',        labelJa: 'ð æ°ããé ',      labelEn: 'ð Newest' },
+  { key: 'old',        labelJa: 'ð å¤ãé ',        labelEn: 'ð Oldest' },
+  { key: 'upd_desc',   labelJa: 'ð æ´æ°â',        labelEn: 'ð Updatedâ' },
+  { key: 'upd_asc',    labelJa: 'ð æ´æ°â',        labelEn: 'ð Updatedâ' },
+  { key: 'alpha_asc',  labelJa: 'ãâã',            labelEn: 'AâZ' },
+  { key: 'alpha_desc', labelJa: 'ãâã',            labelEn: 'ZâA' },
+  { key: 'random',     labelJa: 'ð ã©ã³ãã¢',       labelEn: 'ð Random' },
+  { key: 'thumb_first',labelJa: 'ð¼ ãµã ãããå',   labelEn: 'ð¼ Thumb First' },
+  { key: 'plays',      labelJa: 'ð åçå¤ãé ',     labelEn: 'ð Most Played' },
 ];
 let currentSort = 'new';
 let thumbFilter  = 'all'; // 'all' | 'thumb' | 'no-thumb'
 
 // =========================================================
-// 状態管理
+// ç¶æç®¡ç
 // =========================================================
 let allFolders  = [];
 let allVideos   = [];
@@ -613,13 +811,13 @@ let activeChId  = null;
 let activeVidId = null;
 let searchQ     = '';
 let clog        = [];
-let videoMeta   = {}; // uuid → { thumbnailUrl, display_name_en }
+let videoMeta   = {}; // uuid â { thumbnailUrl, display_name_en }
 
-// 再生回数マップ: videoId → 数値（Hihaho API実データ、-1=取得失敗）
+// åçåæ°ããã: videoId â æ°å¤ï¼Hihaho APIå®ãã¼ã¿ã-1=åå¾å¤±æï¼
 let playCountMap = new Map();
 
 // =========================================================
-// 翻訳キャッシュ（MyMemory API）
+// ç¿»è¨³ã­ã£ãã·ã¥ï¼MyMemory APIï¼
 // =========================================================
 const _translCache = {};
 
@@ -644,11 +842,11 @@ async function translateTitle(vid) {
       _translCache[vid.id] = data.responseData.translatedText;
       if (_currentLang === 'en') { renderGrid(); renderSidebar(); }
     }
-  } catch(e) { console.error('翻訳エラー:', e.message); }
+  } catch(e) { console.error('ç¿»è¨³ã¨ã©ã¼:', e.message); }
 }
 
 // =========================================================
-// ログ
+// ã­ã°
 // =========================================================
 const origLog = console.log.bind(console);
 console.log = (...a) => { origLog(...a); clog.push(a.join(' ')); };
@@ -657,8 +855,8 @@ console.error = (...a) => { origErr(...a); clog.push('[ERR] ' + a.join(' ')); };
 const log = m => console.log(`[hihaho] ${m}`);
 
 // =========================================================
-// サムネイルHTML生成
-// 優先: ①Firestore video_meta → ②Firebase Hosting → ③🎬フォールバック
+// ãµã ãã¤ã«HTMLçæ
+// åªå: â Firestore video_meta â â¡Firebase Hosting â â¢ð¬ãã©ã¼ã«ããã¯
 // =========================================================
 function thumbHtml(uuid, cls) {
   const metaUrl = videoMeta[uuid]?.thumbnailUrl;
@@ -669,19 +867,19 @@ function thumbHtml(uuid, cls) {
            style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"
            onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
            loading="lazy">
-      <div class="vrow-thumb-fb" style="display:none">🎬</div>`;
+      <div class="vrow-thumb-fb" style="display:none">ð¬</div>`;
   } else {
     return `
       <img src="${src}"
            style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"
            onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
            loading="lazy">
-      <div class="qcard-thumb-fb" style="display:none">🎬</div>`;
+      <div class="qcard-thumb-fb" style="display:none">ð¬</div>`;
   }
 }
 
 // =========================================================
-// API呼び出し（Cloudflare Worker経由）
+// APIå¼ã³åºãï¼Cloudflare Workerçµç±ï¼
 // =========================================================
 async function apiFetch(path) {
   const res = await fetch(`${WORKER_URL}${path}`, {
@@ -692,25 +890,25 @@ async function apiFetch(path) {
 }
 
 // =========================================================
-// 再生回数取得（Hihaho aggregated-statistics API）
-// 5並列バッチ処理・バッチ間200ms待機でレート制限対策
-// 取得完了ごとにDOM直接更新（グリッド全再描画なし）
+// åçåæ°åå¾ï¼Hihaho aggregated-statistics APIï¼
+// 5ä¸¦åãããå¦çã»ãããé200mså¾æ©ã§ã¬ã¼ãå¶éå¯¾ç­
+// åå¾å®äºãã¨ã«DOMç´æ¥æ´æ°ï¼ã°ãªããå¨åæç»ãªãï¼
 // =========================================================
 
-// 1件の再生回数を取得してバッジDOMを即時更新
+// 1ä»¶ã®åçåæ°ãåå¾ãã¦ããã¸DONãå³ææ´æ°
 async function _fetchOnePlayCount(v) {
   try {
     const data = await apiFetch(`/v2/video/${v.id}/aggregated-statistics`);
     const stats = data?.data?.aggregated_statistics;
     const num = Number(stats?.views ?? stats?.play_count ?? stats?.plays ?? 0) || 0;
     playCountMap.set(v.id, num);
-    log(`再生回数 [${v.id}] views=${num}`);
+    log(`åçåæ° [${v.id}] views=${num}`);
     document.querySelectorAll(`.vrow-count-ov[data-vid="${v.id}"]`).forEach(el => {
       el.textContent = num.toLocaleString();
       el.classList.add('loaded');
     });
   } catch (e) {
-    console.error(`再生回数取得失敗 [${v.id}]: ${e.message}`);
+    console.error(`åçåæ°åå¾å¤±æ [${v.id}]: ${e.message}`);
     playCountMap.set(v.id, 0);
     document.querySelectorAll(`.vrow-count-ov[data-vid="${v.id}"]`).forEach(el => {
       el.textContent = '0';
@@ -721,114 +919,256 @@ async function _fetchOnePlayCount(v) {
 
 async function loadPlayCounts() {
   if (allVideos.length === 0) return;
-  const BATCH = 5; // 1バッチあたりの同時リクエスト数
+  const BATCH = 5; // 1ããããããã®åæãªã¯ã¨ã¹ãæ°
   const delay = ms => new Promise(r => setTimeout(r, ms));
-  log(`再生回数取得開始: ${allVideos.length}本（${BATCH}並列バッチ）`);
+  log(`åçåæ°åå¾éå§: ${allVideos.length}æ¬ï¼${BATCH}ä¸¦åãããï¼`);
 
   for (let i = 0; i < allVideos.length; i += BATCH) {
     const batch = allVideos.slice(i, i + BATCH);
     await Promise.all(batch.map(v => _fetchOnePlayCount(v)));
-    // バッチ間に200ms待機（レート制限対策）
+    // ãããéã«200mså¾æ©ï¼ã¬ã¼ãå¶éå¯¾ç­ï¼
     if (i + BATCH < allVideos.length) await delay(200);
   }
-  log('再生回数取得完了');
+  log('åçåæ°åå¾å®äº');
 }
 
-// 再生回数オーバーレイHTML（サムネイル内に埋め込む）
-// 取得前: グレー「…」、取得後: 赤バッジに数値
+// åçåæ°ãªã¼ãã¼ã¬ã¤HTMLï¼ãµã ãã¤ã«åã«åãè¾¼ãï¼
+// åå¾å: ã°ã¬ã¼ãâ¦ããåå¾å¾: èµ¤ããã¸ã«æ°å¤
 function playCountOverlay(videoId) {
   const count = playCountMap.get(videoId);
   const loaded = playCountMap.has(videoId);
-  const text   = loaded ? (Number(count) || 0).toLocaleString() : '…';
+  const text   = loaded ? (Number(count) || 0).toLocaleString() : 'â¦';
   return `<div class="vrow-count-ov${loaded?' loaded':''}" data-vid="${videoId}">${text}</div>`;
 }
 
 // =========================================================
-// 初期化
+// åæå
 // =========================================================
 async function init() {
-  log('初期化開始');
+  log('åæåéå§');
   try {
-    // Firebase初期化
+    // Firebaseåæå
     firebase.initializeApp(FIREBASE_CONFIG);
     const db = firebase.firestore();
 
-    // URLパラメータ ?id= からFirestoreのプレイリストを取得
+    // URLãã©ã¡ã¼ã¿ ?id= ããFirestoreã®ãã¬ã¤ãªã¹ããåå¾
     const playlistId = new URLSearchParams(location.search).get('id');
     if (playlistId) {
       const playlistDoc = await db.collection('playlists').doc(playlistId).get();
       if (!playlistDoc.exists) {
         showError(_currentLang==='ja'
-          ? `プレイリストが見つかりません (id: ${playlistId})`
+          ? `ãã¬ã¤ãªã¹ããè¦ã¤ããã¾ãã (id: ${playlistId})`
           : `Playlist not found (id: ${playlistId})`);
         return;
       }
       const pd = playlistDoc.data();
       SHOW_FOLDER_IDS = pd.folderIds || [];
-      document.title = `hihaho Player – ${pd.name}`;
-      log(`プレイリスト: ${pd.name} / フォルダ${SHOW_FOLDER_IDS.length}件`);
+      document.title = `hihaho Player â ${pd.name}`;
+      log(`ãã¬ã¤ãªã¹ã: ${pd.name} / ãã©ã«ã${SHOW_FOLDER_IDS.length}ä»¶`);
     } else {
-      // ?id= なし → フォールバック
+      // ?id= ãªã â ãã©ã¼ã«ããã°
       SHOW_FOLDER_IDS = FALLBACK_FOLDER_IDS;
-      log(`フォールバックフォルダ: ${SHOW_FOLDER_IDS.join(',')}`);
+      log(`ãã©ã¼ã«ããã°ãã©ã«ã: ${SHOW_FOLDER_IDS.join(',')}`);
     }
 
     if (SHOW_FOLDER_IDS.length === 0) {
-      showError(_currentLang==='ja' ? 'フォルダが設定されていません' : 'No folders configured');
+      showError(_currentLang==='ja' ? 'ãã©ã«ããè¨­å®ããã¦ãã¾ãã' : 'No folders configured');
       return;
     }
 
-    // Firestore video_meta（カスタムサムネイル・英語名）
+    // Firestore video_metaï¼ã«ã¹ã¿ã ãµã ãã¤ã«ã»è±èªåï¼
     try {
       const metaSnap = await db.collection('video_meta').get();
       metaSnap.forEach(doc => { videoMeta[doc.id] = doc.data(); });
-      log(`video_meta: ${metaSnap.size}件`);
-    } catch(e) { console.error('video_meta取得失敗:', e.message); }
+      log(`video_meta: ${metaSnap.size}ä»¶`);
+    } catch(e) { console.error('video_metaåå¾å¤±æ:', e.message); }
 
-    // フォルダ一覧取得
+    // ãã©ã«ãäºåå¾
     const foldersRes = await apiFetch('/v2/video-container');
     allFolders = (foldersRes.data || []).filter(f => SHOW_FOLDER_IDS.includes(f.id));
     allFolders.sort((a, b) => SHOW_FOLDER_IDS.indexOf(a.id) - SHOW_FOLDER_IDS.indexOf(b.id));
 
     if (allFolders.length === 0) {
-      showError(_currentLang==='ja' ? '表示できるフォルダがありません' : 'No folders available');
+      showError(_currentLang==='ja' ? 'è¡¨ç¤ºã§ãããã©ã«ããããã¾ãã' : 'No folders available');
       return;
     }
 
-    // 各フォルダの動画を並列取得
+    // åãã©ã«ãã®åç»ãä¸¦ååå¾
     const videoResults = await Promise.all(
       allFolders.map(f => apiFetch(`/v2/video?video_container_id=${f.id}`))
     );
     allVideos = videoResults.flatMap(r => r.data || []);
-    log(`フォルダ: ${allFolders.length}件 / 動画: ${allVideos.length}件`);
+    log(`ãã©ã«ã: ${allFolders.length}ä»¶ / åç»: ${allVideos.length}ä»¶`);
 
     activeChId = allFolders[0].id;
     renderTabs();
     renderSortBar();
     renderSidebar();
     renderGrid();
-    log('初期化完了');
+    log('åæåå®äº');
 
-    // バックグラウンドで再生回数を取得
+    // ããã¯ã°ã©ã¦ã³ãã§åçåæ°ãåå¾
     loadPlayCounts();
 
   } catch(e) {
     console.error(e.message);
-    showError(`データ取得エラー: ${e.message}`);
+    showError(`ãã¼ã¿åå¾ã¨ã©ã¼: ${e.message}`);
   }
 }
 
 // =========================================================
-// エラー表示
+// ã¨ã©ã¼è¡¨ç¤º
 // =========================================================
 function showError(msg) {
-  document.getElementById('videoGrid').innerHTML = `<div class="error-msg">⚠️ ${msg}</div>`;
-  document.getElementById('listLabel').textContent = 'エラー';
+  document.getElementById('videoGrid').innerHTML = `<div class="error-msg">â ï¸ ${msg}</div>`;
+  document.getElementById('listLabel').textContent = 'ã¨ã©ã¼';
+  document.getElemen==========
+async function apiFetch(path) {
+  const res = await fetch(`${WORKER_URL}${path}`, {
+    headers: { 'Accept': 'application/json' }
+  });
+  if (!res.ok) throw new Error(`API error: ${res.status} ${path}`);
+  return res.json();
+}
+
+// =========================================================
+// åçåæ°åå¾ï¼Hihaho aggregated-statistics APIï¼
+// 5ä¸¦åãããå¦çã»ãããé200mså¾æ©ã§ã¬ã¼ãå¶éå¯¾ç­
+// åå¾å®äºãã¨ã«DOMç´æ¥æ´æ°ï¼ã°ãªããå¨åæç»ãªãï¼
+// =========================================================
+
+// 1ä»¶ã®åçåæ°ãåå¾ãã¦ããã¸DONãå³ææ´æ°
+async function _fetchOnePlayCount(v) {
+  try {
+    const data = await apiFetch(`/v2/video/${v.id}/aggregated-statistics`);
+    const stats = data?.data?.aggregated_statistics;
+    const num = Number(stats?.views ?? stats?.play_count ?? stats?.plays ?? 0) || 0;
+    playCountMap.set(v.id, num);
+    log(`åçåæ° [${v.id}] views=${num}`);
+    document.querySelectorAll(`.vrow-count-ov[data-vid="${v.id}"]`).forEach(el => {
+      el.textContent = num.toLocaleString();
+      el.classList.add('loaded');
+    });
+  } catch (e) {
+    console.error(`åçåæ°åå¾å¤±æ [${v.id}]: ${e.message}`);
+    playCountMap.set(v.id, 0);
+    document.querySelectorAll(`.vrow-count-ov[data-vid="${v.id}"]`).forEach(el => {
+      el.textContent = '0';
+      el.classList.add('loaded');
+    });
+  }
+}
+
+async function loadPlayCounts() {
+  if (allVideos.length === 0) return;
+  const BATCH = 5; // 1ããããããã®åæãªã¯ã¨ã¹ãæ°
+  const delay = ms => new Promise(r => setTimeout(r, ms));
+  log(`åçåæ°åå¾éå§: ${allVideos.length}æ¬ï¼${BATCH}ä¸¦åãããï¼`);
+
+  for (let i = 0; i < allVideos.length; i += BATCH) {
+    const batch = allVideos.slice(i, i + BATCH);
+    await Promise.all(batch.map(v => _fetchOnePlayCount(v)));
+    // ãããéã«200mså¾æ©ï¼ã¬ã¼ãå¶éå¯¾ç­ï¼
+    if (i + BATCH < allVideos.length) await delay(200);
+  }
+  log('åçåæ°åå¾å®äº');
+}
+
+// åçåæ°ãªã¼ãã¼ã¬ã¤HTMLï¼ãµã ãã¤ã«åã«åãè¾¼ãï¼
+// åå¾å: ã°ã¬ã¼ãâ¦ããåå¾å¾: èµ¤ããã¸ã«æ°å¤
+function playCountOverlay(videoId) {
+  const count = playCountMap.get(videoId);
+  const loaded = playCountMap.has(videoId);
+  const text   = loaded ? (Number(count) || 0).toLocaleString() : 'â¦';
+  return `<div class="vrow-count-ov${loaded?' loaded':''}" data-vid="${videoId}">${text}</div>`;
+}
+
+// =========================================================
+// åæå
+// =========================================================
+async function init() {
+  log('åæåéå§');
+  try {
+    // Firebaseåæå
+    firebase.initializeApp(FIREBASE_CONFIG);
+    const db = firebase.firestore();
+
+    // URLãã©ã¡ã¼ã¿ ?id= ããFirestoreã®ãã¬ã¤ãªã¹ããåå¾
+    const playlistId = new URLSearchParams(location.search).get('id');
+    if (playlistId) {
+      const playlistDoc = await db.collection('playlists').doc(playlistId).get();
+      if (!playlistDoc.exists) {
+        showError(_currentLang==='ja'
+          ? `ãã¬ã¤ãªã¹ããè¦ã¤ããã¾ãã (id: ${playlistId})`
+          : `Playlist not found (id: ${playlistId})`);
+        return;
+      }
+      const pd = playlistDoc.data();
+      SHOW_FOLDER_IDS = pd.folderIds || [];
+      document.title = `hihaho Player â ${pd.name}`;
+      log(`ãã¬ã¤ãªã¹ã: ${pd.name} / ãã©ã«ã${SHOW_FOLDER_IDS.length}ä»¶`);
+    } else {
+      // ?id= ãªã â ãã©ã¼ã«ããã°
+      SHOW_FOLDER_IDS = FALLBACK_FOLDER_IDS;
+      log(`ãã©ã¼ã«ããã°ãã©ã«ã: ${SHOW_FOLDER_IDS.join(',')}`);
+    }
+
+    if (SHOW_FOLDER_IDS.length === 0) {
+      showError(_currentLang==='ja' ? 'ãã©ã«ããè¨­å®ããã¦ãã¾ãã' : 'No folders configured');
+      return;
+    }
+
+    // Firestore video_metaï¼ã«ã¹ã¿ã ãµã ãã¤ã«ã»è±èªåï¼
+    try {
+      const metaSnap = await db.collection('video_meta').get();
+      metaSnap.forEach(doc => { videoMeta[doc.id] = doc.data(); });
+      log(`video_meta: ${metaSnap.size}ä»¶`);
+    } catch(e) { console.error('video_metaåå¾å¤±æ:', e.message); }
+
+    // ãã©ã«ãäº¯åå¾
+    const foldersRes = await apiFetch('/v2/video-container');
+    allFolders = (foldersRes.data || []).filter(f => SHOW_FOLDER_IDS.includes(f.id));
+    allFolders.sort((a, b) => SHOW_FOLDER_IDS.indexOf(a.id) - SHOW_FOLDER_IDS.indexOf(b.id));
+
+    if (allFolders.length === 0) {
+      showError(_currentLang==='ja' ? 'è¡¨ç¤ºã§ãããã©ã«ããããã¾ãã' : 'No folders available');
+      return;
+    }
+
+    // åãã©ã«ãã®åç»ãä¸¦ååå¾
+    const videoResults = await Promise.all(
+      allFolders.map(f => apiFetch(`/v2/video?video_container_id=${f.id}`))
+    );
+    allVideos = videoResults.flatMap(r => r.data || []);
+    log(`ãã©ã«ã: ${allFolders.length}ä»¶ / åç»: ${allVideos.length}ä»¶`);
+
+    activeChId = allFolders[0].id;
+    renderTabs();
+    renderSortBar();
+    renderSidebar();
+    renderGrid();
+    log('åæåå®äº');
+
+    // ããã¯ã°ã©ã¦ã³ãã§åçåæ°ãåå¾
+    loadPlayCounts();
+
+  } catch(e) {
+    console.error(e.message);
+    showError(`ãã¼ã¿åå¾ã¨ã©ã¼: ${e.message}`);
+  }
+}
+
+// =========================================================
+// ã¨ã©ã¼è¡¨ç¤º
+// =========================================================
+function showError(msg) {
+  document.getElementById('videoGrid').innerHTML = `<div class="error-msg">â ï¸ ${msg}</div>`;
+  document.getElementById('listLabel').textContent = 'ã¨ã©ã¼';
   document.getElementById('chTabs').innerHTML = '';
 }
 
 // =========================================================
-// タブ描画
+// ã¿ãæç»
 // =========================================================
 function renderTabs() {
   document.getElementById('chTabs').innerHTML = allFolders.map(f => {
@@ -849,7 +1189,7 @@ function selectCh(id) {
 }
 
 // =========================================================
-// サイドバー描画
+// ãµã¤ããã¼æç»
 // =========================================================
 function renderSidebar() {
   const folder = curFolder();
@@ -864,12 +1204,12 @@ function renderSidebar() {
         <div class="ch-info-id">ID: ${folder.id}</div>
       </div>
     </div>
-    <div class="ch-info-count">${curChVideos().length} ${_currentLang==='ja'?'本の動画':'videos'}</div>`;
+    <div class="ch-info-count">${curChVideos().length} ${_currentLang==='ja'?'æ¬ã®åç»':'videos'}</div>`;
 
   const qp = document.getElementById('queuePanel');
-  qp.innerHTML = `<div class="queue-label">${_currentLang==='ja'?'ラインナップ':'Lineup'}</div>` +
+  qp.innerHTML = `<div class="queue-label">${_currentLang==='ja'?'ã©ã¤ã³ããã':'Lineup'}</div>` +
     (videos.length === 0
-      ? `<div class="empty"><div class="empty-icon">🔍</div><p>${_currentLang==='ja'?'動画が見つかりません':'No videos found'}</p></div>`
+      ? `<div class="empty"><div class="empty-icon">ð</div><p>${_currentLang==='ja'?'åç»ãè¦ã¤ããã¾ãã':'No videos found'}</p></div>`
       : videos.map((v, i) => `
         <div class="qcard ${v.id===activeVidId?'playing':''}" style="animation-delay:${i*25}ms" onclick="play(${v.id})">
           <div class="qcard-thumb">${thumbHtml(v.uuid,'qcard')}</div>
@@ -881,7 +1221,7 @@ function renderSidebar() {
 }
 
 // =========================================================
-// グリッド描画
+// ã°ãªããæç»
 // =========================================================
 function renderGrid() {
   const folder = curFolder();
@@ -889,12 +1229,12 @@ function renderGrid() {
   const videos = filteredVideos();
   document.getElementById('listLabel').textContent =
     searchQ
-      ? `「${searchQ}」 ${videos.length} ${_currentLang==='ja'?'件':'results'}`
-      : `${folder.name} ${_currentLang==='ja'?'の動画一覧':'— Videos'} (${videos.length})`;
+      ? `ã${searchQ}ã ${videos.length} ${_currentLang==='ja'?'ä»¶':'results'}`
+      : `${folder.name} ${_currentLang==='ja'?'ã®åç»ä¸è¦§':'â Videos'} (${videos.length})`;
 
   const g = document.getElementById('videoGrid');
   if (!videos.length) {
-    g.innerHTML = `<div class="empty"><div class="empty-icon">🔍</div><p>${_currentLang==='ja'?'動画が見つかりませんでした':'No videos found'}</p></div>`;
+    g.innerHTML = `<div class="empty"><div class="empty-icon">ð</div><p>${_currentLang==='ja'?'åç»ãè¦ã¤ããã¾ããã§ãã':'No videos found'}</p></div>`;
     return;
   }
   g.innerHTML = videos.map((v, i) => {
@@ -924,13 +1264,13 @@ function renderGrid() {
 }
 
 // =========================================================
-// 再生
+// åç
 // =========================================================
 function play(id) {
-  const vid = allVideos.find(v => v.id === id);
+  const vid = allVideos.find(v =>(v.id === id);
   if (!vid) return;
   activeVidId = id;
-  log(`再生: ${vid.display_name} (uuid: ${vid.uuid})`);
+  log(`åç: ${vid.display_name} (uuid: ${vid.uuid})`);
 
   const wrap = document.getElementById('playerWrap');
   document.getElementById('placeholder').style.display = 'none';
@@ -943,7 +1283,7 @@ function play(id) {
   iframe.allowFullscreen = true;
   iframe.onload = () => {
     document.getElementById('spinner').classList.remove('show');
-    log(`iframe完了: ${vid.uuid}`);
+    log(`iframeå®äº: ${vid.uuid}`);
   };
   wrap.appendChild(iframe);
 
@@ -952,17 +1292,17 @@ function play(id) {
     `${esc(getTitle(vid))}${st.cls?` <span class="${st.cls}">${st.label}</span>`:''}`;
   document.getElementById('nowMeta').innerHTML =
     `<span>${curFolder()?.name||''}</span>
-     <span class="dot">·</span>
+     <span class="dot">Â·</span>
      <span>${fmt(vid.created_at)}</span>
-     <span class="dot">·</span>
-     <span style="font-family:var(--mono);font-size:11px;color:var(--text-muted)">${vid.uuid.slice(0,8)}…</span>`;
+     <span class="dot">Â·</span>
+     <span style="font-family:var(--mono);font-size:11px;color:var(--text-muted)">${vid.uuid.slice(0,8)}â¦</span>`;
 
   renderSidebar();
   renderGrid();
 }
 
 // =========================================================
-// 検索
+// æ¤ç´¢
 // =========================================================
 function onSearch(q) {
   searchQ = q.trim();
@@ -971,11 +1311,11 @@ function onSearch(q) {
 }
 
 // =========================================================
-// ユーティリティ
+// ã¦ã¼ãã£ãªãã£
 // =========================================================
 const curFolder   = () => allFolders.find(f => f.id === activeChId);
 
-// status=1(PUBLISHED) または status=2(INTERACTIVE) のみ表示
+// status=1(PUBLISHED) ã¾ãã¯ status=2(INTERACTIVE) ã®ã¿è¡¨ç¤º
 const curChVideos = (fid) => {
   const id = fid ?? activeChId;
   return allVideos.filter(v => v.video_container_id === id && (v.status === 1 || v.status === 2));
@@ -1025,7 +1365,7 @@ function sortVideos(videos) {
 }
 
 // =========================================================
-// ソートバー・フィルタバー描画
+// ã½ã¼ããã¼ã»ãã£ã«ã¿ãã¼æç»
 // =========================================================
 function renderSortBar() {
   document.getElementById('sortBar').innerHTML = SORT_OPTS.map(o =>
@@ -1037,14 +1377,14 @@ function renderSortBar() {
 }
 
 const FILTER_OPTS = [
-  { key:'all',      labelJa:'両方',    labelEn:'All',         cls:'' },
-  { key:'thumb',    labelJa:'🖼 あり',  labelEn:'🖼 With',    cls:'active' },
-  { key:'no-thumb', labelJa:'🚫 なし',  labelEn:'🚫 Without', cls:'active-none' },
+  { key:'all',      labelJa:'ä¸¡æ¹',    labelEn:'All',         cls:'' },
+  { key:'thumb',    labelJa:'ð¼ ãã',  labelEn:'ð¼ With',    cls:'active' },
+  { key:'no-thumb', labelJa:'ð« ãªã',  labelEn:'ð« Without', cls:'active-none' },
 ];
 function renderFilterBar() {
   const el = document.getElementById('filterBar');
   if (!el) return;
-  el.innerHTML = `<span class="filter-label">${_currentLang==='ja'?'サムネ:':'Thumb:'}</span>` +
+  el.innerHTML = `<span class="filter-label">${_currentLang==='ja'?'ãµã ã:':'Thumb:'}</span>` +
     FILTER_OPTS.map(o => {
       const isActive = o.key === thumbFilter;
       const cls = isActive ? `filter-btn ${o.cls||'active'}` : 'filter-btn';
@@ -1068,7 +1408,7 @@ function setThumbFilter(key) {
 }
 
 // =========================================================
-// 言語切替
+// è¨èªåæ¿
 // =========================================================
 let _currentLang = 'ja';
 function setLang(lang) {
@@ -1079,7 +1419,7 @@ function setLang(lang) {
   document.getElementById('langBtnEn')?.classList.toggle('active-en', lang==='en');
   const inp = document.getElementById('searchInput');
   if (inp) inp.placeholder = lang==='ja' ? inp.dataset.phJa : inp.dataset.phEn;
-  // EN切替時に全タイトルを先読み翻訳
+  // ENåæ¿æã«å¨ã¿ã¤ãã«ãåèª­ã¿ç¿»è¨³
   if (lang === 'en') {
     allVideos.forEach(v => {
       if (!_translCache[v.id] && !videoMeta[v.uuid]?.display_name_en && !_translCache['_pending_'+v.id]) {
@@ -1095,36 +1435,47 @@ function setLang(lang) {
 function toggleLang() { setLang(_currentLang==='ja'?'en':'ja'); }
 
 // =========================================================
-// リリースノート
+// ãªãªã¼ã¹ãã¼ã
 // =========================================================
 const RELEASE_NOTES = [
+  { ver:'v1.3.0', date:'2026-04-06', type:'player',
+    ja:['ã¢ãã¤ã«UIå¯¾å¿ï¼ã¹ããã»ã¿ãã¬ããæé©åï¼',
+        'ããã ããã²ã¼ã·ã§ã³ãã¼è¿½å ï¼ãã£ã³ãã« / ã©ã¤ã³ããã / JPâENï¼',
+        'ãã£ã³ãã«é¸æãããã ã·ã¼ãã§æä½å¯è½ã«',
+        'ã©ã¤ã³ããããããã ã·ã¼ãã§è¡¨ç¤º',
+        'ã½ã¼ããã¼ã»ãã£ã«ã¿ãã¼ãæ¨ªã¹ã¯ã­ã¼ã«å¯¾å¿'],
+    en:['Mobile UI support (smartphone/tablet optimized)',
+        'Bottom navigation bar added (Channel / Lineup / JPâEN)',
+        'Channel picker redesigned as a bottom sheet on mobile',
+        'Lineup accessible via bottom sheet on mobile',
+        'Sort bar & filter bar now horizontally scrollable on mobile'] },
   { ver:'v1.2.5', date:'2026-04-05', type:'player',
-    ja:['Hihaho APIから実再生数を取得・表示（aggregated-statistics）',
-        '再生回数バッジ（👁 紫）を動画一覧に追加',
-        'Cloudflare Workerに aggregated-statistics パスを追加'],
+    ja:['Hihaho APIããå®åçæ°ãåå¾ã»è¡¨ç¤ºï¼aggregated-statisticsï¼',
+        'åçåæ°ããã¸ï¼ð ç´«ï¼ãåç»ä¸è¦§ã«è¿½å ',
+        'Cloudflare Workerã« aggregated-statistics ãã¹ãè¿½å '],
     en:['Real play count from Hihaho API (aggregated-statistics)',
-        'Play count badge (👁 purple) added to video list',
+        'Play count badge (ð purple) added to video list',
         'Added aggregated-statistics path to Cloudflare Worker'] },
   { ver:'v1.2.4', date:'2026-04-05', type:'player',
-    ja:['各動画の再生回数を表示（👁 N形式）','再生回数ソート追加'],
-    en:['Play count display per video (👁 N format)','Play count sort added'] },
+    ja:['ååç»ã®åçåæ°ãè¡¨ç¤ºï¼ð Nå½¢å¼ï¼','åçåæ°ã½ã¼ãè¿½å '],
+    en:['Play count display per video (ð N format)','Play count sort added'] },
   { ver:'v1.2.3', date:'2026-04-05', type:'player',
-    ja:['ヘッダにhihahoブランドロゴを追加'],
+    ja:['ãããã«hihahoãã©ã³ãã­ã´ãè¿½å '],
     en:['hihaho brand logo added to header'] },
   { ver:'v1.2.2', date:'2026-04-05', type:'player',
-    ja:['サムネイルフィルタ[🖼あり/🚫なし/両方]ボタン追加','ソートに「🖼 サムネあり先」追加'],
-    en:['Thumbnail filter [With/Without/Both] buttons','Sort option "🖼 Thumb First" added'] },
+    ja:['ãµã ãã¤ã«ãã£ã«ã¿[ð¼ãã/ð«ãªã/ä¸¡æ¹]ãã¿ã³è¿½å ','ã½ã¼ãã«ãð¼ ãµã ãããåãè¿½å '],
+    en:['Thumbnail filter [With/Without/Both] buttons','Sort option "ð¼ Thumb First" added'] },
   { ver:'v1.2.1', date:'2026-04-05', type:'player',
-    ja:['JP/EN言語切替を[JP|EN]2ボタン形式に変更（JP=赤・EN=青）'],
+    ja:['JP/ENè¨èªåæ¿ã[JP|EN]2ãã¿ã³å½¢å¼ã«å¤æ´ï¼JP=èµ¤ã»EN=éï¼'],
     en:['Language toggle redesigned as [JP|EN] dual buttons'] },
   { ver:'v1.2.0', date:'2026-04-04', type:'both',
-    ja:['バイリンガルUI（JP/EN切替）追加','MyMemory APIによる英語自動翻訳'],
+    ja:['ãã¤ãªã³ã¬ã«UIï¼JP/ENåæ¿ï¼è¿½å ','MyMemory APIã«ããè±èªèªåç¿»è¨³'],
     en:['Bilingual UI (JP/EN toggle)','Auto English translation via MyMemory API'] },
   { ver:'v1.1.0', date:'2026-04-03', type:'player',
-    ja:['フォルダ別チャンネルタブ','キューサイドバー追加','ソートバー追加'],
+    ja:['ãã©ã«ãå¥ãã£ã³ãã«ã¿ã','ã­ã¥ã¼ãµã¤ããã¼è¿½å ','ã½ã¼ããã¼è¿½å '],
     en:['Folder-based channel tabs','Queue sidebar','Sort bar added'] },
   { ver:'v1.0.0', date:'2026-04-01', type:'both',
-    ja:['初回リリース: YouTubeライクL字UIプレイヤー','hihaho動画一覧・サムネイル対応'],
+    ja:['ååãªãªã¼ã¹: YouTubeã©ã¤ã¯Lå­UIãã¬ã¤ã¤ã¼','hihahoåç»ä¸è¦§ã»ãµã ãã¤ã«å¯¾å¿'],
     en:['Initial release: YouTube-like L-shaped UI','Video list & thumbnail support'] },
 ];
 const RN_TYPE_LABEL = { player:'PLAYER', admin:'ADMIN', both:'BOTH' };
@@ -1170,24 +1521,123 @@ function _renderRnBody() {
 }
 
 // =========================================================
-// ユーティリティ
+// ã¦ã¼ãã£ãªãã£
 // =========================================================
 const esc = s => String(s)
   .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
   .replace(/"/g,'&quot;').replace(/'/g,'&#x27;');
 const fmt = d => {
-  if (!d) return '—';
+  if (!d) return 'â';
   const dt = new Date(d);
   return `${dt.getFullYear()}/${String(dt.getMonth()+1).padStart(2,'0')}/${String(dt.getDate()).padStart(2,'0')}`;
 };
 function copyConsole() {
-  navigator.clipboard.writeText(clog.join('\n')||'（ログなし）')
-    .then(()=>alert('コピーしました'))
-    .catch(()=>alert('コピー失敗'));
+  navigator.clipboard.writeText(clog.join('\n')||'ï¼ã­ã°ãªãï¼')
+    .then(()=>alert('ã³ãã¼ãã¾ãã'))
+    .catch(()=>alert('ã³ãã¼å¤±æ'));
 }
 
 // =========================================================
-// 起動
+// ã¢ãã¤ã«: ããã ã·ã¼ãéé
+// =========================================================
+
+/** ãã£ã³ãã«ã·ã¼ã: éã */
+function openChannelSheet() {
+  _renderChannelSheet();
+  const overlay = document.getElementById('channelSheetOverlay');
+  overlay.style.display = 'block';
+  requestAnimationFrame(() => overlay.classList.add('show'));
+  document.getElementById('mnavChannel')?.classList.add('active');
+}
+/** ãã£ã³ãã«ã·ã¼ã: éãã */
+function closeChannelSheet() {
+  const overlay = document.getElementById('channelSheetOverlay');
+  overlay.classList.remove('show');
+  overlay.addEventListener('transitionend', () => { overlay.style.display = 'none'; }, { once: true });
+  document.getElementById('mnavChannel')?.classList.remove('active');
+}
+/** ãã£ã³ãã«ã·ã¼ã: åå®¹æç» */
+function _renderChannelSheet() {
+  const el = document.getElementById('chSheetTabs');
+  if (!el || allFolders.length === 0) return;
+  el.innerHTML = allFolders.map(f => {
+    const cnt = curChVideos(f.id).length;
+    const isActive = f.id === activeChId;
+    return `<button class="ch-sheet-tab ${isActive?'active':''}" onclick="selectChMobile(${f.id})">
+      <span class="ch-sheet-icon">ðº</span>
+      ${esc(f.name)}
+      <span class="ch-sheet-cnt">${cnt}æ¬</span>
+    </button>`;
+  }).join('');
+}
+/** ãã£ã³ãã«ã·ã¼ããããã£ã³ãã«é¸æ */
+function selectChMobile(id) {
+  selectCh(id);
+  closeChannelSheet();
+}
+
+/** ã©ã¤ã³ãããã·ã¼ã: éã */
+function openQueueSheet() {
+  _renderQueueSheet();
+  const overlay = document.getElementById('queueSheetOverlay');
+  overlay.style.display = 'block';
+  requestAnimationFrame(() => overlay.classList.add('show'));
+  document.getElementById('mnavQueue')?.classList.add('active');
+}
+/** ã©ã¤ã³ãããã·ã¼ã: éãã */
+function closeQueueSheet() {
+  const overlay = document.getElementById('queueSheetOverlay');
+  overlay.classList.remove('show');
+  overlay.addEventListener('transitionend', () => { overlay.style.display = 'none'; }, { once: true });
+  document.getElementById('mnavQueue')?.classList.remove('active');
+}
+/** ã©ã¤ã³ãããã·ã¼ã: queuePanel ã®åå®¹ããã©ã¼ */
+function _renderQueueSheet() {
+  const src  = document.getElementById('queuePanel');
+  const dest = document.getElementById('queueSheetBody');
+  if (!src || !dest) return;
+  // queuePanelã®HTMLããã®ã¾ã¾ã³ãã¼ï¼onclickç­ãåä½ããï¼
+  dest.innerHTML = src.innerHTML;
+}
+
+/** ã¢ãã¤ã«ã®ã©ã¤ã³ãããã·ã¼ãåãwqcardãã¿ããããéã«ã·ã¼ããéãã¦play */
+function playFromSheet(id) {
+  closeQueueSheet();
+  play(id);
+}
+
+/** è¨èªåæ¿æã®ã¢ãã¤ã«ããã¢ã¤ã³ã³æ´æ° */
+function _updateMobileNavLang() {
+  const icon  = document.getElementById('mnavLangIcon');
+  const label = document.getElementById('mnavLangLabel');
+  if (!icon || !label) return;
+  icon.textContent  = _currentLang === 'ja' ? 'ð¯ðµ' : 'ðºð¸';
+  label.textContent = _currentLang === 'ja' ? 'JPâEN' : 'ENâJP';
+}
+
+// =========================================================
+// ã¢ãã¤ã«å¯¾å¿: renderSidebarå¾ã«ã·ã¼ããæ´æ°
+// =========================================================
+const _origRenderSidebar = renderSidebar;
+renderSidebar = function() {
+  _origRenderSidebar();
+  // ã©ã¤ã³ãããã·ã¼ããéãã¦ããã°åå®¹ãæ´æ°
+  const qo = document.getElementById('queueSheetOverlay');
+  if (qo && qo.classList.contains('show')) _renderQueueSheet();
+};
+
+// setLangå¾ã«ã¢ãã¤ã«ãããæ´æ°
+const _origSetLang = setLang;
+setLang = function(lang) {
+  _origSetLang(lang);
+  _updateMobileNavLang();
+  // ãã£ã³ãã«ã·ã¼ããéãã¦ããã°åæç»
+  const co = document.getElementById('channelSheetOverlay');
+  if (co && co.classList.contains('show')) _renderChannelSheet();
+};
+
+// =========================================================
+// èµ·å
 // =========================================================
 init();
 </script>
