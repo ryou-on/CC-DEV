@@ -141,7 +141,7 @@ main{margin-left:var(--sw);margin-top:var(--hh);padding:24px;}
 <body>
 
 <header>
-  <div class="logo"><div class="logo-bar"></div>hihaho Admin<span class="logo-badge">ADMIN</span><span class="ver-badge rn-trigger" onclick="showReleaseNotes()" title="リリースノート">v1.1.2</span></div>
+  <div class="logo"><div class="logo-bar"></div>hihaho Admin<span class="logo-badge">ADMIN</span><span class="ver-badge rn-trigger" onclick="showReleaseNotes()" title="リリースノート">v1.1.3</span></div>
   <div style="margin-left:auto">
     <button class="btn bs bsm" onclick="copyConsole()">📋 console</button>
   </div>
@@ -230,6 +230,12 @@ main{margin-left:var(--sw);margin-top:var(--hh);padding:24px;}
               <option value="thumb">サムネあり先</option>
             </select>
           </div>
+          <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:4px 0 0">
+            <span style="font-size:11px;color:#6b7280;font-weight:600">Thumb:</span>
+            <button id="tfAll" onclick="onThumbThumbFilter('all')" style="padding:3px 10px;border-radius:4px;font-size:11px;border:1px solid #1565c0;background:#1565c0;color:#fff;cursor:pointer">全て</button>
+            <button id="tfWith" onclick="onThumbThumbFilter('with')" style="padding:3px 10px;border-radius:4px;font-size:11px;border:1px solid #d1d5db;background:#f3f4f6;color:#374151;cursor:pointer">🖼 あり</button>
+            <button id="tfWithout" onclick="onThumbThumbFilter('without')" style="padding:3px 10px;border-radius:4px;font-size:11px;border:1px solid #d1d5db;background:#f3f4f6;color:#374151;cursor:pointer">⬜ なし</button>
+          </div>
         </div>
         <div id="thumbList">
           <div class="emp"><div class="ei">📁</div><p>左のフォルダを選択してください</p></div>
@@ -284,7 +290,7 @@ const TEXT   = 'jpg';
 
 let folders=[], videos=[], selF=new Set(), selV=new Set(), tabVideos=[];
 let mode=null, tabF=null, tabT=null, vmeta={}, clog=[];
-let thumbFolderSearch='',thumbVideos=[],thumbSortKey='new',thumbSearchQ=''; // フォルダ検索クエリ
+let thumbFolderSearch='',thumbVideos=[],thumbSortKey='new',thumbSearchQ='',thumbThumbFilter='all'; // フォルダ検索クエリ
 
 const ol=console.log.bind(console);
 console.log=(...a)=>{ol(...a);clog.push(a.join(' '));};
@@ -545,6 +551,8 @@ async function loadThumbVideos(folderId){
 function renderThumbList(){
   let vs=[...thumbVideos];
   if(thumbSearchQ)vs=vs.filter(v=>v.display_name.toLowerCase().includes(thumbSearchQ.toLowerCase()));
+  if(thumbThumbFilter==='with')vs=vs.filter(v=>!!(vmeta[v.uuid]&&vmeta[v.uuid].thumbnailUrl));
+  else if(thumbThumbFilter==='without')vs=vs.filter(v=>!(vmeta[v.uuid]&&vmeta[v.uuid].thumbnailUrl));
   switch(thumbSortKey){
     case 'new':vs.sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0));break;
     case 'old':vs.sort((a,b)=>new Date(a.created_at||0)-new Date(b.created_at||0));break;
@@ -683,6 +691,9 @@ function toggleAdminLang() {
 
 // ── リリースノートデータ ──
 const RELEASE_NOTES = [
+  { ver:'v1.1.3', date:'2026-04-06', type:'admin',
+    ja:['サムネイル有り無しフィルター追加（全て/あり/なし）'],
+    en:['Added thumbnail filter (All/With/Without)'] },
   { ver:'v1.1.2', date:'2026-04-06', type:'admin',
     ja:['サムネイル設定にソート機能追加（8種類）','動画検索・フィルタ機能追加','hihaho視聴リンク追加'],
     en:['Added sort options to thumbnail settings (8 types)','Added video search/filter','Added hihaho player links'] },
@@ -740,7 +751,8 @@ function _renderRnBody(filter) {
 }
 
 // HTMLインラインハンドラー用グローバル公開
-window.onThumbSearch=function(q){thumbSearchQ=q;renderThumbList();};
+window.onThumbThumbFilter=function(f){thumbThumbFilter=f;['All','With','Without'].forEach(k=>{const b=document.getElementById('tf'+k);if(b){b.style.background=k.toLowerCase()===f?'#1565c0':'#f3f4f6';b.style.color=k.toLowerCase()===f?'#fff':'#374151';b.style.borderColor=k.toLowerCase()===f?'#1565c0':'#d1d5db';}});renderThumbList();};
+  window.onThumbSearch=function(q){thumbSearchQ=q;renderThumbList();};
 window.onThumbSort=function(k){thumbSortKey=k;renderThumbList();};
 window.showReleaseNotes=showReleaseNotes;
 window.hideReleaseNotes=hideReleaseNotes;
