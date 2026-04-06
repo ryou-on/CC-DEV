@@ -216,6 +216,21 @@ main{margin-left:var(--sw);margin-top:var(--hh);padding:24px;}
       </div>
       <!-- 右：動画リスト -->
       <div class="thumb-content">
+        <div id="thumbCtrl" style="display:none;border-bottom:1px solid #e5e7eb;padding:0 0 8px;margin-bottom:4px">
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 0 0">
+            <input type="text" id="thumbSearchQ" placeholder="🔍 動画を検索…" style="flex:1;min-width:150px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px" oninput="thumbSearchQ=this.value;renderThumbList()">
+            <select id="thumbSortSel" onchange="thumbSortKey=this.value;renderThumbList()" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;background:#fff">
+              <option value="new">新しい順</option>
+              <option value="old">古い順</option>
+              <option value="updD">更新↓</option>
+              <option value="updA">更新↑</option>
+              <option value="az">あ→ん</option>
+              <option value="za">ん→あ</option>
+              <option value="rand">ランダム</option>
+              <option value="thumb">サムネあり先</option>
+            </select>
+          </div>
+        </div>
         <div id="thumbList">
           <div class="emp"><div class="ei">📁</div><p>左のフォルダを選択してください</p></div>
         </div>
@@ -269,7 +284,7 @@ const TEXT   = 'jpg';
 
 let folders=[], videos=[], selF=new Set(), selV=new Set(), tabVideos=[];
 let mode=null, tabF=null, tabT=null, vmeta={}, clog=[];
-let thumbFolderSearch=''; // フォルダ検索クエリ
+let thumbFolderSearch='',thumbVideos=[],thumbSortKey='new',thumbSearchQ=''; // フォルダ検索クエリ
 
 const ol=console.log.bind(console);
 console.log=(...a)=>{ol(...a);clog.push(a.join(' '));};
@@ -516,10 +531,12 @@ function switchThumbFolder(id){
 async function loadThumbVideos(folderId){
   const el=document.getElementById('thumbList');
   el.innerHTML='<div class="load"><div class="spin"></div>読み込み中...</div>';
+  thumbSearchQ='';const sq=document.getElementById('thumbSearchQ');if(sq)sq.value='';
   try{
     const res=await api('/v2/video?video_container_id='+folderId);
-    const vs=res.data||[];
-    renderThumbListWithVideos(vs);
+    thumbVideos=res.data||[];
+    const ctrl=document.getElementById('thumbCtrl');if(ctrl)ctrl.style.display='';
+    renderThumbList();
   }catch(e){
     el.innerHTML='<div class="emp"><div class="ei">⚠️</div><p>'+e.message+'</p></div>';
   }
@@ -562,6 +579,7 @@ function renderThumbListWithVideos(vs){
           </label>
           <span id="uprog-${v.uuid}" class="uprog">アップロード中...</span>
         </div>
+        <div style="margin-top:5px;display:flex;gap:12px;font-size:11px"><a href="https://player.hihaho.com/${v.uuid}" target="_blank" rel="noopener" style="color:#1565c0;text-decoration:none">🎬 hihaho視聴</a></div>
         <div style="font-size:10px;color:var(--text-muted);margin-top:4px;font-family:var(--mono)">${v.uuid}</div>
       </div>
     </div>`;
@@ -671,6 +689,7 @@ function _rnLang(){ return (typeof currentLang !== 'undefined' ? currentLang : '
 function showReleaseNotes(filterInit) {
   const modal = document.getElementById('rnModal');
   if (!modal) return;
+  if(modal.parentElement!==document.body)document.body.appendChild(modal);
   modal.classList.add('open');
   _rnSetFilter(filterInit || 'all');
 }
