@@ -267,7 +267,7 @@ const PLAYER = 'https://cc-dev-ps7.web.app/hihaho-view/';
 const TBASE  = 'https://cc-dev-ps7.web.app/hihaho-player/thumbs';
 const TEXT   = 'jpg';
 
-let folders=[], videos=[], selF=new Set(), selV=new Set();
+let folders=[], videos=[], selF=new Set(), selV=new Set(), tabVideos=[];
 let mode=null, tabF=null, tabT=null, vmeta={}, clog=[];
 let thumbFolderSearch=''; // フォルダ検索クエリ
 
@@ -372,7 +372,7 @@ function renderFGrid(){
   const el=document.getElementById('folderGrid');
   if(!folders.length){el.innerHTML='<p style="color:var(--text-muted);font-size:13px">フォルダがありません</p>';return;}
   el.innerHTML=folders.map(f=>{
-    const cnt=videos.filter(v=>String(v.video_container_id)===String(f.id)).length;
+    const cnt='-';
     const sel=selF.has(f.id);
     return `<div class="fc ${sel?'sel':''}" onclick="toggleF(${f.id})">
       <div class="fa">${f.name.charAt(0).toUpperCase()}</div>
@@ -395,7 +395,7 @@ function renderVTabs(){
   renderVList();
 }
 
-function switchFTab(id){
+async function loadTabVideos(fid){ const el=document.getElementById('videoList'); el.innerHTML='<div class="load"><div class="spin"></div>読み込み中...</div>'; try{ const res=await api('/v2/video?video_container_id='+fid); tabVideos=res.data||[]; renderVList(); }catch(e){ el.innerHTML='<div class="emp"><div class="ei">⚠️</div><p>'+e.message+'</p></div>'; } } function switchFTab(id){
   tabF=id;
   document.querySelectorAll('#folderTabs .tab').forEach(t=>t.classList.remove('active'));
   event.currentTarget.classList.add('active');
@@ -403,7 +403,7 @@ function switchFTab(id){
 }
 
 function renderVList(){
-  const vs=videos.filter(v=>String(v.video_container_id)===String(tabF));
+  const vs=tabVideos;
   const sb=document.getElementById('selectBar');
   sb.style.display=selV.size>0?'flex':'none';
   document.getElementById('selectCount').textContent=selV.size+'件選択中';
@@ -444,7 +444,7 @@ async function publishPlaylist(){
     const data={name,createdAt:serverTimestamp(),type:mode};
     if(mode==='folder'){
       data.folderIds=[...selF];
-      data.videoIds=videos.filter(v=>selF.has(v.video_container_id)).map(v=>v.id);
+      data.videoIds=[];
     }else{
       data.videoIds=[...selV];data.folderIds=[];
     }
