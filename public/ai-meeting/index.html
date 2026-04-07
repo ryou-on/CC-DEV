@@ -10,21 +10,21 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.0/marked.min.js"></script>
   <style>
-    .meeting-output h1 { font-size:1.5em; font-weight:bold; margin:1em 0 .5em }
-    .meeting-output h2 { font-size:1.3em; font-weight:bold; margin:1em 0 .5em }
-    .meeting-output h3 { font-size:1.15em; font-weight:bold; margin:.8em 0 .4em }
-    .meeting-output p  { margin:.5em 0; line-height:1.8 }
-    .meeting-output ul,.meeting-output ol { margin:.5em 0; padding-left:1.5em }
-    .meeting-output li { margin:.3em 0; line-height:1.7 }
-    .meeting-output blockquote { border-left:3px solid #a855f7; padding-left:1em; margin:.8em 0; color:#6b7280 }
-    .meeting-output strong { font-weight:bold }
-    .meeting-output hr { margin:1.5em 0; border-color:#e5e7eb }
-    .meeting-output code { background:#f3f4f6; padding:.15em .4em; border-radius:3px; font-size:.9em }
-    .cs::-webkit-scrollbar { width:6px }
-    .cs::-webkit-scrollbar-track { background:#f1f5f9; border-radius:3px }
-    .cs::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:3px }
-    @keyframes pd { 0%,100%{opacity:.4} 50%{opacity:1} }
-    .pd { animation:pd 1.5s infinite }
+    .meeting-output h1{font-size:1.5em;font-weight:bold;margin:1em 0 .5em}
+    .meeting-output h2{font-size:1.3em;font-weight:bold;margin:1em 0 .5em}
+    .meeting-output h3{font-size:1.15em;font-weight:bold;margin:.8em 0 .4em}
+    .meeting-output p{margin:.5em 0;line-height:1.8}
+    .meeting-output ul,.meeting-output ol{margin:.5em 0;padding-left:1.5em}
+    .meeting-output li{margin:.3em 0;line-height:1.7}
+    .meeting-output blockquote{border-left:3px solid #a855f7;padding-left:1em;margin:.8em 0;color:#6b7280}
+    .meeting-output strong{font-weight:bold}
+    .meeting-output hr{margin:1.5em 0;border-color:#e5e7eb}
+    .meeting-output code{background:#f3f4f6;padding:.15em .4em;border-radius:3px;font-size:.9em}
+    .cs::-webkit-scrollbar{width:6px}
+    .cs::-webkit-scrollbar-track{background:#f1f5f9;border-radius:3px}
+    .cs::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:3px}
+    @keyframes pd{0%,100%{opacity:.4}50%{opacity:1}}
+    .pd{animation:pd 1.5s infinite}
     .pd:nth-child(2){animation-delay:.3s}.pd:nth-child(3){animation-delay:.6s}
     @keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
     .sc::after{content:'▊';animation:blink 1s infinite;color:#a855f7}
@@ -33,17 +33,18 @@
 <body class="bg-gray-50 min-h-screen">
   <div id="root"></div>
   <script type="text/babel">
-    const { useState, useRef, useEffect, useCallback } = React;
-
-    const CHARS = [
-      { id:'genius',   emoji:'🧠', name:'天才',       bg:'#f3e8ff', border:'#a855f7', color:'#7c3aed', desc:'常識を無視した大胆なアイデアを出す' },
-      { id:'beginner', emoji:'🔰', name:'初心者',     bg:'#ecfdf5', border:'#34d399', color:'#059669', desc:'素朴な疑問で前提を問い直す' },
-      { id:'positive', emoji:'☀️', name:'ポジティブ', bg:'#fefce8', border:'#facc15', color:'#ca8a04', desc:'可能性を広げてアイデアを育てる' },
-      { id:'worrier',  emoji:'😰', name:'心配性',     bg:'#fef2f2', border:'#f87171', color:'#dc2626', desc:'リスクを洗い出し現実チェックする' },
+    const{useState,useRef,useEffect,useCallback}=React;
+    const CHARS=[
+      {id:'genius',  emoji:'🧠',name:'天才',      bg:'#f3e8ff',border:'#a855f7',color:'#7c3aed',desc:'常識を無視した大胆なアイデアを出す'},
+      {id:'beginner',emoji:'🔰',name:'初心者',    bg:'#ecfdf5',border:'#34d399',color:'#059669',desc:'素朴な疑問で前提を問い直す'},
+      {id:'positive',emoji:'☀️',name:'ポジティブ',bg:'#fefce8',border:'#facc15',color:'#ca8a04',desc:'可能性を広げてアイデアを育てる'},
+      {id:'worrier', emoji:'😰',name:'心配性',    bg:'#fef2f2',border:'#f87171',color:'#dc2626',desc:'リスクを洗い出し現実チェックする'},
     ];
-    const DEF_P = ['🛠️ 開発者目線','📣 マーケティング目線','🤖 AIコンサル目線'];
+    const DEF_P=['🛠️ 開発者目線','📣 マーケティング目線','🤖 AIコンサル目線'];
+    const CM=['claude-sonnet-4-6','claude-opus-4-6','claude-haiku-4-5-20251001'];
+    const OM=['gpt-4o','gpt-4o-mini','gpt-4-turbo','o3-mini'];
 
-    const buildPrompt = (theme, perspectives) =>
+    const buildPrompt=(theme,perspectives)=>
 `### タスク
 テーマについて関連する天才・初心者・ポジティブ・心配性なキャラ4人を作成し、
 批判的思考で非常に価値の高い架空の会議を進めてください（最低10000字以上）。
@@ -61,124 +62,160 @@ ${perspectives.join('\n')}
 ### テーマ：
 ・${theme}`;
 
-    // OpenAI ストリーミング
-    async function* streamOpenAI(apiKey, model, prompt) {
-      const res = await fetch('https://api.openai.com/v1/chat/completions', {
-        method:'POST',
-        headers:{'Content-Type':'application/json','Authorization':`Bearer ${apiKey}`},
-        body:JSON.stringify({model,messages:[{role:'user',content:prompt}],stream:true,max_tokens:16000,temperature:0.9}),
-      });
-      if (!res.ok) throw new Error(`OpenAI Error: ${res.status} ${await res.text()}`);
-      const reader=res.body.getReader(), dec=new TextDecoder(); let buf='';
+    // SSEパーサー（共通）
+    async function*parseSSE(body,extractor){
+      const reader=body.getReader(),dec=new TextDecoder();let buf='';
       while(true){
-        const {done,value}=await reader.read(); if(done)break;
+        const{done,value}=await reader.read();if(done)break;
         buf+=dec.decode(value,{stream:true});
-        const lines=buf.split('\n'); buf=lines.pop()||'';
+        const lines=buf.split('\n');buf=lines.pop()||'';
         for(const l of lines){
-          const t=l.trim(); if(!t||t==='data: [DONE]')continue;
-          if(t.startsWith('data: ')){try{const j=JSON.parse(t.slice(6));const c=j.choices?.[0]?.delta?.content;if(c)yield c;}catch{}}
+          const t=l.trim();if(!t||t==='data: [DONE]')continue;
+          if(t.startsWith('data: ')){try{const j=JSON.parse(t.slice(6));const v=extractor(j);if(v)yield v;}catch{}}
         }
       }
     }
 
-    // Claude ストリーミング
-    async function* streamClaude(apiKey, model, prompt) {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
+    // 直接モード - Claude
+    async function*streamClaude(apiKey,model,prompt){
+      const res=await fetch('https://api.anthropic.com/v1/messages',{
         method:'POST',
-        headers:{
-          'Content-Type':'application/json',
-          'x-api-key': apiKey,   // trim済みのキーを渡す
-          'anthropic-version':'2023-06-01',
-          'anthropic-dangerous-direct-browser-access':'true',
-        },
+        headers:{'Content-Type':'application/json','x-api-key':apiKey.trim(),'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
         body:JSON.stringify({model,max_tokens:16000,messages:[{role:'user',content:prompt}],stream:true,temperature:0.9}),
       });
-      if (!res.ok) throw new Error(`Claude Error: ${res.status} ${await res.text()}`);
-      const reader=res.body.getReader(), dec=new TextDecoder(); let buf='';
-      while(true){
-        const {done,value}=await reader.read(); if(done)break;
-        buf+=dec.decode(value,{stream:true});
-        const lines=buf.split('\n'); buf=lines.pop()||'';
-        for(const l of lines){
-          const t=l.trim(); if(!t)continue;
-          if(t.startsWith('data: ')){try{const j=JSON.parse(t.slice(6));if(j.type==='content_block_delta'&&j.delta?.text)yield j.delta.text;}catch{}}
-        }
+      if(!res.ok)throw new Error(`Claudeエラー: ${res.status} ${await res.text()}`);
+      yield*parseSSE(res.body,c=>c.type==='content_block_delta'?c.delta?.text:null);
+    }
+
+    // 直接モード - OpenAI
+    async function*streamOpenAI(apiKey,model,prompt){
+      const res=await fetch('https://api.openai.com/v1/chat/completions',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':`Bearer ${apiKey.trim()}`},
+        body:JSON.stringify({model,messages:[{role:'user',content:prompt}],stream:true,max_tokens:16000,temperature:0.9}),
+      });
+      if(!res.ok)throw new Error(`OpenAIエラー: ${res.status} ${await res.text()}`);
+      yield*parseSSE(res.body,c=>c.choices?.[0]?.delta?.content??null);
+    }
+
+    // プロキシモード - Cloudflare Worker経由
+    async function*streamProxy(workerUrl,sharedToken,model,prompt){
+      const res=await fetch(workerUrl.trim(),{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':`Bearer ${sharedToken.trim()}`},
+        body:JSON.stringify({model,max_tokens:16000,messages:[{role:'user',content:prompt}],stream:true,temperature:0.9}),
+      });
+      if(!res.ok){
+        const err=await res.text();let msg=`Workerエラー: ${res.status}`;
+        try{msg=JSON.parse(err).error||msg;}catch{}
+        throw new Error(msg);
       }
+      yield*parseSSE(res.body,c=>c.type==='content_block_delta'?c.delta?.text:null);
     }
 
     // 設定パネル
-    function SettingsPanel({settings,setSettings,open,setOpen}){
-      const [showKey,setShowKey]=useState(false);
-      const providers=[
-        {id:'openai',  name:'OpenAI',            models:['gpt-4o','gpt-4o-mini','gpt-4-turbo','o3-mini']},
-        {id:'claude',  name:'Claude (Anthropic)', models:['claude-sonnet-4-6','claude-opus-4-6','claude-haiku-4-5-20251001']},
-      ];
-      const cur=providers.find(p=>p.id===settings.provider);
-      return (
+    function SettingsPanel({s,setS,open,setOpen}){
+      const[showKey,setShowKey]=useState(false);
+      const[showToken,setShowToken]=useState(false);
+      const models=s.mode==='proxy'?CM:s.provider==='claude'?CM:OM;
+      const configured=(s.mode==='direct'&&s.apiKey)||(s.mode==='proxy'&&s.workerUrl&&s.sharedToken);
+      return(
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
           <button onClick={()=>setOpen(!open)} className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 transition">
             <div className="flex items-center gap-3">
               <span className="text-xl">⚙️</span>
               <span className="font-semibold text-gray-800">API設定</span>
-              {settings.apiKey
-                ? <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">設定済み</span>
-                : <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full">未設定</span>}
+              {configured
+                ?<span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">設定済み</span>
+                :<span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full">未設定</span>}
+              <span className={`text-xs px-2 py-0.5 rounded-full ${s.mode==='proxy'?'bg-blue-100 text-blue-700':'bg-gray-100 text-gray-600'}`}>
+                {s.mode==='proxy'?'🔒 プロキシ':'💻 直接接続'}
+              </span>
             </div>
             <svg className={`w-5 h-5 text-gray-400 transition-transform ${open?'rotate-180':''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/>
             </svg>
           </button>
-          {open && (
+          {open&&(
             <div className="px-6 pb-6 space-y-4 border-t border-gray-100 pt-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">AIプロバイダ</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">接続モード</label>
                 <div className="flex gap-3">
-                  {providers.map(p=>(
-                    <button key={p.id} onClick={()=>setSettings(s=>({...s,provider:p.id,model:p.models[0]}))}
-                      className={`flex-1 py-2.5 px-4 rounded-xl border-2 text-sm font-medium transition ${settings.provider===p.id?'border-purple-500 bg-purple-50 text-purple-700':'border-gray-200 text-gray-600 hover:border-gray-300'}`}>
-                      {p.name}
+                  {[{id:'direct',label:'💻 直接（自分のAPIキー）'},{id:'proxy',label:'🔒 プロキシ（共有用）'}].map(m=>(
+                    <button key={m.id} onClick={()=>setS(p=>({...p,mode:m.id}))}
+                      className={`flex-1 py-2.5 px-3 rounded-xl border-2 text-sm font-medium transition ${s.mode===m.id?'border-purple-500 bg-purple-50 text-purple-700':'border-gray-200 text-gray-600 hover:border-gray-300'}`}>
+                      {m.label}
                     </button>
                   ))}
                 </div>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">モデル</label>
-                <select value={settings.model} onChange={e=>setSettings(s=>({...s,model:e.target.value}))}
+                <select value={s.model} onChange={e=>setS(p=>({...p,model:e.target.value}))}
                   className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:ring-2 focus:ring-purple-500 outline-none">
-                  {cur?.models.map(m=><option key={m} value={m}>{m}</option>)}
+                  {models.map(m=><option key={m} value={m}>{m}</option>)}
                 </select>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">APIキー</label>
-                <div className="relative">
-                  <input type={showKey?'text':'password'} value={settings.apiKey}
-                    onChange={e=>setSettings(s=>({...s,apiKey:e.target.value}))}
-                    onBlur={e=>setSettings(s=>({...s,apiKey:e.target.value.trim()}))}  /* フォーカスアウト時にtrim */
-                    placeholder={settings.provider==='openai'?'sk-...':'sk-ant-api03-...'}
-                    className="w-full px-4 py-2.5 pr-20 rounded-xl border border-gray-200 text-sm focus:ring-2 focus:ring-purple-500 outline-none font-mono"/>
-                  <button onClick={()=>setShowKey(!showKey)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-600">
-                    {showKey?'🙈 隠す':'👁 表示'}
-                  </button>
+              {s.mode==='direct'&&(<>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">AIプロバイダ</label>
+                  <div className="flex gap-3">
+                    {[{id:'claude',name:'Claude'},{id:'openai',name:'OpenAI'}].map(p=>(
+                      <button key={p.id} onClick={()=>setS(s=>({...s,provider:p.id,model:(p.id==='claude'?CM:OM)[0]}))}
+                        className={`flex-1 py-2.5 px-4 rounded-xl border-2 text-sm font-medium transition ${s.provider===p.id?'border-purple-500 bg-purple-50 text-purple-700':'border-gray-200 text-gray-600 hover:border-gray-300'}`}>{p.name}</button>
+                    ))}
+                  </div>
                 </div>
-                {settings.apiKey && (
-                  <p className="text-xs text-gray-400 mt-1">
-                    {settings.apiKey.length}文字 ／ 先頭: <code className="bg-gray-100 px-1 rounded">{settings.apiKey.slice(0,12)}...</code>
-                  </p>
-                )}
-                <p className="text-xs text-gray-400 mt-1">
-                  取得先: {settings.provider==='claude'?'console.anthropic.com':'platform.openai.com'} ／ localStorageに保存
-                </p>
-              </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">APIキー</label>
+                  <div className="relative">
+                    <input type={showKey?'text':'password'} value={s.apiKey}
+                      onChange={e=>setS(p=>({...p,apiKey:e.target.value}))}
+                      onBlur={e=>setS(p=>({...p,apiKey:e.target.value.trim()}))}
+                      placeholder={s.provider==='claude'?'sk-ant-api03-...':'sk-...'}
+                      className="w-full px-4 py-2.5 pr-20 rounded-xl border border-gray-200 text-sm focus:ring-2 focus:ring-purple-500 outline-none font-mono"/>
+                    <button onClick={()=>setShowKey(!showKey)} className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-600">
+                      {showKey?'🙈 隠す':'👁 表示'}
+                    </button>
+                  </div>
+                  {s.apiKey&&<p className="text-xs text-gray-400 mt-1">{s.apiKey.length}文字 / 先頭: <code className="bg-gray-100 px-1 rounded">{s.apiKey.slice(0,12)}...</code></p>}
+                  <p className="text-xs text-gray-400 mt-1">取得先: {s.provider==='claude'?'console.anthropic.com':'platform.openai.com'}</p>
+                </div>
+              </>)}
+              {s.mode==='proxy'&&(<>
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-700">
+                  🔒 プロキシモードではAPIキーは不要です。<br/>管理者からWorker URLと共有トークンを受け取って入力してください。
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Worker URL</label>
+                  <input type="text" value={s.workerUrl}
+                    onChange={e=>setS(p=>({...p,workerUrl:e.target.value}))}
+                    onBlur={e=>setS(p=>({...p,workerUrl:e.target.value.trim()}))}
+                    placeholder="https://ai-meeting-proxy.xxxxx.workers.dev"
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:ring-2 focus:ring-purple-500 outline-none font-mono"/>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">共有トークン</label>
+                  <div className="relative">
+                    <input type={showToken?'text':'password'} value={s.sharedToken}
+                      onChange={e=>setS(p=>({...p,sharedToken:e.target.value}))}
+                      onBlur={e=>setS(p=>({...p,sharedToken:e.target.value.trim()}))}
+                      placeholder="管理者から受け取ったトークン"
+                      className="w-full px-4 py-2.5 pr-20 rounded-xl border border-gray-200 text-sm focus:ring-2 focus:ring-purple-500 outline-none font-mono"/>
+                    <button onClick={()=>setShowToken(!showToken)} className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-gray-600">
+                      {showToken?'🙈 隠す':'👁 表示'}
+                    </button>
+                  </div>
+                </div>
+              </>)}
             </div>
           )}
         </div>
       );
     }
 
-    // キャラカード
     function CharCards(){
-      return (
+      return(
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {CHARS.map(c=>(
             <div key={c.id} style={{background:c.bg,borderColor:c.border}} className="border rounded-xl p-4 text-center">
@@ -191,11 +228,10 @@ ${perspectives.join('\n')}
       );
     }
 
-    // 専門視点
     function PerspTags({list,setList}){
-      const [v,setV]=useState('');
+      const[v,setV]=useState('');
       const add=()=>{if(v.trim()&&!list.includes(v.trim())){setList([...list,v.trim()]);setV('');}};
-      return (
+      return(
         <div className="space-y-2">
           <label className="block text-sm font-medium text-gray-700">専門視点（カスタマイズ可）</label>
           <div className="flex flex-wrap gap-2">
@@ -214,13 +250,12 @@ ${perspectives.join('\n')}
       );
     }
 
-    // 会議出力
     function Output({content,streaming}){
       const ref=useRef(null);
-      const [auto,setAuto]=useState(true);
+      const[auto,setAuto]=useState(true);
       useEffect(()=>{if(auto&&ref.current)ref.current.scrollTop=ref.current.scrollHeight;},[content,auto]);
       if(!content)return null;
-      return (
+      return(
         <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -230,17 +265,17 @@ ${perspectives.join('\n')}
             </div>
             <span className="text-sm text-gray-400">{content.length.toLocaleString()}文字</span>
           </div>
-          <div ref={ref} onScroll={()=>{if(!ref.current)return;const{scrollTop,scrollHeight,clientHeight}=ref.current;setAuto(scrollHeight-scrollTop-clientHeight<100);}}
+          <div ref={ref}
+            onScroll={()=>{if(!ref.current)return;const{scrollTop,scrollHeight,clientHeight}=ref.current;setAuto(scrollHeight-scrollTop-clientHeight<100);}}
             className={`p-6 max-h-[70vh] overflow-y-auto cs meeting-output text-gray-800 leading-relaxed ${streaming?'sc':''}`}
             dangerouslySetInnerHTML={{__html:marked.parse(content,{breaks:true})}}/>
         </div>
       );
     }
 
-    // デバッグ
     function Debug({logs}){
-      const [open,setOpen]=useState(false);
-      return (
+      const[open,setOpen]=useState(false);
+      return(
         <div className="fixed bottom-4 right-4 z-50">
           {open&&<div className="bg-gray-900 text-green-400 rounded-xl shadow-2xl w-96 max-h-64 overflow-y-auto mb-2 p-4 text-xs font-mono cs">{logs.map((l,i)=><div key={i}>{l}</div>)}</div>}
           <div className="flex gap-2 justify-end">
@@ -251,34 +286,34 @@ ${perspectives.join('\n')}
       );
     }
 
-    // メイン
     function App(){
-      const [settings,setSettings]=useState(()=>{
-        try{const s=localStorage.getItem('ai-meeting-v2');return s?JSON.parse(s):{provider:'claude',model:'claude-sonnet-4-6',apiKey:''};}
-        catch{return{provider:'claude',model:'claude-sonnet-4-6',apiKey:''};}
+      const[s,setS]=useState(()=>{
+        try{const v=localStorage.getItem('ai-meeting-v3');return v?JSON.parse(v):{mode:'direct',provider:'claude',model:'claude-sonnet-4-6',apiKey:'',workerUrl:'',sharedToken:''};}
+        catch{return{mode:'direct',provider:'claude',model:'claude-sonnet-4-6',apiKey:'',workerUrl:'',sharedToken:''};}
       });
-      const [sOpen,setSOpen]=useState(!settings.apiKey);
-      const [theme,setTheme]=useState('');
-      const [persp,setPersp]=useState([...DEF_P]);
-      const [content,setContent]=useState('');
-      const [streaming,setStreaming]=useState(false);
-      const [error,setError]=useState('');
-      const [logs,setLogs]=useState([]);
+      const[sOpen,setSOpen]=useState(true);
+      const[theme,setTheme]=useState('');
+      const[persp,setPersp]=useState([...DEF_P]);
+      const[content,setContent]=useState('');
+      const[streaming,setStreaming]=useState(false);
+      const[error,setError]=useState('');
+      const[logs,setLogs]=useState([]);
       const log=useCallback(m=>setLogs(p=>[...p,`[${new Date().toLocaleTimeString()}] ${m}`]),[]);
 
-      useEffect(()=>{try{localStorage.setItem('ai-meeting-v2',JSON.stringify(settings));}catch{}},[settings]);
+      useEffect(()=>{try{localStorage.setItem('ai-meeting-v3',JSON.stringify(s));}catch{}},[s]);
 
       const start=async()=>{
-        const apiKey=settings.apiKey.trim();   // ← 必ずtrim
-        if(!apiKey){setError('APIキーを設定してください');setSOpen(true);return;}
+        if(s.mode==='direct'&&!s.apiKey.trim()){setError('APIキーを設定してください');setSOpen(true);return;}
+        if(s.mode==='proxy'&&(!s.workerUrl.trim()||!s.sharedToken.trim())){setError('Worker URLと共有トークンを入力してください');setSOpen(true);return;}
         if(!theme.trim()){setError('テーマを入力してください');return;}
         setError('');setContent('');setStreaming(true);setSOpen(false);
-        log(`開始: ${settings.provider} / ${settings.model}`);
-        log(`APIキー: ${apiKey.length}文字 / 先頭12: "${apiKey.slice(0,12)}"`);
+        log(`開始: mode=${s.mode}, model=${s.model}`);
         try{
-          const gen=settings.provider==='openai'
-            ?streamOpenAI(apiKey,settings.model,buildPrompt(theme.trim(),persp))
-            :streamClaude(apiKey,settings.model,buildPrompt(theme.trim(),persp));
+          const prompt=buildPrompt(theme.trim(),persp);
+          let gen;
+          if(s.mode==='proxy')gen=streamProxy(s.workerUrl,s.sharedToken,s.model,prompt);
+          else if(s.provider==='openai')gen=streamOpenAI(s.apiKey,s.model,prompt);
+          else gen=streamClaude(s.apiKey,s.model,prompt);
           let full='';
           for await(const c of gen){full+=c;setContent(full);}
           log(`完了: ${full.length}文字`);
@@ -286,7 +321,7 @@ ${perspectives.join('\n')}
         finally{setStreaming(false);}
       };
 
-      return (
+      return(
         <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-indigo-50">
           <header className="bg-white/80 backdrop-blur-sm border-b border-gray-200 sticky top-0 z-40">
             <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
@@ -307,7 +342,7 @@ ${perspectives.join('\n')}
             </div>
           </header>
           <main className="max-w-4xl mx-auto px-4 py-6 space-y-5">
-            <SettingsPanel settings={settings} setSettings={setSettings} open={sOpen} setOpen={setSOpen}/>
+            <SettingsPanel s={s} setS={setS} open={sOpen} setOpen={setSOpen}/>
             {!content&&<CharCards/>}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 space-y-4">
               <div>
