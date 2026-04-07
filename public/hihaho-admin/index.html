@@ -210,9 +210,16 @@ main{margin-left:var(--sw);margin-top:var(--hh);padding:24px;}
         <div style="font-size:11px;font-weight:600;color:#374151;margin-bottom:4px">プレイヤー名（空欄=デフォルト）</div>
         <input class="fi" id="playerNameInput" placeholder="例: ACME 研修プレイヤー" maxlength="40">
       </div>
-      <div>
-        <div style="font-size:11px;font-weight:600;color:#374151;margin-bottom:4px">ロゴ画像URL（任意）</div>
-        <input class="fi" id="logoUrlInput" placeholder="https://example.com/logo.png" maxlength="300">
+            <div>
+        <div style="font-size:11px;font-weight:600;color:#374151;margin-bottom:4px">ロゴ画像（任意）</div>
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+          <input class="fi" id="logoUrlInput" placeholder="https://example.com/logo.png" maxlength="300" style="flex:1" oninput="updateLogoPreview()">
+          <label class="btn bs" style="margin:0;padding:5px 10px;cursor:pointer;white-space:nowrap;font-size:12px">📂 アップロード<input type="file" id="logoFileInput" accept="image/*" style="display:none" onchange="uploadLogoFile(this)"></label>
+        </div>
+        <div id="logoPreviewWrap" style="display:none;margin-bottom:6px;align-items:center;gap:8px">
+          <img id="logoPreviewImg" style="height:32px;max-width:120px;object-fit:contain;border:1px solid #e5e7eb;border-radius:4px;padding:2px;background:#f9fafb">
+          <button onclick="clearLogoUrl()" style="font-size:10px;color:#ef4444;background:none;border:none;cursor:pointer">× クリア</button>
+        </div>
         <div style="font-size:10px;color:#9ca3af;margin-top:3px">空欄の場合はhihahoデフォルトロゴを使用</div>
       </div>
     </div>
@@ -317,7 +324,7 @@ console.log=(...a)=>{ol(...a);clog.push(a.join(' '));};
 const log=m=>console.log('[admin] '+m);
 
 Object.assign(window,{
-  showPage,openEdit,setMode,toggleF,toggleV,switchFTab,
+  showPage,uploadLogoFile,updateLogoPreview,clearLogoUrl,openEdit,setMode,toggleF,toggleV,switchFTab,
   clearSel,publishPlaylist,resetCreate,closeMo,copyPubUrl,openPubUrl,
   deletePlaylist,copyUrl,previewThumb,saveThumbs,clearThumb,
   switchThumbFolder, filterThumbFolders, uploadThumb,
@@ -518,12 +525,48 @@ function closeMo(){document.getElementById('pubModal').classList.remove('open');
 function copyPubUrl(){navigator.clipboard.writeText(document.getElementById('pubUrlText').textContent).then(()=>toast('URLをコピーしました','suc'));}
 function openPubUrl(){window.open(document.getElementById('pubUrlText').textContent);closeMo();}
 
+
+// ロゴ画像アップロード
+async function uploadLogoFile(input){
+  if(!input.files||!input.files[0])return;
+  const file=input.files[0];
+  if(!file.type.startsWith('image/')){toast('画像ファイルを選択してください','err');input.value='';return;}
+  if(file.size>2*1024*1024){toast('2MB以下の画像を選択してください','err');input.value='';return;}
+  const lbl=input.closest('label');
+  const origHTML=lbl.innerHTML;
+  lbl.textContent='アップロード中...';
+  try{
+    const ext=file.name.split('.').pop().toLowerCase();
+    const path='logos/'+Date.now()+'_'+Math.random().toString(36).slice(2,6)+'.'+ext;
+    const sr=ref(storage,path);
+    await uploadBytes(sr,file);
+    const url=await getDownloadURL(sr);
+    document.getElementById('logoUrlInput').value=url;
+    updateLogoPreview();
+    toast('アップロード完了！');
+  }catch(e){toast('アップロードエラー: '+e.message,'err');}
+  finally{lbl.innerHTML=origHTML;input.value='';}
+}
+function updateLogoPreview(){
+  const url=document.getElementById('logoUrlInput')?.value.trim();
+  const wrap=document.getElementById('logoPreviewWrap');
+  const img=document.getElementById('logoPreviewImg');
+  if(wrap&&img){
+    if(url){img.src=url;img.style.display='block';wrap.style.display='flex';}
+    else{wrap.style.display='none';}
+  }
+}
+function clearLogoUrl(){
+  const inp=document.getElementById('logoUrlInput');if(inp)inp.value='';
+  updateLogoPreview();
+}
 function resetCreate(){
   editId=null;
   const pb=document.getElementById('publishBtn');if(pb)pb.textContent='🔗 発行データを発行';
   document.getElementById('playlistName').value='';
   const pni=document.getElementById('playerNameInput'); if(pni) pni.value='';
   const lui=document.getElementById('logoUrlInput'); if(lui) lui.value='';
+  updateLogoPreview();
   mode=null;selF.clear();selV.clear();tabF=null;
   ['modeFolder','modeVideo'].forEach(id=>{
     const b=document.getElementById(id);
@@ -550,6 +593,7 @@ async function openEdit(id){
     document.getElementById('playlistName').value=d.name||'';
     const pni=document.getElementById('playerNameInput');if(pni)pni.value=d.playerName||'';
     const lui=document.getElementById('logoUrlInput');if(lui)lui.value=d.logoUrl||'';
+    updateLogoPreview();
     // 発行ボタンのテキスト変更
     const pb=document.getElementById('publishBtn');if(pb)pb.textContent='✅ 更新する';
     // モード設定
