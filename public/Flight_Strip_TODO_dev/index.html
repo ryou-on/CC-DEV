@@ -1,0 +1,1664 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>◈ FLIGHT STRIP TODO [DEV]</title>
+
+  <!-- Firebase Compat SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+
+  <!-- React + Babel + Tailwind -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone@7.23.10/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg-main, #060a18); transition: background 0.3s; }
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: var(--bg-scroll, #0a1020); }
+    ::-webkit-scrollbar-thumb { background: var(--border, #1a2540); border-radius: 2px; }
+    select option { background: var(--bg-input, #0a1020); color: var(--text-main, #ddeeff); }
+    @keyframes spin  { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @keyframes pulse { 0%,100%{opacity:0.3;} 50%{opacity:1;} }
+    @keyframes blink { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+    /* DEV バナー */
+    #dev-banner {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
+      background: #ff6600; color: #000;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px; font-weight: 800; letter-spacing: 0.2em;
+      text-align: center; padding: 3px 0;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="dev-banner">⚠ DEV BUILD — v0.6.0-dev — NOT FOR PRODUCTION ⚠</div>
+  <div id="root" style="padding-top:22px;"></div>
+
+  <!-- Firebase 初期化 -->
+  <script>
+    const firebaseConfig = {
+      apiKey:            "AIzaSyDPlsAhtxbJBihy-EAHck9P7XbuMdzV0ds",
+      authDomain:        "cc-dev-ps7.firebaseapp.com",
+      projectId:         "cc-dev-ps7",
+      storageBucket:     "cc-dev-ps7.firebasestorage.app",
+      messagingSenderId: "1029579090333",
+      appId:             "1:1029579090333:web:5a2ea499fec97c497f2774"
+    };
+    firebase.initializeApp(firebaseConfig);
+    window._auth = firebase.auth();
+    window._db   = firebase.firestore();
+  </script>
+
+  <!-- React アプリ（JSX） -->
+  <script id="jsx-source" type="text/plain">
+    const { useState, useRef, useCallback, useEffect, useMemo, createContext, useContext } = React;
+    const auth = window._auth;
+    const db   = window._db;
+
+    // ======================================================
+    // ⚙️ アクセス制御
+    // ======================================================
+    const ALLOWED_EMAILS = [];
+
+    // ======================================================
+    // 🎨 テーマ定義
+    // ======================================================
+    const THEMES = {
+      DARK: {
+        id: "DARK", name: "DARK",
+        bg: "#060a18",
+        bgGrad: "linear-gradient(180deg,#060a18 0%,#0a1020 50%,#0d1428 100%)",
+        bgCard: "rgba(10,15,30,0.4)",
+        bgInput: "rgba(0,10,20,0.8)",
+        bgModal: "rgba(10,15,35,0.97)",
+        accent: "#00ff88", accent2: "#00ccff",
+        text: "#ddeeff", textDim: "#8899aa", textMuted: "#334466",
+        border: "#1a2540", border2: "#222244",
+        grid: "rgba(0,255,136,0.03)", scanAlpha: 0.08,
+        dot: "#00ff88",
+      },
+      LIGHT: {
+        id: "LIGHT", name: "LIGHT",
+        bg: "#f0f5fc",
+        bgGrad: "linear-gradient(180deg,#f0f5fc 0%,#e8f0fa 50%,#e0ecf8 100%)",
+        bgCard: "rgba(255,255,255,0.88)",
+        bgInput: "rgba(240,248,255,0.92)",
+        bgModal: "rgba(248,252,255,0.98)",
+        accent: "#0055cc", accent2: "#0099bb",
+        text: "#1a2840", textDim: "#5577aa", textMuted: "#aabbcc",
+        border: "#c0d0e8", border2: "#d0ddf0",
+        grid: "rgba(0,80,200,0.03)", scanAlpha: 0,
+        dot: "#0055cc",
+      },
+      MEDIUM: {
+        id: "MEDIUM", name: "MEDIUM",
+        bg: "#1a2234",
+        bgGrad: "linear-gradient(180deg,#1a2234 0%,#1e2840 50%,#1c2638 100%)",
+        bgCard: "rgba(22,30,50,0.6)",
+        bgInput: "rgba(15,22,40,0.8)",
+        bgModal: "rgba(20,28,48,0.97)",
+        accent: "#55aaff", accent2: "#44ddff",
+        text: "#c5d8ec", textDim: "#6688aa", textMuted: "#2a4060",
+        border: "#2a3a58", border2: "#2e3e60",
+        grid: "rgba(80,150,255,0.04)", scanAlpha: 0.04,
+        dot: "#55aaff",
+      },
+      COLOR: {
+        id: "COLOR", name: "COLOR",
+        bg: "#0f0a1a",
+        bgGrad: "linear-gradient(180deg,#0f0a1a 0%,#130d22 50%,#0f0a1a 100%)",
+        bgCard: "rgba(20,12,35,0.5)",
+        bgInput: "rgba(10,6,20,0.8)",
+        bgModal: "rgba(18,10,32,0.97)",
+        accent: "#ff6600", accent2: "#cc44ff",
+        text: "#f0ddcc", textDim: "#997766", textMuted: "#3a2030",
+        border: "#2e1a40", border2: "#351e48",
+        grid: "rgba(255,100,0,0.03)", scanAlpha: 0.06,
+        dot: "#ff6600",
+      },
+      COLORFUL: {
+        id: "COLORFUL", name: "COLORFUL",
+        bg: "#05080f",
+        bgGrad: "linear-gradient(135deg,#05080f 0%,#0a0615 50%,#050810 100%)",
+        bgCard: "rgba(8,6,18,0.5)",
+        bgInput: "rgba(5,4,12,0.85)",
+        bgModal: "rgba(8,6,18,0.97)",
+        accent: "#ff2299", accent2: "#22ffcc",
+        text: "#ffffff", textDim: "#aaa8cc", textMuted: "#333355",
+        border: "#1a1830", border2: "#20183c",
+        grid: "rgba(255,30,150,0.04)", scanAlpha: 0.05,
+        dot: "#ff2299",
+      },
+    };
+
+    const ThemeCtx = createContext(THEMES.DARK);
+    const useT = () => useContext(ThemeCtx);
+
+    // ======================================================
+    // 定数
+    // ======================================================
+    const CATEGORIES = {
+      kikaku7:  { label: "企画7課",   color: "#00ff88" },
+      sg:       { label: "SG",        color: "#00ccff" },
+      jigyou:   { label: "個人事業",  color: "#ffaa00" },
+      katei:    { label: "家庭",      color: "#ff6699" },
+      dev:      { label: "開発",      color: "#aa88ff" },
+    };
+    const PRIORITIES = {
+      high:   { label: "URG", color: "#ff3333", bg: "rgba(255,51,51,0.15)",   border: "#ff3333"   },
+      normal: { label: "NRM", color: "#00ff88", bg: "rgba(0,255,136,0.08)",   border: "#00ff8844" },
+      low:    { label: "LOW", color: "#666688", bg: "rgba(102,102,136,0.08)", border: "#666688"   },
+    };
+    const COLUMNS = [
+      { id: "active",    label: "ACTIVE",      sublabel: "進行中",         icon: "▶", limit: 1  },
+      { id: "next",      label: "NEXT ACTION", sublabel: "次のアクション", icon: "→", limit: 5  },
+      { id: "delegated", label: "DELEGATED",   sublabel: "委任中",         icon: "✈" },
+      { id: "pending",   label: "HOLDING",     sublabel: "待機中",         icon: "⏸" },
+      { id: "completed", label: "CLEARED",     sublabel: "完了",           icon: "✓" },
+    ];
+    const SHORTCUTS = [
+      { key: "J / K",   desc: "次/前のストリップを選択" },
+      { key: "↑ / ↓",   desc: "選択ストリップを上/下へ移動" },
+      { key: "1",        desc: "→ ACTIVE（進行中・最大1）へ移動" },
+      { key: "2",        desc: "→ NEXT ACTION（次のアクション・最大5）へ移動" },
+      { key: "3",        desc: "→ DELEGATED（委任中）へ移動" },
+      { key: "4",        desc: "→ HOLDING（待機中）へ移動" },
+      { key: "5",        desc: "→ CLEARED（完了）へ移動" },
+      { key: "T",        desc: "ACTIVE タスクのタイマー START / STOP" },
+      { key: "N",        desc: "新規ストリップ作成" },
+      { key: "E",        desc: "選択ストリップを編集（全フィールド）" },
+      { key: "D",        desc: "選択ストリップを削除" },
+      { key: "F",        desc: "フィルター切替（優先度）" },
+      { key: "Esc",      desc: "選択解除 / フォームを閉じる" },
+      { key: "?",        desc: "ショートカット一覧の表示/非表示" },
+    ];
+    const PRIORITY_CYCLE = ["all", "high", "normal", "low"];
+
+    const useCurrentTime = () => {
+      const [time, setTime] = useState(new Date());
+      useEffect(() => {
+        const t = setInterval(() => setTime(new Date()), 1000);
+        return () => clearInterval(t);
+      }, []);
+      return time;
+    };
+
+    // ======================================================
+    // モバイル判定フック
+    // ======================================================
+    const useIsMobile = () => {
+      const [isMobile, setIsMobile] = useState(() => window.innerWidth < 540);
+      useEffect(() => {
+        const h = () => setIsMobile(window.innerWidth < 540);
+        window.addEventListener('resize', h);
+        return () => window.removeEventListener('resize', h);
+      }, []);
+      return isMobile;
+    };
+
+    // ======================================================
+    // ローディング画面
+    // ======================================================
+    const LoadingScreen = () => {
+      const T = useT();
+      return (
+        <div style={{ minHeight:"100vh", background:T.bg, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'JetBrains Mono',monospace", color:T.accent, fontSize:"12px", letterSpacing:"0.2em" }}>
+          <div style={{ textAlign:"center" }}>
+            <div style={{ fontSize:"28px", marginBottom:"16px", animation:"pulse 1.5s ease-in-out infinite" }}>◈</div>
+            <div>SYSTEM INITIALIZING...</div>
+          </div>
+        </div>
+      );
+    };
+
+    // ======================================================
+    // ログイン画面
+    // ======================================================
+    const LoginScreen = () => {
+      const T = useT();
+      const [loading, setLoading] = useState(false);
+      const [error, setError]     = useState(null);
+
+      const handleGoogleLogin = async () => {
+        setLoading(true); setError(null);
+        try {
+          const provider = new firebase.auth.GoogleAuthProvider();
+          await auth.signInWithPopup(provider);
+        } catch (e) {
+          setError("ログインに失敗しました。ポップアップをブロックしていないか確認してください。");
+          setLoading(false);
+        }
+      };
+
+      return (
+        <div style={{ minHeight:"100vh", background:T.bgGrad, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'JetBrains Mono',monospace" }}>
+          <div style={{ position:"fixed", inset:0, backgroundImage:`linear-gradient(${T.grid} 1px,transparent 1px),linear-gradient(90deg,${T.grid} 1px,transparent 1px)`, backgroundSize:"40px 40px", pointerEvents:"none" }} />
+          <div style={{ background:T.bgModal, border:`1px solid ${T.accent}33`, borderRadius:"8px", padding:"48px 40px", textAlign:"center", maxWidth:"360px", width:"90%", boxShadow:`0 0 60px ${T.accent}18`, position:"relative", zIndex:1 }}>
+            <div style={{ fontSize:"26px", fontWeight:800, color:T.accent, letterSpacing:"0.15em", marginBottom:"6px", textShadow:`0 0 20px ${T.accent}44` }}>◈ FLIGHT STRIP</div>
+            <div style={{ fontSize:"10px", color:T.textMuted, letterSpacing:"0.3em", marginBottom:"40px" }}>ATC TASK MANAGEMENT SYSTEM</div>
+            <button onClick={handleGoogleLogin} disabled={loading} style={{ width:"100%", background:loading?"transparent":`${T.accent}18`, border:`1px solid ${loading?T.border:T.accent}55`, color:loading?T.textMuted:T.accent, padding:"12px 24px", borderRadius:"4px", cursor:loading?"not-allowed":"pointer", fontSize:"12px", fontWeight:700, letterSpacing:"0.1em", fontFamily:"'JetBrains Mono',monospace", display:"flex", alignItems:"center", justifyContent:"center", gap:"10px", transition:"all 0.15s" }}>
+              {loading ? <><span style={{ animation:"spin 1s linear infinite", display:"inline-block" }}>◌</span> AUTHENTICATING...</> : <><span style={{ fontFamily:"sans-serif", fontWeight:700, fontSize:"14px" }}>G</span> SIGN IN WITH GOOGLE</>}
+            </button>
+            {error && <div style={{ marginTop:"12px", color:"#ff6666", fontSize:"10px", lineHeight:1.5 }}>{error}</div>}
+            <div style={{ marginTop:"28px", fontSize:"9px", color:T.textMuted, letterSpacing:"0.15em" }}>AUTHORIZED PERSONNEL ONLY</div>
+          </div>
+        </div>
+      );
+    };
+
+    // ======================================================
+    // アクセス拒否画面
+    // ======================================================
+    const AccessDenied = ({ email, onDismiss }) => (
+      <div style={{ minHeight:"100vh", background:"linear-gradient(180deg,#060a18 0%,#1a0505 100%)", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'JetBrains Mono',monospace" }}>
+        <div style={{ background:"rgba(20,5,5,0.97)", border:"1px solid #ff333333", borderRadius:"8px", padding:"40px", textAlign:"center", maxWidth:"360px", width:"90%", boxShadow:"0 0 40px rgba(255,51,51,0.1)" }}>
+          <div style={{ fontSize:"32px", marginBottom:"16px", color:"#ff3333" }}>✕</div>
+          <div style={{ color:"#ff3333", fontSize:"13px", fontWeight:700, letterSpacing:"0.15em", marginBottom:"10px" }}>ACCESS DENIED</div>
+          <div style={{ color:"#556677", fontSize:"11px", lineHeight:1.7, marginBottom:"24px" }}>
+            <span style={{ color:"#778899" }}>{email}</span><br />はこのシステムへのアクセス権限がありません
+          </div>
+          <button onClick={onDismiss} style={{ background:"rgba(255,51,51,0.1)", border:"1px solid #ff333355", color:"#ff6666", padding:"8px 24px", borderRadius:"3px", cursor:"pointer", fontSize:"11px", fontWeight:700, fontFamily:"'JetBrains Mono',monospace", letterSpacing:"0.1em" }}>← BACK TO LOGIN</button>
+        </div>
+      </div>
+    );
+
+    // ======================================================
+    // ショートカットモーダル
+    // ======================================================
+    // リリースノート
+    // ======================================================
+    const RELEASE_NOTES = [
+      {
+        version: "v0.5.0", date: "2026-04-09",
+        changes: [
+          "タイマーをFirestore同期化 — 複数端末でリアルタイム共有",
+          "モバイルUI刷新 — ACTIVE固定 + HOLDINGスクロール + その他タブ",
+          "ストリップ本文の文字サイズ切替（小／中／大）",
+          "モバイル判定ブレークポイントを540px未満に変更",
+        ],
+      },
+      {
+        version: "v0.4.0", date: "2026-04-08",
+        changes: [
+          "ACTIVE 1スロット制限・NEXT ACTION 5スロット追加",
+          "DELEGATED（委任中）列を追加",
+          "ACTIVEタスクにタイマー計測機能を追加（timeLogs保存）",
+          "キーボードショートカット追加: 1-5でステータス移動 / T でタイマー",
+          "タッチDnD実装（iOS / Androidでドラッグ＆ドロップ対応）",
+        ],
+      },
+      {
+        version: "v0.3.0", date: "2026-04-07",
+        changes: [
+          "HYBRID / KANBAN / TIMELINE ビューモード追加",
+          "タイムライン表示（7:00〜19:00の時間軸）",
+          "テーマ切替: DARK / LIGHT / MEDIUM / COLOR / COLORFUL",
+          "タスクフィルター（優先度・カテゴリ）",
+          "Googleログイン・アクセス制御",
+        ],
+      },
+      {
+        version: "v0.2.0", date: "2026-04-06",
+        changes: [
+          "Firestoreリアルタイム同期",
+          "ドラッグ＆ドロップで並べ替え・カラム移動",
+          "JSON / Markdownエクスポート・インポート",
+          "ストリップ編集モーダル（全フィールド）",
+        ],
+      },
+      {
+        version: "v0.1.0", date: "2026-04-05",
+        changes: [
+          "初期リリース",
+          "ACTIVE / HOLDING / CLEARED の3カラムKanban",
+          "キーボードショートカット（J/K移動・E編集・D削除）",
+          "HANDOFF（委任先）フィールド",
+        ],
+      },
+    ];
+
+    const ReleaseNotes = ({ onClose }) => {
+      const T = useT();
+      return (
+        <div style={{ position:"fixed", inset:0, zIndex:100, background:"rgba(0,0,0,0.8)", display:"flex", alignItems:"center", justifyContent:"center" }} onClick={onClose}>
+          <div onClick={e => e.stopPropagation()} style={{ background:T.bgModal, border:`1px solid ${T.accent}44`, borderRadius:"6px", padding:"24px 28px", maxWidth:"520px", width:"92%", maxHeight:"80vh", overflowY:"auto", boxShadow:`0 0 40px ${T.accent}18`, fontFamily:"'JetBrains Mono',monospace" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"20px" }}>
+              <div>
+                <div style={{ color:T.accent, fontSize:"13px", fontWeight:800, letterSpacing:"0.2em" }}>◈ RELEASE NOTES</div>
+                <div style={{ color:T.textMuted, fontSize:"9px", letterSpacing:"0.15em", marginTop:"2px" }}>FLIGHT STRIP TODO</div>
+              </div>
+              <button onClick={onClose} style={{ background:"transparent", border:`1px solid ${T.border2}`, color:T.textDim, padding:"4px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontFamily:"'JetBrains Mono',monospace" }}>✕ CLOSE</button>
+            </div>
+            {RELEASE_NOTES.map((r, i) => (
+              <div key={r.version} style={{ marginBottom:"20px", paddingBottom:"20px", borderBottom: i < RELEASE_NOTES.length-1 ? `1px solid ${T.border}` : "none" }}>
+                <div style={{ display:"flex", alignItems:"baseline", gap:"12px", marginBottom:"8px" }}>
+                  <span style={{ color: i===0 ? T.accent : T.textDim, fontSize:"13px", fontWeight:700, letterSpacing:"0.1em" }}>{r.version}</span>
+                  <span style={{ color:T.textMuted, fontSize:"9px" }}>{r.date}</span>
+                  {i === 0 && <span style={{ color:T.accent, fontSize:"8px", padding:"1px 6px", border:`1px solid ${T.accent}66`, borderRadius:"2px", letterSpacing:"0.1em" }}>LATEST</span>}
+                </div>
+                <ul style={{ listStyle:"none", padding:0, margin:0 }}>
+                  {r.changes.map((c, j) => (
+                    <li key={j} style={{ color: i===0 ? T.text : T.textDim, fontSize:"11px", lineHeight:1.8, display:"flex", gap:"8px" }}>
+                      <span style={{ color: i===0 ? T.accent : T.textMuted, flexShrink:0 }}>▸</span>
+                      {c}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    };
+
+    // ======================================================
+    const ShortcutHelp = ({ onClose }) => {
+      const T = useT();
+      return (
+        <div style={{ position:"fixed", inset:0, zIndex:100, background:"rgba(0,0,0,0.75)", display:"flex", alignItems:"center", justifyContent:"center" }} onClick={onClose}>
+          <div onClick={e => e.stopPropagation()} style={{ background:T.bgModal, border:`1px solid ${T.accent}44`, borderRadius:"6px", padding:"24px 32px", maxWidth:"440px", width:"90%", boxShadow:`0 0 40px ${T.accent}18`, fontFamily:"'JetBrains Mono',monospace" }}>
+            <div style={{ color:T.accent, fontSize:"13px", fontWeight:700, letterSpacing:"0.2em", marginBottom:"16px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <span>◈ KEYBOARD SHORTCUTS</span>
+              <button onClick={onClose} style={{ background:"transparent", border:"none", color:T.textDim, fontSize:"16px", cursor:"pointer" }}>✕</button>
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", gap:"6px" }}>
+              {SHORTCUTS.map(s => (
+                <div key={s.key} style={{ display:"flex", alignItems:"center", gap:"12px", padding:"4px 0", borderBottom:`1px solid ${T.border}` }}>
+                  <kbd style={{ background:`${T.accent}18`, border:`1px solid ${T.accent}44`, borderRadius:"3px", padding:"2px 10px", color:T.accent, fontSize:"11px", fontWeight:700, minWidth:"70px", textAlign:"center", fontFamily:"'JetBrains Mono',monospace" }}>{s.key}</kbd>
+                  <span style={{ color:T.textDim, fontSize:"12px" }}>{s.desc}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop:"16px", color:T.textMuted, fontSize:"9px", letterSpacing:"0.1em", textAlign:"center" }}>※ フォーム入力中はショートカット無効</div>
+          </div>
+        </div>
+      );
+    };
+
+    // ======================================================
+    // ストリップ編集モーダル（全フィールド）
+    // ======================================================
+    const EditStripModal = ({ task, onSave, onClose }) => {
+      const T = useT();
+      const [title,    setTitle]    = useState(task.title || "");
+      const [priority, setPriority] = useState(task.priority || "normal");
+      const [category, setCategory] = useState(task.category || "work");
+      const [time,     setTime]     = useState(task.time || "09:00");
+      const [tagInput, setTagInput] = useState((task.tags || []).join(", "));
+      const [assignee, setAssignee] = useState(task.assignee || "");
+      const titleRef = useRef(null);
+
+      useEffect(() => { titleRef.current?.focus(); }, []);
+
+      const handleSave = () => {
+        if (!title.trim()) return;
+        onSave(task.id, {
+          title: title.trim(), priority, category, time,
+          tags: tagInput ? tagInput.split(",").map(s => s.trim()).filter(Boolean) : [],
+          assignee: assignee.trim(),
+        });
+        onClose();
+      };
+
+      const inp = {
+        background:T.bgInput, border:`1px solid ${T.border2}`, color:T.text,
+        padding:"7px 10px", borderRadius:"2px", fontSize:"12px",
+        fontFamily:"'JetBrains Mono',monospace", outline:"none",
+        width:"100%", boxSizing:"border-box",
+      };
+      const lbl = { fontSize:"9px", color:T.textMuted, letterSpacing:"0.1em", marginBottom:"4px" };
+
+      return (
+        <div style={{ position:"fixed", inset:0, zIndex:100, background:"rgba(0,0,0,0.75)", display:"flex", alignItems:"center", justifyContent:"center" }} onClick={onClose}>
+          <div onClick={e => e.stopPropagation()} style={{ background:T.bgModal, border:`1px solid ${T.accent}44`, borderRadius:"6px", padding:"24px 28px", maxWidth:"460px", width:"90%", boxShadow:`0 0 40px ${T.accent}18`, fontFamily:"'JetBrains Mono',monospace" }}>
+            <div style={{ color:T.accent, fontSize:"11px", fontWeight:700, letterSpacing:"0.15em", marginBottom:"16px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <span>◈ EDIT STRIP</span>
+              <span style={{ color:T.textDim, fontWeight:400, fontSize:"10px" }}>[{task.stripId}]</span>
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", gap:"10px" }}>
+              <div>
+                <div style={lbl}>TITLE</div>
+                <input ref={titleRef} value={title} onChange={e => setTitle(e.target.value)}
+                  onKeyDown={e => { if (e.key==="Enter"&&!e.nativeEvent.isComposing) handleSave(); if (e.key==="Escape") onClose(); }}
+                  placeholder="タスク名..." style={inp} />
+              </div>
+              <div style={{ display:"flex", gap:"8px" }}>
+                <div style={{ flex:1 }}>
+                  <div style={lbl}>PRIORITY</div>
+                  <select value={priority} onChange={e => setPriority(e.target.value)} style={{ ...inp, cursor:"pointer" }}>
+                    <option value="high">🔴 URG（緊急）</option>
+                    <option value="normal">🟢 NRM（通常）</option>
+                    <option value="low">⚫ LOW（低）</option>
+                  </select>
+                </div>
+                <div style={{ flex:1 }}>
+                  <div style={lbl}>CATEGORY</div>
+                  <select value={category} onChange={e => setCategory(e.target.value)} style={{ ...inp, cursor:"pointer" }}>
+                    {Object.entries(CATEGORIES).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div style={{ display:"flex", gap:"8px" }}>
+                <div style={{ flex:"0 0 100px" }}>
+                  <div style={lbl}>TIME</div>
+                  <input type="time" value={time} onChange={e => setTime(e.target.value)} style={inp} />
+                </div>
+                <div style={{ flex:1 }}>
+                  <div style={lbl}>TAGS（カンマ区切り）</div>
+                  <input value={tagInput} onChange={e => setTagInput(e.target.value)} placeholder="tag1, tag2..." style={inp} />
+                </div>
+              </div>
+              <div>
+                <div style={lbl}>✈ HANDOFF</div>
+                <input value={assignee} onChange={e => setAssignee(e.target.value)} placeholder="委任先（空欄＝自分）"
+                  style={{ ...inp, borderColor: assignee?"#ffaa0066":T.border2 }} />
+              </div>
+              <div style={{ display:"flex", gap:"8px", justifyContent:"flex-end", marginTop:"4px" }}>
+                <button onClick={onClose} style={{ background:"transparent", border:`1px solid ${T.border2}`, color:T.textDim, padding:"6px 16px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontFamily:"'JetBrains Mono',monospace" }}>CANCEL</button>
+                <button onClick={handleSave} style={{ background:`${T.accent}22`, border:`1px solid ${T.accent}66`, color:T.accent, padding:"6px 16px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontWeight:700, fontFamily:"'JetBrains Mono',monospace" }}>SAVE ↵</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // ======================================================
+    // テーマピッカー
+    // ======================================================
+    const THEME_DOTS = { DARK:"#00ff88", LIGHT:"#0055cc", MEDIUM:"#55aaff", COLOR:"#ff6600", COLORFUL:"#ff2299" };
+
+    const ThemePicker = ({ currentId, onChange }) => {
+      const T = useT();
+      const [open, setOpen] = useState(false);
+
+      return (
+        <div style={{ position:"relative" }}>
+          <button onClick={() => setOpen(p => !p)} style={{ background:open?`${T.accent}18`:"transparent", border:`1px solid ${open?T.accent+"66":T.border2}`, color:T.accent, padding:"4px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"10px", fontWeight:700, letterSpacing:"0.1em", fontFamily:"'JetBrains Mono',monospace", display:"flex", alignItems:"center", gap:"6px" }}>
+            <span style={{ width:"8px", height:"8px", borderRadius:"50%", background:THEME_DOTS[currentId], display:"inline-block", flexShrink:0 }} />
+            {currentId}
+          </button>
+          {open && (
+            <>
+              <div style={{ position:"fixed", inset:0, zIndex:48 }} onClick={() => setOpen(false)} />
+              <div style={{ position:"absolute", top:"calc(100% + 4px)", right:0, background:T.bgModal, border:`1px solid ${T.border}`, borderRadius:"4px", padding:"6px", zIndex:49, minWidth:"130px", boxShadow:"0 4px 20px rgba(0,0,0,0.4)" }}>
+                {Object.values(THEMES).map(th => (
+                  <button key={th.id} onClick={() => { onChange(th.id); setOpen(false); }} style={{ display:"flex", alignItems:"center", gap:"8px", width:"100%", background:currentId===th.id?`${T.accent}18`:"transparent", border:"none", color:currentId===th.id?T.accent:T.textDim, padding:"5px 8px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontWeight:currentId===th.id?700:400, fontFamily:"'JetBrains Mono',monospace", textAlign:"left" }}>
+                    <span style={{ width:"8px", height:"8px", borderRadius:"50%", background:THEME_DOTS[th.id], display:"inline-block", flexShrink:0 }} />
+                    {th.name}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      );
+    };
+
+    // ======================================================
+    // エクスポート / インポートメニュー
+    // ======================================================
+    const DataMenu = ({ tasks, tasksRef }) => {
+      const T = useT();
+      const [open, setOpen] = useState(false);
+      const fileRef = useRef(null);
+
+      const exportJSON = () => {
+        const data = JSON.stringify({ exportedAt: new Date().toISOString(), tasks }, null, 2);
+        const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([data],{type:"application/json"})), download: `flight-strips-${new Date().toISOString().slice(0,10)}.json` });
+        a.click(); setOpen(false);
+      };
+
+      const exportMD = () => {
+        const lines = ["# Flight Strip TODO - Export", `> ${new Date().toLocaleString("ja-JP")}`, ""];
+        for (const col of COLUMNS) {
+          const colTasks = tasks.filter(t => t.status === col.id).sort((a,b)=>(b.sortOrder??0)-(a.sortOrder??0));
+          if (!colTasks.length) continue;
+          lines.push(`## ${col.label}（${col.sublabel}）`, "");
+          for (const t of colTasks) {
+            const pri = PRIORITIES[t.priority]?.label || t.priority;
+            lines.push(`- [${t.status==="completed"?"x":" "}] **${t.title}** \`${pri}\` \`${t.time || "--:--"}\` \`${t.stripId}\``);
+            if (t.assignee) lines.push(`  - ✈ HANDOFF: ${t.assignee}`);
+            if (t.category) lines.push(`  - CAT: ${CATEGORIES[t.category]?.label || t.category}`);
+            if (t.tags?.length) lines.push(`  - Tags: ${t.tags.join(", ")}`);
+          }
+          lines.push("");
+        }
+        const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([lines.join("\n")],{type:"text/markdown"})), download: `flight-strips-${new Date().toISOString().slice(0,10)}.md` });
+        a.click(); setOpen(false);
+      };
+
+      const handleImport = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        try {
+          const data = JSON.parse(await file.text());
+          const imported = Array.isArray(data) ? data : (data.tasks || []);
+          if (!imported.length) { alert("インポートするタスクが見つかりません"); return; }
+          if (!window.confirm(`${imported.length}件のストリップをインポートしますか？`)) return;
+          const tsVal = firebase.firestore.FieldValue.serverTimestamp();
+          for (const t of imported) {
+            const { id, ...taskData } = t;
+            await tasksRef.add({ ...taskData, createdAt: tsVal, updatedAt: tsVal, sortOrder: Date.now() + Math.random()*1000 });
+          }
+          alert(`✓ ${imported.length}件をインポートしました`);
+        } catch (err) {
+          alert("インポートに失敗しました: " + err.message);
+        }
+        e.target.value = ""; setOpen(false);
+      };
+
+      const menuBtn = (label, action) => (
+        <button onClick={action} style={{ display:"block", width:"100%", background:"transparent", border:"none", color:T.textDim, padding:"6px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontFamily:"'JetBrains Mono',monospace", textAlign:"left" }}
+          onMouseEnter={e=>e.target.style.color=T.text} onMouseLeave={e=>e.target.style.color=T.textDim}>
+          {label}
+        </button>
+      );
+
+      return (
+        <div style={{ position:"relative" }}>
+          <button onClick={() => setOpen(p => !p)} style={{ background:open?`${T.accent}18`:"transparent", border:`1px solid ${open?T.accent+"66":T.border2}`, color:open?T.accent:T.textDim, padding:"4px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"10px", letterSpacing:"0.08em", fontFamily:"'JetBrains Mono',monospace" }}>⇅ DATA</button>
+          {open && (
+            <>
+              <div style={{ position:"fixed", inset:0, zIndex:48 }} onClick={() => setOpen(false)} />
+              <div style={{ position:"absolute", top:"calc(100% + 4px)", right:0, background:T.bgModal, border:`1px solid ${T.border}`, borderRadius:"4px", padding:"6px", zIndex:49, minWidth:"160px", boxShadow:"0 4px 20px rgba(0,0,0,0.4)" }}>
+                {menuBtn("📥 Export JSON", exportJSON)}
+                {menuBtn("📝 Export Markdown", exportMD)}
+                <div style={{ borderTop:`1px solid ${T.border}`, margin:"4px 0" }} />
+                {menuBtn("📤 Import JSON", () => fileRef.current?.click())}
+                <input ref={fileRef} type="file" accept=".json" onChange={handleImport} style={{ display:"none" }} />
+              </div>
+            </>
+          )}
+        </div>
+      );
+    };
+
+    // ======================================================
+    // フライトストリップ（個別タスクカード）
+    // ======================================================
+    // 経過時間フォーマット
+    const formatDuration = (ms) => {
+      if (!ms || ms < 0) return "00:00";
+      const s = Math.floor(ms / 1000);
+      const h = Math.floor(s / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      const sec = s % 60;
+      if (h > 0) return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
+      return `${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
+    };
+
+    const FlightStrip = ({ task, isSelected, dropState, onDragStart, onDragOver, onDragEnd, onDrop, onStatusChange, onDelete, onEdit, isTimerRunning, elapsedMs, totalLoggedMs, onTimerStart, onTimerStop, onTouchStart, onTouchMove, onTouchEnd, titleFontSize=13 }) => {
+      const T = useT();
+      const pri = PRIORITIES[task.priority] || PRIORITIES.normal;
+      const cat = CATEGORIES[task.category] || { label: task.category || "OTHER", color: "#888888" };
+      const isCompleted = task.status === "completed";
+      const isActive = task.status === "active";
+      const isDragOver = dropState?.id === task.id;
+      const stripRef = useRef(null);
+
+      const dropStyle = isDragOver
+        ? dropState.pos === "before"
+          ? { borderTop: `3px solid ${T.accent}`, paddingTop: "3px" }
+          : { borderBottom: `3px solid ${T.accent}`, paddingBottom: "3px" }
+        : {};
+
+      // touchmove は passive:false が必要なので useEffect で登録
+      useEffect(() => {
+        const el = stripRef.current;
+        if (!el || !onTouchMove) return;
+        const handler = (e) => onTouchMove(e, task.id);
+        el.addEventListener('touchmove', handler, { passive: false });
+        return () => el.removeEventListener('touchmove', handler);
+      }, [task.id, onTouchMove]);
+
+      return (
+        <div
+          ref={stripRef}
+          data-task-id={task.id}
+          draggable
+          onDragStart={e => onDragStart(e, task.id)}
+          onDragOver={e => { e.preventDefault(); e.stopPropagation(); onDragOver(e, task.id); }}
+          onDragEnd={onDragEnd}
+          onDrop={e => { e.preventDefault(); e.stopPropagation(); onDrop(e, task.id); }}
+          onTouchStart={onTouchStart ? e => onTouchStart(e, task.id) : undefined}
+          onTouchEnd={onTouchEnd ? e => onTouchEnd(e, task.id) : undefined}
+          className="group relative cursor-grab active:cursor-grabbing"
+          style={{
+            background:   isCompleted ? `${T.border}44` : pri.bg,
+            border:       isSelected ? `1px solid ${T.accent2}` : `1px solid ${isCompleted ? T.border : pri.border}`,
+            borderLeft:   isSelected ? `4px solid ${T.accent2}` : `4px solid ${isCompleted ? T.textDim : pri.color}`,
+            boxShadow:    isSelected ? `0 0 12px ${T.accent2}44, inset 0 0 20px ${T.accent2}08` : "none",
+            opacity:      isCompleted ? 0.6 : 1,
+            borderRadius: "2px", marginBottom: "6px",
+            fontFamily: "'JetBrains Mono',monospace",
+            transition: "border 0.1s ease", position: "relative", overflow: "hidden",
+            display: "flex",
+            ...dropStyle,
+          }}>
+          <div style={{ position:"absolute", inset:0, background:"repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,255,136,0.015) 2px,rgba(0,255,136,0.015) 4px)", pointerEvents:"none" }} />
+
+          {/* 左：コンテンツ */}
+          <div style={{ flex:1, minWidth:0, padding:0 }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"6px 8px 2px", gap:"6px" }}>
+              <span style={{ color:isSelected?T.accent2:cat.color, fontSize:"10px", fontWeight:700, letterSpacing:"0.1em" }}>{isSelected?"◉ ":""}{task.stripId}</span>
+              <span style={{ color:T.textDim, fontSize:"10px" }}>{task.time}</span>
+              <span style={{ color:pri.color, fontSize:"9px", fontWeight:700, padding:"1px 6px", border:`1px solid ${pri.color}`, borderRadius:"2px", letterSpacing:"0.15em" }}>{pri.label}</span>
+            </div>
+            <div style={{ padding:"4px 8px 2px", color:isCompleted?T.textDim:T.text, fontSize:`${titleFontSize}px`, fontWeight:600, textDecoration:isCompleted?"line-through":"none", lineHeight:1.3 }}>{task.title}</div>
+            {task.assignee && (
+              <div style={{ display:"flex", alignItems:"center", gap:"4px", padding:"2px 8px 0" }}>
+                <span style={{ fontSize:"9px", fontWeight:700, color:"#ffaa00", letterSpacing:"0.1em" }}>✈ HANDOFF</span>
+                <span style={{ fontSize:"10px", color:"#ffcc44", padding:"1px 6px", background:"rgba(255,170,0,0.12)", border:"1px solid rgba(255,170,0,0.25)", borderRadius:"2px" }}>→ {task.assignee}</span>
+              </div>
+            )}
+            <div style={{ display:"flex", gap:"4px", padding:"2px 8px 4px", flexWrap:"wrap" }}>
+              {(task.tags||[]).map(tag => <span key={tag} style={{ fontSize:"9px", color:T.textDim, padding:"1px 5px", background:"rgba(100,120,140,0.15)", border:"1px solid rgba(100,120,140,0.2)", borderRadius:"2px" }}>{tag}</span>)}
+              <span style={{ fontSize:"9px", color:cat.color, opacity:0.7, padding:"1px 5px", letterSpacing:"0.1em" }}>{cat.label}</span>
+            </div>
+
+            {/* タイマー表示（ACTIVEのみ） */}
+            {isActive && (
+              <div style={{ display:"flex", alignItems:"center", gap:"8px", padding:"4px 8px 6px", borderTop:`1px solid ${T.border}`, marginTop:"2px" }}>
+                <button
+                  onClick={e => { e.stopPropagation(); isTimerRunning ? onTimerStop(task.id) : onTimerStart(task.id); }}
+                  style={{ background: isTimerRunning ? "rgba(255,51,51,0.2)" : "rgba(0,255,136,0.15)", border:`1px solid ${isTimerRunning?"#ff333366":"rgba(0,255,136,0.4)"}`, color: isTimerRunning ? "#ff6666" : T.accent, padding:"2px 8px", borderRadius:"2px", cursor:"pointer", fontSize:"9px", fontWeight:700, fontFamily:"'JetBrains Mono',monospace", letterSpacing:"0.1em", flexShrink:0 }}>
+                  {isTimerRunning ? "⏹ STOP" : "▶ START"}
+                </button>
+                <span style={{ fontSize:"14px", fontWeight:700, color: isTimerRunning ? T.accent : T.textDim, letterSpacing:"0.1em", fontVariantNumeric:"tabular-nums", minWidth:"52px" }}>
+                  {formatDuration(isTimerRunning ? elapsedMs : 0)}
+                </span>
+                {totalLoggedMs > 0 && (
+                  <span style={{ fontSize:"9px", color:T.textMuted, letterSpacing:"0.05em" }}>
+                    合計 {formatDuration(totalLoggedMs)}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* 右：常時表示の完了ボタン */}
+          <button
+            onClick={e => { e.stopPropagation(); onStatusChange(task.id, isCompleted ? "active" : "completed"); }}
+            title={isCompleted ? "元に戻す (active)" : "完了にする (3)"}
+            style={{
+              flexShrink: 0,
+              width: "44px",
+              background: isCompleted ? "rgba(100,120,140,0.15)" : "rgba(0,255,136,0.1)",
+              borderLeft: `1px solid ${isCompleted ? T.border : "rgba(0,255,136,0.25)"}`,
+              border: "none",
+              color: isCompleted ? T.textDim : "#00ff88",
+              cursor: "pointer",
+              display: "flex", flexDirection: "column",
+              alignItems: "center", justifyContent: "center", gap: "2px",
+              transition: "background 0.15s, color 0.15s",
+              position: "relative", zIndex: 1,
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = isCompleted ? "rgba(100,120,140,0.3)" : "rgba(0,255,136,0.22)";
+              e.currentTarget.style.color = isCompleted ? T.text : "#33ff99";
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = isCompleted ? "rgba(100,120,140,0.15)" : "rgba(0,255,136,0.1)";
+              e.currentTarget.style.color = isCompleted ? T.textDim : "#00ff88";
+            }}
+          >
+            <span style={{ fontSize: "18px", lineHeight: 1, fontWeight: 700 }}>
+              {isCompleted ? "↩" : "✓"}
+            </span>
+            <span style={{ fontSize: "7px", letterSpacing: "0.05em", opacity: 0.7 }}>
+              {isCompleted ? "UNDO" : "DONE"}
+            </span>
+          </button>
+
+          {/* ホバーアクションボタン（編集・削除・ステータス変更） */}
+          <div className="opacity-0 group-hover:opacity-100" style={{ position:"absolute", top:"4px", right:"48px", display:"flex", gap:"2px", transition:"opacity 0.15s ease" }}>
+            <button onClick={e=>{e.stopPropagation();onEdit(task.id);}} title="編集 (E)" style={{ background:`${T.accent}20`, border:`1px solid ${T.accent}44`, color:T.accent, fontSize:"10px", padding:"2px 6px", borderRadius:"2px", cursor:"pointer", lineHeight:1 }}>✎</button>
+            {COLUMNS.filter(c=>c.id!==task.status && c.id!=="completed").map(col => (
+              <button key={col.id} onClick={e=>{e.stopPropagation();onStatusChange(task.id,col.id);}} title={`→ ${col.label}`} style={{ background:`rgba(0,0,0,0.7)`, border:`1px solid ${T.border}`, color:T.textDim, fontSize:"10px", padding:"2px 5px", borderRadius:"2px", cursor:"pointer", lineHeight:1 }}>{col.icon}</button>
+            ))}
+            <button onClick={e=>{e.stopPropagation();onDelete(task.id);}} title="削除 (D)" style={{ background:"rgba(255,0,0,0.2)", border:"1px solid #ff333366", color:"#ff6666", fontSize:"10px", padding:"2px 5px", borderRadius:"2px", cursor:"pointer", lineHeight:1 }}>✕</button>
+          </div>
+        </div>
+      );
+    };
+
+    // ======================================================
+    // タイムライン
+    // ======================================================
+    const TimelineView = ({ tasks, currentTime }) => {
+      const T = useT();
+      const hours = Array.from({ length: 13 }, (_, i) => i + 7);
+      const currentHour = currentTime.getHours();
+      const currentMin  = currentTime.getMinutes();
+
+      return (
+        <div style={{ background:T.bgCard, border:`1px solid ${T.border}`, borderRadius:"4px", padding:"12px", overflowX:"auto" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:"8px", marginBottom:"10px", color:T.accent, fontSize:"11px", fontWeight:700, letterSpacing:"0.15em", fontFamily:"'JetBrains Mono',monospace" }}>
+            <span>◈</span><span>TIMELINE</span>
+            <span style={{ color:T.textMuted }}>━━━━━━━━━━━━━━━━━━━━━━</span>
+          </div>
+          <div style={{ position:"relative", height:"100px" }}>
+            <div style={{ display:"flex", height:"100%", position:"relative" }}>
+              {hours.map(h => {
+                const tasksAtHour = tasks.filter(t => parseInt((t.time||"0:0").split(":")[0])===h && t.status!=="completed");
+                const isCurrent = h === currentHour;
+                return (
+                  <div key={h} style={{ flex:1, borderRight:`1px solid ${T.border}`, position:"relative", background:isCurrent?`${T.accent}08`:"transparent" }}>
+                    <span style={{ position:"absolute", top:0, left:"4px", fontSize:"9px", color:isCurrent?T.accent:T.textMuted, fontFamily:"'JetBrains Mono',monospace", fontWeight:isCurrent?700:400 }}>{String(h).padStart(2,"0")}:00</span>
+                    {tasksAtHour.map((t,i) => (
+                      <div key={t.id} style={{ position:"absolute", top:24+i*26, left:"4px", right:"4px", background:PRIORITIES[t.priority]?.bg, border:`1px solid ${PRIORITIES[t.priority]?.color}44`, borderLeft:`3px solid ${PRIORITIES[t.priority]?.color}`, borderRadius:"2px", padding:"2px 6px", fontSize:"9px", color:T.textDim, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", fontFamily:"'JetBrains Mono',monospace" }}>
+                        <span style={{ color:PRIORITIES[t.priority]?.color, marginRight:"4px" }}>●</span>{t.title}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ position:"absolute", left:`${((currentHour-7)+currentMin/60)/13*100}%`, top:0, bottom:0, width:"2px", background:"#ff3333", boxShadow:"0 0 8px #ff333388", zIndex:10 }}>
+              <div style={{ position:"absolute", top:"-3px", left:"-3px", width:"8px", height:"8px", background:"#ff3333", borderRadius:"50%" }} />
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // ======================================================
+    // 新規タスク入力フォーム
+    // ======================================================
+    const NewStripForm = ({ onAdd, onClose }) => {
+      const T = useT();
+      const [title,    setTitle]    = useState("");
+      const [priority, setPriority] = useState("normal");
+      const [category, setCategory] = useState("work");
+      const [time,     setTime]     = useState("09:00");
+      const [tagInput, setTagInput] = useState("");
+      const [assignee, setAssignee] = useState("");
+      const titleRef = useRef(null);
+
+      useEffect(() => { titleRef.current?.focus(); }, []);
+
+      const handleSubmit = () => {
+        if (!title.trim()) return;
+        onAdd({
+          stripId: `FS${String(Date.now()).slice(-4)}`,
+          title: title.trim(), priority, category, time, status: "next",
+          tags: tagInput ? tagInput.split(",").map(s=>s.trim()).filter(Boolean) : [],
+          assignee: assignee.trim(),
+          sortOrder: Date.now(),
+        });
+        onClose();
+      };
+
+      const inp = { background:T.bgInput, border:`1px solid ${T.border2}`, color:T.text, padding:"6px 10px", borderRadius:"2px", fontSize:"12px", fontFamily:"'JetBrains Mono',monospace", outline:"none", width:"100%", boxSizing:"border-box" };
+
+      return (
+        <div style={{ background:T.bgModal, border:`1px solid ${T.accent}44`, borderRadius:"4px", padding:"16px", marginBottom:"12px", boxShadow:`0 0 20px ${T.accent}12` }}>
+          <div style={{ color:T.accent, fontSize:"11px", fontWeight:700, letterSpacing:"0.15em", marginBottom:"12px", fontFamily:"'JetBrains Mono',monospace", display:"flex", justifyContent:"space-between" }}>
+            <span>◈ NEW STRIP</span>
+            <span style={{ color:T.textMuted, fontSize:"9px", fontWeight:400 }}>N キーで開閉 · Esc で閉じる</span>
+          </div>
+          <div style={{ display:"flex", flexDirection:"column", gap:"8px" }}>
+            <input ref={titleRef} style={inp} placeholder="タスク名..." value={title}
+              onChange={e=>setTitle(e.target.value)}
+              onKeyDown={e=>{ if(e.key==="Enter"&&!e.nativeEvent.isComposing) handleSubmit(); if(e.key==="Escape") onClose(); }} />
+            <div style={{ display:"flex", gap:"8px" }}>
+              <select style={{ ...inp, cursor:"pointer" }} value={priority} onChange={e=>setPriority(e.target.value)}>
+                <option value="high">🔴 URG（緊急）</option>
+                <option value="normal">🟢 NRM（通常）</option>
+                <option value="low">⚫ LOW（低）</option>
+              </select>
+              <select style={{ ...inp, cursor:"pointer" }} value={category} onChange={e=>setCategory(e.target.value)}>
+                {Object.entries(CATEGORIES).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
+              </select>
+              <input style={{ ...inp, width:"90px" }} type="time" value={time} onChange={e=>setTime(e.target.value)} />
+            </div>
+            <input style={inp} placeholder="タグ（カンマ区切り）" value={tagInput} onChange={e=>setTagInput(e.target.value)} />
+            <input style={{ ...inp, borderColor:assignee?"#ffaa0066":T.border2 }} placeholder="✈ HANDOFF先（委任者名、空欄＝自分）" value={assignee} onChange={e=>setAssignee(e.target.value)} />
+            <div style={{ display:"flex", gap:"8px", justifyContent:"flex-end" }}>
+              <button onClick={onClose} style={{ background:"transparent", border:`1px solid ${T.border2}`, color:T.textDim, padding:"6px 16px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontFamily:"'JetBrains Mono',monospace" }}>CANCEL</button>
+              <button onClick={handleSubmit} style={{ background:`${T.accent}22`, border:`1px solid ${T.accent}66`, color:T.accent, padding:"6px 16px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontWeight:700, fontFamily:"'JetBrains Mono',monospace" }}>FILE STRIP</button>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // ======================================================
+    // メインアプリ（Firestoreリアルタイム同期）
+    // ======================================================
+    function FlightStripTodo({ user, themeId, setTheme }) {
+      const T = useT();
+      const isMobile = useIsMobile();
+      const [tasks,          setTasks]          = useState([]);
+      const [loading,        setLoading]        = useState(true);
+      const [draggedId,      setDraggedId]      = useState(null);
+      const [dropState,      setDropState]      = useState(null); // { id, pos }
+      const dropStateRef = useRef(null);
+      const [showForm,       setShowForm]       = useState(false);
+      const [showHelp,       setShowHelp]       = useState(false);
+      const [showRelease,    setShowRelease]    = useState(false);
+      const [viewMode,       setViewMode]       = useState("hybrid");
+      const [filterPriority, setFilterPriority] = useState("all");
+      const [filterCategory, setFilterCategory] = useState("all");
+      const [selectedId,     setSelectedId]     = useState(null);
+      const [editTaskId,     setEditTaskId]     = useState(null);
+      const [syncStatus,     setSyncStatus]     = useState("connecting");
+      // activeTimer はタスクの timerRunning / timerStartedAt から導出（Firestore同期）
+      const [mobileTab,      setMobileTab]      = useState("active");
+      const [stripFontSize,  setStripFontSize]  = useState(() => localStorage.getItem("fst-fontsize") || "md");
+      const FONT_SIZES = { sm: { label:"小", px:11 }, md: { label:"中", px:13 }, lg: { label:"大", px:16 } };
+      const cycleFontSize = () => {
+        const keys = ["sm","md","lg"];
+        const next = keys[(keys.indexOf(stripFontSize) + 1) % keys.length];
+        setStripFontSize(next);
+        localStorage.setItem("fst-fontsize", next);
+      };
+      // タッチDnD
+      const touchDragRef = useRef(null);
+      const [touchGhostPos, setTouchGhostPos]  = useState(null);
+      const currentTime = useCurrentTime();
+
+      const tasksRef = useMemo(() => db.collection(`users/${user.uid}/tasks`), [user.uid]);
+      const ts = () => firebase.firestore.FieldValue.serverTimestamp();
+
+      // リアルタイム同期
+      useEffect(() => {
+        setSyncStatus("connecting");
+        const unsubscribe = tasksRef.onSnapshot(
+          snapshot => {
+            const loaded = snapshot.docs.map(doc => {
+              const d = doc.data();
+              return {
+                id: doc.id, ...d,
+                // sortOrder未設定の既存タスクはcreatedAtのミリ秒で代替
+                sortOrder: d.sortOrder ?? (d.createdAt?.seconds ? d.createdAt.seconds * 1000 : Date.now()),
+              };
+            });
+            setTasks(loaded);
+            setLoading(false);
+            setSyncStatus("online");
+          },
+          err => { console.error("Firestore:", err); setLoading(false); setSyncStatus("error"); }
+        );
+        return unsubscribe;
+      }, [tasksRef]);
+
+      const filteredTasks = useMemo(() => tasks.filter(t => {
+        if (filterPriority !== "all" && t.priority !== filterPriority) return false;
+        if (filterCategory !== "all" && t.category !== filterCategory) return false;
+        return true;
+      }), [tasks, filterPriority, filterCategory]);
+
+      // カラム別タスク取得（sortOrder降順: 大きいほど上）
+      const getColTasks = useCallback((status) =>
+        filteredTasks.filter(t => t.status === status).sort((a,b) => (b.sortOrder??0) - (a.sortOrder??0)),
+      [filteredTasks]);
+
+      // J/Kナビゲーション用フラットリスト
+      const orderedTasks = useMemo(() => {
+        const all = [];
+        for (const col of COLUMNS) all.push(...getColTasks(col.id));
+        return all;
+      }, [getColTasks]);
+
+      // --- CRUD ハンドラー ---
+      const handleAdd          = useCallback(t  => tasksRef.add({ ...t, createdAt:ts(), updatedAt:ts() }), [tasksRef]);
+      const handleDelete       = useCallback(id => {
+        if (!window.confirm("このストリップを削除しますか？")) return;
+        tasksRef.doc(id).delete();
+        setSelectedId(p => p===id ? null : p);
+      }, [tasksRef]);
+      const handleStatusChange = useCallback((id, s) => {
+        const col = COLUMNS.find(c => c.id === s);
+        if (col?.limit) {
+          const existing = tasks.filter(t => t.status === s && t.id !== id).length;
+          if (existing >= col.limit) {
+            alert(`⚠ ${col.label} は最大 ${col.limit} スロットです\n先にタスクを移動してください`);
+            return;
+          }
+        }
+        tasksRef.doc(id).update({ status: s, updatedAt: ts() });
+      }, [tasks, tasksRef]);
+      const handleEditSave     = useCallback((id, fields) => tasksRef.doc(id).update({ ...fields, updatedAt:ts() }), [tasksRef]);
+
+      // --- タイマーハンドラー（Firestore同期） ---
+      // timerRunning / timerStartedAt をFirestoreに保存 → 全端末でリアルタイム同期
+      const handleTimerStart = useCallback(async (id) => {
+        await tasksRef.doc(id).update({
+          timerRunning:   true,
+          timerStartedAt: firebase.firestore.Timestamp.now(),
+          updatedAt:      ts(),
+        });
+      }, [tasksRef]);
+
+      const handleTimerStop = useCallback(async (id) => {
+        const task = tasks.find(t => t.id === id);
+        if (!task?.timerRunning) return;
+        // Firestore の timerStartedAt を使って正確な経過時間を算出
+        const startMs = task.timerStartedAt?.toMillis?.()
+          ?? (task.timerStartedAt?.seconds * 1000)
+          ?? Date.now();
+        const durationMs = Date.now() - startMs;
+        const newLog = {
+          startedAt:  new Date(startMs).toISOString(),
+          stoppedAt:  new Date().toISOString(),
+          durationMs,
+        };
+        const timeLogs = [...(task.timeLogs || []), newLog];
+        await tasksRef.doc(id).update({
+          timerRunning:   false,
+          timerStartedAt: null,
+          timeLogs,
+          updatedAt:      ts(),
+        });
+      }, [tasks, tasksRef]);
+
+      // タスクがACTIVE以外に移ったらタイマー自動停止
+      useEffect(() => {
+        const runningTask = tasks.find(t => t.timerRunning);
+        if (runningTask && runningTask.status !== "active") {
+          handleTimerStop(runningTask.id);
+        }
+      }, [tasks, handleTimerStop]);
+
+      // --- 並べ替え（↑↓キー）: sortOrder値を入れ替え ---
+      const handleMoveInColumn = useCallback(async (taskId, direction) => {
+        const task = tasks.find(t => t.id === taskId);
+        if (!task) return;
+        const col = tasks.filter(t => t.status === task.status).sort((a,b) => (b.sortOrder??0) - (a.sortOrder??0));
+        const idx = col.findIndex(t => t.id === taskId);
+        const targetIdx = direction === "up" ? idx - 1 : idx + 1;
+        if (targetIdx < 0 || targetIdx >= col.length) return;
+        const target = col[targetIdx];
+        const mySO = task.sortOrder ?? 0;
+        const thSO = target.sortOrder ?? 0;
+        await tasksRef.doc(taskId).update({ sortOrder: thSO });
+        await tasksRef.doc(target.id).update({ sortOrder: mySO });
+      }, [tasks, tasksRef]);
+
+      // --- ドラッグ ---
+      const handleDragStart = (e, id) => {
+        setDraggedId(id);
+        e.dataTransfer.effectAllowed = "move";
+      };
+
+      const handleDragOverStrip = (e, targetId) => {
+        if (!draggedId || draggedId === targetId) return;
+        const rect = e.currentTarget.getBoundingClientRect();
+        const pos = e.clientY < rect.top + rect.height / 2 ? "before" : "after";
+        dropStateRef.current = { id: targetId, pos };
+        setDropState({ id: targetId, pos });
+      };
+
+      const handleDragEnd = () => {
+        setDraggedId(null);
+        setDropState(null);
+        dropStateRef.current = null;
+      };
+
+      const handleDropOnStrip = async (e, targetId) => {
+        const dId = draggedId;
+        const ds = dropStateRef.current;
+        setDraggedId(null); setDropState(null); dropStateRef.current = null;
+        if (!dId || dId === targetId || !ds) return;
+
+        const draggedTask = tasks.find(t => t.id === dId);
+        const targetTask  = tasks.find(t => t.id === targetId);
+        if (!draggedTask || !targetTask) return;
+
+        if (draggedTask.status !== targetTask.status) {
+          // 異なるカラム: ステータス変更のみ
+          await tasksRef.doc(dId).update({ status: targetTask.status, updatedAt: ts() });
+          return;
+        }
+
+        // 同じカラム内並べ替え
+        const col = tasks.filter(t => t.status === draggedTask.status).sort((a,b) => (b.sortOrder??0) - (a.sortOrder??0));
+        const withoutDragged = col.filter(t => t.id !== dId);
+        const targetIdx = withoutDragged.findIndex(t => t.id === targetId);
+        const insertIdx = ds.pos === "before" ? targetIdx : targetIdx + 1;
+        const newOrder = [...withoutDragged];
+        newOrder.splice(insertIdx, 0, draggedTask);
+
+        // sortOrderを再割り当て（降順: 先頭が最大値）
+        const base = Date.now();
+        await Promise.all(newOrder.map((t, i) => tasksRef.doc(t.id).update({ sortOrder: base - i * 10000, updatedAt: ts() })));
+      };
+
+      const handleDropOnColumn = async (e, colId) => {
+        const dId = draggedId;
+        setDraggedId(null); setDropState(null); dropStateRef.current = null;
+        if (!dId) return;
+        const draggedTask = tasks.find(t => t.id === dId);
+        if (draggedTask && draggedTask.status !== colId) {
+          await tasksRef.doc(dId).update({ status: colId, updatedAt: ts() });
+        }
+      };
+
+      // --- タッチ DnD ハンドラー ---
+      const handleTouchStart = useCallback((e, taskId) => {
+        if (e.touches.length !== 1) return;
+        const touch = e.touches[0];
+        const rect = e.currentTarget.getBoundingClientRect();
+        touchDragRef.current = {
+          taskId,
+          offsetX: touch.clientX - rect.left,
+          offsetY: touch.clientY - rect.top,
+          width: rect.width,
+          height: rect.height,
+        };
+        setDraggedId(taskId);
+      }, []);
+
+      const handleTouchMove = useCallback((e, taskId) => {
+        const drag = touchDragRef.current;
+        if (!drag || drag.taskId !== taskId) return;
+        e.preventDefault(); // スクロール防止
+        const touch = e.touches[0];
+        setTouchGhostPos({
+          x: touch.clientX - drag.offsetX,
+          y: touch.clientY - drag.offsetY,
+          width: drag.width,
+          height: drag.height,
+          taskId,
+        });
+        // ゴーストを一時的に隠してhitTestに影響しないようにする
+        const ghostEl = document.getElementById('touch-ghost');
+        if (ghostEl) ghostEl.style.pointerEvents = 'none';
+        const el = document.elementFromPoint(touch.clientX, touch.clientY);
+        const stripEl = el?.closest('[data-task-id]');
+        const colEl   = el?.closest('[data-col-id]');
+        if (stripEl && stripEl.getAttribute('data-task-id') !== taskId) {
+          const targetId = stripEl.getAttribute('data-task-id');
+          const rect2 = stripEl.getBoundingClientRect();
+          const pos = touch.clientY < rect2.top + rect2.height / 2 ? 'before' : 'after';
+          dropStateRef.current = { id: targetId, pos };
+          setDropState({ id: targetId, pos });
+        } else if (colEl) {
+          const colId = colEl.getAttribute('data-col-id');
+          dropStateRef.current = { colId };
+          setDropState(null);
+        } else {
+          dropStateRef.current = null;
+          setDropState(null);
+        }
+      }, []);
+
+      const handleTouchEnd = useCallback(async (e, taskId) => {
+        const drag = touchDragRef.current;
+        if (!drag || drag.taskId !== taskId) return;
+        const touch = e.changedTouches[0];
+        const ds = dropStateRef.current;
+        touchDragRef.current = null;
+        setTouchGhostPos(null);
+        setDraggedId(null);
+        setDropState(null);
+        dropStateRef.current = null;
+        if (!ds) return;
+        if (ds.id) {
+          // strip へのドロップ
+          const draggedTask = tasks.find(t => t.id === taskId);
+          const targetTask  = tasks.find(t => t.id === ds.id);
+          if (!draggedTask || !targetTask) return;
+          if (draggedTask.status !== targetTask.status) {
+            await tasksRef.doc(taskId).update({ status: targetTask.status, updatedAt: ts() });
+            return;
+          }
+          const col = tasks.filter(t => t.status === draggedTask.status).sort((a,b) => (b.sortOrder??0)-(a.sortOrder??0));
+          const withoutDragged = col.filter(t => t.id !== taskId);
+          const targetIdx = withoutDragged.findIndex(t => t.id === ds.id);
+          const insertIdx = ds.pos === 'before' ? targetIdx : targetIdx + 1;
+          const newOrder = [...withoutDragged];
+          newOrder.splice(insertIdx, 0, draggedTask);
+          const base = Date.now();
+          await Promise.all(newOrder.map((t, i) => tasksRef.doc(t.id).update({ sortOrder: base - i * 10000, updatedAt: ts() })));
+        } else if (ds.colId) {
+          // column へのドロップ
+          const draggedTask = tasks.find(t => t.id === taskId);
+          if (draggedTask && draggedTask.status !== ds.colId) {
+            const col = COLUMNS.find(c => c.id === ds.colId);
+            if (col?.limit) {
+              const existing = tasks.filter(t => t.status === ds.colId && t.id !== taskId).length;
+              if (existing >= col.limit) {
+                alert(`⚠ ${col.label} は最大 ${col.limit} スロットです`);
+                return;
+              }
+            }
+            await tasksRef.doc(taskId).update({ status: ds.colId, updatedAt: ts() });
+          }
+        }
+      }, [tasks, tasksRef]);
+
+      // --- キーボードショートカット ---
+      useEffect(() => {
+        const handler = e => {
+          const isInput = ["INPUT","TEXTAREA","SELECT"].includes(e.target.tagName) || e.target.isContentEditable;
+          if (e.key === "Escape") {
+            e.preventDefault();
+            if (editTaskId) { setEditTaskId(null); return; }
+            if (showHelp)   { setShowHelp(false); return; }
+            if (showForm)   { setShowForm(false); return; }
+            setSelectedId(null); return;
+          }
+          if (isInput || editTaskId) return;
+          const key = e.key.toLowerCase();
+          if (e.key === "?" || (e.shiftKey && key === "/")) { e.preventDefault(); setShowHelp(p=>!p); return; }
+          if (key === "n") { e.preventDefault(); setShowForm(p=>!p); return; }
+          if (key === "f") { e.preventDefault(); setFilterPriority(p => PRIORITY_CYCLE[(PRIORITY_CYCLE.indexOf(p)+1)%PRIORITY_CYCLE.length]); return; }
+          // J/K: 選択移動
+          if (key === "j" || key === "k") {
+            e.preventDefault();
+            if (!orderedTasks.length) return;
+            const idx = orderedTasks.findIndex(t => t.id === selectedId);
+            setSelectedId(orderedTasks[
+              key === "j" ? (idx<0 ? 0 : Math.min(idx+1, orderedTasks.length-1))
+                          : (idx<0 ? orderedTasks.length-1 : Math.max(idx-1, 0))
+            ].id);
+            return;
+          }
+          // ↑↓: 並べ替え
+          if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+            if (!selectedId) return;
+            e.preventDefault();
+            handleMoveInColumn(selectedId, e.key === "ArrowUp" ? "up" : "down");
+            return;
+          }
+          if (!selectedId) return;
+          if (key === "1") { e.preventDefault(); handleStatusChange(selectedId, "active");    return; }
+          if (key === "2") { e.preventDefault(); handleStatusChange(selectedId, "next");      return; }
+          if (key === "3") { e.preventDefault(); handleStatusChange(selectedId, "delegated"); return; }
+          if (key === "4") { e.preventDefault(); handleStatusChange(selectedId, "pending");   return; }
+          if (key === "5") { e.preventDefault(); handleStatusChange(selectedId, "completed"); return; }
+          if (key === "t") {
+            e.preventDefault();
+            const selTask = tasks.find(t => t.id === selectedId);
+            if (selTask?.status === "active") {
+              if (selTask.timerRunning) handleTimerStop(selectedId);
+              else handleTimerStart(selectedId);
+            }
+            return;
+          }
+          if (key === "d") { e.preventDefault(); handleDelete(selectedId); return; }
+          if (key === "e") {
+            e.preventDefault();
+            const t = tasks.find(t => t.id === selectedId);
+            if (t) setEditTaskId(t.id);
+            return;
+          }
+        };
+        window.addEventListener("keydown", handler);
+        return () => window.removeEventListener("keydown", handler);
+      }, [selectedId, orderedTasks, showForm, showHelp, editTaskId, tasks, handleStatusChange, handleDelete, handleMoveInColumn, handleTimerStart, handleTimerStop]);
+
+      const stats = {
+        active:    tasks.filter(t => t.status === "active").length,
+        next:      tasks.filter(t => t.status === "next").length,
+        delegated: tasks.filter(t => t.status === "delegated").length,
+        pending:   tasks.filter(t => t.status === "pending").length,
+        completed: tasks.filter(t => t.status === "completed").length,
+        urgent:    tasks.filter(t => t.priority === "high" && t.status !== "completed").length,
+        handoff:   tasks.filter(t => t.assignee && t.status !== "completed").length,
+      };
+
+      const editTask = editTaskId ? tasks.find(t => t.id === editTaskId) : null;
+      const syncColor = syncStatus === "online" ? T.accent : syncStatus === "error" ? "#ff3333" : "#ffaa00";
+      const syncLabel = syncStatus === "online" ? "SYNC ●" : syncStatus === "error" ? "SYNC ✕" : "SYNC ◌";
+
+      const accentForCol = (colId) => {
+        if (colId === "active")    return T.accent;
+        if (colId === "next")      return "#00ccff";
+        if (colId === "delegated") return "#ffaa00";
+        if (colId === "pending")   return T.textDim;
+        if (colId === "completed") return T.textMuted;
+        return T.accent;
+      };
+
+      const handleConsoleCopy = () => {
+        const log = JSON.stringify({ exportedAt:new Date().toISOString(), user:user.email, tasks }, null, 2);
+        navigator.clipboard.writeText(log).then(()=>alert("✓ コピーしました")).catch(()=>console.log(log));
+      };
+
+      if (loading) return <LoadingScreen />;
+
+      return (
+        <div style={{ minHeight:"100vh", background:T.bgGrad, color:T.text, fontFamily:"'JetBrains Mono',monospace", position:"relative" }}>
+          {/* タッチDnDゴースト */}
+          {touchGhostPos && (() => {
+            const task = tasks.find(t => t.id === touchGhostPos.taskId);
+            const pri = task ? (PRIORITIES[task.priority] || PRIORITIES.normal) : PRIORITIES.normal;
+            return (
+              <div id="touch-ghost" style={{
+                position: 'fixed',
+                left: touchGhostPos.x,
+                top: touchGhostPos.y,
+                width: touchGhostPos.width,
+                zIndex: 9999,
+                opacity: 0.85,
+                pointerEvents: 'none',
+                background: pri.bg,
+                border: `2px solid ${pri.color}`,
+                borderRadius: '4px',
+                padding: '8px 10px',
+                fontFamily: "'JetBrains Mono',monospace",
+                fontSize: '12px',
+                color: T.text,
+                boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+                transform: 'rotate(2deg)',
+              }}>
+                <div style={{ fontSize: '9px', color: pri.color, fontWeight: 700 }}>{task?.stripId}</div>
+                <div style={{ fontWeight: 600, marginTop: '2px' }}>{task?.title}</div>
+              </div>
+            );
+          })()}
+
+          {/* グリッド背景 */}
+          <div style={{ position:"fixed", inset:0, backgroundImage:`linear-gradient(${T.grid} 1px,transparent 1px),linear-gradient(90deg,${T.grid} 1px,transparent 1px)`, backgroundSize:"40px 40px", pointerEvents:"none", zIndex:0 }} />
+          {T.scanAlpha > 0 && (
+            <div style={{ position:"fixed", inset:0, background:`repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,${T.scanAlpha}) 3px,rgba(0,0,0,${T.scanAlpha}) 6px)`, pointerEvents:"none", zIndex:1 }} />
+          )}
+
+          {showHelp    && <ShortcutHelp  onClose={() => setShowHelp(false)} />}
+          {showRelease && <ReleaseNotes  onClose={() => setShowRelease(false)} />}
+          {editTaskId && editTask && <EditStripModal task={editTask} onSave={handleEditSave} onClose={() => setEditTaskId(null)} />}
+
+          <div style={{ position:"relative", zIndex:2, maxWidth:"1200px", margin:"0 auto", padding:"16px" }}>
+
+            {/* ヘッダー */}
+            <header style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px 0", marginBottom:"12px", borderBottom:`1px solid ${T.border}`, flexWrap:"wrap", gap:"8px" }}>
+              <div>
+                <div style={{ fontSize:"18px", fontWeight:800, color:T.accent, letterSpacing:"0.2em", textShadow:`0 0 20px ${T.accent}44`, lineHeight:1 }}>◈ FLIGHT STRIP TODO</div>
+                <div style={{ fontSize:"9px", color:T.textMuted, letterSpacing:"0.3em", marginTop:"4px" }}>
+                  <span onClick={() => setShowRelease(true)} style={{ cursor:"pointer", color:T.textDim, borderBottom:`1px solid ${T.border2}`, paddingBottom:"1px", transition:"color 0.15s" }}
+                    onMouseEnter={e=>e.target.style.color=T.accent} onMouseLeave={e=>e.target.style.color=T.textDim}>
+                    ATC-SYS v0.6.0-dev
+                  </span>
+                  &nbsp;· <span style={{ color:syncColor, animation:syncStatus==="connecting"?"blink 1s infinite":"none" }}>{syncLabel}</span>
+                  &nbsp;· <span style={{ color:T.textMuted }}>? でショートカット</span>
+                </div>
+              </div>
+              <div style={{ display:"flex", alignItems:"center", gap:"12px", flexWrap:"wrap" }}>
+                {selectedId && (
+                  <div style={{ fontSize:"10px", color:T.accent2, padding:"3px 10px", border:`1px solid ${T.accent2}44`, borderRadius:"2px", background:`${T.accent2}10` }}>
+                    ◉ {tasks.find(t=>t.id===selectedId)?.stripId||"---"} &nbsp;<span style={{ color:T.textMuted, fontSize:"8px" }}>↑↓で移動 · E編集</span>
+                  </div>
+                )}
+                <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
+                  {user.photoURL && <img src={user.photoURL} alt="" style={{ width:"26px", height:"26px", borderRadius:"50%", border:`1px solid ${T.accent}33` }} />}
+                  <div>
+                    <div style={{ fontSize:"9px", color:T.textDim, lineHeight:1.3 }}>{user.displayName||user.email}</div>
+                    <button onClick={() => auth.signOut()} style={{ background:"transparent", border:"none", color:T.textMuted, fontSize:"8px", cursor:"pointer", fontFamily:"'JetBrains Mono',monospace", padding:0 }}>SIGN OUT ↩</button>
+                  </div>
+                </div>
+                <div style={{ fontSize:"10px", color:T.textDim, letterSpacing:"0.08em" }}>
+                  ACT:<span style={{ color:T.accent }}>{stats.active}</span>&nbsp;·&nbsp;
+                  NXT:<span style={{ color:"#00ccff" }}>{stats.next}</span>&nbsp;·&nbsp;
+                  DLG:<span style={{ color:"#ffaa00" }}>{stats.delegated}</span>&nbsp;·&nbsp;
+                  HLD:<span style={{ color:T.textDim }}>{stats.pending}</span>&nbsp;·&nbsp;
+                  CLR:<span style={{ color:T.textMuted }}>{stats.completed}</span>
+                  {stats.urgent >0 && <span style={{ color:"#ff3333" }}>&nbsp;·&nbsp;URG:{stats.urgent}</span>}
+                </div>
+                <div style={{ color:T.accent, fontSize:"22px", fontWeight:700, letterSpacing:"0.1em", textShadow:`0 0 15px ${T.accent}44` }}>
+                  {currentTime.toLocaleTimeString("ja-JP",{hour12:false})}
+                </div>
+              </div>
+            </header>
+
+            {/* ツールバー */}
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"12px", gap:"8px", flexWrap:"wrap" }}>
+              {!isMobile && (
+                <div style={{ display:"flex", gap:"2px" }}>
+                  {[{id:"hybrid",label:"HYBRID"},{id:"kanban",label:"KANBAN"},{id:"timeline",label:"TIMELINE"}].map(mode => (
+                    <button key={mode.id} onClick={() => setViewMode(mode.id)} style={{ background:viewMode===mode.id?`${T.accent}18`:"transparent", border:`1px solid ${viewMode===mode.id?T.accent+"66":T.border2}`, color:viewMode===mode.id?T.accent:T.textDim, padding:"4px 12px", borderRadius:"2px", cursor:"pointer", fontSize:"10px", fontWeight:700, letterSpacing:"0.1em", fontFamily:"'JetBrains Mono',monospace" }}>{mode.label}</button>
+                  ))}
+                </div>
+              )}
+              <div style={{ display:"flex", gap:"6px", alignItems:"center", flexWrap:"wrap" }}>
+                <select value={filterPriority} onChange={e=>setFilterPriority(e.target.value)} style={{ background:T.bgInput, border:`1px solid ${T.border2}`, color:T.textDim, padding:"4px 8px", borderRadius:"2px", fontSize:"10px", fontFamily:"'JetBrains Mono',monospace", cursor:"pointer" }}>
+                  <option value="all">ALL PRI</option>
+                  <option value="high">🔴 URG</option>
+                  <option value="normal">🟢 NRM</option>
+                  <option value="low">⚫ LOW</option>
+                </select>
+                <select value={filterCategory} onChange={e=>setFilterCategory(e.target.value)} style={{ background:T.bgInput, border:`1px solid ${T.border2}`, color:T.textDim, padding:"4px 8px", borderRadius:"2px", fontSize:"10px", fontFamily:"'JetBrains Mono',monospace", cursor:"pointer" }}>
+                  <option value="all">ALL CAT</option>
+                  {Object.entries(CATEGORIES).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
+                </select>
+                <ThemePicker currentId={themeId} onChange={setTheme} />
+                <DataMenu tasks={tasks} tasksRef={tasksRef} />
+                <button onClick={cycleFontSize} title="文字サイズ切替（小→中→大）" style={{ background:"transparent", border:`1px solid ${T.border2}`, color:T.accent, padding:"4px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"13px", fontWeight:700, fontFamily:"'JetBrains Mono',monospace", letterSpacing:"0.05em", minWidth:"52px" }}>
+                  A{FONT_SIZES[stripFontSize].label}
+                </button>
+                <button onClick={() => setShowForm(!showForm)} style={{ background:showForm?"rgba(255,50,50,0.15)":`${T.accent}18`, border:`1px solid ${showForm?"#ff333366":T.accent+"66"}`, color:showForm?"#ff6666":T.accent, padding:"4px 14px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontWeight:700, letterSpacing:"0.1em", fontFamily:"'JetBrains Mono',monospace" }}>{showForm?"✕ CLOSE":"+ FILE STRIP"}</button>
+                <button onClick={() => setShowHelp(!showHelp)} style={{ background:showHelp?`${T.accent2}18`:"transparent", border:`1px solid ${showHelp?T.accent2+"66":T.border2}`, color:showHelp?T.accent2:T.textDim, padding:"4px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"12px", fontWeight:700, fontFamily:"'JetBrains Mono',monospace" }}>?</button>
+              </div>
+            </div>
+
+            {showForm && <NewStripForm onAdd={handleAdd} onClose={() => setShowForm(false)} />}
+
+            {!isMobile && (viewMode === "hybrid" || viewMode === "timeline") && (
+              <div style={{ marginBottom:"16px" }}>
+                <TimelineView tasks={filteredTasks} currentTime={currentTime} />
+              </div>
+            )}
+
+            {(viewMode === "hybrid" || viewMode === "kanban") && (() => {
+              // タイマー計算（Firestoreから導出 → 全端末で同期）
+              const runningTask     = tasks.find(t => t.timerRunning && t.timerStartedAt);
+              const timerStartMs    = runningTask?.timerStartedAt?.toMillis?.()
+                ?? (runningTask?.timerStartedAt?.seconds * 1000) ?? 0;
+              const elapsedMs       = runningTask ? Math.max(0, currentTime.getTime() - timerStartMs) : 0;
+              const totalLoggedMs = (id) => {
+                const task = tasks.find(t => t.id === id);
+                return (task?.timeLogs || []).reduce((sum, l) => sum + (l.durationMs || 0), 0);
+              };
+
+              // モバイルレイアウト
+              if (isMobile) {
+                const renderStripMobile = (task) => (
+                  <div key={task.id} onClick={() => setSelectedId(task.id)}>
+                    <FlightStrip
+                      task={task}
+                      isSelected={selectedId === task.id}
+                      dropState={dropState}
+                      onDragStart={handleDragStart}
+                      onDragOver={handleDragOverStrip}
+                      onDragEnd={handleDragEnd}
+                      onDrop={handleDropOnStrip}
+                      onStatusChange={handleStatusChange}
+                      onDelete={handleDelete}
+                      onEdit={id => setEditTaskId(id)}
+                      isTimerRunning={task.timerRunning === true}
+                      elapsedMs={task.timerRunning ? elapsedMs : 0}
+                      totalLoggedMs={totalLoggedMs(task.id)}
+                      onTimerStart={handleTimerStart}
+                      onTimerStop={handleTimerStop}
+                      onTouchStart={handleTouchStart}
+                      onTouchMove={handleTouchMove}
+                      onTouchEnd={handleTouchEnd}
+                      titleFontSize={FONT_SIZES[stripFontSize].px}
+                    />
+                  </div>
+                );
+
+                const activeTasks2    = getColTasks("active");
+                const pendingTasks2   = getColTasks("pending");
+                // タブ対象列（NEXT / DELEGATED / CLEARED）
+                const SUB_TABS = [
+                  { col: COLUMNS[1], id: "next"      },
+                  { col: COLUMNS[2], id: "delegated" },
+                  { col: COLUMNS[4], id: "completed" },
+                ];
+                const tabCol = COLUMNS.find(c => c.id === mobileTab);
+
+                return (
+                  <div style={{ paddingBottom: '80px' }}>
+
+                    {/* ① ACTIVE — sticky */}
+                    <div style={{ position:'sticky', top:0, zIndex:10, background:T.bg, paddingBottom:'8px' }}>
+                      <div data-col-id="active"
+                        onDrop={e => handleDropOnColumn(e, "active")} onDragOver={e => e.preventDefault()}
+                        style={{ background:T.bgCard, border:`1px solid ${T.accent}44`, borderRadius:'4px', padding:'10px', boxShadow:`0 4px 20px ${T.accent}10` }}>
+                        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'6px', paddingBottom:'6px', borderBottom:`1px solid ${T.border}` }}>
+                          <span style={{ color:T.accent, fontSize:'12px', fontWeight:700, letterSpacing:'0.15em' }}>▶ ACTIVE</span>
+                          <span style={{ fontSize:'9px', color:T.textMuted }}>max 1</span>
+                        </div>
+                        {activeTasks2.map(renderStripMobile)}
+                        {activeTasks2.length === 0 && (
+                          <div style={{ textAlign:'center', padding:'14px', color:T.border, fontSize:'10px', letterSpacing:'0.1em', border:`1px dashed ${T.border}`, borderRadius:'2px' }}>
+                            — 待機中 —
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* ② タブ行: NEXT / DELEGATED / CLEARED */}
+                    <div style={{ display:'flex', borderBottom:`1px solid ${T.border}`, marginBottom:'8px' }}>
+                      {SUB_TABS.map(({ col, id }) => {
+                        const cnt = getColTasks(id).length;
+                        const active = mobileTab === id;
+                        const acc = accentForCol(id);
+                        return (
+                          <button key={id}
+                            onClick={() => setMobileTab(active ? null : id)}
+                            style={{ flex:1, padding:'10px 4px', background:'transparent', border:'none',
+                              borderBottom: active ? `2px solid ${acc}` : '2px solid transparent',
+                              color: active ? acc : T.textDim,
+                              fontSize:'10px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace",
+                              cursor:'pointer', minHeight:'44px', lineHeight:1.3 }}>
+                            {col.icon} {col.label.replace(" ACTION","")}<br/>
+                            <span style={{ fontSize:'9px', opacity:0.7 }}>{cnt}{col.limit?`/${col.limit}`:''}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* ③ 選択タブのコンテンツ（展開） */}
+                    {mobileTab && tabCol && (
+                      <div data-col-id={mobileTab}
+                        onDrop={e => handleDropOnColumn(e, mobileTab)} onDragOver={e => e.preventDefault()}
+                        style={{ background:T.bgCard, border:`1px solid ${T.border}`, borderRadius:'4px', padding:'10px', marginBottom:'10px' }}>
+                        {getColTasks(mobileTab).map(renderStripMobile)}
+                        {mobileTab === 'next' && Array.from({ length: Math.max(0, 5 - getColTasks('next').length) }).map((_, i) => (
+                          <div key={`slot-${i}`} style={{ height:'36px', border:`1px dashed ${T.border}22`, borderRadius:'2px', marginBottom:'6px', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                            <span style={{ color:T.border, fontSize:'8px' }}>SLOT {getColTasks('next').length + i + 1}</span>
+                          </div>
+                        ))}
+                        {getColTasks(mobileTab).length === 0 && mobileTab !== 'next' && (
+                          <div style={{ textAlign:'center', padding:'16px', color:T.border, fontSize:'10px' }}>NO STRIPS</div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ④ HOLDING — スクロール */}
+                    <div data-col-id="pending"
+                      onDrop={e => handleDropOnColumn(e, "pending")} onDragOver={e => e.preventDefault()}
+                      style={{ background:T.bgCard, border:`1px solid ${T.border}`, borderRadius:'4px', padding:'10px' }}>
+                      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'8px', paddingBottom:'6px', borderBottom:`1px solid ${T.border}` }}>
+                        <span style={{ color:T.textDim, fontSize:'12px', fontWeight:700, letterSpacing:'0.15em' }}>⏸ HOLDING</span>
+                        <span style={{ background:"rgba(100,120,140,0.2)", color:T.textDim, fontSize:'9px', padding:'1px 6px', borderRadius:'10px' }}>{pendingTasks2.length}</span>
+                      </div>
+                      {pendingTasks2.map(renderStripMobile)}
+                      {pendingTasks2.length === 0 && (
+                        <div style={{ textAlign:'center', padding:'20px', color:T.border, fontSize:'10px' }}>NO STRIPS</div>
+                      )}
+                    </div>
+
+                  </div>
+                );
+              }
+
+              // デスクトップレイアウト（共通ストリップレンダラー）
+              // 共通ストリップレンダラー
+              const renderStrip = (task) => (
+                <div key={task.id} onClick={() => setSelectedId(task.id)}>
+                  <FlightStrip
+                    task={task}
+                    isSelected={selectedId === task.id}
+                    dropState={dropState}
+                    onDragStart={handleDragStart}
+                    onDragOver={handleDragOverStrip}
+                    onDragEnd={handleDragEnd}
+                    onDrop={handleDropOnStrip}
+                    onStatusChange={handleStatusChange}
+                    onDelete={handleDelete}
+                    onEdit={id => setEditTaskId(id)}
+                    isTimerRunning={task.timerRunning === true}
+                    elapsedMs={task.timerRunning ? elapsedMs : 0}
+                    totalLoggedMs={totalLoggedMs(task.id)}
+                    onTimerStart={handleTimerStart}
+                    onTimerStop={handleTimerStop}
+                    onTouchStart={handleTouchStart}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handleTouchEnd}
+                    titleFontSize={FONT_SIZES[stripFontSize].px}
+                  />
+                </div>
+              );
+
+              // カラムヘッダー
+              const colHeader = (col, tasksCount) => {
+                const colColor = col.id==="active" ? T.accent : col.id==="next" ? "#00ccff" : col.id==="delegated" ? "#ffaa00" : col.id==="completed" ? T.textDim : T.textDim;
+                return (
+                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"8px", paddingBottom:"6px", borderBottom:`1px solid ${T.border}` }}>
+                    <div>
+                      <span style={{ color:colColor, fontSize:"11px", fontWeight:700, letterSpacing:"0.15em" }}>{col.icon} {col.label}</span>
+                      <span style={{ color:T.textMuted, fontSize:"9px", marginLeft:"6px" }}>{col.sublabel}</span>
+                      {col.limit && <span style={{ color:T.textMuted, fontSize:"8px", marginLeft:"4px" }}>max {col.limit}</span>}
+                    </div>
+                    <span style={{ background:"rgba(100,120,140,0.2)", color:T.textDim, fontSize:"9px", padding:"1px 6px", borderRadius:"10px" }}>{tasksCount}{col.limit?`/${col.limit}`:""}</span>
+                  </div>
+                );
+              };
+
+              const dropCol = (colId) => ({ onDrop: e => handleDropOnColumn(e, colId), onDragOver: e => e.preventDefault() });
+              const colBox  = (extra) => ({ background:T.bgCard, border:`1px solid ${T.border}`, borderRadius:"4px", padding:"10px", ...extra });
+              const emptyMsg = <div style={{ textAlign:"center", padding:"20px 10px", color:T.border, fontSize:"10px", letterSpacing:"0.1em" }}>NO STRIPS</div>;
+
+              const activeTasks    = getColTasks("active");
+              const nextTasks      = getColTasks("next");
+              const delegatedTasks = getColTasks("delegated");
+              const pendingTasks   = getColTasks("pending");
+              const completedTasks = getColTasks("completed");
+
+              return (
+                <div style={{ display:"flex", gap:"12px", alignItems:"flex-start" }}>
+
+                  {/* 左パネル: ACTIVE + NEXT ACTION */}
+                  <div style={{ flex:"0 0 300px", display:"flex", flexDirection:"column", gap:"12px" }}>
+
+                    {/* ACTIVE（1スロット） */}
+                    <div data-col-id="active" style={colBox({ border:`1px solid ${T.accent}44`, boxShadow:`0 0 20px ${T.accent}10` })} {...dropCol("active")}>
+                      {colHeader(COLUMNS[0], activeTasks.length)}
+                      {activeTasks.map(renderStrip)}
+                      {activeTasks.length === 0 && (
+                        <div style={{ textAlign:"center", padding:"20px 10px", color:T.border, fontSize:"10px", letterSpacing:"0.1em", border:`1px dashed ${T.border}`, borderRadius:"2px" }}>
+                          — 待機中 —
+                        </div>
+                      )}
+                    </div>
+
+                    {/* NEXT ACTION（5スロット） */}
+                    <div data-col-id="next" style={colBox({ border:`1px solid #00ccff33` })} {...dropCol("next")}>
+                      {colHeader(COLUMNS[1], nextTasks.length)}
+                      {nextTasks.map(renderStrip)}
+                      {/* 空きスロット表示 */}
+                      {Array.from({ length: Math.max(0, 5 - nextTasks.length) }).map((_, i) => (
+                        <div key={`empty-${i}`} style={{ height:"28px", border:`1px dashed ${T.border}22`, borderRadius:"2px", marginBottom:"6px", display:"flex", alignItems:"center", justifyContent:"center" }}>
+                          <span style={{ color:T.border, fontSize:"8px", letterSpacing:"0.1em" }}>SLOT {nextTasks.length + i + 1}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* DELEGATED（委任中） */}
+                    <div data-col-id="delegated" style={colBox({ border:`1px solid #ffaa0033` })} {...dropCol("delegated")}>
+                      {colHeader(COLUMNS[2], delegatedTasks.length)}
+                      {delegatedTasks.map(renderStrip)}
+                      {delegatedTasks.length === 0 && emptyMsg}
+                    </div>
+                  </div>
+
+                  {/* 右パネル: HOLDING + CLEARED */}
+                  <div style={{ flex:1, display:"grid", gridTemplateColumns:"1fr 1fr", gap:"12px" }}>
+                    <div data-col-id="pending" style={colBox({})} {...dropCol("pending")}>
+                      {colHeader(COLUMNS[3], pendingTasks.length)}
+                      {pendingTasks.map(renderStrip)}
+                      {pendingTasks.length === 0 && emptyMsg}
+                    </div>
+                    <div data-col-id="completed" style={colBox({})} {...dropCol("completed")}>
+                      {colHeader(COLUMNS[4], completedTasks.length)}
+                      {completedTasks.map(renderStrip)}
+                      {completedTasks.length === 0 && emptyMsg}
+                    </div>
+                  </div>
+
+                </div>
+              );
+            })()}
+
+            {/* フッター */}
+            <footer style={{ marginTop:"20px", paddingTop:"10px", borderTop:`1px solid ${T.border}`, display:"flex", justifyContent:"space-between", alignItems:"center", color:T.textMuted, fontSize:"9px", letterSpacing:"0.1em" }}>
+              <span>FLIGHT STRIP TODO · ATC-SYS v0.6.0-dev</span>
+              <div style={{ display:"flex", gap:"8px", alignItems:"center" }}>
+                <span>{currentTime.toLocaleDateString("ja-JP")} · STRIPS: {tasks.length}</span>
+                <button onClick={handleConsoleCopy} style={{ background:`${T.accent}10`, border:`1px solid ${T.accent}22`, color:T.textDim, padding:"2px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"8px", fontFamily:"'JetBrains Mono',monospace", letterSpacing:"0.05em" }}>📋 CONSOLE COPY</button>
+              </div>
+            </footer>
+          </div>
+        </div>
+      );
+    }
+
+    // ======================================================
+    // App ルート（認証 + テーマ管理）
+    // ======================================================
+    function App() {
+      const [user,        setUser]        = useState(null);
+      const [authChecked, setAuthChecked] = useState(false);
+      const [denied,      setDenied]      = useState({ active:false, email:"" });
+      const [themeId,     setThemeId]     = useState(() => localStorage.getItem("fst-theme") || "DARK");
+
+      const setTheme = id => { setThemeId(id); localStorage.setItem("fst-theme", id); };
+      const theme = THEMES[themeId] || THEMES.DARK;
+
+      // body 背景色 + CSS変数をテーマに同期
+      useEffect(() => {
+        document.body.style.background = theme.bg;
+        document.documentElement.style.setProperty("--bg-main",  theme.bg);
+        document.documentElement.style.setProperty("--bg-input", theme.bgInput);
+        document.documentElement.style.setProperty("--bg-scroll",theme.bg);
+        document.documentElement.style.setProperty("--border",   theme.border);
+        document.documentElement.style.setProperty("--text-main",theme.text);
+      }, [theme]);
+
+      useEffect(() => {
+        return auth.onAuthStateChanged(u => {
+          if (u) {
+            const ok = ALLOWED_EMAILS.length === 0 || ALLOWED_EMAILS.includes(u.email);
+            if (ok) { setUser(u); setDenied({active:false,email:""}); }
+            else    { auth.signOut(); setDenied({active:true,email:u.email}); setUser(null); }
+          } else { setUser(null); }
+          setAuthChecked(true);
+        });
+      }, []);
+
+      return (
+        <ThemeCtx.Provider value={theme}>
+          {!authChecked
+            ? <LoadingScreen />
+            : denied.active
+              ? <AccessDenied email={denied.email} onDismiss={() => setDenied({active:false,email:""})} />
+              : !user
+                ? <LoginScreen />
+                : <FlightStripTodo user={user} themeId={themeId} setTheme={setTheme} />
+          }
+        </ThemeCtx.Provider>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+
+  <!-- JSX手動トランスフォーム＆実行 -->
+  <script>
+    (function() {
+      var src = document.getElementById('jsx-source').textContent;
+      var result = Babel.transform(src, { presets: ['react', 'env'] });
+      // グローバルスコープで実行（React等のグローバル変数にアクセスするため）
+      var fn = new Function(result.code);
+      fn();
+    })();
+  </script>
+</body>
+</html>
