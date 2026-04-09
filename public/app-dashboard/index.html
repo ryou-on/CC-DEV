@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>APP DASHBOARD — ロビーの制作物</title>
+
+  <!-- Firebase SDK -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import {
+      getFirestore, collection, getDocs, addDoc, updateDoc,
+      deleteDoc, doc, serverTimestamp, query, orderBy
+    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+    /* ============================================================
+       🔧 Firebase設定 — cc-dev-ps7
+       ============================================================ */
+  // Import the functions you need from the SDKs you need
+import { initializeApp } from "firebase/app";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyDPlsAhtxbJBihy-EAHck9P7XbuMdzV0ds",
+  authDomain: "cc-dev-ps7.firebaseapp.com",
+  projectId: "cc-dev-ps7",
+  storageBucket: "cc-dev-ps7.firebasestorage.app",
+  messagingSenderId: "1029579090333",
+  appId: "1:1029579090333:web:5a2ea499fec97c497f2774"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    /* ============================================================
+       初期データ — 初回のみFirestoreにシードする
+       ============================================================ */
+    const SEED_APPS = [
+      {
+        name: "hihaho Player System",
+        type: "web", version: "0.5.3", status: "active",
+        url: "https://cc-dev-ps7.web.app/",
+        env: ["Claude Code", "Firebase"],
+        docs: [],
+        releaseNote: "YouTube型逆L字プレイヤー。Cloudflare Workers APIプロキシ、Firestoreプレイリスト管理。",
+        updatedAt: null
+      },
+      {
+        name: "AI活用スキル診断",
+        type: "web", version: "0.3.0", status: "active",
+        url: "https://cc-dev-ps7.web.app/ai-skill-check/",
+        env: ["Claude Code", "Cloudflare Workers", "Supabase"],
+        docs: [],
+        releaseNote: "レーダーチャート・Claude APIコーチング・Supabaseデータ収集・バイリンガル対応・管理CSV出力。",
+        updatedAt: null
+      },
+      {
+        name: "リアルタイム翻訳アプリ",
+        type: "web", version: "0.9.2", status: "active",
+        url: "https://cc-dev-ps7.web.app/realtime-translator/",
+        env: ["Claude Code", "Web Speech API"],
+        docs: [],
+        releaseNote: "Web Speech API + Claude ストリーミング。ユーザー辞書・モデル選択対応。",
+        updatedAt: null
+      },
+      {
+        name: "リアルタイム通訳アプリ",
+        type: "web", version: "0.1.0", status: "active",
+        url: "https://cc-dev-ps7.web.app/realtime-interpreter/",
+        env: ["Claude Code", "Whisper API"],
+        docs: [],
+        releaseNote: "Whisper API + Claude APIハイブリッド翻訳。",
+        updatedAt: null
+      },
+      {
+        name: "COCO-ITTA 家族マップ",
+        type: "web", version: "0.1.0", status: "dev",
+        url: "https://cc-dev-ps7.web.app/coco-itta/",
+        env: ["Claude Code", "Leaflet", "Firebase"],
+        docs: [],
+        releaseNote: "Phase1 MVP: Leaflet + OpenStreetMap + localStorage。Phase2: Firebase Auth + Firestore予定。",
+        updatedAt: null
+      },
+      {
+        name: "AI コンテンツ再利用エンジン",
+        type: "web", version: "0.1.0", status: "active",
+        url: "https://cc-dev-ps7.web.app/",
+        env: ["Claude Code", "Cloudflare Workers"],
+        docs: [],
+        releaseNote: "note記事からXポスト・ニュースレター文章を生成。",
+        updatedAt: null
+      },
+      {
+        name: "hihaho 料金シミュレーター",
+        type: "web", version: "1.0.0", status: "active",
+        url: "https://cc-dev-ps7.web.app/",
+        env: ["Claude Code", "GAS"],
+        docs: [],
+        releaseNote: "Starter/Standard/Enterprise/Customプラン対応。年間/月額トグル・DocuSign風見積出力。",
+        updatedAt: null
+      },
+      {
+        name: "hihaho iFrame Injector",
+        type: "chrome", version: "0.5.3", status: "active",
+        url: "",
+        env: ["Claude Code"],
+        docs: [],
+        releaseNote: "インラインピッカーUI。CC-DEV製HTML ウィジェット152個・12カテゴリ対応。srcdocでページ離脱ダイアログ回避。",
+        updatedAt: null
+      },
+      {
+        name: "Google Tasks サイドバー",
+        type: "chrome", version: "1.0.0", status: "active",
+        url: "",
+        env: ["Claude Code"],
+        docs: [],
+        releaseNote: "OAuth・Google Tasks API連携のサイドパネル拡張。",
+        updatedAt: null
+      },
+      {
+        name: "Sidebar Memo",
+        type: "chrome", version: "1.0.0", status: "active",
+        url: "",
+        env: ["Claude Code"],
+        docs: [],
+        releaseNote: "Side Panel API使用のメモ拡張。",
+        updatedAt: null
+      },
+      {
+        name: "黒崎くん (OpenClaw Agent)",
+        type: "other", version: "0.2.0", status: "dev",
+        url: "",
+        env: ["Mac Mini M4", "Telegram", "OpenClaw"],
+        docs: [],
+        releaseNote: "24/7 Telegram AIエージェント。日本語ペルソナ・SKILL.md自己進化ループ・Pika Skills統合予定。",
+        updatedAt: null
+      }
+    ];
+
+    /* ============================================================
+       アプリ状態管理
+       ============================================================ */
+    let allApps = [];
+    let currentTab = "all";
+    let editingId = null;
+    let consoleLog = [];
+
+    // コンソールログ記録
+    function log(msg) {
+      const ts = new Date().toLocaleTimeString("ja-JP");
+      consoleLog.unshift(`[${ts}] ${msg}`);
+      if (consoleLog.length > 50) consoleLog.pop();
+      renderConsole();
+    }
+
+    /* ============================================================
+       Firestore CRUD
+       ============================================================ */
+    async function loadApps() {
+      log("Firestoreからアプリ一覧を読み込み中...");
+      try {
+        const q = query(collection(db, "apps"), orderBy("updatedAt", "desc"));
+        const snap = await getDocs(q);
+        allApps = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        log(`✅ ${allApps.length}件のアプリを読み込みました`);
+      } catch (e) {
+        // updatedAtインデックスがない場合はorderByなしで再試行
+        try {
+          const snap = await getDocs(collection(db, "apps"));
+          allApps = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          log(`✅ ${allApps.length}件のアプリを読み込みました（インデックスなし）`);
+        } catch (e2) {
+          log(`❌ 読み込みエラー: ${e2.message}`);
+        }
+      }
+      renderAll();
+    }
+
+    async function seedIfEmpty() {
+      const snap = await getDocs(collection(db, "apps"));
+      if (!snap.empty) return;
+      log("初期データをFirestoreに投入中...");
+      for (const a of SEED_APPS) {
+        await addDoc(collection(db, "apps"), { ...a, updatedAt: serverTimestamp() });
+      }
+      log("✅ 初期データ投入完了");
+      await loadApps();
+    }
+
+    async function saveApp(data) {
+      if (editingId) {
+        await updateDoc(doc(db, "apps", editingId), { ...data, updatedAt: serverTimestamp() });
+        log(`✅ 更新: ${data.name}`);
+      } else {
+        await addDoc(collection(db, "apps"), { ...data, updatedAt: serverTimestamp() });
+        log(`✅ 追加: ${data.name}`);
+      }
+      editingId = null;
+      closeModal();
+      await loadApps();
+    }
+
+    async function deleteApp(id, name) {
+      if (!confirm(`「${name}」を削除しますか？`)) return;
+      await deleteDoc(doc(db, "apps", id));
+      log(`🗑 削除: ${name}`);
+      await loadApps();
+    }
+
+    /* ============================================================
+       レンダリング
+       ============================================================ */
+    const TAB_DEFS = [
+      { key: "all",    label: "ALL",         icon: "⬡" },
+      { key: "web",    label: "Web",          icon: "🌐" },
+      { key: "chrome", label: "Chrome拡張",   icon: "🧩" },
+      { key: "ios",    label: "iOS",          icon: "📱" },
+      { key: "android",label: "Android",      icon: "🤖" },
+      { key: "other",  label: "Other",        icon: "🔧" },
+    ];
+
+    const STATUS_MAP = {
+      active:   { label: "LIVE",    cls: "status-live" },
+      dev:      { label: "DEV",     cls: "status-dev" },
+      beta:     { label: "BETA",    cls: "status-beta" },
+      archived: { label: "ARCHIVE", cls: "status-arch" },
+    };
+
+    function renderAll() {
+      renderTabs();
+      renderCards();
+      renderCount();
+    }
+
+    function renderTabs() {
+      const el = document.getElementById("tabs");
+      el.innerHTML = TAB_DEFS.map(t => {
+        const count = t.key === "all"
+          ? allApps.length
+          : allApps.filter(a => a.type === t.key).length;
+        return `<button class="tab-btn ${currentTab === t.key ? "active" : ""}"
+          onclick="window._setTab('${t.key}')">
+          <span class="tab-icon">${t.icon}</span>
+          <span class="tab-label">${t.label}</span>
+          <span class="tab-count">${count}</span>
+        </button>`;
+      }).join("");
+    }
+
+    function renderCards() {
+      const filtered = currentTab === "all"
+        ? allApps
+        : allApps.filter(a => a.type === currentTab);
+      const el = document.getElementById("cards");
+
+      if (filtered.length === 0) {
+        el.innerHTML = `<div class="empty-state">
+          <div class="empty-icon">◎</div>
+          <p>このカテゴリにはまだアプリがありません</p>
+          <button class="btn-add-empty" onclick="window._openModal()">＋ 追加する</button>
+        </div>`;
+        return;
+      }
+
+      el.innerHTML = filtered.map(app => {
+        const s = STATUS_MAP[app.status] || STATUS_MAP.dev;
+        const envTags = (app.env || []).map(e =>
+          `<span class="env-tag">${e}</span>`).join("");
+        const docLinks = (app.docs || []).map(d =>
+          `<a href="${d.url}" target="_blank" class="doc-link" title="${d.label}">
+            ${d.type === "gdoc" ? "📄" : d.type === "notion" ? "🔲" : "📝"} ${d.label}
+          </a>`).join("");
+
+        return `<div class="card" data-id="${app.id}">
+          <div class="card-header">
+            <div class="card-title-row">
+              <h3 class="card-name">${app.name}</h3>
+              <span class="badge ${s.cls}">${s.label}</span>
+            </div>
+            <div class="card-ver">v${app.version || "0.0.1"}</div>
+          </div>
+
+          <p class="card-note">${app.releaseNote || "—"}</p>
+
+          <div class="card-env">${envTags}</div>
+
+          ${docLinks ? `<div class="card-docs">${docLinks}</div>` : ""}
+
+          <div class="card-footer">
+            ${app.url
+              ? `<a href="${app.url}" target="_blank" class="btn-launch">▶ 開く</a>`
+              : `<span class="btn-launch disabled">URL未設定</span>`}
+            <div class="card-actions">
+              <button class="btn-icon" onclick="window._openModal('${app.id}')" title="編集">✎</button>
+              <button class="btn-icon danger" onclick="window._delete('${app.id}','${app.name.replace(/'/g,"\\'")}')">✕</button>
+            </div>
+          </div>
+        </div>`;
+      }).join("");
+    }
+
+    function renderCount() {
+      const filtered = currentTab === "all"
+        ? allApps
+        : allApps.filter(a => a.type === currentTab);
+      document.getElementById("count").textContent =
+        `${filtered.length} apps`;
+    }
+
+    function renderConsole() {
+      const el = document.getElementById("console-log");
+      if (el) el.textContent = consoleLog.join("\n");
+    }
+
+    /* ============================================================
+       モーダル（追加・編集）
+       ============================================================ */
+    function openModal(id) {
+      editingId = id || null;
+      const app = id ? allApps.find(a => a.id === id) : null;
+      const modal = document.getElementById("modal");
+
+      document.getElementById("modal-title").textContent =
+        app ? "アプリを編集" : "アプリを追加";
+
+      // フォームに値をセット
+      document.getElementById("f-name").value    = app?.name    || "";
+      document.getElementById("f-type").value    = app?.type    || "web";
+      document.getElementById("f-version").value = app?.version || "0.1.0";
+      document.getElementById("f-status").value  = app?.status  || "dev";
+      document.getElementById("f-url").value     = app?.url     || "";
+      document.getElementById("f-env").value     = (app?.env || []).join(", ");
+      document.getElementById("f-note").value    = app?.releaseNote || "";
+      document.getElementById("f-docs").value    =
+        (app?.docs || []).map(d => `${d.label}|${d.url}|${d.type}`).join("\n");
+
+      modal.classList.add("open");
+    }
+
+    function closeModal() {
+      document.getElementById("modal").classList.remove("open");
+      editingId = null;
+    }
+
+    async function submitForm() {
+      const name = document.getElementById("f-name").value.trim();
+      if (!name) { alert("アプリ名を入力してください"); return; }
+
+      // docs: "ラベル|URL|タイプ" の形式でパース
+      const docsRaw = document.getElementById("f-docs").value.trim();
+      const docs = docsRaw ? docsRaw.split("\n").map(line => {
+        const [label, url, type] = line.split("|").map(s => s.trim());
+        return { label: label || "", url: url || "", type: type || "gdoc" };
+      }).filter(d => d.url) : [];
+
+      const data = {
+        name,
+        type:        document.getElementById("f-type").value,
+        version:     document.getElementById("f-version").value,
+        status:      document.getElementById("f-status").value,
+        url:         document.getElementById("f-url").value.trim(),
+        env:         document.getElementById("f-env").value.split(",").map(s => s.trim()).filter(Boolean),
+        releaseNote: document.getElementById("f-note").value.trim(),
+        docs
+      };
+
+      await saveApp(data);
+    }
+
+    /* ============================================================
+       グローバル関数（HTMLのonclickから呼ぶため）
+       ============================================================ */
+    window._setTab = (key) => {
+      currentTab = key;
+      renderAll();
+    };
+    window._openModal  = openModal;
+    window._closeModal = closeModal;
+    window._submit     = submitForm;
+    window._delete     = deleteApp;
+    window._copyConsole = () => {
+      navigator.clipboard.writeText(consoleLog.join("\n"));
+      log("📋 コンソールをクリップボードにコピーしました");
+    };
+
+    /* ============================================================
+       初期化
+       ============================================================ */
+    document.addEventListener("DOMContentLoaded", async () => {
+      log("🚀 App Dashboard 起動中...");
+      try {
+        await seedIfEmpty();
+        await loadApps();
+      } catch(e) {
+        log(`❌ 初期化エラー: ${e.message}`);
+        log("⚙️ Firebase設定（apiKey等）をindex.htmlに設定してください");
+        // Firebase未設定時はサンプルデータで表示
+        allApps = SEED_APPS.map((a, i) => ({ ...a, id: `sample-${i}` }));
+        renderAll();
+      }
+    });
+  </script>
+
+  <style>
+    /* ============================================================
+       CSS変数 & リセット
+       ============================================================ */
+    @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=Noto+Sans+JP:wght@300;400;500;700&display=swap');
+
+    :root {
+      --bg:       #0a0a0f;
+      --surface:  #111118;
+      --border:   #1e1e2e;
+      --accent:   #00e5c8;
+      --accent2:  #ff4d6d;
+      --accent3:  #ffd166;
+      --text:     #e8e8f0;
+      --muted:    #5a5a7a;
+      --card-bg:  #13131f;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Noto Sans JP', sans-serif;
+      min-height: 100vh;
+      background-image:
+        radial-gradient(ellipse 80% 40% at 20% -10%, rgba(0,229,200,0.07) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 80% 110%, rgba(255,77,109,0.05) 0%, transparent 60%);
+    }
+
+    /* ============================================================
+       ヘッダー
+       ============================================================ */
+    header {
+      padding: 2rem 2.5rem 1rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .header-left h1 {
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: clamp(1.6rem, 4vw, 2.8rem);
+      letter-spacing: -0.03em;
+      line-height: 1;
+      color: #fff;
+    }
+
+    .header-left h1 span {
+      color: var(--accent);
+    }
+
+    .header-sub {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 0.4rem;
+      font-family: 'Syne', sans-serif;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .btn-add {
+      background: var(--accent);
+      color: #000;
+      border: none;
+      padding: 0.6rem 1.4rem;
+      font-family: 'Syne', sans-serif;
+      font-weight: 700;
+      font-size: 0.85rem;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      clip-path: polygon(8px 0%, 100% 0%, calc(100% - 8px) 100%, 0% 100%);
+      transition: background 0.2s, transform 0.1s;
+    }
+    .btn-add:hover { background: #00ffdf; transform: translateY(-1px); }
+
+    /* ============================================================
+       タブバー
+       ============================================================ */
+    .tab-bar {
+      display: flex;
+      gap: 0.25rem;
+      padding: 1rem 2.5rem 0;
+      border-bottom: 1px solid var(--border);
+      overflow-x: auto;
+    }
+
+    .tab-btn {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.5rem 1rem 0.6rem;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--muted);
+      font-family: 'Syne', sans-serif;
+      font-size: 0.82rem;
+      font-weight: 600;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: color 0.2s, border-color 0.2s;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+    .tab-count {
+      background: var(--border);
+      color: var(--muted);
+      font-size: 0.7rem;
+      padding: 0.1rem 0.4rem;
+      border-radius: 999px;
+    }
+    .tab-btn.active .tab-count {
+      background: rgba(0,229,200,0.15);
+      color: var(--accent);
+    }
+
+    /* ============================================================
+       メインエリア
+       ============================================================ */
+    .main {
+      padding: 1.5rem 2.5rem;
+    }
+
+    .toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.2rem;
+    }
+
+    #count {
+      font-family: 'Syne', sans-serif;
+      font-size: 0.75rem;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    /* ============================================================
+       カードグリッド
+       ============================================================ */
+    #cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 1rem;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      padding: 1.2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.7rem;
+      transition: border-color 0.2s, transform 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+    .card::before {
+      content: "";
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, var(--accent), transparent);
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    .card:hover {
+      border-color: rgba(0,229,200,0.3);
+      transform: translateY(-2px);
+    }
+    .card:hover::before { opacity: 1; }
+
+    .card-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem; }
+    .card-title-row { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; flex: 1; }
+
+    .card-name {
+      font-family: 'Syne', sans-serif;
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #fff;
+      line-height: 1.3;
+    }
+
+    .card-ver {
+      font-family: 'Syne', sans-serif;
+      font-size: 0.7rem;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    /* ステータスバッジ */
+    .badge {
+      font-family: 'Syne', sans-serif;
+      font-size: 0.6rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      padding: 0.15rem 0.45rem;
+      border-radius: 2px;
+    }
+    .status-live { background: rgba(0,229,200,0.15); color: var(--accent); border: 1px solid rgba(0,229,200,0.3); }
+    .status-dev  { background: rgba(255,209,102,0.12); color: var(--accent3); border: 1px solid rgba(255,209,102,0.3); }
+    .status-beta { background: rgba(120,100,255,0.15); color: #a78bfa; border: 1px solid rgba(120,100,255,0.3); }
+    .status-arch { background: rgba(90,90,120,0.2); color: var(--muted); border: 1px solid var(--border); }
+
+    .card-note {
+      font-size: 0.78rem;
+      color: #8888aa;
+      line-height: 1.6;
+      flex: 1;
+    }
+
+    .card-env {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.3rem;
+    }
+    .env-tag {
+      font-size: 0.65rem;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 0.15rem 0.5rem;
+      border-radius: 3px;
+      font-family: 'Syne', sans-serif;
+      letter-spacing: 0.03em;
+    }
+
+    .card-docs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+    }
+    .doc-link {
+      font-size: 0.7rem;
+      color: #7777cc;
+      text-decoration: none;
+      padding: 0.15rem 0.5rem;
+      border: 1px solid rgba(120,120,200,0.2);
+      border-radius: 3px;
+      transition: color 0.2s, border-color 0.2s;
+    }
+    .doc-link:hover { color: #aaaaf0; border-color: rgba(170,170,240,0.4); }
+
+    .card-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 0.3rem;
+      padding-top: 0.7rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .btn-launch {
+      font-family: 'Syne', sans-serif;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+      text-decoration: none;
+      padding: 0.3rem 0.8rem;
+      border: 1px solid rgba(0,229,200,0.3);
+      transition: background 0.2s, color 0.2s;
+    }
+    .btn-launch:hover { background: var(--accent); color: #000; }
+    .btn-launch.disabled { color: var(--muted); border-color: var(--border); cursor: default; }
+
+    .card-actions { display: flex; gap: 0.4rem; }
+    .btn-icon {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      width: 28px; height: 28px;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer;
+      font-size: 0.8rem;
+      transition: color 0.2s, border-color 0.2s;
+    }
+    .btn-icon:hover { color: var(--text); border-color: var(--muted); }
+    .btn-icon.danger:hover { color: var(--accent2); border-color: var(--accent2); }
+
+    /* 空状態 */
+    .empty-state {
+      grid-column: 1 / -1;
+      text-align: center;
+      padding: 4rem 2rem;
+      color: var(--muted);
+    }
+    .empty-icon { font-size: 3rem; margin-bottom: 1rem; opacity: 0.3; }
+    .btn-add-empty {
+      margin-top: 1rem;
+      background: none;
+      border: 1px dashed var(--border);
+      color: var(--muted);
+      padding: 0.5rem 1.5rem;
+      cursor: pointer;
+      font-family: 'Syne', sans-serif;
+      transition: color 0.2s, border-color 0.2s;
+    }
+    .btn-add-empty:hover { color: var(--accent); border-color: var(--accent); }
+
+    /* ============================================================
+       コンソールパネル
+       ============================================================ */
+    .console-panel {
+      margin: 0 2.5rem 2rem;
+      border: 1px solid var(--border);
+      background: #0c0c14;
+    }
+    .console-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.4rem 0.8rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .console-header span {
+      font-family: 'Syne', sans-serif;
+      font-size: 0.65rem;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+    }
+    .btn-copy-console {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.65rem;
+      padding: 0.2rem 0.6rem;
+      cursor: pointer;
+      font-family: 'Syne', sans-serif;
+      transition: color 0.2s;
+    }
+    .btn-copy-console:hover { color: var(--accent); }
+
+    #console-log {
+      font-family: 'Courier New', monospace;
+      font-size: 0.7rem;
+      color: #44cc88;
+      padding: 0.6rem 0.8rem;
+      max-height: 100px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      line-height: 1.6;
+    }
+
+    /* ============================================================
+       モーダル
+       ============================================================ */
+    #modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.8);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+    #modal.open { display: flex; }
+
+    .modal-box {
+      background: #14141f;
+      border: 1px solid var(--border);
+      width: 100%;
+      max-width: 520px;
+      max-height: 90vh;
+      overflow-y: auto;
+      padding: 1.8rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    #modal-title {
+      font-family: 'Syne', sans-serif;
+      font-weight: 700;
+      font-size: 1.1rem;
+      color: #fff;
+    }
+    .btn-close {
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 1.2rem;
+      cursor: pointer;
+    }
+    .btn-close:hover { color: var(--text); }
+
+    .form-row { display: flex; flex-direction: column; gap: 0.3rem; }
+    .form-row label {
+      font-family: 'Syne', sans-serif;
+      font-size: 0.7rem;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      text-transform: uppercase;
+    }
+    .form-row input,
+    .form-row select,
+    .form-row textarea {
+      background: #0a0a14;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.5rem 0.7rem;
+      font-size: 0.85rem;
+      font-family: 'Noto Sans JP', sans-serif;
+      outline: none;
+      transition: border-color 0.2s;
+      width: 100%;
+    }
+    .form-row input:focus,
+    .form-row select:focus,
+    .form-row textarea:focus {
+      border-color: var(--accent);
+    }
+    .form-row textarea { resize: vertical; min-height: 70px; }
+    .form-hint {
+      font-size: 0.65rem;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
+
+    .modal-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 0.6rem;
+      padding-top: 0.5rem;
+      border-top: 1px solid var(--border);
+    }
+    .btn-cancel {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 0.5rem 1.2rem;
+      font-family: 'Syne', sans-serif;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: color 0.2s;
+    }
+    .btn-cancel:hover { color: var(--text); }
+    .btn-save {
+      background: var(--accent);
+      border: none;
+      color: #000;
+      padding: 0.5rem 1.4rem;
+      font-family: 'Syne', sans-serif;
+      font-size: 0.8rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn-save:hover { background: #00ffdf; }
+
+    /* レスポンシブ */
+    @media (max-width: 600px) {
+      header, .tab-bar, .main, .console-panel { padding-left: 1rem; padding-right: 1rem; }
+      #cards { grid-template-columns: 1fr; }
+      .form-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ヘッダー -->
+  <header>
+    <div class="header-left">
+      <h1>APP <span>DASHBOARD</span></h1>
+      <p class="header-sub">ロビーの制作物ポータル</p>
+    </div>
+    <button class="btn-add" onclick="window._openModal()">＋ アプリを追加</button>
+  </header>
+
+  <!-- タブバー -->
+  <nav class="tab-bar" id="tabs"></nav>
+
+  <!-- メインエリア -->
+  <main class="main">
+    <div class="toolbar">
+      <span id="count">—</span>
+    </div>
+    <div id="cards">
+      <div class="empty-state">
+        <div class="empty-icon">◎</div>
+        <p>読み込み中...</p>
+      </div>
+    </div>
+  </main>
+
+  <!-- デバッグコンソール -->
+  <div class="console-panel">
+    <div class="console-header">
+      <span>CONSOLE LOG</span>
+      <button class="btn-copy-console" onclick="window._copyConsole()">📋 コピー</button>
+    </div>
+    <pre id="console-log">起動中...</pre>
+  </div>
+
+  <!-- 追加・編集モーダル -->
+  <div id="modal">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h2 id="modal-title">アプリを追加</h2>
+        <button class="btn-close" onclick="window._closeModal()">✕</button>
+      </div>
+
+      <!-- フォーム -->
+      <div class="form-row">
+        <label>アプリ名 *</label>
+        <input id="f-name" type="text" placeholder="例: hihaho Player System" />
+      </div>
+
+      <div class="form-grid">
+        <div class="form-row">
+          <label>タイプ</label>
+          <select id="f-type">
+            <option value="web">🌐 Web</option>
+            <option value="chrome">🧩 Chrome拡張</option>
+            <option value="ios">📱 iOS</option>
+            <option value="android">🤖 Android</option>
+            <option value="other">🔧 Other</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>ステータス</label>
+          <select id="f-status">
+            <option value="dev">DEV（開発中）</option>
+            <option value="beta">BETA</option>
+            <option value="active">LIVE（公開中）</option>
+            <option value="archived">ARCHIVE</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-grid">
+        <div class="form-row">
+          <label>バージョン</label>
+          <input id="f-version" type="text" placeholder="0.1.0" />
+        </div>
+        <div class="form-row">
+          <label>URL</label>
+          <input id="f-url" type="url" placeholder="https://..." />
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label>開発環境（カンマ区切り）</label>
+        <input id="f-env" type="text" placeholder="例: Claude Code, Firebase, Cloudflare Workers" />
+      </div>
+
+      <div class="form-row">
+        <label>リリースノート</label>
+        <textarea id="f-note" placeholder="このバージョンの変更内容や概要"></textarea>
+      </div>
+
+      <div class="form-row">
+        <label>ドキュメントリンク（1行1件）</label>
+        <textarea id="f-docs" placeholder="ラベル|https://docs.google.com/...|gdoc&#10;ラベル|https://notion.so/...|notion&#10;ラベル|obsidian://...|obsidian"></textarea>
+        <p class="form-hint">
+          書式: <code>ラベル|URL|タイプ</code>（タイプ: gdoc / notion / obsidian）
+        </p>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn-cancel" onclick="window._closeModal()">キャンセル</button>
+        <button class="btn-save" onclick="window._submit()">保存する</button>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>
