@@ -2,15 +2,33 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ユーザー自身のデータのみ読み書き可（tasks / meta 配下すべて）
+    // プレイリスト：誰でも読める・書き込みはローカルのみ許可
+    match /playlists/{id} {
+      allow read: if true;
+      allow write: if request.auth != null ||
+                      request.resource.data.keys().hasAny(['name','type','folderIds','videoIds','createdAt']);
+    }
+
+    // サムネイルメタ：誰でも読める
+    match /video_meta/{id} {
+      allow read: if true;
+      allow write: if request.auth != null ||
+                      request.resource.data.keys().hasAny(['thumbnailUrl']);
+    }
+
+    // Flight Strip TODO: ユーザー自身のデータのみ（tasks + meta 配下すべて）
     match /users/{userId}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
-    // その他すべて拒否
+    // App Dashboard: 読み書き許可
+    match /apps/{id} {
+      allow read, write: if true;
+    }
+
+    // その他は全拒否
     match /{document=**} {
       allow read, write: if false;
     }
-
   }
 }
