@@ -138,13 +138,13 @@
     // ======================================================
     // 定数
     // ======================================================
-    const CATEGORIES = {
-      kikaku7:  { label: "企画7課",   color: "#00ff88" },
-      sg:       { label: "SG",        color: "#00ccff" },
-      jigyou:   { label: "個人事業",  color: "#ffaa00" },
-      katei:    { label: "家庭",      color: "#ff6699" },
-      dev:      { label: "開発",      color: "#aa88ff" },
-    };
+    const DEFAULT_CATEGORIES = [
+      { id:"work",   label:"仕事",  color:"#00ff88" },
+      { id:"home",   label:"家庭",  color:"#ff6699" },
+      { id:"study",  label:"学習",  color:"#00ccff" },
+      { id:"health", label:"健康",  color:"#ffaa00" },
+    ];
+    let CATEGORIES = Object.fromEntries(DEFAULT_CATEGORIES.map(c => [c.id, c]));
     const PRIORITIES = {
       high:   { label: "URG", color: "#ff3333", bg: "rgba(255,51,51,0.15)",   border: "#ff3333"   },
       normal: { label: "NRM", color: "#00ff88", bg: "rgba(0,255,136,0.08)",   border: "#00ff8844" },
@@ -347,6 +347,51 @@
                 </ul>
               </div>
             ))}
+          </div>
+        </div>
+      );
+    };
+
+    // ======================================================
+    // カテゴリエディタ
+    // ======================================================
+    const CategoryEditor = ({ categories, onSave, onClose }) => {
+      const T = useT();
+      const [cats, setCats] = useState(categories.map(c => ({ ...c })));
+      const handleChange = (idx, field, val) => {
+        setCats(prev => prev.map((c, i) => i === idx ? { ...c, [field]: val } : c));
+      };
+      const handleAdd = () => {
+        setCats(prev => [...prev, { id: `cat_${Date.now()}`, label: "新カテゴリ", color: "#aaaaaa" }]);
+      };
+      const handleRemove = (idx) => {
+        if (cats.length <= 1) return;
+        setCats(prev => prev.filter((_, i) => i !== idx));
+      };
+      const inp = { background:T.bgInput, border:`1px solid ${T.border2}`, color:T.text, padding:"4px 8px", borderRadius:"2px", fontSize:"11px", fontFamily:"'JetBrains Mono',monospace", outline:"none" };
+      return (
+        <div style={{ position:"fixed", inset:0, zIndex:200, background:"rgba(0,0,0,0.75)", display:"flex", alignItems:"center", justifyContent:"center" }} onClick={onClose}>
+          <div onClick={e => e.stopPropagation()} style={{ background:T.bgModal, border:`1px solid ${T.accent}44`, borderRadius:"6px", padding:"24px 28px", maxWidth:"400px", width:"90%", boxShadow:`0 0 40px ${T.accent}18`, fontFamily:"'JetBrains Mono',monospace" }}>
+            <div style={{ color:T.accent, fontSize:"12px", fontWeight:700, letterSpacing:"0.2em", marginBottom:"16px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <span>◈ CATEGORY EDITOR</span>
+              <button onClick={onClose} style={{ background:"transparent", border:"none", color:T.textDim, fontSize:"16px", cursor:"pointer" }}>✕</button>
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", gap:"8px", marginBottom:"12px" }}>
+              {cats.map((c, idx) => (
+                <div key={c.id} style={{ display:"flex", alignItems:"center", gap:"8px" }}>
+                  <input type="color" value={c.color} onChange={e => handleChange(idx, "color", e.target.value)} style={{ width:"32px", height:"28px", border:`1px solid ${T.border2}`, borderRadius:"2px", cursor:"pointer", background:"transparent", padding:"2px" }} />
+                  <input style={{ ...inp, flex:1 }} value={c.label} onChange={e => handleChange(idx, "label", e.target.value)} maxLength={20} />
+                  <button onClick={() => handleRemove(idx)} disabled={cats.length <= 1} style={{ background:"transparent", border:`1px solid ${cats.length<=1?"#33334466":"#ff333444"}`, color:cats.length<=1?T.border:"#ff6666", padding:"4px 8px", borderRadius:"2px", cursor:cats.length<=1?"not-allowed":"pointer", fontSize:"11px", fontFamily:"'JetBrains Mono',monospace" }}>✕</button>
+                </div>
+              ))}
+            </div>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <button onClick={handleAdd} style={{ background:`${T.accent}18`, border:`1px solid ${T.accent}44`, color:T.accent, padding:"4px 14px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontWeight:700, fontFamily:"'JetBrains Mono',monospace" }}>+ 追加</button>
+              <div style={{ display:"flex", gap:"8px" }}>
+                <button onClick={onClose} style={{ background:"transparent", border:`1px solid ${T.border2}`, color:T.textDim, padding:"4px 14px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontFamily:"'JetBrains Mono',monospace" }}>CANCEL</button>
+                <button onClick={() => onSave(cats)} style={{ background:`${T.accent}22`, border:`1px solid ${T.accent}66`, color:T.accent, padding:"4px 14px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontWeight:700, fontFamily:"'JetBrains Mono',monospace" }}>SAVE</button>
+              </div>
+            </div>
           </div>
         </div>
       );
@@ -859,9 +904,33 @@
       const touchDragRef = useRef(null);
       const [touchGhostPos, setTouchGhostPos]  = useState(null);
       const currentTime = useCurrentTime();
+      // カテゴリ（Firestore同期）
+      const [categories,    setCategories]    = useState(DEFAULT_CATEGORIES);
+      const [showCatEditor, setShowCatEditor] = useState(false);
 
       const tasksRef = useMemo(() => db.collection(`users/${user.uid}/tasks`), [user.uid]);
+      const metaRef  = useMemo(() => db.collection(`users/${user.uid}/meta`),  [user.uid]);
       const ts = () => firebase.firestore.FieldValue.serverTimestamp();
+
+      // カテゴリ Firestore 同期
+      useEffect(() => {
+        const unsub = metaRef.doc('categories').onSnapshot(snap => {
+          if (snap.exists && snap.data()?.items?.length) {
+            setCategories(snap.data().items);
+          }
+        });
+        return unsub;
+      }, [metaRef]);
+
+      // グローバル CATEGORIES を動的更新
+      useEffect(() => {
+        CATEGORIES = Object.fromEntries(categories.map(c => [c.id, c]));
+      }, [categories]);
+
+      const handleSaveCats = async (cats) => {
+        await metaRef.doc('categories').set({ items: cats });
+        setShowCatEditor(false);
+      };
 
       // リアルタイム同期
       useEffect(() => {
@@ -1261,6 +1330,7 @@
 
           {showHelp    && <ShortcutHelp  onClose={() => setShowHelp(false)} />}
           {showRelease && <ReleaseNotes  onClose={() => setShowRelease(false)} />}
+          {showCatEditor && <CategoryEditor categories={categories} onSave={handleSaveCats} onClose={() => setShowCatEditor(false)} />}
           {editTaskId && editTask && <EditStripModal task={editTask} onSave={handleEditSave} onClose={() => setEditTaskId(null)} />}
 
           <div style={{ position:"relative", zIndex:2, maxWidth:"1200px", margin:"0 auto", padding:"16px" }}>
@@ -1325,6 +1395,7 @@
                   <option value="all">ALL CAT</option>
                   {Object.entries(CATEGORIES).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
                 </select>
+                <button onClick={() => setShowCatEditor(true)} style={{ background:"transparent", border:`1px solid ${T.border2}`, color:T.textDim, padding:"4px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"10px", fontWeight:700, fontFamily:"'JetBrains Mono',monospace", letterSpacing:"0.05em" }}>CAT ✎</button>
                 <ThemePicker currentId={themeId} onChange={setTheme} />
                 <DataMenu tasks={tasks} tasksRef={tasksRef} />
                 <button onClick={cycleFontSize} title="文字サイズ切替（小→中→大）" style={{ background:"transparent", border:`1px solid ${T.border2}`, color:T.accent, padding:"4px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"13px", fontWeight:700, fontFamily:"'JetBrains Mono',monospace", letterSpacing:"0.05em", minWidth:"52px" }}>
