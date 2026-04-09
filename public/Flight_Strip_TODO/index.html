@@ -188,9 +188,9 @@
     // モバイル判定フック
     // ======================================================
     const useIsMobile = () => {
-      const [isMobile, setIsMobile] = useState(() => window.innerWidth < 720);
+      const [isMobile, setIsMobile] = useState(() => window.innerWidth < 540);
       useEffect(() => {
-        const h = () => setIsMobile(window.innerWidth < 720);
+        const h = () => setIsMobile(window.innerWidth < 540);
         window.addEventListener('resize', h);
         return () => window.removeEventListener('resize', h);
       }, []);
@@ -502,7 +502,7 @@
       return `${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
     };
 
-    const FlightStrip = ({ task, isSelected, dropState, onDragStart, onDragOver, onDragEnd, onDrop, onStatusChange, onDelete, onEdit, isTimerRunning, elapsedMs, totalLoggedMs, onTimerStart, onTimerStop, onTouchStart, onTouchMove, onTouchEnd }) => {
+    const FlightStrip = ({ task, isSelected, dropState, onDragStart, onDragOver, onDragEnd, onDrop, onStatusChange, onDelete, onEdit, isTimerRunning, elapsedMs, totalLoggedMs, onTimerStart, onTimerStop, onTouchStart, onTouchMove, onTouchEnd, titleFontSize=13 }) => {
       const T = useT();
       const pri = PRIORITIES[task.priority] || PRIORITIES.normal;
       const cat = CATEGORIES[task.category] || { label: task.category || "OTHER", color: "#888888" };
@@ -559,7 +559,7 @@
               <span style={{ color:T.textDim, fontSize:"10px" }}>{task.time}</span>
               <span style={{ color:pri.color, fontSize:"9px", fontWeight:700, padding:"1px 6px", border:`1px solid ${pri.color}`, borderRadius:"2px", letterSpacing:"0.15em" }}>{pri.label}</span>
             </div>
-            <div style={{ padding:"4px 8px 2px", color:isCompleted?T.textDim:T.text, fontSize:"13px", fontWeight:600, textDecoration:isCompleted?"line-through":"none", lineHeight:1.3 }}>{task.title}</div>
+            <div style={{ padding:"4px 8px 2px", color:isCompleted?T.textDim:T.text, fontSize:`${titleFontSize}px`, fontWeight:600, textDecoration:isCompleted?"line-through":"none", lineHeight:1.3 }}>{task.title}</div>
             {task.assignee && (
               <div style={{ display:"flex", alignItems:"center", gap:"4px", padding:"2px 8px 0" }}>
                 <span style={{ fontSize:"9px", fontWeight:700, color:"#ffaa00", letterSpacing:"0.1em" }}>✈ HANDOFF</span>
@@ -759,6 +759,14 @@
       const [syncStatus,     setSyncStatus]     = useState("connecting");
       const [activeTimer,    setActiveTimer]    = useState(null); // { taskId, startMs }
       const [mobileTab,      setMobileTab]      = useState("active");
+      const [stripFontSize,  setStripFontSize]  = useState(() => localStorage.getItem("fst-fontsize") || "md");
+      const FONT_SIZES = { sm: { label:"小", px:11 }, md: { label:"中", px:13 }, lg: { label:"大", px:16 } };
+      const cycleFontSize = () => {
+        const keys = ["sm","md","lg"];
+        const next = keys[(keys.indexOf(stripFontSize) + 1) % keys.length];
+        setStripFontSize(next);
+        localStorage.setItem("fst-fontsize", next);
+      };
       // タッチDnD
       const touchDragRef = useRef(null);
       const [touchGhostPos, setTouchGhostPos]  = useState(null);
@@ -1210,6 +1218,9 @@
                   <option value="all">ALL CAT</option>
                   {Object.entries(CATEGORIES).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
                 </select>
+                <button onClick={cycleFontSize} title="ストリップ文字サイズ切替" style={{ background:`${T.accent}10`, border:`1px solid ${T.border2}`, color:T.textDim, padding:"4px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontWeight:700, fontFamily:"'JetBrains Mono',monospace", letterSpacing:"0.05em" }}>
+                  A <span style={{ color:T.accent }}>{FONT_SIZES[stripFontSize].label}</span>
+                </button>
                 <ThemePicker currentId={themeId} onChange={setTheme} />
                 <DataMenu tasks={tasks} tasksRef={tasksRef} />
                 <button onClick={() => setShowForm(!showForm)} style={{ background:showForm?"rgba(255,50,50,0.15)":`${T.accent}18`, border:`1px solid ${showForm?"#ff333366":T.accent+"66"}`, color:showForm?"#ff6666":T.accent, padding:"4px 14px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontWeight:700, letterSpacing:"0.1em", fontFamily:"'JetBrains Mono',monospace" }}>{showForm?"✕ CLOSE":"+ FILE STRIP"}</button>
@@ -1256,6 +1267,7 @@
                       onTouchStart={handleTouchStart}
                       onTouchMove={handleTouchMove}
                       onTouchEnd={handleTouchEnd}
+                      titleFontSize={FONT_SIZES[stripFontSize].px}
                     />
                   </div>
                 );
