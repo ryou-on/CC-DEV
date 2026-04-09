@@ -757,7 +757,7 @@
       const [selectedId,     setSelectedId]     = useState(null);
       const [editTaskId,     setEditTaskId]     = useState(null);
       const [syncStatus,     setSyncStatus]     = useState("connecting");
-      const [activeTimer,    setActiveTimer]    = useState(null); // { taskId, startMs }
+      // activeTimer はタスクの timerRunning / timerStartedAt から導出（Firestore同期）
       const [mobileTab,      setMobileTab]      = useState("active");
       const [stripFontSize,  setStripFontSize]  = useState(() => localStorage.getItem("fst-fontsize") || "md");
       const FONT_SIZES = { sm: { label:"小", px:11 }, md: { label:"中", px:13 }, lg: { label:"大", px:16 } };
@@ -835,31 +835,45 @@
       }, [tasks, tasksRef]);
       const handleEditSave     = useCallback((id, fields) => tasksRef.doc(id).update({ ...fields, updatedAt:ts() }), [tasksRef]);
 
-      // --- タイマーハンドラー ---
-      const handleTimerStart = useCallback((id) => {
-        setActiveTimer({ taskId: id, startMs: Date.now() });
-      }, []);
+      // --- タイマーハンドラー（Firestore同期） ---
+      // timerRunning / timerStartedAt をFirestoreに保存 → 全端末でリアルタイム同期
+      const handleTimerStart = useCallback(async (id) => {
+        await tasksRef.doc(id).update({
+          timerRunning:   true,
+          timerStartedAt: firebase.firestore.Timestamp.now(),
+          updatedAt:      ts(),
+        });
+      }, [tasksRef]);
 
       const handleTimerStop = useCallback(async (id) => {
-        if (!activeTimer || activeTimer.taskId !== id) return;
-        const durationMs = Date.now() - activeTimer.startMs;
         const task = tasks.find(t => t.id === id);
+        if (!task?.timerRunning) return;
+        // Firestore の timerStartedAt を使って正確な経過時間を算出
+        const startMs = task.timerStartedAt?.toMillis?.()
+          ?? (task.timerStartedAt?.seconds * 1000)
+          ?? Date.now();
+        const durationMs = Date.now() - startMs;
         const newLog = {
-          startedAt:  new Date(activeTimer.startMs).toISOString(),
+          startedAt:  new Date(startMs).toISOString(),
           stoppedAt:  new Date().toISOString(),
           durationMs,
         };
-        const timeLogs = [...(task?.timeLogs || []), newLog];
-        await tasksRef.doc(id).update({ timeLogs, updatedAt: ts() });
-        setActiveTimer(null);
-      }, [activeTimer, tasks, tasksRef]);
+        const timeLogs = [...(task.timeLogs || []), newLog];
+        await tasksRef.doc(id).update({
+          timerRunning:   false,
+          timerStartedAt: null,
+          timeLogs,
+          updatedAt:      ts(),
+        });
+      }, [tasks, tasksRef]);
 
       // タスクがACTIVE以外に移ったらタイマー自動停止
       useEffect(() => {
-        if (!activeTimer) return;
-        const task = tasks.find(t => t.id === activeTimer.taskId);
-        if (task && task.status !== "active") handleTimerStop(activeTimer.taskId);
-      }, [tasks, activeTimer, handleTimerStop]);
+        const runningTask = tasks.find(t => t.timerRunning);
+        if (runningTask && runningTask.status !== "active") {
+          handleTimerStop(runningTask.id);
+        }
+      }, [tasks, handleTimerStop]);
 
       // --- 並べ替え（↑↓キー）: sortOrder値を入れ替え ---
       const handleMoveInColumn = useCallback(async (taskId, direction) => {
@@ -1073,7 +1087,7 @@
             e.preventDefault();
             const selTask = tasks.find(t => t.id === selectedId);
             if (selTask?.status === "active") {
-              if (activeTimer?.taskId === selectedId) handleTimerStop(selectedId);
+              if (selTask.timerRunning) handleTimerStop(selectedId);
               else handleTimerStart(selectedId);
             }
             return;
@@ -1088,7 +1102,7 @@
         };
         window.addEventListener("keydown", handler);
         return () => window.removeEventListener("keydown", handler);
-      }, [selectedId, orderedTasks, showForm, showHelp, editTaskId, tasks, handleStatusChange, handleDelete, handleMoveInColumn, activeTimer, handleTimerStart, handleTimerStop]);
+      }, [selectedId, orderedTasks, showForm, showHelp, editTaskId, tasks, handleStatusChange, handleDelete, handleMoveInColumn, handleTimerStart, handleTimerStop]);
 
       const stats = {
         active:    tasks.filter(t => t.status === "active").length,
@@ -1237,8 +1251,11 @@
             )}
 
             {(viewMode === "hybrid" || viewMode === "kanban") && (() => {
-              // タイマー計算
-              const elapsedMs = activeTimer ? (currentTime.getTime() - activeTimer.startMs) : 0;
+              // タイマー計算（Firestoreから導出 → 全端末で同期）
+              const runningTask     = tasks.find(t => t.timerRunning && t.timerStartedAt);
+              const timerStartMs    = runningTask?.timerStartedAt?.toMillis?.()
+                ?? (runningTask?.timerStartedAt?.seconds * 1000) ?? 0;
+              const elapsedMs       = runningTask ? Math.max(0, currentTime.getTime() - timerStartMs) : 0;
               const totalLoggedMs = (id) => {
                 const task = tasks.find(t => t.id === id);
                 return (task?.timeLogs || []).reduce((sum, l) => sum + (l.durationMs || 0), 0);
@@ -1259,8 +1276,8 @@
                       onStatusChange={handleStatusChange}
                       onDelete={handleDelete}
                       onEdit={id => setEditTaskId(id)}
-                      isTimerRunning={activeTimer?.taskId === task.id}
-                      elapsedMs={activeTimer?.taskId === task.id ? elapsedMs : 0}
+                      isTimerRunning={task.timerRunning === true}
+                      elapsedMs={task.timerRunning ? elapsedMs : 0}
                       totalLoggedMs={totalLoggedMs(task.id)}
                       onTimerStart={handleTimerStart}
                       onTimerStop={handleTimerStop}
