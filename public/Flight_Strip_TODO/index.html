@@ -22,11 +22,11 @@
 
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #060a18; }
+    body { background: var(--bg-main, #060a18); transition: background 0.3s; }
     ::-webkit-scrollbar { width: 4px; }
-    ::-webkit-scrollbar-track { background: #0a1020; }
-    ::-webkit-scrollbar-thumb { background: #1a2540; border-radius: 2px; }
-    select option { background: #0a1020; color: #ddeeff; }
+    ::-webkit-scrollbar-track { background: var(--bg-scroll, #0a1020); }
+    ::-webkit-scrollbar-thumb { background: var(--border, #1a2540); border-radius: 2px; }
+    select option { background: var(--bg-input, #0a1020); color: var(--text-main, #ddeeff); }
     @keyframes spin  { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     @keyframes pulse { 0%,100%{opacity:0.3;} 50%{opacity:1;} }
     @keyframes blink { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
@@ -35,7 +35,7 @@
 <body>
   <div id="root"></div>
 
-  <!-- Firebase 初期化（通常JS） -->
+  <!-- Firebase 初期化 -->
   <script>
     const firebaseConfig = {
       apiKey:            "AIzaSyDPlsAhtxbJBihy-EAHck9P7XbuMdzV0ds",
@@ -52,19 +52,92 @@
 
   <!-- React アプリ（JSX） -->
   <script type="text/babel">
-    const { useState, useRef, useCallback, useEffect, useMemo } = React;
+    const { useState, useRef, useCallback, useEffect, useMemo, createContext, useContext } = React;
     const auth = window._auth;
     const db   = window._db;
 
     // ======================================================
     // ⚙️ アクセス制御
-    // 空配列 → Googleアカウントなら誰でもアクセス可
-    // メールアドレスを追加 → そのアドレスのみ許可
-    // 例: const ALLOWED_EMAILS = ["you@gmail.com", "team@example.com"];
     // ======================================================
     const ALLOWED_EMAILS = [];
 
-    // --- 定数 ---
+    // ======================================================
+    // 🎨 テーマ定義
+    // ======================================================
+    const THEMES = {
+      DARK: {
+        id: "DARK", name: "DARK",
+        bg: "#060a18",
+        bgGrad: "linear-gradient(180deg,#060a18 0%,#0a1020 50%,#0d1428 100%)",
+        bgCard: "rgba(10,15,30,0.4)",
+        bgInput: "rgba(0,10,20,0.8)",
+        bgModal: "rgba(10,15,35,0.97)",
+        accent: "#00ff88", accent2: "#00ccff",
+        text: "#ddeeff", textDim: "#8899aa", textMuted: "#334466",
+        border: "#1a2540", border2: "#222244",
+        grid: "rgba(0,255,136,0.03)", scanAlpha: 0.08,
+        dot: "#00ff88",
+      },
+      LIGHT: {
+        id: "LIGHT", name: "LIGHT",
+        bg: "#f0f5fc",
+        bgGrad: "linear-gradient(180deg,#f0f5fc 0%,#e8f0fa 50%,#e0ecf8 100%)",
+        bgCard: "rgba(255,255,255,0.88)",
+        bgInput: "rgba(240,248,255,0.92)",
+        bgModal: "rgba(248,252,255,0.98)",
+        accent: "#0055cc", accent2: "#0099bb",
+        text: "#1a2840", textDim: "#5577aa", textMuted: "#aabbcc",
+        border: "#c0d0e8", border2: "#d0ddf0",
+        grid: "rgba(0,80,200,0.03)", scanAlpha: 0,
+        dot: "#0055cc",
+      },
+      MEDIUM: {
+        id: "MEDIUM", name: "MEDIUM",
+        bg: "#1a2234",
+        bgGrad: "linear-gradient(180deg,#1a2234 0%,#1e2840 50%,#1c2638 100%)",
+        bgCard: "rgba(22,30,50,0.6)",
+        bgInput: "rgba(15,22,40,0.8)",
+        bgModal: "rgba(20,28,48,0.97)",
+        accent: "#55aaff", accent2: "#44ddff",
+        text: "#c5d8ec", textDim: "#6688aa", textMuted: "#2a4060",
+        border: "#2a3a58", border2: "#2e3e60",
+        grid: "rgba(80,150,255,0.04)", scanAlpha: 0.04,
+        dot: "#55aaff",
+      },
+      COLOR: {
+        id: "COLOR", name: "COLOR",
+        bg: "#0f0a1a",
+        bgGrad: "linear-gradient(180deg,#0f0a1a 0%,#130d22 50%,#0f0a1a 100%)",
+        bgCard: "rgba(20,12,35,0.5)",
+        bgInput: "rgba(10,6,20,0.8)",
+        bgModal: "rgba(18,10,32,0.97)",
+        accent: "#ff6600", accent2: "#cc44ff",
+        text: "#f0ddcc", textDim: "#997766", textMuted: "#3a2030",
+        border: "#2e1a40", border2: "#351e48",
+        grid: "rgba(255,100,0,0.03)", scanAlpha: 0.06,
+        dot: "#ff6600",
+      },
+      COLORFUL: {
+        id: "COLORFUL", name: "COLORFUL",
+        bg: "#05080f",
+        bgGrad: "linear-gradient(135deg,#05080f 0%,#0a0615 50%,#050810 100%)",
+        bgCard: "rgba(8,6,18,0.5)",
+        bgInput: "rgba(5,4,12,0.85)",
+        bgModal: "rgba(8,6,18,0.97)",
+        accent: "#ff2299", accent2: "#22ffcc",
+        text: "#ffffff", textDim: "#aaa8cc", textMuted: "#333355",
+        border: "#1a1830", border2: "#20183c",
+        grid: "rgba(255,30,150,0.04)", scanAlpha: 0.05,
+        dot: "#ff2299",
+      },
+    };
+
+    const ThemeCtx = createContext(THEMES.DARK);
+    const useT = () => useContext(ThemeCtx);
+
+    // ======================================================
+    // 定数
+    // ======================================================
     const CATEGORIES = {
       work:     { label: "WORK（仕事）",  color: "#00ff88" },
       personal: { label: "PRSNL（個人）", color: "#00ccff" },
@@ -82,18 +155,17 @@
       { id: "completed", label: "CLEARED", sublabel: "完了",   icon: "✓" },
     ];
     const SHORTCUTS = [
-      { key: "J",   desc: "次のストリップを選択" },
-      { key: "K",   desc: "前のストリップを選択" },
-      { key: "1",   desc: "→ ACTIVE（進行中）へ移動" },
-      { key: "2",   desc: "→ HOLDING（待機中）へ移動" },
-      { key: "3",   desc: "→ CLEARED（完了）へ移動" },
-      { key: "N",   desc: "新規ストリップ作成" },
-      { key: "E",   desc: "選択中のストリップを編集" },
-      { key: "D",   desc: "選択中のストリップを削除" },
-      { key: "H",   desc: "HANDOFF先を入力" },
-      { key: "F",   desc: "フィルター切替（優先度）" },
-      { key: "Esc", desc: "フォーム/モーダルを閉じる" },
-      { key: "?",   desc: "ショートカット一覧の表示/非表示" },
+      { key: "J / K",   desc: "次/前のストリップを選択" },
+      { key: "↑ / ↓",   desc: "選択ストリップを上/下へ移動" },
+      { key: "1",        desc: "→ ACTIVE（進行中）へ移動" },
+      { key: "2",        desc: "→ HOLDING（待機中）へ移動" },
+      { key: "3",        desc: "→ CLEARED（完了）へ移動" },
+      { key: "N",        desc: "新規ストリップ作成" },
+      { key: "E",        desc: "選択ストリップを編集（全フィールド）" },
+      { key: "D",        desc: "選択ストリップを削除" },
+      { key: "F",        desc: "フィルター切替（優先度）" },
+      { key: "Esc",      desc: "選択解除 / フォームを閉じる" },
+      { key: "?",        desc: "ショートカット一覧の表示/非表示" },
     ];
     const PRIORITY_CYCLE = ["all", "high", "normal", "low"];
 
@@ -109,26 +181,25 @@
     // ======================================================
     // ローディング画面
     // ======================================================
-    const LoadingScreen = () => (
-      <div style={{
-        minHeight: "100vh", background: "#060a18",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        fontFamily: "'JetBrains Mono', monospace", color: "#00ff88",
-        fontSize: "12px", letterSpacing: "0.2em",
-      }}>
-        <div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: "28px", marginBottom: "16px", animation: "pulse 1.5s ease-in-out infinite" }}>◈</div>
-          <div>SYSTEM INITIALIZING...</div>
+    const LoadingScreen = () => {
+      const T = useT();
+      return (
+        <div style={{ minHeight:"100vh", background:T.bg, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'JetBrains Mono',monospace", color:T.accent, fontSize:"12px", letterSpacing:"0.2em" }}>
+          <div style={{ textAlign:"center" }}>
+            <div style={{ fontSize:"28px", marginBottom:"16px", animation:"pulse 1.5s ease-in-out infinite" }}>◈</div>
+            <div>SYSTEM INITIALIZING...</div>
+          </div>
         </div>
-      </div>
-    );
+      );
+    };
 
     // ======================================================
     // ログイン画面
     // ======================================================
     const LoginScreen = () => {
+      const T = useT();
       const [loading, setLoading] = useState(false);
-      const [error,   setError]   = useState(null);
+      const [error, setError]     = useState(null);
 
       const handleGoogleLogin = async () => {
         setLoading(true); setError(null);
@@ -142,52 +213,16 @@
       };
 
       return (
-        <div style={{
-          minHeight: "100vh",
-          background: "linear-gradient(180deg, #060a18 0%, #0a1020 50%, #0d1428 100%)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          fontFamily: "'JetBrains Mono', monospace",
-        }}>
-          <div style={{
-            position: "fixed", inset: 0,
-            backgroundImage: `linear-gradient(rgba(0,255,136,0.03) 1px, transparent 1px),
-                              linear-gradient(90deg, rgba(0,255,136,0.03) 1px, transparent 1px)`,
-            backgroundSize: "40px 40px", pointerEvents: "none",
-          }} />
-          <div style={{
-            background: "rgba(10,15,35,0.97)", border: "1px solid #00ff8833",
-            borderRadius: "8px", padding: "48px 40px", textAlign: "center",
-            maxWidth: "360px", width: "90%",
-            boxShadow: "0 0 60px rgba(0,255,136,0.1)", position: "relative", zIndex: 1,
-          }}>
-            <div style={{
-              fontSize: "26px", fontWeight: 800, color: "#00ff88", letterSpacing: "0.15em",
-              marginBottom: "6px", textShadow: "0 0 20px rgba(0,255,136,0.4)",
-            }}>◈ FLIGHT STRIP</div>
-            <div style={{ fontSize: "10px", color: "#334466", letterSpacing: "0.3em", marginBottom: "40px" }}>
-              ATC TASK MANAGEMENT SYSTEM
-            </div>
-            <button onClick={handleGoogleLogin} disabled={loading} style={{
-              width: "100%",
-              background: loading ? "rgba(0,255,136,0.05)" : "rgba(0,255,136,0.12)",
-              border: `1px solid ${loading ? "#1a2540" : "#00ff8855"}`,
-              color: loading ? "#334466" : "#00ff88",
-              padding: "12px 24px", borderRadius: "4px",
-              cursor: loading ? "not-allowed" : "pointer",
-              fontSize: "12px", fontWeight: 700, letterSpacing: "0.1em",
-              fontFamily: "'JetBrains Mono', monospace",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: "10px",
-              transition: "all 0.15s",
-            }}>
-              {loading
-                ? <><span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}>◌</span> AUTHENTICATING...</>
-                : <><span style={{ fontFamily: "sans-serif", fontWeight: 700, fontSize: "14px" }}>G</span> SIGN IN WITH GOOGLE</>
-              }
+        <div style={{ minHeight:"100vh", background:T.bgGrad, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'JetBrains Mono',monospace" }}>
+          <div style={{ position:"fixed", inset:0, backgroundImage:`linear-gradient(${T.grid} 1px,transparent 1px),linear-gradient(90deg,${T.grid} 1px,transparent 1px)`, backgroundSize:"40px 40px", pointerEvents:"none" }} />
+          <div style={{ background:T.bgModal, border:`1px solid ${T.accent}33`, borderRadius:"8px", padding:"48px 40px", textAlign:"center", maxWidth:"360px", width:"90%", boxShadow:`0 0 60px ${T.accent}18`, position:"relative", zIndex:1 }}>
+            <div style={{ fontSize:"26px", fontWeight:800, color:T.accent, letterSpacing:"0.15em", marginBottom:"6px", textShadow:`0 0 20px ${T.accent}44` }}>◈ FLIGHT STRIP</div>
+            <div style={{ fontSize:"10px", color:T.textMuted, letterSpacing:"0.3em", marginBottom:"40px" }}>ATC TASK MANAGEMENT SYSTEM</div>
+            <button onClick={handleGoogleLogin} disabled={loading} style={{ width:"100%", background:loading?"transparent":`${T.accent}18`, border:`1px solid ${loading?T.border:T.accent}55`, color:loading?T.textMuted:T.accent, padding:"12px 24px", borderRadius:"4px", cursor:loading?"not-allowed":"pointer", fontSize:"12px", fontWeight:700, letterSpacing:"0.1em", fontFamily:"'JetBrains Mono',monospace", display:"flex", alignItems:"center", justifyContent:"center", gap:"10px", transition:"all 0.15s" }}>
+              {loading ? <><span style={{ animation:"spin 1s linear infinite", display:"inline-block" }}>◌</span> AUTHENTICATING...</> : <><span style={{ fontFamily:"sans-serif", fontWeight:700, fontSize:"14px" }}>G</span> SIGN IN WITH GOOGLE</>}
             </button>
-            {error && <div style={{ marginTop: "12px", color: "#ff6666", fontSize: "10px", lineHeight: 1.5 }}>{error}</div>}
-            <div style={{ marginTop: "28px", fontSize: "9px", color: "#1a2540", letterSpacing: "0.15em" }}>
-              AUTHORIZED PERSONNEL ONLY
-            </div>
+            {error && <div style={{ marginTop:"12px", color:"#ff6666", fontSize:"10px", lineHeight:1.5 }}>{error}</div>}
+            <div style={{ marginTop:"28px", fontSize:"9px", color:T.textMuted, letterSpacing:"0.15em" }}>AUTHORIZED PERSONNEL ONLY</div>
           </div>
         </div>
       );
@@ -197,31 +232,14 @@
     // アクセス拒否画面
     // ======================================================
     const AccessDenied = ({ email, onDismiss }) => (
-      <div style={{
-        minHeight: "100vh",
-        background: "linear-gradient(180deg, #060a18 0%, #1a0505 100%)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        fontFamily: "'JetBrains Mono', monospace",
-      }}>
-        <div style={{
-          background: "rgba(20,5,5,0.97)", border: "1px solid #ff333333",
-          borderRadius: "8px", padding: "40px", textAlign: "center",
-          maxWidth: "360px", width: "90%", boxShadow: "0 0 40px rgba(255,51,51,0.1)",
-        }}>
-          <div style={{ fontSize: "32px", marginBottom: "16px", color: "#ff3333" }}>✕</div>
-          <div style={{ color: "#ff3333", fontSize: "13px", fontWeight: 700, letterSpacing: "0.15em", marginBottom: "10px" }}>
-            ACCESS DENIED
+      <div style={{ minHeight:"100vh", background:"linear-gradient(180deg,#060a18 0%,#1a0505 100%)", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'JetBrains Mono',monospace" }}>
+        <div style={{ background:"rgba(20,5,5,0.97)", border:"1px solid #ff333333", borderRadius:"8px", padding:"40px", textAlign:"center", maxWidth:"360px", width:"90%", boxShadow:"0 0 40px rgba(255,51,51,0.1)" }}>
+          <div style={{ fontSize:"32px", marginBottom:"16px", color:"#ff3333" }}>✕</div>
+          <div style={{ color:"#ff3333", fontSize:"13px", fontWeight:700, letterSpacing:"0.15em", marginBottom:"10px" }}>ACCESS DENIED</div>
+          <div style={{ color:"#556677", fontSize:"11px", lineHeight:1.7, marginBottom:"24px" }}>
+            <span style={{ color:"#778899" }}>{email}</span><br />はこのシステムへのアクセス権限がありません
           </div>
-          <div style={{ color: "#556677", fontSize: "11px", lineHeight: 1.7, marginBottom: "24px" }}>
-            <span style={{ color: "#778899" }}>{email}</span><br />
-            はこのシステムへの<br />アクセス権限がありません
-          </div>
-          <button onClick={onDismiss} style={{
-            background: "rgba(255,51,51,0.1)", border: "1px solid #ff333355",
-            color: "#ff6666", padding: "8px 24px", borderRadius: "3px",
-            cursor: "pointer", fontSize: "11px", fontWeight: 700,
-            fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.1em",
-          }}>← BACK TO LOGIN</button>
+          <button onClick={onDismiss} style={{ background:"rgba(255,51,51,0.1)", border:"1px solid #ff333355", color:"#ff6666", padding:"8px 24px", borderRadius:"3px", cursor:"pointer", fontSize:"11px", fontWeight:700, fontFamily:"'JetBrains Mono',monospace", letterSpacing:"0.1em" }}>← BACK TO LOGIN</button>
         </div>
       </div>
     );
@@ -229,99 +247,111 @@
     // ======================================================
     // ショートカットモーダル
     // ======================================================
-    const ShortcutHelp = ({ onClose }) => (
-      <div style={{
-        position: "fixed", inset: 0, zIndex: 100,
-        background: "rgba(0,0,0,0.75)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-      }} onClick={onClose}>
-        <div onClick={e => e.stopPropagation()} style={{
-          background: "rgba(10,15,35,0.97)", border: "1px solid #00ff8844",
-          borderRadius: "6px", padding: "24px 32px",
-          maxWidth: "420px", width: "90%",
-          boxShadow: "0 0 40px rgba(0,255,136,0.15)", fontFamily: "'JetBrains Mono', monospace",
-        }}>
-          <div style={{
-            color: "#00ff88", fontSize: "13px", fontWeight: 700,
-            letterSpacing: "0.2em", marginBottom: "16px",
-            display: "flex", justifyContent: "space-between", alignItems: "center",
-          }}>
-            <span>◈ KEYBOARD SHORTCUTS</span>
-            <button onClick={onClose} style={{ background: "transparent", border: "none", color: "#556677", fontSize: "16px", cursor: "pointer" }}>✕</button>
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-            {SHORTCUTS.map(s => (
-              <div key={s.key} style={{ display: "flex", alignItems: "center", gap: "12px", padding: "4px 0", borderBottom: "1px solid #111833" }}>
-                <kbd style={{
-                  background: "rgba(0,255,136,0.1)", border: "1px solid #00ff8844",
-                  borderRadius: "3px", padding: "2px 10px", color: "#00ff88",
-                  fontSize: "12px", fontWeight: 700, minWidth: "36px", textAlign: "center",
-                  fontFamily: "'JetBrains Mono', monospace",
-                }}>{s.key}</kbd>
-                <span style={{ color: "#8899aa", fontSize: "12px" }}>{s.desc}</span>
-              </div>
-            ))}
-          </div>
-          <div style={{ marginTop: "16px", color: "#334455", fontSize: "9px", letterSpacing: "0.1em", textAlign: "center" }}>
-            ※ フォーム入力中はショートカット無効
+    const ShortcutHelp = ({ onClose }) => {
+      const T = useT();
+      return (
+        <div style={{ position:"fixed", inset:0, zIndex:100, background:"rgba(0,0,0,0.75)", display:"flex", alignItems:"center", justifyContent:"center" }} onClick={onClose}>
+          <div onClick={e => e.stopPropagation()} style={{ background:T.bgModal, border:`1px solid ${T.accent}44`, borderRadius:"6px", padding:"24px 32px", maxWidth:"440px", width:"90%", boxShadow:`0 0 40px ${T.accent}18`, fontFamily:"'JetBrains Mono',monospace" }}>
+            <div style={{ color:T.accent, fontSize:"13px", fontWeight:700, letterSpacing:"0.2em", marginBottom:"16px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <span>◈ KEYBOARD SHORTCUTS</span>
+              <button onClick={onClose} style={{ background:"transparent", border:"none", color:T.textDim, fontSize:"16px", cursor:"pointer" }}>✕</button>
+            </div>
+            <div style={{ display:"flex", flexDirection:"column", gap:"6px" }}>
+              {SHORTCUTS.map(s => (
+                <div key={s.key} style={{ display:"flex", alignItems:"center", gap:"12px", padding:"4px 0", borderBottom:`1px solid ${T.border}` }}>
+                  <kbd style={{ background:`${T.accent}18`, border:`1px solid ${T.accent}44`, borderRadius:"3px", padding:"2px 10px", color:T.accent, fontSize:"11px", fontWeight:700, minWidth:"70px", textAlign:"center", fontFamily:"'JetBrains Mono',monospace" }}>{s.key}</kbd>
+                  <span style={{ color:T.textDim, fontSize:"12px" }}>{s.desc}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ marginTop:"16px", color:T.textMuted, fontSize:"9px", letterSpacing:"0.1em", textAlign:"center" }}>※ フォーム入力中はショートカット無効</div>
           </div>
         </div>
-      </div>
-    );
+      );
+    };
 
     // ======================================================
-    // インライン編集モーダル（E / H キー）
+    // ストリップ編集モーダル（全フィールド）
     // ======================================================
-    const InlineEditor = ({ task, field, onSave, onClose }) => {
-      const [value, setValue] = useState(field === "title" ? task.title : (task.assignee || ""));
-      const inputRef = useRef(null);
-      useEffect(() => { inputRef.current?.focus(); }, []);
+    const EditStripModal = ({ task, onSave, onClose }) => {
+      const T = useT();
+      const [title,    setTitle]    = useState(task.title || "");
+      const [priority, setPriority] = useState(task.priority || "normal");
+      const [category, setCategory] = useState(task.category || "work");
+      const [time,     setTime]     = useState(task.time || "09:00");
+      const [tagInput, setTagInput] = useState((task.tags || []).join(", "));
+      const [assignee, setAssignee] = useState(task.assignee || "");
+      const titleRef = useRef(null);
 
-      const handleSave = () => { onSave(task.id, field, value); onClose(); };
-      const accent      = field === "assignee" ? "#ffaa00" : "#00ff88";
-      const label       = field === "title" ? "EDIT STRIP" : "✈ SET HANDOFF";
-      const placeholder = field === "title" ? "タスク名..." : "委任先（空欄＝自分）";
+      useEffect(() => { titleRef.current?.focus(); }, []);
+
+      const handleSave = () => {
+        if (!title.trim()) return;
+        onSave(task.id, {
+          title: title.trim(), priority, category, time,
+          tags: tagInput ? tagInput.split(",").map(s => s.trim()).filter(Boolean) : [],
+          assignee: assignee.trim(),
+        });
+        onClose();
+      };
+
+      const inp = {
+        background:T.bgInput, border:`1px solid ${T.border2}`, color:T.text,
+        padding:"7px 10px", borderRadius:"2px", fontSize:"12px",
+        fontFamily:"'JetBrains Mono',monospace", outline:"none",
+        width:"100%", boxSizing:"border-box",
+      };
+      const lbl = { fontSize:"9px", color:T.textMuted, letterSpacing:"0.1em", marginBottom:"4px" };
 
       return (
-        <div style={{
-          position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,0.7)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }} onClick={onClose}>
-          <div onClick={e => e.stopPropagation()} style={{
-            background: "rgba(10,15,35,0.97)", border: `1px solid ${accent}44`,
-            borderRadius: "6px", padding: "20px 28px", maxWidth: "400px", width: "90%",
-            boxShadow: `0 0 30px ${accent}22`, fontFamily: "'JetBrains Mono', monospace",
-          }}>
-            <div style={{ color: accent, fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em", marginBottom: "12px" }}>
-              ◈ {label}
-              <span style={{ color: "#556677", marginLeft: "12px", fontWeight: 400 }}>[{task.stripId}]</span>
+        <div style={{ position:"fixed", inset:0, zIndex:100, background:"rgba(0,0,0,0.75)", display:"flex", alignItems:"center", justifyContent:"center" }} onClick={onClose}>
+          <div onClick={e => e.stopPropagation()} style={{ background:T.bgModal, border:`1px solid ${T.accent}44`, borderRadius:"6px", padding:"24px 28px", maxWidth:"460px", width:"90%", boxShadow:`0 0 40px ${T.accent}18`, fontFamily:"'JetBrains Mono',monospace" }}>
+            <div style={{ color:T.accent, fontSize:"11px", fontWeight:700, letterSpacing:"0.15em", marginBottom:"16px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+              <span>◈ EDIT STRIP</span>
+              <span style={{ color:T.textDim, fontWeight:400, fontSize:"10px" }}>[{task.stripId}]</span>
             </div>
-            <input ref={inputRef} value={value}
-              onChange={e => setValue(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === "Enter" && !e.nativeEvent.isComposing) handleSave();
-                if (e.key === "Escape") onClose();
-              }}
-              placeholder={placeholder}
-              style={{
-                width: "100%", background: "rgba(0,10,20,0.8)",
-                border: `1px solid ${accent}44`, color: "#ddeeff",
-                padding: "8px 12px", borderRadius: "3px",
-                fontSize: "13px", fontFamily: "'JetBrains Mono', monospace",
-                outline: "none", marginBottom: "12px", boxSizing: "border-box",
-              }}
-            />
-            <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
-              <button onClick={onClose} style={{
-                background: "transparent", border: "1px solid #334466", color: "#667788",
-                padding: "5px 14px", borderRadius: "2px", cursor: "pointer",
-                fontSize: "11px", fontFamily: "'JetBrains Mono', monospace",
-              }}>ESC</button>
-              <button onClick={handleSave} style={{
-                background: `${accent}22`, border: `1px solid ${accent}66`, color: accent,
-                padding: "5px 14px", borderRadius: "2px", cursor: "pointer",
-                fontSize: "11px", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace",
-              }}>SAVE</button>
+            <div style={{ display:"flex", flexDirection:"column", gap:"10px" }}>
+              <div>
+                <div style={lbl}>TITLE</div>
+                <input ref={titleRef} value={title} onChange={e => setTitle(e.target.value)}
+                  onKeyDown={e => { if (e.key==="Enter"&&!e.nativeEvent.isComposing) handleSave(); if (e.key==="Escape") onClose(); }}
+                  placeholder="タスク名..." style={inp} />
+              </div>
+              <div style={{ display:"flex", gap:"8px" }}>
+                <div style={{ flex:1 }}>
+                  <div style={lbl}>PRIORITY</div>
+                  <select value={priority} onChange={e => setPriority(e.target.value)} style={{ ...inp, cursor:"pointer" }}>
+                    <option value="high">🔴 URG（緊急）</option>
+                    <option value="normal">🟢 NRM（通常）</option>
+                    <option value="low">⚫ LOW（低）</option>
+                  </select>
+                </div>
+                <div style={{ flex:1 }}>
+                  <div style={lbl}>CATEGORY</div>
+                  <select value={category} onChange={e => setCategory(e.target.value)} style={{ ...inp, cursor:"pointer" }}>
+                    {Object.entries(CATEGORIES).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div style={{ display:"flex", gap:"8px" }}>
+                <div style={{ flex:"0 0 100px" }}>
+                  <div style={lbl}>TIME</div>
+                  <input type="time" value={time} onChange={e => setTime(e.target.value)} style={inp} />
+                </div>
+                <div style={{ flex:1 }}>
+                  <div style={lbl}>TAGS（カンマ区切り）</div>
+                  <input value={tagInput} onChange={e => setTagInput(e.target.value)} placeholder="tag1, tag2..." style={inp} />
+                </div>
+              </div>
+              <div>
+                <div style={lbl}>✈ HANDOFF</div>
+                <input value={assignee} onChange={e => setAssignee(e.target.value)} placeholder="委任先（空欄＝自分）"
+                  style={{ ...inp, borderColor: assignee?"#ffaa0066":T.border2 }} />
+              </div>
+              <div style={{ display:"flex", gap:"8px", justifyContent:"flex-end", marginTop:"4px" }}>
+                <button onClick={onClose} style={{ background:"transparent", border:`1px solid ${T.border2}`, color:T.textDim, padding:"6px 16px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontFamily:"'JetBrains Mono',monospace" }}>CANCEL</button>
+                <button onClick={handleSave} style={{ background:`${T.accent}22`, border:`1px solid ${T.accent}66`, color:T.accent, padding:"6px 16px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontWeight:700, fontFamily:"'JetBrains Mono',monospace" }}>SAVE ↵</button>
+              </div>
             </div>
           </div>
         </div>
@@ -329,86 +359,175 @@
     };
 
     // ======================================================
+    // テーマピッカー
+    // ======================================================
+    const THEME_DOTS = { DARK:"#00ff88", LIGHT:"#0055cc", MEDIUM:"#55aaff", COLOR:"#ff6600", COLORFUL:"#ff2299" };
+
+    const ThemePicker = ({ currentId, onChange }) => {
+      const T = useT();
+      const [open, setOpen] = useState(false);
+
+      return (
+        <div style={{ position:"relative" }}>
+          <button onClick={() => setOpen(p => !p)} style={{ background:open?`${T.accent}18`:"transparent", border:`1px solid ${open?T.accent+"66":T.border2}`, color:T.accent, padding:"4px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"10px", fontWeight:700, letterSpacing:"0.1em", fontFamily:"'JetBrains Mono',monospace", display:"flex", alignItems:"center", gap:"6px" }}>
+            <span style={{ width:"8px", height:"8px", borderRadius:"50%", background:THEME_DOTS[currentId], display:"inline-block", flexShrink:0 }} />
+            {currentId}
+          </button>
+          {open && (
+            <>
+              <div style={{ position:"fixed", inset:0, zIndex:48 }} onClick={() => setOpen(false)} />
+              <div style={{ position:"absolute", top:"calc(100% + 4px)", right:0, background:T.bgModal, border:`1px solid ${T.border}`, borderRadius:"4px", padding:"6px", zIndex:49, minWidth:"130px", boxShadow:"0 4px 20px rgba(0,0,0,0.4)" }}>
+                {Object.values(THEMES).map(th => (
+                  <button key={th.id} onClick={() => { onChange(th.id); setOpen(false); }} style={{ display:"flex", alignItems:"center", gap:"8px", width:"100%", background:currentId===th.id?`${T.accent}18`:"transparent", border:"none", color:currentId===th.id?T.accent:T.textDim, padding:"5px 8px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontWeight:currentId===th.id?700:400, fontFamily:"'JetBrains Mono',monospace", textAlign:"left" }}>
+                    <span style={{ width:"8px", height:"8px", borderRadius:"50%", background:THEME_DOTS[th.id], display:"inline-block", flexShrink:0 }} />
+                    {th.name}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      );
+    };
+
+    // ======================================================
+    // エクスポート / インポートメニュー
+    // ======================================================
+    const DataMenu = ({ tasks, tasksRef }) => {
+      const T = useT();
+      const [open, setOpen] = useState(false);
+      const fileRef = useRef(null);
+
+      const exportJSON = () => {
+        const data = JSON.stringify({ exportedAt: new Date().toISOString(), tasks }, null, 2);
+        const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([data],{type:"application/json"})), download: `flight-strips-${new Date().toISOString().slice(0,10)}.json` });
+        a.click(); setOpen(false);
+      };
+
+      const exportMD = () => {
+        const lines = ["# Flight Strip TODO - Export", `> ${new Date().toLocaleString("ja-JP")}`, ""];
+        for (const col of COLUMNS) {
+          const colTasks = tasks.filter(t => t.status === col.id).sort((a,b)=>(b.sortOrder??0)-(a.sortOrder??0));
+          if (!colTasks.length) continue;
+          lines.push(`## ${col.label}（${col.sublabel}）`, "");
+          for (const t of colTasks) {
+            const pri = PRIORITIES[t.priority]?.label || t.priority;
+            lines.push(`- [${t.status==="completed"?"x":" "}] **${t.title}** \`${pri}\` \`${t.time || "--:--"}\` \`${t.stripId}\``);
+            if (t.assignee) lines.push(`  - ✈ HANDOFF: ${t.assignee}`);
+            if (t.category) lines.push(`  - CAT: ${CATEGORIES[t.category]?.label || t.category}`);
+            if (t.tags?.length) lines.push(`  - Tags: ${t.tags.join(", ")}`);
+          }
+          lines.push("");
+        }
+        const a = Object.assign(document.createElement("a"), { href: URL.createObjectURL(new Blob([lines.join("\n")],{type:"text/markdown"})), download: `flight-strips-${new Date().toISOString().slice(0,10)}.md` });
+        a.click(); setOpen(false);
+      };
+
+      const handleImport = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        try {
+          const data = JSON.parse(await file.text());
+          const imported = Array.isArray(data) ? data : (data.tasks || []);
+          if (!imported.length) { alert("インポートするタスクが見つかりません"); return; }
+          if (!window.confirm(`${imported.length}件のストリップをインポートしますか？`)) return;
+          const tsVal = firebase.firestore.FieldValue.serverTimestamp();
+          for (const t of imported) {
+            const { id, ...taskData } = t;
+            await tasksRef.add({ ...taskData, createdAt: tsVal, updatedAt: tsVal, sortOrder: Date.now() + Math.random()*1000 });
+          }
+          alert(`✓ ${imported.length}件をインポートしました`);
+        } catch (err) {
+          alert("インポートに失敗しました: " + err.message);
+        }
+        e.target.value = ""; setOpen(false);
+      };
+
+      const menuBtn = (label, action) => (
+        <button onClick={action} style={{ display:"block", width:"100%", background:"transparent", border:"none", color:T.textDim, padding:"6px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontFamily:"'JetBrains Mono',monospace", textAlign:"left" }}
+          onMouseEnter={e=>e.target.style.color=T.text} onMouseLeave={e=>e.target.style.color=T.textDim}>
+          {label}
+        </button>
+      );
+
+      return (
+        <div style={{ position:"relative" }}>
+          <button onClick={() => setOpen(p => !p)} style={{ background:open?`${T.accent}18`:"transparent", border:`1px solid ${open?T.accent+"66":T.border2}`, color:open?T.accent:T.textDim, padding:"4px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"10px", letterSpacing:"0.08em", fontFamily:"'JetBrains Mono',monospace" }}>⇅ DATA</button>
+          {open && (
+            <>
+              <div style={{ position:"fixed", inset:0, zIndex:48 }} onClick={() => setOpen(false)} />
+              <div style={{ position:"absolute", top:"calc(100% + 4px)", right:0, background:T.bgModal, border:`1px solid ${T.border}`, borderRadius:"4px", padding:"6px", zIndex:49, minWidth:"160px", boxShadow:"0 4px 20px rgba(0,0,0,0.4)" }}>
+                {menuBtn("📥 Export JSON", exportJSON)}
+                {menuBtn("📝 Export Markdown", exportMD)}
+                <div style={{ borderTop:`1px solid ${T.border}`, margin:"4px 0" }} />
+                {menuBtn("📤 Import JSON", () => fileRef.current?.click())}
+                <input ref={fileRef} type="file" accept=".json" onChange={handleImport} style={{ display:"none" }} />
+              </div>
+            </>
+          )}
+        </div>
+      );
+    };
+
+    // ======================================================
     // フライトストリップ（個別タスクカード）
     // ======================================================
-    const FlightStrip = ({ task, isSelected, onDragStart, onStatusChange, onDelete }) => {
+    const FlightStrip = ({ task, isSelected, dropState, onDragStart, onDragOver, onDragEnd, onDrop, onStatusChange, onDelete, onEdit }) => {
+      const T = useT();
       const pri = PRIORITIES[task.priority] || PRIORITIES.normal;
       const cat = CATEGORIES[task.category] || CATEGORIES.work;
       const isCompleted = task.status === "completed";
+      const isDragOver = dropState?.id === task.id;
+
+      const dropStyle = isDragOver
+        ? dropState.pos === "before"
+          ? { borderTop: `3px solid ${T.accent}`, paddingTop: "3px" }
+          : { borderBottom: `3px solid ${T.accent}`, paddingBottom: "3px" }
+        : {};
 
       return (
         <div
-          draggable onDragStart={e => onDragStart(e, task.id)}
+          draggable
+          onDragStart={e => onDragStart(e, task.id)}
+          onDragOver={e => { e.preventDefault(); e.stopPropagation(); onDragOver(e, task.id); }}
+          onDragEnd={onDragEnd}
+          onDrop={e => { e.preventDefault(); e.stopPropagation(); onDrop(e, task.id); }}
           className="group relative cursor-grab active:cursor-grabbing"
           style={{
-            background:   isCompleted ? "rgba(30,35,50,0.5)" : pri.bg,
-            border:       isSelected ? "1px solid #00ccff" : `1px solid ${isCompleted ? "#333355" : pri.border}`,
-            borderLeft:   isSelected ? "4px solid #00ccff" : `4px solid ${isCompleted ? "#555577" : pri.color}`,
-            boxShadow:    isSelected ? "0 0 12px rgba(0,204,255,0.3), inset 0 0 20px rgba(0,204,255,0.05)" : "none",
+            background:   isCompleted ? `${T.border}44` : pri.bg,
+            border:       isSelected ? `1px solid ${T.accent2}` : `1px solid ${isCompleted ? T.border : pri.border}`,
+            borderLeft:   isSelected ? `4px solid ${T.accent2}` : `4px solid ${isCompleted ? T.textDim : pri.color}`,
+            boxShadow:    isSelected ? `0 0 12px ${T.accent2}44, inset 0 0 20px ${T.accent2}08` : "none",
             opacity:      isCompleted ? 0.6 : 1,
             borderRadius: "2px", padding: "0", marginBottom: "6px",
-            fontFamily: "'JetBrains Mono', 'SF Mono', monospace",
-            transition: "all 0.15s ease", position: "relative", overflow: "hidden",
+            fontFamily: "'JetBrains Mono',monospace",
+            transition: "border 0.1s ease", position: "relative", overflow: "hidden",
+            ...dropStyle,
           }}>
-          <div style={{
-            position: "absolute", inset: 0,
-            background: "repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,255,136,0.02) 2px, rgba(0,255,136,0.02) 4px)",
-            pointerEvents: "none",
-          }} />
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 8px 2px", gap: "6px" }}>
-            <span style={{ color: isSelected ? "#00ccff" : cat.color, fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em" }}>
-              {isSelected ? "◉ " : ""}{task.stripId}
-            </span>
-            <span style={{ color: "#8888aa", fontSize: "10px" }}>{task.time}</span>
-            <span style={{
-              color: pri.color, fontSize: "9px", fontWeight: 700,
-              padding: "1px 6px", border: `1px solid ${pri.color}`,
-              borderRadius: "2px", letterSpacing: "0.15em",
-            }}>{pri.label}</span>
+          <div style={{ position:"absolute", inset:0, background:"repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,255,136,0.015) 2px,rgba(0,255,136,0.015) 4px)", pointerEvents:"none" }} />
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"6px 8px 2px", gap:"6px" }}>
+            <span style={{ color:isSelected?T.accent2:cat.color, fontSize:"10px", fontWeight:700, letterSpacing:"0.1em" }}>{isSelected?"◉ ":""}{task.stripId}</span>
+            <span style={{ color:T.textDim, fontSize:"10px" }}>{task.time}</span>
+            <span style={{ color:pri.color, fontSize:"9px", fontWeight:700, padding:"1px 6px", border:`1px solid ${pri.color}`, borderRadius:"2px", letterSpacing:"0.15em" }}>{pri.label}</span>
           </div>
-          <div style={{
-            padding: "4px 8px 2px", color: isCompleted ? "#556677" : "#ddeeff",
-            fontSize: "13px", fontWeight: 600,
-            textDecoration: isCompleted ? "line-through" : "none", lineHeight: 1.3,
-          }}>{task.title}</div>
+          <div style={{ padding:"4px 8px 2px", color:isCompleted?T.textDim:T.text, fontSize:"13px", fontWeight:600, textDecoration:isCompleted?"line-through":"none", lineHeight:1.3 }}>{task.title}</div>
           {task.assignee && (
-            <div style={{ display: "flex", alignItems: "center", gap: "4px", padding: "2px 8px 0" }}>
-              <span style={{ fontSize: "9px", fontWeight: 700, color: "#ffaa00", letterSpacing: "0.1em" }}>✈ HANDOFF</span>
-              <span style={{
-                fontSize: "10px", color: "#ffcc44", padding: "1px 6px",
-                background: "rgba(255,170,0,0.12)", border: "1px solid rgba(255,170,0,0.25)", borderRadius: "2px",
-              }}>→ {task.assignee}</span>
+            <div style={{ display:"flex", alignItems:"center", gap:"4px", padding:"2px 8px 0" }}>
+              <span style={{ fontSize:"9px", fontWeight:700, color:"#ffaa00", letterSpacing:"0.1em" }}>✈ HANDOFF</span>
+              <span style={{ fontSize:"10px", color:"#ffcc44", padding:"1px 6px", background:"rgba(255,170,0,0.12)", border:"1px solid rgba(255,170,0,0.25)", borderRadius:"2px" }}>→ {task.assignee}</span>
             </div>
           )}
-          <div style={{ display: "flex", gap: "4px", padding: "2px 8px 6px", flexWrap: "wrap" }}>
-            {(task.tags || []).map(tag => (
-              <span key={tag} style={{
-                fontSize: "9px", color: "#8899aa", padding: "1px 5px",
-                background: "rgba(100,120,140,0.15)", border: "1px solid rgba(100,120,140,0.2)",
-                borderRadius: "2px", letterSpacing: "0.05em",
-              }}>{tag}</span>
-            ))}
-            <span style={{ fontSize: "9px", color: cat.color, opacity: 0.7, padding: "1px 5px", letterSpacing: "0.1em" }}>{cat.label}</span>
+          <div style={{ display:"flex", gap:"4px", padding:"2px 8px 6px", flexWrap:"wrap" }}>
+            {(task.tags||[]).map(tag => <span key={tag} style={{ fontSize:"9px", color:T.textDim, padding:"1px 5px", background:"rgba(100,120,140,0.15)", border:"1px solid rgba(100,120,140,0.2)", borderRadius:"2px" }}>{tag}</span>)}
+            <span style={{ fontSize:"9px", color:cat.color, opacity:0.7, padding:"1px 5px", letterSpacing:"0.1em" }}>{cat.label}</span>
           </div>
-          <div className="opacity-0 group-hover:opacity-100" style={{
-            position: "absolute", top: "4px", right: "4px",
-            display: "flex", gap: "2px", transition: "opacity 0.15s ease",
-          }}>
-            {COLUMNS.filter(c => c.id !== task.status).map(col => (
-              <button key={col.id}
-                onClick={e => { e.stopPropagation(); onStatusChange(task.id, col.id); }}
-                title={`→ ${col.label}`}
-                style={{
-                  background: "rgba(0,0,0,0.7)", border: "1px solid #444466",
-                  color: "#aabbcc", fontSize: "10px", padding: "2px 5px",
-                  borderRadius: "2px", cursor: "pointer", lineHeight: 1,
-                }}>{col.icon}</button>
+          {/* ホバーアクションボタン */}
+          <div className="opacity-0 group-hover:opacity-100" style={{ position:"absolute", top:"4px", right:"4px", display:"flex", gap:"2px", transition:"opacity 0.15s ease" }}>
+            <button onClick={e=>{e.stopPropagation();onEdit(task.id);}} title="編集 (E)" style={{ background:`${T.accent}20`, border:`1px solid ${T.accent}44`, color:T.accent, fontSize:"10px", padding:"2px 6px", borderRadius:"2px", cursor:"pointer", lineHeight:1 }}>✎</button>
+            {COLUMNS.filter(c=>c.id!==task.status).map(col => (
+              <button key={col.id} onClick={e=>{e.stopPropagation();onStatusChange(task.id,col.id);}} title={`→ ${col.label}`} style={{ background:`rgba(0,0,0,0.7)`, border:`1px solid ${T.border}`, color:T.textDim, fontSize:"10px", padding:"2px 5px", borderRadius:"2px", cursor:"pointer", lineHeight:1 }}>{col.icon}</button>
             ))}
-            <button onClick={e => { e.stopPropagation(); onDelete(task.id); }} title="削除" style={{
-              background: "rgba(255,0,0,0.2)", border: "1px solid #ff333366",
-              color: "#ff6666", fontSize: "10px", padding: "2px 5px",
-              borderRadius: "2px", cursor: "pointer", lineHeight: 1,
-            }}>✕</button>
+            <button onClick={e=>{e.stopPropagation();onDelete(task.id);}} title="削除 (D)" style={{ background:"rgba(255,0,0,0.2)", border:"1px solid #ff333366", color:"#ff6666", fontSize:"10px", padding:"2px 5px", borderRadius:"2px", cursor:"pointer", lineHeight:1 }}>✕</button>
           </div>
         </div>
       );
@@ -418,69 +537,36 @@
     // タイムライン
     // ======================================================
     const TimelineView = ({ tasks, currentTime }) => {
+      const T = useT();
       const hours = Array.from({ length: 13 }, (_, i) => i + 7);
       const currentHour = currentTime.getHours();
       const currentMin  = currentTime.getMinutes();
 
       return (
-        <div style={{
-          background: "rgba(10,15,30,0.6)", border: "1px solid #1a2040",
-          borderRadius: "4px", padding: "12px", overflowX: "auto",
-        }}>
-          <div style={{
-            display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px",
-            color: "#00ff88", fontSize: "11px", fontWeight: 700, letterSpacing: "0.15em",
-            fontFamily: "'JetBrains Mono', monospace",
-          }}>
+        <div style={{ background:T.bgCard, border:`1px solid ${T.border}`, borderRadius:"4px", padding:"12px", overflowX:"auto" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:"8px", marginBottom:"10px", color:T.accent, fontSize:"11px", fontWeight:700, letterSpacing:"0.15em", fontFamily:"'JetBrains Mono',monospace" }}>
             <span>◈</span><span>TIMELINE</span>
-            <span style={{ color: "#334455" }}>━━━━━━━━━━━━━━━━━━━━━━</span>
+            <span style={{ color:T.textMuted }}>━━━━━━━━━━━━━━━━━━━━━━</span>
           </div>
-          <div style={{ position: "relative", height: "100px" }}>
-            <div style={{ display: "flex", height: "100%", position: "relative" }}>
+          <div style={{ position:"relative", height:"100px" }}>
+            <div style={{ display:"flex", height:"100%", position:"relative" }}>
               {hours.map(h => {
-                const tasksAtHour = tasks.filter(t =>
-                  parseInt((t.time || "0:0").split(":")[0]) === h && t.status !== "completed"
-                );
+                const tasksAtHour = tasks.filter(t => parseInt((t.time||"0:0").split(":")[0])===h && t.status!=="completed");
                 const isCurrent = h === currentHour;
                 return (
-                  <div key={h} style={{
-                    flex: 1, borderRight: "1px solid #1a2040", position: "relative",
-                    background: isCurrent ? "rgba(0,255,136,0.03)" : "transparent",
-                  }}>
-                    <span style={{
-                      position: "absolute", top: 0, left: "4px", fontSize: "9px",
-                      color: isCurrent ? "#00ff88" : "#334466",
-                      fontFamily: "'JetBrains Mono', monospace", fontWeight: isCurrent ? 700 : 400,
-                    }}>{String(h).padStart(2, "0")}:00</span>
-                    {tasksAtHour.map((t, i) => (
-                      <div key={t.id} style={{
-                        position: "absolute", top: 24 + i * 26, left: "4px", right: "4px",
-                        background: PRIORITIES[t.priority]?.bg,
-                        border: `1px solid ${PRIORITIES[t.priority]?.color}44`,
-                        borderLeft: `3px solid ${PRIORITIES[t.priority]?.color}`,
-                        borderRadius: "2px", padding: "2px 6px",
-                        fontSize: "9px", color: "#bbccdd",
-                        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                        fontFamily: "'JetBrains Mono', monospace",
-                      }}>
-                        <span style={{ color: PRIORITIES[t.priority]?.color, marginRight: "4px" }}>●</span>
-                        {t.title}
+                  <div key={h} style={{ flex:1, borderRight:`1px solid ${T.border}`, position:"relative", background:isCurrent?`${T.accent}08`:"transparent" }}>
+                    <span style={{ position:"absolute", top:0, left:"4px", fontSize:"9px", color:isCurrent?T.accent:T.textMuted, fontFamily:"'JetBrains Mono',monospace", fontWeight:isCurrent?700:400 }}>{String(h).padStart(2,"0")}:00</span>
+                    {tasksAtHour.map((t,i) => (
+                      <div key={t.id} style={{ position:"absolute", top:24+i*26, left:"4px", right:"4px", background:PRIORITIES[t.priority]?.bg, border:`1px solid ${PRIORITIES[t.priority]?.color}44`, borderLeft:`3px solid ${PRIORITIES[t.priority]?.color}`, borderRadius:"2px", padding:"2px 6px", fontSize:"9px", color:T.textDim, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", fontFamily:"'JetBrains Mono',monospace" }}>
+                        <span style={{ color:PRIORITIES[t.priority]?.color, marginRight:"4px" }}>●</span>{t.title}
                       </div>
                     ))}
                   </div>
                 );
               })}
             </div>
-            <div style={{
-              position: "absolute",
-              left: `${((currentHour - 7) + currentMin / 60) / 13 * 100}%`,
-              top: 0, bottom: 0, width: "2px",
-              background: "#ff3333", boxShadow: "0 0 8px #ff333388", zIndex: 10,
-            }}>
-              <div style={{
-                position: "absolute", top: "-3px", left: "-3px",
-                width: "8px", height: "8px", background: "#ff3333", borderRadius: "50%",
-              }} />
+            <div style={{ position:"absolute", left:`${((currentHour-7)+currentMin/60)/13*100}%`, top:0, bottom:0, width:"2px", background:"#ff3333", boxShadow:"0 0 8px #ff333388", zIndex:10 }}>
+              <div style={{ position:"absolute", top:"-3px", left:"-3px", width:"8px", height:"8px", background:"#ff3333", borderRadius:"50%" }} />
             </div>
           </div>
         </div>
@@ -491,6 +577,7 @@
     // 新規タスク入力フォーム
     // ======================================================
     const NewStripForm = ({ onAdd, onClose }) => {
+      const T = useT();
       const [title,    setTitle]    = useState("");
       const [priority, setPriority] = useState("normal");
       const [category, setCategory] = useState("work");
@@ -504,72 +591,43 @@
       const handleSubmit = () => {
         if (!title.trim()) return;
         onAdd({
-          stripId:  `FS${String(Date.now()).slice(-4)}`,
+          stripId: `FS${String(Date.now()).slice(-4)}`,
           title: title.trim(), priority, category, time, status: "pending",
-          tags: tagInput ? tagInput.split(",").map(s => s.trim()).filter(Boolean) : [],
+          tags: tagInput ? tagInput.split(",").map(s=>s.trim()).filter(Boolean) : [],
           assignee: assignee.trim(),
+          sortOrder: Date.now(),
         });
         onClose();
       };
 
-      const inputStyle = {
-        background: "rgba(0,10,20,0.8)", border: "1px solid #334466", color: "#ddeeff",
-        padding: "6px 10px", borderRadius: "2px", fontSize: "12px",
-        fontFamily: "'JetBrains Mono', monospace", outline: "none",
-        width: "100%", boxSizing: "border-box",
-      };
+      const inp = { background:T.bgInput, border:`1px solid ${T.border2}`, color:T.text, padding:"6px 10px", borderRadius:"2px", fontSize:"12px", fontFamily:"'JetBrains Mono',monospace", outline:"none", width:"100%", boxSizing:"border-box" };
 
       return (
-        <div style={{
-          background: "rgba(10,15,35,0.95)", border: "1px solid #00ff8844",
-          borderRadius: "4px", padding: "16px", marginBottom: "12px",
-          boxShadow: "0 0 20px rgba(0,255,136,0.1)",
-        }}>
-          <div style={{
-            color: "#00ff88", fontSize: "11px", fontWeight: 700,
-            letterSpacing: "0.15em", marginBottom: "12px",
-            fontFamily: "'JetBrains Mono', monospace",
-            display: "flex", justifyContent: "space-between",
-          }}>
+        <div style={{ background:T.bgModal, border:`1px solid ${T.accent}44`, borderRadius:"4px", padding:"16px", marginBottom:"12px", boxShadow:`0 0 20px ${T.accent}12` }}>
+          <div style={{ color:T.accent, fontSize:"11px", fontWeight:700, letterSpacing:"0.15em", marginBottom:"12px", fontFamily:"'JetBrains Mono',monospace", display:"flex", justifyContent:"space-between" }}>
             <span>◈ NEW STRIP</span>
-            <span style={{ color: "#334455", fontSize: "9px", fontWeight: 400 }}>N キーで開閉 · Esc で閉じる</span>
+            <span style={{ color:T.textMuted, fontSize:"9px", fontWeight:400 }}>N キーで開閉 · Esc で閉じる</span>
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            <input ref={titleRef} style={inputStyle} placeholder="タスク名..." value={title}
-              onChange={e => setTitle(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === "Enter" && !e.nativeEvent.isComposing) handleSubmit();
-                if (e.key === "Escape") onClose();
-              }}
-            />
-            <div style={{ display: "flex", gap: "8px" }}>
-              <select style={{ ...inputStyle, cursor: "pointer" }} value={priority} onChange={e => setPriority(e.target.value)}>
+          <div style={{ display:"flex", flexDirection:"column", gap:"8px" }}>
+            <input ref={titleRef} style={inp} placeholder="タスク名..." value={title}
+              onChange={e=>setTitle(e.target.value)}
+              onKeyDown={e=>{ if(e.key==="Enter"&&!e.nativeEvent.isComposing) handleSubmit(); if(e.key==="Escape") onClose(); }} />
+            <div style={{ display:"flex", gap:"8px" }}>
+              <select style={{ ...inp, cursor:"pointer" }} value={priority} onChange={e=>setPriority(e.target.value)}>
                 <option value="high">🔴 URG（緊急）</option>
                 <option value="normal">🟢 NRM（通常）</option>
                 <option value="low">⚫ LOW（低）</option>
               </select>
-              <select style={{ ...inputStyle, cursor: "pointer" }} value={category} onChange={e => setCategory(e.target.value)}>
-                {Object.entries(CATEGORIES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+              <select style={{ ...inp, cursor:"pointer" }} value={category} onChange={e=>setCategory(e.target.value)}>
+                {Object.entries(CATEGORIES).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
               </select>
-              <input style={{ ...inputStyle, width: "90px" }} type="time" value={time} onChange={e => setTime(e.target.value)} />
+              <input style={{ ...inp, width:"90px" }} type="time" value={time} onChange={e=>setTime(e.target.value)} />
             </div>
-            <input style={inputStyle} placeholder="タグ（カンマ区切り）" value={tagInput} onChange={e => setTagInput(e.target.value)} />
-            <input
-              style={{ ...inputStyle, borderColor: assignee ? "#ffaa0066" : "#334466" }}
-              placeholder="✈ HANDOFF先（委任者名、空欄＝自分）"
-              value={assignee} onChange={e => setAssignee(e.target.value)}
-            />
-            <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
-              <button onClick={onClose} style={{
-                background: "transparent", border: "1px solid #334466", color: "#667788",
-                padding: "6px 16px", borderRadius: "2px", cursor: "pointer",
-                fontSize: "11px", fontFamily: "'JetBrains Mono', monospace",
-              }}>CANCEL</button>
-              <button onClick={handleSubmit} style={{
-                background: "rgba(0,255,136,0.15)", border: "1px solid #00ff8866", color: "#00ff88",
-                padding: "6px 16px", borderRadius: "2px", cursor: "pointer",
-                fontSize: "11px", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace",
-              }}>FILE STRIP</button>
+            <input style={inp} placeholder="タグ（カンマ区切り）" value={tagInput} onChange={e=>setTagInput(e.target.value)} />
+            <input style={{ ...inp, borderColor:assignee?"#ffaa0066":T.border2 }} placeholder="✈ HANDOFF先（委任者名、空欄＝自分）" value={assignee} onChange={e=>setAssignee(e.target.value)} />
+            <div style={{ display:"flex", gap:"8px", justifyContent:"flex-end" }}>
+              <button onClick={onClose} style={{ background:"transparent", border:`1px solid ${T.border2}`, color:T.textDim, padding:"6px 16px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontFamily:"'JetBrains Mono',monospace" }}>CANCEL</button>
+              <button onClick={handleSubmit} style={{ background:`${T.accent}22`, border:`1px solid ${T.accent}66`, color:T.accent, padding:"6px 16px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontWeight:700, fontFamily:"'JetBrains Mono',monospace" }}>FILE STRIP</button>
             </div>
           </div>
         </div>
@@ -579,36 +637,44 @@
     // ======================================================
     // メインアプリ（Firestoreリアルタイム同期）
     // ======================================================
-    function FlightStripTodo({ user }) {
+    function FlightStripTodo({ user, themeId, setTheme }) {
+      const T = useT();
       const [tasks,          setTasks]          = useState([]);
       const [loading,        setLoading]        = useState(true);
       const [draggedId,      setDraggedId]      = useState(null);
+      const [dropState,      setDropState]      = useState(null); // { id, pos }
+      const dropStateRef = useRef(null);
       const [showForm,       setShowForm]       = useState(false);
       const [showHelp,       setShowHelp]       = useState(false);
       const [viewMode,       setViewMode]       = useState("hybrid");
       const [filterPriority, setFilterPriority] = useState("all");
       const [filterCategory, setFilterCategory] = useState("all");
       const [selectedId,     setSelectedId]     = useState(null);
-      const [editModal,      setEditModal]      = useState(null);
+      const [editTaskId,     setEditTaskId]     = useState(null);
       const [syncStatus,     setSyncStatus]     = useState("connecting");
       const currentTime = useCurrentTime();
 
       const tasksRef = useMemo(() => db.collection(`users/${user.uid}/tasks`), [user.uid]);
+      const ts = () => firebase.firestore.FieldValue.serverTimestamp();
 
       // リアルタイム同期
       useEffect(() => {
         setSyncStatus("connecting");
-        const unsubscribe = tasksRef.orderBy("createdAt", "desc").onSnapshot(
+        const unsubscribe = tasksRef.onSnapshot(
           snapshot => {
-            setTasks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+            const loaded = snapshot.docs.map(doc => {
+              const d = doc.data();
+              return {
+                id: doc.id, ...d,
+                // sortOrder未設定の既存タスクはcreatedAtのミリ秒で代替
+                sortOrder: d.sortOrder ?? (d.createdAt?.seconds ? d.createdAt.seconds * 1000 : Date.now()),
+              };
+            });
+            setTasks(loaded);
             setLoading(false);
             setSyncStatus("online");
           },
-          err => {
-            console.error("Firestore:", err);
-            setLoading(false);
-            setSyncStatus("error");
-          }
+          err => { console.error("Firestore:", err); setLoading(false); setSyncStatus("error"); }
         );
         return unsubscribe;
       }, [tasksRef]);
@@ -619,70 +685,134 @@
         return true;
       }), [tasks, filterPriority, filterCategory]);
 
+      // カラム別タスク取得（sortOrder降順: 大きいほど上）
+      const getColTasks = useCallback((status) =>
+        filteredTasks.filter(t => t.status === status).sort((a,b) => (b.sortOrder??0) - (a.sortOrder??0)),
+      [filteredTasks]);
+
+      // J/Kナビゲーション用フラットリスト
       const orderedTasks = useMemo(() => {
-        const priOrder = { high: 0, normal: 1, low: 2 };
-        const sorted = [];
-        for (const col of COLUMNS) {
-          sorted.push(...filteredTasks
-            .filter(t => t.status === col.id)
-            .sort((a, b) => {
-              if (priOrder[a.priority] !== priOrder[b.priority]) return priOrder[a.priority] - priOrder[b.priority];
-              return (a.time || "").localeCompare(b.time || "");
-            })
-          );
-        }
-        return sorted;
-      }, [filteredTasks]);
+        const all = [];
+        for (const col of COLUMNS) all.push(...getColTasks(col.id));
+        return all;
+      }, [getColTasks]);
 
-      // --- Firestore ハンドラー ---
-      const ts = () => firebase.firestore.FieldValue.serverTimestamp();
-
-      const handleDragStart    = useCallback((e, id) => { setDraggedId(id); e.dataTransfer.effectAllowed = "move"; }, []);
-      const handleDragOver     = useCallback(e => e.preventDefault(), []);
-      const handleDrop         = useCallback((e, newStatus) => {
-        e.preventDefault();
-        if (!draggedId) return;
-        tasksRef.doc(draggedId).update({ status: newStatus, updatedAt: ts() });
-        setDraggedId(null);
-      }, [draggedId, tasksRef]);
-      const handleStatusChange = useCallback((id, s) => tasksRef.doc(id).update({ status: s, updatedAt: ts() }), [tasksRef]);
-      const handleDelete       = useCallback((id) => {
+      // --- CRUD ハンドラー ---
+      const handleAdd          = useCallback(t  => tasksRef.add({ ...t, createdAt:ts(), updatedAt:ts() }), [tasksRef]);
+      const handleDelete       = useCallback(id => {
         if (!window.confirm("このストリップを削除しますか？")) return;
         tasksRef.doc(id).delete();
-        setSelectedId(p => p === id ? null : p);
+        setSelectedId(p => p===id ? null : p);
       }, [tasksRef]);
-      const handleAdd          = useCallback((t) => tasksRef.add({ ...t, createdAt: ts(), updatedAt: ts() }), [tasksRef]);
-      const handleFieldSave    = useCallback((id, field, value) => tasksRef.doc(id).update({ [field]: value, updatedAt: ts() }), [tasksRef]);
+      const handleStatusChange = useCallback((id, s) => tasksRef.doc(id).update({ status:s, updatedAt:ts() }), [tasksRef]);
+      const handleEditSave     = useCallback((id, fields) => tasksRef.doc(id).update({ ...fields, updatedAt:ts() }), [tasksRef]);
 
-      // キーボードショートカット
+      // --- 並べ替え（↑↓キー）: sortOrder値を入れ替え ---
+      const handleMoveInColumn = useCallback(async (taskId, direction) => {
+        const task = tasks.find(t => t.id === taskId);
+        if (!task) return;
+        const col = tasks.filter(t => t.status === task.status).sort((a,b) => (b.sortOrder??0) - (a.sortOrder??0));
+        const idx = col.findIndex(t => t.id === taskId);
+        const targetIdx = direction === "up" ? idx - 1 : idx + 1;
+        if (targetIdx < 0 || targetIdx >= col.length) return;
+        const target = col[targetIdx];
+        const mySO = task.sortOrder ?? 0;
+        const thSO = target.sortOrder ?? 0;
+        await tasksRef.doc(taskId).update({ sortOrder: thSO });
+        await tasksRef.doc(target.id).update({ sortOrder: mySO });
+      }, [tasks, tasksRef]);
+
+      // --- ドラッグ ---
+      const handleDragStart = (e, id) => {
+        setDraggedId(id);
+        e.dataTransfer.effectAllowed = "move";
+      };
+
+      const handleDragOverStrip = (e, targetId) => {
+        if (!draggedId || draggedId === targetId) return;
+        const rect = e.currentTarget.getBoundingClientRect();
+        const pos = e.clientY < rect.top + rect.height / 2 ? "before" : "after";
+        dropStateRef.current = { id: targetId, pos };
+        setDropState({ id: targetId, pos });
+      };
+
+      const handleDragEnd = () => {
+        setDraggedId(null);
+        setDropState(null);
+        dropStateRef.current = null;
+      };
+
+      const handleDropOnStrip = async (e, targetId) => {
+        const dId = draggedId;
+        const ds = dropStateRef.current;
+        setDraggedId(null); setDropState(null); dropStateRef.current = null;
+        if (!dId || dId === targetId || !ds) return;
+
+        const draggedTask = tasks.find(t => t.id === dId);
+        const targetTask  = tasks.find(t => t.id === targetId);
+        if (!draggedTask || !targetTask) return;
+
+        if (draggedTask.status !== targetTask.status) {
+          // 異なるカラム: ステータス変更のみ
+          await tasksRef.doc(dId).update({ status: targetTask.status, updatedAt: ts() });
+          return;
+        }
+
+        // 同じカラム内並べ替え
+        const col = tasks.filter(t => t.status === draggedTask.status).sort((a,b) => (b.sortOrder??0) - (a.sortOrder??0));
+        const withoutDragged = col.filter(t => t.id !== dId);
+        const targetIdx = withoutDragged.findIndex(t => t.id === targetId);
+        const insertIdx = ds.pos === "before" ? targetIdx : targetIdx + 1;
+        const newOrder = [...withoutDragged];
+        newOrder.splice(insertIdx, 0, draggedTask);
+
+        // sortOrderを再割り当て（降順: 先頭が最大値）
+        const base = Date.now();
+        await Promise.all(newOrder.map((t, i) => tasksRef.doc(t.id).update({ sortOrder: base - i * 10000, updatedAt: ts() })));
+      };
+
+      const handleDropOnColumn = async (e, colId) => {
+        const dId = draggedId;
+        setDraggedId(null); setDropState(null); dropStateRef.current = null;
+        if (!dId) return;
+        const draggedTask = tasks.find(t => t.id === dId);
+        if (draggedTask && draggedTask.status !== colId) {
+          await tasksRef.doc(dId).update({ status: colId, updatedAt: ts() });
+        }
+      };
+
+      // --- キーボードショートカット ---
       useEffect(() => {
         const handler = e => {
           const isInput = ["INPUT","TEXTAREA","SELECT"].includes(e.target.tagName) || e.target.isContentEditable;
           if (e.key === "Escape") {
             e.preventDefault();
-            if (editModal) { setEditModal(null); return; }
-            if (showHelp)  { setShowHelp(false); return; }
-            if (showForm)  { setShowForm(false); return; }
+            if (editTaskId) { setEditTaskId(null); return; }
+            if (showHelp)   { setShowHelp(false); return; }
+            if (showForm)   { setShowForm(false); return; }
             setSelectedId(null); return;
           }
-          if (isInput || editModal) return;
+          if (isInput || editTaskId) return;
           const key = e.key.toLowerCase();
-          if (e.key === "?" || (e.shiftKey && key === "/")) { e.preventDefault(); setShowHelp(p => !p); return; }
-          if (key === "n") { e.preventDefault(); setShowForm(p => !p); return; }
-          if (key === "f") {
-            e.preventDefault();
-            setFilterPriority(p => PRIORITY_CYCLE[(PRIORITY_CYCLE.indexOf(p) + 1) % PRIORITY_CYCLE.length]);
-            return;
-          }
+          if (e.key === "?" || (e.shiftKey && key === "/")) { e.preventDefault(); setShowHelp(p=>!p); return; }
+          if (key === "n") { e.preventDefault(); setShowForm(p=>!p); return; }
+          if (key === "f") { e.preventDefault(); setFilterPriority(p => PRIORITY_CYCLE[(PRIORITY_CYCLE.indexOf(p)+1)%PRIORITY_CYCLE.length]); return; }
+          // J/K: 選択移動
           if (key === "j" || key === "k") {
             e.preventDefault();
             if (!orderedTasks.length) return;
             const idx = orderedTasks.findIndex(t => t.id === selectedId);
             setSelectedId(orderedTasks[
-              key === "j"
-                ? (idx < 0 ? 0 : Math.min(idx + 1, orderedTasks.length - 1))
-                : (idx < 0 ? orderedTasks.length - 1 : Math.max(idx - 1, 0))
+              key === "j" ? (idx<0 ? 0 : Math.min(idx+1, orderedTasks.length-1))
+                          : (idx<0 ? orderedTasks.length-1 : Math.max(idx-1, 0))
             ].id);
+            return;
+          }
+          // ↑↓: 並べ替え
+          if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+            if (!selectedId) return;
+            e.preventDefault();
+            handleMoveInColumn(selectedId, e.key === "ArrowUp" ? "up" : "down");
             return;
           }
           if (!selectedId) return;
@@ -690,12 +820,16 @@
           if (key === "2") { e.preventDefault(); handleStatusChange(selectedId, "pending");   return; }
           if (key === "3") { e.preventDefault(); handleStatusChange(selectedId, "completed"); return; }
           if (key === "d") { e.preventDefault(); handleDelete(selectedId); return; }
-          if (key === "e") { e.preventDefault(); const t = tasks.find(t => t.id === selectedId); if (t) setEditModal({ taskId: t.id, field: "title" });    return; }
-          if (key === "h") { e.preventDefault(); const t = tasks.find(t => t.id === selectedId); if (t) setEditModal({ taskId: t.id, field: "assignee" }); return; }
+          if (key === "e") {
+            e.preventDefault();
+            const t = tasks.find(t => t.id === selectedId);
+            if (t) setEditTaskId(t.id);
+            return;
+          }
         };
         window.addEventListener("keydown", handler);
         return () => window.removeEventListener("keydown", handler);
-      }, [selectedId, orderedTasks, showForm, showHelp, editModal, tasks, handleStatusChange, handleDelete]);
+      }, [selectedId, orderedTasks, showForm, showHelp, editTaskId, tasks, handleStatusChange, handleDelete, handleMoveInColumn]);
 
       const stats = {
         active:    tasks.filter(t => t.status === "active").length,
@@ -705,207 +839,132 @@
         handoff:   tasks.filter(t => t.assignee && t.status !== "completed").length,
       };
 
-      const editTask = editModal ? tasks.find(t => t.id === editModal.taskId) : null;
+      const editTask = editTaskId ? tasks.find(t => t.id === editTaskId) : null;
+      const syncColor = syncStatus === "online" ? T.accent : syncStatus === "error" ? "#ff3333" : "#ffaa00";
+      const syncLabel = syncStatus === "online" ? "SYNC ●" : syncStatus === "error" ? "SYNC ✕" : "SYNC ◌";
 
       const handleConsoleCopy = () => {
-        const log = JSON.stringify({ exportedAt: new Date().toISOString(), user: user.email, tasks }, null, 2);
-        navigator.clipboard.writeText(log)
-          .then(() => alert("✓ タスクデータをクリップボードにコピーしました"))
-          .catch(() => console.log(log));
+        const log = JSON.stringify({ exportedAt:new Date().toISOString(), user:user.email, tasks }, null, 2);
+        navigator.clipboard.writeText(log).then(()=>alert("✓ コピーしました")).catch(()=>console.log(log));
       };
-
-      const syncColor = syncStatus === "online" ? "#00ff88" : syncStatus === "error" ? "#ff3333" : "#ffaa00";
-      const syncLabel = syncStatus === "online" ? "SYNC ●"  : syncStatus === "error" ? "SYNC ✕"  : "SYNC ◌";
 
       if (loading) return <LoadingScreen />;
 
       return (
-        <div style={{
-          minHeight: "100vh",
-          background: "linear-gradient(180deg, #060a18 0%, #0a1020 50%, #0d1428 100%)",
-          color: "#ccddee", fontFamily: "'JetBrains Mono', 'SF Mono', monospace",
-          position: "relative",
-        }}>
-          <div style={{
-            position: "fixed", inset: 0,
-            backgroundImage: `linear-gradient(rgba(0,255,136,0.03) 1px, transparent 1px),
-                              linear-gradient(90deg, rgba(0,255,136,0.03) 1px, transparent 1px)`,
-            backgroundSize: "40px 40px", pointerEvents: "none", zIndex: 0,
-          }} />
-          <div style={{
-            position: "fixed", inset: 0,
-            background: "repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,0.08) 3px, rgba(0,0,0,0.08) 6px)",
-            pointerEvents: "none", zIndex: 1,
-          }} />
-
-          {showHelp && <ShortcutHelp onClose={() => setShowHelp(false)} />}
-          {editModal && editTask && (
-            <InlineEditor task={editTask} field={editModal.field} onSave={handleFieldSave} onClose={() => setEditModal(null)} />
+        <div style={{ minHeight:"100vh", background:T.bgGrad, color:T.text, fontFamily:"'JetBrains Mono',monospace", position:"relative" }}>
+          {/* グリッド背景 */}
+          <div style={{ position:"fixed", inset:0, backgroundImage:`linear-gradient(${T.grid} 1px,transparent 1px),linear-gradient(90deg,${T.grid} 1px,transparent 1px)`, backgroundSize:"40px 40px", pointerEvents:"none", zIndex:0 }} />
+          {T.scanAlpha > 0 && (
+            <div style={{ position:"fixed", inset:0, background:`repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,${T.scanAlpha}) 3px,rgba(0,0,0,${T.scanAlpha}) 6px)`, pointerEvents:"none", zIndex:1 }} />
           )}
 
-          <div style={{ position: "relative", zIndex: 2, maxWidth: "1200px", margin: "0 auto", padding: "16px" }}>
+          {showHelp && <ShortcutHelp onClose={() => setShowHelp(false)} />}
+          {editTaskId && editTask && <EditStripModal task={editTask} onSave={handleEditSave} onClose={() => setEditTaskId(null)} />}
+
+          <div style={{ position:"relative", zIndex:2, maxWidth:"1200px", margin:"0 auto", padding:"16px" }}>
 
             {/* ヘッダー */}
-            <header style={{
-              display: "flex", alignItems: "center", justifyContent: "space-between",
-              padding: "12px 0", marginBottom: "12px", borderBottom: "1px solid #1a2540",
-              flexWrap: "wrap", gap: "8px",
-            }}>
+            <header style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"12px 0", marginBottom:"12px", borderBottom:`1px solid ${T.border}`, flexWrap:"wrap", gap:"8px" }}>
               <div>
-                <div style={{
-                  fontSize: "18px", fontWeight: 800, color: "#00ff88",
-                  letterSpacing: "0.2em", textShadow: "0 0 20px rgba(0,255,136,0.3)", lineHeight: 1,
-                }}>◈ FLIGHT STRIP TODO</div>
-                <div style={{ fontSize: "9px", color: "#334466", letterSpacing: "0.3em", marginTop: "4px" }}>
-                  ATC-SYS v0.3.0 ·&nbsp;
-                  <span style={{ color: syncColor, animation: syncStatus === "connecting" ? "blink 1s infinite" : "none" }}>
-                    {syncLabel}
-                  </span>
-                  &nbsp;· <span style={{ color: "#445566" }}>? でショートカット表示</span>
+                <div style={{ fontSize:"18px", fontWeight:800, color:T.accent, letterSpacing:"0.2em", textShadow:`0 0 20px ${T.accent}44`, lineHeight:1 }}>◈ FLIGHT STRIP TODO</div>
+                <div style={{ fontSize:"9px", color:T.textMuted, letterSpacing:"0.3em", marginTop:"4px" }}>
+                  ATC-SYS v0.4.0 · <span style={{ color:syncColor, animation:syncStatus==="connecting"?"blink 1s infinite":"none" }}>{syncLabel}</span>
+                  &nbsp;· <span style={{ color:T.textMuted }}>? でショートカット</span>
                 </div>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
+              <div style={{ display:"flex", alignItems:"center", gap:"12px", flexWrap:"wrap" }}>
                 {selectedId && (
-                  <div style={{
-                    fontSize: "10px", color: "#00ccff", padding: "3px 10px",
-                    border: "1px solid #00ccff44", borderRadius: "2px",
-                    background: "rgba(0,204,255,0.08)", letterSpacing: "0.05em",
-                  }}>◉ {tasks.find(t => t.id === selectedId)?.stripId || "---"}</div>
+                  <div style={{ fontSize:"10px", color:T.accent2, padding:"3px 10px", border:`1px solid ${T.accent2}44`, borderRadius:"2px", background:`${T.accent2}10` }}>
+                    ◉ {tasks.find(t=>t.id===selectedId)?.stripId||"---"} &nbsp;<span style={{ color:T.textMuted, fontSize:"8px" }}>↑↓で移動 · E編集</span>
+                  </div>
                 )}
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  {user.photoURL && (
-                    <img src={user.photoURL} alt="" style={{ width: "26px", height: "26px", borderRadius: "50%", border: "1px solid #00ff8833" }} />
-                  )}
+                <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
+                  {user.photoURL && <img src={user.photoURL} alt="" style={{ width:"26px", height:"26px", borderRadius:"50%", border:`1px solid ${T.accent}33` }} />}
                   <div>
-                    <div style={{ fontSize: "9px", color: "#556677", lineHeight: 1.3 }}>{user.displayName || user.email}</div>
-                    <button onClick={() => auth.signOut()} style={{
-                      background: "transparent", border: "none", color: "#334455",
-                      fontSize: "8px", cursor: "pointer",
-                      fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.05em", padding: 0,
-                    }}>SIGN OUT ↩</button>
+                    <div style={{ fontSize:"9px", color:T.textDim, lineHeight:1.3 }}>{user.displayName||user.email}</div>
+                    <button onClick={() => auth.signOut()} style={{ background:"transparent", border:"none", color:T.textMuted, fontSize:"8px", cursor:"pointer", fontFamily:"'JetBrains Mono',monospace", padding:0 }}>SIGN OUT ↩</button>
                   </div>
                 </div>
-                <div style={{ fontSize: "10px", color: "#556677", letterSpacing: "0.08em" }}>
-                  ACT:<span style={{ color: "#00ff88" }}>{stats.active}</span>&nbsp;·&nbsp;
-                  HLD:<span style={{ color: "#ffaa00" }}>{stats.pending}</span>&nbsp;·&nbsp;
-                  CLR:<span style={{ color: "#445566" }}>{stats.completed}</span>
-                  {stats.handoff > 0 && <span style={{ color: "#ffaa00" }}>&nbsp;·&nbsp;HOF:{stats.handoff}</span>}
-                  {stats.urgent  > 0 && <span style={{ color: "#ff3333" }}>&nbsp;·&nbsp;URG:{stats.urgent}</span>}
+                <div style={{ fontSize:"10px", color:T.textDim, letterSpacing:"0.08em" }}>
+                  ACT:<span style={{ color:T.accent }}>{stats.active}</span>&nbsp;·&nbsp;
+                  HLD:<span style={{ color:"#ffaa00" }}>{stats.pending}</span>&nbsp;·&nbsp;
+                  CLR:<span style={{ color:T.textMuted }}>{stats.completed}</span>
+                  {stats.handoff>0 && <span style={{ color:"#ffaa00" }}>&nbsp;·&nbsp;HOF:{stats.handoff}</span>}
+                  {stats.urgent >0 && <span style={{ color:"#ff3333" }}>&nbsp;·&nbsp;URG:{stats.urgent}</span>}
                 </div>
-                <div style={{
-                  color: "#00ff88", fontSize: "22px", fontWeight: 700,
-                  letterSpacing: "0.1em", textShadow: "0 0 15px rgba(0,255,136,0.4)",
-                }}>{currentTime.toLocaleTimeString("ja-JP", { hour12: false })}</div>
+                <div style={{ color:T.accent, fontSize:"22px", fontWeight:700, letterSpacing:"0.1em", textShadow:`0 0 15px ${T.accent}44` }}>
+                  {currentTime.toLocaleTimeString("ja-JP",{hour12:false})}
+                </div>
               </div>
             </header>
 
             {/* ツールバー */}
-            <div style={{
-              display: "flex", alignItems: "center", justifyContent: "space-between",
-              marginBottom: "12px", gap: "8px", flexWrap: "wrap",
-            }}>
-              <div style={{ display: "flex", gap: "2px" }}>
+            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"12px", gap:"8px", flexWrap:"wrap" }}>
+              <div style={{ display:"flex", gap:"2px" }}>
                 {[{id:"hybrid",label:"HYBRID"},{id:"kanban",label:"KANBAN"},{id:"timeline",label:"TIMELINE"}].map(mode => (
-                  <button key={mode.id} onClick={() => setViewMode(mode.id)} style={{
-                    background: viewMode === mode.id ? "rgba(0,255,136,0.15)" : "transparent",
-                    border: `1px solid ${viewMode === mode.id ? "#00ff8866" : "#222244"}`,
-                    color: viewMode === mode.id ? "#00ff88" : "#556677",
-                    padding: "4px 12px", borderRadius: "2px", cursor: "pointer",
-                    fontSize: "10px", fontWeight: 700, letterSpacing: "0.1em",
-                    fontFamily: "'JetBrains Mono', monospace",
-                  }}>{mode.label}</button>
+                  <button key={mode.id} onClick={() => setViewMode(mode.id)} style={{ background:viewMode===mode.id?`${T.accent}18`:"transparent", border:`1px solid ${viewMode===mode.id?T.accent+"66":T.border2}`, color:viewMode===mode.id?T.accent:T.textDim, padding:"4px 12px", borderRadius:"2px", cursor:"pointer", fontSize:"10px", fontWeight:700, letterSpacing:"0.1em", fontFamily:"'JetBrains Mono',monospace" }}>{mode.label}</button>
                 ))}
               </div>
-              <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-                <select value={filterPriority} onChange={e => setFilterPriority(e.target.value)} style={{
-                  background: "rgba(0,10,20,0.8)", border: "1px solid #222244", color: "#8899aa",
-                  padding: "4px 8px", borderRadius: "2px", fontSize: "10px",
-                  fontFamily: "'JetBrains Mono', monospace", cursor: "pointer",
-                }}>
+              <div style={{ display:"flex", gap:"6px", alignItems:"center", flexWrap:"wrap" }}>
+                <select value={filterPriority} onChange={e=>setFilterPriority(e.target.value)} style={{ background:T.bgInput, border:`1px solid ${T.border2}`, color:T.textDim, padding:"4px 8px", borderRadius:"2px", fontSize:"10px", fontFamily:"'JetBrains Mono',monospace", cursor:"pointer" }}>
                   <option value="all">ALL PRI</option>
-                  <option value="high">🔴 URG（緊急）</option>
-                  <option value="normal">🟢 NRM（通常）</option>
-                  <option value="low">⚫ LOW（低）</option>
+                  <option value="high">🔴 URG</option>
+                  <option value="normal">🟢 NRM</option>
+                  <option value="low">⚫ LOW</option>
                 </select>
-                <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} style={{
-                  background: "rgba(0,10,20,0.8)", border: "1px solid #222244", color: "#8899aa",
-                  padding: "4px 8px", borderRadius: "2px", fontSize: "10px",
-                  fontFamily: "'JetBrains Mono', monospace", cursor: "pointer",
-                }}>
+                <select value={filterCategory} onChange={e=>setFilterCategory(e.target.value)} style={{ background:T.bgInput, border:`1px solid ${T.border2}`, color:T.textDim, padding:"4px 8px", borderRadius:"2px", fontSize:"10px", fontFamily:"'JetBrains Mono',monospace", cursor:"pointer" }}>
                   <option value="all">ALL CAT</option>
-                  {Object.entries(CATEGORIES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                  {Object.entries(CATEGORIES).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
                 </select>
-                <button onClick={() => setShowForm(!showForm)} style={{
-                  background: showForm ? "rgba(255,50,50,0.15)" : "rgba(0,255,136,0.15)",
-                  border: `1px solid ${showForm ? "#ff333366" : "#00ff8866"}`,
-                  color: showForm ? "#ff6666" : "#00ff88",
-                  padding: "4px 14px", borderRadius: "2px", cursor: "pointer",
-                  fontSize: "11px", fontWeight: 700, letterSpacing: "0.1em",
-                  fontFamily: "'JetBrains Mono', monospace",
-                }}>{showForm ? "✕ CLOSE" : "+ FILE STRIP"}</button>
-                <button onClick={() => setShowHelp(!showHelp)} title="ショートカット一覧 (?)" style={{
-                  background: showHelp ? "rgba(0,204,255,0.15)" : "transparent",
-                  border: `1px solid ${showHelp ? "#00ccff66" : "#222244"}`,
-                  color: showHelp ? "#00ccff" : "#556677",
-                  padding: "4px 10px", borderRadius: "2px", cursor: "pointer",
-                  fontSize: "12px", fontWeight: 700, fontFamily: "'JetBrains Mono', monospace",
-                }}>?</button>
+                <ThemePicker currentId={themeId} onChange={setTheme} />
+                <DataMenu tasks={tasks} tasksRef={tasksRef} />
+                <button onClick={() => setShowForm(!showForm)} style={{ background:showForm?"rgba(255,50,50,0.15)":`${T.accent}18`, border:`1px solid ${showForm?"#ff333366":T.accent+"66"}`, color:showForm?"#ff6666":T.accent, padding:"4px 14px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontWeight:700, letterSpacing:"0.1em", fontFamily:"'JetBrains Mono',monospace" }}>{showForm?"✕ CLOSE":"+ FILE STRIP"}</button>
+                <button onClick={() => setShowHelp(!showHelp)} style={{ background:showHelp?`${T.accent2}18`:"transparent", border:`1px solid ${showHelp?T.accent2+"66":T.border2}`, color:showHelp?T.accent2:T.textDim, padding:"4px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"12px", fontWeight:700, fontFamily:"'JetBrains Mono',monospace" }}>?</button>
               </div>
             </div>
 
             {showForm && <NewStripForm onAdd={handleAdd} onClose={() => setShowForm(false)} />}
 
             {(viewMode === "hybrid" || viewMode === "timeline") && (
-              <div style={{ marginBottom: "16px" }}>
+              <div style={{ marginBottom:"16px" }}>
                 <TimelineView tasks={filteredTasks} currentTime={currentTime} />
               </div>
             )}
 
             {(viewMode === "hybrid" || viewMode === "kanban") && (
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "12px" }}>
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:"12px" }}>
                 {COLUMNS.map(col => {
-                  const priOrder = { high: 0, normal: 1, low: 2 };
-                  const colTasks = filteredTasks
-                    .filter(t => t.status === col.id)
-                    .sort((a, b) => {
-                      if (priOrder[a.priority] !== priOrder[b.priority]) return priOrder[a.priority] - priOrder[b.priority];
-                      return (a.time || "").localeCompare(b.time || "");
-                    });
+                  const colTasks = getColTasks(col.id);
                   return (
                     <div key={col.id}
-                      onDrop={e => handleDrop(e, col.id)} onDragOver={handleDragOver}
-                      style={{
-                        background: "rgba(10,15,30,0.4)", border: "1px solid #1a2040",
-                        borderRadius: "4px", padding: "10px", minHeight: "200px",
-                      }}>
-                      <div style={{
-                        display: "flex", alignItems: "center", justifyContent: "space-between",
-                        marginBottom: "10px", paddingBottom: "8px", borderBottom: "1px solid #1a2040",
-                      }}>
+                      onDrop={e => handleDropOnColumn(e, col.id)}
+                      onDragOver={e => e.preventDefault()}
+                      style={{ background:T.bgCard, border:`1px solid ${T.border}`, borderRadius:"4px", padding:"10px", minHeight:"200px" }}>
+                      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"10px", paddingBottom:"8px", borderBottom:`1px solid ${T.border}` }}>
                         <div>
-                          <span style={{
-                            color: col.id === "active" ? "#00ff88" : col.id === "completed" ? "#556677" : "#ffaa00",
-                            fontSize: "12px", fontWeight: 700, letterSpacing: "0.15em",
-                          }}>{col.icon} {col.label}</span>
-                          <span style={{ color: "#334455", fontSize: "9px", marginLeft: "8px" }}>{col.sublabel}</span>
+                          <span style={{ color:col.id==="active"?T.accent:col.id==="completed"?T.textDim:"#ffaa00", fontSize:"12px", fontWeight:700, letterSpacing:"0.15em" }}>{col.icon} {col.label}</span>
+                          <span style={{ color:T.textMuted, fontSize:"9px", marginLeft:"8px" }}>{col.sublabel}</span>
                         </div>
-                        <span style={{
-                          background: "rgba(100,120,140,0.2)", color: "#667788",
-                          fontSize: "10px", padding: "2px 8px", borderRadius: "10px",
-                        }}>{colTasks.length}</span>
+                        <span style={{ background:"rgba(100,120,140,0.2)", color:T.textDim, fontSize:"10px", padding:"2px 8px", borderRadius:"10px" }}>{colTasks.length}</span>
                       </div>
                       {colTasks.map(task => (
                         <div key={task.id} onClick={() => setSelectedId(task.id)}>
                           <FlightStrip
-                            task={task} isSelected={selectedId === task.id}
-                            onDragStart={handleDragStart} onStatusChange={handleStatusChange} onDelete={handleDelete}
+                            task={task}
+                            isSelected={selectedId === task.id}
+                            dropState={dropState}
+                            onDragStart={handleDragStart}
+                            onDragOver={handleDragOverStrip}
+                            onDragEnd={handleDragEnd}
+                            onDrop={handleDropOnStrip}
+                            onStatusChange={handleStatusChange}
+                            onDelete={handleDelete}
+                            onEdit={id => setEditTaskId(id)}
                           />
                         </div>
                       ))}
                       {colTasks.length === 0 && (
-                        <div style={{ textAlign: "center", padding: "30px 10px", color: "#223344", fontSize: "10px", letterSpacing: "0.1em" }}>
-                          NO STRIPS
-                        </div>
+                        <div style={{ textAlign:"center", padding:"30px 10px", color:T.border, fontSize:"10px", letterSpacing:"0.1em" }}>NO STRIPS</div>
                       )}
                     </div>
                   );
@@ -914,20 +973,11 @@
             )}
 
             {/* フッター */}
-            <footer style={{
-              marginTop: "20px", paddingTop: "10px", borderTop: "1px solid #111833",
-              display: "flex", justifyContent: "space-between", alignItems: "center",
-              color: "#223344", fontSize: "9px", letterSpacing: "0.1em",
-            }}>
-              <span>FLIGHT STRIP TODO · ATC-SYS v0.3.0</span>
-              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            <footer style={{ marginTop:"20px", paddingTop:"10px", borderTop:`1px solid ${T.border}`, display:"flex", justifyContent:"space-between", alignItems:"center", color:T.textMuted, fontSize:"9px", letterSpacing:"0.1em" }}>
+              <span>FLIGHT STRIP TODO · ATC-SYS v0.4.0</span>
+              <div style={{ display:"flex", gap:"8px", alignItems:"center" }}>
                 <span>{currentTime.toLocaleDateString("ja-JP")} · STRIPS: {tasks.length}</span>
-                <button onClick={handleConsoleCopy} style={{
-                  background: "rgba(0,255,136,0.08)", border: "1px solid #00ff8822",
-                  color: "#445566", padding: "2px 10px", borderRadius: "2px",
-                  cursor: "pointer", fontSize: "8px",
-                  fontFamily: "'JetBrains Mono', monospace", letterSpacing: "0.05em",
-                }}>📋 CONSOLE COPY</button>
+                <button onClick={handleConsoleCopy} style={{ background:`${T.accent}10`, border:`1px solid ${T.accent}22`, color:T.textDim, padding:"2px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"8px", fontFamily:"'JetBrains Mono',monospace", letterSpacing:"0.05em" }}>📋 CONSOLE COPY</button>
               </div>
             </footer>
           </div>
@@ -936,39 +986,53 @@
     }
 
     // ======================================================
-    // App ルート（認証ラッパー）
+    // App ルート（認証 + テーマ管理）
     // ======================================================
     function App() {
       const [user,        setUser]        = useState(null);
       const [authChecked, setAuthChecked] = useState(false);
-      const [denied,      setDenied]      = useState({ active: false, email: "" });
+      const [denied,      setDenied]      = useState({ active:false, email:"" });
+      const [themeId,     setThemeId]     = useState(() => localStorage.getItem("fst-theme") || "DARK");
+
+      const setTheme = id => { setThemeId(id); localStorage.setItem("fst-theme", id); };
+      const theme = THEMES[themeId] || THEMES.DARK;
+
+      // body 背景色 + CSS変数をテーマに同期
+      useEffect(() => {
+        document.body.style.background = theme.bg;
+        document.documentElement.style.setProperty("--bg-main",  theme.bg);
+        document.documentElement.style.setProperty("--bg-input", theme.bgInput);
+        document.documentElement.style.setProperty("--bg-scroll",theme.bg);
+        document.documentElement.style.setProperty("--border",   theme.border);
+        document.documentElement.style.setProperty("--text-main",theme.text);
+      }, [theme]);
 
       useEffect(() => {
         return auth.onAuthStateChanged(u => {
           if (u) {
             const ok = ALLOWED_EMAILS.length === 0 || ALLOWED_EMAILS.includes(u.email);
-            if (ok) {
-              setUser(u);
-              setDenied({ active: false, email: "" });
-            } else {
-              auth.signOut();
-              setDenied({ active: true, email: u.email });
-              setUser(null);
-            }
-          } else {
-            setUser(null);
-          }
+            if (ok) { setUser(u); setDenied({active:false,email:""}); }
+            else    { auth.signOut(); setDenied({active:true,email:u.email}); setUser(null); }
+          } else { setUser(null); }
           setAuthChecked(true);
         });
       }, []);
 
-      if (!authChecked)  return <LoadingScreen />;
-      if (denied.active) return <AccessDenied email={denied.email} onDismiss={() => setDenied({ active: false, email: "" })} />;
-      if (!user)         return <LoginScreen />;
-      return <FlightStripTodo user={user} />;
+      return (
+        <ThemeCtx.Provider value={theme}>
+          {!authChecked
+            ? <LoadingScreen />
+            : denied.active
+              ? <AccessDenied email={denied.email} onDismiss={() => setDenied({active:false,email:""})} />
+              : !user
+                ? <LoginScreen />
+                : <FlightStripTodo user={user} themeId={themeId} setTheme={setTheme} />
+          }
+        </ThemeCtx.Provider>
+      );
     }
 
-    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
   </script>
 </body>
 </html>
