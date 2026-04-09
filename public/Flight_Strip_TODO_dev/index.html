@@ -468,6 +468,32 @@
       const [newTitle, setNewTitle] = React.useState('');
       const [newDesc, setNewDesc] = React.useState('');
       const [newPri, setNewPri] = React.useState('medium');
+      const [checkedIds, setCheckedIds] = React.useState(new Set());
+      const [copyDone, setCopyDone] = React.useState(false);
+
+      const toggleCheck = (id) => setCheckedIds(prev => {
+        const s = new Set(prev);
+        s.has(id) ? s.delete(id) : s.add(id);
+        return s;
+      });
+
+      const handleCopy = () => {
+        const targets = displayed.filter(e => checkedIds.has(e.id));
+        if (targets.length === 0) return;
+        const lines = targets.map(er => {
+          const pri = ER_PRIORITY[er.priority]?.label || 'MED';
+          const diff = ER_DIFFICULTY[er.difficulty]?.label || 'MED';
+          const impl = er.status === 'implemented' ? ' ✅実装済' : '';
+          let line = `- **[${pri}][${diff}]** ${er.title}${impl}`;
+          if (er.description) line += `\n  ${er.description}`;
+          return line;
+        });
+        const md = `## Enhanced Requests\n\n${lines.join('\n\n')}`;
+        navigator.clipboard.writeText(md).then(() => {
+          setCopyDone(true);
+          setTimeout(() => setCopyDone(false), 2000);
+        });
+      };
 
       const PRI_ORDER = { high:0, medium:1, low:2 };
       const DIFF_ORDER = { hard:0, medium:1, easy:2 };
@@ -569,8 +595,11 @@
                 const pri = ER_PRIORITY[er.priority] || ER_PRIORITY.medium;
                 const diff = ER_DIFFICULTY[er.difficulty] || ER_DIFFICULTY.medium;
                 return (
-                  <div key={er.id} style={{ background: impl ? 'transparent' : `${T.bg}cc`, border:`1px solid ${impl ? T.border2 : T.accent+'22'}`, borderRadius:'3px', padding:'8px 10px', opacity: impl ? 0.5 : 1 }}>
+                  <div key={er.id} style={{ background: checkedIds.has(er.id) ? `${T.accent}08` : impl ? 'transparent' : `${T.bg}cc`, border:`1px solid ${checkedIds.has(er.id) ? T.accent+'44' : impl ? T.border2 : T.accent+'22'}`, borderRadius:'3px', padding:'8px 10px', opacity: impl ? 0.55 : 1 }}>
                     <div style={{ display:'flex', alignItems:'flex-start', gap:'8px' }}>
+                      {/* チェックボックス */}
+                      <input type="checkbox" checked={checkedIds.has(er.id)} onChange={() => toggleCheck(er.id)}
+                        style={{ marginTop:'3px', flexShrink:0, accentColor:T.accent, cursor:'pointer' }} />
                       <div style={{ display:'flex', gap:'4px', flexShrink:0, paddingTop:'1px' }}>
                         <span style={{ fontSize:'9px', fontWeight:700, padding:'1px 5px', borderRadius:'2px', background:pri.bg, color:pri.color, border:`1px solid ${pri.color}44` }}>{pri.label}</span>
                         <span style={{ fontSize:'9px', fontWeight:700, padding:'1px 5px', borderRadius:'2px', background:'transparent', color:diff.color, border:`1px solid ${diff.color}44` }}>{diff.label}</span>
@@ -593,8 +622,15 @@
             </div>
 
             {/* フッター */}
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:'14px', paddingTop:'12px', borderTop:`1px solid ${T.border2}` }}>
-              <span style={{ fontSize:'10px', color:T.textDim }}>合計 {items.length} 件 / 実装済 {items.filter(e=>e.status==='implemented').length} 件 / 未実装 {items.filter(e=>e.status!=='implemented').length} 件</span>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:'14px', paddingTop:'12px', borderTop:`1px solid ${T.border2}`, flexWrap:'wrap', gap:'8px' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:'8px', flexWrap:'wrap' }}>
+                <span style={{ fontSize:'10px', color:T.textDim }}>合計 {items.length} / 実装済 {items.filter(e=>e.status==='implemented').length} / 未実装 {items.filter(e=>e.status!=='implemented').length}</span>
+                {checkedIds.size > 0 && (
+                  <button onClick={handleCopy} style={{ ...btnBase, background: copyDone ? 'rgba(0,255,136,0.2)' : 'rgba(100,120,200,0.15)', border:`1px solid ${copyDone ? '#00ff88' : '#6688cc'}`, color: copyDone ? '#00ff88' : '#8899dd', fontWeight:700 }}>
+                    {copyDone ? '✓ COPIED!' : `📋 COPY (${checkedIds.size}件)`}
+                  </button>
+                )}
+              </div>
               <div style={{ display:'flex', gap:'6px' }}>
                 <button onClick={onClose} style={{ ...btnBase, background:'transparent', border:`1px solid ${T.border2}`, color:T.textDim }}>CANCEL</button>
                 <button onClick={() => { onSave(items); onClose(); }} style={{ ...btnBase, background:`${T.accent}22`, border:`1px solid ${T.accent}66`, color:T.accent, fontWeight:700 }}>SAVE</button>
@@ -842,7 +878,7 @@
       return `${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
     };
 
-    const FlightStrip = ({ task, isSelected, dropState, onDragStart, onDragOver, onDragEnd, onDrop, onStatusChange, onDelete, onEdit, isTimerRunning, elapsedMs, totalLoggedMs, onTimerStart, onTimerStop, onTouchStart, onTouchMove, onTouchEnd, titleFontSize=13 }) => {
+    const FlightStrip = ({ task, isSelected, isMultiSelected, dropState, onDragStart, onDragOver, onDragEnd, onDrop, onStatusChange, onDelete, onEdit, isTimerRunning, elapsedMs, totalLoggedMs, onTimerStart, onTimerStop, onTouchStart, onTouchMove, onTouchEnd, titleFontSize=13 }) => {
       const T = useT();
       const pri = PRIORITIES[task.priority] || PRIORITIES.normal;
       const cat = CATEGORIES[task.category] || { label: task.category || "OTHER", color: "#888888" };
@@ -881,10 +917,10 @@
           onTouchEnd={onTouchEnd ? e => onTouchEnd(e, task.id) : undefined}
           className="group relative cursor-grab active:cursor-grabbing"
           style={{
-            background:   isLost ? "rgba(255,80,0,0.08)" : isCompleted ? `${T.border}44` : pri.bg,
-            border:       isSelected ? `1px solid ${T.accent2}` : `1px solid ${isLost ? "#ff550044" : isCompleted ? T.border : pri.border}`,
-            borderLeft:   isSelected ? `4px solid ${T.accent2}` : `4px solid ${isLost ? "#ff5500" : isCompleted ? T.textDim : pri.color}`,
-            boxShadow:    isSelected ? `0 0 12px ${T.accent2}44, inset 0 0 20px ${T.accent2}08` : "none",
+            background:   isMultiSelected ? "rgba(100,160,255,0.1)" : isLost ? "rgba(255,80,0,0.08)" : isCompleted ? `${T.border}44` : pri.bg,
+            border:       isMultiSelected ? `1px solid rgba(100,160,255,0.6)` : isSelected ? `1px solid ${T.accent2}` : `1px solid ${isLost ? "#ff550044" : isCompleted ? T.border : pri.border}`,
+            borderLeft:   isMultiSelected ? `4px solid rgba(100,160,255,0.9)` : isSelected ? `4px solid ${T.accent2}` : `4px solid ${isLost ? "#ff5500" : isCompleted ? T.textDim : pri.color}`,
+            boxShadow:    isMultiSelected ? `0 0 10px rgba(100,160,255,0.25)` : isSelected ? `0 0 12px ${T.accent2}44, inset 0 0 20px ${T.accent2}08` : "none",
             opacity:      isTerminal ? 0.65 : 1,
             borderRadius: "2px", marginBottom: "6px",
             fontFamily: "'JetBrains Mono',monospace",
@@ -939,31 +975,31 @@
             title={isLost ? "待機に戻す" : "未達成にする (6)"}
             style={{
               flexShrink: 0,
-              width: "36px",
-              background: isLost ? "rgba(100,120,140,0.15)" : "rgba(255,85,0,0.08)",
-              borderLeft: `1px solid ${isLost ? T.border : "rgba(255,85,0,0.25)"}`,
+              width: "22px",
+              background: isLost ? "rgba(100,120,140,0.15)" : "rgba(255,85,0,0.06)",
+              borderLeft: `1px solid ${isLost ? T.border : "rgba(255,85,0,0.2)"}`,
               border: "none",
               color: isLost ? T.textDim : "#ff6600",
               cursor: "pointer",
               display: "flex", flexDirection: "column",
-              alignItems: "center", justifyContent: "center", gap: "2px",
+              alignItems: "center", justifyContent: "center", gap: "1px",
               transition: "background 0.15s, color 0.15s",
               position: "relative", zIndex: 1,
             }}
             onMouseEnter={e => {
-              e.currentTarget.style.background = isLost ? "rgba(100,120,140,0.3)" : "rgba(255,85,0,0.2)";
+              e.currentTarget.style.background = isLost ? "rgba(100,120,140,0.3)" : "rgba(255,85,0,0.18)";
               e.currentTarget.style.color = isLost ? T.text : "#ff8833";
             }}
             onMouseLeave={e => {
-              e.currentTarget.style.background = isLost ? "rgba(100,120,140,0.15)" : "rgba(255,85,0,0.08)";
+              e.currentTarget.style.background = isLost ? "rgba(100,120,140,0.15)" : "rgba(255,85,0,0.06)";
               e.currentTarget.style.color = isLost ? T.textDim : "#ff6600";
             }}
           >
-            <span style={{ fontSize: "16px", lineHeight: 1, fontWeight: 700 }}>
+            <span style={{ fontSize: "10px", lineHeight: 1, fontWeight: 700 }}>
               {isLost ? "↩" : "✗"}
             </span>
-            <span style={{ fontSize: "7px", letterSpacing: "0.05em", opacity: 0.7 }}>
-              {isLost ? "UNDO" : "LOST"}
+            <span style={{ fontSize: "5px", letterSpacing: "0em", opacity: 0.55, fontFamily:"'JetBrains Mono',monospace" }}>
+              {isLost ? "UND" : "LST"}
             </span>
           </button>
 
@@ -1164,6 +1200,10 @@
       const [showCatEditor, setShowCatEditor] = useState(false);
       const [ers,           setErs]           = useState([]);
       const [showER,        setShowER]        = useState(false);
+      // 複数選択
+      const [multiSelected, setMultiSelected] = useState(new Set()); // Set<taskId>
+      // コンテキストメニュー
+      const [ctxMenu, setCtxMenu] = useState(null); // { x, y, taskId } or null
 
       const tasksRef = useMemo(() => db.collection(`users/${user.uid}/tasks`), [user.uid]);
       const metaRef  = useMemo(() => db.collection(`users/${user.uid}/meta`),  [user.uid]);
@@ -1215,6 +1255,50 @@
           console.error("handleSaveERs error:", err);
         }
       };
+
+      // 複数選択 + コンテキストメニューハンドラー
+      const handleStripClick = useCallback((e, taskId) => {
+        if (e.shiftKey) {
+          e.preventDefault();
+          setMultiSelected(prev => {
+            const s = new Set(prev);
+            s.has(taskId) ? s.delete(taskId) : s.add(taskId);
+            return s;
+          });
+        } else {
+          setMultiSelected(new Set());
+          setSelectedId(taskId);
+        }
+      }, []);
+
+      const handleStripContextMenu = useCallback((e, taskId) => {
+        e.preventDefault();
+        // 右クリックしたタスクがマルチ選択に入っていなければ単体で選択
+        if (!multiSelected.has(taskId)) {
+          setMultiSelected(new Set([taskId]));
+        }
+        setCtxMenu({ x: e.clientX, y: e.clientY, taskId });
+      }, [multiSelected]);
+
+      const handleBulkCategoryChange = useCallback(async (catId) => {
+        const ids = multiSelected.size > 0 ? [...multiSelected] : ctxMenu ? [ctxMenu.taskId] : [];
+        if (ids.length === 0) return;
+        const batch = db.batch();
+        ids.forEach(id => {
+          batch.update(tasksRef.doc(id), { category: catId });
+        });
+        await batch.commit();
+        setCtxMenu(null);
+        setMultiSelected(new Set());
+      }, [multiSelected, ctxMenu, tasksRef]);
+
+      // コンテキストメニューを外クリックで閉じる
+      useEffect(() => {
+        if (!ctxMenu) return;
+        const close = () => setCtxMenu(null);
+        window.addEventListener('click', close, { once: true });
+        return () => window.removeEventListener('click', close);
+      }, [ctxMenu]);
 
       // リアルタイム同期
       useEffect(() => {
@@ -1622,6 +1706,25 @@
           {showER && <ERModal ers={ers} onSave={handleSaveERs} onClose={() => setShowER(false)} />}
           {editTaskId && editTask && <EditStripModal task={editTask} onSave={handleEditSave} onClose={() => setEditTaskId(null)} />}
 
+          {/* 右クリックコンテキストメニュー */}
+          {ctxMenu && (
+            <div onClick={e => e.stopPropagation()} style={{ position:'fixed', left:Math.min(ctxMenu.x, window.innerWidth-200), top:Math.min(ctxMenu.y, window.innerHeight-300), zIndex:300, background:T.bgModal, border:`1px solid ${T.accent}44`, borderRadius:'4px', padding:'6px', boxShadow:'0 4px 24px rgba(0,0,0,0.5)', minWidth:'180px', fontFamily:"'JetBrains Mono',monospace" }}>
+              <div style={{ fontSize:'9px', color:T.textDim, letterSpacing:'0.1em', padding:'2px 8px 6px', borderBottom:`1px solid ${T.border2}`, marginBottom:'4px' }}>
+                カテゴリを変更 {multiSelected.size > 1 ? `(${multiSelected.size}件)` : ''}
+              </div>
+              {categories.map(cat => (
+                <div key={cat.id} onClick={() => handleBulkCategoryChange(cat.id)}
+                  style={{ display:'flex', alignItems:'center', gap:'8px', padding:'5px 8px', borderRadius:'2px', cursor:'pointer', fontSize:'11px', color:T.text }}
+                  onMouseEnter={e => e.currentTarget.style.background=`${T.accent}18`}
+                  onMouseLeave={e => e.currentTarget.style.background='transparent'}
+                >
+                  <span style={{ width:'8px', height:'8px', borderRadius:'50%', background:cat.color, flexShrink:0 }} />
+                  {cat.label}
+                </div>
+              ))}
+            </div>
+          )}
+
           <div style={{ position:"relative", zIndex:2, maxWidth:"1200px", margin:"0 auto", padding:"16px" }}>
 
             {/* ヘッダー */}
@@ -1723,10 +1826,14 @@
               // モバイルレイアウト
               if (isMobile) {
                 const renderStripMobile = (task) => (
-                  <div key={task.id} onClick={() => setSelectedId(task.id)}>
+                  <div key={task.id}
+                    onClick={e => handleStripClick(e, task.id)}
+                    onContextMenu={e => handleStripContextMenu(e, task.id)}
+                  >
                     <FlightStrip
                       task={task}
                       isSelected={selectedId === task.id}
+                      isMultiSelected={multiSelected.has(task.id)}
                       dropState={dropState}
                       onDragStart={handleDragStart}
                       onDragOver={handleDragOverStrip}
@@ -1839,10 +1946,14 @@
               // デスクトップレイアウト（共通ストリップレンダラー）
               // 共通ストリップレンダラー
               const renderStrip = (task) => (
-                <div key={task.id} onClick={() => setSelectedId(task.id)}>
+                <div key={task.id}
+                  onClick={e => handleStripClick(e, task.id)}
+                  onContextMenu={e => handleStripContextMenu(e, task.id)}
+                >
                   <FlightStrip
                     task={task}
                     isSelected={selectedId === task.id}
+                    isMultiSelected={multiSelected.has(task.id)}
                     dropState={dropState}
                     onDragStart={handleDragStart}
                     onDragOver={handleDragOverStrip}
