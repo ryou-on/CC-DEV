@@ -185,6 +185,19 @@
     };
 
     // ======================================================
+    // モバイル判定フック
+    // ======================================================
+    const useIsMobile = () => {
+      const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+      useEffect(() => {
+        const h = () => setIsMobile(window.innerWidth < 768);
+        window.addEventListener('resize', h);
+        return () => window.removeEventListener('resize', h);
+      }, []);
+      return isMobile;
+    };
+
+    // ======================================================
     // ローディング画面
     // ======================================================
     const LoadingScreen = () => {
@@ -489,13 +502,14 @@
       return `${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
     };
 
-    const FlightStrip = ({ task, isSelected, dropState, onDragStart, onDragOver, onDragEnd, onDrop, onStatusChange, onDelete, onEdit, isTimerRunning, elapsedMs, totalLoggedMs, onTimerStart, onTimerStop }) => {
+    const FlightStrip = ({ task, isSelected, dropState, onDragStart, onDragOver, onDragEnd, onDrop, onStatusChange, onDelete, onEdit, isTimerRunning, elapsedMs, totalLoggedMs, onTimerStart, onTimerStop, onTouchStart, onTouchMove, onTouchEnd }) => {
       const T = useT();
       const pri = PRIORITIES[task.priority] || PRIORITIES.normal;
       const cat = CATEGORIES[task.category] || { label: task.category || "OTHER", color: "#888888" };
       const isCompleted = task.status === "completed";
       const isActive = task.status === "active";
       const isDragOver = dropState?.id === task.id;
+      const stripRef = useRef(null);
 
       const dropStyle = isDragOver
         ? dropState.pos === "before"
@@ -503,13 +517,26 @@
           : { borderBottom: `3px solid ${T.accent}`, paddingBottom: "3px" }
         : {};
 
+      // touchmove は passive:false が必要なので useEffect で登録
+      useEffect(() => {
+        const el = stripRef.current;
+        if (!el || !onTouchMove) return;
+        const handler = (e) => onTouchMove(e, task.id);
+        el.addEventListener('touchmove', handler, { passive: false });
+        return () => el.removeEventListener('touchmove', handler);
+      }, [task.id, onTouchMove]);
+
       return (
         <div
+          ref={stripRef}
+          data-task-id={task.id}
           draggable
           onDragStart={e => onDragStart(e, task.id)}
           onDragOver={e => { e.preventDefault(); e.stopPropagation(); onDragOver(e, task.id); }}
           onDragEnd={onDragEnd}
           onDrop={e => { e.preventDefault(); e.stopPropagation(); onDrop(e, task.id); }}
+          onTouchStart={onTouchStart ? e => onTouchStart(e, task.id) : undefined}
+          onTouchEnd={onTouchEnd ? e => onTouchEnd(e, task.id) : undefined}
           className="group relative cursor-grab active:cursor-grabbing"
           style={{
             background:   isCompleted ? `${T.border}44` : pri.bg,
@@ -716,6 +743,7 @@
     // ======================================================
     function FlightStripTodo({ user, themeId, setTheme }) {
       const T = useT();
+      const isMobile = useIsMobile();
       const [tasks,          setTasks]          = useState([]);
       const [loading,        setLoading]        = useState(true);
       const [draggedId,      setDraggedId]      = useState(null);
@@ -730,6 +758,10 @@
       const [editTaskId,     setEditTaskId]     = useState(null);
       const [syncStatus,     setSyncStatus]     = useState("connecting");
       const [activeTimer,    setActiveTimer]    = useState(null); // { taskId, startMs }
+      const [mobileTab,      setMobileTab]      = useState("active");
+      // タッチDnD
+      const touchDragRef = useRef(null);
+      const [touchGhostPos, setTouchGhostPos]  = useState(null);
       const currentTime = useCurrentTime();
 
       const tasksRef = useMemo(() => db.collection(`users/${user.uid}/tasks`), [user.uid]);
@@ -895,6 +927,100 @@
         }
       };
 
+      // --- タッチ DnD ハンドラー ---
+      const handleTouchStart = useCallback((e, taskId) => {
+        if (e.touches.length !== 1) return;
+        const touch = e.touches[0];
+        const rect = e.currentTarget.getBoundingClientRect();
+        touchDragRef.current = {
+          taskId,
+          offsetX: touch.clientX - rect.left,
+          offsetY: touch.clientY - rect.top,
+          width: rect.width,
+          height: rect.height,
+        };
+        setDraggedId(taskId);
+      }, []);
+
+      const handleTouchMove = useCallback((e, taskId) => {
+        const drag = touchDragRef.current;
+        if (!drag || drag.taskId !== taskId) return;
+        e.preventDefault(); // スクロール防止
+        const touch = e.touches[0];
+        setTouchGhostPos({
+          x: touch.clientX - drag.offsetX,
+          y: touch.clientY - drag.offsetY,
+          width: drag.width,
+          height: drag.height,
+          taskId,
+        });
+        // ゴーストを一時的に隠してhitTestに影響しないようにする
+        const ghostEl = document.getElementById('touch-ghost');
+        if (ghostEl) ghostEl.style.pointerEvents = 'none';
+        const el = document.elementFromPoint(touch.clientX, touch.clientY);
+        const stripEl = el?.closest('[data-task-id]');
+        const colEl   = el?.closest('[data-col-id]');
+        if (stripEl && stripEl.getAttribute('data-task-id') !== taskId) {
+          const targetId = stripEl.getAttribute('data-task-id');
+          const rect2 = stripEl.getBoundingClientRect();
+          const pos = touch.clientY < rect2.top + rect2.height / 2 ? 'before' : 'after';
+          dropStateRef.current = { id: targetId, pos };
+          setDropState({ id: targetId, pos });
+        } else if (colEl) {
+          const colId = colEl.getAttribute('data-col-id');
+          dropStateRef.current = { colId };
+          setDropState(null);
+        } else {
+          dropStateRef.current = null;
+          setDropState(null);
+        }
+      }, []);
+
+      const handleTouchEnd = useCallback(async (e, taskId) => {
+        const drag = touchDragRef.current;
+        if (!drag || drag.taskId !== taskId) return;
+        const touch = e.changedTouches[0];
+        const ds = dropStateRef.current;
+        touchDragRef.current = null;
+        setTouchGhostPos(null);
+        setDraggedId(null);
+        setDropState(null);
+        dropStateRef.current = null;
+        if (!ds) return;
+        if (ds.id) {
+          // strip へのドロップ
+          const draggedTask = tasks.find(t => t.id === taskId);
+          const targetTask  = tasks.find(t => t.id === ds.id);
+          if (!draggedTask || !targetTask) return;
+          if (draggedTask.status !== targetTask.status) {
+            await tasksRef.doc(taskId).update({ status: targetTask.status, updatedAt: ts() });
+            return;
+          }
+          const col = tasks.filter(t => t.status === draggedTask.status).sort((a,b) => (b.sortOrder??0)-(a.sortOrder??0));
+          const withoutDragged = col.filter(t => t.id !== taskId);
+          const targetIdx = withoutDragged.findIndex(t => t.id === ds.id);
+          const insertIdx = ds.pos === 'before' ? targetIdx : targetIdx + 1;
+          const newOrder = [...withoutDragged];
+          newOrder.splice(insertIdx, 0, draggedTask);
+          const base = Date.now();
+          await Promise.all(newOrder.map((t, i) => tasksRef.doc(t.id).update({ sortOrder: base - i * 10000, updatedAt: ts() })));
+        } else if (ds.colId) {
+          // column へのドロップ
+          const draggedTask = tasks.find(t => t.id === taskId);
+          if (draggedTask && draggedTask.status !== ds.colId) {
+            const col = COLUMNS.find(c => c.id === ds.colId);
+            if (col?.limit) {
+              const existing = tasks.filter(t => t.status === ds.colId && t.id !== taskId).length;
+              if (existing >= col.limit) {
+                alert(`⚠ ${col.label} は最大 ${col.limit} スロットです`);
+                return;
+              }
+            }
+            await tasksRef.doc(taskId).update({ status: ds.colId, updatedAt: ts() });
+          }
+        }
+      }, [tasks, tasksRef]);
+
       // --- キーボードショートカット ---
       useEffect(() => {
         const handler = e => {
@@ -970,6 +1096,15 @@
       const syncColor = syncStatus === "online" ? T.accent : syncStatus === "error" ? "#ff3333" : "#ffaa00";
       const syncLabel = syncStatus === "online" ? "SYNC ●" : syncStatus === "error" ? "SYNC ✕" : "SYNC ◌";
 
+      const accentForCol = (colId) => {
+        if (colId === "active")    return T.accent;
+        if (colId === "next")      return "#00ccff";
+        if (colId === "delegated") return "#ffaa00";
+        if (colId === "pending")   return T.textDim;
+        if (colId === "completed") return T.textMuted;
+        return T.accent;
+      };
+
       const handleConsoleCopy = () => {
         const log = JSON.stringify({ exportedAt:new Date().toISOString(), user:user.email, tasks }, null, 2);
         navigator.clipboard.writeText(log).then(()=>alert("✓ コピーしました")).catch(()=>console.log(log));
@@ -979,6 +1114,35 @@
 
       return (
         <div style={{ minHeight:"100vh", background:T.bgGrad, color:T.text, fontFamily:"'JetBrains Mono',monospace", position:"relative" }}>
+          {/* タッチDnDゴースト */}
+          {touchGhostPos && (() => {
+            const task = tasks.find(t => t.id === touchGhostPos.taskId);
+            const pri = task ? (PRIORITIES[task.priority] || PRIORITIES.normal) : PRIORITIES.normal;
+            return (
+              <div id="touch-ghost" style={{
+                position: 'fixed',
+                left: touchGhostPos.x,
+                top: touchGhostPos.y,
+                width: touchGhostPos.width,
+                zIndex: 9999,
+                opacity: 0.85,
+                pointerEvents: 'none',
+                background: pri.bg,
+                border: `2px solid ${pri.color}`,
+                borderRadius: '4px',
+                padding: '8px 10px',
+                fontFamily: "'JetBrains Mono',monospace",
+                fontSize: '12px',
+                color: T.text,
+                boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+                transform: 'rotate(2deg)',
+              }}>
+                <div style={{ fontSize: '9px', color: pri.color, fontWeight: 700 }}>{task?.stripId}</div>
+                <div style={{ fontWeight: 600, marginTop: '2px' }}>{task?.title}</div>
+              </div>
+            );
+          })()}
+
           {/* グリッド背景 */}
           <div style={{ position:"fixed", inset:0, backgroundImage:`linear-gradient(${T.grid} 1px,transparent 1px),linear-gradient(90deg,${T.grid} 1px,transparent 1px)`, backgroundSize:"40px 40px", pointerEvents:"none", zIndex:0 }} />
           {T.scanAlpha > 0 && (
@@ -1028,11 +1192,13 @@
 
             {/* ツールバー */}
             <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"12px", gap:"8px", flexWrap:"wrap" }}>
-              <div style={{ display:"flex", gap:"2px" }}>
-                {[{id:"hybrid",label:"HYBRID"},{id:"kanban",label:"KANBAN"},{id:"timeline",label:"TIMELINE"}].map(mode => (
-                  <button key={mode.id} onClick={() => setViewMode(mode.id)} style={{ background:viewMode===mode.id?`${T.accent}18`:"transparent", border:`1px solid ${viewMode===mode.id?T.accent+"66":T.border2}`, color:viewMode===mode.id?T.accent:T.textDim, padding:"4px 12px", borderRadius:"2px", cursor:"pointer", fontSize:"10px", fontWeight:700, letterSpacing:"0.1em", fontFamily:"'JetBrains Mono',monospace" }}>{mode.label}</button>
-                ))}
-              </div>
+              {!isMobile && (
+                <div style={{ display:"flex", gap:"2px" }}>
+                  {[{id:"hybrid",label:"HYBRID"},{id:"kanban",label:"KANBAN"},{id:"timeline",label:"TIMELINE"}].map(mode => (
+                    <button key={mode.id} onClick={() => setViewMode(mode.id)} style={{ background:viewMode===mode.id?`${T.accent}18`:"transparent", border:`1px solid ${viewMode===mode.id?T.accent+"66":T.border2}`, color:viewMode===mode.id?T.accent:T.textDim, padding:"4px 12px", borderRadius:"2px", cursor:"pointer", fontSize:"10px", fontWeight:700, letterSpacing:"0.1em", fontFamily:"'JetBrains Mono',monospace" }}>{mode.label}</button>
+                  ))}
+                </div>
+              )}
               <div style={{ display:"flex", gap:"6px", alignItems:"center", flexWrap:"wrap" }}>
                 <select value={filterPriority} onChange={e=>setFilterPriority(e.target.value)} style={{ background:T.bgInput, border:`1px solid ${T.border2}`, color:T.textDim, padding:"4px 8px", borderRadius:"2px", fontSize:"10px", fontFamily:"'JetBrains Mono',monospace", cursor:"pointer" }}>
                   <option value="all">ALL PRI</option>
@@ -1053,7 +1219,7 @@
 
             {showForm && <NewStripForm onAdd={handleAdd} onClose={() => setShowForm(false)} />}
 
-            {(viewMode === "hybrid" || viewMode === "timeline") && (
+            {!isMobile && (viewMode === "hybrid" || viewMode === "timeline") && (
               <div style={{ marginBottom:"16px" }}>
                 <TimelineView tasks={filteredTasks} currentTime={currentTime} />
               </div>
@@ -1067,6 +1233,80 @@
                 return (task?.timeLogs || []).reduce((sum, l) => sum + (l.durationMs || 0), 0);
               };
 
+              // モバイルレイアウト（タブ式）
+              if (isMobile) {
+                const renderStripMobile = (task) => (
+                  <div key={task.id} onClick={() => setSelectedId(task.id)}>
+                    <FlightStrip
+                      task={task}
+                      isSelected={selectedId === task.id}
+                      dropState={dropState}
+                      onDragStart={handleDragStart}
+                      onDragOver={handleDragOverStrip}
+                      onDragEnd={handleDragEnd}
+                      onDrop={handleDropOnStrip}
+                      onStatusChange={handleStatusChange}
+                      onDelete={handleDelete}
+                      onEdit={id => setEditTaskId(id)}
+                      isTimerRunning={activeTimer?.taskId === task.id}
+                      elapsedMs={activeTimer?.taskId === task.id ? elapsedMs : 0}
+                      totalLoggedMs={totalLoggedMs(task.id)}
+                      onTimerStart={handleTimerStart}
+                      onTimerStop={handleTimerStop}
+                      onTouchStart={handleTouchStart}
+                      onTouchMove={handleTouchMove}
+                      onTouchEnd={handleTouchEnd}
+                    />
+                  </div>
+                );
+
+                const activeColTasks = getColTasks(mobileTab);
+
+                return (
+                  <div>
+                    {/* タブバー */}
+                    <div style={{ display:'flex', overflowX:'auto', borderBottom:`1px solid ${T.border}`, marginBottom:'12px', WebkitOverflowScrolling:'touch' }}>
+                      {COLUMNS.map(col => (
+                        <button key={col.id} onClick={() => setMobileTab(col.id)}
+                          style={{
+                            padding:'12px 14px', background:'transparent', border:'none',
+                            borderBottom: mobileTab===col.id ? `2px solid ${accentForCol(col.id)}` : '2px solid transparent',
+                            color: mobileTab===col.id ? accentForCol(col.id) : T.textDim,
+                            fontSize:'11px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace",
+                            cursor:'pointer', whiteSpace:'nowrap', flexShrink:0,
+                            minHeight:'44px',
+                          }}>
+                          {col.icon} {col.label}
+                          <span style={{ marginLeft:'4px', fontSize:'9px', opacity:0.7 }}>
+                            {getColTasks(col.id).length}{col.limit?`/${col.limit}`:''}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* 選択カラムのコンテンツ */}
+                    <div data-col-id={mobileTab}
+                      onDrop={e => handleDropOnColumn(e, mobileTab)}
+                      onDragOver={e => e.preventDefault()}
+                      style={{ minHeight:'300px', paddingBottom:'80px' }}>
+                      {activeColTasks.length === 0 && (
+                        <div style={{ textAlign:'center', padding:'40px 10px', color:T.border, fontSize:'10px', letterSpacing:'0.1em', border:`1px dashed ${T.border}`, borderRadius:'4px' }}>
+                          {mobileTab === 'active' ? '— 待機中 —' : 'NO STRIPS'}
+                        </div>
+                      )}
+                      {activeColTasks.map(renderStripMobile)}
+                      {/* NEXTの空きスロット */}
+                      {mobileTab === 'next' && Array.from({ length: Math.max(0, 5 - activeColTasks.length) }).map((_, i) => (
+                        <div key={`empty-${i}`} style={{ height:'44px', border:`1px dashed ${T.border}22`, borderRadius:'2px', marginBottom:'6px', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                          <span style={{ color:T.border, fontSize:'8px', letterSpacing:'0.1em' }}>SLOT {activeColTasks.length + i + 1}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              }
+
+              // デスクトップレイアウト（共通ストリップレンダラー）
               // 共通ストリップレンダラー
               const renderStrip = (task) => (
                 <div key={task.id} onClick={() => setSelectedId(task.id)}>
@@ -1086,6 +1326,9 @@
                     totalLoggedMs={totalLoggedMs(task.id)}
                     onTimerStart={handleTimerStart}
                     onTimerStop={handleTimerStop}
+                    onTouchStart={handleTouchStart}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handleTouchEnd}
                   />
                 </div>
               );
@@ -1122,7 +1365,7 @@
                   <div style={{ flex:"0 0 300px", display:"flex", flexDirection:"column", gap:"12px" }}>
 
                     {/* ACTIVE（1スロット） */}
-                    <div style={colBox({ border:`1px solid ${T.accent}44`, boxShadow:`0 0 20px ${T.accent}10` })} {...dropCol("active")}>
+                    <div data-col-id="active" style={colBox({ border:`1px solid ${T.accent}44`, boxShadow:`0 0 20px ${T.accent}10` })} {...dropCol("active")}>
                       {colHeader(COLUMNS[0], activeTasks.length)}
                       {activeTasks.map(renderStrip)}
                       {activeTasks.length === 0 && (
@@ -1133,7 +1376,7 @@
                     </div>
 
                     {/* NEXT ACTION（5スロット） */}
-                    <div style={colBox({ border:`1px solid #00ccff33` })} {...dropCol("next")}>
+                    <div data-col-id="next" style={colBox({ border:`1px solid #00ccff33` })} {...dropCol("next")}>
                       {colHeader(COLUMNS[1], nextTasks.length)}
                       {nextTasks.map(renderStrip)}
                       {/* 空きスロット表示 */}
@@ -1145,7 +1388,7 @@
                     </div>
 
                     {/* DELEGATED（委任中） */}
-                    <div style={colBox({ border:`1px solid #ffaa0033` })} {...dropCol("delegated")}>
+                    <div data-col-id="delegated" style={colBox({ border:`1px solid #ffaa0033` })} {...dropCol("delegated")}>
                       {colHeader(COLUMNS[2], delegatedTasks.length)}
                       {delegatedTasks.map(renderStrip)}
                       {delegatedTasks.length === 0 && emptyMsg}
@@ -1154,12 +1397,12 @@
 
                   {/* 右パネル: HOLDING + CLEARED */}
                   <div style={{ flex:1, display:"grid", gridTemplateColumns:"1fr 1fr", gap:"12px" }}>
-                    <div style={colBox({})} {...dropCol("pending")}>
+                    <div data-col-id="pending" style={colBox({})} {...dropCol("pending")}>
                       {colHeader(COLUMNS[3], pendingTasks.length)}
                       {pendingTasks.map(renderStrip)}
                       {pendingTasks.length === 0 && emptyMsg}
                     </div>
-                    <div style={colBox({})} {...dropCol("completed")}>
+                    <div data-col-id="completed" style={colBox({})} {...dropCol("completed")}>
                       {colHeader(COLUMNS[4], completedTasks.length)}
                       {completedTasks.map(renderStrip)}
                       {completedTasks.length === 0 && emptyMsg}
