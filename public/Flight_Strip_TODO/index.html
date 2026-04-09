@@ -151,16 +151,21 @@
       low:    { label: "LOW", color: "#666688", bg: "rgba(102,102,136,0.08)", border: "#666688"   },
     };
     const COLUMNS = [
-      { id: "active",    label: "ACTIVE",  sublabel: "進行中", icon: "▶" },
-      { id: "pending",   label: "HOLDING", sublabel: "待機中", icon: "⏸" },
-      { id: "completed", label: "CLEARED", sublabel: "完了",   icon: "✓" },
+      { id: "active",    label: "ACTIVE",      sublabel: "進行中",         icon: "▶", limit: 1  },
+      { id: "next",      label: "NEXT ACTION", sublabel: "次のアクション", icon: "→", limit: 5  },
+      { id: "delegated", label: "DELEGATED",   sublabel: "委任中",         icon: "✈" },
+      { id: "pending",   label: "HOLDING",     sublabel: "待機中",         icon: "⏸" },
+      { id: "completed", label: "CLEARED",     sublabel: "完了",           icon: "✓" },
     ];
     const SHORTCUTS = [
       { key: "J / K",   desc: "次/前のストリップを選択" },
       { key: "↑ / ↓",   desc: "選択ストリップを上/下へ移動" },
-      { key: "1",        desc: "→ ACTIVE（進行中）へ移動" },
-      { key: "2",        desc: "→ HOLDING（待機中）へ移動" },
-      { key: "3",        desc: "→ CLEARED（完了）へ移動" },
+      { key: "1",        desc: "→ ACTIVE（進行中・最大1）へ移動" },
+      { key: "2",        desc: "→ NEXT ACTION（次のアクション・最大5）へ移動" },
+      { key: "3",        desc: "→ DELEGATED（委任中）へ移動" },
+      { key: "4",        desc: "→ HOLDING（待機中）へ移動" },
+      { key: "5",        desc: "→ CLEARED（完了）へ移動" },
+      { key: "T",        desc: "ACTIVE タスクのタイマー START / STOP" },
       { key: "N",        desc: "新規ストリップ作成" },
       { key: "E",        desc: "選択ストリップを編集（全フィールド）" },
       { key: "D",        desc: "選択ストリップを削除" },
@@ -473,11 +478,23 @@
     // ======================================================
     // フライトストリップ（個別タスクカード）
     // ======================================================
-    const FlightStrip = ({ task, isSelected, dropState, onDragStart, onDragOver, onDragEnd, onDrop, onStatusChange, onDelete, onEdit }) => {
+    // 経過時間フォーマット
+    const formatDuration = (ms) => {
+      if (!ms || ms < 0) return "00:00";
+      const s = Math.floor(ms / 1000);
+      const h = Math.floor(s / 3600);
+      const m = Math.floor((s % 3600) / 60);
+      const sec = s % 60;
+      if (h > 0) return `${String(h).padStart(2,"0")}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
+      return `${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
+    };
+
+    const FlightStrip = ({ task, isSelected, dropState, onDragStart, onDragOver, onDragEnd, onDrop, onStatusChange, onDelete, onEdit, isTimerRunning, elapsedMs, totalLoggedMs, onTimerStart, onTimerStop }) => {
       const T = useT();
       const pri = PRIORITIES[task.priority] || PRIORITIES.normal;
       const cat = CATEGORIES[task.category] || { label: task.category || "OTHER", color: "#888888" };
       const isCompleted = task.status === "completed";
+      const isActive = task.status === "active";
       const isDragOver = dropState?.id === task.id;
 
       const dropStyle = isDragOver
@@ -522,10 +539,29 @@
                 <span style={{ fontSize:"10px", color:"#ffcc44", padding:"1px 6px", background:"rgba(255,170,0,0.12)", border:"1px solid rgba(255,170,0,0.25)", borderRadius:"2px" }}>→ {task.assignee}</span>
               </div>
             )}
-            <div style={{ display:"flex", gap:"4px", padding:"2px 8px 6px", flexWrap:"wrap" }}>
+            <div style={{ display:"flex", gap:"4px", padding:"2px 8px 4px", flexWrap:"wrap" }}>
               {(task.tags||[]).map(tag => <span key={tag} style={{ fontSize:"9px", color:T.textDim, padding:"1px 5px", background:"rgba(100,120,140,0.15)", border:"1px solid rgba(100,120,140,0.2)", borderRadius:"2px" }}>{tag}</span>)}
               <span style={{ fontSize:"9px", color:cat.color, opacity:0.7, padding:"1px 5px", letterSpacing:"0.1em" }}>{cat.label}</span>
             </div>
+
+            {/* タイマー表示（ACTIVEのみ） */}
+            {isActive && (
+              <div style={{ display:"flex", alignItems:"center", gap:"8px", padding:"4px 8px 6px", borderTop:`1px solid ${T.border}`, marginTop:"2px" }}>
+                <button
+                  onClick={e => { e.stopPropagation(); isTimerRunning ? onTimerStop(task.id) : onTimerStart(task.id); }}
+                  style={{ background: isTimerRunning ? "rgba(255,51,51,0.2)" : "rgba(0,255,136,0.15)", border:`1px solid ${isTimerRunning?"#ff333366":"rgba(0,255,136,0.4)"}`, color: isTimerRunning ? "#ff6666" : T.accent, padding:"2px 8px", borderRadius:"2px", cursor:"pointer", fontSize:"9px", fontWeight:700, fontFamily:"'JetBrains Mono',monospace", letterSpacing:"0.1em", flexShrink:0 }}>
+                  {isTimerRunning ? "⏹ STOP" : "▶ START"}
+                </button>
+                <span style={{ fontSize:"14px", fontWeight:700, color: isTimerRunning ? T.accent : T.textDim, letterSpacing:"0.1em", fontVariantNumeric:"tabular-nums", minWidth:"52px" }}>
+                  {formatDuration(isTimerRunning ? elapsedMs : 0)}
+                </span>
+                {totalLoggedMs > 0 && (
+                  <span style={{ fontSize:"9px", color:T.textMuted, letterSpacing:"0.05em" }}>
+                    合計 {formatDuration(totalLoggedMs)}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           {/* 右：常時表示の完了ボタン */}
@@ -633,7 +669,7 @@
         if (!title.trim()) return;
         onAdd({
           stripId: `FS${String(Date.now()).slice(-4)}`,
-          title: title.trim(), priority, category, time, status: "pending",
+          title: title.trim(), priority, category, time, status: "next",
           tags: tagInput ? tagInput.split(",").map(s=>s.trim()).filter(Boolean) : [],
           assignee: assignee.trim(),
           sortOrder: Date.now(),
@@ -693,6 +729,7 @@
       const [selectedId,     setSelectedId]     = useState(null);
       const [editTaskId,     setEditTaskId]     = useState(null);
       const [syncStatus,     setSyncStatus]     = useState("connecting");
+      const [activeTimer,    setActiveTimer]    = useState(null); // { taskId, startMs }
       const currentTime = useCurrentTime();
 
       const tasksRef = useMemo(() => db.collection(`users/${user.uid}/tasks`), [user.uid]);
@@ -745,8 +782,44 @@
         tasksRef.doc(id).delete();
         setSelectedId(p => p===id ? null : p);
       }, [tasksRef]);
-      const handleStatusChange = useCallback((id, s) => tasksRef.doc(id).update({ status:s, updatedAt:ts() }), [tasksRef]);
+      const handleStatusChange = useCallback((id, s) => {
+        const col = COLUMNS.find(c => c.id === s);
+        if (col?.limit) {
+          const existing = tasks.filter(t => t.status === s && t.id !== id).length;
+          if (existing >= col.limit) {
+            alert(`⚠ ${col.label} は最大 ${col.limit} スロットです\n先にタスクを移動してください`);
+            return;
+          }
+        }
+        tasksRef.doc(id).update({ status: s, updatedAt: ts() });
+      }, [tasks, tasksRef]);
       const handleEditSave     = useCallback((id, fields) => tasksRef.doc(id).update({ ...fields, updatedAt:ts() }), [tasksRef]);
+
+      // --- タイマーハンドラー ---
+      const handleTimerStart = useCallback((id) => {
+        setActiveTimer({ taskId: id, startMs: Date.now() });
+      }, []);
+
+      const handleTimerStop = useCallback(async (id) => {
+        if (!activeTimer || activeTimer.taskId !== id) return;
+        const durationMs = Date.now() - activeTimer.startMs;
+        const task = tasks.find(t => t.id === id);
+        const newLog = {
+          startedAt:  new Date(activeTimer.startMs).toISOString(),
+          stoppedAt:  new Date().toISOString(),
+          durationMs,
+        };
+        const timeLogs = [...(task?.timeLogs || []), newLog];
+        await tasksRef.doc(id).update({ timeLogs, updatedAt: ts() });
+        setActiveTimer(null);
+      }, [activeTimer, tasks, tasksRef]);
+
+      // タスクがACTIVE以外に移ったらタイマー自動停止
+      useEffect(() => {
+        if (!activeTimer) return;
+        const task = tasks.find(t => t.id === activeTimer.taskId);
+        if (task && task.status !== "active") handleTimerStop(activeTimer.taskId);
+      }, [tasks, activeTimer, handleTimerStop]);
 
       // --- 並べ替え（↑↓キー）: sortOrder値を入れ替え ---
       const handleMoveInColumn = useCallback(async (taskId, direction) => {
@@ -858,8 +931,19 @@
           }
           if (!selectedId) return;
           if (key === "1") { e.preventDefault(); handleStatusChange(selectedId, "active");    return; }
-          if (key === "2") { e.preventDefault(); handleStatusChange(selectedId, "pending");   return; }
-          if (key === "3") { e.preventDefault(); handleStatusChange(selectedId, "completed"); return; }
+          if (key === "2") { e.preventDefault(); handleStatusChange(selectedId, "next");      return; }
+          if (key === "3") { e.preventDefault(); handleStatusChange(selectedId, "delegated"); return; }
+          if (key === "4") { e.preventDefault(); handleStatusChange(selectedId, "pending");   return; }
+          if (key === "5") { e.preventDefault(); handleStatusChange(selectedId, "completed"); return; }
+          if (key === "t") {
+            e.preventDefault();
+            const selTask = tasks.find(t => t.id === selectedId);
+            if (selTask?.status === "active") {
+              if (activeTimer?.taskId === selectedId) handleTimerStop(selectedId);
+              else handleTimerStart(selectedId);
+            }
+            return;
+          }
           if (key === "d") { e.preventDefault(); handleDelete(selectedId); return; }
           if (key === "e") {
             e.preventDefault();
@@ -870,10 +954,12 @@
         };
         window.addEventListener("keydown", handler);
         return () => window.removeEventListener("keydown", handler);
-      }, [selectedId, orderedTasks, showForm, showHelp, editTaskId, tasks, handleStatusChange, handleDelete, handleMoveInColumn]);
+      }, [selectedId, orderedTasks, showForm, showHelp, editTaskId, tasks, handleStatusChange, handleDelete, handleMoveInColumn, activeTimer, handleTimerStart, handleTimerStop]);
 
       const stats = {
         active:    tasks.filter(t => t.status === "active").length,
+        next:      tasks.filter(t => t.status === "next").length,
+        delegated: tasks.filter(t => t.status === "delegated").length,
         pending:   tasks.filter(t => t.status === "pending").length,
         completed: tasks.filter(t => t.status === "completed").length,
         urgent:    tasks.filter(t => t.priority === "high" && t.status !== "completed").length,
@@ -928,9 +1014,10 @@
                 </div>
                 <div style={{ fontSize:"10px", color:T.textDim, letterSpacing:"0.08em" }}>
                   ACT:<span style={{ color:T.accent }}>{stats.active}</span>&nbsp;·&nbsp;
-                  HLD:<span style={{ color:"#ffaa00" }}>{stats.pending}</span>&nbsp;·&nbsp;
+                  NXT:<span style={{ color:"#00ccff" }}>{stats.next}</span>&nbsp;·&nbsp;
+                  DLG:<span style={{ color:"#ffaa00" }}>{stats.delegated}</span>&nbsp;·&nbsp;
+                  HLD:<span style={{ color:T.textDim }}>{stats.pending}</span>&nbsp;·&nbsp;
                   CLR:<span style={{ color:T.textMuted }}>{stats.completed}</span>
-                  {stats.handoff>0 && <span style={{ color:"#ffaa00" }}>&nbsp;·&nbsp;HOF:{stats.handoff}</span>}
                   {stats.urgent >0 && <span style={{ color:"#ff3333" }}>&nbsp;·&nbsp;URG:{stats.urgent}</span>}
                 </div>
                 <div style={{ color:T.accent, fontSize:"22px", fontWeight:700, letterSpacing:"0.1em", textShadow:`0 0 15px ${T.accent}44` }}>
@@ -972,46 +1059,116 @@
               </div>
             )}
 
-            {(viewMode === "hybrid" || viewMode === "kanban") && (
-              <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:"12px" }}>
-                {COLUMNS.map(col => {
-                  const colTasks = getColTasks(col.id);
-                  return (
-                    <div key={col.id}
-                      onDrop={e => handleDropOnColumn(e, col.id)}
-                      onDragOver={e => e.preventDefault()}
-                      style={{ background:T.bgCard, border:`1px solid ${T.border}`, borderRadius:"4px", padding:"10px", minHeight:"200px" }}>
-                      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"10px", paddingBottom:"8px", borderBottom:`1px solid ${T.border}` }}>
-                        <div>
-                          <span style={{ color:col.id==="active"?T.accent:col.id==="completed"?T.textDim:"#ffaa00", fontSize:"12px", fontWeight:700, letterSpacing:"0.15em" }}>{col.icon} {col.label}</span>
-                          <span style={{ color:T.textMuted, fontSize:"9px", marginLeft:"8px" }}>{col.sublabel}</span>
+            {(viewMode === "hybrid" || viewMode === "kanban") && (() => {
+              // タイマー計算
+              const elapsedMs = activeTimer ? (currentTime.getTime() - activeTimer.startMs) : 0;
+              const totalLoggedMs = (id) => {
+                const task = tasks.find(t => t.id === id);
+                return (task?.timeLogs || []).reduce((sum, l) => sum + (l.durationMs || 0), 0);
+              };
+
+              // 共通ストリップレンダラー
+              const renderStrip = (task) => (
+                <div key={task.id} onClick={() => setSelectedId(task.id)}>
+                  <FlightStrip
+                    task={task}
+                    isSelected={selectedId === task.id}
+                    dropState={dropState}
+                    onDragStart={handleDragStart}
+                    onDragOver={handleDragOverStrip}
+                    onDragEnd={handleDragEnd}
+                    onDrop={handleDropOnStrip}
+                    onStatusChange={handleStatusChange}
+                    onDelete={handleDelete}
+                    onEdit={id => setEditTaskId(id)}
+                    isTimerRunning={activeTimer?.taskId === task.id}
+                    elapsedMs={activeTimer?.taskId === task.id ? elapsedMs : 0}
+                    totalLoggedMs={totalLoggedMs(task.id)}
+                    onTimerStart={handleTimerStart}
+                    onTimerStop={handleTimerStop}
+                  />
+                </div>
+              );
+
+              // カラムヘッダー
+              const colHeader = (col, tasksCount) => {
+                const colColor = col.id==="active" ? T.accent : col.id==="next" ? "#00ccff" : col.id==="delegated" ? "#ffaa00" : col.id==="completed" ? T.textDim : T.textDim;
+                return (
+                  <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"8px", paddingBottom:"6px", borderBottom:`1px solid ${T.border}` }}>
+                    <div>
+                      <span style={{ color:colColor, fontSize:"11px", fontWeight:700, letterSpacing:"0.15em" }}>{col.icon} {col.label}</span>
+                      <span style={{ color:T.textMuted, fontSize:"9px", marginLeft:"6px" }}>{col.sublabel}</span>
+                      {col.limit && <span style={{ color:T.textMuted, fontSize:"8px", marginLeft:"4px" }}>max {col.limit}</span>}
+                    </div>
+                    <span style={{ background:"rgba(100,120,140,0.2)", color:T.textDim, fontSize:"9px", padding:"1px 6px", borderRadius:"10px" }}>{tasksCount}{col.limit?`/${col.limit}`:""}</span>
+                  </div>
+                );
+              };
+
+              const dropCol = (colId) => ({ onDrop: e => handleDropOnColumn(e, colId), onDragOver: e => e.preventDefault() });
+              const colBox  = (extra) => ({ background:T.bgCard, border:`1px solid ${T.border}`, borderRadius:"4px", padding:"10px", ...extra });
+              const emptyMsg = <div style={{ textAlign:"center", padding:"20px 10px", color:T.border, fontSize:"10px", letterSpacing:"0.1em" }}>NO STRIPS</div>;
+
+              const activeTasks    = getColTasks("active");
+              const nextTasks      = getColTasks("next");
+              const delegatedTasks = getColTasks("delegated");
+              const pendingTasks   = getColTasks("pending");
+              const completedTasks = getColTasks("completed");
+
+              return (
+                <div style={{ display:"flex", gap:"12px", alignItems:"flex-start" }}>
+
+                  {/* 左パネル: ACTIVE + NEXT ACTION */}
+                  <div style={{ flex:"0 0 300px", display:"flex", flexDirection:"column", gap:"12px" }}>
+
+                    {/* ACTIVE（1スロット） */}
+                    <div style={colBox({ border:`1px solid ${T.accent}44`, boxShadow:`0 0 20px ${T.accent}10` })} {...dropCol("active")}>
+                      {colHeader(COLUMNS[0], activeTasks.length)}
+                      {activeTasks.map(renderStrip)}
+                      {activeTasks.length === 0 && (
+                        <div style={{ textAlign:"center", padding:"20px 10px", color:T.border, fontSize:"10px", letterSpacing:"0.1em", border:`1px dashed ${T.border}`, borderRadius:"2px" }}>
+                          — 待機中 —
                         </div>
-                        <span style={{ background:"rgba(100,120,140,0.2)", color:T.textDim, fontSize:"10px", padding:"2px 8px", borderRadius:"10px" }}>{colTasks.length}</span>
-                      </div>
-                      {colTasks.map(task => (
-                        <div key={task.id} onClick={() => setSelectedId(task.id)}>
-                          <FlightStrip
-                            task={task}
-                            isSelected={selectedId === task.id}
-                            dropState={dropState}
-                            onDragStart={handleDragStart}
-                            onDragOver={handleDragOverStrip}
-                            onDragEnd={handleDragEnd}
-                            onDrop={handleDropOnStrip}
-                            onStatusChange={handleStatusChange}
-                            onDelete={handleDelete}
-                            onEdit={id => setEditTaskId(id)}
-                          />
-                        </div>
-                      ))}
-                      {colTasks.length === 0 && (
-                        <div style={{ textAlign:"center", padding:"30px 10px", color:T.border, fontSize:"10px", letterSpacing:"0.1em" }}>NO STRIPS</div>
                       )}
                     </div>
-                  );
-                })}
-              </div>
-            )}
+
+                    {/* NEXT ACTION（5スロット） */}
+                    <div style={colBox({ border:`1px solid #00ccff33` })} {...dropCol("next")}>
+                      {colHeader(COLUMNS[1], nextTasks.length)}
+                      {nextTasks.map(renderStrip)}
+                      {/* 空きスロット表示 */}
+                      {Array.from({ length: Math.max(0, 5 - nextTasks.length) }).map((_, i) => (
+                        <div key={`empty-${i}`} style={{ height:"28px", border:`1px dashed ${T.border}22`, borderRadius:"2px", marginBottom:"6px", display:"flex", alignItems:"center", justifyContent:"center" }}>
+                          <span style={{ color:T.border, fontSize:"8px", letterSpacing:"0.1em" }}>SLOT {nextTasks.length + i + 1}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* DELEGATED（委任中） */}
+                    <div style={colBox({ border:`1px solid #ffaa0033` })} {...dropCol("delegated")}>
+                      {colHeader(COLUMNS[2], delegatedTasks.length)}
+                      {delegatedTasks.map(renderStrip)}
+                      {delegatedTasks.length === 0 && emptyMsg}
+                    </div>
+                  </div>
+
+                  {/* 右パネル: HOLDING + CLEARED */}
+                  <div style={{ flex:1, display:"grid", gridTemplateColumns:"1fr 1fr", gap:"12px" }}>
+                    <div style={colBox({})} {...dropCol("pending")}>
+                      {colHeader(COLUMNS[3], pendingTasks.length)}
+                      {pendingTasks.map(renderStrip)}
+                      {pendingTasks.length === 0 && emptyMsg}
+                    </div>
+                    <div style={colBox({})} {...dropCol("completed")}>
+                      {colHeader(COLUMNS[4], completedTasks.length)}
+                      {completedTasks.map(renderStrip)}
+                      {completedTasks.length === 0 && emptyMsg}
+                    </div>
+                  </div>
+
+                </div>
+              );
+            })()}
 
             {/* フッター */}
             <footer style={{ marginTop:"20px", paddingTop:"10px", borderTop:`1px solid ${T.border}`, display:"flex", justifyContent:"space-between", alignItems:"center", color:T.textMuted, fontSize:"9px", letterSpacing:"0.1em" }}>
