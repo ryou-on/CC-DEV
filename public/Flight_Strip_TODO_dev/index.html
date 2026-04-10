@@ -377,6 +377,7 @@
           "タイムライン刷新 — 時間外フィード（右端）を追加、範囲外タスクを分離表示",
           "タイムライン — 07:00〜19:59 範囲外タスクは時間外フィードに自動格納",
           "タイムライン — 時間外フィードへのDnDで時刻クリア、メイン←→外をドラッグ移動可",
+          "タイムライン — タッチパネル対応（指ドラッグで時間移動・時間外フィードへ移動）",
           "LOSTステータス追加 — 未達成タスクを記録（キー: 6）",
           "Enhanced Request (ER) システム — 機能要望管理モーダル",
           "ER: 優先度・難易度（AIキーワード自動判定）・登録日・実装日",
@@ -1220,6 +1221,91 @@
       const [dragOverHour,    setDragOverHour]    = useState(null);
       const [dragOverOutside, setDragOverOutside] = useState(false);
 
+      // タッチドラッグ用
+      const touchDragRef  = useRef(null); // { taskId, title, priority }
+      const [touchGhost,  setTouchGhost]  = useState(null); // { x, y, title, priority }
+      const mainTlRef     = useRef(null); // メインタイムラインdivのref
+      const outsideRef    = useRef(null); // 時間外フィードdivのref
+
+      // タッチ移動ハンドラ（non-passive）
+      useEffect(() => {
+        const onTouchMove = (e) => {
+          if (!touchDragRef.current) return;
+          e.preventDefault();
+          const touch = e.touches[0];
+          setTouchGhost(g => g ? { ...g, x: touch.clientX, y: touch.clientY } : g);
+
+          // ホバー判定：メインタイムライン各列
+          let matched = false;
+          if (mainTlRef.current) {
+            const cols = mainTlRef.current.querySelectorAll('[data-tl-hour]');
+            cols.forEach(col => {
+              const r = col.getBoundingClientRect();
+              if (touch.clientX >= r.left && touch.clientX <= r.right &&
+                  touch.clientY >= r.top  && touch.clientY <= r.bottom) {
+                const h = parseInt(col.getAttribute('data-tl-hour'));
+                setDragOverHour(h);
+                setDragOverOutside(false);
+                matched = true;
+              }
+            });
+          }
+          // ホバー判定：時間外フィード
+          if (!matched && outsideRef.current) {
+            const r = outsideRef.current.getBoundingClientRect();
+            if (touch.clientX >= r.left && touch.clientX <= r.right &&
+                touch.clientY >= r.top  && touch.clientY <= r.bottom) {
+              setDragOverOutside(true);
+              setDragOverHour(null);
+              matched = true;
+            }
+          }
+          if (!matched) { setDragOverHour(null); setDragOverOutside(false); }
+        };
+        window.addEventListener('touchmove', onTouchMove, { passive: false });
+        return () => window.removeEventListener('touchmove', onTouchMove);
+      }, []);
+
+      // タッチ終了ハンドラ
+      useEffect(() => {
+        const onTouchEnd = (e) => {
+          if (!touchDragRef.current) return;
+          const { taskId } = touchDragRef.current;
+          const touch = e.changedTouches[0];
+
+          // ドロップ先判定
+          let dropped = false;
+          if (mainTlRef.current) {
+            const cols = mainTlRef.current.querySelectorAll('[data-tl-hour]');
+            cols.forEach(col => {
+              const r = col.getBoundingClientRect();
+              if (touch.clientX >= r.left && touch.clientX <= r.right &&
+                  touch.clientY >= r.top  && touch.clientY <= r.bottom) {
+                const h = parseInt(col.getAttribute('data-tl-hour'));
+                onTimeChange && onTimeChange(taskId, `${String(h).padStart(2,'0')}:00`);
+                dropped = true;
+              }
+            });
+          }
+          if (!dropped && outsideRef.current) {
+            const r = outsideRef.current.getBoundingClientRect();
+            if (touch.clientX >= r.left && touch.clientX <= r.right &&
+                touch.clientY >= r.top  && touch.clientY <= r.bottom) {
+              onTimeChange && onTimeChange(taskId, '');
+              dropped = true;
+            }
+          }
+
+          // クリーンアップ
+          touchDragRef.current = null;
+          setTouchGhost(null);
+          setDragOverHour(null);
+          setDragOverOutside(false);
+        };
+        window.addEventListener('touchend', onTouchEnd);
+        return () => window.removeEventListener('touchend', onTouchEnd);
+      }, [onTimeChange]);
+
       // タスクの時刻を数値で返す（未設定はnull）
       const getHour = (t) => {
         if (!t.time || t.time === '00:00' || t.time === '0:00') return null;
@@ -1241,8 +1327,13 @@
         <div key={t.id}
           draggable={!!onTimeChange}
           onDragStart={onTimeChange ? e => { e.dataTransfer.setData('text/plain', t.id); e.dataTransfer.effectAllowed = 'move'; } : undefined}
+          onTouchStart={onTimeChange ? e => {
+            touchDragRef.current = { taskId: t.id };
+            const touch = e.touches[0];
+            setTouchGhost({ x: touch.clientX, y: touch.clientY, title: t.title, priority: t.priority });
+          } : undefined}
           title={t.title}
-          style={{ background:PRIORITIES[t.priority]?.bg, border:`1px solid ${PRIORITIES[t.priority]?.color}44`, borderLeft:`3px solid ${PRIORITIES[t.priority]?.color}`, borderRadius:"2px", padding:"2px 5px", fontSize:"9px", color:T.textDim, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", fontFamily:"'JetBrains Mono',monospace", cursor:onTimeChange?"grab":"default", ...opts.style }}>
+          style={{ background:PRIORITIES[t.priority]?.bg, border:`1px solid ${PRIORITIES[t.priority]?.color}44`, borderLeft:`3px solid ${PRIORITIES[t.priority]?.color}`, borderRadius:"2px", padding:"2px 5px", fontSize:"9px", color:T.textDim, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", fontFamily:"'JetBrains Mono',monospace", cursor:onTimeChange?"grab":"default", touchAction:"none", ...opts.style }}>
           {opts.showTime && t.time && <span style={{ color:T.textMuted, marginRight:"3px", fontSize:"8px" }}>{t.time}</span>}
           <span style={{ color:PRIORITIES[t.priority]?.color, marginRight:"3px" }}>●</span>
           {t.title}
@@ -1254,7 +1345,7 @@
           {/* ヘッダー */}
           <div style={{ display:"flex", alignItems:"center", gap:"8px", marginBottom:"8px", fontFamily:"'JetBrains Mono',monospace" }}>
             <span style={{ color:T.accent, fontSize:"11px", fontWeight:700, letterSpacing:"0.15em" }}>◈ TIMELINE</span>
-            {onTimeChange && <span style={{ color:T.textMuted, fontSize:"9px" }}>ドラッグで時間変更</span>}
+            {onTimeChange && <span style={{ color:T.textMuted, fontSize:"9px" }}>ドラッグ / タッチで時間変更</span>}
             <div style={{ flex:1 }} />
             {outsideTasks.length > 0 && (
               <span style={{ fontSize:"9px", color:"#ffaa00", background:"rgba(255,170,0,0.1)", border:"1px solid rgba(255,170,0,0.25)", padding:"1px 7px", borderRadius:"2px" }}>
@@ -1267,7 +1358,7 @@
           <div style={{ display:"flex", gap:"8px", alignItems:"flex-start" }}>
 
             {/* ── メインタイムライン ── */}
-            <div style={{ flex:1, position:"relative", height:`${TL_H}px`, minWidth:0, overflowX:"auto" }}>
+            <div ref={mainTlRef} style={{ flex:1, position:"relative", height:`${TL_H}px`, minWidth:0, overflowX:"auto" }}>
               <div style={{ display:"flex", height:"100%", minWidth:`${HOURS.length * 60}px`, position:"relative" }}>
                 {HOURS.map(h => {
                   const tasksAtHour = active.filter(t => getHour(t) === h);
@@ -1275,6 +1366,7 @@
                   const isDragOver = dragOverHour === h;
                   return (
                     <div key={h}
+                      data-tl-hour={h}
                       style={{ flex:1, borderRight:`1px solid ${T.border}`, position:"relative", background:isDragOver?`${T.accent}18`:isCurrent?`${T.accent}08`:"transparent", transition:"background 0.1s", minWidth:"60px" }}
                       onDragOver={onTimeChange ? e => { e.preventDefault(); e.dataTransfer.dropEffect='move'; setDragOverHour(h); } : undefined}
                       onDragLeave={onTimeChange ? () => setDragOverHour(null) : undefined}
@@ -1302,6 +1394,7 @@
 
             {/* ── 時間外フィード ── */}
             <div
+              ref={outsideRef}
               style={{ width:"152px", flexShrink:0, border:`1px solid ${dragOverOutside?"#ffaa0077":T.border2}`, borderRadius:"3px", background: dragOverOutside?`rgba(255,170,0,0.06)`:T.bg, transition:"border-color 0.1s, background 0.1s", height:`${TL_H}px`, display:"flex", flexDirection:"column" }}
               onDragOver={onTimeChange ? e => { e.preventDefault(); setDragOverOutside(true); } : undefined}
               onDragLeave={onTimeChange ? () => setDragOverOutside(false) : undefined}
@@ -1319,6 +1412,14 @@
             </div>
 
           </div>
+
+          {/* タッチドラッグ ゴースト */}
+          {touchGhost && (
+            <div style={{ position:"fixed", left:touchGhost.x+12, top:touchGhost.y-16, pointerEvents:"none", zIndex:9999, background:PRIORITIES[touchGhost.priority]?.bg, border:`2px solid ${PRIORITIES[touchGhost.priority]?.color}`, borderRadius:"3px", padding:"3px 8px", fontSize:"9px", color:"#fff", whiteSpace:"nowrap", maxWidth:"160px", overflow:"hidden", textOverflow:"ellipsis", opacity:0.9, fontFamily:"'JetBrains Mono',monospace", boxShadow:"0 4px 16px rgba(0,0,0,0.5)" }}>
+              <span style={{ color:PRIORITIES[touchGhost.priority]?.color, marginRight:"4px" }}>●</span>
+              {touchGhost.title}
+            </div>
+          )}
         </div>
       );
     };
