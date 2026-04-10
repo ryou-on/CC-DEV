@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>◈ FLIGHT STRIP TODO — ANALYTICS</title>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone@7.23.10/babel.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #060a18; color: #ddeeff; font-family: 'JetBrains Mono', monospace; }
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: #0a1020; }
+    ::-webkit-scrollbar-thumb { background: #1a2540; border-radius: 2px; }
+    @keyframes spin  { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+    @keyframes pulse { 0%,100%{opacity:0.3} 50%{opacity:1} }
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  const firebaseConfig = {
+    apiKey:            "AIzaSyDPlsAhtxbJBihy-EAHck9P7XbuMdzV0ds",
+    authDomain:        "cc-dev-ps7.firebaseapp.com",
+    projectId:         "cc-dev-ps7",
+    storageBucket:     "cc-dev-ps7.firebasestorage.app",
+    messagingSenderId: "1029579090333",
+    appId:             "1:1029579090333:web:5a2ea499fec97c497f2774"
+  };
+  firebase.initializeApp(firebaseConfig);
+  window._auth = firebase.auth();
+  window._db   = firebase.firestore();
+</script>
+<script id="jsx-source" type="text/plain">
+  const { useState, useEffect, useMemo } = React;
+  const auth = window._auth;
+  const db   = window._db;
+
+  const ACC = '#00ff88';
+  const BG  = '#060a18';
+  const BORDER = '#1a2540';
+  const TEXT = '#ddeeff';
+  const DIM  = '#556677';
+  const MUTED = '#1a2540';
+  const BGCARD = 'rgba(10,15,30,0.5)';
+
+  const DOW_LABELS = ['日','月','火','水','木','金','土'];
+  const DOW_COLORS = ['#ff6688','#00aaff','#00aaff','#00aaff','#00aaff','#00aaff','#ff6688'];
+
+  // ── ログイン画面 ──────────────────────────────
+  const Login = () => {
+    const [loading, setLoading] = useState(false);
+    const login = async () => {
+      setLoading(true);
+      try { await auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()); }
+      catch(e) { setLoading(false); }
+    };
+    return (
+      <div style={{ minHeight:'100vh', background:'linear-gradient(180deg,#060a18,#0a1020)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+        <div style={{ background:'rgba(10,15,35,0.97)', border:`1px solid ${ACC}33`, borderRadius:'8px', padding:'48px 40px', textAlign:'center', maxWidth:'340px', width:'90%' }}>
+          <div style={{ fontSize:'22px', fontWeight:800, color:ACC, letterSpacing:'0.15em', marginBottom:'4px' }}>◈ ANALYTICS</div>
+          <div style={{ fontSize:'9px', color:DIM, letterSpacing:'0.3em', marginBottom:'36px' }}>FLIGHT STRIP TODO</div>
+          <button onClick={login} disabled={loading} style={{ width:'100%', background:`${ACC}18`, border:`1px solid ${ACC}55`, color:ACC, padding:'12px', borderRadius:'4px', cursor:'pointer', fontSize:'11px', fontWeight:700, letterSpacing:'0.1em', fontFamily:'inherit' }}>
+            {loading ? '...' : 'G SIGN IN WITH GOOGLE'}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  // ── カードコンポーネント ──────────────────────
+  const Card = ({ children, style={} }) => (
+    <div style={{ background:BGCARD, border:`1px solid ${BORDER}`, borderRadius:'6px', padding:'16px', ...style }}>
+      {children}
+    </div>
+  );
+
+  const SectionTitle = ({ children }) => (
+    <div style={{ fontSize:'9px', color:ACC, fontWeight:700, letterSpacing:'0.2em', marginBottom:'12px', paddingBottom:'6px', borderBottom:`1px solid ${BORDER}` }}>
+      {children}
+    </div>
+  );
+
+  // ── 棒グラフ ──────────────────────────────────
+  const BarChart = ({ data, labelKey, valueKey, color=ACC, height=120, showValue=true }) => {
+    const max = Math.max(1, ...data.map(d => d[valueKey]));
+    return (
+      <div style={{ display:'flex', alignItems:'flex-end', gap:'3px', height:`${height}px` }}>
+        {data.map((d, i) => (
+          <div key={i} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', height:'100%', justifyContent:'flex-end', gap:'2px' }}>
+            {showValue && d[valueKey] > 0 && (
+              <span style={{ fontSize:'7px', color:DIM }}>{d[valueKey]}</span>
+            )}
+            <div style={{ width:'100%', background:`${color}33`, borderRadius:'2px 2px 0 0', position:'relative', height:`${Math.max(2, d[valueKey]/max*100)}%`, transition:'height 0.3s' }}>
+              <div style={{ position:'absolute', inset:0, background:color, opacity:0.7, borderRadius:'2px 2px 0 0' }} />
+            </div>
+            <span style={{ fontSize:'7px', color:DIM, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', maxWidth:'100%', textAlign:'center' }}>{d[labelKey]}</span>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  // ── ヒートマップ ──────────────────────────────
+  const Heatmap = ({ data, maxVal }) => {
+    const max = maxVal || Math.max(1, ...data.flat());
+    return (
+      <div>
+        {/* 時間ラベル（上） */}
+        <div style={{ display:'flex', marginLeft:'24px', marginBottom:'2px' }}>
+          {Array.from({length:24},(_,h)=>(
+            <div key={h} style={{ flex:1, fontSize:'6px', color:DIM, textAlign:'center' }}>
+              {h%3===0?String(h).padStart(2,'0'):''}
+            </div>
+          ))}
+        </div>
+        {data.map((row, dow) => (
+          <div key={dow} style={{ display:'flex', alignItems:'center', marginBottom:'2px' }}>
+            <span style={{ width:'20px', fontSize:'8px', color:DOW_COLORS[dow], flexShrink:0, textAlign:'right', marginRight:'4px' }}>{DOW_LABELS[dow]}</span>
+            {row.map((val, h) => {
+              const intensity = val / max;
+              const alpha = Math.min(0.95, 0.05 + intensity * 0.9);
+              return (
+                <div key={h} title={`${DOW_LABELS[dow]} ${h}時: ${val}セッション`}
+                  style={{ flex:1, height:'14px', background:`rgba(0,255,136,${alpha})`, borderRadius:'1px', margin:'0 1px', position:'relative', cursor:'default' }}
+                />
+              );
+            })}
+          </div>
+        ))}
+        {/* 凡例 */}
+        <div style={{ display:'flex', alignItems:'center', gap:'4px', marginTop:'6px', justifyContent:'flex-end' }}>
+          <span style={{ fontSize:'7px', color:DIM }}>少</span>
+          {[0.05,0.25,0.5,0.75,0.95].map((a,i) => (
+            <div key={i} style={{ width:'12px', height:'8px', background:`rgba(0,255,136,${a})`, borderRadius:'1px' }} />
+          ))}
+          <span style={{ fontSize:'7px', color:DIM }}>多</span>
+        </div>
+      </div>
+    );
+  };
+
+  // ── メトリクスカード ──────────────────────────
+  const Metric = ({ label, value, sub, color=ACC }) => (
+    <div style={{ background:BGCARD, border:`1px solid ${BORDER}`, borderRadius:'6px', padding:'14px 18px', textAlign:'center' }}>
+      <div style={{ fontSize:'28px', fontWeight:800, color, lineHeight:1, letterSpacing:'-0.02em' }}>{value}</div>
+      <div style={{ fontSize:'10px', color:TEXT, marginTop:'4px', fontWeight:600 }}>{label}</div>
+      {sub && <div style={{ fontSize:'8px', color:DIM, marginTop:'2px' }}>{sub}</div>}
+    </div>
+  );
+
+  // ── メインアナリティクス ──────────────────────
+  const Analytics = ({ user }) => {
+    const [sessions, setSessions]   = useState([]);
+    const [loading,  setLoading]    = useState(true);
+    const [error,    setError]      = useState(null);
+    const [range,    setRange]      = useState(30); // 表示日数
+
+    useEffect(() => {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 90);
+      const cutoffStr = cutoff.toISOString().slice(0,10);
+      db.collection('fst_analytics')
+        .where('date','>=', cutoffStr)
+        .orderBy('date','desc')
+        .limit(10000)
+        .get()
+        .then(snap => {
+          setSessions(snap.docs.map(d => ({ id:d.id, ...d.data() })));
+          setLoading(false);
+        })
+        .catch(err => { setError(err.message); setLoading(false); });
+    }, []);
+
+    const stats = useMemo(() => {
+      if (!sessions.length) return null;
+      const today     = new Date().toISOString().slice(0,10);
+      const thisMonth = new Date().toISOString().slice(0,7);
+
+      // 表示範囲でフィルタ
+      const rangeCutoff = new Date();
+      rangeCutoff.setDate(rangeCutoff.getDate() - range);
+      const rangeStr = rangeCutoff.toISOString().slice(0,10);
+      const ranged = sessions.filter(s => s.date >= rangeStr);
+
+      // ユニークユーザー
+      const allUsers   = new Set(sessions.map(s=>s.uidHash));
+      const todayU     = new Set(sessions.filter(s=>s.date===today).map(s=>s.uidHash));
+      const weekCut    = new Date(); weekCut.setDate(weekCut.getDate()-7);
+      const weekStr    = weekCut.toISOString().slice(0,10);
+      const weekU      = new Set(sessions.filter(s=>s.date>=weekStr).map(s=>s.uidHash));
+      const monthU     = new Set(sessions.filter(s=>s.month===thisMonth).map(s=>s.uidHash));
+
+      // 時間帯分布（ranged）
+      const hourDist = Array(24).fill(0);
+      ranged.forEach(s => { if(s.hour>=0&&s.hour<24) hourDist[s.hour]++; });
+
+      // 曜日分布（ranged）
+      const dowDist = Array(7).fill(0);
+      ranged.forEach(s => { if(s.dow>=0&&s.dow<7) dowDist[s.dow]++; });
+
+      // ヒートマップ 曜日×時間（ranged）
+      const heatmap = Array.from({length:7},()=>Array(24).fill(0));
+      ranged.forEach(s => {
+        if(s.dow>=0&&s.dow<7&&s.hour>=0&&s.hour<24) heatmap[s.dow][s.hour]++;
+      });
+
+      // 日別 DAU（range日分）
+      const dailyData = [];
+      for(let i=range-1; i>=0; i--) {
+        const d = new Date(); d.setDate(d.getDate()-i);
+        const dateStr = d.toISOString().slice(0,10);
+        const dayS = sessions.filter(s=>s.date===dateStr);
+        const dayU = new Set(dayS.map(s=>s.uidHash));
+        dailyData.push({
+          date: dateStr,
+          label: i===0?'今日': i===1?'昨日': `${d.getMonth()+1}/${d.getDate()}`,
+          users: dayU.size,
+          sessions: dayS.length,
+        });
+      }
+
+      // バージョン分布
+      const verDist = {};
+      sessions.forEach(s => {
+        const v = s.version||'unknown';
+        verDist[v] = (verDist[v]||0)+1;
+      });
+      const verEntries = Object.entries(verDist).sort((a,b)=>b[1]-a[1]);
+
+      // ピーク時間帯
+      const peakHour = hourDist.indexOf(Math.max(...hourDist));
+      const peakDow  = dowDist.indexOf(Math.max(...dowDist));
+
+      return {
+        totalUsers: allUsers.size,
+        todayUsers: todayU.size,
+        weekUsers:  weekU.size,
+        monthUsers: monthU.size,
+        totalSessions: sessions.length,
+        rangeSessions: ranged.length,
+        hourDist, dowDist, heatmap,
+        dailyData, verEntries,
+        peakHour, peakDow,
+      };
+    }, [sessions, range]);
+
+    if (loading) return (
+      <div style={{ minHeight:'100vh', background:BG, display:'flex', alignItems:'center', justifyContent:'center', color:ACC, fontSize:'11px', letterSpacing:'0.2em' }}>
+        <div style={{ textAlign:'center' }}>
+          <div style={{ fontSize:'28px', marginBottom:'16px', animation:'pulse 1.5s infinite' }}>◈</div>
+          LOADING ANALYTICS...
+        </div>
+      </div>
+    );
+
+    if (error) return (
+      <div style={{ minHeight:'100vh', background:BG, display:'flex', alignItems:'center', justifyContent:'center', color:'#ff6666', fontSize:'11px', padding:'24px', textAlign:'center' }}>
+        <div>
+          <div style={{ fontSize:'20px', marginBottom:'12px' }}>⚠</div>
+          <div style={{ marginBottom:'8px' }}>データの読み込みに失敗しました</div>
+          <div style={{ fontSize:'9px', color:DIM }}>{error}</div>
+          <div style={{ fontSize:'9px', color:DIM, marginTop:'8px' }}>Firestoreルールが未デプロイの可能性があります</div>
+        </div>
+      </div>
+    );
+
+    const hourChartData = (stats?.hourDist||[]).map((v,h) => ({ label:`${h}`, value:v }));
+    const dowChartData  = (stats?.dowDist||[]).map((v,i) => ({ label:DOW_LABELS[i], value:v }));
+
+    return (
+      <div style={{ minHeight:'100vh', background:`linear-gradient(180deg,${BG} 0%,#0a1020 100%)`, color:TEXT, fontFamily:'inherit', position:'relative' }}>
+        {/* グリッド背景 */}
+        <div style={{ position:'fixed', inset:0, backgroundImage:`linear-gradient(rgba(0,255,136,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,255,136,0.03) 1px,transparent 1px)`, backgroundSize:'40px 40px', pointerEvents:'none', zIndex:0 }} />
+        <div style={{ position:'fixed', inset:0, background:'repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,0.06) 3px,rgba(0,0,0,0.06) 6px)', pointerEvents:'none', zIndex:1 }} />
+
+        <div style={{ position:'relative', zIndex:2, maxWidth:'1100px', margin:'0 auto', padding:'20px 16px 40px' }}>
+
+          {/* ヘッダー */}
+          <header style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'20px', paddingBottom:'12px', borderBottom:`1px solid ${BORDER}`, flexWrap:'wrap', gap:'8px' }}>
+            <div>
+              <div style={{ fontSize:'16px', fontWeight:800, color:ACC, letterSpacing:'0.2em', textShadow:`0 0 20px ${ACC}44` }}>◈ FLIGHT STRIP ANALYTICS</div>
+              <div style={{ fontSize:'8px', color:DIM, letterSpacing:'0.25em', marginTop:'3px' }}>
+                <a href="./index.html" style={{ color:DIM, textDecoration:'none', borderBottom:`1px solid ${BORDER}` }}
+                  onMouseEnter={e=>e.target.style.color=ACC} onMouseLeave={e=>e.target.style.color=DIM}>
+                  ← アプリに戻る
+                </a>
+                &nbsp;·&nbsp;{user.email}
+              </div>
+            </div>
+            <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+              {/* 表示範囲切替 */}
+              <div style={{ display:'flex', gap:'2px' }}>
+                {[7,14,30,90].map(d => (
+                  <button key={d} onClick={()=>setRange(d)}
+                    style={{ background:range===d?`${ACC}18`:'transparent', border:`1px solid ${range===d?ACC+'66':BORDER}`, color:range===d?ACC:DIM, padding:'4px 10px', borderRadius:'2px', cursor:'pointer', fontSize:'9px', fontWeight:range===d?700:400, fontFamily:'inherit' }}>
+                    {d}日
+                  </button>
+                ))}
+              </div>
+              <button onClick={()=>auth.signOut()} style={{ background:'rgba(255,51,51,0.1)', border:'1px solid #ff333344', color:'#ff6666', padding:'4px 10px', borderRadius:'2px', cursor:'pointer', fontSize:'9px', fontFamily:'inherit' }}>
+                SIGN OUT
+              </button>
+            </div>
+          </header>
+
+          {!stats || sessions.length === 0 ? (
+            <div style={{ textAlign:'center', padding:'60px', color:DIM, fontSize:'11px' }}>
+              <div style={{ fontSize:'24px', marginBottom:'12px' }}>📊</div>
+              <div>データがまだありません</div>
+              <div style={{ fontSize:'9px', marginTop:'8px' }}>アプリを使用するとここに統計が表示されます</div>
+            </div>
+          ) : (
+            <>
+              {/* サマリーカード */}
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))', gap:'10px', marginBottom:'16px' }}>
+                <Metric label="総ユーザー（90日）" value={stats.totalUsers} sub="ユニーク" color={ACC} />
+                <Metric label="TODAY" value={stats.todayUsers} sub="アクティブ" color="#00ccff" />
+                <Metric label="週間 (7日)" value={stats.weekUsers} sub="アクティブ" color="#ffaa00" />
+                <Metric label="月間 (今月)" value={stats.monthUsers} sub="アクティブ" color="#cc44ff" />
+                <Metric label="総セッション" value={stats.totalSessions} sub="90日合計" color={DIM} />
+                <Metric label={`セッション (${range}日)`} value={stats.rangeSessions} sub="集計範囲" color={DIM} />
+              </div>
+
+              {/* ピーク情報 */}
+              <div style={{ display:'flex', gap:'8px', marginBottom:'16px', flexWrap:'wrap' }}>
+                <div style={{ background:`${ACC}08`, border:`1px solid ${ACC}22`, borderRadius:'4px', padding:'8px 14px', fontSize:'10px', color:TEXT }}>
+                  <span style={{ color:ACC, fontWeight:700 }}>⚡ ピーク時間帯:</span>
+                  &nbsp;{stats.peakHour}:00〜{stats.peakHour+1}:00
+                </div>
+                <div style={{ background:`${ACC}08`, border:`1px solid ${ACC}22`, borderRadius:'4px', padding:'8px 14px', fontSize:'10px', color:TEXT }}>
+                  <span style={{ color:ACC, fontWeight:700 }}>⚡ ピーク曜日:</span>
+                  &nbsp;{DOW_LABELS[stats.peakDow]}曜日
+                </div>
+              </div>
+
+              {/* メイン2カラム */}
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'12px', marginBottom:'12px' }}>
+
+                {/* 日別アクティブユーザー */}
+                <Card>
+                  <SectionTitle>◈ 日別アクティブユーザー（DAU · {range}日）</SectionTitle>
+                  <BarChart data={stats.dailyData} labelKey="label" valueKey="users" color={ACC} height={130} showValue={false} />
+                  <div style={{ display:'flex', justifyContent:'space-between', marginTop:'8px', fontSize:'8px', color:DIM }}>
+                    <span>{stats.dailyData[0]?.date}</span>
+                    <span>{stats.dailyData[stats.dailyData.length-1]?.date}</span>
+                  </div>
+                </Card>
+
+                {/* 曜日別 */}
+                <Card>
+                  <SectionTitle>◈ 曜日別セッション数</SectionTitle>
+                  <div style={{ display:'flex', alignItems:'flex-end', gap:'6px', height:'130px' }}>
+                    {dowChartData.map((d,i) => {
+                      const max = Math.max(1,...dowChartData.map(x=>x.value));
+                      const pct = Math.max(2, d.value/max*100);
+                      const isWeekend = i===0||i===6;
+                      return (
+                        <div key={i} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', height:'100%', justifyContent:'flex-end', gap:'3px' }}>
+                          <span style={{ fontSize:'8px', color:DIM }}>{d.value||''}</span>
+                          <div style={{ width:'100%', height:`${pct}%`, background:isWeekend?'rgba(255,102,136,0.3)':'rgba(0,170,255,0.25)', borderRadius:'2px 2px 0 0', position:'relative', transition:'height 0.3s' }}>
+                            <div style={{ position:'absolute', inset:0, background:isWeekend?'#ff6688':'#00aaff', opacity:0.65, borderRadius:'2px 2px 0 0' }} />
+                          </div>
+                          <span style={{ fontSize:'10px', fontWeight:700, color:isWeekend?'#ff6688':'#00aaff' }}>{d.label}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </Card>
+              </div>
+
+              {/* ヒートマップ */}
+              <Card style={{ marginBottom:'12px' }}>
+                <SectionTitle>◈ 曜日×時間帯ヒートマップ（{range}日間）</SectionTitle>
+                <Heatmap data={stats.heatmap} maxVal={Math.max(1,...stats.heatmap.flat())} />
+              </Card>
+
+              {/* 下段2カラム */}
+              <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr', gap:'12px' }}>
+
+                {/* 時間帯別 */}
+                <Card>
+                  <SectionTitle>◈ 時間帯別セッション数（{range}日間）</SectionTitle>
+                  <BarChart data={hourChartData} labelKey="label" valueKey="value" color="#00ccff" height={100} showValue={false} />
+                  <div style={{ display:'flex', justifyContent:'space-between', marginTop:'4px', fontSize:'7px', color:DIM }}>
+                    <span>0時</span><span>6時</span><span>12時</span><span>18時</span><span>23時</span>
+                  </div>
+                </Card>
+
+                {/* バージョン分布 */}
+                <Card>
+                  <SectionTitle>◈ バージョン分布</SectionTitle>
+                  <div style={{ display:'flex', flexDirection:'column', gap:'6px' }}>
+                    {stats.verEntries.map(([ver, cnt]) => {
+                      const total = sessions.length;
+                      const pct = Math.round(cnt/total*100);
+                      return (
+                        <div key={ver}>
+                          <div style={{ display:'flex', justifyContent:'space-between', fontSize:'9px', marginBottom:'2px' }}>
+                            <span style={{ color:TEXT }}>{ver}</span>
+                            <span style={{ color:DIM }}>{cnt} ({pct}%)</span>
+                          </div>
+                          <div style={{ height:'6px', background:`${ACC}14`, borderRadius:'3px', overflow:'hidden' }}>
+                            <div style={{ width:`${pct}%`, height:'100%', background:ACC, opacity:0.7, borderRadius:'3px', transition:'width 0.3s' }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </Card>
+
+              </div>
+
+              {/* フッター */}
+              <div style={{ marginTop:'20px', textAlign:'center', fontSize:'8px', color:DIM, letterSpacing:'0.15em' }}>
+                FLIGHT STRIP TODO ANALYTICS · データは fst_analytics コレクションから取得 · 最終90日間
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // ── ルート ────────────────────────────────────
+  const App = () => {
+    const [user,    setUser]    = useState(undefined);
+    useEffect(() => {
+      return auth.onAuthStateChanged(u => setUser(u || null));
+    }, []);
+    if (user === undefined) return (
+      <div style={{ minHeight:'100vh', background:BG, display:'flex', alignItems:'center', justifyContent:'center', color:ACC, fontSize:'11px', letterSpacing:'0.2em' }}>
+        <div style={{ animation:'pulse 1.5s infinite' }}>◈</div>
+      </div>
+    );
+    if (!user) return <Login />;
+    return <Analytics user={user} />;
+  };
+
+  ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+<script>
+  const src = document.getElementById('jsx-source').textContent;
+  const compiled = Babel.transform(src, { presets: ['react'] }).code;
+  const script = document.createElement('script');
+  script.textContent = compiled;
+  document.body.appendChild(script);
+</script>
+</body>
+</html>

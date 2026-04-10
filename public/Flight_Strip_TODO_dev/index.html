@@ -2099,6 +2099,25 @@
         autoSync();
       }, [metaRef]); // eslint-disable-line
 
+      // アナリティクス: セッション記録（起動時1回）
+      useEffect(() => {
+        try {
+          const now = new Date();
+          const uidHash = btoa(user.uid).replace(/[^a-zA-Z0-9]/g,'').slice(0,12);
+          const sessionId = `${now.toISOString().slice(0,10)}_${uidHash}_${now.getTime()}`;
+          db.collection('fst_analytics').doc(sessionId).set({
+            uidHash,
+            date:    now.toISOString().slice(0,10),
+            month:   now.toISOString().slice(0,7),
+            hour:    now.getHours(),
+            dow:     now.getDay(),
+            version: 'v0.6.5-dev',
+            build:   'dev',
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          }).catch(()=>{});
+        } catch(e){}
+      }, []); // eslint-disable-line
+
       // 繰り返しタスク: 毎日1回、当日分を自動で 'next' へ昇格
       useEffect(() => {
         if (tasks.length === 0) return;
@@ -2996,6 +3015,7 @@
               <span>FLIGHT STRIP TODO · ATC-SYS v0.6.5-dev</span>
               <div style={{ display:"flex", gap:"8px", alignItems:"center" }}>
                 <span>{currentTime.toLocaleDateString("ja-JP")} · STRIPS: {tasks.length}</span>
+                <a href="./analytics.html" target="_blank" style={{ background:`${T.accent}10`, border:`1px solid ${T.accent}22`, color:T.accent, padding:"2px 10px", borderRadius:"2px", fontSize:"8px", fontFamily:"'JetBrains Mono',monospace", letterSpacing:"0.05em", textDecoration:"none" }}>📊 ANALYTICS</a>
                 <button onClick={handleConsoleCopy} style={{ background:`${T.accent}10`, border:`1px solid ${T.accent}22`, color:T.textDim, padding:"2px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"8px", fontFamily:"'JetBrains Mono',monospace", letterSpacing:"0.05em" }}>📋 CONSOLE COPY</button>
               </div>
             </footer>
