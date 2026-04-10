@@ -1,0 +1,150 @@
+name: ER Auto Sync
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  er-sync:
+    # [er-sync] タグ付きコミットは無限ループ防止でスキップ
+    if: "!contains(github.event.head_commit.message, '[er-sync]')"
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 30
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Write sync script
+        run: |
+          cat > /tmp/er-sync.mjs << 'JSEOF'
+          import { execSync } from 'child_process';
+          import fs from 'fs';
+
+          const today = new Date().toISOString().slice(0, 10);
+          const syncPath = 'public/Flight_Strip_TODO_dev/er-sync.json';
+
+          // 既存の er-sync.json を読み込む
+          let current = { syncedAt: null, appliedCommits: [], implemented: [], newItems: [] };
+          if (fs.existsSync(syncPath)) {
+            try { current = JSON.parse(fs.readFileSync(syncPath, 'utf8')); } catch(e) {}
+          }
+
+          // ERインデックス（ID・タイトル・マッチングキーワード）
+          const ER_INDEX = [
+            { id:'er-001', title:'データエクスポート・インポート',         keywords:['エクスポート','インポート','export','import','json'] },
+            { id:'er-002', title:'UIテーマ切替',                         keywords:['テーマ','theme','dark','light','color','カラー'] },
+            { id:'er-003', title:'ストリップ編集',                        keywords:['編集','edit','editstrip','editmodal'] },
+            { id:'er-004', title:'ストリップ並べ替え（↑↓・DnD）',         keywords:['並べ替え','dnd','drag','sort','droppable'] },
+            { id:'er-005', title:'モバイル版UI',                          keywords:['モバイル','mobile','スマホ','タッチ','touch','responsive'] },
+            { id:'er-006', title:'委任先（HANDOFF）・DELEGATED列',         keywords:['handoff','委任','delegated','assignee'] },
+            { id:'er-007', title:'作業時間の計測・記録',                   keywords:['タイマー','timer','timelogs','時間計測','elapsed'] },
+            { id:'er-008', title:'タスクのロスト',                        keywords:['lost','ロスト','islost','未達成'] },
+            { id:'er-009', title:'タイムラインでのDnD移動',               keywords:['タイムライン','timeline','dnd','時系列'] },
+            { id:'er-010', title:'安定版と開発版の分離',                   keywords:['安定版','開発版','dev','stable','分離','branch'] },
+            { id:'er-011', title:'プロジェクト管理（FlightDispatcher連携）',keywords:['プロジェクト','project','dispatcher','workflow'] },
+            { id:'er-012', title:'Googleカレンダー・タスク連携',            keywords:['カレンダー','calendar','google','gcal','googleapis'] },
+            { id:'er-013', title:'ストリップへのリンク添付',               keywords:['リンク','link','url','添付'] },
+            { id:'er-014', title:'継続タスクのノード連携',                 keywords:['ノード','node','継続','workflow','フロー'] },
+            { id:'er-015', title:'毎日の定型業務テンプレート',              keywords:['テンプレート','template','定型','繰り返し','repeat'] },
+            { id:'er-016', title:'タスク長さ設定・タイムライン制限',        keywords:['タスク長さ','duration','制限','limit','予定時間'] },
+            { id:'er-017', title:'タイムライン縦型編集モード',              keywords:['縦型','vertical','gantt','ガント','カレンダー形式'] },
+            { id:'er-018', title:'タスク所要時間の設定・AI予測',            keywords:['所要時間','ai予測','predict','estimate','見込み'] },
+            { id:'er-019', title:'確認・依頼の別トラック',                 keywords:['確認','依頼','トラック','pending track','waiting'] },
+            { id:'er-020', title:'複数選択・一括カテゴリ変更',              keywords:['複数選択','一括','multi','bulk','shift','multiselected'] },
+          ];
+
+          // 処理済みコミットセット
+          const appliedSet = new Set(current.appliedCommits || []);
+
+          // 新しいコミット取得（最大20件、処理済み除外）
+          const rawLog = execSync('git log --format="%H|||%s|||%b" -20').toString().trim();
+          const commits = rawLog.split('\n')
+            .map(l => {
+              const parts = l.split('|||');
+              return { hash: parts[0]?.trim(), msg: (parts[1] || '').trim(), body: (parts[2] || '').trim() };
+            })
+            .filter(c => c.hash && c.msg && !appliedSet.has(c.hash) && !c.msg.includes('[er-sync]'));
+
+          if (commits.length === 0) {
+            console.log('No new commits to process. Exit.');
+            process.exit(0);
+          }
+
+          console.log(`Processing ${commits.length} new commits...`);
+
+          const newImplemented = new Set(current.implemented || []);
+          const newAutoItems   = [...(current.newItems || [])];
+          const processedHashes = [];
+
+          for (const { hash, msg, body } of commits) {
+            const fullText = (msg + ' ' + body).toLowerCase();
+            let matched = false;
+
+            for (const er of ER_INDEX) {
+              if (newImplemented.has(er.id)) continue;
+              const hit = er.keywords.some(k => fullText.includes(k.toLowerCase()))
+                || er.title.split(/[・\s、。]/).filter(t => t.length > 2)
+                           .some(t => fullText.includes(t.toLowerCase()));
+              if (hit) {
+                newImplemented.add(er.id);
+                matched = true;
+                console.log(`  ✓ Matched ${er.id} [${er.title}] <- "${msg}"`);
+              }
+            }
+
+            // マッチしなかった feat/fix 系コミットは新規ERとして自動登録
+            if (!matched && /^(feat|fix|add|update|refactor|改善|追加|修正|機能)/i.test(msg)) {
+              const cleanTitle = msg
+                .replace(/^(feat|fix|add|update|refactor|docs|style|chore|build|test|改善|追加|修正|機能)[:：!]\s*/i, '')
+                .trim();
+              if (cleanTitle.length > 5 && !newAutoItems.find(i => i.title === cleanTitle)) {
+                newAutoItems.push({
+                  id:            'er-auto-' + hash.slice(0, 8),
+                  title:         cleanTitle,
+                  description:   'コミットから自動登録: ' + msg,
+                  priority:      'low',
+                  difficulty:    'easy',
+                  status:        'implemented',
+                  source:        'auto',
+                  registeredAt:  today,
+                  implementedAt: today,
+                });
+                console.log(`  + Auto item: "${cleanTitle}"`);
+              }
+            }
+
+            processedHashes.push(hash);
+          }
+
+          const result = {
+            syncedAt:       new Date().toISOString(),
+            appliedCommits: [...appliedSet, ...processedHashes].slice(-60),
+            implemented:    [...newImplemented],
+            newItems:       newAutoItems,
+          };
+
+          fs.writeFileSync(syncPath, JSON.stringify(result, null, 2));
+          console.log(`\ner-sync.json updated:`);
+          console.log(`  implemented: ${result.implemented.length} items`);
+          console.log(`  autoItems:   ${result.newItems.length} items`);
+          JSEOF
+
+      - name: Run ER sync
+        run: node /tmp/er-sync.mjs
+
+      - name: Commit er-sync.json if changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin main
+          git add public/Flight_Strip_TODO_dev/er-sync.json
+          if git diff --staged --quiet; then
+            echo "No changes to er-sync.json"
+          else
+            git commit -m "[er-sync] Auto update ER status $(date -u +%Y-%m-%d)"
+            git push
+          fi

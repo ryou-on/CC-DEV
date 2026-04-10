@@ -509,8 +509,8 @@
         const today = new Date().toISOString().slice(0, 10);
         setItems(prev => prev.map(e => e.id === id
           ? e.status === 'implemented'
-            ? { ...e, status:'pending', implementedAt: undefined }
-            : { ...e, status:'implemented', implementedAt: today }
+            ? { ...e, status:'pending', implementedAt: undefined, source:'manual' }
+            : { ...e, status:'implemented', implementedAt: today, source:'manual' }
           : e
         ));
       };
@@ -607,8 +607,11 @@
                       <div style={{ flex:1, minWidth:0 }}>
                         <div style={{ fontSize:'12px', color:T.text, textDecoration:impl?'line-through':'none', lineHeight:'1.4', wordBreak:'break-all' }}>{er.title}</div>
                         {er.description && <div style={{ fontSize:'10px', color:T.textDim, marginTop:'2px', textDecoration:impl?'line-through':'none' }}>{er.description}</div>}
-                        <div style={{ fontSize:'9px', color:T.textDim, marginTop:'3px' }}>
-                          登録: {er.registeredAt}{impl && er.implementedAt ? <span style={{ color:'#00ff88', marginLeft:'8px' }}>実装: {er.implementedAt}</span> : null}
+                        <div style={{ fontSize:'9px', color:T.textDim, marginTop:'3px', display:'flex', alignItems:'center', gap:'8px', flexWrap:'wrap' }}>
+                          <span>登録: {er.registeredAt}</span>
+                          {impl && er.implementedAt ? <span style={{ color:'#00ff88' }}>実装: {er.implementedAt}</span> : null}
+                          {er.source === 'auto' && <span style={{ color:'#6688cc', border:'1px solid #6688cc44', padding:'0 4px', borderRadius:'2px', fontSize:'8px' }}>🤖 AUTO</span>}
+                          {er.source === 'manual' && <span style={{ color:'#aa8844', border:'1px solid #aa884444', padding:'0 4px', borderRadius:'2px', fontSize:'8px' }}>✋ MANUAL</span>}
                         </div>
                       </div>
                       <button onClick={() => toggleImpl(er.id)} style={{ ...btnBase, flexShrink:0, background:impl ? 'transparent' : `${T.accent}11`, border:`1px solid ${impl ? T.border2 : T.accent+'44'}`, color:impl ? T.textDim : T.accent }}>
@@ -1276,6 +1279,65 @@
           console.error("handleSaveERs error:", err);
         }
       };
+
+      // er-sync.json から自動同期（アプリ起動時に1回）
+      useEffect(() => {
+        const autoSync = async () => {
+          try {
+            const res = await fetch('/Flight_Strip_TODO_dev/er-sync.json?t=' + Date.now());
+            if (!res.ok) return;
+            const syncData = await res.json();
+            if (!syncData.syncedAt) return;
+
+            // 前回の適用タイムスタンプを確認
+            const stateSnap = await metaRef.doc('erSyncState').get();
+            const lastApplied = stateSnap.exists ? stateSnap.data()?.lastApplied : null;
+            if (lastApplied && lastApplied >= syncData.syncedAt) return; // 適用済み
+
+            // 現在のERをFirestoreから取得
+            const erSnap = await metaRef.doc('enhancedRequests').get();
+            const currentERs = (erSnap.exists && erSnap.data()?.items?.length)
+              ? erSnap.data().items
+              : INITIAL_ERS.map(e => ({ ...e }));
+
+            const today = new Date().toISOString().slice(0, 10);
+            let updated = currentERs.map(er => {
+              // source:'manual' は自動変更から保護
+              if (er.source === 'manual') return er;
+              if ((syncData.implemented || []).includes(er.id) && er.status !== 'implemented') {
+                return { ...er, status: 'implemented', implementedAt: today, source: 'auto' };
+              }
+              // 未実装リストにないのに実装済みなら pending に戻す（auto のみ）
+              if (!(syncData.implemented || []).includes(er.id) && er.status === 'implemented' && er.source === 'auto') {
+                return { ...er, status: 'pending', implementedAt: undefined, source: 'auto' };
+              }
+              return er;
+            });
+
+            // 新規アイテム追加（er-sync.json の newItems）
+            let added = 0;
+            for (const newItem of (syncData.newItems || [])) {
+              if (!updated.find(e => e.id === newItem.id)) {
+                updated.push({ ...newItem, source: 'auto' });
+                added++;
+              }
+            }
+
+            const hasChanges = JSON.stringify(updated) !== JSON.stringify(currentERs);
+            if (hasChanges) {
+              await metaRef.doc('enhancedRequests').set({ items: updated });
+              setErs(updated);
+              console.log(`[ER Auto Sync] Applied: ${added} new items, updated statuses`);
+            }
+
+            // 適用タイムスタンプを保存
+            await metaRef.doc('erSyncState').set({ lastApplied: syncData.syncedAt });
+          } catch(err) {
+            console.log('[ER Auto Sync] Skip:', err.message);
+          }
+        };
+        autoSync();
+      }, [metaRef]); // eslint-disable-line
 
       // 複数選択 + コンテキストメニューハンドラー
       const handleStripClick = useCallback((e, taskId) => {
