@@ -188,6 +188,59 @@
     const PRIORITY_CYCLE = ["all", "high", "normal", "low"];
 
     // ======================================================
+    // 繰り返しタスク ヘルパー
+    // ======================================================
+    const RECUR_TYPES = [
+      { id:'daily',    label:'毎日' },
+      { id:'weekdays', label:'月〜金' },
+      { id:'weekly',   label:'毎週（曜日指定）' },
+      { id:'monthly',  label:'毎月（日付指定）' },
+    ];
+    const WEEKDAY_LABELS = ['日','月','火','水','木','金','土'];
+
+    // 次の発生日を計算（Date を返す）
+    const calcNextOccurrence = (recurrence, fromDate) => {
+      const base = fromDate ? new Date(fromDate) : new Date();
+      base.setDate(base.getDate() + 1); // 今日の翌日から探す
+      const { type, weekdays = [], monthDay = 1 } = recurrence;
+      if (type === 'daily') return base;
+      if (type === 'weekdays') {
+        for (let i = 0; i < 7; i++) {
+          if (base.getDay() !== 0 && base.getDay() !== 6) return base;
+          base.setDate(base.getDate() + 1);
+        }
+        return base;
+      }
+      if (type === 'weekly') {
+        const days = weekdays.length ? weekdays : [1];
+        for (let i = 0; i < 8; i++) {
+          if (days.includes(base.getDay())) return base;
+          base.setDate(base.getDate() + 1);
+        }
+        return base;
+      }
+      if (type === 'monthly') {
+        let d = new Date(base.getFullYear(), base.getMonth(), monthDay);
+        if (d <= new Date()) d = new Date(base.getFullYear(), base.getMonth() + 1, monthDay);
+        return d;
+      }
+      return base;
+    };
+
+    // 今日がrecurrenceに該当するか
+    const isTodayOccurrence = (recurrence) => {
+      const today = new Date();
+      const dow = today.getDay();
+      const dom = today.getDate();
+      const { type, weekdays = [], monthDay = 1 } = recurrence;
+      if (type === 'daily')    return true;
+      if (type === 'weekdays') return dow >= 1 && dow <= 5;
+      if (type === 'weekly')   return (weekdays.length ? weekdays : [1]).includes(dow);
+      if (type === 'monthly')  return dom === monthDay;
+      return false;
+    };
+
+    // ======================================================
     // ER（エンハンストリクエスト）定数
     // ======================================================
     const ER_PRIORITY   = { high:{label:"HIGH",color:"#ff3333",bg:"rgba(255,51,51,0.12)"}, medium:{label:"MED",color:"#ffaa00",bg:"rgba(255,170,0,0.10)"}, low:{label:"LOW",color:"#666688",bg:"rgba(102,102,136,0.08)"} };
@@ -505,14 +558,28 @@
       });
       const displayed = showAll ? sorted : sorted.filter(e => e.status !== 'implemented');
 
+      const [saveStatus, setSaveStatus] = React.useState(''); // '' | 'saving' | 'saved'
+
+      const autoSave = React.useCallback((newItems) => {
+        setSaveStatus('saving');
+        onSave(newItems).then(() => {
+          setSaveStatus('saved');
+          setTimeout(() => setSaveStatus(''), 1500);
+        }).catch(() => setSaveStatus(''));
+      }, [onSave]);
+
       const toggleImpl = (id) => {
         const today = new Date().toISOString().slice(0, 10);
-        setItems(prev => prev.map(e => e.id === id
-          ? e.status === 'implemented'
-            ? { ...e, status:'pending', implementedAt: undefined, source:'manual' }
-            : { ...e, status:'implemented', implementedAt: today, source:'manual' }
-          : e
-        ));
+        setItems(prev => {
+          const next = prev.map(e => e.id === id
+            ? e.status === 'implemented'
+              ? { ...e, status:'pending', implementedAt: undefined, source:'manual' }
+              : { ...e, status:'implemented', implementedAt: today, source:'manual' }
+            : e
+          );
+          autoSave(next);
+          return next;
+        });
       };
 
       const addER = () => {
@@ -527,7 +594,11 @@
           status: 'pending',
           registeredAt: today,
         };
-        setItems(prev => [newER, ...prev]);
+        setItems(prev => {
+          const next = [newER, ...prev];
+          autoSave(next);
+          return next;
+        });
         setNewTitle(''); setNewDesc(''); setNewPri('medium'); setShowForm(false);
       };
 
@@ -628,16 +699,15 @@
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginTop:'14px', paddingTop:'12px', borderTop:`1px solid ${T.border2}`, flexWrap:'wrap', gap:'8px' }}>
               <div style={{ display:'flex', alignItems:'center', gap:'8px', flexWrap:'wrap' }}>
                 <span style={{ fontSize:'10px', color:T.textDim }}>合計 {items.length} / 実装済 {items.filter(e=>e.status==='implemented').length} / 未実装 {items.filter(e=>e.status!=='implemented').length}</span>
+                {saveStatus === 'saving' && <span style={{ fontSize:'9px', color:'#ffaa00' }}>💾 保存中...</span>}
+                {saveStatus === 'saved'  && <span style={{ fontSize:'9px', color:'#00ff88' }}>✓ 保存済み</span>}
                 {checkedIds.size > 0 && (
                   <button onClick={handleCopy} style={{ ...btnBase, background: copyDone ? 'rgba(0,255,136,0.2)' : 'rgba(100,120,200,0.15)', border:`1px solid ${copyDone ? '#00ff88' : '#6688cc'}`, color: copyDone ? '#00ff88' : '#8899dd', fontWeight:700 }}>
                     {copyDone ? '✓ COPIED!' : `📋 COPY (${checkedIds.size}件)`}
                   </button>
                 )}
               </div>
-              <div style={{ display:'flex', gap:'6px' }}>
-                <button onClick={onClose} style={{ ...btnBase, background:'transparent', border:`1px solid ${T.border2}`, color:T.textDim }}>CANCEL</button>
-                <button onClick={() => { onSave(items); onClose(); }} style={{ ...btnBase, background:`${T.accent}22`, border:`1px solid ${T.accent}66`, color:T.accent, fontWeight:700 }}>SAVE</button>
-              </div>
+              <button onClick={onClose} style={{ ...btnBase, background:`${T.accent}18`, border:`1px solid ${T.accent}55`, color:T.accent, fontWeight:700 }}>✕ CLOSE</button>
             </div>
           </div>
         </div>
@@ -680,17 +750,30 @@
       const [tagInput, setTagInput] = useState((task.tags || []).join(", "));
       const [assignee, setAssignee] = useState(task.assignee || "");
       const [link,     setLink]     = useState(task.link || "");
+      // 繰り返し
+      const [recurOn,  setRecurOn]  = useState(!!(task.recurrence?.type));
+      const [recurType,setRecurType]= useState(task.recurrence?.type || 'daily');
+      const [recurDays,setRecurDays]= useState(task.recurrence?.weekdays || [1,2,3,4,5]);
+      const [recurMDay,setRecurMDay]= useState(task.recurrence?.monthDay || 1);
       const titleRef = useRef(null);
 
       useEffect(() => { titleRef.current?.focus(); }, []);
 
+      const toggleDay = (d) => setRecurDays(p => p.includes(d) ? p.filter(x=>x!==d) : [...p,d].sort());
+
       const handleSave = () => {
         if (!title.trim()) return;
+        const recurrence = recurOn ? {
+          type: recurType,
+          ...(recurType === 'weekly'  ? { weekdays: recurDays } : {}),
+          ...(recurType === 'monthly' ? { monthDay: recurMDay } : {}),
+        } : null;
         onSave(task.id, {
           title: title.trim(), priority, category, time,
           tags: tagInput ? tagInput.split(",").map(s => s.trim()).filter(Boolean) : [],
           assignee: assignee.trim(),
           link: link.trim(),
+          recurrence,
         });
         onClose();
       };
@@ -752,6 +835,44 @@
                 <div style={lbl}>🔗 LINK</div>
                 <input value={link} onChange={e => setLink(e.target.value)} placeholder="https://..."
                   style={{ ...inp, borderColor: link?"#6699ff66":T.border2 }} />
+              </div>
+              {/* ♻ 繰り返し */}
+              <div style={{ background:recurOn?`${T.accent}08`:'transparent', border:`1px solid ${recurOn?T.accent+'33':T.border2}`, borderRadius:"4px", padding:"10px 12px" }}>
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom: recurOn?"10px":"0" }}>
+                  <span style={{ fontSize:"10px", color:recurOn?T.accent:T.textDim, fontWeight:700, letterSpacing:"0.1em" }}>♻ 繰り返し</span>
+                  <label style={{ display:"flex", alignItems:"center", gap:"6px", cursor:"pointer" }}>
+                    <input type="checkbox" checked={recurOn} onChange={e=>setRecurOn(e.target.checked)} style={{ accentColor:T.accent }} />
+                    <span style={{ fontSize:"10px", color:T.textDim }}>{recurOn?'ON':'OFF'}</span>
+                  </label>
+                </div>
+                {recurOn && (
+                  <div style={{ display:"flex", flexDirection:"column", gap:"8px" }}>
+                    <select value={recurType} onChange={e=>setRecurType(e.target.value)} style={{ ...inp, fontSize:"11px" }}>
+                      {RECUR_TYPES.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
+                    </select>
+                    {recurType === 'weekly' && (
+                      <div style={{ display:"flex", gap:"4px", flexWrap:"wrap" }}>
+                        {WEEKDAY_LABELS.map((label,i) => (
+                          <button key={i} type="button" onClick={()=>toggleDay(i)}
+                            style={{ padding:"3px 8px", borderRadius:"2px", fontSize:"10px", cursor:"pointer", border:`1px solid ${recurDays.includes(i)?T.accent+'88':T.border2}`, background:recurDays.includes(i)?`${T.accent}22`:'transparent', color:recurDays.includes(i)?T.accent:T.textDim, fontFamily:"'JetBrains Mono',monospace" }}>
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {recurType === 'monthly' && (
+                      <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
+                        <span style={{ fontSize:"10px", color:T.textDim }}>毎月</span>
+                        <input type="number" min="1" max="31" value={recurMDay} onChange={e=>setRecurMDay(parseInt(e.target.value)||1)}
+                          style={{ ...inp, width:"70px" }} />
+                        <span style={{ fontSize:"10px", color:T.textDim }}>日</span>
+                      </div>
+                    )}
+                    <div style={{ fontSize:"9px", color:T.textDim }}>
+                      次回: {(() => { try { return calcNextOccurrence({type:recurType,weekdays:recurDays,monthDay:recurMDay})?.toLocaleDateString('ja-JP'); } catch(e) { return '—'; } })()}
+                    </div>
+                  </div>
+                )}
               </div>
               <div style={{ display:"flex", gap:"8px", justifyContent:"flex-end", marginTop:"4px" }}>
                 <button onClick={onClose} style={{ background:"transparent", border:`1px solid ${T.border2}`, color:T.textDim, padding:"6px 16px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontFamily:"'JetBrains Mono',monospace" }}>CANCEL</button>
@@ -968,6 +1089,12 @@
                   🔗 LINK
                 </a>
               )}
+              {task.recurrence && (
+                <span title={`♻ 繰り返し: ${RECUR_TYPES.find(r=>r.id===task.recurrence.type)?.label||task.recurrence.type}`}
+                  style={{ fontSize:"9px", color:"#00ccaa", padding:"1px 5px", background:"rgba(0,200,170,0.08)", border:"1px solid rgba(0,200,170,0.3)", borderRadius:"2px", letterSpacing:"0.05em", flexShrink:0 }}>
+                  ♻ {RECUR_TYPES.find(r=>r.id===task.recurrence.type)?.label||'REC'}
+                </span>
+              )}
             </div>
 
             {/* タイマー表示（ACTIVEのみ） */}
@@ -1133,18 +1260,30 @@
       const [tagInput, setTagInput] = useState("");
       const [assignee, setAssignee] = useState("");
       const [link,     setLink]     = useState("");
+      const [recurOn,  setRecurOn]  = useState(false);
+      const [recurType,setRecurType]= useState('daily');
+      const [recurDays,setRecurDays]= useState([1,2,3,4,5]);
+      const [recurMDay,setRecurMDay]= useState(1);
       const titleRef = useRef(null);
 
       useEffect(() => { titleRef.current?.focus(); }, []);
 
+      const toggleDay = (d) => setRecurDays(p => p.includes(d) ? p.filter(x=>x!==d) : [...p,d].sort());
+
       const handleSubmit = () => {
         if (!title.trim()) return;
+        const recurrence = recurOn ? {
+          type: recurType,
+          ...(recurType === 'weekly'  ? { weekdays: recurDays } : {}),
+          ...(recurType === 'monthly' ? { monthDay: recurMDay } : {}),
+        } : null;
         onAdd({
           stripId: `FS${String(Date.now()).slice(-4)}`,
           title: title.trim(), priority, category, time, status: "next",
           tags: tagInput ? tagInput.split(",").map(s=>s.trim()).filter(Boolean) : [],
           assignee: assignee.trim(),
           link: link.trim(),
+          recurrence,
           sortOrder: Date.now(),
         });
         onClose();
@@ -1176,6 +1315,44 @@
             <input style={inp} placeholder="タグ（カンマ区切り）" value={tagInput} onChange={e=>setTagInput(e.target.value)} />
             <input style={{ ...inp, borderColor:assignee?"#ffaa0066":T.border2 }} placeholder="✈ HANDOFF先（委任者名、空欄＝自分）" value={assignee} onChange={e=>setAssignee(e.target.value)} />
             <input style={{ ...inp, borderColor:link?"#6699ff66":T.border2 }} placeholder="🔗 URL（任意）" value={link} onChange={e=>setLink(e.target.value)} />
+            {/* ♻ 繰り返し */}
+            <div style={{ background:recurOn?`${T.accent}08`:'transparent', border:`1px solid ${recurOn?T.accent+'33':T.border2}`, borderRadius:"4px", padding:"8px 10px" }}>
+              <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:recurOn?"8px":"0" }}>
+                <span style={{ fontSize:"10px", color:recurOn?T.accent:T.textDim, fontWeight:700 }}>♻ 繰り返し</span>
+                <label style={{ display:"flex", alignItems:"center", gap:"5px", cursor:"pointer" }}>
+                  <input type="checkbox" checked={recurOn} onChange={e=>setRecurOn(e.target.checked)} style={{ accentColor:T.accent }} />
+                  <span style={{ fontSize:"10px", color:T.textDim }}>{recurOn?'ON':'OFF'}</span>
+                </label>
+              </div>
+              {recurOn && (
+                <div style={{ display:"flex", flexDirection:"column", gap:"6px" }}>
+                  <select value={recurType} onChange={e=>setRecurType(e.target.value)} style={{ ...inp, fontSize:"11px" }}>
+                    {RECUR_TYPES.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
+                  </select>
+                  {recurType === 'weekly' && (
+                    <div style={{ display:"flex", gap:"4px" }}>
+                      {WEEKDAY_LABELS.map((label,i) => (
+                        <button key={i} type="button" onClick={()=>toggleDay(i)}
+                          style={{ padding:"2px 7px", borderRadius:"2px", fontSize:"10px", cursor:"pointer", border:`1px solid ${recurDays.includes(i)?T.accent+'88':T.border2}`, background:recurDays.includes(i)?`${T.accent}22`:'transparent', color:recurDays.includes(i)?T.accent:T.textDim, fontFamily:"'JetBrains Mono',monospace" }}>
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {recurType === 'monthly' && (
+                    <div style={{ display:"flex", alignItems:"center", gap:"8px" }}>
+                      <span style={{ fontSize:"10px", color:T.textDim }}>毎月</span>
+                      <input type="number" min="1" max="31" value={recurMDay} onChange={e=>setRecurMDay(parseInt(e.target.value)||1)}
+                        style={{ ...inp, width:"70px" }} />
+                      <span style={{ fontSize:"10px", color:T.textDim }}>日</span>
+                    </div>
+                  )}
+                  <div style={{ fontSize:"9px", color:T.textDim }}>
+                    次回: {(() => { try { return calcNextOccurrence({type:recurType,weekdays:recurDays,monthDay:recurMDay})?.toLocaleDateString('ja-JP'); } catch(e) { return '—'; } })()}
+                  </div>
+                </div>
+              )}
+            </div>
             <div style={{ display:"flex", gap:"8px", justifyContent:"flex-end" }}>
               <button onClick={onClose} style={{ background:"transparent", border:`1px solid ${T.border2}`, color:T.textDim, padding:"6px 16px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontFamily:"'JetBrains Mono',monospace" }}>CANCEL</button>
               <button onClick={handleSubmit} style={{ background:`${T.accent}22`, border:`1px solid ${T.accent}66`, color:T.accent, padding:"6px 16px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontWeight:700, fontFamily:"'JetBrains Mono',monospace" }}>FILE STRIP</button>
@@ -1270,14 +1447,13 @@
         return unsub;
       }, [metaRef]);
 
-      const handleSaveERs = async (items) => {
-        try {
-          await metaRef.doc('enhancedRequests').set({ items });
-          setErs(items);
-        } catch (err) {
-          alert(`⚠ ERの保存に失敗しました\n\n${err.message}`);
-          console.error("handleSaveERs error:", err);
-        }
+      const handleSaveERs = (items) => {
+        return metaRef.doc('enhancedRequests').set({ items })
+          .then(() => setErs(items))
+          .catch(err => {
+            console.error("handleSaveERs error:", err);
+            throw err;
+          });
       };
 
       // er-sync.json から自動同期（アプリ起動時に1回）
@@ -1338,6 +1514,24 @@
         };
         autoSync();
       }, [metaRef]); // eslint-disable-line
+
+      // 繰り返しタスク: 毎日1回、当日分を自動で 'next' へ昇格
+      useEffect(() => {
+        if (tasks.length === 0) return;
+        const today = new Date().toISOString().slice(0, 10);
+        const checkKey = `fst-recurCheck-${today}`;
+        if (localStorage.getItem(checkKey)) return; // 本日チェック済み
+        localStorage.setItem(checkKey, '1');
+
+        const dueTasks = tasks.filter(t =>
+          t.recurrence &&
+          t.status === 'pending' &&
+          t.scheduledDate &&
+          t.scheduledDate <= today
+        );
+        dueTasks.forEach(t => tasksRef.doc(t.id).update({ status: 'next', updatedAt: ts() }));
+        if (dueTasks.length > 0) console.log(`[RecurCheck] ${dueTasks.length} tasks activated`);
+      }, [tasks.length, tasksRef]); // eslint-disable-line
 
       // 複数選択 + コンテキストメニューハンドラー
       const handleStripClick = useCallback((e, taskId) => {
@@ -1430,7 +1624,7 @@
         tasksRef.doc(id).delete();
         setSelectedId(p => p===id ? null : p);
       }, [tasksRef]);
-      const handleStatusChange = useCallback((id, s) => {
+      const handleStatusChange = useCallback(async (id, s) => {
         const col = COLUMNS.find(c => c.id === s);
         if (col?.limit) {
           const existing = tasks.filter(t => t.status === s && t.id !== id).length;
@@ -1439,7 +1633,33 @@
             return;
           }
         }
-        tasksRef.doc(id).update({ status: s, updatedAt: ts() });
+        await tasksRef.doc(id).update({ status: s, updatedAt: ts() });
+
+        // 繰り返しタスク: 完了・LOST時に次回インスタンスを自動生成
+        if (s === 'completed' || s === 'cleared' || s === 'lost') {
+          const task = tasks.find(t => t.id === id);
+          if (task?.recurrence) {
+            const nextDate = calcNextOccurrence(task.recurrence);
+            if (nextDate) {
+              const dateStr = nextDate.toISOString().slice(0, 10);
+              const { id: _id, createdAt: _c, updatedAt: _u, timerRunning: _tr,
+                      timerStartedAt: _ts, timeLogs: _tl, ...rest } = task;
+              await tasksRef.add({
+                ...rest,
+                stripId:    `FS${String(Date.now()).slice(-4)}`,
+                status:     'pending',
+                scheduledDate: dateStr,
+                fromRecurring: id,
+                sortOrder:  Date.now() + 1,
+                createdAt:  ts(),
+                updatedAt:  ts(),
+                timerRunning: false,
+                timerStartedAt: null,
+                timeLogs:   [],
+              });
+            }
+          }
+        }
       }, [tasks, tasksRef]);
       const handleEditSave     = useCallback((id, fields) => tasksRef.doc(id).update({ ...fields, updatedAt:ts() }), [tasksRef]);
       const handleTimeChange   = useCallback((id, time)   => tasksRef.doc(id).update({ time, updatedAt: ts() }), [tasksRef]);
