@@ -374,6 +374,9 @@
       {
         version: "v0.6.0-dev", date: "2026-04-10",
         changes: [
+          "タイムライン刷新 — 時間外フィード（右端）を追加、範囲外タスクを分離表示",
+          "タイムライン — 07:00〜19:59 範囲外タスクは時間外フィードに自動格納",
+          "タイムライン — 時間外フィードへのDnDで時刻クリア、メイン←→外をドラッグ移動可",
           "LOSTステータス追加 — 未達成タスクを記録（キー: 6）",
           "Enhanced Request (ER) システム — 機能要望管理モーダル",
           "ER: 優先度・難易度（AIキーワード自動判定）・登録日・実装日",
@@ -1209,47 +1212,112 @@
     // ======================================================
     const TimelineView = ({ tasks, currentTime, onTimeChange }) => {
       const T = useT();
-      const hours = Array.from({ length: 13 }, (_, i) => i + 7);
+      const TL_START = 7;   // タイムライン開始時刻
+      const TL_END   = 20;  // タイムライン終了時刻（排他）
+      const HOURS = Array.from({ length: TL_END - TL_START }, (_, i) => i + TL_START);
       const currentHour = currentTime.getHours();
       const currentMin  = currentTime.getMinutes();
-      const [dragOverHour, setDragOverHour] = useState(null);
+      const [dragOverHour,    setDragOverHour]    = useState(null);
+      const [dragOverOutside, setDragOverOutside] = useState(false);
+
+      // タスクの時刻を数値で返す（未設定はnull）
+      const getHour = (t) => {
+        if (!t.time || t.time === '00:00' || t.time === '0:00') return null;
+        const h = parseInt(t.time.split(':')[0]);
+        return isNaN(h) ? null : h;
+      };
+
+      const active = tasks.filter(t => t.status !== 'completed' && t.status !== 'cleared');
+
+      // タイムライン内（07:00〜TL_END未満）
+      const inRange = (t) => { const h = getHour(t); return h !== null && h >= TL_START && h < TL_END; };
+      // 時間外フィード（時刻未設定 or 範囲外）
+      const outsideTasks = active.filter(t => !inRange(t))
+        .sort((a, b) => (getHour(a) ?? 99) - (getHour(b) ?? 99));
+
+      const TL_H = 108; // タイムライン高さ px
+
+      const stripChip = (t, opts = {}) => (
+        <div key={t.id}
+          draggable={!!onTimeChange}
+          onDragStart={onTimeChange ? e => { e.dataTransfer.setData('text/plain', t.id); e.dataTransfer.effectAllowed = 'move'; } : undefined}
+          title={t.title}
+          style={{ background:PRIORITIES[t.priority]?.bg, border:`1px solid ${PRIORITIES[t.priority]?.color}44`, borderLeft:`3px solid ${PRIORITIES[t.priority]?.color}`, borderRadius:"2px", padding:"2px 5px", fontSize:"9px", color:T.textDim, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", fontFamily:"'JetBrains Mono',monospace", cursor:onTimeChange?"grab":"default", ...opts.style }}>
+          {opts.showTime && t.time && <span style={{ color:T.textMuted, marginRight:"3px", fontSize:"8px" }}>{t.time}</span>}
+          <span style={{ color:PRIORITIES[t.priority]?.color, marginRight:"3px" }}>●</span>
+          {t.title}
+        </div>
+      );
 
       return (
-        <div style={{ background:T.bgCard, border:`1px solid ${T.border}`, borderRadius:"4px", padding:"12px", overflowX:"auto" }}>
-          <div style={{ display:"flex", alignItems:"center", gap:"8px", marginBottom:"10px", color:T.accent, fontSize:"11px", fontWeight:700, letterSpacing:"0.15em", fontFamily:"'JetBrains Mono',monospace" }}>
-            <span>◈</span><span>TIMELINE</span>
-            <span style={{ color:T.textMuted }}>━━━━━━━━━━━━━━━━━━━━━━</span>
-            {onTimeChange && <span style={{ color:T.textMuted, fontSize:"9px", fontWeight:400 }}>（タスクをドラッグして時間変更）</span>}
+        <div style={{ background:T.bgCard, border:`1px solid ${T.border}`, borderRadius:"4px", padding:"12px" }}>
+          {/* ヘッダー */}
+          <div style={{ display:"flex", alignItems:"center", gap:"8px", marginBottom:"8px", fontFamily:"'JetBrains Mono',monospace" }}>
+            <span style={{ color:T.accent, fontSize:"11px", fontWeight:700, letterSpacing:"0.15em" }}>◈ TIMELINE</span>
+            {onTimeChange && <span style={{ color:T.textMuted, fontSize:"9px" }}>ドラッグで時間変更</span>}
+            <div style={{ flex:1 }} />
+            {outsideTasks.length > 0 && (
+              <span style={{ fontSize:"9px", color:"#ffaa00", background:"rgba(255,170,0,0.1)", border:"1px solid rgba(255,170,0,0.25)", padding:"1px 7px", borderRadius:"2px" }}>
+                時間外 {outsideTasks.length}件
+              </span>
+            )}
           </div>
-          <div style={{ position:"relative", height:"100px" }}>
-            <div style={{ display:"flex", height:"100%", position:"relative" }}>
-              {hours.map(h => {
-                const tasksAtHour = tasks.filter(t => parseInt((t.time||"0:0").split(":")[0])===h && t.status!=="completed");
-                const isCurrent = h === currentHour;
-                const isDragOver = dragOverHour === h;
-                return (
-                  <div key={h}
-                    style={{ flex:1, borderRight:`1px solid ${T.border}`, position:"relative", background:isDragOver?'rgba(0,255,136,0.1)':isCurrent?`${T.accent}08`:"transparent", transition:"background 0.1s" }}
-                    onDragOver={onTimeChange ? e => { e.preventDefault(); e.dataTransfer.dropEffect='move'; setDragOverHour(h); } : undefined}
-                    onDragLeave={onTimeChange ? () => setDragOverHour(null) : undefined}
-                    onDrop={onTimeChange ? e => { e.preventDefault(); const taskId=e.dataTransfer.getData('text/plain'); const newTime=`${String(h).padStart(2,'0')}:00`; onTimeChange(taskId,newTime); setDragOverHour(null); } : undefined}
-                  >
-                    <span style={{ position:"absolute", top:0, left:"4px", fontSize:"9px", color:isCurrent?T.accent:T.textMuted, fontFamily:"'JetBrains Mono',monospace", fontWeight:isCurrent?700:400 }}>{String(h).padStart(2,"0")}:00</span>
-                    {tasksAtHour.map((t,i) => (
-                      <div key={t.id}
-                        draggable={!!onTimeChange}
-                        onDragStart={onTimeChange ? e => { e.dataTransfer.setData('text/plain',t.id); e.dataTransfer.effectAllowed='move'; } : undefined}
-                        style={{ position:"absolute", top:24+i*26, left:"4px", right:"4px", background:PRIORITIES[t.priority]?.bg, border:`1px solid ${PRIORITIES[t.priority]?.color}44`, borderLeft:`3px solid ${PRIORITIES[t.priority]?.color}`, borderRadius:"2px", padding:"2px 6px", fontSize:"9px", color:T.textDim, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", fontFamily:"'JetBrains Mono',monospace", cursor:onTimeChange?"grab":"default" }}>
-                        <span style={{ color:PRIORITIES[t.priority]?.color, marginRight:"4px" }}>●</span>{t.title}
-                      </div>
-                    ))}
-                  </div>
-                );
-              })}
+
+          {/* タイムライン本体 + 時間外フィード */}
+          <div style={{ display:"flex", gap:"8px", alignItems:"flex-start" }}>
+
+            {/* ── メインタイムライン ── */}
+            <div style={{ flex:1, position:"relative", height:`${TL_H}px`, minWidth:0, overflowX:"auto" }}>
+              <div style={{ display:"flex", height:"100%", minWidth:`${HOURS.length * 60}px`, position:"relative" }}>
+                {HOURS.map(h => {
+                  const tasksAtHour = active.filter(t => getHour(t) === h);
+                  const isCurrent  = h === currentHour;
+                  const isDragOver = dragOverHour === h;
+                  return (
+                    <div key={h}
+                      style={{ flex:1, borderRight:`1px solid ${T.border}`, position:"relative", background:isDragOver?`${T.accent}18`:isCurrent?`${T.accent}08`:"transparent", transition:"background 0.1s", minWidth:"60px" }}
+                      onDragOver={onTimeChange ? e => { e.preventDefault(); e.dataTransfer.dropEffect='move'; setDragOverHour(h); } : undefined}
+                      onDragLeave={onTimeChange ? () => setDragOverHour(null) : undefined}
+                      onDrop={onTimeChange ? e => { e.preventDefault(); const id=e.dataTransfer.getData('text/plain'); onTimeChange(id, `${String(h).padStart(2,'0')}:00`); setDragOverHour(null); } : undefined}
+                    >
+                      <span style={{ position:"absolute", top:0, left:"3px", fontSize:"8px", color:isCurrent?T.accent:T.textMuted, fontFamily:"'JetBrains Mono',monospace", fontWeight:isCurrent?700:400 }}>
+                        {String(h).padStart(2,"0")}
+                      </span>
+                      {tasksAtHour.map((t, i) => (
+                        <div key={t.id} style={{ position:"absolute", top:16+i*24, left:"3px", right:"3px" }}>
+                          {stripChip(t)}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+              {/* 現在時刻ライン（範囲内のみ） */}
+              {currentHour >= TL_START && currentHour < TL_END && (
+                <div style={{ position:"absolute", left:`${((currentHour - TL_START) + currentMin/60) / HOURS.length * 100}%`, top:0, bottom:0, width:"2px", background:"#ff3333", boxShadow:"0 0 8px #ff333388", zIndex:10, pointerEvents:"none" }}>
+                  <div style={{ position:"absolute", top:"-3px", left:"-3px", width:"8px", height:"8px", background:"#ff3333", borderRadius:"50%" }} />
+                </div>
+              )}
             </div>
-            <div style={{ position:"absolute", left:`${((currentHour-7)+currentMin/60)/13*100}%`, top:0, bottom:0, width:"2px", background:"#ff3333", boxShadow:"0 0 8px #ff333388", zIndex:10 }}>
-              <div style={{ position:"absolute", top:"-3px", left:"-3px", width:"8px", height:"8px", background:"#ff3333", borderRadius:"50%" }} />
+
+            {/* ── 時間外フィード ── */}
+            <div
+              style={{ width:"152px", flexShrink:0, border:`1px solid ${dragOverOutside?"#ffaa0077":T.border2}`, borderRadius:"3px", background: dragOverOutside?`rgba(255,170,0,0.06)`:T.bg, transition:"border-color 0.1s, background 0.1s", height:`${TL_H}px`, display:"flex", flexDirection:"column" }}
+              onDragOver={onTimeChange ? e => { e.preventDefault(); setDragOverOutside(true); } : undefined}
+              onDragLeave={onTimeChange ? () => setDragOverOutside(false) : undefined}
+              onDrop={onTimeChange ? e => { e.preventDefault(); const id=e.dataTransfer.getData('text/plain'); onTimeChange(id, ''); setDragOverOutside(false); } : undefined}
+            >
+              <div style={{ padding:"3px 7px", borderBottom:`1px solid ${T.border2}`, fontSize:"8px", color:"#ffaa00", letterSpacing:"0.12em", fontFamily:"'JetBrains Mono',monospace", flexShrink:0 }}>
+                時間外 / 未設定
+              </div>
+              <div style={{ flex:1, overflowY:"auto", padding:"4px", display:"flex", flexDirection:"column", gap:"3px" }}>
+                {outsideTasks.length === 0
+                  ? <div style={{ fontSize:"8px", color:T.border, textAlign:"center", marginTop:"16px", fontFamily:"'JetBrains Mono',monospace" }}>NO STRIPS</div>
+                  : outsideTasks.map(t => stripChip(t, { showTime:true }))
+                }
+              </div>
             </div>
+
           </div>
         </div>
       );
