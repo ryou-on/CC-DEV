@@ -1582,6 +1582,8 @@
       const [newTaskTitle,  setNewTaskTitle]  = useState('');
       const [newTaskPri,    setNewTaskPri]    = useState('normal');
       const [addingTask,    setAddingTask]    = useState(false);
+      const [addMode,       setAddMode]       = useState('new'); // 'new' | 'existing'
+      const [existSearch,   setExistSearch]   = useState('');
 
       const selectedProj = projects.find(p => p.id === selectedProjId);
       const projTasks = tasks
@@ -1616,6 +1618,18 @@
           sortOrder: Date.now(), createdAt: ts(), updatedAt: ts(),
         });
         setNewTaskTitle(''); setAddingTask(false);
+      };
+
+      const linkExistingTask = async (taskId) => {
+        const maxOrder = projTasks.reduce((m, t) => Math.max(m, t.projectOrder ?? 0), -1);
+        const isFirst = projTasks.length === 0;
+        await tasksRef.doc(taskId).update({
+          projectId: selectedProjId,
+          projectOrder: maxOrder + 1,
+          // 初タスクなら next、以降は pending
+          status: isFirst ? 'next' : 'pending',
+          updatedAt: ts(),
+        });
       };
 
       const removeTask = async (taskId) =>
@@ -1757,24 +1771,75 @@
                       )}
                     </div>
 
-                    {/* タスク追加フォーム */}
+                    {/* タスク追加パネル */}
                     {addingTask ? (
-                      <div style={{ display:'flex', gap:'6px', alignItems:'center', flexWrap:'wrap', padding:'8px', border:`1px solid ${T.accent}33`, borderRadius:'3px', background:`${T.accent}06`, flexShrink:0 }}>
-                        <input value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)}
-                          onKeyDown={e => { if(e.key==='Enter') addTask(); if(e.key==='Escape') setAddingTask(false); }}
-                          placeholder="タスク名..." autoFocus
-                          style={{ ...inp, flex:'1 1 140px' }} />
-                        <select value={newTaskPri} onChange={e => setNewTaskPri(e.target.value)}
-                          style={{ ...inp, cursor:'pointer' }}>
-                          <option value="high">🔴 URG</option>
-                          <option value="normal">🟢 NRM</option>
-                          <option value="low">⚫ LOW</option>
-                        </select>
-                        <button onClick={addTask} style={{ background:`${T.accent}22`, border:`1px solid ${T.accent}66`, color:T.accent, padding:'6px 12px', borderRadius:'2px', cursor:'pointer', fontSize:'10px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace" }}>追加 ↵</button>
-                        <button onClick={() => setAddingTask(false)} style={{ background:'transparent', border:`1px solid ${T.border2}`, color:T.textDim, padding:'6px 8px', borderRadius:'2px', cursor:'pointer', fontSize:'10px' }}>✕</button>
+                      <div style={{ border:`1px solid ${T.accent}33`, borderRadius:'3px', background:`${T.accent}06`, flexShrink:0, overflow:'hidden' }}>
+                        {/* モード切替タブ */}
+                        <div style={{ display:'flex', borderBottom:`1px solid ${T.accent}22` }}>
+                          {[{id:'new',label:'＋ 新規作成'},{id:'existing',label:'📋 既存から選ぶ'}].map(m => (
+                            <button key={m.id} onClick={() => setAddMode(m.id)}
+                              style={{ flex:1, padding:'6px', background:addMode===m.id?`${T.accent}18`:'transparent', border:'none', borderBottom:addMode===m.id?`2px solid ${T.accent}`:'2px solid transparent', color:addMode===m.id?T.accent:T.textDim, fontSize:'10px', fontWeight:addMode===m.id?700:400, cursor:'pointer', fontFamily:"'JetBrains Mono',monospace", transition:'all 0.1s' }}>
+                              {m.label}
+                            </button>
+                          ))}
+                          <button onClick={() => { setAddingTask(false); setExistSearch(''); }}
+                            style={{ padding:'6px 10px', background:'transparent', border:'none', color:T.textDim, cursor:'pointer', fontSize:'12px' }}>✕</button>
+                        </div>
+
+                        {addMode === 'new' ? (
+                          /* 新規作成フォーム */
+                          <div style={{ display:'flex', gap:'6px', alignItems:'center', flexWrap:'wrap', padding:'8px' }}>
+                            <input value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)}
+                              onKeyDown={e => { if(e.key==='Enter') addTask(); if(e.key==='Escape') setAddingTask(false); }}
+                              placeholder="タスク名..." autoFocus
+                              style={{ ...inp, flex:'1 1 140px' }} />
+                            <select value={newTaskPri} onChange={e => setNewTaskPri(e.target.value)}
+                              style={{ ...inp, cursor:'pointer' }}>
+                              <option value="high">🔴 URG</option>
+                              <option value="normal">🟢 NRM</option>
+                              <option value="low">⚫ LOW</option>
+                            </select>
+                            <button onClick={addTask} style={{ background:`${T.accent}22`, border:`1px solid ${T.accent}66`, color:T.accent, padding:'6px 12px', borderRadius:'2px', cursor:'pointer', fontSize:'10px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace" }}>追加 ↵</button>
+                          </div>
+                        ) : (
+                          /* 既存タスク選択 */
+                          <div style={{ padding:'8px', display:'flex', flexDirection:'column', gap:'6px' }}>
+                            <input value={existSearch} onChange={e => setExistSearch(e.target.value)}
+                              placeholder="タスク名で絞り込み..." autoFocus
+                              style={{ ...inp, width:'100%', boxSizing:'border-box' }} />
+                            <div style={{ maxHeight:'160px', overflowY:'auto', display:'flex', flexDirection:'column', gap:'3px' }}>
+                              {(() => {
+                                const available = tasks.filter(t =>
+                                  !t.projectId &&
+                                  !['completed','cleared','lost'].includes(t.status) &&
+                                  (existSearch === '' || t.title.toLowerCase().includes(existSearch.toLowerCase()))
+                                );
+                                if (available.length === 0) return (
+                                  <div style={{ textAlign:'center', fontSize:'10px', color:T.textMuted, padding:'12px' }}>
+                                    {existSearch ? '該当なし' : '追加できる既存タスクがありません'}
+                                  </div>
+                                );
+                                return available.map(t => {
+                                  const pri = PRIORITIES[t.priority] || PRIORITIES.normal;
+                                  return (
+                                    <div key={t.id} onClick={() => { linkExistingTask(t.id); setExistSearch(''); }}
+                                      style={{ display:'flex', alignItems:'center', gap:'8px', padding:'5px 8px', borderRadius:'2px', border:`1px solid ${T.border2}`, cursor:'pointer', background:'transparent', transition:'background 0.1s' }}
+                                      onMouseEnter={e => e.currentTarget.style.background=`${T.accent}14`}
+                                      onMouseLeave={e => e.currentTarget.style.background='transparent'}>
+                                      <span style={{ fontSize:'9px', color:pri.color, fontWeight:700, padding:'1px 4px', border:`1px solid ${pri.color}44`, borderRadius:'2px', flexShrink:0 }}>{pri.label}</span>
+                                      <span style={{ flex:1, fontSize:'11px', color:T.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{t.title}</span>
+                                      <span style={{ fontSize:'8px', color:T.textMuted, flexShrink:0 }}>{t.status}</span>
+                                      <span style={{ fontSize:'9px', color:T.accent, flexShrink:0 }}>＋</span>
+                                    </div>
+                                  );
+                                });
+                              })()}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ) : (
-                      <button onClick={() => setAddingTask(true)} style={{ background:'transparent', border:`1px dashed ${T.border}`, color:T.textDim, padding:'8px', borderRadius:'3px', cursor:'pointer', fontSize:'10px', fontFamily:"'JetBrains Mono',monospace", width:'100%', flexShrink:0 }}>
+                      <button onClick={() => { setAddingTask(true); setAddMode('new'); }} style={{ background:'transparent', border:`1px dashed ${T.border}`, color:T.textDim, padding:'8px', borderRadius:'3px', cursor:'pointer', fontSize:'10px', fontFamily:"'JetBrains Mono',monospace", width:'100%', flexShrink:0 }}>
                         ＋ タスクを追加
                       </button>
                     )}
