@@ -265,7 +265,7 @@
       { id:'er-008', title:'タスクのロスト', desc:'当日できなかったタスクをLOSTとして記録。CLEAREDとは区別', priority:'medium', difficulty:'easy', status:'implemented', registeredAt:'2026-04-09', implementedAt:'2026-04-09' },
       { id:'er-009', title:'タイムラインでのDnD移動', desc:'タイムライン上でドラッグ＆ドロップでストリップを任意の時間に移動', priority:'medium', difficulty:'medium', status:'implemented', registeredAt:'2026-04-05', implementedAt:'2026-04-09' },
       { id:'er-010', title:'安定版と開発版の分離', desc:'安定版（Flight_Strip_TODO/）と開発版（dev/）を分離して運用', priority:'high', difficulty:'easy', status:'implemented', registeredAt:'2026-04-08', implementedAt:'2026-04-09' },
-      { id:'er-011', title:'プロジェクト管理（FlightDispatcher連携）', desc:'Stripの上位概念としてプロジェクトを設定。FlightDispatcherと連携しワークフローとしてストリップを生成。過去プロジェクトからタスク候補を提案', priority:'high', difficulty:'hard', status:'pending', registeredAt:'2026-04-09' },
+      { id:'er-011', title:'プロジェクト管理 — タスクシーケンス', desc:'タスクの上位概念としてプロジェクトを設定。目薬→朝・昼・夕方・寝る前のような順番タスクをノードで繋ぎ、完了すると次タスクが自動表示。スキップボタンあり', priority:'high', difficulty:'hard', status:'pending', registeredAt:'2026-04-09' },
       { id:'er-012', title:'Googleカレンダー・タスク連携', desc:'グーグルカレンダーやグーグルタスクなど既存タスク管理アプリとのAPI連携', priority:'medium', difficulty:'hard', status:'pending', registeredAt:'2026-04-09' },
       { id:'er-013', title:'ストリップへのリンク添付', desc:'他のWebサイトやアプリへのリンクを添付。例：Gmailを起動するなど', priority:'low', difficulty:'easy', status:'pending', registeredAt:'2026-04-09' },
       { id:'er-014', title:'継続タスクのノード連携', desc:'見積もり→承諾→契約書→請求書などのワークフローをノードで紐付け', priority:'medium', difficulty:'hard', status:'pending', registeredAt:'2026-04-09' },
@@ -378,6 +378,9 @@
           "タイムライン — 07:00〜19:59 範囲外タスクは時間外フィードに自動格納",
           "タイムライン — 時間外フィードへのDnDで時刻クリア、メイン←→外をドラッグ移動可",
           "タイムライン — タッチパネル対応（指ドラッグで時間移動・時間外フィードへ移動）",
+          "プロジェクト管理 — タスクシーケンス（完了で次タスク自動アクティブ化・⏭スキップ）",
+          "プロジェクト — 将来タスクを自動非表示（現在タスクのみ表示）",
+          "プロジェクト — 📁バッジをストリップに表示",
           "LOSTステータス追加 — 未達成タスクを記録（キー: 6）",
           "Enhanced Request (ER) システム — 機能要望管理モーダル",
           "ER: 優先度・難易度（AIキーワード自動判定）・登録日・実装日",
@@ -1020,7 +1023,7 @@
       return `${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
     };
 
-    const FlightStrip = ({ task, isSelected, isMultiSelected, dropState, onDragStart, onDragOver, onDragEnd, onDrop, onStatusChange, onDelete, onEdit, isTimerRunning, elapsedMs, totalLoggedMs, onTimerStart, onTimerStop, onTouchStart, onTouchMove, onTouchEnd, titleFontSize=13 }) => {
+    const FlightStrip = ({ task, isSelected, isMultiSelected, dropState, onDragStart, onDragOver, onDragEnd, onDrop, onStatusChange, onDelete, onEdit, isTimerRunning, elapsedMs, totalLoggedMs, onTimerStart, onTimerStop, onTouchStart, onTouchMove, onTouchEnd, titleFontSize=13, projects=[], onSkipProject }) => {
       const T = useT();
       const pri = PRIORITIES[task.priority] || PRIORITIES.normal;
       const cat = CATEGORIES[task.category] || { label: task.category || "OTHER", color: "#888888" };
@@ -1106,6 +1109,15 @@
                   ♻ {RECUR_TYPES.find(r=>r.id===task.recurrence.type)?.label||'REC'}
                 </span>
               )}
+              {task.projectId && (() => {
+                const proj = projects.find(p => p.id === task.projectId);
+                return proj ? (
+                  <span title={`📁 プロジェクト: ${proj.name}`}
+                    style={{ fontSize:"9px", color:proj.color||'#00aaff', padding:"1px 5px", background:`${proj.color||'#00aaff'}18`, border:`1px solid ${proj.color||'#00aaff'}44`, borderRadius:"2px", letterSpacing:"0.05em", flexShrink:0, maxWidth:"80px", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                    📁 {proj.name}
+                  </span>
+                ) : null;
+              })()}
             </div>
 
             {/* タイマー表示（ACTIVEのみ） */}
@@ -1128,6 +1140,25 @@
             )}
           </div>
 
+          {/* 右：プロジェクトSKIPボタン（プロジェクトタスクのみ） */}
+          {task.projectId && onSkipProject && (
+            <button
+              onClick={e => { e.stopPropagation(); onSkipProject(task.id); }}
+              title="このタスクをスキップして次へ"
+              style={{
+                flexShrink: 0, width: "22px",
+                background: "rgba(100,150,255,0.06)", borderLeft: "1px solid rgba(100,150,255,0.2)",
+                border: "none", color: "#6699ff", cursor: "pointer",
+                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "1px",
+                transition: "background 0.15s, color 0.15s", position: "relative", zIndex: 1,
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background="rgba(100,150,255,0.2)"; e.currentTarget.style.color="#88bbff"; }}
+              onMouseLeave={e => { e.currentTarget.style.background="rgba(100,150,255,0.06)"; e.currentTarget.style.color="#6699ff"; }}
+            >
+              <span style={{ fontSize: "10px", lineHeight: 1, fontWeight: 700 }}>⏭</span>
+              <span style={{ fontSize: "5px", letterSpacing: "0em", opacity: 0.55, fontFamily:"'JetBrains Mono',monospace" }}>SKIP</span>
+            </button>
+          )}
           {/* 右：LOSTボタン */}
           <button
             onClick={e => { e.stopPropagation(); onStatusChange(task.id, isLost ? "pending" : "lost"); }}
@@ -1539,6 +1570,225 @@
     };
 
     // ======================================================
+    // プロジェクト管理モーダル
+    // ======================================================
+    const ProjectModal = ({ tasks, tasksRef, projects, projectsRef, onClose }) => {
+      const T = useT();
+      const ts = () => firebase.firestore.FieldValue.serverTimestamp();
+      const [selectedProjId, setSelectedProjId] = useState(projects[0]?.id || null);
+      const [newProjName,   setNewProjName]   = useState('');
+      const [newProjColor,  setNewProjColor]  = useState('#00aaff');
+      const [showNewProj,   setShowNewProj]   = useState(false);
+      const [newTaskTitle,  setNewTaskTitle]  = useState('');
+      const [newTaskPri,    setNewTaskPri]    = useState('normal');
+      const [addingTask,    setAddingTask]    = useState(false);
+
+      const selectedProj = projects.find(p => p.id === selectedProjId);
+      const projTasks = tasks
+        .filter(t => t.projectId === selectedProjId)
+        .sort((a, b) => (a.projectOrder ?? 0) - (b.projectOrder ?? 0));
+
+      const createProject = async () => {
+        if (!newProjName.trim()) return;
+        const ref = await projectsRef.add({ name: newProjName.trim(), color: newProjColor, createdAt: ts(), updatedAt: ts() });
+        setSelectedProjId(ref.id);
+        setNewProjName(''); setShowNewProj(false);
+      };
+
+      const deleteProject = async (projId) => {
+        if (!window.confirm('プロジェクトを削除しますか？（タスクは削除されません）')) return;
+        await projectsRef.doc(projId).delete();
+        const linked = tasks.filter(t => t.projectId === projId);
+        for (const t of linked) await tasksRef.doc(t.id).update({ projectId: null, projectOrder: null, updatedAt: ts() });
+        setSelectedProjId(projects.find(p => p.id !== projId)?.id || null);
+      };
+
+      const addTask = async () => {
+        if (!newTaskTitle.trim() || !selectedProjId) return;
+        const maxOrder = projTasks.reduce((m, t) => Math.max(m, t.projectOrder ?? 0), -1);
+        const isFirst = projTasks.length === 0;
+        await tasksRef.add({
+          title: newTaskTitle.trim(), priority: newTaskPri,
+          status: isFirst ? 'next' : 'pending',
+          projectId: selectedProjId, projectOrder: maxOrder + 1,
+          category: 'work', tags: [], time: '',
+          stripId: `FS${String(Date.now()).slice(-4)}`,
+          sortOrder: Date.now(), createdAt: ts(), updatedAt: ts(),
+        });
+        setNewTaskTitle(''); setAddingTask(false);
+      };
+
+      const removeTask = async (taskId) =>
+        tasksRef.doc(taskId).update({ projectId: null, projectOrder: null, updatedAt: ts() });
+
+      const moveTask = async (taskId, dir) => {
+        const idx = projTasks.findIndex(t => t.id === taskId);
+        const tIdx = dir === 'up' ? idx - 1 : idx + 1;
+        if (tIdx < 0 || tIdx >= projTasks.length) return;
+        const target = projTasks[tIdx];
+        const myO = projTasks[idx].projectOrder ?? idx;
+        const thO = target.projectOrder ?? tIdx;
+        await tasksRef.doc(taskId).update({ projectOrder: thO, updatedAt: ts() });
+        await tasksRef.doc(target.id).update({ projectOrder: myO, updatedAt: ts() });
+      };
+
+      const inp = { background:T.bgInput, border:`1px solid ${T.border2}`, color:T.text, padding:'6px 10px', borderRadius:'2px', fontSize:'11px', fontFamily:"'JetBrains Mono',monospace" };
+      const STATUS_COLORS = { active:'#00ff88', next:'#00ccff', delegated:'#ffaa00', pending:'#556677', completed:'#00ff88', cleared:'#00ff88', lost:'#ff6600' };
+
+      return (
+        <div style={{ position:'fixed', inset:0, zIndex:100, background:'rgba(0,0,0,0.82)', display:'flex', alignItems:'center', justifyContent:'center' }} onClick={onClose}>
+          <div onClick={e => e.stopPropagation()} style={{ background:T.bgModal, border:`1px solid ${T.accent}44`, borderRadius:'6px', padding:'24px', maxWidth:'700px', width:'95%', maxHeight:'85vh', display:'flex', flexDirection:'column', gap:'12px', boxShadow:`0 0 40px ${T.accent}18`, fontFamily:"'JetBrains Mono',monospace" }}>
+
+            {/* ヘッダー */}
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+              <span style={{ color:T.accent, fontSize:'13px', fontWeight:700, letterSpacing:'0.15em' }}>◈ PROJECTS</span>
+              <div style={{ display:'flex', gap:'8px' }}>
+                <button onClick={() => setShowNewProj(p=>!p)} style={{ background:`${T.accent}18`, border:`1px solid ${T.accent}55`, color:T.accent, padding:'4px 12px', borderRadius:'2px', cursor:'pointer', fontSize:'10px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace" }}>+ NEW PROJECT</button>
+                <button onClick={onClose} style={{ background:'transparent', border:`1px solid ${T.border2}`, color:T.textDim, padding:'4px 10px', borderRadius:'2px', cursor:'pointer', fontSize:'12px' }}>✕</button>
+              </div>
+            </div>
+
+            {/* 新規プロジェクト作成フォーム */}
+            {showNewProj && (
+              <div style={{ background:`${T.accent}08`, border:`1px solid ${T.accent}33`, borderRadius:'3px', padding:'10px', display:'flex', gap:'8px', flexWrap:'wrap', alignItems:'center' }}>
+                <input value={newProjName} onChange={e => setNewProjName(e.target.value)}
+                  onKeyDown={e => { if(e.key==='Enter') createProject(); if(e.key==='Escape') setShowNewProj(false); }}
+                  placeholder="プロジェクト名..." autoFocus
+                  style={{ ...inp, flex:'1 1 160px' }} />
+                <div style={{ display:'flex', gap:'4px' }}>
+                  {['#00aaff','#ff6600','#00ff88','#ff2299','#ffaa00','#cc44ff','#ff3333','#00ccaa'].map(c => (
+                    <button key={c} onClick={() => setNewProjColor(c)}
+                      style={{ width:'18px', height:'18px', borderRadius:'50%', background:c, border:`2px solid ${newProjColor===c?'#fff':'transparent'}`, cursor:'pointer', padding:0, flexShrink:0 }} />
+                  ))}
+                </div>
+                <button onClick={createProject} style={{ background:`${T.accent}22`, border:`1px solid ${T.accent}66`, color:T.accent, padding:'6px 14px', borderRadius:'2px', cursor:'pointer', fontSize:'10px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace" }}>作成</button>
+              </div>
+            )}
+
+            {/* メインコンテンツ */}
+            <div style={{ display:'flex', gap:'16px', flex:1, minHeight:0, overflow:'hidden' }}>
+
+              {/* 左: プロジェクト一覧 */}
+              <div style={{ width:'170px', flexShrink:0, display:'flex', flexDirection:'column', gap:'4px', overflowY:'auto' }}>
+                <div style={{ fontSize:'8px', color:T.textMuted, letterSpacing:'0.12em', padding:'2px 4px', marginBottom:'2px' }}>PROJECTS ({projects.length})</div>
+                {projects.length === 0 && <div style={{ fontSize:'10px', color:T.textMuted, padding:'12px 4px', textAlign:'center' }}>なし</div>}
+                {projects.map(proj => {
+                  const ptasks = tasks.filter(t => t.projectId === proj.id);
+                  const done = ptasks.filter(t => ['completed','cleared','lost'].includes(t.status)).length;
+                  const isSel = proj.id === selectedProjId;
+                  const pct = ptasks.length > 0 ? Math.round(done / ptasks.length * 100) : 0;
+                  return (
+                    <div key={proj.id} onClick={() => setSelectedProjId(proj.id)}
+                      style={{ padding:'8px 10px', borderRadius:'3px', cursor:'pointer', border:`1px solid ${isSel?proj.color+'66':T.border2}`, background:isSel?`${proj.color}12`:'transparent', transition:'all 0.1s' }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:'6px' }}>
+                        <span style={{ width:'8px', height:'8px', borderRadius:'50%', background:proj.color||'#00aaff', flexShrink:0 }} />
+                        <span style={{ fontSize:'11px', color:isSel?T.text:T.textDim, fontWeight:isSel?700:400, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{proj.name}</span>
+                      </div>
+                      <div style={{ marginTop:'4px', paddingLeft:'14px' }}>
+                        <div style={{ height:'3px', background:T.border, borderRadius:'2px', overflow:'hidden' }}>
+                          <div style={{ width:`${pct}%`, height:'100%', background:proj.color||'#00aaff', transition:'width 0.3s' }} />
+                        </div>
+                        <div style={{ fontSize:'8px', color:T.textMuted, marginTop:'2px' }}>{done}/{ptasks.length} 完了</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* 右: タスクシーケンス */}
+              <div style={{ flex:1, display:'flex', flexDirection:'column', gap:'8px', overflowY:'auto', minWidth:0 }}>
+                {!selectedProj ? (
+                  <div style={{ fontSize:'11px', color:T.textMuted, textAlign:'center', marginTop:'32px' }}>
+                    プロジェクトを選択または作成してください
+                  </div>
+                ) : (
+                  <>
+                    {/* プロジェクトヘッダー */}
+                    <div style={{ display:'flex', alignItems:'center', gap:'8px', paddingBottom:'8px', borderBottom:`1px solid ${T.border2}`, flexShrink:0 }}>
+                      <span style={{ width:'10px', height:'10px', borderRadius:'50%', background:selectedProj.color||'#00aaff', flexShrink:0 }} />
+                      <span style={{ fontSize:'13px', color:T.text, fontWeight:700 }}>{selectedProj.name}</span>
+                      <span style={{ fontSize:'9px', color:T.textDim }}>— {projTasks.length}タスク シーケンス</span>
+                      <div style={{ flex:1 }} />
+                      <button onClick={() => deleteProject(selectedProjId)} style={{ background:'rgba(255,50,50,0.1)', border:'1px solid rgba(255,50,50,0.3)', color:'#ff8888', padding:'2px 8px', borderRadius:'2px', cursor:'pointer', fontSize:'9px', fontFamily:"'JetBrains Mono',monospace" }}>削除</button>
+                    </div>
+
+                    {/* シーケンス説明 */}
+                    <div style={{ fontSize:'9px', color:T.textMuted, padding:'4px 0' }}>
+                      ▶ 現在のタスクが完了すると、次のタスクが自動的に NEXT ACTION に移動します
+                    </div>
+
+                    {/* タスクシーケンスリスト */}
+                    <div style={{ display:'flex', flexDirection:'column', gap:'4px' }}>
+                      {projTasks.map((task, idx) => {
+                        const pri = PRIORITIES[task.priority] || PRIORITIES.normal;
+                        const isDone = ['completed','cleared','lost'].includes(task.status);
+                        const isCurrent = !isDone && projTasks.slice(0, idx).every(t => ['completed','cleared','lost'].includes(t.status));
+                        const isFuture = !isDone && !isCurrent;
+                        return (
+                          <div key={task.id}>
+                            {/* シーケンス矢印 */}
+                            {idx > 0 && (
+                              <div style={{ textAlign:'center', fontSize:'9px', color:T.border, padding:'1px 0' }}>↓</div>
+                            )}
+                            <div style={{ display:'flex', alignItems:'center', gap:'8px', padding:'6px 8px', borderRadius:'3px', background:isCurrent?`${pri.bg}`:isFuture?'transparent':'transparent', border:`1px solid ${isCurrent?pri.border:isDone?T.border2+'66':T.border2}`, opacity:isDone?0.5:1 }}>
+                              <span style={{ fontSize:'10px', color:T.textMuted, minWidth:'18px', textAlign:'right', fontWeight:700 }}>{idx+1}</span>
+                              <span style={{ fontSize:'10px', minWidth:'16px' }}>
+                                {isCurrent ? '▶' : isDone ? '✓' : '○'}
+                              </span>
+                              <span style={{ flex:1, fontSize:'11px', color:isDone?T.textDim:T.text, textDecoration:isDone?'line-through':'none', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{task.title}</span>
+                              <span style={{ fontSize:'8px', color:pri.color, padding:'1px 4px', border:`1px solid ${pri.color}44`, borderRadius:'2px', flexShrink:0 }}>{pri.label}</span>
+                              <span style={{ fontSize:'8px', color:STATUS_COLORS[task.status]||T.textMuted, flexShrink:0 }}>{task.status}</span>
+                              <div style={{ display:'flex', gap:'2px', flexShrink:0 }}>
+                                <button onClick={() => moveTask(task.id, 'up')} disabled={idx===0} title="上へ"
+                                  style={{ background:'transparent', border:`1px solid ${T.border2}`, color:idx===0?T.textMuted:T.textDim, padding:'1px 5px', borderRadius:'2px', cursor:idx===0?'default':'pointer', fontSize:'9px' }}>↑</button>
+                                <button onClick={() => moveTask(task.id, 'down')} disabled={idx===projTasks.length-1} title="下へ"
+                                  style={{ background:'transparent', border:`1px solid ${T.border2}`, color:idx===projTasks.length-1?T.textMuted:T.textDim, padding:'1px 5px', borderRadius:'2px', cursor:idx===projTasks.length-1?'default':'pointer', fontSize:'9px' }}>↓</button>
+                                <button onClick={() => removeTask(task.id)} title="プロジェクトから外す"
+                                  style={{ background:'rgba(255,50,50,0.1)', border:'1px solid rgba(255,50,50,0.25)', color:'#ff8888', padding:'1px 5px', borderRadius:'2px', cursor:'pointer', fontSize:'9px' }}>✕</button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {projTasks.length === 0 && (
+                        <div style={{ textAlign:'center', padding:'20px', fontSize:'10px', color:T.textMuted, border:`1px dashed ${T.border}`, borderRadius:'3px' }}>
+                          タスクを追加してください
+                        </div>
+                      )}
+                    </div>
+
+                    {/* タスク追加フォーム */}
+                    {addingTask ? (
+                      <div style={{ display:'flex', gap:'6px', alignItems:'center', flexWrap:'wrap', padding:'8px', border:`1px solid ${T.accent}33`, borderRadius:'3px', background:`${T.accent}06`, flexShrink:0 }}>
+                        <input value={newTaskTitle} onChange={e => setNewTaskTitle(e.target.value)}
+                          onKeyDown={e => { if(e.key==='Enter') addTask(); if(e.key==='Escape') setAddingTask(false); }}
+                          placeholder="タスク名..." autoFocus
+                          style={{ ...inp, flex:'1 1 140px' }} />
+                        <select value={newTaskPri} onChange={e => setNewTaskPri(e.target.value)}
+                          style={{ ...inp, cursor:'pointer' }}>
+                          <option value="high">🔴 URG</option>
+                          <option value="normal">🟢 NRM</option>
+                          <option value="low">⚫ LOW</option>
+                        </select>
+                        <button onClick={addTask} style={{ background:`${T.accent}22`, border:`1px solid ${T.accent}66`, color:T.accent, padding:'6px 12px', borderRadius:'2px', cursor:'pointer', fontSize:'10px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace" }}>追加 ↵</button>
+                        <button onClick={() => setAddingTask(false)} style={{ background:'transparent', border:`1px solid ${T.border2}`, color:T.textDim, padding:'6px 8px', borderRadius:'2px', cursor:'pointer', fontSize:'10px' }}>✕</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => setAddingTask(true)} style={{ background:'transparent', border:`1px dashed ${T.border}`, color:T.textDim, padding:'8px', borderRadius:'3px', cursor:'pointer', fontSize:'10px', fontFamily:"'JetBrains Mono',monospace", width:'100%', flexShrink:0 }}>
+                        ＋ タスクを追加
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
+
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // ======================================================
     // メインアプリ（Firestoreリアルタイム同期）
     // ======================================================
     function FlightStripTodo({ user, themeId, setTheme }) {
@@ -1577,6 +1827,9 @@
       const [showCatEditor, setShowCatEditor] = useState(false);
       const [ers,           setErs]           = useState([]);
       const [showER,        setShowER]        = useState(false);
+      const [projects,      setProjects]      = useState([]);
+      const [showProjects,  setShowProjects]  = useState(false);
+      const projectsRef = useMemo(() => db.collection(`users/${user.uid}/projects`), [user.uid]);
       // 複数選択
       const [multiSelected, setMultiSelected] = useState(new Set()); // Set<taskId>
       // コンテキストメニュー
@@ -1610,6 +1863,14 @@
           console.error("handleSaveCats error:", err);
         }
       };
+
+      // プロジェクト Firestore 同期
+      useEffect(() => {
+        const unsub = projectsRef.onSnapshot(snap => {
+          setProjects(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        });
+        return unsub;
+      }, [projectsRef]);
 
       // ER Firestore 同期
       useEffect(() => {
@@ -1775,11 +2036,24 @@
         return unsubscribe;
       }, [tasksRef]);
 
-      const filteredTasks = useMemo(() => tasks.filter(t => {
-        if (filterPriority !== "all" && t.priority !== filterPriority) return false;
-        if (filterCategory !== "all" && t.category !== filterCategory) return false;
-        return true;
-      }), [tasks, filterPriority, filterCategory]);
+      const filteredTasks = useMemo(() => {
+        const base = tasks.filter(t => {
+          if (filterPriority !== "all" && t.priority !== filterPriority) return false;
+          if (filterCategory !== "all" && t.category !== filterCategory) return false;
+          return true;
+        });
+        // プロジェクト未来タスクを非表示（前のタスクが未完了なら隠す）
+        return base.filter(task => {
+          if (!task.projectId) return true;
+          const hasEarlierActive = tasks.some(t =>
+            t.projectId === task.projectId &&
+            t.id !== task.id &&
+            (t.projectOrder ?? 0) < (task.projectOrder ?? 0) &&
+            !['completed','cleared','lost'].includes(t.status)
+          );
+          return !hasEarlierActive;
+        });
+      }, [tasks, filterPriority, filterCategory]);
 
       // カラム別タスク取得（sortOrder降順: 大きいほど上）
       const getColTasks = useCallback((status) =>
@@ -1814,6 +2088,14 @@
         // 繰り返しタスク: 完了・LOST時に次回インスタンスを自動生成
         if (s === 'completed' || s === 'cleared' || s === 'lost') {
           const task = tasks.find(t => t.id === id);
+          // プロジェクトシーケンス: 次タスクを自動アクティブ化
+          if (task?.projectId) {
+            const seq = tasks
+              .filter(t => t.projectId === task.projectId && t.id !== id && !['completed','cleared','lost'].includes(t.status))
+              .sort((a, b) => (a.projectOrder ?? 0) - (b.projectOrder ?? 0));
+            const next = seq.find(t => (t.projectOrder ?? 0) > (task.projectOrder ?? 0));
+            if (next) await tasksRef.doc(next.id).update({ status: 'next', updatedAt: ts() });
+          }
           if (task?.recurrence) {
             const nextDate = calcNextOccurrence(task.recurrence);
             if (nextDate) {
@@ -1837,6 +2119,18 @@
           }
         }
       }, [tasks, tasksRef]);
+      const handleSkipProjectTask = useCallback(async (taskId) => {
+        const task = tasks.find(t => t.id === taskId);
+        if (!task?.projectId) return;
+        await tasksRef.doc(taskId).update({ status: 'completed', updatedAt: ts() });
+        // 次のタスクを自動アクティブ化
+        const seq = tasks
+          .filter(t => t.projectId === task.projectId && t.id !== taskId && !['completed','cleared','lost'].includes(t.status))
+          .sort((a, b) => (a.projectOrder ?? 0) - (b.projectOrder ?? 0));
+        const next = seq.find(t => (t.projectOrder ?? 0) > (task.projectOrder ?? 0));
+        if (next) await tasksRef.doc(next.id).update({ status: 'next', updatedAt: ts() });
+      }, [tasks, tasksRef]);
+
       const handleEditSave     = useCallback((id, fields) => tasksRef.doc(id).update({ ...fields, updatedAt:ts() }), [tasksRef]);
       const handleTimeChange   = useCallback((id, time)   => tasksRef.doc(id).update({ time, updatedAt: ts() }), [tasksRef]);
 
@@ -2183,6 +2477,7 @@
           {showRelease && <ReleaseNotes  onClose={() => setShowRelease(false)} />}
           {showCatEditor && <CategoryEditor categories={categories} onSave={handleSaveCats} onClose={() => setShowCatEditor(false)} />}
           {showER && <ERModal ers={ers} onSave={handleSaveERs} onClose={() => setShowER(false)} />}
+          {showProjects && <ProjectModal tasks={tasks} tasksRef={tasksRef} projects={projects} projectsRef={projectsRef} onClose={() => setShowProjects(false)} />}
           {editTaskId && editTask && <EditStripModal task={editTask} onSave={handleEditSave} onClose={() => setEditTaskId(null)} />}
 
           {/* 右クリックコンテキストメニュー */}
@@ -2278,6 +2573,9 @@
                 <button onClick={cycleFontSize} title="文字サイズ切替（小→中→大）" style={{ background:"transparent", border:`1px solid ${T.border2}`, color:T.accent, padding:"4px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"13px", fontWeight:700, fontFamily:"'JetBrains Mono',monospace", letterSpacing:"0.05em", minWidth:"52px" }}>
                   A{FONT_SIZES[stripFontSize].label}
                 </button>
+                <button onClick={() => setShowProjects(true)} style={{ background:`rgba(100,150,255,0.12)`, border:`1px solid rgba(100,150,255,0.4)`, color:"#8899ff", padding:"4px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"10px", fontWeight:700, letterSpacing:"0.08em", fontFamily:"'JetBrains Mono',monospace", display:"flex", alignItems:"center", gap:"4px" }}>
+                  📁 {projects.length > 0 ? `PROJ (${projects.length})` : 'PROJ'}
+                </button>
                 <button onClick={() => setShowForm(!showForm)} style={{ background:showForm?"rgba(255,50,50,0.15)":`${T.accent}18`, border:`1px solid ${showForm?"#ff333366":T.accent+"66"}`, color:showForm?"#ff6666":T.accent, padding:"4px 14px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontWeight:700, letterSpacing:"0.1em", fontFamily:"'JetBrains Mono',monospace" }}>{showForm?"✕ CLOSE":"+ FILE STRIP"}</button>
                 <button onClick={() => setShowHelp(!showHelp)} style={{ background:showHelp?`${T.accent2}18`:"transparent", border:`1px solid ${showHelp?T.accent2+"66":T.border2}`, color:showHelp?T.accent2:T.textDim, padding:"4px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"12px", fontWeight:700, fontFamily:"'JetBrains Mono',monospace" }}>?</button>
               </div>
@@ -2330,6 +2628,8 @@
                       onTouchMove={handleTouchMove}
                       onTouchEnd={handleTouchEnd}
                       titleFontSize={FONT_SIZES[stripFontSize].px}
+                      projects={projects}
+                      onSkipProject={handleSkipProjectTask}
                     />
                   </div>
                 );
@@ -2450,6 +2750,8 @@
                     onTouchMove={handleTouchMove}
                     onTouchEnd={handleTouchEnd}
                     titleFontSize={FONT_SIZES[stripFontSize].px}
+                    projects={projects}
+                    onSkipProject={handleSkipProjectTask}
                   />
                 </div>
               );
