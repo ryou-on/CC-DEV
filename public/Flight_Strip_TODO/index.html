@@ -274,6 +274,7 @@
         version: "v0.5.2", date: "2026-04-11",
         changes: [
           "ファビコン追加（レーダー＋フライトストリップ ATCデザイン）",
+          "起動時に fst_analytics へセッション自動記録（利用統計収集）",
         ],
       },
       {
@@ -926,6 +927,25 @@
       const tasksRef = useMemo(() => db.collection(`users/${user.uid}/tasks`), [user.uid]);
       const metaRef  = useMemo(() => db.collection(`users/${user.uid}/meta`),  [user.uid]);
       const ts = () => firebase.firestore.FieldValue.serverTimestamp();
+
+      // セッション記録（Analytics用）
+      useEffect(() => {
+        try {
+          const now = new Date();
+          const uidHash = btoa(user.uid).replace(/[^a-zA-Z0-9]/g,'').slice(0,12);
+          const sessionId = `${now.toISOString().slice(0,10)}_${uidHash}_${now.getTime()}`;
+          db.collection('fst_analytics').doc(sessionId).set({
+            uidHash,
+            date:  now.toISOString().slice(0,10),
+            month: now.toISOString().slice(0,7),
+            hour:  now.getHours(),
+            dow:   now.getDay(),
+            version: 'v0.5.2',
+            build:   'stable',
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          }).catch(() => {});
+        } catch(e) {}
+      }, []);
 
       // カテゴリ Firestore 同期
       useEffect(() => {
