@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>◈ FLIGHT STRIP TODO [DEV]</title>
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
+  <!-- EmailJS: フィードバック自動返信 -->
+  <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 
   <!-- Firebase Compat SDKs -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
@@ -66,6 +68,17 @@
     const { useState, useRef, useCallback, useEffect, useMemo, createContext, useContext } = React;
     const auth = window._auth;
     const db   = window._db;
+
+    // ── EmailJS 設定（emailjs.com で取得） ──────────────────
+    // 1. https://www.emailjs.com でアカウント作成
+    // 2. Email Service を追加（Gmail推奨）→ serviceId をコピー
+    // 3. Email Template を作成（変数: {{to_email}} {{fb_id}} {{subject}} {{message}}）→ templateId をコピー
+    // 4. Account > API Keys > Public Key をコピー
+    const EMAILJS_CONFIG = {
+      serviceId:  '',   // 例: 'service_xxxxxxx'
+      templateId: '',   // 例: 'template_xxxxxxx'
+      publicKey:  '',   // 例: 'xxxxxxxxxxxxxxxxxxxx'
+    };
 
     // ======================================================
     // ⚙️ アクセス制御
@@ -374,6 +387,14 @@
     // リリースノート
     // ======================================================
     const RELEASE_NOTES = [
+      {
+        version: "v0.6.7-dev", date: "2026-04-11",
+        changes: [
+          "フィードバック機能追加 — ロゴ横 [フィードバック] ボタンから送信",
+          "FB_XXXX 連番管理・Firestore 保存・EmailJS 自動返信対応",
+          "Analytics に受信箱追加（未読バッジ付き）",
+        ],
+      },
       {
         version: "v0.6.6-dev", date: "2026-04-10",
         changes: [
@@ -1663,6 +1684,110 @@
     };
 
     // ======================================================
+    // フィードバックモーダル
+    // ======================================================
+    const FeedbackModal = ({ user, onClose, build }) => {
+      const T = useT();
+      const [subject, setSubject] = useState('');
+      const [email,   setEmail]   = useState(user?.email || '');
+      const [message, setMessage] = useState('');
+      const [sending, setSending] = useState(false);
+      const [sent,    setSent]    = useState(false);
+      const [error,   setError]   = useState('');
+
+      const handleSubmit = async () => {
+        if (!subject.trim()) { setError('件名を入力してください'); return; }
+        if (!message.trim()) { setError('メッセージを入力してください'); return; }
+        if (message.length > 200) { setError('メッセージは200文字以内です'); return; }
+        setSending(true); setError('');
+        try {
+          // トランザクションで FB_XXXX 連番取得
+          const counterRef = db.collection('fst_feedback_meta').doc('counter');
+          let fbId;
+          await db.runTransaction(async tx => {
+            const doc = await tx.get(counterRef);
+            const n = (doc.exists ? (doc.data().count || 0) : 0) + 1;
+            tx.set(counterRef, { count: n }, { merge: true });
+            fbId = `FB_${String(n).padStart(4, '0')}`;
+          });
+          // Firestore に保存
+          await db.collection('fst_feedback').doc(fbId).set({
+            fbId, subject: subject.trim(), email: email.trim(),
+            message: message.trim(), build,
+            uid: user?.uid || null, status: 'new', replySent: false,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          });
+          // EmailJS で自動返信
+          if (EMAILJS_CONFIG.publicKey && EMAILJS_CONFIG.serviceId && email.trim()) {
+            try {
+              await window.emailjs.send(
+                EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateId,
+                { to_email: email.trim(), fb_id: fbId,
+                  subject: subject.trim(), message: message.trim() },
+                EMAILJS_CONFIG.publicKey
+              );
+              await db.collection('fst_feedback').doc(fbId).update({ replySent: true });
+            } catch(e) { console.warn('Auto-reply failed:', e); }
+          }
+          setSent(true);
+        } catch(e) { setError('送信に失敗しました: ' + e.message); }
+        finally { setSending(false); }
+      };
+
+      return (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center", padding:"16px" }}>
+          <div style={{ background:T.bgModal, border:`1px solid ${T.border}`, borderRadius:"6px", padding:"24px", width:"100%", maxWidth:"480px", boxShadow:"0 8px 40px rgba(0,0,0,0.5)" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"20px", paddingBottom:"12px", borderBottom:`1px solid ${T.border}` }}>
+              <div>
+                <div style={{ fontSize:"14px", fontWeight:800, color:T.accent, letterSpacing:"0.15em" }}>💬 フィードバック</div>
+                <div style={{ fontSize:"8px", color:T.textMuted, letterSpacing:"0.2em", marginTop:"2px" }}>FLIGHT STRIP TODO</div>
+              </div>
+              <button onClick={onClose} style={{ background:"transparent", border:"none", color:T.textDim, cursor:"pointer", fontSize:"18px", lineHeight:1 }}>✕</button>
+            </div>
+            {sent ? (
+              <div style={{ textAlign:"center", padding:"24px 0" }}>
+                <div style={{ fontSize:"36px", marginBottom:"12px" }}>✅</div>
+                <div style={{ fontSize:"13px", color:T.accent, fontWeight:700, marginBottom:"8px" }}>送信完了</div>
+                <div style={{ fontSize:"11px", color:T.textDim, lineHeight:1.7 }}>フィードバックありがとうございました</div>
+                <button onClick={onClose} style={{ marginTop:"20px", background:`${T.accent}18`, border:`1px solid ${T.accent}44`, color:T.accent, padding:"8px 24px", borderRadius:"4px", cursor:"pointer", fontSize:"11px", fontFamily:"inherit" }}>閉じる</button>
+              </div>
+            ) : (<>
+              <div style={{ marginBottom:"14px" }}>
+                <label style={{ fontSize:"9px", color:T.textDim, letterSpacing:"0.15em", display:"block", marginBottom:"5px" }}>件名 *</label>
+                <input value={subject} onChange={e=>setSubject(e.target.value)} maxLength={100}
+                  style={{ width:"100%", background:T.bgCard, border:`1px solid ${T.border2}`, borderRadius:"3px", padding:"8px 10px", color:T.text, fontSize:"12px", fontFamily:"inherit", outline:"none", boxSizing:"border-box" }}
+                  placeholder="例：タスク追加時の不具合について" />
+              </div>
+              <div style={{ marginBottom:"14px" }}>
+                <label style={{ fontSize:"9px", color:T.textDim, letterSpacing:"0.15em", display:"block", marginBottom:"5px" }}>メールアドレス（返信先）</label>
+                <input value={email} onChange={e=>setEmail(e.target.value)} type="email"
+                  style={{ width:"100%", background:T.bgCard, border:`1px solid ${T.border2}`, borderRadius:"3px", padding:"8px 10px", color:T.text, fontSize:"12px", fontFamily:"inherit", outline:"none", boxSizing:"border-box" }}
+                  placeholder="reply@example.com" />
+              </div>
+              <div style={{ marginBottom:"16px" }}>
+                <div style={{ display:"flex", justifyContent:"space-between", marginBottom:"5px" }}>
+                  <label style={{ fontSize:"9px", color:T.textDim, letterSpacing:"0.15em" }}>メッセージ *</label>
+                  <span style={{ fontSize:"9px", color: message.length > 180 ? "#ff6666" : T.textMuted }}>{message.length} / 200</span>
+                </div>
+                <textarea value={message} onChange={e=>setMessage(e.target.value)} maxLength={200} rows={5}
+                  style={{ width:"100%", background:T.bgCard, border:`1px solid ${T.border2}`, borderRadius:"3px", padding:"8px 10px", color:T.text, fontSize:"12px", fontFamily:"inherit", resize:"vertical", outline:"none", boxSizing:"border-box" }}
+                  placeholder="ご意見・ご要望・不具合報告など" />
+              </div>
+              {error && <div style={{ fontSize:"10px", color:"#ff6666", marginBottom:"12px" }}>{error}</div>}
+              <div style={{ display:"flex", justifyContent:"flex-end", gap:"8px" }}>
+                <button onClick={onClose} style={{ background:"transparent", border:`1px solid ${T.border2}`, color:T.textDim, padding:"8px 16px", borderRadius:"3px", cursor:"pointer", fontSize:"11px", fontFamily:"inherit" }}>キャンセル</button>
+                <button onClick={handleSubmit} disabled={sending}
+                  style={{ background:`${T.accent}18`, border:`1px solid ${T.accent}55`, color:T.accent, padding:"8px 20px", borderRadius:"3px", cursor:"pointer", fontSize:"11px", fontWeight:700, fontFamily:"inherit", opacity:sending?0.6:1 }}>
+                  {sending ? "送信中..." : "送信"}
+                </button>
+              </div>
+            </>)}
+          </div>
+        </div>
+      );
+    };
+
+    // ======================================================
     // プロジェクト管理モーダル
     // ======================================================
     const ProjectModal = ({ tasks, tasksRef, projects, projectsRef, onClose }) => {
@@ -1960,6 +2085,7 @@
       const [showForm,       setShowForm]       = useState(false);
       const [showHelp,       setShowHelp]       = useState(false);
       const [showRelease,    setShowRelease]    = useState(false);
+      const [showFeedback,   setShowFeedback]   = useState(false);
       const [viewMode,       setViewMode]       = useState("hybrid");
       const [filterPriority, setFilterPriority] = useState("all");
       const [filterCategory, setFilterCategory] = useState("all");
@@ -2652,6 +2778,7 @@
 
           {showHelp    && <ShortcutHelp  onClose={() => setShowHelp(false)} />}
           {showRelease && <ReleaseNotes  onClose={() => setShowRelease(false)} />}
+          {showFeedback && <FeedbackModal user={user} build="dev" onClose={() => setShowFeedback(false)} />}
           {showCatEditor && <CategoryEditor categories={categories} onSave={handleSaveCats} onClose={() => setShowCatEditor(false)} />}
           {showER && <ERModal ers={ers} onSave={handleSaveERs} onClose={() => setShowER(false)} />}
           {showProjects && <ProjectModal tasks={tasks} tasksRef={tasksRef} projects={projects} projectsRef={projectsRef} onClose={() => setShowProjects(false)} />}
@@ -2686,6 +2813,10 @@
                   <span onClick={() => setShowER(true)} title="Enhanced Requests を開く" style={{ cursor:"pointer", fontSize:"10px", fontWeight:700, color:"#ff6600", background:"rgba(255,102,0,0.12)", border:"1px solid rgba(255,102,0,0.4)", borderRadius:"3px", padding:"2px 6px", letterSpacing:"0.05em", userSelect:"none", transition:"background 0.15s" }}
                     onMouseEnter={e=>e.currentTarget.style.background="rgba(255,102,0,0.25)"} onMouseLeave={e=>e.currentTarget.style.background="rgba(255,102,0,0.12)"}>
                     [ER]{ers.filter(e=>e.status!=='implemented').length > 0 && <span style={{ marginLeft:"4px", background:"#ff6600", color:"#fff", borderRadius:"10px", padding:"0 5px", fontSize:"9px" }}>{ers.filter(e=>e.status!=='implemented').length}</span>}
+                  </span>
+                  <span onClick={() => setShowFeedback(true)} title="フィードバックを送る" style={{ cursor:"pointer", fontSize:"10px", fontWeight:700, color:"#00aaff", background:"rgba(0,170,255,0.1)", border:"1px solid rgba(0,170,255,0.35)", borderRadius:"3px", padding:"2px 6px", letterSpacing:"0.05em", userSelect:"none", transition:"background 0.15s" }}
+                    onMouseEnter={e=>e.currentTarget.style.background="rgba(0,170,255,0.22)"} onMouseLeave={e=>e.currentTarget.style.background="rgba(0,170,255,0.1)"}>
+                    [フィードバック]
                   </span>
                 </div>
                 <div style={{ fontSize:"9px", color:T.textMuted, letterSpacing:"0.3em", marginTop:"4px" }}>

@@ -195,6 +195,78 @@
     </div>
   );
 
+  // ── フィードバック受信箱 ──────────────────────
+  const Inbox = () => {
+    const [feedbacks, setFeedbacks] = useState([]);
+    const [loading,   setLoading]   = useState(true);
+
+    useEffect(() => {
+      db.collection('fst_feedback')
+        .orderBy('createdAt', 'desc')
+        .limit(200)
+        .get()
+        .then(snap => {
+          setFeedbacks(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+          setLoading(false);
+        })
+        .catch(() => setLoading(false));
+    }, []);
+
+    const markRead = async (fbId) => {
+      await db.collection('fst_feedback').doc(fbId).update({ status: 'read' });
+      setFeedbacks(prev => prev.map(f => f.fbId === fbId ? { ...f, status: 'read' } : f));
+    };
+
+    const unreadCount = feedbacks.filter(f => f.status === 'new').length;
+
+    if (loading) return <div style={{ textAlign:'center', padding:'40px', color:DIM, fontSize:'11px' }}>読み込み中...</div>;
+
+    return (
+      <div>
+        <div style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'16px', paddingBottom:'10px', borderBottom:`1px solid ${BORDER}` }}>
+          <span style={{ fontSize:'14px', fontWeight:800, color:ACC, letterSpacing:'0.15em' }}>💬 フィードバック受信箱</span>
+          {unreadCount > 0 && (
+            <span style={{ background:ACC, color:'#000', fontSize:'9px', fontWeight:700, padding:'2px 8px', borderRadius:'10px' }}>{unreadCount} 件未読</span>
+          )}
+          <span style={{ fontSize:'9px', color:DIM, marginLeft:'auto' }}>全 {feedbacks.length} 件</span>
+        </div>
+
+        {feedbacks.length === 0 ? (
+          <div style={{ textAlign:'center', padding:'40px', color:DIM, fontSize:'11px' }}>フィードバックはまだありません</div>
+        ) : (
+          <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
+            {feedbacks.map(f => {
+              const isNew = f.status === 'new';
+              const buildColor = f.build === 'dev' ? DEV : STABLE;
+              const date = f.createdAt?.toDate ? f.createdAt.toDate().toLocaleString('ja-JP') : '---';
+              return (
+                <div key={f.id}
+                  style={{ background: isNew ? 'rgba(0,255,136,0.04)' : BGCARD, border:`1px solid ${isNew ? ACC+'44' : BORDER}`, borderRadius:'6px', padding:'14px 16px', cursor: isNew ? 'pointer' : 'default', transition:'border-color 0.15s' }}
+                  onClick={() => isNew && markRead(f.fbId)}>
+                  <div style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'8px', flexWrap:'wrap' }}>
+                    <span style={{ fontSize:'11px', fontWeight:800, color: isNew ? ACC : DIM, letterSpacing:'0.1em' }}>{f.fbId}</span>
+                    <span style={{ fontSize:'8px', fontWeight:700, color: buildColor, background:`${buildColor}18`, border:`1px solid ${buildColor}44`, borderRadius:'3px', padding:'1px 6px' }}>
+                      {f.build === 'dev' ? '開発版' : '安定版'}
+                    </span>
+                    {isNew && <span style={{ fontSize:'8px', color:'#000', background:ACC, borderRadius:'3px', padding:'1px 6px', fontWeight:700 }}>NEW</span>}
+                    {f.replySent && <span style={{ fontSize:'8px', color:'#00aaff', background:'rgba(0,170,255,0.12)', borderRadius:'3px', padding:'1px 6px' }}>返信済</span>}
+                    <span style={{ fontSize:'8px', color:DIM, marginLeft:'auto' }}>{date}</span>
+                  </div>
+                  <div style={{ fontSize:'12px', fontWeight:700, color:TEXT, marginBottom:'6px' }}>{f.subject}</div>
+                  <div style={{ fontSize:'11px', color:DIM, lineHeight:1.6, marginBottom:'8px', whiteSpace:'pre-wrap' }}>{f.message}</div>
+                  {f.email && (
+                    <div style={{ fontSize:'9px', color:'#00aaff', letterSpacing:'0.05em' }}>✉ {f.email}</div>
+                  )}
+                  {isNew && <div style={{ fontSize:'8px', color:DIM, marginTop:'8px', textAlign:'right' }}>クリックで既読にする</div>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // ── メインアナリティクス ──────────────────────
   const Analytics = ({ user }) => {
     const [sessions,     setSessions]     = useState([]);
@@ -202,6 +274,7 @@
     const [error,        setError]        = useState(null);
     const [range,        setRange]        = useState(30);
     const [buildFilter,  setBuildFilter]  = useState('all'); // 'all' | 'stable' | 'dev'
+    const [activeTab,    setActiveTab]    = useState('stats'); // 'stats' | 'inbox'
 
     useEffect(() => {
       const cutoff = new Date();
@@ -367,7 +440,18 @@
             </div>
             <div style={{ display:'flex', alignItems:'center', gap:'8px', flexWrap:'wrap' }}>
 
-              {/* ビルドフィルタータブ */}
+              {/* 画面切替タブ */}
+              <div style={{ display:'flex', gap:'2px', background:`${BORDER}55`, borderRadius:'4px', padding:'2px' }}>
+                {[['stats','📊 統計'],['inbox','💬 受信箱']].map(([v,label]) => (
+                  <button key={v} onClick={()=>setActiveTab(v)}
+                    style={{ background:activeTab===v?`${ACC}22`:'transparent', border:`1px solid ${activeTab===v?ACC+'88':'transparent'}`, color:activeTab===v?ACC:DIM, padding:'4px 12px', borderRadius:'3px', cursor:'pointer', fontSize:'9px', fontWeight:activeTab===v?700:400, fontFamily:'inherit', transition:'all 0.15s' }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {/* ビルドフィルタータブ（統計画面のみ） */}
+              {activeTab === 'stats' && <>
               <div style={{ display:'flex', gap:'2px', background:`${BORDER}55`, borderRadius:'4px', padding:'2px' }}>
                 {[
                   { v:'all',    label:'両方',   color:ACC },
@@ -397,13 +481,15 @@
                   </button>
                 ))}
               </div>
+              </>}
+
               <button onClick={()=>auth.signOut()} style={{ background:'rgba(255,51,51,0.1)', border:'1px solid #ff333344', color:'#ff6666', padding:'4px 10px', borderRadius:'2px', cursor:'pointer', fontSize:'9px', fontFamily:'inherit' }}>
                 SIGN OUT
               </button>
             </div>
           </header>
 
-          {!stats || sessions.length === 0 ? (
+          {activeTab === 'inbox' ? <Inbox /> : !stats || sessions.length === 0 ? (
             <div style={{ textAlign:'center', padding:'60px', color:DIM, fontSize:'11px' }}>
               <div style={{ fontSize:'24px', marginBottom:'12px' }}>📊</div>
               <div>データがまだありません</div>
