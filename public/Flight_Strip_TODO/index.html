@@ -1014,13 +1014,12 @@
         tasksRef.doc(id).delete();
         setSelectedId(p => p===id ? null : p);
       }, [tasksRef]);
-      const handleStatusChange = useCallback((id, s) => {
-        const col = COLUMNS.find(c => c.id === s);
-        if (col?.limit) {
-          const existing = tasks.filter(t => t.status === s && t.id !== id).length;
-          if (existing >= col.limit) {
-            alert(`⚠ ${col.label} は最大 ${col.limit} スロットです\n先にタスクを移動してください`);
-            return;
+      const handleStatusChange = useCallback(async (id, s) => {
+        // activeに変更する場合: 既存のactiveタスクをnextに移動
+        if (s === 'active') {
+          const currentActives = tasks.filter(t => t.status === 'active' && t.id !== id);
+          for (const t of currentActives) {
+            await tasksRef.doc(t.id).update({ status: 'next', updatedAt: ts() });
           }
         }
         tasksRef.doc(id).update({ status: s, updatedAt: ts() });
