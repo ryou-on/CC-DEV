@@ -42,12 +42,13 @@
   const auth = window._auth;
   const db   = window._db;
 
-  const ACC = '#00ff88';
-  const BG  = '#060a18';
+  const ACC    = '#00ff88';
+  const STABLE = '#00ff88'; // 安定版カラー（緑）
+  const DEV    = '#ffaa44'; // 開発版カラー（アンバー）
+  const BG     = '#060a18';
   const BORDER = '#1a2540';
-  const TEXT = '#ddeeff';
-  const DIM  = '#556677';
-  const MUTED = '#1a2540';
+  const TEXT   = '#ddeeff';
+  const DIM    = '#556677';
   const BGCARD = 'rgba(10,15,30,0.5)';
 
   const DOW_LABELS = ['日','月','火','水','木','金','土'];
@@ -87,7 +88,7 @@
     </div>
   );
 
-  // ── 棒グラフ ──────────────────────────────────
+  // ── 単色棒グラフ ──────────────────────────────
   const BarChart = ({ data, labelKey, valueKey, color=ACC, height=120, showValue=true }) => {
     const max = Math.max(1, ...data.map(d => d[valueKey]));
     return (
@@ -107,12 +108,38 @@
     );
   };
 
+  // ── 2色積み上げ棒グラフ（安定版＋開発版）──────
+  const BarChartDual = ({ data, labelKey, stableKey, devKey, height=120 }) => {
+    const max = Math.max(1, ...data.map(d => (d[stableKey]||0) + (d[devKey]||0)));
+    return (
+      <div style={{ display:'flex', alignItems:'flex-end', gap:'2px', height:`${height}px` }}>
+        {data.map((d, i) => {
+          const sv = d[stableKey]||0;
+          const dv = d[devKey]||0;
+          const total = sv + dv;
+          const totalPct = Math.max(total>0?2:0, total/max*100);
+          const sPct = total > 0 ? sv/total*100 : 0;
+          const dPct = total > 0 ? dv/total*100 : 0;
+          return (
+            <div key={i} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', height:'100%', justifyContent:'flex-end', gap:'2px' }}>
+              <div title={`安定版:${sv} / 開発版:${dv}`}
+                style={{ width:'100%', height:`${totalPct}%`, display:'flex', flexDirection:'column', borderRadius:'2px 2px 0 0', overflow:'hidden' }}>
+                {dv > 0 && <div style={{ flex:`${dPct} 0 0`, background:DEV, opacity:0.8 }} />}
+                {sv > 0 && <div style={{ flex:`${sPct} 0 0`, background:STABLE, opacity:0.75 }} />}
+              </div>
+              <span style={{ fontSize:'7px', color:DIM, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis', maxWidth:'100%', textAlign:'center' }}>{d[labelKey]}</span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   // ── ヒートマップ ──────────────────────────────
-  const Heatmap = ({ data, maxVal }) => {
+  const Heatmap = ({ data, maxVal, color='0,255,136' }) => {
     const max = maxVal || Math.max(1, ...data.flat());
     return (
       <div>
-        {/* 時間ラベル（上） */}
         <div style={{ display:'flex', marginLeft:'24px', marginBottom:'2px' }}>
           {Array.from({length:24},(_,h)=>(
             <div key={h} style={{ flex:1, fontSize:'6px', color:DIM, textAlign:'center' }}>
@@ -128,17 +155,16 @@
               const alpha = Math.min(0.95, 0.05 + intensity * 0.9);
               return (
                 <div key={h} title={`${DOW_LABELS[dow]} ${h}時: ${val}セッション`}
-                  style={{ flex:1, height:'14px', background:`rgba(0,255,136,${alpha})`, borderRadius:'1px', margin:'0 1px', position:'relative', cursor:'default' }}
+                  style={{ flex:1, height:'14px', background:`rgba(${color},${alpha})`, borderRadius:'1px', margin:'0 1px', cursor:'default' }}
                 />
               );
             })}
           </div>
         ))}
-        {/* 凡例 */}
         <div style={{ display:'flex', alignItems:'center', gap:'4px', marginTop:'6px', justifyContent:'flex-end' }}>
           <span style={{ fontSize:'7px', color:DIM }}>少</span>
           {[0.05,0.25,0.5,0.75,0.95].map((a,i) => (
-            <div key={i} style={{ width:'12px', height:'8px', background:`rgba(0,255,136,${a})`, borderRadius:'1px' }} />
+            <div key={i} style={{ width:'12px', height:'8px', background:`rgba(${color},${a})`, borderRadius:'1px' }} />
           ))}
           <span style={{ fontSize:'7px', color:DIM }}>多</span>
         </div>
@@ -155,12 +181,27 @@
     </div>
   );
 
+  // ── 凡例（両方モード用） ──────────────────────
+  const DualLegend = () => (
+    <div style={{ display:'flex', gap:'12px', marginBottom:'8px', justifyContent:'flex-end' }}>
+      <div style={{ display:'flex', alignItems:'center', gap:'4px' }}>
+        <div style={{ width:'10px', height:'10px', background:STABLE, borderRadius:'2px', opacity:0.8 }} />
+        <span style={{ fontSize:'8px', color:DIM }}>安定版</span>
+      </div>
+      <div style={{ display:'flex', alignItems:'center', gap:'4px' }}>
+        <div style={{ width:'10px', height:'10px', background:DEV, borderRadius:'2px', opacity:0.8 }} />
+        <span style={{ fontSize:'8px', color:DIM }}>開発版</span>
+      </div>
+    </div>
+  );
+
   // ── メインアナリティクス ──────────────────────
   const Analytics = ({ user }) => {
-    const [sessions, setSessions]   = useState([]);
-    const [loading,  setLoading]    = useState(true);
-    const [error,    setError]      = useState(null);
-    const [range,    setRange]      = useState(30); // 表示日数
+    const [sessions,     setSessions]     = useState([]);
+    const [loading,      setLoading]      = useState(true);
+    const [error,        setError]        = useState(null);
+    const [range,        setRange]        = useState(30);
+    const [buildFilter,  setBuildFilter]  = useState('all'); // 'all' | 'stable' | 'dev'
 
     useEffect(() => {
       const cutoff = new Date();
@@ -183,50 +224,73 @@
       const today     = new Date().toISOString().slice(0,10);
       const thisMonth = new Date().toISOString().slice(0,7);
 
-      // 表示範囲でフィルタ
+      // 表示範囲でフィルタ（全ビルド）
       const rangeCutoff = new Date();
       rangeCutoff.setDate(rangeCutoff.getDate() - range);
       const rangeStr = rangeCutoff.toISOString().slice(0,10);
       const ranged = sessions.filter(s => s.date >= rangeStr);
 
-      // ユニークユーザー
-      const allUsers   = new Set(sessions.map(s=>s.uidHash));
-      const todayU     = new Set(sessions.filter(s=>s.date===today).map(s=>s.uidHash));
-      const weekCut    = new Date(); weekCut.setDate(weekCut.getDate()-7);
-      const weekStr    = weekCut.toISOString().slice(0,10);
-      const weekU      = new Set(sessions.filter(s=>s.date>=weekStr).map(s=>s.uidHash));
-      const monthU     = new Set(sessions.filter(s=>s.month===thisMonth).map(s=>s.uidHash));
+      // ビルド別分離
+      const stableRanged = ranged.filter(s => s.build === 'stable' || !s.build);
+      const devRanged    = ranged.filter(s => s.build === 'dev');
 
-      // 時間帯分布（ranged）
+      // ビルドフィルター適用（グラフ用）
+      const filtered = buildFilter === 'stable' ? stableRanged
+                     : buildFilter === 'dev'    ? devRanged
+                     : ranged;
+
+      // ユニークユーザー（全ビルド・90日）
+      const allUsers  = new Set(sessions.map(s=>s.uidHash));
+      const weekCut   = new Date(); weekCut.setDate(weekCut.getDate()-7);
+      const weekStr   = weekCut.toISOString().slice(0,10);
+
+      // 各種ユーザー数（buildFilter適用）
+      const allSess   = buildFilter==='stable' ? sessions.filter(s=>s.build==='stable'||!s.build)
+                      : buildFilter==='dev'    ? sessions.filter(s=>s.build==='dev')
+                      : sessions;
+      const todayU  = new Set(allSess.filter(s=>s.date===today).map(s=>s.uidHash));
+      const weekU   = new Set(allSess.filter(s=>s.date>=weekStr).map(s=>s.uidHash));
+      const monthU  = new Set(allSess.filter(s=>s.month===thisMonth).map(s=>s.uidHash));
+      const totalU  = new Set(allSess.map(s=>s.uidHash));
+
+      // 時間帯・曜日分布（filtered）
       const hourDist = Array(24).fill(0);
-      ranged.forEach(s => { if(s.hour>=0&&s.hour<24) hourDist[s.hour]++; });
+      filtered.forEach(s => { if(s.hour>=0&&s.hour<24) hourDist[s.hour]++; });
 
-      // 曜日分布（ranged）
       const dowDist = Array(7).fill(0);
-      ranged.forEach(s => { if(s.dow>=0&&s.dow<7) dowDist[s.dow]++; });
+      filtered.forEach(s => { if(s.dow>=0&&s.dow<7) dowDist[s.dow]++; });
 
-      // ヒートマップ 曜日×時間（ranged）
+      // ヒートマップ（filtered）
       const heatmap = Array.from({length:7},()=>Array(24).fill(0));
-      ranged.forEach(s => {
+      filtered.forEach(s => {
         if(s.dow>=0&&s.dow<7&&s.hour>=0&&s.hour<24) heatmap[s.dow][s.hour]++;
       });
 
-      // 日別 DAU（range日分）
+      // 日別 DAU
       const dailyData = [];
       for(let i=range-1; i>=0; i--) {
         const d = new Date(); d.setDate(d.getDate()-i);
         const dateStr = d.toISOString().slice(0,10);
-        const dayS = sessions.filter(s=>s.date===dateStr);
-        const dayU = new Set(dayS.map(s=>s.uidHash));
+        const dayAll    = filtered.filter(s=>s.date===dateStr);
+        const dayStable = stableRanged.filter(s=>s.date===dateStr);
+        const dayDev    = devRanged.filter(s=>s.date===dateStr);
         dailyData.push({
           date: dateStr,
           label: i===0?'今日': i===1?'昨日': `${d.getMonth()+1}/${d.getDate()}`,
-          users: dayU.size,
-          sessions: dayS.length,
+          users:        new Set(dayAll.map(s=>s.uidHash)).size,
+          sessions:     dayAll.length,
+          stableUsers:  new Set(dayStable.map(s=>s.uidHash)).size,
+          devUsers:     new Set(dayDev.map(s=>s.uidHash)).size,
         });
       }
 
-      // バージョン分布
+      // 曜日別 dual
+      const dowStable = Array(7).fill(0);
+      const dowDev    = Array(7).fill(0);
+      stableRanged.forEach(s => { if(s.dow>=0&&s.dow<7) dowStable[s.dow]++; });
+      devRanged.forEach(s    => { if(s.dow>=0&&s.dow<7) dowDev[s.dow]++; });
+
+      // バージョン分布（全）
       const verDist = {};
       sessions.forEach(s => {
         const v = s.version||'unknown';
@@ -234,22 +298,22 @@
       });
       const verEntries = Object.entries(verDist).sort((a,b)=>b[1]-a[1]);
 
-      // ピーク時間帯
+      // ピーク
       const peakHour = hourDist.indexOf(Math.max(...hourDist));
       const peakDow  = dowDist.indexOf(Math.max(...dowDist));
 
       return {
-        totalUsers: allUsers.size,
+        totalUsers: totalU.size,
         todayUsers: todayU.size,
         weekUsers:  weekU.size,
         monthUsers: monthU.size,
-        totalSessions: sessions.length,
-        rangeSessions: ranged.length,
+        totalSessions: allSess.length,
+        rangeSessions: filtered.length,
         hourDist, dowDist, heatmap,
-        dailyData, verEntries,
-        peakHour, peakDow,
+        dailyData, dowStable, dowDev,
+        verEntries, peakHour, peakDow,
       };
-    }, [sessions, range]);
+    }, [sessions, range, buildFilter]);
 
     if (loading) return (
       <div style={{ minHeight:'100vh', background:BG, display:'flex', alignItems:'center', justifyContent:'center', color:ACC, fontSize:'11px', letterSpacing:'0.2em' }}>
@@ -273,10 +337,17 @@
 
     const hourChartData = (stats?.hourDist||[]).map((v,h) => ({ label:`${h}`, value:v }));
     const dowChartData  = (stats?.dowDist||[]).map((v,i) => ({ label:DOW_LABELS[i], value:v }));
+    const dowDualData   = DOW_LABELS.map((label,i) => ({
+      label,
+      stable: stats?.dowStable[i]||0,
+      dev:    stats?.dowDev[i]||0,
+    }));
+
+    // ビルドフィルターの色
+    const filterColor = buildFilter==='stable' ? STABLE : buildFilter==='dev' ? DEV : ACC;
 
     return (
       <div style={{ minHeight:'100vh', background:`linear-gradient(180deg,${BG} 0%,#0a1020 100%)`, color:TEXT, fontFamily:'inherit', position:'relative' }}>
-        {/* グリッド背景 */}
         <div style={{ position:'fixed', inset:0, backgroundImage:`linear-gradient(rgba(0,255,136,0.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,255,136,0.03) 1px,transparent 1px)`, backgroundSize:'40px 40px', pointerEvents:'none', zIndex:0 }} />
         <div style={{ position:'fixed', inset:0, background:'repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,0.06) 3px,rgba(0,0,0,0.06) 6px)', pointerEvents:'none', zIndex:1 }} />
 
@@ -294,7 +365,29 @@
                 &nbsp;·&nbsp;{user.email}
               </div>
             </div>
-            <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:'8px', flexWrap:'wrap' }}>
+
+              {/* ビルドフィルタータブ */}
+              <div style={{ display:'flex', gap:'2px', background:`${BORDER}55`, borderRadius:'4px', padding:'2px' }}>
+                {[
+                  { v:'all',    label:'両方',   color:ACC },
+                  { v:'stable', label:'安定版',  color:STABLE },
+                  { v:'dev',    label:'開発版',  color:DEV },
+                ].map(({ v, label, color }) => (
+                  <button key={v} onClick={()=>setBuildFilter(v)}
+                    style={{
+                      background: buildFilter===v ? `${color}22` : 'transparent',
+                      border: `1px solid ${buildFilter===v ? color+'88' : 'transparent'}`,
+                      color: buildFilter===v ? color : DIM,
+                      padding:'4px 12px', borderRadius:'3px', cursor:'pointer',
+                      fontSize:'9px', fontWeight:buildFilter===v?700:400,
+                      fontFamily:'inherit', transition:'all 0.15s',
+                    }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+
               {/* 表示範囲切替 */}
               <div style={{ display:'flex', gap:'2px' }}>
                 {[7,14,30,90].map(d => (
@@ -320,7 +413,7 @@
             <>
               {/* サマリーカード */}
               <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))', gap:'10px', marginBottom:'16px' }}>
-                <Metric label="総ユーザー（90日）" value={stats.totalUsers} sub="ユニーク" color={ACC} />
+                <Metric label="総ユーザー（90日）" value={stats.totalUsers} sub="ユニーク" color={filterColor} />
                 <Metric label="TODAY" value={stats.todayUsers} sub="アクティブ" color="#00ccff" />
                 <Metric label="週間 (7日)" value={stats.weekUsers} sub="アクティブ" color="#ffaa00" />
                 <Metric label="月間 (今月)" value={stats.monthUsers} sub="アクティブ" color="#cc44ff" />
@@ -330,12 +423,12 @@
 
               {/* ピーク情報 */}
               <div style={{ display:'flex', gap:'8px', marginBottom:'16px', flexWrap:'wrap' }}>
-                <div style={{ background:`${ACC}08`, border:`1px solid ${ACC}22`, borderRadius:'4px', padding:'8px 14px', fontSize:'10px', color:TEXT }}>
-                  <span style={{ color:ACC, fontWeight:700 }}>⚡ ピーク時間帯:</span>
+                <div style={{ background:`${filterColor}08`, border:`1px solid ${filterColor}22`, borderRadius:'4px', padding:'8px 14px', fontSize:'10px', color:TEXT }}>
+                  <span style={{ color:filterColor, fontWeight:700 }}>⚡ ピーク時間帯:</span>
                   &nbsp;{stats.peakHour}:00〜{stats.peakHour+1}:00
                 </div>
-                <div style={{ background:`${ACC}08`, border:`1px solid ${ACC}22`, borderRadius:'4px', padding:'8px 14px', fontSize:'10px', color:TEXT }}>
-                  <span style={{ color:ACC, fontWeight:700 }}>⚡ ピーク曜日:</span>
+                <div style={{ background:`${filterColor}08`, border:`1px solid ${filterColor}22`, borderRadius:'4px', padding:'8px 14px', fontSize:'10px', color:TEXT }}>
+                  <span style={{ color:filterColor, fontWeight:700 }}>⚡ ピーク曜日:</span>
                   &nbsp;{DOW_LABELS[stats.peakDow]}曜日
                 </div>
               </div>
@@ -346,7 +439,12 @@
                 {/* 日別アクティブユーザー */}
                 <Card>
                   <SectionTitle>◈ 日別アクティブユーザー（DAU · {range}日）</SectionTitle>
-                  <BarChart data={stats.dailyData} labelKey="label" valueKey="users" color={ACC} height={130} showValue={false} />
+                  {buildFilter === 'all' && <DualLegend />}
+                  {buildFilter === 'all' ? (
+                    <BarChartDual data={stats.dailyData} labelKey="label" stableKey="stableUsers" devKey="devUsers" height={130} />
+                  ) : (
+                    <BarChart data={stats.dailyData} labelKey="label" valueKey="users" color={filterColor} height={130} showValue={false} />
+                  )}
                   <div style={{ display:'flex', justifyContent:'space-between', marginTop:'8px', fontSize:'8px', color:DIM }}>
                     <span>{stats.dailyData[0]?.date}</span>
                     <span>{stats.dailyData[stats.dailyData.length-1]?.date}</span>
@@ -356,29 +454,60 @@
                 {/* 曜日別 */}
                 <Card>
                   <SectionTitle>◈ 曜日別セッション数</SectionTitle>
-                  <div style={{ display:'flex', alignItems:'flex-end', gap:'6px', height:'130px' }}>
-                    {dowChartData.map((d,i) => {
-                      const max = Math.max(1,...dowChartData.map(x=>x.value));
-                      const pct = Math.max(2, d.value/max*100);
-                      const isWeekend = i===0||i===6;
-                      return (
-                        <div key={i} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', height:'100%', justifyContent:'flex-end', gap:'3px' }}>
-                          <span style={{ fontSize:'8px', color:DIM }}>{d.value||''}</span>
-                          <div style={{ width:'100%', height:`${pct}%`, background:isWeekend?'rgba(255,102,136,0.3)':'rgba(0,170,255,0.25)', borderRadius:'2px 2px 0 0', position:'relative', transition:'height 0.3s' }}>
-                            <div style={{ position:'absolute', inset:0, background:isWeekend?'#ff6688':'#00aaff', opacity:0.65, borderRadius:'2px 2px 0 0' }} />
+                  {buildFilter === 'all' ? (
+                    <>
+                      <DualLegend />
+                      <div style={{ display:'flex', alignItems:'flex-end', gap:'6px', height:'130px' }}>
+                        {dowDualData.map((d,i) => {
+                          const max = Math.max(1,...dowDualData.map(x=>x.stable+x.dev));
+                          const total = d.stable + d.dev;
+                          const totalPct = Math.max(total>0?2:0, total/max*100);
+                          const sPct = total > 0 ? d.stable/total*100 : 0;
+                          const dPct = total > 0 ? d.dev/total*100 : 0;
+                          const isWeekend = i===0||i===6;
+                          return (
+                            <div key={i} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', height:'100%', justifyContent:'flex-end', gap:'3px' }}>
+                              <span style={{ fontSize:'8px', color:DIM }}>{total||''}</span>
+                              <div title={`安定版:${d.stable} / 開発版:${d.dev}`}
+                                style={{ width:'100%', height:`${totalPct}%`, display:'flex', flexDirection:'column', borderRadius:'2px 2px 0 0', overflow:'hidden', transition:'height 0.3s' }}>
+                                {d.dev > 0 && <div style={{ flex:`${dPct} 0 0`, background:DEV, opacity:0.8 }} />}
+                                {d.stable > 0 && <div style={{ flex:`${sPct} 0 0`, background:STABLE, opacity:0.75 }} />}
+                              </div>
+                              <span style={{ fontSize:'10px', fontWeight:700, color:isWeekend?'#ff6688':'#00aaff' }}>{d.label}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ display:'flex', alignItems:'flex-end', gap:'6px', height:'130px' }}>
+                      {dowChartData.map((d,i) => {
+                        const max = Math.max(1,...dowChartData.map(x=>x.value));
+                        const pct = Math.max(2, d.value/max*100);
+                        const isWeekend = i===0||i===6;
+                        return (
+                          <div key={i} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', height:'100%', justifyContent:'flex-end', gap:'3px' }}>
+                            <span style={{ fontSize:'8px', color:DIM }}>{d.value||''}</span>
+                            <div style={{ width:'100%', height:`${pct}%`, background:isWeekend?'rgba(255,102,136,0.3)':'rgba(0,170,255,0.25)', borderRadius:'2px 2px 0 0', position:'relative', transition:'height 0.3s' }}>
+                              <div style={{ position:'absolute', inset:0, background:isWeekend?'#ff6688':'#00aaff', opacity:0.65, borderRadius:'2px 2px 0 0' }} />
+                            </div>
+                            <span style={{ fontSize:'10px', fontWeight:700, color:isWeekend?'#ff6688':'#00aaff' }}>{d.label}</span>
                           </div>
-                          <span style={{ fontSize:'10px', fontWeight:700, color:isWeekend?'#ff6688':'#00aaff' }}>{d.label}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </Card>
               </div>
 
               {/* ヒートマップ */}
               <Card style={{ marginBottom:'12px' }}>
-                <SectionTitle>◈ 曜日×時間帯ヒートマップ（{range}日間）</SectionTitle>
-                <Heatmap data={stats.heatmap} maxVal={Math.max(1,...stats.heatmap.flat())} />
+                <SectionTitle>◈ 曜日×時間帯ヒートマップ（{range}日間）{buildFilter==='all'?'· 全ビルド合計':buildFilter==='stable'?'· 安定版':'· 開発版'}</SectionTitle>
+                <Heatmap
+                  data={stats.heatmap}
+                  maxVal={Math.max(1,...stats.heatmap.flat())}
+                  color={buildFilter==='dev' ? '255,170,68' : '0,255,136'}
+                />
               </Card>
 
               {/* 下段2カラム */}
@@ -387,7 +516,7 @@
                 {/* 時間帯別 */}
                 <Card>
                   <SectionTitle>◈ 時間帯別セッション数（{range}日間）</SectionTitle>
-                  <BarChart data={hourChartData} labelKey="label" valueKey="value" color="#00ccff" height={100} showValue={false} />
+                  <BarChart data={hourChartData} labelKey="label" valueKey="value" color={buildFilter==='dev'?DEV:buildFilter==='stable'?STABLE:'#00ccff'} height={100} showValue={false} />
                   <div style={{ display:'flex', justifyContent:'space-between', marginTop:'4px', fontSize:'7px', color:DIM }}>
                     <span>0時</span><span>6時</span><span>12時</span><span>18時</span><span>23時</span>
                   </div>
@@ -400,14 +529,16 @@
                     {stats.verEntries.map(([ver, cnt]) => {
                       const total = sessions.length;
                       const pct = Math.round(cnt/total*100);
+                      const isDev = ver.includes('dev');
+                      const barColor = isDev ? DEV : STABLE;
                       return (
                         <div key={ver}>
                           <div style={{ display:'flex', justifyContent:'space-between', fontSize:'9px', marginBottom:'2px' }}>
-                            <span style={{ color:TEXT }}>{ver}</span>
+                            <span style={{ color:isDev?DEV:STABLE, fontWeight:600 }}>{ver}</span>
                             <span style={{ color:DIM }}>{cnt} ({pct}%)</span>
                           </div>
-                          <div style={{ height:'6px', background:`${ACC}14`, borderRadius:'3px', overflow:'hidden' }}>
-                            <div style={{ width:`${pct}%`, height:'100%', background:ACC, opacity:0.7, borderRadius:'3px', transition:'width 0.3s' }} />
+                          <div style={{ height:'6px', background:`${barColor}14`, borderRadius:'3px', overflow:'hidden' }}>
+                            <div style={{ width:`${pct}%`, height:'100%', background:barColor, opacity:0.7, borderRadius:'3px', transition:'width 0.3s' }} />
                           </div>
                         </div>
                       );
@@ -430,7 +561,7 @@
 
   // ── ルート ────────────────────────────────────
   const App = () => {
-    const [user,    setUser]    = useState(undefined);
+    const [user, setUser] = useState(undefined);
     useEffect(() => {
       return auth.onAuthStateChanged(u => setUser(u || null));
     }, []);
