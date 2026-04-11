@@ -45,7 +45,7 @@
   </style>
 </head>
 <body>
-  <div id="dev-banner">⚠ DEV BUILD — v0.6.6-dev — NOT FOR PRODUCTION ⚠</div>
+  <div id="dev-banner">⚠ DEV BUILD — v0.7.2-dev — NOT FOR PRODUCTION ⚠</div>
   <div id="root" style="padding-top:22px;"></div>
 
   <!-- Firebase 初期化 -->
@@ -392,6 +392,45 @@
     // リリースノート
     // ======================================================
     const RELEASE_NOTES = [
+      {
+        version: "v0.7.2-dev", date: "2026-04-11",
+        changes: [
+          "タイムラインビューからDELEGATEDタスクを非表示",
+          "委任中タスクはカンバンに残り、カレンダーには表示されない",
+        ],
+      },
+      {
+        version: "v0.7.1-dev", date: "2026-04-11",
+        changes: [
+          "日付入力をYYYYMMDD形式に対応（新規作成・編集モーダル）",
+          "カードヘッダーに📅日付バッジを表示（YYYYMMDD形式）",
+          "締切順ソートと連動してデッドライン管理を強化",
+        ],
+      },
+      {
+        version: "v0.7.0-dev", date: "2026-04-11",
+        changes: [
+          "🖨 印刷/PDF出力ボタン追加 — ツールバー右端",
+          "白地黒文字・右上に日時・カラム別グループ表示",
+          "URG/NRM/LOWを左ボーダー色で識別、プロジェクト名・締切日も出力",
+        ],
+      },
+      {
+        version: "v0.6.9-dev", date: "2026-04-11",
+        changes: [
+          "ソート機能追加 — MANUAL / 締切順(DEADLINE) / 重要度順(PRIORITY)",
+          "ツールバーのドロップダウンで全カラム一括切替",
+          "ソート中はドロップダウンをアクセントカラーで強調表示",
+        ],
+      },
+      {
+        version: "v0.6.8-dev", date: "2026-04-11",
+        changes: [
+          "プロジェクト名をカード最上部に大フォント（13px）で表示",
+          "activeのプロジェクトタスク完了時、次タスクを自動でactiveに昇格",
+          "skipボタン使用時も同様に次タスクをactiveに自動昇格",
+        ],
+      },
       {
         version: "v0.6.7-dev", date: "2026-04-11",
         changes: [
@@ -838,6 +877,10 @@
       const [tagInput, setTagInput] = useState((task.tags || []).join(", "));
       const [assignee, setAssignee] = useState(task.assignee || "");
       const [link,     setLink]     = useState(task.link || "");
+      // 日付（YYYYMMDD ↔ YYYY-MM-DD）
+      const toYMD  = (iso) => iso ? iso.replace(/-/g,'') : '';
+      const fromYMD = (s) => s.length===8 ? `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}` : s;
+      const [dateInput, setDateInput] = useState(toYMD(task.scheduledDate || ''));
       // 繰り返し
       const [recurOn,  setRecurOn]  = useState(!!(task.recurrence?.type));
       const [recurType,setRecurType]= useState(task.recurrence?.type || 'daily');
@@ -856,12 +899,14 @@
           ...(recurType === 'weekly'  ? { weekdays: recurDays } : {}),
           ...(recurType === 'monthly' ? { monthDay: recurMDay } : {}),
         } : null;
+        const scheduledDate = dateInput.replace(/-/g,'').length===8 ? fromYMD(dateInput.replace(/-/g,'')) : (dateInput||null);
         onSave(task.id, {
           title: title.trim(), priority, category, time,
           tags: tagInput ? tagInput.split(",").map(s => s.trim()).filter(Boolean) : [],
           assignee: assignee.trim(),
           link: link.trim(),
           recurrence,
+          scheduledDate: scheduledDate || null,
         });
         onClose();
       };
@@ -908,6 +953,16 @@
                 <div style={{ flex:"0 0 100px" }}>
                   <div style={lbl}>TIME</div>
                   <input type="time" value={time} onChange={e => setTime(e.target.value)} style={inp} />
+                </div>
+                <div style={{ flex:"0 0 120px" }}>
+                  <div style={lbl}>📅 DATE (YYYYMMDD)</div>
+                  <input
+                    value={dateInput}
+                    onChange={e => { const v=e.target.value.replace(/[^0-9\-]/g,''); setDateInput(v); }}
+                    placeholder="20260415"
+                    maxLength={10}
+                    style={{ ...inp, borderColor: dateInput ? "#00ccff66" : T.border2, color: dateInput ? "#00ccff" : T.text }}
+                  />
                 </div>
                 <div style={{ flex:1 }}>
                   <div style={lbl}>TAGS（カンマ区切り）</div>
@@ -1161,6 +1216,11 @@
               <span style={{ color:isSelected?T.accent2:cat.color, fontSize:"10px", fontWeight:700, letterSpacing:"0.1em" }}>{isSelected?"◉ ":""}{task.stripId}</span>
               <span style={{ color:T.textDim, fontSize:"10px" }}>{task.time}</span>
               <span style={{ color:pri.color, fontSize:"9px", fontWeight:700, padding:"1px 6px", border:`1px solid ${pri.color}`, borderRadius:"2px", letterSpacing:"0.15em" }}>{pri.label}</span>
+              {task.scheduledDate && (
+                <span style={{ fontSize:"9px", color:"#00ccff", padding:"1px 5px", background:"rgba(0,204,255,0.08)", border:"1px solid rgba(0,204,255,0.3)", borderRadius:"2px", letterSpacing:"0.05em", flexShrink:0 }}>
+                  📅 {task.scheduledDate.replace(/-/g,'')}
+                </span>
+              )}
               {proj && projSeq.length > 0 && (
                 <span onClick={e => { e.stopPropagation(); setShowSeq(p => !p); }}
                   title="クリックでシーケンス表示"
@@ -1170,6 +1230,11 @@
                 </span>
               )}
             </div>
+            {proj && (
+              <div style={{ padding:"2px 8px 0px", display:"flex", alignItems:"center", gap:"5px" }}>
+                <span style={{ fontSize:"13px", fontWeight:800, color:proj.color||'#00aaff', letterSpacing:"0.05em", lineHeight:1.2, textShadow:`0 0 10px ${proj.color||'#00aaff'}55`, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:"calc(100% - 20px)" }}>📁 {proj.name}</span>
+              </div>
+            )}
             <div style={{ padding:"4px 8px 2px", color:isTerminal?T.textDim:T.text, fontSize:`${titleFontSize}px`, fontWeight:600, textDecoration:isTerminal?"line-through":"none", lineHeight:1.3 }}>{task.title}</div>
             {task.assignee && (
               <div style={{ display:"flex", alignItems:"center", gap:"4px", padding:"2px 8px 0" }}>
@@ -1195,13 +1260,6 @@
                 <span title={`♻ 繰り返し: ${RECUR_TYPES.find(r=>r.id===task.recurrence.type)?.label||task.recurrence.type}`}
                   style={{ fontSize:"9px", color:"#00ccaa", padding:"1px 5px", background:"rgba(0,200,170,0.08)", border:"1px solid rgba(0,200,170,0.3)", borderRadius:"2px", letterSpacing:"0.05em", flexShrink:0 }}>
                   ♻ {RECUR_TYPES.find(r=>r.id===task.recurrence.type)?.label||'REC'}
-                </span>
-              )}
-              {proj && (
-                <span onClick={e => { e.stopPropagation(); setShowSeq(p => !p); }}
-                  title={`📁 ${proj.name} — クリックでシーケンス表示`}
-                  style={{ fontSize:"9px", color:proj.color||'#00aaff', padding:"1px 5px", background:`${proj.color||'#00aaff'}18`, border:`1px solid ${proj.color||'#00aaff'}44`, borderRadius:"2px", letterSpacing:"0.05em", flexShrink:0, maxWidth:"80px", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", cursor:"pointer" }}>
-                  📁 {proj.name}
                 </span>
               )}
             </div>
@@ -1590,6 +1648,8 @@
       const [recurType,setRecurType]= useState('daily');
       const [recurDays,setRecurDays]= useState([1,2,3,4,5]);
       const [recurMDay,setRecurMDay]= useState(1);
+      const [dateInput,setDateInput]= useState('');
+      const fromYMD = (s) => s.length===8 ? `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}` : s;
       const titleRef = useRef(null);
 
       useEffect(() => { titleRef.current?.focus(); }, []);
@@ -1603,6 +1663,8 @@
           ...(recurType === 'weekly'  ? { weekdays: recurDays } : {}),
           ...(recurType === 'monthly' ? { monthDay: recurMDay } : {}),
         } : null;
+        const d = dateInput.replace(/-/g,'');
+        const scheduledDate = d.length===8 ? fromYMD(d) : null;
         onAdd({
           stripId: `FS${String(Date.now()).slice(-4)}`,
           title: title.trim(), priority, category, time, status: "next",
@@ -1610,6 +1672,7 @@
           assignee: assignee.trim(),
           link: link.trim(),
           recurrence,
+          scheduledDate,
           sortOrder: Date.now(),
         });
         onClose();
@@ -1637,6 +1700,13 @@
                 {Object.entries(CATEGORIES).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
               </select>
               <input style={{ ...inp, width:"90px" }} type="time" value={time} onChange={e=>setTime(e.target.value)} />
+              <input
+                style={{ ...inp, width:"110px", borderColor:dateInput?"#00ccff66":T.border2, color:dateInput?"#00ccff":T.text }}
+                placeholder="YYYYMMDD"
+                maxLength={10}
+                value={dateInput}
+                onChange={e=>setDateInput(e.target.value.replace(/[^0-9\-]/g,''))}
+              />
             </div>
             <input style={inp} placeholder="タグ（カンマ区切り）" value={tagInput} onChange={e=>setTagInput(e.target.value)} />
             <input style={{ ...inp, borderColor:assignee?"#ffaa0066":T.border2 }} placeholder="✈ HANDOFF先（委任者名、空欄＝自分）" value={assignee} onChange={e=>setAssignee(e.target.value)} />
@@ -2094,6 +2164,7 @@
       const [viewMode,       setViewMode]       = useState("hybrid");
       const [filterPriority, setFilterPriority] = useState("all");
       const [filterCategory, setFilterCategory] = useState("all");
+      const [columnSort, setColumnSort] = useState("manual"); // manual | deadline | priority
       const [selectedId,     setSelectedId]     = useState(null);
       const [editTaskId,     setEditTaskId]     = useState(null);
       const [syncStatus,     setSyncStatus]     = useState("connecting");
@@ -2253,7 +2324,7 @@
             month:   now.toISOString().slice(0,7),
             hour:    now.getHours(),
             dow:     now.getDay(),
-            version: 'v0.6.6-dev',
+            version: 'v0.7.2-dev',
             build:   'dev',
             createdAt: firebase.firestore.FieldValue.serverTimestamp(),
           }).catch(()=>{});
@@ -2364,9 +2435,26 @@
       }, [tasks, filterPriority, filterCategory]);
 
       // カラム別タスク取得（sortOrder降順: 大きいほど上）
-      const getColTasks = useCallback((status) =>
-        filteredTasks.filter(t => t.status === status).sort((a,b) => (b.sortOrder??0) - (a.sortOrder??0)),
-      [filteredTasks]);
+      const PRIORITY_RANK = { high: 0, normal: 1, low: 2 };
+      const getColTasks = useCallback((status) => {
+        const col = filteredTasks.filter(t => t.status === status);
+        if (columnSort === 'deadline') {
+          return [...col].sort((a, b) => {
+            const da = a.scheduledDate || 'zzzz';
+            const db = b.scheduledDate || 'zzzz';
+            return da < db ? -1 : da > db ? 1 : (b.sortOrder??0) - (a.sortOrder??0);
+          });
+        }
+        if (columnSort === 'priority') {
+          return [...col].sort((a, b) => {
+            const pa = PRIORITY_RANK[a.priority] ?? 1;
+            const pb = PRIORITY_RANK[b.priority] ?? 1;
+            return pa !== pb ? pa - pb : (b.sortOrder??0) - (a.sortOrder??0);
+          });
+        }
+        // manual（デフォルト）
+        return col.sort((a,b) => (b.sortOrder??0) - (a.sortOrder??0));
+      }, [filteredTasks, columnSort]);
 
       // J/Kナビゲーション用フラットリスト
       const orderedTasks = useMemo(() => {
@@ -2395,13 +2483,14 @@
         // 繰り返しタスク: 完了・LOST時に次回インスタンスを自動生成
         if (s === 'completed' || s === 'cleared' || s === 'lost') {
           const task = tasks.find(t => t.id === id);
-          // プロジェクトシーケンス: 次タスクを自動アクティブ化
+          // プロジェクトシーケンス: 次タスクを自動アクティブ化（activeだった場合はactiveに、そうでなければnextに）
           if (task?.projectId) {
+            const wasActive = task.status === 'active';
             const seq = tasks
               .filter(t => t.projectId === task.projectId && t.id !== id && !['completed','cleared','lost'].includes(t.status))
               .sort((a, b) => (a.projectOrder ?? 0) - (b.projectOrder ?? 0));
             const next = seq.find(t => (t.projectOrder ?? 0) > (task.projectOrder ?? 0));
-            if (next) await tasksRef.doc(next.id).update({ status: 'next', updatedAt: ts() });
+            if (next) await tasksRef.doc(next.id).update({ status: wasActive ? 'active' : 'next', updatedAt: ts() });
           }
           if (task?.recurrence) {
             const nextDate = calcNextOccurrence(task.recurrence);
@@ -2429,16 +2518,70 @@
       const handleSkipProjectTask = useCallback(async (taskId) => {
         const task = tasks.find(t => t.id === taskId);
         if (!task?.projectId) return;
+        const wasActive = task.status === 'active';
         await tasksRef.doc(taskId).update({ status: 'completed', updatedAt: ts() });
-        // 次のタスクを自動アクティブ化
+        // 次のタスクを自動アクティブ化（activeだった場合はactiveに）
         const seq = tasks
           .filter(t => t.projectId === task.projectId && t.id !== taskId && !['completed','cleared','lost'].includes(t.status))
           .sort((a, b) => (a.projectOrder ?? 0) - (b.projectOrder ?? 0));
         const next = seq.find(t => (t.projectOrder ?? 0) > (task.projectOrder ?? 0));
-        if (next) await tasksRef.doc(next.id).update({ status: 'next', updatedAt: ts() });
+        if (next) await tasksRef.doc(next.id).update({ status: wasActive ? 'active' : 'next', updatedAt: ts() });
       }, [tasks, tasksRef]);
 
       const handleEditSave     = useCallback((id, fields) => tasksRef.doc(id).update({ ...fields, updatedAt:ts() }), [tasksRef]);
+
+      // --- 印刷/PDF出力 ---
+      const handlePrint = useCallback(() => {
+        const now = new Date();
+        const dateStr = now.toLocaleDateString('ja-JP', { year:'numeric', month:'2-digit', day:'2-digit', weekday:'short' });
+        const timeStr = now.toLocaleTimeString('ja-JP', { hour12:false, hour:'2-digit', minute:'2-digit' });
+        const printCols = COLUMNS.filter(c => !['completed','cleared','lost'].includes(c.id));
+        const priLabel = { high:'[URG]', normal:'[NRM]', low:'[LOW]' };
+        let html = `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>Flight Strip TODO — ${dateStr}</title><style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#fff;padding:16px 20px}
+.header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;border-bottom:2px solid #111;padding-bottom:8px}
+.header h1{font-size:16px;font-weight:900;letter-spacing:0.1em}
+.header .dt{font-size:11px;text-align:right;line-height:1.6}
+.col{margin-bottom:18px}
+.col-title{font-size:10px;font-weight:900;letter-spacing:0.2em;border-bottom:1px solid #999;padding-bottom:3px;margin-bottom:6px;color:#333}
+.strip{display:flex;gap:8px;align-items:baseline;padding:4px 6px;border-left:3px solid #999;margin-bottom:4px;background:#f9f9f9}
+.strip.urg{border-left-color:#cc0000}
+.strip.nrm{border-left-color:#006633}
+.strip.low{border-left-color:#999}
+.strip-id{font-size:9px;color:#666;min-width:44px;flex-shrink:0}
+.strip-pri{font-size:9px;min-width:36px;flex-shrink:0}
+.strip-pri.urg{color:#cc0000;font-weight:900}
+.strip-title{font-size:11px;font-weight:700;flex:1}
+.strip-date{font-size:9px;color:#555;flex-shrink:0}
+.strip-proj{font-size:9px;color:#333;font-style:italic;flex-shrink:0}
+@media print{body{padding:10px 14px}button{display:none}}
+</style></head><body>`;
+        html += `<div class="header"><div><h1>◈ FLIGHT STRIP TODO</h1></div><div class="dt"><span>${dateStr}</span><br/><strong>${timeStr}</strong></div></div>`;
+        printCols.forEach(col => {
+          const colT = tasks.filter(t => t.status === col.id).sort((a,b) => (b.sortOrder??0)-(a.sortOrder??0));
+          if (colT.length === 0) return;
+          html += `<div class="col"><div class="col-title">${col.icon} ${col.label} — ${col.sublabel}（${colT.length}）</div>`;
+          colT.forEach(t => {
+            const pri = t.priority || 'normal';
+            const proj = projects.find(p => p.id === t.projectId);
+            html += `<div class="strip ${pri==='high'?'urg':pri==='low'?'low':'nrm'}">`;
+            html += `<span class="strip-id">${t.stripId||''}</span>`;
+            html += `<span class="strip-pri ${pri==='high'?'urg':''}">${priLabel[pri]||''}</span>`;
+            html += `<span class="strip-title">${t.title||''}</span>`;
+            if (proj) html += `<span class="strip-proj">📁${proj.name}</span>`;
+            if (t.scheduledDate) html += `<span class="strip-date">${t.scheduledDate}</span>`;
+            html += `</div>`;
+          });
+          html += `</div>`;
+        });
+        html += `</body></html>`;
+        const w = window.open('', '_blank', 'width=800,height=900');
+        w.document.write(html);
+        w.document.close();
+        w.focus();
+        setTimeout(() => w.print(), 400);
+      }, [tasks, projects]);
       const handleTimeChange   = useCallback((id, time)   => tasksRef.doc(id).update({ time, updatedAt: ts() }), [tasksRef]);
 
       // --- タイマーハンドラー（Firestore同期） ---
@@ -2827,7 +2970,7 @@
                 <div style={{ fontSize:"9px", color:T.textMuted, letterSpacing:"0.3em", marginTop:"4px" }}>
                   <span onClick={() => setShowRelease(true)} style={{ cursor:"pointer", color:T.textDim, borderBottom:`1px solid ${T.border2}`, paddingBottom:"1px", transition:"color 0.15s" }}
                     onMouseEnter={e=>e.target.style.color=T.accent} onMouseLeave={e=>e.target.style.color=T.textDim}>
-                    ATC-SYS v0.6.6-dev
+                    ATC-SYS v0.7.2-dev
                   </span>
                   &nbsp;· <span style={{ color:syncColor, animation:syncStatus==="connecting"?"blink 1s infinite":"none" }}>{syncLabel}</span>
                   &nbsp;· <span style={{ color:T.textMuted }}>? でショートカット</span>
@@ -2886,10 +3029,16 @@
                 <button onClick={cycleFontSize} title="文字サイズ切替（小→中→大）" style={{ background:"transparent", border:`1px solid ${T.border2}`, color:T.accent, padding:"4px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"13px", fontWeight:700, fontFamily:"'JetBrains Mono',monospace", letterSpacing:"0.05em", minWidth:"52px" }}>
                   A{FONT_SIZES[stripFontSize].label}
                 </button>
+                <select value={columnSort} onChange={e=>setColumnSort(e.target.value)} title="ソート順" style={{ background:T.bgInput, border:`1px solid ${columnSort!=='manual'?T.accent+'66':T.border2}`, color:columnSort!=='manual'?T.accent:T.textDim, padding:"4px 8px", borderRadius:"2px", fontSize:"10px", fontFamily:"'JetBrains Mono',monospace", cursor:"pointer" }}>
+                  <option value="manual">↕ MANUAL</option>
+                  <option value="deadline">📅 DEADLINE</option>
+                  <option value="priority">🔴 PRIORITY</option>
+                </select>
                 <button onClick={() => setShowProjects(true)} style={{ background:`rgba(100,150,255,0.12)`, border:`1px solid rgba(100,150,255,0.4)`, color:"#8899ff", padding:"4px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"10px", fontWeight:700, letterSpacing:"0.08em", fontFamily:"'JetBrains Mono',monospace", display:"flex", alignItems:"center", gap:"4px" }}>
                   📁 {projects.length > 0 ? `PROJ (${projects.length})` : 'PROJ'}
                 </button>
                 <button onClick={() => setShowForm(!showForm)} style={{ background:showForm?"rgba(255,50,50,0.15)":`${T.accent}18`, border:`1px solid ${showForm?"#ff333366":T.accent+"66"}`, color:showForm?"#ff6666":T.accent, padding:"4px 14px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontWeight:700, letterSpacing:"0.1em", fontFamily:"'JetBrains Mono',monospace" }}>{showForm?"✕ CLOSE":"+ FILE STRIP"}</button>
+                <button onClick={handlePrint} title="印刷/PDF出力" style={{ background:"transparent", border:`1px solid ${T.border2}`, color:T.textDim, padding:"4px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontWeight:700, fontFamily:"'JetBrains Mono',monospace", letterSpacing:"0.05em" }}>🖨</button>
                 <button onClick={() => setShowHelp(!showHelp)} style={{ background:showHelp?`${T.accent2}18`:"transparent", border:`1px solid ${showHelp?T.accent2+"66":T.border2}`, color:showHelp?T.accent2:T.textDim, padding:"4px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"12px", fontWeight:700, fontFamily:"'JetBrains Mono',monospace" }}>?</button>
               </div>
             </div>
@@ -2898,7 +3047,7 @@
 
             {!isMobile && (viewMode === "hybrid" || viewMode === "timeline") && (
               <div style={{ marginBottom:"16px" }}>
-                <TimelineView tasks={filteredTasks} currentTime={currentTime} onTimeChange={handleTimeChange} />
+                <TimelineView tasks={filteredTasks.filter(t => t.status !== 'delegated')} currentTime={currentTime} onTimeChange={handleTimeChange} />
               </div>
             )}
 
@@ -3159,7 +3308,7 @@
 
             {/* フッター */}
             <footer style={{ marginTop:"20px", paddingTop:"10px", borderTop:`1px solid ${T.border}`, display:"flex", justifyContent:"space-between", alignItems:"center", color:T.textMuted, fontSize:"9px", letterSpacing:"0.1em" }}>
-              <span>FLIGHT STRIP TODO · ATC-SYS v0.6.6-dev</span>
+              <span>FLIGHT STRIP TODO · ATC-SYS v0.7.2-dev</span>
               <div style={{ display:"flex", gap:"8px", alignItems:"center" }}>
                 <span>{currentTime.toLocaleDateString("ja-JP")} · STRIPS: {tasks.length}</span>
                 <a href="./analytics.html" target="_blank" style={{ background:`${T.accent}10`, border:`1px solid ${T.accent}22`, color:T.accent, padding:"2px 10px", borderRadius:"2px", fontSize:"8px", fontFamily:"'JetBrains Mono',monospace", letterSpacing:"0.05em", textDecoration:"none" }}>📊 ANALYTICS</a>
