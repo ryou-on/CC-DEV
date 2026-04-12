@@ -46,7 +46,7 @@
   </style>
 </head>
 <body>
-  <div id="dev-banner">⚠ DEV BUILD — v0.9.0-dev — NOT FOR PRODUCTION ⚠</div>
+  <div id="dev-banner">⚠ DEV BUILD — v0.9.1-dev — NOT FOR PRODUCTION ⚠</div>
   <div id="root" style="padding-top:22px;"></div>
 
   <!-- Firebase 初期化 -->
@@ -328,6 +328,8 @@
       { id:'ER-0070', title:'タスクにチェックリスト機能追加', desc:'通常タスクにルーティンと同じチェックリストを追加できるように。チェックリストを全チェックしても完了にはならず、ユーザーが手動で完了操作する', priority:'medium', difficulty:'easy', status:'implemented', registeredAt:'2026-04-13', implementedAt:'2026-04-13' },
       { id:'ER-0071', title:'タスクの全画面表示', desc:'ストリップの「フルスクリーン」アイコンをクリックすると、そのタスクだけが画面いっぱいに表示される。フルスクリーンモーダル内でも編集・ステータス変更が可能', priority:'medium', difficulty:'easy', status:'implemented', registeredAt:'2026-04-13', implementedAt:'2026-04-13' },
       { id:'ER-0072', title:'プロジェクト機能の改善（タスクアーカイブ維持）', desc:'プロジェクトの全タスクが完了してもプロジェクト状態を維持。完了タスクはプロジェクト内にアーカイブとして残り、進捗管理（何件完了/全件）を常に表示', priority:'medium', difficulty:'medium', status:'pending', registeredAt:'2026-04-13' },
+      { id:'ER-0073', title:'Analytics機能の改善（デバイス・タスク統計）', desc:'セッション記録にデバイス情報（モバイル/デスクトップ）を追加。Analyticsにデバイス別ユーザー数・completionRateのrange期間対応を追加', priority:'medium', difficulty:'medium', status:'implemented', registeredAt:'2026-04-13', implementedAt:'2026-04-13' },
+      { id:'ER-0074', title:'完了タスクスタックの折りたたみ', desc:'CLEAREDカラムの完了タスクを今日/昨日/今週/今月/年月でグループ分け・折りたたみ表示。デフォルトで今日・昨日は展開', priority:'medium', difficulty:'medium', status:'implemented', registeredAt:'2026-04-13', implementedAt:'2026-04-13' },
     ];
 
     const useCurrentTime = () => {
@@ -451,9 +453,16 @@
     // ======================================================
     // リリースノート
     // ======================================================
-    const APP_VERSION = 'v0.9.0-dev';
+    const APP_VERSION = 'v0.9.1-dev';
 
     const RELEASE_NOTES = [
+      {
+        version: "v0.9.1-dev", date: "2026-04-13",
+        changes: [
+          "📊 完了タスクを今日/昨日/今週/今月/年月でグループ折りたたみ表示",
+          "📱 Analyticsにデバイス別ユーザー数（モバイル/デスクトップ）を追加",
+        ],
+      },
       {
         version: "v0.9.0-dev", date: "2026-04-13",
         changes: [
@@ -4101,6 +4110,7 @@
       const [fullscreenTaskId, setFullscreenTaskId] = useState(null);
       // ER-0054: 一括操作ドロップダウン
       const [showBulkMenu, setShowBulkMenu] = useState(false);
+      const [clearedOpen,  setClearedOpen]  = useState({'今日': true, '昨日': true});
       // PROJ/ROUTINE ドロップダウン
       const [showProjMenu, setShowProjMenu] = useState(false);
       const projMenuRef = useRef(null);
@@ -4270,6 +4280,7 @@
           const now = new Date();
           const uidHash = btoa(user.uid).replace(/[^a-zA-Z0-9]/g,'').slice(0,12);
           const sessionId = `${now.toISOString().slice(0,10)}_${uidHash}_${now.getTime()}`;
+          const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
           db.collection('fst_analytics').doc(sessionId).set({
             uidHash,
             date:    now.toISOString().slice(0,10),
@@ -4278,6 +4289,7 @@
             dow:     now.getDay(),
             version: APP_VERSION,
             build:   'dev',
+            device:  isMobileDevice ? 'mobile' : 'desktop',
             createdAt: firebase.firestore.FieldValue.serverTimestamp(),
           }).catch(()=>{});
         } catch(e){}
@@ -4518,6 +4530,36 @@
         // manual（デフォルト）
         return col.sort((a,b) => (b.sortOrder??0) - (a.sortOrder??0));
       }, [filteredTasks, columnSort, columnSortDir]);
+
+      // ER-0074: 完了タスクを日付グループに分類
+      const getClearedGrouped = (status) => {
+        const col = getColTasks(status);
+        const today = new Date();
+        const groups = {};
+        col.forEach(t => {
+          const d = t.completedAt?.toDate?.() || t.updatedAt?.toDate?.() || new Date(0);
+          const dateStr = d.toISOString().slice(0,10);
+          const todayStr = today.toISOString().slice(0,10);
+          const yest = new Date(today); yest.setDate(today.getDate()-1);
+          const yesterdayStr = yest.toISOString().slice(0,10);
+          const weekStart = new Date(today); weekStart.setDate(today.getDate()-today.getDay()+(today.getDay()===0?-6:1));
+          const weekStr = weekStart.toISOString().slice(0,10);
+          const monthStr = today.toISOString().slice(0,7);
+
+          let key;
+          if (dateStr === todayStr) key = '今日';
+          else if (dateStr === yesterdayStr) key = '昨日';
+          else if (dateStr >= weekStr) key = '今週';
+          else if (dateStr.slice(0,7) === monthStr) key = '今月';
+          else key = dateStr.slice(0,7).replace('-', '年') + '月';
+
+          if (!groups[key]) groups[key] = [];
+          groups[key].push(t);
+        });
+        const order = ['今日','昨日','今週','今月'];
+        const sorted = [...order.filter(k=>groups[k]), ...Object.keys(groups).filter(k=>!order.includes(k)).sort().reverse()];
+        return sorted.map(k => ({ label: k, tasks: groups[k] }));
+      };
 
       // J/Kナビゲーション用フラットリスト
       const orderedTasks = useMemo(() => {
@@ -5562,7 +5604,24 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                     </div>
                     <div data-col-id="completed" style={colBox({})} {...dropCol("completed")}>
                       {colHeader(COLUMNS[4], completedTasks.length)}
-                      {completedTasks.map(renderStrip)}
+                      {getClearedGrouped('completed').map(({ label, tasks }) => (
+                        <div key={label}>
+                          <div
+                            onClick={() => setClearedOpen(p => ({ ...p, [label]: !p[label] }))}
+                            style={{ display:'flex', alignItems:'center', justifyContent:'space-between',
+                              padding:'4px 8px', cursor:'pointer', userSelect:'none',
+                              background:`${T.accent}08`, borderRadius:'3px', marginBottom:'4px',
+                              border:`1px solid ${T.border2 || T.border}` }}>
+                            <span style={{ fontSize:'9px', color:T.textDim, letterSpacing:'0.1em' }}>
+                              {label} <span style={{ color:T.accent }}>({tasks.length})</span>
+                            </span>
+                            <span style={{ fontSize:'9px', color:T.textDim }}>
+                              {clearedOpen[label] !== false ? '▲' : '▼'}
+                            </span>
+                          </div>
+                          {clearedOpen[label] !== false && tasks.map(t => renderStrip(t))}
+                        </div>
+                      ))}
                       {completedTasks.length === 0 && emptyMsg}
                     </div>
                     <div data-col-id="lost" style={colBox({ border:`1px solid #ff550022` })} {...dropCol("lost")}>

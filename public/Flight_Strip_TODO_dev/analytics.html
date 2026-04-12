@@ -321,7 +321,7 @@
         completedToday:  taskCompleted.filter(s=>s.date===today).length,
         completedWeek:   taskCompleted.filter(s=>s.date>=weekCutStr).length,
         completedRange:  taskCompleted.filter(s=>s.date>=rangeCutStr2).length,
-        completionRate:  taskCreated.length > 0 ? Math.round(taskCompleted.length / taskCreated.length * 100) : null,
+        completionRate:  taskCreated.filter(s=>s.date>=rangeCutStr2).length > 0 ? Math.round(taskCompleted.filter(s=>s.date>=rangeCutStr2).length / taskCreated.filter(s=>s.date>=rangeCutStr2).length * 100) : null,
       };
 
       // 表示範囲でフィルタ（全ビルド）※セッションのみ
@@ -402,6 +402,10 @@
       const peakHour = hourDist.indexOf(Math.max(...hourDist));
       const peakDow  = dowDist.indexOf(Math.max(...dowDist));
 
+      // デバイス別集計（ranged セッションのみ）
+      const deviceMobile  = new Set(filtered.filter(s=>s.device==='mobile').map(s=>s.uidHash)).size;
+      const deviceDesktop = new Set(filtered.filter(s=>s.device==='desktop'||!s.device).map(s=>s.uidHash)).size;
+
       return {
         totalUsers: totalU.size,
         todayUsers: todayU.size,
@@ -412,7 +416,7 @@
         hourDist, dowDist, heatmap,
         dailyData, dowStable, dowDev,
         verEntries, peakHour, peakDow,
-        taskStats,
+        taskStats, deviceMobile, deviceDesktop,
       };
     }, [sessions, range, buildFilter]);
 
@@ -544,7 +548,24 @@
                   <Metric label="完了 (今日)" value={stats.taskStats.completedToday} sub="タスク" color="#00ff88" />
                   <Metric label={`完了 (${range}日)`} value={stats.taskStats.completedRange} sub="タスク" color="#00cc66" />
                   {stats.taskStats.completionRate !== null && (
-                    <Metric label="完了率 (90日)" value={`${stats.taskStats.completionRate}%`} sub="完了/登録" color="#ffaa00" />
+                    <Metric label={`完了率 (${range}日)`} value={`${stats.taskStats.completionRate}%`} sub="完了/登録" color="#ffaa00" />
+                  )}
+                </div>
+              </div>
+
+              {/* デバイス別 */}
+              <div style={{ marginBottom:'16px' }}>
+                <div style={{ fontSize:'10px', color:DIM, letterSpacing:'0.12em', marginBottom:'8px' }}>◈ デバイス別ユーザー（{range}日）</div>
+                <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))', gap:'8px' }}>
+                  <Metric label="📱 モバイル" value={stats.deviceMobile} sub="ユーザー" color="#00ccff" />
+                  <Metric label="🖥 デスクトップ" value={stats.deviceDesktop} sub="ユーザー" color="#aa88ff" />
+                  {stats.deviceMobile + stats.deviceDesktop > 0 && (
+                    <Metric
+                      label="モバイル率"
+                      value={`${Math.round(stats.deviceMobile/(stats.deviceMobile+stats.deviceDesktop)*100)}%`}
+                      sub="比率"
+                      color="#ffaa00"
+                    />
                   )}
                 </div>
               </div>
