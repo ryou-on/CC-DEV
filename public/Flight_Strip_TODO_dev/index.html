@@ -442,9 +442,15 @@
     // ======================================================
     // リリースノート
     // ======================================================
-    const APP_VERSION = 'v0.8.3-dev';
+    const APP_VERSION = 'v0.8.4-dev';
 
     const RELEASE_NOTES = [
+      {
+        version: "v0.8.4-dev", date: "2026-04-12",
+        changes: [
+          "⚙ ER-0063: 管理画面新設（ブロードキャスト/アンケート/ユーザー一覧/強制更新/ER一括管理）",
+        ],
+      },
       {
         version: "v0.8.3-dev", date: "2026-04-12",
         changes: [
@@ -796,6 +802,9 @@
       );
     };
 
+    // 管理者権限
+    const ALLOWED_ADMINS = ['junpei.omote@gmail.com', 'jumpei.omote@splineglobal.com'];
+
     // ER-030: 編集権限管理
     const ALLOWED_ER_EDITORS = ['junpei.omote@gmail.com', 'jumpei.omote@splineglobal.com'];
 
@@ -1085,6 +1094,477 @@
                 )}
               </div>
               <button onClick={onClose} style={{ ...btnBase, background:`${T.accent}18`, border:`1px solid ${T.accent}55`, color:T.accent, fontWeight:700 }}>✕ CLOSE</button>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // ======================================================
+    // ER-0063: 管理画面コンポーネント群
+    // ======================================================
+
+    // ブロードキャストポップアップ（全ユーザー告知）
+    const BroadcastPopup = ({ title, message, onClose }) => {
+      const T = useT();
+      return (
+        <div style={{ position:'fixed', inset:0, zIndex:500, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+          <div style={{ background:T.bgModal, border:`2px solid #ffaa00`, borderRadius:'4px', padding:'28px 32px', maxWidth:'460px', width:'90%', fontFamily:"'JetBrains Mono',monospace", boxShadow:'0 8px 40px rgba(0,0,0,0.7)' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:'10px', marginBottom:'16px' }}>
+              <span style={{ fontSize:'20px' }}>⚠</span>
+              <div style={{ fontSize:'13px', fontWeight:700, color:'#ffaa00', letterSpacing:'0.1em' }}>{title || 'お知らせ'}</div>
+            </div>
+            <div style={{ fontSize:'12px', color:T.text, lineHeight:1.7, whiteSpace:'pre-wrap', marginBottom:'20px' }}>{message}</div>
+            <button onClick={onClose} style={{ background:'rgba(255,170,0,0.15)', border:'1px solid #ffaa0066', color:'#ffaa00', padding:'6px 20px', borderRadius:'2px', cursor:'pointer', fontSize:'11px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace" }}>CLOSE</button>
+          </div>
+        </div>
+      );
+    };
+
+    // アンケートポップアップ
+    const SurveyPopup = ({ survey, uidHash, onClose }) => {
+      const T = useT();
+      const db2 = firebase.firestore();
+      const [selected, setSelected] = useState('');
+      const [text, setText] = useState('');
+      const [submitted, setSubmitted] = useState(false);
+      const isText = survey.type === 'text';
+
+      const handleSubmit = async () => {
+        const answer = isText ? text : selected;
+        if (!answer) return;
+        const docId = `${survey.id}_${uidHash}`;
+        await db2.collection('fst_survey_answers').doc(docId).set({
+          surveyId: survey.id,
+          uidHash,
+          answer,
+          answeredAt: firebase.firestore.FieldValue.serverTimestamp(),
+        }).catch(() => {});
+        localStorage.setItem('fst_survey_answered_' + survey.id, '1');
+        setSubmitted(true);
+      };
+
+      return (
+        <div style={{ position:'fixed', inset:0, zIndex:500, background:'rgba(0,0,0,0.7)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+          <div style={{ background:T.bgModal, border:`1px solid ${T.accent}66`, borderRadius:'4px', padding:'28px 32px', maxWidth:'480px', width:'90%', fontFamily:"'JetBrains Mono',monospace", boxShadow:'0 8px 40px rgba(0,0,0,0.7)' }}>
+            <div style={{ fontSize:'10px', color:T.textDim, letterSpacing:'0.15em', marginBottom:'8px' }}>SURVEY</div>
+            <div style={{ fontSize:'13px', fontWeight:700, color:T.text, marginBottom:'6px' }}>{survey.title}</div>
+            {!submitted ? (
+              <>
+                <div style={{ fontSize:'12px', color:T.textDim, marginBottom:'14px' }}>{survey.question}</div>
+                {isText ? (
+                  <textarea value={text} onChange={e=>setText(e.target.value)}
+                    style={{ width:'100%', background:T.bgInput, border:`1px solid ${T.border2}`, color:T.text, padding:'8px', borderRadius:'2px', fontSize:'12px', fontFamily:"'JetBrains Mono',monospace", resize:'vertical', minHeight:'80px', boxSizing:'border-box' }}
+                    placeholder="回答を入力..." />
+                ) : (
+                  <div style={{ display:'flex', flexDirection:'column', gap:'6px', marginBottom:'14px' }}>
+                    {(survey.options || []).map((opt, i) => (
+                      <label key={i} style={{ display:'flex', alignItems:'center', gap:'8px', cursor:'pointer', fontSize:'12px', color: selected===opt ? T.accent : T.text }}>
+                        <input type="radio" name="survey_opt" value={opt} checked={selected===opt} onChange={()=>setSelected(opt)} />
+                        {opt}
+                      </label>
+                    ))}
+                  </div>
+                )}
+                <div style={{ display:'flex', gap:'8px', marginTop:'16px' }}>
+                  <button onClick={handleSubmit} style={{ background:`${T.accent}22`, border:`1px solid ${T.accent}66`, color:T.accent, padding:'6px 20px', borderRadius:'2px', cursor:'pointer', fontSize:'11px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace" }}>送信</button>
+                  <button onClick={onClose} style={{ background:'transparent', border:`1px solid ${T.border2}`, color:T.textDim, padding:'6px 14px', borderRadius:'2px', cursor:'pointer', fontSize:'11px', fontFamily:"'JetBrains Mono',monospace" }}>スキップ</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize:'12px', color:'#00cc88', marginBottom:'16px' }}>✓ 回答を送信しました。ありがとうございます。</div>
+                <button onClick={onClose} style={{ background:`${T.accent}22`, border:`1px solid ${T.accent}66`, color:T.accent, padding:'6px 20px', borderRadius:'2px', cursor:'pointer', fontSize:'11px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace" }}>CLOSE</button>
+              </>
+            )}
+          </div>
+        </div>
+      );
+    };
+
+    // 管理パネル（タブ型）
+    const AdminPanel = ({ onClose, user, ers, onSaveERs }) => {
+      const T = useT();
+      const db2 = firebase.firestore();
+      const [tab, setTab] = useState('broadcast');
+
+      // BROADCASTタブ state
+      const [bcTitle, setBcTitle] = useState('');
+      const [bcMsg, setBcMsg]     = useState('');
+      const [bcStatus, setBcStatus] = useState(null); // {active, title, message}
+      const [bcLoading, setBcLoading] = useState(false);
+
+      // SURVEYタブ state
+      const [surveys, setSurveys] = useState([]);
+      const [svTitle, setSvTitle] = useState('');
+      const [svQuestion, setSvQuestion] = useState('');
+      const [svType, setSvType] = useState('options'); // options | text
+      const [svOptions, setSvOptions] = useState('');
+      const [svAnswers, setSvAnswers] = useState({}); // surveyId -> answers[]
+      const [svExpanded, setSvExpanded] = useState(null);
+
+      // USERSタブ state
+      const [analytics, setAnalytics] = useState([]);
+      const [usersLoading, setUsersLoading] = useState(false);
+
+      // FORCE_UPDATEタブ state
+      const [fuEnabled, setFuEnabled] = useState(false);
+      const [fuMinVer, setFuMinVer] = useState('');
+      const [fuMsg, setFuMsg] = useState('');
+      const [fuTarget, setFuTarget] = useState('all');
+      const [fuSaved, setFuSaved] = useState(false);
+
+      // ER_BULKタブ state
+      const [erItems, setErItems] = useState(() => ers ? [...ers] : []);
+      const [erChecked, setErChecked] = useState(new Set());
+      const [erBulkStatus, setErBulkStatus] = useState('implemented');
+      const [erSaved, setErSaved] = useState(false);
+
+      // Broadcast読み込み
+      useEffect(() => {
+        if (tab !== 'broadcast') return;
+        db2.collection('fst_admin').doc('broadcast').get().then(snap => {
+          if (snap.exists) setBcStatus(snap.data());
+        }).catch(()=>{});
+      }, [tab]);
+
+      // Survey読み込み
+      useEffect(() => {
+        if (tab !== 'survey') return;
+        db2.collection('fst_surveys').orderBy('createdAt','desc').limit(20).get().then(snap => {
+          setSurveys(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        }).catch(()=>{});
+      }, [tab]);
+
+      // Users読み込み
+      useEffect(() => {
+        if (tab !== 'users') return;
+        setUsersLoading(true);
+        db2.collection('fst_analytics').orderBy('createdAt','desc').limit(500).get().then(snap => {
+          setAnalytics(snap.docs.map(d => d.data()));
+          setUsersLoading(false);
+        }).catch(()=>{ setUsersLoading(false); });
+      }, [tab]);
+
+      // ForceUpdate読み込み
+      useEffect(() => {
+        if (tab !== 'force_update') return;
+        db2.collection('fst_admin').doc('forceUpdate').get().then(snap => {
+          if (snap.exists) {
+            const d = snap.data();
+            setFuEnabled(d.enabled || false);
+            setFuMinVer(d.minVersion || '');
+            setFuMsg(d.message || '');
+            setFuTarget(d.targetBuild || 'all');
+          }
+        }).catch(()=>{});
+      }, [tab]);
+
+      // Broadcast配信開始
+      const handleBcStart = async () => {
+        setBcLoading(true);
+        await db2.collection('fst_admin').doc('broadcast').set({
+          active: true, title: bcTitle, message: bcMsg,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        }).catch(()=>{});
+        setBcStatus({ active: true, title: bcTitle, message: bcMsg });
+        setBcLoading(false);
+      };
+      const handleBcStop = async () => {
+        await db2.collection('fst_admin').doc('broadcast').set({
+          active: false, title: bcTitle, message: bcMsg,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        }).catch(()=>{});
+        setBcStatus(s => s ? { ...s, active: false } : null);
+      };
+
+      // Survey作成
+      const handleSvCreate = async () => {
+        if (!svTitle || !svQuestion) return;
+        const opts = svType === 'options' ? svOptions.split('\n').map(s=>s.trim()).filter(Boolean) : [];
+        await db2.collection('fst_surveys').add({
+          title: svTitle, question: svQuestion, type: svType,
+          options: opts, active: false,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        }).catch(()=>{});
+        setSvTitle(''); setSvQuestion(''); setSvOptions('');
+        // リロード
+        const snap = await db2.collection('fst_surveys').orderBy('createdAt','desc').limit(20).get().catch(()=>null);
+        if (snap) setSurveys(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      };
+      const handleSvToggle = async (sv) => {
+        await db2.collection('fst_surveys').doc(sv.id).update({ active: !sv.active }).catch(()=>{});
+        setSurveys(list => list.map(s => s.id===sv.id ? { ...s, active: !s.active } : s));
+      };
+      const handleSvAnswers = async (svId) => {
+        if (svExpanded === svId) { setSvExpanded(null); return; }
+        const snap = await db2.collection('fst_survey_answers').where('surveyId','==',svId).get().catch(()=>null);
+        if (snap) setSvAnswers(a => ({ ...a, [svId]: snap.docs.map(d=>d.data()) }));
+        setSvExpanded(svId);
+      };
+
+      // ForceUpdate保存
+      const handleFuSave = async () => {
+        await db2.collection('fst_admin').doc('forceUpdate').set({
+          enabled: fuEnabled, minVersion: fuMinVer, message: fuMsg,
+          targetBuild: fuTarget,
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        }).catch(()=>{});
+        setFuSaved(true);
+        setTimeout(()=>setFuSaved(false), 2000);
+      };
+
+      // ER一括保存
+      const handleErBulkSave = () => {
+        onSaveERs(erItems);
+        setErSaved(true);
+        setTimeout(()=>setErSaved(false), 2000);
+      };
+      const handleErBulkChange = () => {
+        setErItems(list => list.map(e => erChecked.has(e.id) ? { ...e, status: erBulkStatus } : e));
+        setErChecked(new Set());
+      };
+
+      // ユーザー集計
+      const userMap = {};
+      analytics.forEach(a => {
+        if (!a.uidHash) return;
+        if (!userMap[a.uidHash]) userMap[a.uidHash] = { uidHash: a.uidHash, sessions: 0, firstDate: a.date, lastDate: a.date, version: a.version };
+        userMap[a.uidHash].sessions++;
+        if (a.date < userMap[a.uidHash].firstDate) userMap[a.uidHash].firstDate = a.date;
+        if (a.date > userMap[a.uidHash].lastDate) { userMap[a.uidHash].lastDate = a.date; userMap[a.uidHash].version = a.version; }
+      });
+      const userList = Object.values(userMap).sort((a,b) => b.lastDate.localeCompare(a.lastDate));
+      const today = new Date().toISOString().slice(0,10);
+      const dau = new Set(analytics.filter(a=>a.date===today).map(a=>a.uidHash)).size;
+
+      const tabStyle = (id) => ({
+        padding:'6px 14px', borderRadius:'2px', cursor:'pointer', fontSize:'10px', fontWeight:700,
+        letterSpacing:'0.08em', fontFamily:"'JetBrains Mono',monospace", border:'none',
+        background: tab===id ? `${T.accent}22` : 'transparent',
+        color: tab===id ? T.accent : T.textDim,
+        borderBottom: tab===id ? `2px solid ${T.accent}` : '2px solid transparent',
+      });
+      const inputStyle = { background:T.bgInput, border:`1px solid ${T.border2}`, color:T.text, padding:'6px 10px', borderRadius:'2px', fontSize:'11px', fontFamily:"'JetBrains Mono',monospace", width:'100%', boxSizing:'border-box' };
+      const btnPrimary = { background:`${T.accent}22`, border:`1px solid ${T.accent}66`, color:T.accent, padding:'6px 16px', borderRadius:'2px', cursor:'pointer', fontSize:'11px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace" };
+      const btnDanger  = { background:'rgba(255,68,68,0.15)', border:'1px solid #ff444444', color:'#ff6666', padding:'6px 14px', borderRadius:'2px', cursor:'pointer', fontSize:'11px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace" };
+
+      return (
+        <div style={{ position:'fixed', inset:0, zIndex:200, background:'rgba(0,0,0,0.85)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+          <div style={{ background:T.bgModal, border:`1px solid ${T.accent}44`, borderRadius:'4px', width:'min(820px, 96vw)', maxHeight:'90vh', display:'flex', flexDirection:'column', fontFamily:"'JetBrains Mono',monospace", boxShadow:'0 12px 60px rgba(0,0,0,0.8)' }}>
+            {/* ヘッダー */}
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'14px 20px', borderBottom:`1px solid ${T.border2}`, flexShrink:0 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+                <span style={{ color:'#ff6666', fontSize:'14px' }}>⚙</span>
+                <span style={{ fontSize:'12px', fontWeight:700, color:'#ff6666', letterSpacing:'0.15em' }}>ADMIN PANEL</span>
+                <span style={{ fontSize:'10px', color:T.textDim }}>— {user.email}</span>
+              </div>
+              <button onClick={onClose} style={{ ...btnDanger, padding:'4px 12px' }}>✕</button>
+            </div>
+
+            {/* タブバー */}
+            <div style={{ display:'flex', gap:'2px', padding:'10px 20px 0', borderBottom:`1px solid ${T.border2}`, flexShrink:0 }}>
+              <button style={tabStyle('broadcast')} onClick={()=>setTab('broadcast')}>BROADCAST</button>
+              <button style={tabStyle('survey')} onClick={()=>setTab('survey')}>SURVEY</button>
+              <button style={tabStyle('users')} onClick={()=>setTab('users')}>USERS</button>
+              <button style={tabStyle('force_update')} onClick={()=>setTab('force_update')}>FORCE UPDATE</button>
+              <button style={tabStyle('er_bulk')} onClick={()=>setTab('er_bulk')}>ER BULK</button>
+            </div>
+
+            {/* タブコンテンツ */}
+            <div style={{ overflowY:'auto', padding:'20px', flex:1 }}>
+
+              {/* BROADCASTタブ */}
+              {tab === 'broadcast' && (
+                <div>
+                  <div style={{ fontSize:'10px', color:T.textDim, letterSpacing:'0.1em', marginBottom:'14px' }}>全ユーザーへのポップアップ告知を配信します</div>
+                  {bcStatus && (
+                    <div style={{ marginBottom:'16px', padding:'10px 14px', background: bcStatus.active ? 'rgba(255,170,0,0.1)' : 'rgba(255,255,255,0.04)', border:`1px solid ${bcStatus.active ? '#ffaa0066' : T.border2}`, borderRadius:'2px', fontSize:'11px' }}>
+                      <span style={{ color: bcStatus.active ? '#ffaa00' : T.textDim }}>● 現在の状態: </span>
+                      <span style={{ color: bcStatus.active ? '#ffaa00' : T.textDim, fontWeight:700 }}>{bcStatus.active ? `配信中 — "${bcStatus.title}"` : '停止中'}</span>
+                    </div>
+                  )}
+                  <div style={{ display:'flex', flexDirection:'column', gap:'10px', maxWidth:'480px' }}>
+                    <div>
+                      <div style={{ fontSize:'10px', color:T.textDim, marginBottom:'4px' }}>タイトル</div>
+                      <input value={bcTitle} onChange={e=>setBcTitle(e.target.value)} style={inputStyle} placeholder="例: メンテナンスのお知らせ" />
+                    </div>
+                    <div>
+                      <div style={{ fontSize:'10px', color:T.textDim, marginBottom:'4px' }}>メッセージ</div>
+                      <textarea value={bcMsg} onChange={e=>setBcMsg(e.target.value)} style={{ ...inputStyle, resize:'vertical', minHeight:'80px' }} placeholder="メッセージを入力..." />
+                    </div>
+                    <div style={{ display:'flex', gap:'8px' }}>
+                      <button onClick={handleBcStart} disabled={bcLoading} style={btnPrimary}>▶ 配信開始</button>
+                      <button onClick={handleBcStop} style={btnDanger}>■ 配信停止</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* SURVEYタブ */}
+              {tab === 'survey' && (
+                <div>
+                  <div style={{ fontSize:'10px', color:T.textDim, letterSpacing:'0.1em', marginBottom:'14px' }}>アンケートを作成・配信します</div>
+                  {/* 作成フォーム */}
+                  <div style={{ marginBottom:'20px', padding:'14px', border:`1px solid ${T.border2}`, borderRadius:'2px' }}>
+                    <div style={{ fontSize:'10px', color:T.accent, marginBottom:'10px', letterSpacing:'0.1em' }}>+ 新規作成</div>
+                    <div style={{ display:'flex', flexDirection:'column', gap:'8px', maxWidth:'480px' }}>
+                      <input value={svTitle} onChange={e=>setSvTitle(e.target.value)} style={inputStyle} placeholder="タイトル" />
+                      <input value={svQuestion} onChange={e=>setSvQuestion(e.target.value)} style={inputStyle} placeholder="質問文" />
+                      <div style={{ display:'flex', gap:'8px' }}>
+                        <label style={{ display:'flex', alignItems:'center', gap:'4px', fontSize:'11px', color:T.text, cursor:'pointer' }}>
+                          <input type="radio" checked={svType==='options'} onChange={()=>setSvType('options')} /> 選択式
+                        </label>
+                        <label style={{ display:'flex', alignItems:'center', gap:'4px', fontSize:'11px', color:T.text, cursor:'pointer' }}>
+                          <input type="radio" checked={svType==='text'} onChange={()=>setSvType('text')} /> テキスト
+                        </label>
+                      </div>
+                      {svType==='options' && (
+                        <textarea value={svOptions} onChange={e=>setSvOptions(e.target.value)} style={{ ...inputStyle, resize:'vertical', minHeight:'60px' }} placeholder="選択肢（1行1項目）" />
+                      )}
+                      <button onClick={handleSvCreate} style={{ ...btnPrimary, alignSelf:'flex-start' }}>作成</button>
+                    </div>
+                  </div>
+                  {/* 一覧 */}
+                  {surveys.map(sv => (
+                    <div key={sv.id} style={{ marginBottom:'10px', padding:'12px 14px', border:`1px solid ${sv.active ? T.accent+'44' : T.border2}`, borderRadius:'2px' }}>
+                      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'6px' }}>
+                        <div>
+                          <span style={{ fontSize:'11px', fontWeight:700, color: sv.active ? T.accent : T.text }}>{sv.title}</span>
+                          <span style={{ fontSize:'10px', color:T.textDim, marginLeft:'10px' }}>{sv.question}</span>
+                        </div>
+                        <div style={{ display:'flex', gap:'6px' }}>
+                          <button onClick={()=>handleSvToggle(sv)} style={sv.active ? btnDanger : btnPrimary}>{sv.active ? '停止' : '配信開始'}</button>
+                          <button onClick={()=>handleSvAnswers(sv.id)} style={{ ...btnPrimary, fontSize:'10px' }}>回答{svExpanded===sv.id ? '▲' : '▼'}</button>
+                        </div>
+                      </div>
+                      {svExpanded===sv.id && svAnswers[sv.id] && (
+                        <div style={{ marginTop:'8px', borderTop:`1px solid ${T.border2}`, paddingTop:'8px' }}>
+                          <div style={{ fontSize:'10px', color:T.textDim, marginBottom:'6px' }}>回答数: {svAnswers[sv.id].length}</div>
+                          {svAnswers[sv.id].slice(0,50).map((a,i) => (
+                            <div key={i} style={{ fontSize:'11px', color:T.text, padding:'3px 0', borderBottom:`1px solid ${T.border2}22` }}>
+                              <span style={{ color:T.textDim }}>{a.uidHash}</span>: {a.answer}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* USERSタブ */}
+              {tab === 'users' && (
+                <div>
+                  {usersLoading ? (
+                    <div style={{ color:T.textDim, fontSize:'12px' }}>読み込み中...</div>
+                  ) : (
+                    <>
+                      <div style={{ display:'flex', gap:'20px', marginBottom:'16px' }}>
+                        <div style={{ padding:'10px 16px', background:`${T.accent}11`, border:`1px solid ${T.accent}33`, borderRadius:'2px' }}>
+                          <div style={{ fontSize:'10px', color:T.textDim, marginBottom:'4px' }}>総ユーザー数</div>
+                          <div style={{ fontSize:'20px', fontWeight:700, color:T.accent }}>{userList.length}</div>
+                        </div>
+                        <div style={{ padding:'10px 16px', background:'rgba(0,204,136,0.08)', border:'1px solid rgba(0,204,136,0.3)', borderRadius:'2px' }}>
+                          <div style={{ fontSize:'10px', color:T.textDim, marginBottom:'4px' }}>DAU (今日)</div>
+                          <div style={{ fontSize:'20px', fontWeight:700, color:'#00cc88' }}>{dau}</div>
+                        </div>
+                        <div style={{ padding:'10px 16px', background:'rgba(255,255,255,0.04)', border:`1px solid ${T.border2}`, borderRadius:'2px' }}>
+                          <div style={{ fontSize:'10px', color:T.textDim, marginBottom:'4px' }}>総セッション</div>
+                          <div style={{ fontSize:'20px', fontWeight:700, color:T.text }}>{analytics.length}</div>
+                        </div>
+                      </div>
+                      <div style={{ border:`1px solid ${T.border2}`, borderRadius:'2px', overflow:'hidden' }}>
+                        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 60px 80px', padding:'6px 10px', background:`${T.accent}11`, fontSize:'9px', color:T.textDim, letterSpacing:'0.1em' }}>
+                          <div>UID (HASH)</div><div>初回</div><div>最終</div><div>セッション</div><div>バージョン</div>
+                        </div>
+                        {userList.map(u => (
+                          <div key={u.uidHash} style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 60px 80px', padding:'6px 10px', borderTop:`1px solid ${T.border2}22`, fontSize:'10px', color:T.text }}>
+                            <div style={{ color:T.textDim, fontFamily:"'JetBrains Mono',monospace" }}>{u.uidHash}</div>
+                            <div>{u.firstDate}</div>
+                            <div style={{ color: u.lastDate===today ? '#00cc88' : T.text }}>{u.lastDate}</div>
+                            <div style={{ textAlign:'center' }}>{u.sessions}</div>
+                            <div style={{ color:T.textDim, fontSize:'9px' }}>{u.version}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* FORCE_UPDATEタブ */}
+              {tab === 'force_update' && (
+                <div>
+                  <div style={{ fontSize:'10px', color:T.textDim, letterSpacing:'0.1em', marginBottom:'14px' }}>指定バージョン以下のユーザーにアップデートを強制します</div>
+                  <div style={{ display:'flex', flexDirection:'column', gap:'10px', maxWidth:'480px' }}>
+                    <label style={{ display:'flex', alignItems:'center', gap:'8px', fontSize:'12px', color:T.text, cursor:'pointer' }}>
+                      <input type="checkbox" checked={fuEnabled} onChange={e=>setFuEnabled(e.target.checked)} />
+                      強制アップデートを有効化
+                    </label>
+                    <div>
+                      <div style={{ fontSize:'10px', color:T.textDim, marginBottom:'4px' }}>最低バージョン (例: v0.8.0-dev)</div>
+                      <input value={fuMinVer} onChange={e=>setFuMinVer(e.target.value)} style={inputStyle} placeholder="v0.8.0-dev" />
+                    </div>
+                    <div>
+                      <div style={{ fontSize:'10px', color:T.textDim, marginBottom:'4px' }}>対象ビルド</div>
+                      <select value={fuTarget} onChange={e=>setFuTarget(e.target.value)} style={{ ...inputStyle, width:'auto' }}>
+                        <option value="all">all（すべて）</option>
+                        <option value="dev">dev（開発版のみ）</option>
+                        <option value="stable">stable（安定版のみ）</option>
+                      </select>
+                    </div>
+                    <div>
+                      <div style={{ fontSize:'10px', color:T.textDim, marginBottom:'4px' }}>メッセージ</div>
+                      <textarea value={fuMsg} onChange={e=>setFuMsg(e.target.value)} style={{ ...inputStyle, resize:'vertical', minHeight:'60px' }} placeholder="アップデートのお知らせ文..." />
+                    </div>
+                    <button onClick={handleFuSave} style={{ ...btnPrimary, alignSelf:'flex-start' }}>
+                      {fuSaved ? '✓ 保存しました' : '保存'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ER_BULKタブ */}
+              {tab === 'er_bulk' && (
+                <div>
+                  <div style={{ fontSize:'10px', color:T.textDim, letterSpacing:'0.1em', marginBottom:'12px' }}>ERのステータスを一括変更します</div>
+                  <div style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'14px', flexWrap:'wrap' }}>
+                    <span style={{ fontSize:'10px', color:T.textDim }}>{erChecked.size}件選択中</span>
+                    <select value={erBulkStatus} onChange={e=>setErBulkStatus(e.target.value)} style={{ ...inputStyle, width:'auto' }}>
+                      <option value="implemented">implemented（実装済み）</option>
+                      <option value="pending">pending（未実装）</option>
+                    </select>
+                    <button onClick={handleErBulkChange} disabled={erChecked.size===0} style={btnPrimary}>一括変更</button>
+                    <button onClick={handleErBulkSave} style={btnPrimary}>{erSaved ? '✓ 保存' : '一括保存'}</button>
+                  </div>
+                  <div style={{ display:'flex', gap:'6px', marginBottom:'10px' }}>
+                    <button onClick={()=>setErChecked(new Set(erItems.map(e=>e.id)))} style={{ ...btnPrimary, fontSize:'10px', padding:'4px 10px' }}>全選択</button>
+                    <button onClick={()=>setErChecked(new Set())} style={{ background:'transparent', border:`1px solid ${T.border2}`, color:T.textDim, padding:'4px 10px', borderRadius:'2px', cursor:'pointer', fontSize:'10px', fontFamily:"'JetBrains Mono',monospace" }}>全解除</button>
+                  </div>
+                  <div style={{ border:`1px solid ${T.border2}`, borderRadius:'2px', overflow:'hidden', maxHeight:'400px', overflowY:'auto' }}>
+                    <div style={{ display:'grid', gridTemplateColumns:'32px 80px 1fr 130px', padding:'6px 10px', background:`${T.accent}11`, fontSize:'9px', color:T.textDim, letterSpacing:'0.1em', position:'sticky', top:0 }}>
+                      <div></div><div>ID</div><div>タイトル</div><div>ステータス</div>
+                    </div>
+                    {erItems.map(er => (
+                      <div key={er.id} style={{ display:'grid', gridTemplateColumns:'32px 80px 1fr 130px', padding:'5px 10px', borderTop:`1px solid ${T.border2}22`, fontSize:'10px', color:T.text, background: erChecked.has(er.id) ? `${T.accent}11` : 'transparent' }}>
+                        <input type="checkbox" checked={erChecked.has(er.id)} onChange={e=>{
+                          setErChecked(prev => { const s=new Set(prev); e.target.checked?s.add(er.id):s.delete(er.id); return s; });
+                        }} />
+                        <div style={{ color:T.textDim, fontSize:'9px' }}>{er.id}</div>
+                        <div style={{ overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{er.title}</div>
+                        <select value={er.status||'pending'} onChange={e=>{
+                          setErItems(list=>list.map(x=>x.id===er.id?{...x,status:e.target.value}:x));
+                        }} style={{ background:T.bgInput, border:`1px solid ${T.border2}`, color: er.status==='implemented' ? '#00cc88' : T.textDim, padding:'2px 6px', borderRadius:'2px', fontSize:'10px', fontFamily:"'JetBrains Mono',monospace" }}>
+                          <option value="pending">pending</option>
+                          <option value="implemented">implemented</option>
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
             </div>
           </div>
         </div>
@@ -2611,6 +3091,12 @@
       const [showProjects,  setShowProjects]  = useState(false);
       // ER-040: リリースノートポップアップ
       const [showRnPopup,   setShowRnPopup]   = useState(false);
+      // ER-0063: 管理画面
+      const [showAdminPanel, setShowAdminPanel] = useState(false);
+      const [broadcastMsg,   setBroadcastMsg]   = useState(null);
+      const [activeSurvey,   setActiveSurvey]   = useState(null);
+      const [forceUpdateMsg, setForceUpdateMsg] = useState(null);
+      const isAdmin = ALLOWED_ADMINS.includes(user?.email || '');
       const projectsRef = useMemo(() => db.collection(`users/${user.uid}/projects`), [user.uid]);
       // 複数選択
       const [multiSelected, setMultiSelected] = useState(new Set()); // Set<taskId>
@@ -2767,6 +3253,45 @@
             createdAt: firebase.firestore.FieldValue.serverTimestamp(),
           }).catch(()=>{});
         } catch(e){}
+      }, []); // eslint-disable-line
+
+      // ER-0063: ブロードキャスト監視（onSnapshot）
+      useEffect(() => {
+        const unsub = db.collection('fst_admin').doc('broadcast').onSnapshot(snap => {
+          if (snap.exists && snap.data()?.active) {
+            setBroadcastMsg({ title: snap.data().title, message: snap.data().message });
+          } else {
+            setBroadcastMsg(null);
+          }
+        });
+        return unsub;
+      }, []); // eslint-disable-line
+
+      // ER-0063: アンケート確認（1回）
+      useEffect(() => {
+        db.collection('fst_surveys').where('active','==',true).limit(1).get().then(snap => {
+          if (snap.empty) return;
+          const doc = snap.docs[0];
+          const surveyId = doc.id;
+          const answered = localStorage.getItem('fst_survey_answered_' + surveyId);
+          if (!answered) setActiveSurvey({ id: surveyId, ...doc.data() });
+        }).catch(() => {});
+      }, []); // eslint-disable-line
+
+      // ER-0063: 強制アップデートチェック（1回）
+      useEffect(() => {
+        db.collection('fst_admin').doc('forceUpdate').get().then(snap => {
+          if (!snap.exists || !snap.data()?.enabled) return;
+          const { minVersion, message, targetBuild } = snap.data();
+          const build = 'dev';
+          if (targetBuild !== 'all' && targetBuild !== build) return;
+          const parseV = v => v.replace(/[^0-9.]/g,'').split('.').map(Number);
+          const cur = parseV(APP_VERSION), min = parseV(minVersion);
+          const isOld = cur[0] < min[0] || (cur[0] === min[0] && cur[1] < min[1]) || (cur[0] === min[0] && cur[1] === min[1] && (cur[2]||0) < (min[2]||0));
+          if (isOld) {
+            setForceUpdateMsg(message || 'アプリを最新版に更新してください');
+          }
+        }).catch(() => {});
       }, []); // eslint-disable-line
 
       // ER-040: リリースノートポップアップ（新バージョン初回）
@@ -3416,6 +3941,17 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
           {editTaskId && editTask && <EditStripModal task={editTask} onSave={handleEditSave} onClose={() => setEditTaskId(null)} />}
           {/* ER-040: リリースノートポップアップ */}
           {showRnPopup && <ReleaseNotePopup onClose={() => setShowRnPopup(false)} />}
+          {/* ER-0063: 管理画面モーダル群 */}
+          {showAdminPanel && <AdminPanel user={user} ers={ers} onSaveERs={handleSaveERs} onClose={() => setShowAdminPanel(false)} />}
+          {broadcastMsg && <BroadcastPopup title={broadcastMsg.title} message={broadcastMsg.message} onClose={() => setBroadcastMsg(null)} />}
+          {activeSurvey && <SurveyPopup survey={activeSurvey} uidHash={btoa(user.uid).replace(/[^a-zA-Z0-9]/g,'').slice(0,12)} onClose={() => setActiveSurvey(null)} />}
+          {forceUpdateMsg && (
+            <div style={{ position:'fixed', inset:0, zIndex:9999, background:'rgba(0,0,0,0.95)', display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:'16px', fontFamily:"'JetBrains Mono',monospace" }}>
+              <span style={{ color:'#ff4444', fontSize:'20px', fontWeight:700 }}>⚠ アップデートが必要です</span>
+              <span style={{ color:'#ccc', fontSize:'13px', textAlign:'center', maxWidth:'400px' }}>{forceUpdateMsg}</span>
+              <a href="https://cc-dev-ps7.web.app/Flight_Strip_TODO_dev/" style={{ color:'#00aaff', fontSize:'12px' }}>最新版を開く →</a>
+            </div>
+          )}
 
           {/* 右クリックコンテキストメニュー */}
           {ctxMenu && (
@@ -3533,6 +4069,12 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                 <button onClick={() => setShowForm(!showForm)} style={{ background:showForm?"rgba(255,50,50,0.15)":`${T.accent}18`, border:`1px solid ${showForm?"#ff333366":T.accent+"66"}`, color:showForm?"#ff6666":T.accent, padding:"4px 14px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontWeight:700, letterSpacing:"0.1em", fontFamily:"'JetBrains Mono',monospace" }}>{showForm?"✕ CLOSE":"+ FILE STRIP"}</button>
                 <button onClick={handlePrint} title="印刷/PDF出力" style={{ background:"transparent", border:`1px solid ${T.border2}`, color:T.textDim, padding:"4px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontWeight:700, fontFamily:"'JetBrains Mono',monospace", letterSpacing:"0.05em" }}>🖨</button>
                 <button onClick={() => setShowHelp(!showHelp)} style={{ background:showHelp?`${T.accent2}18`:"transparent", border:`1px solid ${showHelp?T.accent2+"66":T.border2}`, color:showHelp?T.accent2:T.textDim, padding:"4px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"12px", fontWeight:700, fontFamily:"'JetBrains Mono',monospace" }}>?</button>
+                {isAdmin && (
+                  <button onClick={() => setShowAdminPanel(true)}
+                    style={{ background:'rgba(255,68,68,0.15)', border:'1px solid rgba(255,68,68,0.27)', color:'#ff6666', padding:'4px 10px', borderRadius:'2px', cursor:'pointer', fontSize:'10px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace", letterSpacing:'0.08em' }}>
+                    ⚙ ADMIN
+                  </button>
+                )}
               </div>
             </div>
 
