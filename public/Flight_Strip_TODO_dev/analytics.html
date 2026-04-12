@@ -306,11 +306,29 @@
       const today     = new Date().toISOString().slice(0,10);
       const thisMonth = new Date().toISOString().slice(0,7);
 
-      // 表示範囲でフィルタ（全ビルド）
+      // セッション / タスクイベント を分離
+      const sessionRecs  = sessions.filter(s => !s.type || s.type === 'session');
+      const taskCreated  = sessions.filter(s => s.type === 'task_created');
+      const taskCompleted= sessions.filter(s => s.type === 'task_completed');
+
+      // タスク集計（今日/7日/range）
+      const weekCutStr = (() => { const d=new Date(); d.setDate(d.getDate()-7); return d.toISOString().slice(0,10); })();
+      const rangeCutStr2= (() => { const d=new Date(); d.setDate(d.getDate()-range); return d.toISOString().slice(0,10); })();
+      const taskStats = {
+        createdToday:    taskCreated.filter(s=>s.date===today).length,
+        createdWeek:     taskCreated.filter(s=>s.date>=weekCutStr).length,
+        createdRange:    taskCreated.filter(s=>s.date>=rangeCutStr2).length,
+        completedToday:  taskCompleted.filter(s=>s.date===today).length,
+        completedWeek:   taskCompleted.filter(s=>s.date>=weekCutStr).length,
+        completedRange:  taskCompleted.filter(s=>s.date>=rangeCutStr2).length,
+        completionRate:  taskCreated.length > 0 ? Math.round(taskCompleted.length / taskCreated.length * 100) : null,
+      };
+
+      // 表示範囲でフィルタ（全ビルド）※セッションのみ
       const rangeCutoff = new Date();
       rangeCutoff.setDate(rangeCutoff.getDate() - range);
       const rangeStr = rangeCutoff.toISOString().slice(0,10);
-      const ranged = sessions.filter(s => s.date >= rangeStr);
+      const ranged = sessionRecs.filter(s => s.date >= rangeStr);
 
       // ビルド別分離
       const stableRanged = ranged.filter(s => s.build === 'stable' || !s.build);
@@ -322,14 +340,14 @@
                      : ranged;
 
       // ユニークユーザー（全ビルド・90日）
-      const allUsers  = new Set(sessions.map(s=>s.uidHash));
+      const allUsers  = new Set(sessionRecs.map(s=>s.uidHash));
       const weekCut   = new Date(); weekCut.setDate(weekCut.getDate()-7);
       const weekStr   = weekCut.toISOString().slice(0,10);
 
       // 各種ユーザー数（buildFilter適用）
-      const allSess   = buildFilter==='stable' ? sessions.filter(s=>s.build==='stable'||!s.build)
-                      : buildFilter==='dev'    ? sessions.filter(s=>s.build==='dev')
-                      : sessions;
+      const allSess   = buildFilter==='stable' ? sessionRecs.filter(s=>s.build==='stable'||!s.build)
+                      : buildFilter==='dev'    ? sessionRecs.filter(s=>s.build==='dev')
+                      : sessionRecs;
       const todayU  = new Set(allSess.filter(s=>s.date===today).map(s=>s.uidHash));
       const weekU   = new Set(allSess.filter(s=>s.date>=weekStr).map(s=>s.uidHash));
       const monthU  = new Set(allSess.filter(s=>s.month===thisMonth).map(s=>s.uidHash));
@@ -394,6 +412,7 @@
         hourDist, dowDist, heatmap,
         dailyData, dowStable, dowDev,
         verEntries, peakHour, peakDow,
+        taskStats,
       };
     }, [sessions, range, buildFilter]);
 
@@ -514,6 +533,20 @@
                 <Metric label="月間 (今月)" value={stats.monthUsers} sub="アクティブ" color="#cc44ff" />
                 <Metric label="総セッション" value={stats.totalSessions} sub="90日合計" color={DIM} />
                 <Metric label={`セッション (${range}日)`} value={stats.rangeSessions} sub="集計範囲" color={DIM} />
+              </div>
+
+              {/* タスク統計 */}
+              <div style={{ marginBottom:'16px' }}>
+                <div style={{ fontSize:'10px', color:DIM, letterSpacing:'0.12em', marginBottom:'8px' }}>◈ タスク統計</div>
+                <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(130px,1fr))', gap:'8px' }}>
+                  <Metric label="登録 (今日)" value={stats.taskStats.createdToday} sub="タスク" color="#00ccff" />
+                  <Metric label={`登録 (${range}日)`} value={stats.taskStats.createdRange} sub="タスク" color="#00aaff" />
+                  <Metric label="完了 (今日)" value={stats.taskStats.completedToday} sub="タスク" color="#00ff88" />
+                  <Metric label={`完了 (${range}日)`} value={stats.taskStats.completedRange} sub="タスク" color="#00cc66" />
+                  {stats.taskStats.completionRate !== null && (
+                    <Metric label="完了率 (90日)" value={`${stats.taskStats.completionRate}%`} sub="完了/登録" color="#ffaa00" />
+                  )}
+                </div>
               </div>
 
               {/* ピーク情報 */}
