@@ -45,7 +45,7 @@
   </style>
 </head>
 <body>
-  <div id="dev-banner">⚠ DEV BUILD — v0.8.0-dev — NOT FOR PRODUCTION ⚠</div>
+  <div id="dev-banner">⚠ DEV BUILD — v0.8.1-dev — NOT FOR PRODUCTION ⚠</div>
   <div id="root" style="padding-top:22px;"></div>
 
   <!-- Firebase 初期化 -->
@@ -311,6 +311,9 @@
       { id:'er-039', title:'開発版の取扱説明書', desc:'開発版にもアプリ名ロゴを左上配置、クリックで取扱説明書ページへ遷移。バージョンアップ時に自動更新', priority:'medium', difficulty:'medium', status:'implemented', registeredAt:'2026-04-12', implementedAt:'2026-04-12' },
       { id:'er-040', title:'リリースノートポップアップ', desc:'新バージョン時にリリースノートをポップアップ表示。「次回から表示しない」チェックボックス付き。ポップアップ有効/無効の設定もリリースノート内に', priority:'medium', difficulty:'easy', status:'implemented', registeredAt:'2026-04-12', implementedAt:'2026-04-12' },
       { id:'er-041', title:'ERの改善（安定版/開発版タブ・安定版反映ボタン）', desc:'ERに安定版/開発版/両方フィルタータブ。開発版実装済みで安定版未反映のものを安定版に反映するボタン。Claude Codeへ送信しやすく', priority:'medium', difficulty:'easy', status:'implemented', registeredAt:'2026-04-12', implementedAt:'2026-04-12' },
+      { id:'er-042', title:'モバイルアプリ内ブラウザでのログインブロック対応', desc:'Messenger・LINE等のアプリ内WebViewからGoogle OAuth認証を試みると「Error 403: disallowed_useragent」でブロックされる。ログイン画面でWebView検出時にSafari/Chromeで開くよう案内バナーを表示', priority:'high', difficulty:'easy', status:'implemented', registeredAt:'2026-04-12', implementedAt:'2026-04-12' },
+      { id:'er-043', title:'プロジェクトの子タスク追加・並べ替え編集機能', desc:'プロジェクト管理モーダルでの子タスク追加・並べ替え（↑↓）・削除・プロジェクトカラー変更機能の改善', priority:'medium', difficulty:'medium', status:'implemented', registeredAt:'2026-04-12', implementedAt:'2026-04-12' },
+      { id:'er-044', title:'ストリップのダブルクリックで編集モーダルを開く', desc:'ストリップカードをダブルクリックすると編集モーダルが開くようにする', priority:'medium', difficulty:'easy', status:'implemented', registeredAt:'2026-04-12', implementedAt:'2026-04-12' },
     ];
 
     const useCurrentTime = () => {
@@ -358,6 +361,12 @@
       const [loading, setLoading] = useState(false);
       const [error, setError]     = useState(null);
 
+      // er-042: アプリ内WebView検出
+      const ua = navigator.userAgent;
+      const isInAppBrowser = /FBAN|FBAV|FB_IAB|Instagram|Line\/|NAVER|Twitter|Snapchat|TikTok|LinkedInApp|MicroMessenger|GSA|YJApp/i.test(ua);
+      const isIOS = /iPhone|iPad|iPod/.test(ua);
+      const isAndroid = /Android/.test(ua);
+
       const handleGoogleLogin = async () => {
         setLoading(true); setError(null);
         try {
@@ -372,10 +381,32 @@
       return (
         <div style={{ minHeight:"100vh", background:T.bgGrad, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'JetBrains Mono',monospace" }}>
           <div style={{ position:"fixed", inset:0, backgroundImage:`linear-gradient(${T.grid} 1px,transparent 1px),linear-gradient(90deg,${T.grid} 1px,transparent 1px)`, backgroundSize:"40px 40px", pointerEvents:"none" }} />
-          <div style={{ background:T.bgModal, border:`1px solid ${T.accent}33`, borderRadius:"8px", padding:"48px 40px", textAlign:"center", maxWidth:"360px", width:"90%", boxShadow:`0 0 60px ${T.accent}18`, position:"relative", zIndex:1 }}>
+          <div style={{ background:T.bgModal, border:`1px solid ${T.accent}33`, borderRadius:"8px", padding:"48px 40px", textAlign:"center", maxWidth:"380px", width:"90%", boxShadow:`0 0 60px ${T.accent}18`, position:"relative", zIndex:1 }}>
             <div style={{ fontSize:"26px", fontWeight:800, color:T.accent, letterSpacing:"0.15em", marginBottom:"6px", textShadow:`0 0 20px ${T.accent}44` }}>◈ FLIGHT STRIP</div>
             <div style={{ fontSize:"10px", color:T.textMuted, letterSpacing:"0.3em", marginBottom:"40px" }}>ATC TASK MANAGEMENT SYSTEM</div>
-            <button onClick={handleGoogleLogin} disabled={loading} style={{ width:"100%", background:loading?"transparent":`${T.accent}18`, border:`1px solid ${loading?T.border:T.accent}55`, color:loading?T.textMuted:T.accent, padding:"12px 24px", borderRadius:"4px", cursor:loading?"not-allowed":"pointer", fontSize:"12px", fontWeight:700, letterSpacing:"0.1em", fontFamily:"'JetBrains Mono',monospace", display:"flex", alignItems:"center", justifyContent:"center", gap:"10px", transition:"all 0.15s" }}>
+
+            {/* er-042: アプリ内ブラウザ警告 */}
+            {isInAppBrowser && (
+              <div style={{ background:"rgba(255,170,0,0.12)", border:"1px solid rgba(255,170,0,0.5)", borderRadius:"6px", padding:"14px 16px", marginBottom:"20px", textAlign:"left" }}>
+                <div style={{ fontSize:"12px", fontWeight:700, color:"#ffaa00", marginBottom:"8px", display:"flex", alignItems:"center", gap:"6px" }}>
+                  ⚠️ アプリ内ブラウザではログインできません
+                </div>
+                <div style={{ fontSize:"11px", color:"#ffcc66", lineHeight:1.6, marginBottom:"10px" }}>
+                  Googleのセキュリティポリシーにより、LINEやMessengerなどのアプリ内ブラウザからのログインはブロックされます。
+                </div>
+                <div style={{ fontSize:"11px", color:"#fff", lineHeight:1.8 }}>
+                  {isIOS && <><strong>iPhone:</strong> 右下の <strong>「…」→「Safariで開く」</strong><br/></>}
+                  {isAndroid && <><strong>Android:</strong> メニューから <strong>「ブラウザで開く」</strong><br/></>}
+                  {!isIOS && !isAndroid && <>URLをコピーして Safari / Chrome で開いてください</>}
+                </div>
+                <button onClick={() => { const url = window.location.href; navigator.clipboard?.writeText(url).then(() => alert('URLをコピーしました。SafariまたはChromeで開いてください。')); }}
+                  style={{ marginTop:"10px", width:"100%", background:"rgba(255,170,0,0.2)", border:"1px solid rgba(255,170,0,0.6)", color:"#ffaa00", padding:"8px", borderRadius:"4px", cursor:"pointer", fontSize:"11px", fontWeight:700, fontFamily:"'JetBrains Mono',monospace" }}>
+                  📋 URLをコピー
+                </button>
+              </div>
+            )}
+
+            <button onClick={handleGoogleLogin} disabled={loading || isInAppBrowser} style={{ width:"100%", background:loading||isInAppBrowser?"transparent":`${T.accent}18`, border:`1px solid ${loading||isInAppBrowser?T.border:T.accent}55`, color:loading||isInAppBrowser?T.textMuted:T.accent, padding:"12px 24px", borderRadius:"4px", cursor:loading||isInAppBrowser?"not-allowed":"pointer", fontSize:"12px", fontWeight:700, letterSpacing:"0.1em", fontFamily:"'JetBrains Mono',monospace", display:"flex", alignItems:"center", justifyContent:"center", gap:"10px", transition:"all 0.15s" }}>
               {loading ? <><span style={{ animation:"spin 1s linear infinite", display:"inline-block" }}>◌</span> AUTHENTICATING...</> : <><span style={{ fontFamily:"sans-serif", fontWeight:700, fontSize:"14px" }}>G</span> SIGN IN WITH GOOGLE</>}
             </button>
             {error && <div style={{ marginTop:"12px", color:"#ff6666", fontSize:"10px", lineHeight:1.5 }}>{error}</div>}
@@ -406,9 +437,17 @@
     // ======================================================
     // リリースノート
     // ======================================================
-    const APP_VERSION = 'v0.8.0-dev';
+    const APP_VERSION = 'v0.8.1-dev';
 
     const RELEASE_NOTES = [
+      {
+        version: "v0.8.1-dev", date: "2026-04-12",
+        changes: [
+          "📱 er-042: アプリ内ブラウザ(Messenger/LINE等)検出→Safari/Chrome誘導バナー表示・URLコピーボタン",
+          "📁 er-043: プロジェクト編集にカラーピッカー追加・タスク追加ボタンをプロジェクトカラーで強調表示",
+          "✏️ er-044: ストリップのダブルクリックで編集モーダルを開く",
+        ],
+      },
       {
         version: "v0.8.0-dev", date: "2026-04-12",
         changes: [
@@ -1456,6 +1495,7 @@
           onDrop={e => { e.preventDefault(); e.stopPropagation(); onDrop(e, task.id); }}
           onTouchStart={onTouchStart ? e => onTouchStart(e, task.id) : undefined}
           onTouchEnd={onTouchEnd ? e => onTouchEnd(e, task.id) : undefined}
+          onDoubleClick={e => { e.stopPropagation(); onEdit(task.id); }}
           className="group relative cursor-grab active:cursor-grabbing"
           style={{
             background:   isMultiSelected ? "rgba(100,160,255,0.1)" : isLost ? "rgba(255,80,0,0.08)" : isCompleted ? `${T.border}44` : pri.bg,
@@ -2182,6 +2222,7 @@
       // ER-032: 編集中プロジェクト名
       const [editProjId,    setEditProjId]    = useState(null);
       const [editProjName,  setEditProjName]  = useState('');
+      const [editProjColor, setEditProjColor] = useState('#00aaff');
 
       const selectedProj = projects.find(p => p.id === selectedProjId);
       const projTasks = tasks
@@ -2195,10 +2236,10 @@
         setNewProjName(''); setShowNewProj(false);
       };
 
-      // ER-032: プロジェクト名インライン編集
+      // ER-032/043: プロジェクト名・カラーインライン編集
       const saveEditProj = async () => {
         if (!editProjName.trim() || !editProjId) return;
-        await projectsRef.doc(editProjId).update({ name: editProjName.trim(), updatedAt: ts() });
+        await projectsRef.doc(editProjId).update({ name: editProjName.trim(), color: editProjColor, updatedAt: ts() });
         setEditProjId(null); setEditProjName('');
       };
 
@@ -2301,15 +2342,26 @@
                     <div key={proj.id}
                       style={{ padding:'8px 10px', borderRadius:'3px', border:`1px solid ${isSel?proj.color+'66':T.border2}`, background:isSel?`${proj.color}12`:'transparent', transition:'all 0.1s' }}>
                       {isEditingProj ? (
-                        <input value={editProjName} onChange={e => setEditProjName(e.target.value)}
-                          onKeyDown={e => { if(e.key==='Enter' && !e.nativeEvent.isComposing) saveEditProj(); if(e.key==='Escape') setEditProjId(null); }}
-                          onBlur={saveEditProj} autoFocus
-                          style={{ ...inp, width:'100%', boxSizing:'border-box', borderColor:proj.color+'66' }} />
+                        <div style={{ display:'flex', flexDirection:'column', gap:'5px' }}>
+                          <input value={editProjName} onChange={e => setEditProjName(e.target.value)}
+                            onKeyDown={e => { if(e.key==='Enter' && !e.nativeEvent.isComposing) saveEditProj(); if(e.key==='Escape') setEditProjId(null); }}
+                            autoFocus style={{ ...inp, width:'100%', boxSizing:'border-box', borderColor:editProjColor+'88' }} />
+                          <div style={{ display:'flex', gap:'3px', flexWrap:'wrap' }}>
+                            {['#00aaff','#ff6600','#00ff88','#ff2299','#ffaa00','#cc44ff','#ff3333','#00ccaa'].map(c => (
+                              <button key={c} onClick={() => setEditProjColor(c)}
+                                style={{ width:'16px', height:'16px', borderRadius:'50%', background:c, border:`2px solid ${editProjColor===c?'#fff':'transparent'}`, cursor:'pointer', padding:0, flexShrink:0 }} />
+                            ))}
+                          </div>
+                          <div style={{ display:'flex', gap:'4px' }}>
+                            <button onClick={saveEditProj} style={{ flex:1, background:`${editProjColor}22`, border:`1px solid ${editProjColor}66`, color:editProjColor, padding:'3px', borderRadius:'2px', cursor:'pointer', fontSize:'9px', fontFamily:"'JetBrains Mono',monospace", fontWeight:700 }}>保存</button>
+                            <button onClick={() => setEditProjId(null)} style={{ background:'transparent', border:`1px solid ${T.border2}`, color:T.textDim, padding:'3px 6px', borderRadius:'2px', cursor:'pointer', fontSize:'9px' }}>✕</button>
+                          </div>
+                        </div>
                       ) : (
                         <div style={{ display:'flex', alignItems:'center', gap:'6px', cursor:'pointer' }} onClick={() => setSelectedProjId(proj.id)}>
                           <span style={{ width:'8px', height:'8px', borderRadius:'50%', background:proj.color||'#00aaff', flexShrink:0 }} />
                           <span style={{ fontSize:'11px', color:isSel?T.text:T.textDim, fontWeight:isSel?700:400, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{proj.name}</span>
-                          {isSel && <span onClick={e => { e.stopPropagation(); setEditProjId(proj.id); setEditProjName(proj.name); }} title="プロジェクト名を編集" style={{ fontSize:'9px', color:T.textMuted, cursor:'pointer', padding:'1px 4px', borderRadius:'2px', flexShrink:0 }}>✎</span>}
+                          {isSel && <span onClick={e => { e.stopPropagation(); setEditProjId(proj.id); setEditProjName(proj.name); setEditProjColor(proj.color||'#00aaff'); }} title="プロジェクトを編集" style={{ fontSize:'9px', color:T.textMuted, cursor:'pointer', padding:'1px 4px', borderRadius:'2px', flexShrink:0 }}>✎</span>}
                         </div>
                       )}
                       <div style={{ marginTop:'4px', paddingLeft:'14px' }}>
@@ -2456,8 +2508,11 @@
                         )}
                       </div>
                     ) : (
-                      <button onClick={() => { setAddingTask(true); setAddMode('new'); }} style={{ background:'transparent', border:`1px dashed ${T.border}`, color:T.textDim, padding:'8px', borderRadius:'3px', cursor:'pointer', fontSize:'10px', fontFamily:"'JetBrains Mono',monospace", width:'100%', flexShrink:0 }}>
-                        ＋ タスクを追加
+                      <button onClick={() => { setAddingTask(true); setAddMode('new'); }}
+                        style={{ background:`${selectedProj?.color||'#00aaff'}12`, border:`1px dashed ${selectedProj?.color||'#00aaff'}66`, color:selectedProj?.color||'#00aaff', padding:'10px', borderRadius:'3px', cursor:'pointer', fontSize:'11px', fontFamily:"'JetBrains Mono',monospace", width:'100%', flexShrink:0, fontWeight:700, letterSpacing:'0.05em', transition:'all 0.15s' }}
+                        onMouseEnter={e => e.currentTarget.style.background=`${selectedProj?.color||'#00aaff'}22`}
+                        onMouseLeave={e => e.currentTarget.style.background=`${selectedProj?.color||'#00aaff'}12`}>
+                        ＋ タスクを追加 / 既存タスクを追加
                       </button>
                     )}
                   </>
