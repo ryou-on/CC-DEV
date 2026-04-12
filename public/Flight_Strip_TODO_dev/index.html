@@ -33,6 +33,7 @@
     @keyframes spin  { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     @keyframes pulse { 0%,100%{opacity:0.3;} 50%{opacity:1;} }
     @keyframes blink { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
+    @keyframes fadeInOut { 0%{opacity:0;transform:scale(0.8)} 30%{opacity:1;transform:scale(1)} 70%{opacity:1} 100%{opacity:0;transform:scale(1.1)} }
     /* DEV バナー */
     #dev-banner {
       position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
@@ -45,7 +46,7 @@
   </style>
 </head>
 <body>
-  <div id="dev-banner">⚠ DEV BUILD — v0.8.9-dev — NOT FOR PRODUCTION ⚠</div>
+  <div id="dev-banner">⚠ DEV BUILD — v0.9.0-dev — NOT FOR PRODUCTION ⚠</div>
   <div id="root" style="padding-top:22px;"></div>
 
   <!-- Firebase 初期化 -->
@@ -323,6 +324,10 @@
       { id:'ER-0066', title:'おつかれさまモード', desc:'指定した時間に今日の完了タスク一覧をポップアップ表示。「今日も沢山のタスクをこなしましたね、お疲れ様でした」と表示する', priority:'medium', difficulty:'easy', status:'implemented', registeredAt:'2026-04-12', implementedAt:'2026-04-12' },
       { id:'ER-0067', title:'タスクログ・履歴分析', desc:'1日/1週間/1ヶ月/1年の完了タスク一覧と集計。どんなタスクが多かったかなどの傾向分析。AIによるアドバイスも', priority:'medium', difficulty:'medium', status:'implemented', registeredAt:'2026-04-12', implementedAt:'2026-04-12' },
       { id:'ER-0068', title:'チュートリアル画面の作成', desc:'初回起動時にチュートリアルを表示。取扱説明書・リリースノートページにもチュートリアルを再表示するボタンを設置', priority:'medium', difficulty:'easy', status:'implemented', registeredAt:'2026-04-12', implementedAt:'2026-04-12' },
+      { id:'ER-0069', title:'チェックリスト完了アニメーション', desc:'全ステップチェック時に「COMPLETE」文字がふわっと浮かんで消え、自分でリストを閉じるまで展開を維持する', priority:'medium', difficulty:'medium', status:'implemented', registeredAt:'2026-04-13', implementedAt:'2026-04-13' },
+      { id:'ER-0070', title:'タスクにチェックリスト機能追加', desc:'通常タスクにルーティンと同じチェックリストを追加できるように。チェックリストを全チェックしても完了にはならず、ユーザーが手動で完了操作する', priority:'medium', difficulty:'easy', status:'implemented', registeredAt:'2026-04-13', implementedAt:'2026-04-13' },
+      { id:'ER-0071', title:'タスクの全画面表示', desc:'ストリップの「フルスクリーン」アイコンをクリックすると、そのタスクだけが画面いっぱいに表示される。フルスクリーンモーダル内でも編集・ステータス変更が可能', priority:'medium', difficulty:'easy', status:'implemented', registeredAt:'2026-04-13', implementedAt:'2026-04-13' },
+      { id:'ER-0072', title:'プロジェクト機能の改善（タスクアーカイブ維持）', desc:'プロジェクトの全タスクが完了してもプロジェクト状態を維持。完了タスクはプロジェクト内にアーカイブとして残り、進捗管理（何件完了/全件）を常に表示', priority:'medium', difficulty:'medium', status:'pending', registeredAt:'2026-04-13' },
     ];
 
     const useCurrentTime = () => {
@@ -446,9 +451,17 @@
     // ======================================================
     // リリースノート
     // ======================================================
-    const APP_VERSION = 'v0.8.9-dev';
+    const APP_VERSION = 'v0.9.0-dev';
 
     const RELEASE_NOTES = [
+      {
+        version: "v0.9.0-dev", date: "2026-04-13",
+        changes: [
+          "🎉 チェックリスト全完了時に「COMPLETE ✓」アニメーションを表示、自分で閉じるまで展開を維持",
+          "☑️ 通常タスクにもチェックリスト機能を追加（全チェックでも自動完了しない）",
+          "⛶ タスクのフルスクリーン表示機能追加 — ストリップの⛶ボタンで全画面表示",
+        ],
+      },
       {
         version: "v0.8.9-dev", date: "2026-04-12",
         changes: [
@@ -1793,6 +1806,15 @@
       const [assignee, setAssignee] = useState(task.assignee || "");
       const [link,     setLink]     = useState(task.link || "");
       const [estimatedMinutes, setEstimatedMinutes] = useState(task.estimatedMinutes || "");
+      // ER-0070: チェックリスト
+      const [checkItems, setCheckItems] = useState(task.checkItems || []);
+      const [checkInput, setCheckInput] = useState('');
+      const addCheckItem = () => {
+        if (!checkInput.trim()) return;
+        setCheckItems(p => [...p, { id: `ci-${Date.now()}`, text: checkInput.trim(), checked: false }]);
+        setCheckInput('');
+      };
+      const removeCheckItem = (id) => setCheckItems(p => p.filter(ci => ci.id !== id));
       // 日付（YYYYMMDD ↔ YYYY-MM-DD）
       const fromYMD = (s) => s.replace(/-/g,'').length===8 ? `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}` : s;
       const [dateInput, setDateInput] = useState(task.scheduledDate || ''); // YYYY-MM-DD
@@ -1832,6 +1854,7 @@
           recurrence,
           scheduledDate: scheduledDate || null,
           estimatedMinutes: estimatedMinutes ? parseInt(estimatedMinutes) : null,
+          checkItems: checkItems.length > 0 ? checkItems : null,
         });
         onClose();
       };
@@ -1911,6 +1934,23 @@
                   <option value="">未設定</option>
                   {[15,30,45,60,90,120].map(m => <option key={m} value={m}>{m}分</option>)}
                 </select>
+              </div>
+              {/* ER-0070: ☑ チェックリスト */}
+              <div style={{ border:`1px solid ${T.border2}`, borderRadius:"4px", padding:"10px 12px" }}>
+                <div style={{ fontSize:"10px", color:T.textDim, letterSpacing:"0.1em", marginBottom:"8px", fontWeight:700 }}>☑ チェックリスト</div>
+                {checkItems.map(ci => (
+                  <div key={ci.id} style={{ display:'flex', alignItems:'center', gap:'6px', marginBottom:'5px' }}>
+                    <span style={{ flex:1, fontSize:"11px", color:T.text, padding:"4px 8px", background:T.bgInput, border:`1px solid ${T.border2}`, borderRadius:"2px" }}>{ci.text}</span>
+                    <button type="button" onClick={() => removeCheckItem(ci.id)} style={{ background:'rgba(255,0,0,0.15)', border:'1px solid #ff333355', color:'#ff6666', padding:'3px 7px', borderRadius:'2px', cursor:'pointer', fontSize:'10px', fontFamily:"'JetBrains Mono',monospace", flexShrink:0 }}>✕</button>
+                  </div>
+                ))}
+                <div style={{ display:'flex', gap:'6px', marginTop:'6px' }}>
+                  <input value={checkInput} onChange={e => setCheckInput(e.target.value)}
+                    onKeyDown={e => { if (e.key==='Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); addCheckItem(); } }}
+                    placeholder="アイテムを追加..."
+                    style={{ ...inp, flex:1, fontSize:'11px' }} />
+                  <button type="button" onClick={addCheckItem} style={{ background:`${T.accent}20`, border:`1px solid ${T.accent}55`, color:T.accent, padding:'4px 10px', borderRadius:'2px', cursor:'pointer', fontSize:'11px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace", flexShrink:0 }}>＋</button>
+                </div>
               </div>
               {/* ♻ 繰り返し */}
               <div style={{ background:recurOn?`${T.accent}08`:'transparent', border:`1px solid ${recurOn?T.accent+'33':T.border2}`, borderRadius:"4px", padding:"10px 12px" }}>
@@ -2277,6 +2317,120 @@
     };
 
     // ======================================================
+    // ER-0071: タスクフルスクリーンモーダル
+    // ======================================================
+    const TaskFullscreenModal = ({ task, onClose, onStatusChange, onEdit, T }) => {
+      if (!task) return null;
+      const pri = PRIORITIES[task.priority] || PRIORITIES.normal;
+      const cat = CATEGORIES[task.category] || CATEGORIES.work;
+      const isCompleted = ['completed','cleared'].includes(task.status);
+      const isLost = task.status === 'lost';
+
+      const statusButtons = [
+        { id:'active',    label:'▶ ACTIVE',    color:'#00ff88' },
+        { id:'next',      label:'→ NEXT',       color:'#00ccff' },
+        { id:'delegated', label:'✈ DELEGATED',  color:'#ffaa00' },
+        { id:'pending',   label:'⏸ HOLDING',   color:'#8899aa' },
+        { id:'completed', label:'✓ DONE',       color:'#00ff88' },
+        { id:'lost',      label:'✗ LOST',       color:'#ff6600' },
+      ];
+
+      return (
+        <div style={{ position:'fixed', inset:0, zIndex:500, background:'rgba(0,0,0,0.92)', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:"'JetBrains Mono',monospace" }}
+          onClick={onClose}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background:T.bgModal, border:`1px solid ${T.accent}55`, borderRadius:'6px', width:'min(720px,96vw)', maxHeight:'92vh', display:'flex', flexDirection:'column', boxShadow:`0 0 80px ${T.accent}22, 0 24px 80px rgba(0,0,0,0.8)`, overflow:'hidden' }}>
+
+            {/* ヘッダー */}
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'14px 20px', borderBottom:`1px solid ${T.border2}`, flexShrink:0 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+                <span style={{ fontSize:'10px', color:T.textMuted, letterSpacing:'0.1em' }}>{task.stripId}</span>
+                <span style={{ color:pri.color, fontSize:'9px', fontWeight:700, padding:'2px 8px', border:`1px solid ${pri.color}`, borderRadius:'2px' }}>{pri.label}</span>
+                <span style={{ fontSize:'9px', color:cat.color, padding:'2px 7px', border:`1px solid ${cat.color}55`, borderRadius:'2px' }}>{cat.label}</span>
+              </div>
+              <div style={{ display:'flex', gap:'6px', alignItems:'center' }}>
+                <button onClick={() => { onEdit(task.id); onClose(); }}
+                  style={{ background:`${T.accent}18`, border:`1px solid ${T.accent}55`, color:T.accent, padding:'4px 12px', borderRadius:'2px', cursor:'pointer', fontSize:'10px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace", letterSpacing:'0.05em' }}>✎ 編集</button>
+                <button onClick={onClose}
+                  style={{ background:'transparent', border:`1px solid ${T.border2}`, color:T.textDim, padding:'4px 12px', borderRadius:'2px', cursor:'pointer', fontSize:'11px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace" }}>✕</button>
+              </div>
+            </div>
+
+            {/* コンテンツ */}
+            <div style={{ overflowY:'auto', padding:'24px 28px', flex:1 }}>
+              {/* タスクタイトル */}
+              <div style={{ fontSize:'22px', fontWeight:700, color:isCompleted||isLost?T.textDim:T.text, textDecoration:isCompleted||isLost?'line-through':'none', lineHeight:1.4, marginBottom:'20px', letterSpacing:'0.02em' }}>
+                {task.isRoutine && <span style={{ fontSize:'18px', marginRight:'8px' }}>🔄</span>}
+                {task.title}
+              </div>
+
+              {/* メタ情報 */}
+              <div style={{ display:'flex', gap:'10px', flexWrap:'wrap', marginBottom:'20px' }}>
+                {task.time && <span style={{ fontSize:'12px', color:T.textDim, padding:'4px 10px', background:`${T.bgInput}`, border:`1px solid ${T.border2}`, borderRadius:'3px' }}>🕐 {task.time}</span>}
+                {task.scheduledDate && <span style={{ fontSize:'12px', color:'#00ccff', padding:'4px 10px', background:'rgba(0,204,255,0.08)', border:'1px solid rgba(0,204,255,0.3)', borderRadius:'3px' }}>📅 {task.scheduledDate.replace(/-/g,'')}</span>}
+                {task.estimatedMinutes && <span style={{ fontSize:'12px', color:'#ffcc44', padding:'4px 10px', background:'rgba(255,200,68,0.08)', border:'1px solid rgba(255,200,68,0.3)', borderRadius:'3px' }}>⏱ {task.estimatedMinutes}m</span>}
+                {task.assignee && <span style={{ fontSize:'12px', color:'#ffaa00', padding:'4px 10px', background:'rgba(255,170,0,0.08)', border:'1px solid rgba(255,170,0,0.3)', borderRadius:'3px' }}>✈ {task.assignee}</span>}
+                {task.link && <a href={task.link} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{ fontSize:'12px', color:'#66aaff', padding:'4px 10px', background:'rgba(100,150,255,0.1)', border:'1px solid rgba(100,150,255,0.3)', borderRadius:'3px', textDecoration:'none' }}>🔗 LINK</a>}
+              </div>
+
+              {/* チェックリスト（checkItems） */}
+              {task.checkItems && task.checkItems.length > 0 && (
+                <div style={{ marginBottom:'20px', border:`1px solid ${T.border2}`, borderRadius:'4px', padding:'14px 16px' }}>
+                  <div style={{ fontSize:'10px', color:T.textDim, letterSpacing:'0.1em', marginBottom:'10px' }}>
+                    ☑ チェックリスト — {task.checkItems.filter(ci=>ci.checked).length}/{task.checkItems.length}
+                  </div>
+                  {task.checkItems.map(ci => (
+                    <div key={ci.id} style={{ display:'flex', alignItems:'center', gap:'10px', padding:'5px 0', borderBottom:`1px solid ${T.border2}22` }}>
+                      <div style={{ width:'16px', height:'16px', border:`1.5px solid ${ci.checked?T.accent:T.border2}`, borderRadius:'3px', background:ci.checked?T.accent:'transparent', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                        {ci.checked && <span style={{ color:'#000', fontSize:'10px', fontWeight:700 }}>✓</span>}
+                      </div>
+                      <span style={{ fontSize:'12px', color:ci.checked?T.textDim:T.text, textDecoration:ci.checked?'line-through':'none' }}>{ci.text}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* ルーティンチェックリスト */}
+              {task.isRoutine && task.routineSteps && task.routineSteps.length > 0 && (
+                <div style={{ marginBottom:'20px', border:`1px solid ${T.border2}`, borderRadius:'4px', padding:'14px 16px' }}>
+                  <div style={{ fontSize:'10px', color:T.textDim, letterSpacing:'0.1em', marginBottom:'10px' }}>
+                    🔄 ルーティン — {task.routineSteps.filter(s=>s.checked).length}/{task.routineSteps.length}
+                  </div>
+                  {task.routineSteps.map(step => (
+                    <div key={step.id} style={{ display:'flex', alignItems:'center', gap:'10px', padding:'5px 0', borderBottom:`1px solid ${T.border2}22` }}>
+                      <div style={{ width:'16px', height:'16px', border:`1.5px solid ${step.checked?T.accent:T.border2}`, borderRadius:'3px', background:step.checked?T.accent:'transparent', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                        {step.checked && <span style={{ color:'#000', fontSize:'10px', fontWeight:700 }}>✓</span>}
+                      </div>
+                      <span style={{ fontSize:'12px', color:step.checked?T.textDim:T.text, textDecoration:step.checked?'line-through':'none' }}>{step.text}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* ステータス変更ボタン */}
+              <div style={{ marginTop:'8px' }}>
+                <div style={{ fontSize:'9px', color:T.textMuted, letterSpacing:'0.12em', marginBottom:'10px' }}>STATUS</div>
+                <div style={{ display:'flex', gap:'8px', flexWrap:'wrap' }}>
+                  {statusButtons.map(btn => (
+                    <button key={btn.id}
+                      onClick={() => { onStatusChange(task.id, btn.id); onClose(); }}
+                      style={{ padding:'7px 14px', borderRadius:'3px', cursor:'pointer', fontSize:'11px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace", letterSpacing:'0.08em',
+                        background: task.status===btn.id ? `${btn.color}22` : 'transparent',
+                        border: `1px solid ${task.status===btn.id ? btn.color : T.border2}`,
+                        color: task.status===btn.id ? btn.color : T.textDim,
+                      }}>
+                      {btn.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // ======================================================
     // ER-0068: チュートリアルオーバーレイ
     // ======================================================
     const TUTORIAL_STEPS = [
@@ -2381,7 +2535,7 @@
       return `${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
     };
 
-    const FlightStrip = ({ task, isSelected, isMultiSelected, dropState, onDragStart, onDragOver, onDragEnd, onDrop, onStatusChange, onDelete, onEdit, isTimerRunning, elapsedMs, totalLoggedMs, onTimerStart, onTimerStop, onTouchStart, onTouchMove, onTouchEnd, titleFontSize=13, projects=[], onSkipProject, projectTasks=[], onEditSeqTask, onAddNextTask, onCheckRoutineStep }) => {
+    const FlightStrip = ({ task, isSelected, isMultiSelected, dropState, onDragStart, onDragOver, onDragEnd, onDrop, onStatusChange, onDelete, onEdit, isTimerRunning, elapsedMs, totalLoggedMs, onTimerStart, onTimerStop, onTouchStart, onTouchMove, onTouchEnd, titleFontSize=13, projects=[], onSkipProject, projectTasks=[], onEditSeqTask, onAddNextTask, onCheckRoutineStep, onCheckItem, onFullscreen }) => {
       const T = useT();
       const pri = PRIORITIES[task.priority] || PRIORITIES.normal;
       const cat = CATEGORIES[task.category] || { label: task.category || "OTHER", color: "#888888" };
@@ -2394,6 +2548,10 @@
       const [showSeq, setShowSeq] = useState(false);
       // ルーティンストリップ展開
       const [routineExpanded, setRoutineExpanded] = useState(false);
+      // ER-0069: COMPLETE アニメーション
+      const [showComplete, setShowComplete] = useState(false);
+      // ER-0070: チェックリスト展開
+      const [checkExpanded, setCheckExpanded] = useState(false);
       // ER-0061: 次タスク追加フォーム
       const [showNextForm, setShowNextForm] = useState(false);
       const [nextTitle, setNextTitle] = useState('');
@@ -2442,8 +2600,8 @@
           onDrop={e => { e.preventDefault(); e.stopPropagation(); onDrop(e, task.id); }}
           onTouchStart={onTouchStart ? e => onTouchStart(e, task.id) : undefined}
           onTouchEnd={onTouchEnd ? e => onTouchEnd(e, task.id) : undefined}
-          onDoubleClick={e => { e.stopPropagation(); if (!task.isRoutine) onEdit(task.id); }}
-          onClick={task.isRoutine ? e => { e.stopPropagation(); setRoutineExpanded(p => !p); } : undefined}
+          onDoubleClick={e => { e.stopPropagation(); if (!task.isRoutine && !(task.checkItems&&task.checkItems.length>0)) onEdit(task.id); }}
+          onClick={(task.isRoutine || (task.checkItems&&task.checkItems.length>0)) ? e => { e.stopPropagation(); if (task.isRoutine) setRoutineExpanded(p => !p); else setCheckExpanded(p => !p); } : undefined}
           className="group relative cursor-grab active:cursor-grabbing"
           style={{
             background:   isMultiSelected ? "rgba(100,160,255,0.1)" : isLost ? "rgba(255,80,0,0.08)" : isCompleted ? `${T.border}44` : pri.bg,
@@ -2497,6 +2655,16 @@
                   <div style={{ display:"flex", alignItems:"center", gap:"4px", flexShrink:0 }}>
                     <span style={{ fontSize:"9px", color: done===total && total>0 ? "#00ff88" : "#ffaa00", fontWeight:700, padding:"1px 5px", background: done===total && total>0 ? "rgba(0,255,136,0.12)" : "rgba(255,170,0,0.12)", border:`1px solid ${done===total && total>0 ? "rgba(0,255,136,0.4)" : "rgba(255,170,0,0.4)"}`, borderRadius:"2px" }}>{done}/{total}</span>
                     <span style={{ fontSize:"10px", color:T.textDim }}>{routineExpanded ? "▲" : "▼"}</span>
+                  </div>
+                );
+              })()}
+              {!task.isRoutine && task.checkItems && task.checkItems.length > 0 && (() => {
+                const done = task.checkItems.filter(ci => ci.checked).length;
+                const total = task.checkItems.length;
+                return (
+                  <div style={{ display:"flex", alignItems:"center", gap:"4px", flexShrink:0 }}>
+                    <span style={{ fontSize:"9px", color: done===total && total>0 ? "#00ff88" : "#aabbcc", fontWeight:700, padding:"1px 5px", background: done===total && total>0 ? "rgba(0,255,136,0.12)" : "rgba(170,187,204,0.12)", border:`1px solid ${done===total && total>0 ? "rgba(0,255,136,0.4)" : "rgba(170,187,204,0.3)"}`, borderRadius:"2px" }}>☑ {done}/{total}</span>
+                    <span style={{ fontSize:"10px", color:T.textDim }}>{checkExpanded ? "▲" : "▼"}</span>
                   </div>
                 );
               })()}
@@ -2613,12 +2781,31 @@
               </div>
             )}
 
-            {/* ルーティンチェックリスト（展開時） */}
+            {/* ER-0069: ルーティンチェックリスト（展開時） */}
             {task.isRoutine && routineExpanded && (
-              <div style={{ borderTop:`1px solid ${T.border2}`, padding:'8px 12px', display:'flex', flexDirection:'column', gap:'6px' }} onClick={e => e.stopPropagation()}>
+              <div style={{ borderTop:`1px solid ${T.border2}`, padding:'8px 12px', display:'flex', flexDirection:'column', gap:'6px', position:'relative' }} onClick={e => e.stopPropagation()}>
+                {/* COMPLETE アニメーション */}
+                {showComplete && (
+                  <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.6)', borderRadius:'4px', zIndex:10, animation:'fadeInOut 1.5s ease forwards' }}>
+                    <span style={{ color:'#00ff88', fontSize:'18px', fontWeight:800, letterSpacing:'0.1em' }}>COMPLETE ✓</span>
+                  </div>
+                )}
                 {(task.routineSteps || []).map(step => (
                   <div key={step.id}
-                    onClick={e => { e.stopPropagation(); onCheckRoutineStep && onCheckRoutineStep(task.id, step.id, !step.checked); }}
+                    onClick={e => {
+                      e.stopPropagation();
+                      const newChecked = !step.checked;
+                      if (onCheckRoutineStep) onCheckRoutineStep(task.id, step.id, newChecked);
+                      // ER-0069: 全チェック完了時にアニメーション表示
+                      if (newChecked) {
+                        const steps = task.routineSteps || [];
+                        const allDone = steps.every(s => s.id === step.id ? true : s.checked);
+                        if (allDone && steps.length > 0) {
+                          setShowComplete(true);
+                          setTimeout(() => setShowComplete(false), 1500);
+                        }
+                      }
+                    }}
                     style={{ display:'flex', alignItems:'center', gap:'8px', cursor:'pointer', padding:'4px 6px', borderRadius:'3px',
                       background: step.checked ? `${T.accent}15` : 'transparent',
                       opacity: step.checked ? 0.6 : 1 }}>
@@ -2631,8 +2818,43 @@
                       textDecoration: step.checked ? 'line-through' : 'none' }}>{step.text}</span>
                   </div>
                 ))}
-                <div style={{ fontSize:'9px', color:T.textDim, marginTop:'2px' }}>
-                  {(task.routineSteps||[]).filter(s=>s.checked).length} / {(task.routineSteps||[]).length} 完了
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:'2px' }}>
+                  <div style={{ fontSize:'9px', color:T.textDim }}>
+                    {(task.routineSteps||[]).filter(s=>s.checked).length} / {(task.routineSteps||[]).length} 完了
+                  </div>
+                  <button onClick={e => { e.stopPropagation(); setRoutineExpanded(false); }}
+                    style={{ alignSelf:'flex-end', background:'transparent', border:`1px solid ${T.border2}`, color:T.textDim, fontSize:'9px', padding:'2px 8px', cursor:'pointer', borderRadius:'2px', fontFamily:"'JetBrains Mono',monospace" }}>
+                    ✕ 閉じる
+                  </button>
+                </div>
+              </div>
+            )}
+            {/* ER-0070: 通常チェックリスト（展開時） */}
+            {!task.isRoutine && task.checkItems && task.checkItems.length > 0 && checkExpanded && (
+              <div style={{ borderTop:`1px solid ${T.border2}`, padding:'8px 12px', display:'flex', flexDirection:'column', gap:'6px' }} onClick={e => e.stopPropagation()}>
+                {task.checkItems.map(ci => (
+                  <div key={ci.id}
+                    onClick={e => { e.stopPropagation(); onCheckItem && onCheckItem(task.id, ci.id, !ci.checked); }}
+                    style={{ display:'flex', alignItems:'center', gap:'8px', cursor:'pointer', padding:'4px 6px', borderRadius:'3px',
+                      background: ci.checked ? `${T.accent}15` : 'transparent',
+                      opacity: ci.checked ? 0.6 : 1 }}>
+                    <div style={{ width:'14px', height:'14px', border:`1.5px solid ${ci.checked ? T.accent : T.border2}`,
+                      borderRadius:'3px', background: ci.checked ? T.accent : 'transparent', flexShrink:0,
+                      display:'flex', alignItems:'center', justifyContent:'center' }}>
+                      {ci.checked && <span style={{ color:'#000', fontSize:'9px', fontWeight:700 }}>✓</span>}
+                    </div>
+                    <span style={{ fontSize:'10px', color: ci.checked ? T.textDim : T.text,
+                      textDecoration: ci.checked ? 'line-through' : 'none' }}>{ci.text}</span>
+                  </div>
+                ))}
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:'2px' }}>
+                  <div style={{ fontSize:'9px', color:T.textDim }}>
+                    {task.checkItems.filter(ci=>ci.checked).length} / {task.checkItems.length} 完了
+                  </div>
+                  <button onClick={e => { e.stopPropagation(); setCheckExpanded(false); }}
+                    style={{ background:'transparent', border:`1px solid ${T.border2}`, color:T.textDim, fontSize:'9px', padding:'2px 8px', cursor:'pointer', borderRadius:'2px', fontFamily:"'JetBrains Mono',monospace" }}>
+                    ✕ 閉じる
+                  </button>
                 </div>
               </div>
             )}
@@ -2728,6 +2950,7 @@
           {/* ホバーアクションボタン（編集・削除・ステータス変更） */}
           <div className="opacity-0 group-hover:opacity-100" style={{ position:"absolute", top:"4px", right:"48px", display:"flex", gap:"2px", transition:"opacity 0.15s ease" }}>
             <button onClick={e=>{e.stopPropagation();onEdit(task.id);}} title="編集 (E)" style={{ background:`${T.accent}20`, border:`1px solid ${T.accent}44`, color:T.accent, fontSize:"10px", padding:"2px 6px", borderRadius:"2px", cursor:"pointer", lineHeight:1 }}>✎</button>
+            <button onClick={e=>{e.stopPropagation();onFullscreen&&onFullscreen(task.id);}} title="全画面表示" style={{ background:`rgba(0,204,255,0.15)`, border:`1px solid rgba(0,204,255,0.4)`, color:"#00ccff", fontSize:"10px", padding:"2px 5px", borderRadius:"2px", cursor:"pointer", lineHeight:1 }}>⛶</button>
             {COLUMNS.filter(c=>c.id!==task.status && c.id!=="completed" && c.id!=="lost").map(col => (
               <button key={col.id} onClick={e=>{e.stopPropagation();onStatusChange(task.id,col.id);}} title={`→ ${col.label}`} style={{ background:`rgba(0,0,0,0.7)`, border:`1px solid ${T.border}`, color:T.textDim, fontSize:"10px", padding:"2px 5px", borderRadius:"2px", cursor:"pointer", lineHeight:1 }}>{col.icon}</button>
             ))}
@@ -3874,6 +4097,8 @@
       const [showTutorial, setShowTutorial] = useState(false);
       // ER-0060: ルーティンモーダル
       const [showRoutines, setShowRoutines] = useState(false);
+      // ER-0071: フルスクリーンタスク
+      const [fullscreenTaskId, setFullscreenTaskId] = useState(null);
       // ER-0054: 一括操作ドロップダウン
       const [showBulkMenu, setShowBulkMenu] = useState(false);
       // PROJ/ROUTINE ドロップダウン
@@ -4430,11 +4655,21 @@
           routineSteps: updatedSteps,
           updatedAt: ts(),
         });
-        // 全チェック済みなら完了
+        // ER-0069: 全チェック済みなら1600ms後に完了（アニメーション分の余裕）
         if (updatedSteps.every(s => s.checked) && updatedSteps.length > 0) {
-          await handleStatusChange(taskId, 'completed');
+          setTimeout(() => { handleStatusChange(taskId, 'completed'); }, 1600);
         }
       }, [tasks, tasksRef, handleStatusChange]);
+
+      // ER-0070: 通常チェックリストのステップチェック
+      const handleCheckItem = useCallback(async (taskId, itemId, checked) => {
+        const task = tasks.find(t => t.id === taskId);
+        if (!task) return;
+        const updated = (task.checkItems || []).map(ci =>
+          ci.id === itemId ? { ...ci, checked } : ci
+        );
+        await tasksRef.doc(taskId).update({ checkItems: updated, updatedAt: ts() });
+      }, [tasks, tasksRef]);
 
       // --- 印刷/PDF出力 ---
       const handlePrint = useCallback(() => {
@@ -4864,6 +5099,8 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
           {showTaskLog && <TaskLogModal tasks={tasks} categories={categories} onClose={() => setShowTaskLog(false)} />}
           {/* ER-0068: チュートリアル */}
           {showTutorial && <TutorialOverlay onClose={() => setShowTutorial(false)} />}
+          {/* ER-0071: フルスクリーン */}
+          {fullscreenTaskId && <TaskFullscreenModal task={tasks.find(t=>t.id===fullscreenTaskId)} onClose={()=>setFullscreenTaskId(null)} onStatusChange={handleStatusChange} onEdit={id=>{ setEditTaskId(id); setFullscreenTaskId(null); }} T={T} />}
           {/* ER-0060: ルーティンモーダル */}
           {showRoutines && <RoutineModal tasks={tasks} tasksRef={tasksRef} projectsRef={projectsRef} onClose={() => setShowRoutines(false)} />}
           {broadcastMsg && <BroadcastPopup title={broadcastMsg.title} message={broadcastMsg.message} onClose={() => setBroadcastMsg(null)} />}
@@ -5119,6 +5356,8 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                       onEditSeqTask={id => setEditTaskId(id)}
                       onAddNextTask={handleAddNextTask}
                       onCheckRoutineStep={handleCheckRoutineStep}
+                      onCheckItem={handleCheckItem}
+                      onFullscreen={id => setFullscreenTaskId(id)}
                     />
                   </div>
                 );
@@ -5245,6 +5484,8 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                     onEditSeqTask={id => setEditTaskId(id)}
                     onAddNextTask={handleAddNextTask}
                     onCheckRoutineStep={handleCheckRoutineStep}
+                    onCheckItem={handleCheckItem}
+                    onFullscreen={id => setFullscreenTaskId(id)}
                   />
                 </div>
               );
