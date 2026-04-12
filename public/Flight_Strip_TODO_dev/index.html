@@ -2646,7 +2646,23 @@
       useEffect(() => {
         const unsub = metaRef.doc('enhancedRequests').onSnapshot(snap => {
           if (snap.exists && snap.data()?.items?.length) {
-            setErs(snap.data().items);
+            let items = snap.data().items;
+            // 旧形式ID（er-XXX / er-timestamp）を ER-XXXX に自動マイグレーション
+            const needsMigration = items.some(e => !/^ER-\d{4}$/.test(e.id || ''));
+            if (needsMigration) {
+              let maxNum = items.reduce((m, e) => {
+                if (!/^ER-\d{4}$/.test(e.id || '')) return m;
+                return Math.max(m, parseInt(e.id.replace('ER-', ''), 10));
+              }, 59); // INITIAL_ERS の最大が ER-0059
+              items = items.map(e => {
+                if (/^ER-\d{4}$/.test(e.id || '')) return e;
+                maxNum++;
+                return { ...e, id: `ER-${String(maxNum).padStart(4, '0')}` };
+              });
+              metaRef.doc('enhancedRequests').set({ items }).catch(() => {});
+              console.log('[ER Migration] Old IDs migrated to ER-XXXX format');
+            }
+            setErs(items);
           } else {
             setErs(INITIAL_ERS);
           }
