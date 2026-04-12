@@ -3974,11 +3974,39 @@
       }, [getColTasks]);
 
       // --- CRUD ハンドラー ---
-      const handleAdd          = useCallback(t  => tasksRef.add({ ...t, createdAt:ts(), updatedAt:ts() }), [tasksRef]);
+      const handleAdd          = useCallback(t => {
+        tasksRef.add({ ...t, createdAt:ts(), updatedAt:ts() });
+        // タスク作成イベントを記録
+        try {
+          const uidHash = btoa(user.uid).replace(/[^a-zA-Z0-9]/g,'').slice(0,12);
+          const today = new Date().toISOString().slice(0,10);
+          db.collection('fst_analytics').add({
+            type: 'task_created',
+            uidHash,
+            date: today,
+            version: APP_VERSION,
+            build: 'dev',
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          }).catch(()=>{});
+        } catch(e){}
+      }, [tasksRef, user.uid]);
       // ER-0061: 次タスク追加ハンドラー
       const handleAddNextTask  = useCallback(({ title, priority, category }) => {
         tasksRef.add({ stripId:`FS${String(Date.now()).slice(-4)}`, title, status:'next', priority: priority||'normal', category: category||'work', createdAt:ts(), updatedAt:ts(), sortOrder:Date.now() });
-      }, [tasksRef]);
+        // タスク作成イベントを記録
+        try {
+          const uidHash = btoa(user.uid).replace(/[^a-zA-Z0-9]/g,'').slice(0,12);
+          const today = new Date().toISOString().slice(0,10);
+          db.collection('fst_analytics').add({
+            type: 'task_created',
+            uidHash,
+            date: today,
+            version: APP_VERSION,
+            build: 'dev',
+            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+          }).catch(()=>{});
+        } catch(e){}
+      }, [tasksRef, user.uid]);
       const handleDelete       = useCallback(id => {
         if (!window.confirm("このストリップを削除しますか？")) return;
         tasksRef.doc(id).delete();
@@ -4032,7 +4060,22 @@
             }
           }
         }
-      }, [tasks, tasksRef]);
+        // タスク完了イベントを記録
+        if (['completed','cleared','lost'].includes(s)) {
+          try {
+            const uidHash = btoa(user.uid).replace(/[^a-zA-Z0-9]/g,'').slice(0,12);
+            const today = new Date().toISOString().slice(0,10);
+            db.collection('fst_analytics').add({
+              type: 'task_completed',
+              uidHash,
+              date: today,
+              version: APP_VERSION,
+              build: 'dev',
+              createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+            }).catch(()=>{});
+          } catch(e){}
+        }
+      }, [tasks, tasksRef, user.uid]);
       const handleSkipProjectTask = useCallback(async (taskId) => {
         const task = tasks.find(t => t.id === taskId);
         if (!task?.projectId) return;
