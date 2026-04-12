@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gemini 画像生成ツール</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background: #0f172a; }
+    .glass {
+      background: rgba(255,255,255,0.05);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      transition: all 0.2s;
+    }
+    .btn-primary:hover { opacity: 0.85; transform: translateY(-1px); }
+    .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+    #imageResult img { border-radius: 12px; }
+    .spinner {
+      border: 3px solid rgba(255,255,255,0.1);
+      border-top-color: #8b5cf6;
+      border-radius: 50%;
+      width: 40px; height: 40px;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body class="min-h-screen text-white p-4 md:p-8">
+
+  <div class="max-w-2xl mx-auto">
+
+    <!-- ヘッダー -->
+    <div class="text-center mb-8">
+      <h1 class="text-3xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
+        Gemini 画像生成
+      </h1>
+      <p class="text-slate-400 mt-2 text-sm">Imagen 3 powered · ウォーターマークなし</p>
+    </div>
+
+    <!-- API Key -->
+    <div class="glass rounded-2xl p-5 mb-4">
+      <label class="text-xs text-slate-400 uppercase tracking-wider font-semibold block mb-2">
+        Gemini API Key
+      </label>
+      <div class="flex gap-2">
+        <input
+          id="apiKey"
+          type="password"
+          placeholder="AIza..."
+          class="flex-1 bg-slate-800 border border-slate-600 rounded-xl px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+        />
+        <button onclick="toggleApiKey()" class="px-3 py-2 bg-slate-700 rounded-xl text-xs hover:bg-slate-600 transition">
+          表示
+        </button>
+      </div>
+      <p class="text-xs text-slate-500 mt-2">
+        APIキーは
+        <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-indigo-400 hover:underline">
+          Google AI Studio
+        </a>
+        で取得できます（無料）
+      </p>
+    </div>
+
+    <!-- プロンプト -->
+    <div class="glass rounded-2xl p-5 mb-4">
+      <label class="text-xs text-slate-400 uppercase tracking-wider font-semibold block mb-2">
+        プロンプト
+      </label>
+      <textarea
+        id="prompt"
+        rows="4"
+        placeholder="例: A beautiful sunset over Mount Fuji with cherry blossoms, photorealistic, 4K"
+        class="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-3 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 resize-none"
+      ></textarea>
+
+      <!-- オプション -->
+      <div class="grid grid-cols-2 gap-3 mt-3">
+        <div>
+          <label class="text-xs text-slate-500 block mb-1">アスペクト比</label>
+          <select id="aspectRatio" class="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+            <option value="1:1">1:1 (正方形)</option>
+            <option value="16:9">16:9 (横長)</option>
+            <option value="9:16">9:16 (縦長)</option>
+            <option value="4:3">4:3</option>
+            <option value="3:4">3:4</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-xs text-slate-500 block mb-1">生成枚数</label>
+          <select id="sampleCount" class="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500">
+            <option value="1">1枚</option>
+            <option value="2">2枚</option>
+            <option value="4">4枚</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- 生成ボタン -->
+    <button
+      id="generateBtn"
+      onclick="generateImage()"
+      class="btn-primary w-full py-3.5 rounded-2xl font-semibold text-white mb-6"
+    >
+      画像を生成する
+    </button>
+
+    <!-- 結果表示 -->
+    <div id="statusArea" class="hidden glass rounded-2xl p-5 mb-4 text-center">
+      <div class="flex items-center justify-center gap-3">
+        <div class="spinner"></div>
+        <span id="statusText" class="text-slate-300 text-sm">生成中...</span>
+      </div>
+    </div>
+
+    <div id="imageResult" class="grid grid-cols-1 gap-4"></div>
+
+    <!-- エラー表示 -->
+    <div id="errorArea" class="hidden glass rounded-2xl p-4 border border-red-500/30 bg-red-500/10">
+      <p class="text-red-400 text-sm" id="errorText"></p>
+    </div>
+
+    <!-- コンソールコピー -->
+    <div class="mt-6 glass rounded-2xl p-4">
+      <div class="flex justify-between items-center mb-2">
+        <span class="text-xs text-slate-500 uppercase tracking-wider">ログ</span>
+        <button onclick="copyConsole()" class="text-xs bg-slate-700 px-3 py-1 rounded-lg hover:bg-slate-600 transition">
+          コピー
+        </button>
+      </div>
+      <pre id="consoleLog" class="text-xs text-slate-400 max-h-32 overflow-y-auto whitespace-pre-wrap"></pre>
+    </div>
+
+  </div>
+
+  <script>
+    const logs = [];
+
+    function log(msg) {
+      const time = new Date().toLocaleTimeString('ja-JP');
+      const line = `[${time}] ${msg}`;
+      logs.push(line);
+      document.getElementById('consoleLog').textContent = logs.slice(-20).join('\n');
+    }
+
+    function copyConsole() {
+      navigator.clipboard.writeText(logs.join('\n'));
+    }
+
+    function toggleApiKey() {
+      const el = document.getElementById('apiKey');
+      el.type = el.type === 'password' ? 'text' : 'password';
+    }
+
+    function showError(msg) {
+      const el = document.getElementById('errorArea');
+      document.getElementById('errorText').textContent = msg;
+      el.classList.remove('hidden');
+      log('エラー: ' + msg);
+    }
+
+    function hideError() {
+      document.getElementById('errorArea').classList.add('hidden');
+    }
+
+    function setStatus(show, text = '') {
+      const el = document.getElementById('statusArea');
+      if (show) {
+        el.classList.remove('hidden');
+        document.getElementById('statusText').textContent = text;
+      } else {
+        el.classList.add('hidden');
+      }
+    }
+
+    async function generateImage() {
+      hideError();
+      document.getElementById('imageResult').innerHTML = '';
+
+      const apiKey = document.getElementById('apiKey').value.trim();
+      const prompt = document.getElementById('prompt').value.trim();
+      const aspectRatio = document.getElementById('aspectRatio').value;
+      const sampleCount = parseInt(document.getElementById('sampleCount').value);
+
+      if (!apiKey) { showError('APIキーを入力してください'); return; }
+      if (!prompt) { showError('プロンプトを入力してください'); return; }
+
+      const btn = document.getElementById('generateBtn');
+      btn.disabled = true;
+      setStatus(true, '生成中... (10〜30秒かかる場合があります)');
+      log(`生成開始: "${prompt}" | ${aspectRatio} | ${sampleCount}枚`);
+
+      // Imagen 3 API エンドポイント
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${apiKey}`;
+
+      const body = {
+        instances: [{ prompt }],
+        parameters: {
+          sampleCount,
+          aspectRatio,
+          safetyFilterLevel: "block_few",
+          personGeneration: "allow_adult"
+        }
+      };
+
+      try {
+        log('APIリクエスト送信中...');
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+
+        const data = await res.json();
+        log(`レスポンス: ${res.status}`);
+
+        if (!res.ok) {
+          const errMsg = data.error?.message || JSON.stringify(data);
+          throw new Error(errMsg);
+        }
+
+        const predictions = data.predictions;
+        if (!predictions || predictions.length === 0) {
+          throw new Error('画像が生成されませんでした（安全フィルターで除外された可能性があります）');
+        }
+
+        log(`${predictions.length}枚の画像を取得`);
+        setStatus(false);
+
+        const grid = document.getElementById('imageResult');
+        grid.className = predictions.length > 1
+          ? 'grid grid-cols-2 gap-4'
+          : 'grid grid-cols-1 gap-4';
+
+        predictions.forEach((pred, i) => {
+          const mimeType = pred.mimeType || 'image/png';
+          const b64 = pred.bytesBase64Encoded;
+          const src = `data:${mimeType};base64,${b64}`;
+
+          const wrapper = document.createElement('div');
+          wrapper.className = 'glass rounded-2xl p-3';
+          wrapper.innerHTML = `
+            <img src="${src}" class="w-full rounded-xl" alt="生成画像 ${i+1}" />
+            <div class="flex gap-2 mt-3">
+              <a
+                href="${src}"
+                download="gemini-image-${Date.now()}-${i+1}.png"
+                class="flex-1 text-center py-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-semibold transition"
+              >
+                ダウンロード
+              </a>
+              <button
+                onclick="copyImageToClipboard('${src}')"
+                class="flex-1 py-2 bg-slate-700 hover:bg-slate-600 rounded-xl text-xs font-semibold transition"
+              >
+                クリップボード
+              </button>
+            </div>
+          `;
+          grid.appendChild(wrapper);
+          log(`画像${i+1}表示完了`);
+        });
+
+      } catch (err) {
+        setStatus(false);
+        showError(err.message);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function copyImageToClipboard(dataUrl) {
+      try {
+        const res = await fetch(dataUrl);
+        const blob = await res.blob();
+        await navigator.clipboard.write([
+          new ClipboardItem({ [blob.type]: blob })
+        ]);
+        log('クリップボードにコピーしました');
+      } catch (e) {
+        log('クリップボードコピー失敗: ' + e.message);
+      }
+    }
+
+    // Enterキーで生成（Shift+Enterで改行）
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && e.ctrlKey) generateImage();
+    });
+
+    log('アプリ起動完了 · Imagen 3 (imagen-3.0-generate-002)');
+  </script>
+</body>
+</html>
