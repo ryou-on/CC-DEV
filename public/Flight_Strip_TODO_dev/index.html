@@ -2550,7 +2550,7 @@
       return `${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
     };
 
-    const FlightStrip = ({ task, isSelected, isMultiSelected, dropState, onDragStart, onDragOver, onDragEnd, onDrop, onStatusChange, onDelete, onEdit, isTimerRunning, elapsedMs, totalLoggedMs, onTimerStart, onTimerStop, onTouchStart, onTouchMove, onTouchEnd, titleFontSize=13, projects=[], onSkipProject, projectTasks=[], onEditSeqTask, onAddNextTask, onCheckRoutineStep, onCheckItem, onFullscreen }) => {
+    const FlightStrip = ({ task, isSelected, isMultiSelected, dropState, onDragStart, onDragOver, onDragEnd, onDrop, onStatusChange, onDelete, onEdit, isTimerRunning, elapsedMs, totalLoggedMs, onTimerStart, onTimerStop, onTouchStart, onTouchMove, onTouchEnd, titleFontSize=13, projects=[], onSkipProject, projectTasks=[], onEditSeqTask, onAddNextTask, onCheckRoutineStep, onCheckItem, onFullscreen, completedAnim=false }) => {
       const T = useT();
       const pri = PRIORITIES[task.priority] || PRIORITIES.normal;
       const cat = CATEGORIES[task.category] || { label: task.category || "OTHER", color: "#888888" };
@@ -2631,6 +2631,12 @@
             ...dropStyle,
           }}>
           <div style={{ position:"absolute", inset:0, background:"repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,255,136,0.015) 2px,rgba(0,255,136,0.015) 4px)", pointerEvents:"none" }} />
+          {/* ER-0075: タスク完了アニメーション */}
+          {completedAnim && (
+            <div style={{ position:'absolute', inset:0, zIndex:20, pointerEvents:'none', display:'flex', alignItems:'center', justifyContent:'center', animation:'fadeInOut 1.4s ease forwards' }}>
+              <span style={{ background:'#ffffff', color:'#222', fontSize:'11px', fontWeight:800, letterSpacing:'0.18em', padding:'3px 12px', borderRadius:'2px', fontFamily:"'JetBrains Mono',monospace" }}>COMPLETED</span>
+            </div>
+          )}
 
           {/* 左：コンテンツ */}
           <div style={{ flex:1, minWidth:0, padding:0 }}>
@@ -4146,8 +4152,8 @@
       const [showRoutines, setShowRoutines] = useState(false);
       // ER-0071: フルスクリーンタスク
       const [fullscreenTaskId, setFullscreenTaskId] = useState(null);
-      // ER-0075: タスク完了アニメーション
-      const [showCompletedAnim, setShowCompletedAnim] = useState(false);
+      // ER-0075: タスク完了アニメーション（完了したタスクID）
+      const [completedAnimId, setCompletedAnimId] = useState(null);
       // ER-0054: 一括操作ドロップダウン
       const [showBulkMenu, setShowBulkMenu] = useState(false);
       const [clearedOpen,  setClearedOpen]  = useState({'今日': true, '昨日': true});
@@ -4697,8 +4703,8 @@
         }
         // ER-0075: 完了アニメーション（completedのみ）
         if (s === 'completed') {
-          setShowCompletedAnim(true);
-          setTimeout(() => setShowCompletedAnim(false), 1600);
+          setCompletedAnimId(id);
+          setTimeout(() => setCompletedAnimId(null), 1400);
         }
         // タスク完了イベントを記録
         if (['completed','cleared','lost'].includes(s)) {
@@ -5188,12 +5194,6 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
           {showTutorial && <TutorialOverlay onClose={() => setShowTutorial(false)} />}
           {/* ER-0071: フルスクリーン */}
           {fullscreenTaskId && <TaskFullscreenModal task={tasks.find(t=>t.id===fullscreenTaskId)} onClose={()=>setFullscreenTaskId(null)} onStatusChange={handleStatusChange} onEdit={id=>{ setEditTaskId(id); setFullscreenTaskId(null); }} T={T} />}
-          {/* ER-0075: タスク完了アニメーション */}
-          {showCompletedAnim && (
-            <div style={{ position:'fixed', inset:0, zIndex:9998, pointerEvents:'none', display:'flex', alignItems:'center', justifyContent:'center' }}>
-              <div style={{ color:'#00ff88', fontSize:'28px', fontWeight:800, letterSpacing:'0.2em', fontFamily:"'JetBrains Mono',monospace", animation:'fadeInOut 1.6s ease forwards', background:'rgba(0,0,0,0.75)', padding:'16px 36px', borderRadius:'6px', border:'1px solid #00ff8844', textShadow:'0 0 12px #00ff8888' }}>[ COMPLETED ]</div>
-            </div>
-          )}
           {/* ER-0060: ルーティンモーダル */}
           {showRoutines && <RoutineModal tasks={tasks} tasksRef={tasksRef} projectsRef={projectsRef} onClose={() => setShowRoutines(false)} />}
           {broadcastMsg && <BroadcastPopup title={broadcastMsg.title} message={broadcastMsg.message} onClose={() => setBroadcastMsg(null)} />}
@@ -5451,6 +5451,7 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                       onCheckRoutineStep={handleCheckRoutineStep}
                       onCheckItem={handleCheckItem}
                       onFullscreen={id => setFullscreenTaskId(id)}
+                      completedAnim={completedAnimId === task.id}
                     />
                   </div>
                 );
@@ -5579,6 +5580,7 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                     onCheckRoutineStep={handleCheckRoutineStep}
                     onCheckItem={handleCheckItem}
                     onFullscreen={id => setFullscreenTaskId(id)}
+                    completedAnim={completedAnimId === task.id}
                   />
                 </div>
               );
