@@ -80,9 +80,10 @@
     // 3. Email Template を作成（変数: {{to_email}} {{fb_id}} {{subject}} {{message}}）→ templateId をコピー
     // 4. Account > API Keys > Public Key をコピー
     const EMAILJS_CONFIG = {
-      serviceId:  '',   // 例: 'service_xxxxxxx'
-      templateId: '',   // 例: 'template_xxxxxxx'
-      publicKey:  '',   // 例: 'xxxxxxxxxxxxxxxxxxxx'
+      serviceId:        '',   // 例: 'service_xxxxxxx'
+      templateId:       '',   // 自動返信テンプレート 例: 'template_xxxxxxx'
+      replyTemplateId:  '',   // 管理者返信テンプレート 例: 'template_yyyyyyy'
+      publicKey:        '',   // 例: 'xxxxxxxxxxxxxxxxxxxx'
     };
 
     // ======================================================
@@ -458,9 +459,18 @@
     // ======================================================
     // リリースノート
     // ======================================================
-    const APP_VERSION = 'v0.10.3-dev';
+    const APP_VERSION = 'v0.10.4-dev';
 
     const RELEASE_NOTES = [
+      {
+        version: "v0.10.4-dev", date: "2026-04-14",
+        changes: [
+          "⛶ 全画面モードをリデザイン：ヘッダーバー・NEXT preview・ACTIVE表示を削除しToDo専念レイアウトに",
+          "⛶ ACTIVEカラムのタイトル右肩に「全画面」ボタンを追加（デスクトップ）",
+          "⛶ 全画面チェックリスト/ルーティンにtouchAction:manipulation追加でモバイルタップ改善",
+          "💬 管理者INBOXからフィードバックユーザーへの返信機能追加（EmailJS送信＋Firestore保存）",
+        ],
+      },
       {
         version: "v0.10.3-dev", date: "2026-04-14",
         changes: [
@@ -1343,6 +1353,10 @@
       // INBOXタブ state
       const [inboxItems, setInboxItems] = useState([]);
       const [inboxLoading, setInboxLoading] = useState(false);
+      const [replyOpenId, setReplyOpenId] = useState(null); // 返信フォームを開いているfbId
+      const [replyText, setReplyText] = useState('');
+      const [replySending, setReplySending] = useState(false);
+      const [replyError, setReplyError] = useState('');
 
       // Broadcast読み込み
       useEffect(() => {
@@ -1470,6 +1484,37 @@
         onSaveERs(updatedERs);
         localStorage.setItem(`fst_fb_er_registered_${item.docId}`, '1');
         setInboxItems(list => list.map(it => it.docId === item.docId ? { ...it, _registered: true } : it));
+      };
+
+      // フィードバックへの返信送信
+      const handleSendReply = async (item) => {
+        if (!replyText.trim()) { setReplyError('返信内容を入力してください'); return; }
+        setReplySending(true); setReplyError('');
+        try {
+          // EmailJS で返信メール送信（設定済みの場合）
+          if (EMAILJS_CONFIG.publicKey && EMAILJS_CONFIG.serviceId && EMAILJS_CONFIG.replyTemplateId && item.email) {
+            await window.emailjs.send(
+              EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.replyTemplateId,
+              { to_email: item.email, fb_id: item.fbId,
+                subject: item.subject || '', original_message: item.message || '',
+                reply_message: replyText.trim() },
+              EMAILJS_CONFIG.publicKey
+            );
+          }
+          // Firestore に返信内容を保存
+          await db2.collection('fst_feedback').doc(item.docId).update({
+            replyText: replyText.trim(),
+            repliedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            status: 'replied',
+          });
+          // ローカル state を更新
+          setInboxItems(list => list.map(it =>
+            it.docId === item.docId ? { ...it, replyText: replyText.trim(), status: 'replied' } : it
+          ));
+          setReplyOpenId(null);
+          setReplyText('');
+        } catch(e) { setReplyError('送信に失敗しました: ' + e.message); }
+        finally { setReplySending(false); }
       };
 
       // ER一括保存
@@ -1736,30 +1781,82 @@
                     <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
                       {inboxItems.map(item => {
                         const isRegistered = item._registered || localStorage.getItem(`fst_fb_er_registered_${item.docId}`) === '1';
+                        const isReplied = item.status === 'replied' || !!item.replyText;
+                        const isReplyOpen = replyOpenId === item.docId;
                         return (
-                          <div key={item.docId} style={{ padding:'12px 14px', border:`1px solid ${T.border2}`, borderRadius:'2px', background: isRegistered ? `${T.accent}08` : 'transparent' }}>
+                          <div key={item.docId} style={{ padding:'12px 14px', border:`1px solid ${isReplied ? '#44aa7744' : T.border2}`, borderRadius:'2px', background: isReplied ? 'rgba(68,170,119,0.05)' : isRegistered ? `${T.accent}08` : 'transparent' }}>
                             <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:'10px', marginBottom:'6px' }}>
                               <div style={{ flex:1 }}>
-                                <div style={{ display:'flex', gap:'8px', alignItems:'center', marginBottom:'4px' }}>
+                                <div style={{ display:'flex', gap:'8px', alignItems:'center', marginBottom:'4px', flexWrap:'wrap' }}>
                                   <span style={{ fontSize:'9px', color:T.textDim, letterSpacing:'0.05em' }}>{item.fbId}</span>
                                   {item.build && <span style={{ fontSize:'9px', padding:'1px 5px', background:'rgba(255,102,0,0.15)', color:'#ff8844', borderRadius:'2px' }}>{item.build}</span>}
+                                  {isReplied && <span style={{ fontSize:'9px', padding:'1px 5px', background:'rgba(68,170,119,0.2)', color:'#44aa77', borderRadius:'2px' }}>✓ 返信済み</span>}
                                   {item.email && <span style={{ fontSize:'9px', color:T.textDim }}>{item.email}</span>}
                                 </div>
                                 {item.subject && <div style={{ fontSize:'11px', fontWeight:700, color:T.text, marginBottom:'4px' }}>{item.subject}</div>}
                                 <div style={{ fontSize:'11px', color:T.textDim, whiteSpace:'pre-wrap', wordBreak:'break-word', maxHeight:'80px', overflowY:'auto' }}>{item.message}</div>
+                                {isReplied && item.replyText && (
+                                  <div style={{ marginTop:'8px', padding:'8px 10px', background:'rgba(68,170,119,0.08)', border:'1px solid rgba(68,170,119,0.2)', borderRadius:'2px' }}>
+                                    <div style={{ fontSize:'8px', color:'#44aa77', letterSpacing:'0.1em', marginBottom:'4px' }}>REPLY SENT</div>
+                                    <div style={{ fontSize:'11px', color:T.textDim, whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{item.replyText}</div>
+                                  </div>
+                                )}
                               </div>
-                              <button
-                                onClick={() => !isRegistered && handleRegisterAsER(item)}
-                                disabled={isRegistered}
-                                style={{ flexShrink:0, padding:'5px 10px', borderRadius:'2px', cursor: isRegistered ? 'default' : 'pointer', fontSize:'10px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace", letterSpacing:'0.05em',
-                                  background: isRegistered ? `${T.accent}18` : `${T.accent}22`,
-                                  border: isRegistered ? `1px solid ${T.accent}44` : `1px solid ${T.accent}66`,
-                                  color: isRegistered ? T.accent : T.accent,
-                                  opacity: isRegistered ? 0.7 : 1,
-                                }}>
-                                {isRegistered ? '✓ 登録済み' : '＋ ERに登録'}
-                              </button>
+                              <div style={{ display:'flex', flexDirection:'column', gap:'6px', flexShrink:0 }}>
+                                <button
+                                  onClick={() => !isRegistered && handleRegisterAsER(item)}
+                                  disabled={isRegistered}
+                                  style={{ padding:'5px 10px', borderRadius:'2px', cursor: isRegistered ? 'default' : 'pointer', fontSize:'10px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace", letterSpacing:'0.05em',
+                                    background: isRegistered ? `${T.accent}18` : `${T.accent}22`,
+                                    border: isRegistered ? `1px solid ${T.accent}44` : `1px solid ${T.accent}66`,
+                                    color: T.accent, opacity: isRegistered ? 0.7 : 1,
+                                  }}>
+                                  {isRegistered ? '✓ 登録済み' : '＋ ERに登録'}
+                                </button>
+                                {item.email && (
+                                  <button
+                                    onClick={() => {
+                                      if (isReplyOpen) { setReplyOpenId(null); setReplyText(''); setReplyError(''); }
+                                      else { setReplyOpenId(item.docId); setReplyText(''); setReplyError(''); }
+                                    }}
+                                    style={{ padding:'5px 10px', borderRadius:'2px', cursor:'pointer', fontSize:'10px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace", letterSpacing:'0.05em',
+                                      background: isReplyOpen ? 'rgba(68,170,119,0.2)' : 'rgba(68,170,119,0.1)',
+                                      border: `1px solid rgba(68,170,119,${isReplyOpen ? '0.6' : '0.3'})`,
+                                      color: '#44aa77',
+                                    }}>
+                                    {isReplyOpen ? '✕ 閉じる' : isReplied ? '↩ 再返信' : '↩ 返信'}
+                                  </button>
+                                )}
+                              </div>
                             </div>
+                            {isReplyOpen && (
+                              <div style={{ marginTop:'10px', padding:'10px', background:`${T.bgCard}`, border:`1px solid ${T.border2}`, borderRadius:'2px' }}>
+                                <div style={{ fontSize:'9px', color:'#44aa77', letterSpacing:'0.1em', marginBottom:'6px' }}>↩ REPLY TO {item.email}</div>
+                                <textarea
+                                  value={replyText}
+                                  onChange={e => { setReplyText(e.target.value); setReplyError(''); }}
+                                  rows={4}
+                                  placeholder="返信メッセージを入力..."
+                                  style={{ width:'100%', background:T.bgInput, border:`1px solid ${T.border2}`, color:T.text, padding:'8px 10px', borderRadius:'2px', fontSize:'11px', fontFamily:"'JetBrains Mono',monospace", resize:'vertical', outline:'none', boxSizing:'border-box' }}
+                                />
+                                {replyError && <div style={{ fontSize:'10px', color:'#ff6666', marginTop:'4px' }}>{replyError}</div>}
+                                {!EMAILJS_CONFIG.replyTemplateId && (
+                                  <div style={{ fontSize:'9px', color:'#ff8844', marginTop:'4px' }}>⚠ EmailJS未設定のため、Firestoreへの保存のみ行われます（メール送信なし）</div>
+                                )}
+                                <div style={{ display:'flex', justifyContent:'flex-end', gap:'6px', marginTop:'8px' }}>
+                                  <button onClick={() => { setReplyOpenId(null); setReplyText(''); setReplyError(''); }}
+                                    style={{ padding:'5px 12px', borderRadius:'2px', cursor:'pointer', fontSize:'10px', background:'transparent', border:`1px solid ${T.border2}`, color:T.textDim, fontFamily:"'JetBrains Mono',monospace" }}>
+                                    キャンセル
+                                  </button>
+                                  <button onClick={() => handleSendReply(item)} disabled={replySending}
+                                    style={{ padding:'5px 14px', borderRadius:'2px', cursor:'pointer', fontSize:'10px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace",
+                                      background:'rgba(68,170,119,0.2)', border:'1px solid rgba(68,170,119,0.5)', color:'#44aa77',
+                                      opacity: replySending ? 0.6 : 1 }}>
+                                    {replySending ? '送信中...' : '送信'}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         );
                       })}
@@ -5453,75 +5550,46 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                 fontFamily: "'JetBrains Mono', monospace",
                 background: T.bg,
               }}>
-                {/* 左アクセントバー（ストリップの左ボーダーを拡大） */}
+                {/* 左アクセントバー */}
                 <div style={{
-                  width: '14px', flexShrink: 0,
+                  width: '10px', flexShrink: 0,
                   background: task ? pri.color : T.border,
-                  opacity: 0.85,
+                  opacity: 0.9,
                   animation: focusFlash === 'new-task' ? 'focusPulse 0.4s ease 3' : 'none',
                 }} />
 
                 {/* メインエリア */}
                 <div style={{
                   flex: 1, display: 'flex', flexDirection: 'column',
-                  background: task ? `linear-gradient(135deg, ${pri.bg} 0%, ${T.bg} 60%)` : T.bg,
-                  overflow: 'hidden',
+                  background: task ? `linear-gradient(160deg, ${pri.bg} 0%, ${T.bg} 50%)` : T.bg,
                   animation: focusFlash === 'new-task' ? 'focusFlashNew 0.5s ease forwards' : focusFlash === 'updated' ? 'focusFlashUpdate 0.6s ease forwards' : 'none',
+                  position: 'relative',
                 }}>
-
-                  {/* トップバー */}
-                  <div style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    padding: '10px 20px',
-                    borderBottom: `1px solid ${pri.color}33`,
-                    background: `${T.bgCard}cc`,
-                    backdropFilter: 'blur(4px)',
-                  }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      {task && (
-                        <span style={{
-                          color: pri.color, fontSize: '11px', fontWeight: 700,
-                          padding: '2px 8px', border: `1px solid ${pri.color}`, borderRadius: '2px',
-                          letterSpacing: '0.15em',
-                        }}>{pri.label}</span>
-                      )}
-                      <span style={{ color: T.accent, fontSize: '13px', fontWeight: 700, letterSpacing: '0.15em' }}>▶ ACTIVE</span>
-                      {task && (
-                        <span style={{ color: T.textMuted, fontSize: '11px', letterSpacing: '0.1em' }}>
-                          # {task.stripId || task.id?.slice(0, 6)}
-                        </span>
-                      )}
-                      {/* LIVE インジケーター */}
-                      <span style={{
-                        display: 'flex', alignItems: 'center', gap: '5px',
-                        color: focusFlash ? '#00ff88' : T.textMuted,
-                        fontSize: '10px', letterSpacing: '0.1em',
-                        transition: 'color 0.3s',
-                      }}>
-                        <span style={{
-                          width: '6px', height: '6px', borderRadius: '50%',
-                          background: focusFlash ? '#00ff88' : T.border,
-                          display: 'inline-block',
-                          boxShadow: focusFlash ? '0 0 6px #00ff88' : 'none',
-                          transition: 'all 0.3s',
-                        }} />
-                        {focusFlash === 'new-task' ? 'NEW TASK' : focusFlash === 'updated' ? 'UPDATED' : 'LIVE'}
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => setActiveFocusMode(false)}
-                      style={{
-                        background: 'rgba(255,80,80,0.12)', border: '1px solid rgba(255,80,80,0.3)',
-                        color: '#ff6666', fontSize: '12px', padding: '5px 14px', borderRadius: '3px',
-                        cursor: 'pointer', fontWeight: 700, letterSpacing: '0.1em',
-                      }}
-                    >✕ 閉じる</button>
-                  </div>
+                  {/* 閉じるボタン（右上に小さく配置） */}
+                  <button
+                    onClick={() => setActiveFocusMode(false)}
+                    style={{
+                      position: 'absolute', top: '12px', right: '14px', zIndex: 1,
+                      background: 'rgba(255,80,80,0.1)', border: '1px solid rgba(255,80,80,0.25)',
+                      color: '#ff6666aa', fontSize: '14px', width: '32px', height: '32px',
+                      borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      lineHeight: 1,
+                    }}
+                  >✕</button>
+                  {/* LIVEドット（右上に超小さく） */}
+                  <span style={{
+                    position: 'absolute', top: '16px', right: '54px',
+                    width: '6px', height: '6px', borderRadius: '50%',
+                    background: focusFlash ? '#00ff88' : T.border,
+                    display: 'inline-block',
+                    boxShadow: focusFlash ? '0 0 6px #00ff88' : 'none',
+                    transition: 'all 0.3s',
+                  }} />
 
                   {task ? (
                     <>
                       {/* スクロール可能コンテンツ */}
-                      <div style={{ flex: 1, overflowY: 'auto', padding: '32px 28px 20px' }}>
+                      <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: 'clamp(40px,6vh,60px) clamp(20px,5vw,48px) 20px' }}>
 
                         {/* タスクタイトル（大きく） */}
                         <div style={{
@@ -5574,6 +5642,8 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                                   borderRadius: '4px', cursor: 'pointer',
                                   transition: 'all 0.15s',
                                   fontFamily: "'JetBrains Mono', monospace",
+                                  touchAction: 'manipulation',
+                                  WebkitTapHighlightColor: 'transparent',
                                 }}>
                                 <span style={{
                                   fontSize: 'clamp(20px, 3vw, 28px)',
@@ -5615,6 +5685,8 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                                   border: `1px solid ${step.checked ? T.border : 'rgba(0,204,255,0.3)'}`,
                                   borderRadius: '4px', cursor: 'pointer',
                                   fontFamily: "'JetBrains Mono', monospace",
+                                  touchAction: 'manipulation',
+                                  WebkitTapHighlightColor: 'transparent',
                                 }}>
                                 <span style={{
                                   fontSize: 'clamp(20px, 3vw, 28px)',
@@ -5660,53 +5732,23 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                         </div>
                       </div>
 
-                      {/* ボトム：アクションボタン + NEXT preview */}
-                      <div style={{
-                        borderTop: `1px solid ${pri.color}33`,
-                        background: `${T.bgCard}ee`,
-                        backdropFilter: 'blur(4px)',
-                      }}>
-                        {/* NEXT① プレビュー */}
-                        {nextTask && (
-                          <div style={{
-                            padding: '8px 28px',
-                            borderBottom: `1px solid ${T.border}33`,
-                            display: 'flex', alignItems: 'center', gap: '10px',
-                          }}>
-                            <span style={{ color: '#00ccff', fontSize: '10px', fontWeight: 700, letterSpacing: '0.15em', flexShrink: 0 }}>NEXT ①</span>
-                            <span style={{
-                              color: T.textDim, fontSize: '13px',
-                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                            }}>{nextTask.title}</span>
-                          </div>
-                        )}
-                        {/* ボタン */}
-                        <div style={{ display: 'flex', gap: '10px', padding: '14px 28px' }}>
-                          <button
-                            onClick={() => { handleDone(task.id, null); setActiveFocusMode(false); }}
-                            style={{
-                              flex: 1,
-                              padding: 'clamp(14px, 2.5vh, 22px) 16px',
-                              fontSize: 'clamp(16px, 2.5vw, 22px)',
-                              fontWeight: 700,
-                              background: 'rgba(0,255,136,0.12)',
-                              border: '2px solid rgba(0,255,136,0.4)',
-                              color: '#00ff88', borderRadius: '4px', cursor: 'pointer',
-                              letterSpacing: '0.15em',
-                              fontFamily: "'JetBrains Mono', monospace",
-                            }}
-                          >✓ DONE</button>
-                          <button
-                            onClick={() => setEditTaskId(task.id)}
-                            style={{
-                              padding: 'clamp(14px, 2.5vh, 22px) 24px',
-                              fontSize: 'clamp(16px, 2.5vw, 22px)',
-                              background: `${T.accent}15`, border: `2px solid ${T.accent}44`,
-                              color: T.accent, borderRadius: '4px', cursor: 'pointer',
-                              fontFamily: "'JetBrains Mono', monospace",
-                            }}
-                          >✎</button>
-                        </div>
+                      {/* ボトム：DONE ボタンのみ */}
+                      <div style={{ padding: 'clamp(12px,2.5vh,20px) clamp(20px,5vw,48px)', borderTop: `1px solid ${pri.color}22` }}>
+                        <button
+                          onClick={() => { handleDone(task.id, null); setActiveFocusMode(false); }}
+                          style={{
+                            width: '100%',
+                            padding: 'clamp(16px, 3vh, 26px) 16px',
+                            fontSize: 'clamp(18px, 3vw, 26px)',
+                            fontWeight: 700,
+                            background: 'rgba(0,255,136,0.1)',
+                            border: '2px solid rgba(0,255,136,0.35)',
+                            color: '#00ff88', borderRadius: '6px', cursor: 'pointer',
+                            letterSpacing: '0.2em',
+                            fontFamily: "'JetBrains Mono', monospace",
+                            touchAction: 'manipulation',
+                          }}
+                        >✓ DONE</button>
                       </div>
                     </>
                   ) : (
@@ -6203,7 +6245,18 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                       <span style={{ color:T.textMuted, fontSize:"9px", marginLeft:"6px" }}>{col.sublabel}</span>
                       {col.limit && <span style={{ color:T.textMuted, fontSize:"8px", marginLeft:"4px" }}>max {col.limit}</span>}
                     </div>
-                    <span style={{ background:"rgba(100,120,140,0.2)", color:T.textDim, fontSize:"9px", padding:"1px 6px", borderRadius:"10px" }}>{tasksCount}{col.limit?`/${col.limit}`:""}</span>
+                    <div style={{ display:"flex", alignItems:"center", gap:"6px" }}>
+                      {col.id === "active" && (
+                        <button
+                          onClick={() => setActiveFocusMode(true)}
+                          style={{ background:`${T.accent}18`, border:`1px solid ${T.accent}55`, color:T.accent,
+                            fontSize:"10px", padding:"2px 9px", borderRadius:"2px", cursor:"pointer",
+                            fontWeight:700, letterSpacing:"0.08em", fontFamily:"'JetBrains Mono',monospace" }}>
+                          全画面
+                        </button>
+                      )}
+                      <span style={{ background:"rgba(100,120,140,0.2)", color:T.textDim, fontSize:"9px", padding:"1px 6px", borderRadius:"10px" }}>{tasksCount}{col.limit?`/${col.limit}`:""}</span>
+                    </div>
                   </div>
                 );
               };
