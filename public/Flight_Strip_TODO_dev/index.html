@@ -47,7 +47,7 @@
   </style>
 </head>
 <body>
-  <div id="dev-banner">⚠ DEV BUILD — v0.9.5-dev — NOT FOR PRODUCTION ⚠</div>
+  <div id="dev-banner">⚠ DEV BUILD — v0.9.6-dev — NOT FOR PRODUCTION ⚠</div>
   <div id="root" style="padding-top:22px;"></div>
 
   <!-- Firebase 初期化 -->
@@ -455,9 +455,15 @@
     // ======================================================
     // リリースノート
     // ======================================================
-    const APP_VERSION = 'v0.9.5-dev';
+    const APP_VERSION = 'v0.9.6-dev';
 
     const RELEASE_NOTES = [
+      {
+        version: "v0.9.6-dev", date: "2026-04-13",
+        changes: [
+          "⛶ アクティブタスク全画面フォーカスモード（モバイルでPCのD&D連動表示）",
+        ],
+      },
       {
         version: "v0.9.5-dev", date: "2026-04-13",
         changes: [
@@ -4167,6 +4173,8 @@
       const [fullscreenTaskId, setFullscreenTaskId] = useState(null);
       // ER-0075: タスク完了アニメーション（クリック時の座標）
       const [completedAnimRect, setCompletedAnimRect] = useState(null);
+      // アクティブタスク全画面フォーカスモード
+      const [activeFocusMode, setActiveFocusMode] = useState(false);
       // 毎日1回目起動時サマリー通知
       const [dailySummary, setDailySummary] = useState(null);
       const handleCompletedAnim = useCallback((rect) => {
@@ -5316,6 +5324,211 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
             </div>,
             document.body
           )}
+          {/* アクティブタスク全画面フォーカスモード */}
+          {activeFocusMode && (() => {
+            const activeTasks = getColTasks('active');
+            const task = activeTasks[0];
+            return ReactDOM.createPortal(
+              <div style={{
+                position: 'fixed', inset: 0, zIndex: 8000,
+                background: T.bg,
+                display: 'flex', flexDirection: 'column',
+                fontFamily: "'JetBrains Mono', monospace",
+              }}>
+                {/* ヘッダー */}
+                <div style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '12px 16px',
+                  borderBottom: `1px solid ${T.border}`,
+                  background: T.bgCard,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ color: T.accent, fontSize: '11px', fontWeight: 700, letterSpacing: '0.15em' }}>▶ ACTIVE</span>
+                    <span style={{ color: T.textMuted, fontSize: '9px' }}>全画面フォーカスモード</span>
+                  </div>
+                  <button
+                    onClick={() => setActiveFocusMode(false)}
+                    style={{
+                      background: 'rgba(255,80,80,0.15)', border: '1px solid rgba(255,80,80,0.3)',
+                      color: '#ff6666', fontSize: '11px', padding: '4px 12px', borderRadius: '4px',
+                      cursor: 'pointer', fontWeight: 700, letterSpacing: '0.1em',
+                    }}
+                  >✕ 閉じる</button>
+                </div>
+
+                {/* メインコンテンツ */}
+                <div style={{ flex: 1, overflowY: 'auto', padding: '20px 16px' }}>
+                  {task ? (
+                    <div>
+                      {/* ストリップID */}
+                      <div style={{ color: T.textMuted, fontSize: '10px', letterSpacing: '0.15em', marginBottom: '8px' }}>
+                        # {task.stripId || task.id?.slice(0, 6)}
+                      </div>
+
+                      {/* タスクタイトル */}
+                      <div style={{
+                        color: T.text, fontSize: '24px', fontWeight: 700,
+                        lineHeight: 1.4, marginBottom: '16px',
+                        letterSpacing: '0.02em',
+                      }}>
+                        {task.title}
+                      </div>
+
+                      {/* 説明文 */}
+                      {task.description && (
+                        <div style={{
+                          color: T.textDim, fontSize: '14px', lineHeight: 1.7,
+                          marginBottom: '20px',
+                          padding: '12px 16px',
+                          background: `${T.border}22`,
+                          borderRadius: '4px',
+                          borderLeft: `3px solid ${T.border}`,
+                          whiteSpace: 'pre-wrap',
+                        }}>
+                          {task.description}
+                        </div>
+                      )}
+
+                      {/* チェックリスト */}
+                      {task.checkItems && task.checkItems.length > 0 && (
+                        <div style={{ marginBottom: '20px' }}>
+                          <div style={{ color: T.textMuted, fontSize: '10px', letterSpacing: '0.1em', marginBottom: '8px' }}>
+                            CHECKLIST — {task.checkItems.filter(i => i.checked).length}/{task.checkItems.length}
+                          </div>
+                          {task.checkItems.map((item, idx) => (
+                            <div key={item.id || idx}
+                              onClick={() => handleCheckItem(task.id, item.id || idx, !item.checked)}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: '10px',
+                                padding: '10px 12px', marginBottom: '6px',
+                                background: item.checked ? `${T.border}18` : `${T.accent}0a`,
+                                border: `1px solid ${item.checked ? T.border : T.accent + '33'}`,
+                                borderRadius: '3px', cursor: 'pointer',
+                                transition: 'all 0.15s',
+                              }}>
+                              <span style={{ fontSize: '16px', color: item.checked ? '#00ff88' : T.border }}>
+                                {item.checked ? '☑' : '☐'}
+                              </span>
+                              <span style={{
+                                color: item.checked ? T.textDim : T.text,
+                                fontSize: '14px',
+                                textDecoration: item.checked ? 'line-through' : 'none',
+                              }}>
+                                {item.text}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* ルーティンステップ */}
+                      {task.isRoutine && task.routineSteps && task.routineSteps.length > 0 && (
+                        <div style={{ marginBottom: '20px' }}>
+                          <div style={{ color: T.textMuted, fontSize: '10px', letterSpacing: '0.1em', marginBottom: '8px' }}>
+                            🔄 ROUTINE — {task.routineSteps.filter(s => s.done).length}/{task.routineSteps.length}
+                          </div>
+                          {task.routineSteps.map((step, idx) => (
+                            <div key={step.id || idx}
+                              onClick={() => handleCheckRoutineStep(task.id, step.id || idx, !step.done)}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: '10px',
+                                padding: '10px 12px', marginBottom: '6px',
+                                background: step.done ? `${T.border}18` : 'rgba(0,204,255,0.08)',
+                                border: `1px solid ${step.done ? T.border : 'rgba(0,204,255,0.25)'}`,
+                                borderRadius: '3px', cursor: 'pointer',
+                              }}>
+                              <span style={{ fontSize: '16px', color: step.done ? '#00ff88' : '#00ccff' }}>
+                                {step.done ? '☑' : '○'}
+                              </span>
+                              <span style={{
+                                color: step.done ? T.textDim : T.text,
+                                fontSize: '14px',
+                                textDecoration: step.done ? 'line-through' : 'none',
+                              }}>
+                                {step.title || step.text || step.name || `ステップ ${idx + 1}`}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* メタ情報 */}
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '24px' }}>
+                        {task.scheduledDate && (
+                          <span style={{ background: 'rgba(255,170,0,0.12)', border: '1px solid rgba(255,170,0,0.3)', color: '#ffaa00', fontSize: '11px', padding: '3px 10px', borderRadius: '12px' }}>
+                            📅 {task.scheduledDate}
+                          </span>
+                        )}
+                        {task.time && (
+                          <span style={{ background: 'rgba(0,204,255,0.1)', border: '1px solid rgba(0,204,255,0.3)', color: '#00ccff', fontSize: '11px', padding: '3px 10px', borderRadius: '12px' }}>
+                            🕐 {task.time}
+                          </span>
+                        )}
+                        {task.categoryId && (
+                          <span style={{ background: `${T.border}18`, border: `1px solid ${T.border}`, color: T.textDim, fontSize: '11px', padding: '3px 10px', borderRadius: '12px' }}>
+                            {task.categoryId}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* アクションボタン */}
+                      <div style={{ display: 'flex', gap: '12px' }}>
+                        <button
+                          onClick={() => { handleDone(task.id, null); setActiveFocusMode(false); }}
+                          style={{
+                            flex: 1, padding: '16px', fontSize: '14px', fontWeight: 700,
+                            background: 'rgba(0,255,136,0.12)', border: '1px solid rgba(0,255,136,0.35)',
+                            color: '#00ff88', borderRadius: '4px', cursor: 'pointer',
+                            letterSpacing: '0.1em',
+                          }}
+                        >
+                          ✓ DONE
+                        </button>
+                        <button
+                          onClick={() => setEditTaskId(task.id)}
+                          style={{
+                            padding: '16px 20px', fontSize: '14px',
+                            background: `${T.accent}15`, border: `1px solid ${T.accent}44`,
+                            color: T.accent, borderRadius: '4px', cursor: 'pointer',
+                          }}
+                        >
+                          ✎
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    /* タスクなし */
+                    <div style={{
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                      height: '60vh', color: T.border,
+                    }}>
+                      <div style={{ fontSize: '48px', marginBottom: '16px' }}>▷</div>
+                      <div style={{ fontSize: '13px', letterSpacing: '0.2em' }}>ACTIVE タスクなし</div>
+                      <div style={{ fontSize: '10px', marginTop: '8px', color: T.textMuted }}>
+                        PCでタスクをアクティブにしてください
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* フッター：次のタスク情報 */}
+                {getColTasks('next').length > 0 && (
+                  <div style={{
+                    padding: '10px 16px',
+                    borderTop: `1px solid ${T.border}`,
+                    background: T.bgCard,
+                  }}>
+                    <div style={{ color: T.textMuted, fontSize: '9px', letterSpacing: '0.1em', marginBottom: '4px' }}>NEXT ①</div>
+                    <div style={{ color: T.textDim, fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {getColTasks('next')[0]?.title}
+                    </div>
+                  </div>
+                )}
+              </div>,
+              document.body
+            );
+          })()}
+
           {/* 毎日1回目起動時サマリー */}
           {dailySummary && (
             <div style={{ position:'fixed', inset:0, zIndex:9000, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.5)' }}
@@ -5526,6 +5739,17 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                     </div>
                   )}
                 </div>
+                <button
+                  onClick={() => setActiveFocusMode(true)}
+                  title="アクティブタスク全画面フォーカスモード"
+                  style={{
+                    background: activeFocusMode ? `${T.accent}22` : 'transparent',
+                    border: `1px solid ${T.accent}44`,
+                    color: T.accent, fontSize: '11px', padding: '4px 10px',
+                    borderRadius: '2px', cursor: 'pointer', fontWeight: 700,
+                    letterSpacing: '0.05em', fontFamily: "'JetBrains Mono',monospace",
+                  }}
+                >⛶ 全画面</button>
                 <button onClick={() => setShowForm(!showForm)} style={{ background:showForm?"rgba(255,50,50,0.15)":`${T.accent}18`, border:`1px solid ${showForm?"#ff333366":T.accent+"66"}`, color:showForm?"#ff6666":T.accent, padding:"4px 14px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontWeight:700, letterSpacing:"0.1em", fontFamily:"'JetBrains Mono',monospace" }}>{showForm?"✕ CLOSE":"+ FILE STRIP"}</button>
                 <button onClick={() => setShowTaskLog(true)} title="タスクログ・履歴" style={{ background:"transparent", border:`1px solid ${T.border2}`, color:T.textDim, padding:"4px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontWeight:700, fontFamily:"'JetBrains Mono',monospace", letterSpacing:"0.05em" }}>📋 LOG</button>
                 <button onClick={handlePrint} title="印刷/PDF出力" style={{ background:"transparent", border:`1px solid ${T.border2}`, color:T.textDim, padding:"4px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontWeight:700, fontFamily:"'JetBrains Mono',monospace", letterSpacing:"0.05em" }}>🖨</button>
@@ -5620,7 +5844,20 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                         style={{ background:T.bgCard, border:`1px solid ${T.accent}44`, borderRadius:'4px', padding:'10px', boxShadow:`0 4px 20px ${T.accent}10` }}>
                         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'6px', paddingBottom:'6px', borderBottom:`1px solid ${T.border}` }}>
                           <span style={{ color:T.accent, fontSize:'12px', fontWeight:700, letterSpacing:'0.15em' }}>▶ ACTIVE</span>
-                          <span style={{ fontSize:'9px', color:T.textMuted }}>max 1</span>
+                          <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+                            <button
+                              onClick={() => setActiveFocusMode(true)}
+                              title="全画面フォーカスモード"
+                              style={{
+                                background: 'transparent',
+                                border: `1px solid ${T.accent}44`,
+                                color: T.accent, fontSize: '11px', padding: '3px 8px',
+                                borderRadius: '3px', cursor: 'pointer', fontWeight: 700,
+                                letterSpacing: '0.05em', fontFamily: "'JetBrains Mono', monospace",
+                              }}
+                            >⛶ 全画面</button>
+                            <span style={{ fontSize:'9px', color:T.textMuted }}>max 1</span>
+                          </div>
                         </div>
                         {activeTasks2.map(renderStripMobile)}
                         {activeTasks2.length === 0 && (
