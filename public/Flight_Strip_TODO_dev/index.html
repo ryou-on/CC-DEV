@@ -2551,7 +2551,7 @@
       return `${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
     };
 
-    const FlightStrip = ({ task, isSelected, isMultiSelected, dropState, onDragStart, onDragOver, onDragEnd, onDrop, onStatusChange, onDelete, onEdit, isTimerRunning, elapsedMs, totalLoggedMs, onTimerStart, onTimerStop, onTouchStart, onTouchMove, onTouchEnd, titleFontSize=13, projects=[], onSkipProject, projectTasks=[], onEditSeqTask, onAddNextTask, onCheckRoutineStep, onCheckItem, onFullscreen, onCompletedAnim }) => {
+    const FlightStrip = ({ task, isSelected, isMultiSelected, dropState, onDragStart, onDragOver, onDragEnd, onDrop, onStatusChange, onDelete, onEdit, isTimerRunning, elapsedMs, totalLoggedMs, onTimerStart, onTimerStop, onTouchStart, onTouchMove, onTouchEnd, titleFontSize=13, projects=[], onSkipProject, projectTasks=[], onEditSeqTask, onAddNextTask, onCheckRoutineStep, onCheckItem, onFullscreen, onDone }) => {
       const T = useT();
       const pri = PRIORITIES[task.priority] || PRIORITIES.normal;
       const cat = CATEGORIES[task.category] || { label: task.category || "OTHER", color: "#888888" };
@@ -2930,7 +2930,7 @@
 
           {/* 右：常時表示の完了ボタン */}
           <button
-            onClick={e => { e.stopPropagation(); if (!isCompleted) { if (onCompletedAnim && stripRef.current) onCompletedAnim(stripRef.current.getBoundingClientRect()); setTimeout(() => onStatusChange(task.id, 'completed'), 1400); } else { onStatusChange(task.id, 'active'); } }}
+            onClick={e => { e.stopPropagation(); if (!isCompleted) { onDone && onDone(task.id, stripRef.current?.getBoundingClientRect()); } else { onStatusChange(task.id, 'active'); } }}
             title={isCompleted ? "元に戻す (active)" : "完了にする (3)"}
             style={{
               flexShrink: 0,
@@ -4152,6 +4152,19 @@
         setCompletedAnimRect({ top: rect.top, left: rect.left, width: rect.width });
         setTimeout(() => setCompletedAnimRect(null), 1400);
       }, []);
+      // Undo: 遅延完了タイマーと確定済みステータス変更履歴
+      const pendingCompletedRef = useRef(null);
+      const isUndoingRef = useRef(false);
+      const [undoStack, setUndoStack] = useState([]);
+      const handleDone = useCallback((taskId, rect) => {
+        if (rect) handleCompletedAnim(rect);
+        if (pendingCompletedRef.current) clearTimeout(pendingCompletedRef.current.timeoutId);
+        const timeoutId = setTimeout(() => {
+          pendingCompletedRef.current = null;
+          handleStatusChange(taskId, 'completed');
+        }, 1400);
+        pendingCompletedRef.current = { timeoutId, taskId };
+      }, [handleCompletedAnim, handleStatusChange]);
       // ER-0054: 一括操作ドロップダウン
       const [showBulkMenu, setShowBulkMenu] = useState(false);
       const [clearedOpen,  setClearedOpen]  = useState({'今日': true, '昨日': true});
@@ -4652,6 +4665,11 @@
         setSelectedId(p => p===id ? null : p);
       }, [tasksRef]);
       const handleStatusChange = useCallback(async (id, s) => {
+        // Undo スタックに積む（Undo実行中は除外）
+        if (!isUndoingRef.current) {
+          const prev = tasks.find(t => t.id === id);
+          if (prev) setUndoStack(p => [...p.slice(-19), { taskId: id, fromStatus: prev.status }]);
+        }
         // activeに変更する場合: 既存のactiveタスクをnextに移動
         if (s === 'active') {
           const currentActives = tasks.filter(t => t.status === 'active' && t.id !== id);
@@ -5039,6 +5057,24 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
             if (showForm)   { setShowForm(false); return; }
             setSelectedId(null); return;
           }
+          // Cmd+Z / Ctrl+Z: Undo
+          if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
+            e.preventDefault();
+            if (pendingCompletedRef.current) {
+              clearTimeout(pendingCompletedRef.current.timeoutId);
+              pendingCompletedRef.current = null;
+              setCompletedAnimRect(null);
+            } else {
+              setUndoStack(prev => {
+                if (prev.length === 0) return prev;
+                const last = prev[prev.length - 1];
+                isUndoingRef.current = true;
+                handleStatusChange(last.taskId, last.fromStatus).finally(() => { isUndoingRef.current = false; });
+                return prev.slice(0, -1);
+              });
+            }
+            return;
+          }
           if (isInput || editTaskId) return;
           const key = e.key.toLowerCase();
           if (e.key === "?" || (e.shiftKey && key === "/")) { e.preventDefault(); setShowHelp(p=>!p); return; }
@@ -5076,7 +5112,7 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
           if (key === "2") { e.preventDefault(); handleStatusChange(selectedId, "next");      return; }
           if (key === "3") { e.preventDefault(); handleStatusChange(selectedId, "delegated"); return; }
           if (key === "4") { e.preventDefault(); handleStatusChange(selectedId, "pending");   return; }
-          if (key === "5") { e.preventDefault(); const el = document.querySelector(`[data-task-id="${selectedId}"]`); if (el) handleCompletedAnim(el.getBoundingClientRect()); setTimeout(() => handleStatusChange(selectedId, "completed"), 1400); return; }
+          if (key === "5") { e.preventDefault(); const el = document.querySelector(`[data-task-id="${selectedId}"]`); handleDone(selectedId, el?.getBoundingClientRect()); return; }
           if (key === "6") { e.preventDefault(); handleStatusChange(selectedId, "lost");      return; }
           if (key === "t") {
             e.preventDefault();
@@ -5451,7 +5487,7 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                       onCheckRoutineStep={handleCheckRoutineStep}
                       onCheckItem={handleCheckItem}
                       onFullscreen={id => setFullscreenTaskId(id)}
-                      onCompletedAnim={handleCompletedAnim}
+                      onDone={handleDone}
                     />
                   </div>
                 );
