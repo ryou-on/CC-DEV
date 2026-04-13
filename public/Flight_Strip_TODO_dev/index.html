@@ -47,7 +47,7 @@
   </style>
 </head>
 <body>
-  <div id="dev-banner">⚠ DEV BUILD — v0.9.3-dev — NOT FOR PRODUCTION ⚠</div>
+  <div id="dev-banner">⚠ DEV BUILD — v0.9.4-dev — NOT FOR PRODUCTION ⚠</div>
   <div id="root" style="padding-top:22px;"></div>
 
   <!-- Firebase 初期化 -->
@@ -455,9 +455,15 @@
     // ======================================================
     // リリースノート
     // ======================================================
-    const APP_VERSION = 'v0.9.3-dev';
+    const APP_VERSION = 'v0.9.4-dev';
 
     const RELEASE_NOTES = [
+      {
+        version: "v0.9.4-dev", date: "2026-04-13",
+        changes: [
+          "📋 NEXTスロットの右側に①〜⑤番号バーを配置（モバイルはバーをスワイプでスクロール可）",
+        ],
+      },
       {
         version: "v0.9.3-dev", date: "2026-04-13",
         changes: [
@@ -2557,7 +2563,7 @@
       return `${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
     };
 
-    const FlightStrip = ({ task, isSelected, isMultiSelected, dropState, onDragStart, onDragOver, onDragEnd, onDrop, onStatusChange, onDelete, onEdit, isTimerRunning, elapsedMs, totalLoggedMs, onTimerStart, onTimerStop, onTouchStart, onTouchMove, onTouchEnd, titleFontSize=13, projects=[], onSkipProject, projectTasks=[], onEditSeqTask, onAddNextTask, onCheckRoutineStep, onCheckItem, onFullscreen, onDone, nextRank }) => {
+    const FlightStrip = ({ task, isSelected, isMultiSelected, dropState, onDragStart, onDragOver, onDragEnd, onDrop, onStatusChange, onDelete, onEdit, isTimerRunning, elapsedMs, totalLoggedMs, onTimerStart, onTimerStop, onTouchStart, onTouchMove, onTouchEnd, titleFontSize=13, projects=[], onSkipProject, projectTasks=[], onEditSeqTask, onAddNextTask, onCheckRoutineStep, onCheckItem, onFullscreen, onDone }) => {
       const T = useT();
       const pri = PRIORITIES[task.priority] || PRIORITIES.normal;
       const cat = CATEGORIES[task.category] || { label: task.category || "OTHER", color: "#888888" };
@@ -2638,12 +2644,6 @@
             ...dropStyle,
           }}>
           <div style={{ position:"absolute", inset:0, background:"repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,255,136,0.015) 2px,rgba(0,255,136,0.015) 4px)", pointerEvents:"none" }} />
-          {/* NEXT列番号バッジ（①〜⑤） */}
-          {nextRank && nextRank <= 5 && (
-            <div style={{ flexShrink:0, width:'16px', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'11px', color:T.accent2, borderRight:`1px solid ${T.border}`, alignSelf:'stretch', letterSpacing:0 }}>
-              {['①','②','③','④','⑤'][nextRank - 1]}
-            </div>
-          )}
           {/* 左：コンテンツ */}
           <div style={{ flex:1, minWidth:0, padding:0 }}>
             <div style={{ display:"flex", alignItems:"center", padding:"6px 8px 2px", gap:"6px" }}>
@@ -5499,7 +5499,7 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
 
               // モバイルレイアウト
               if (isMobile) {
-                const renderStripMobile = (task, nextRank) => (
+                const renderStripMobile = (task) => (
                   <div key={task.id} style={{ position:'relative' }}
                     onClick={e => handleStripClick(e, task.id)}
                     onContextMenu={e => handleStripContextMenu(e, task.id)}
@@ -5534,7 +5534,6 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                       onCheckItem={handleCheckItem}
                       onFullscreen={id => setFullscreenTaskId(id)}
                       onDone={handleDone}
-                      nextRank={nextRank}
                     />
                   </div>
                 );
@@ -5597,14 +5596,45 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                       <div data-col-id={mobileTab}
                         onDrop={e => handleDropOnColumn(e, mobileTab)} onDragOver={e => e.preventDefault()}
                         style={{ background:T.bgCard, border:`1px solid ${T.border}`, borderRadius:'4px', padding:'10px', marginBottom:'10px' }}>
-                        {getColTasks(mobileTab).map((task, idx) => renderStripMobile(task, mobileTab === 'next' ? idx + 1 : undefined))}
-                        {mobileTab === 'next' && Array.from({ length: Math.max(0, 5 - getColTasks('next').length) }).map((_, i) => (
-                          <div key={`slot-${i}`} style={{ height:'36px', border:`1px dashed ${T.border}22`, borderRadius:'2px', marginBottom:'6px', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                            <span style={{ color:T.border, fontSize:'8px' }}>SLOT {getColTasks('next').length + i + 1}</span>
+                        {mobileTab === 'next' ? (
+                          /* NEXT: ストリップ列 + 右側番号バー（バーはpan-yでスクロール可） */
+                          <div style={{ display:'flex', gap:'4px' }}>
+                            <div style={{ flex:1, minWidth:0 }}>
+                              {getColTasks('next').map(task => renderStripMobile(task))}
+                              {Array.from({ length: Math.max(0, 5 - getColTasks('next').length) }).map((_, i) => (
+                                <div key={`slot-${i}`} style={{ height:'44px', border:`1px dashed ${T.border}22`, borderRadius:'2px', marginBottom:'6px' }} />
+                              ))}
+                            </div>
+                            {/* 右側番号バー（touchAction:pan-y でスクロール可） */}
+                            <div style={{ flexShrink:0, width:'28px', display:'flex', flexDirection:'column', touchAction:'pan-y' }}>
+                              {Array.from({ length: 5 }).map((_, i) => {
+                                const hasTask = i < getColTasks('next').length;
+                                return (
+                                  <div key={i} style={{
+                                    flex: hasTask ? 'none' : '0 0 44px',
+                                    height: hasTask ? undefined : '44px',
+                                    marginBottom:'6px',
+                                    display:'flex', alignItems:'center', justifyContent:'center',
+                                    background: hasTask ? 'rgba(0,204,255,0.12)' : 'rgba(0,204,255,0.04)',
+                                    border:`1px solid ${hasTask ? 'rgba(0,204,255,0.35)' : 'rgba(0,204,255,0.1)'}`,
+                                    borderRadius:'2px',
+                                    color: hasTask ? '#00ccff' : T.border,
+                                    fontSize:'14px', fontWeight:700,
+                                    touchAction:'pan-y',
+                                  }}>
+                                    {['①','②','③','④','⑤'][i]}
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
-                        ))}
-                        {getColTasks(mobileTab).length === 0 && mobileTab !== 'next' && (
-                          <div style={{ textAlign:'center', padding:'16px', color:T.border, fontSize:'10px' }}>NO STRIPS</div>
+                        ) : (
+                          <>
+                            {getColTasks(mobileTab).map(task => renderStripMobile(task))}
+                            {getColTasks(mobileTab).length === 0 && (
+                              <div style={{ textAlign:'center', padding:'16px', color:T.border, fontSize:'10px' }}>NO STRIPS</div>
+                            )}
+                          </>
                         )}
                       </div>
                     )}
@@ -5628,8 +5658,7 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
               }
 
               // デスクトップレイアウト（共通ストリップレンダラー）
-              // 共通ストリップレンダラー（nextRank: NEXT列の順番バッジ用）
-              const renderStrip = (task, nextRank) => (
+              const renderStrip = (task) => (
                 <div key={task.id} style={{ position:'relative' }}
                   onClick={e => handleStripClick(e, task.id)}
                   onContextMenu={e => handleStripContextMenu(e, task.id)}
@@ -5664,7 +5693,6 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                     onCheckItem={handleCheckItem}
                     onFullscreen={id => setFullscreenTaskId(id)}
                     onDone={handleDone}
-                    nextRank={nextRank}
                   />
                 </div>
               );
@@ -5715,13 +5743,37 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                     {/* NEXT ACTION（5スロット） */}
                     <div data-col-id="next" style={colBox({ border:`1px solid #00ccff33` })} {...dropCol("next")}>
                       {colHeader(COLUMNS[1], nextTasks.length)}
-                      {nextTasks.map((task, idx) => renderStrip(task, idx + 1))}
-                      {/* 空きスロット表示 */}
-                      {Array.from({ length: Math.max(0, 5 - nextTasks.length) }).map((_, i) => (
-                        <div key={`empty-${i}`} style={{ height:"28px", border:`1px dashed ${T.border}22`, borderRadius:"2px", marginBottom:"6px", display:"flex", alignItems:"center", justifyContent:"center" }}>
-                          <span style={{ color:T.border, fontSize:"8px", letterSpacing:"0.1em" }}>SLOT {nextTasks.length + i + 1}</span>
+                      {/* ストリップ列 + 右側番号バー */}
+                      <div style={{ display:'flex', gap:'4px' }}>
+                        {/* ストリップ列 */}
+                        <div style={{ flex:1, minWidth:0 }}>
+                          {nextTasks.map(task => renderStrip(task))}
+                          {Array.from({ length: Math.max(0, 5 - nextTasks.length) }).map((_, i) => (
+                            <div key={`empty-${i}`} style={{ height:"28px", border:`1px dashed ${T.border}22`, borderRadius:"2px", marginBottom:"6px" }} />
+                          ))}
                         </div>
-                      ))}
+                        {/* 右側番号バー */}
+                        <div style={{ flexShrink:0, width:'20px', display:'flex', flexDirection:'column' }}>
+                          {Array.from({ length: 5 }).map((_, i) => {
+                            const hasTask = i < nextTasks.length;
+                            return (
+                              <div key={i} style={{
+                                flex: hasTask ? 'none' : '0 0 28px',
+                                height: hasTask ? undefined : '28px',
+                                marginBottom:'6px',
+                                display:'flex', alignItems:'center', justifyContent:'center',
+                                background: hasTask ? 'rgba(0,204,255,0.12)' : 'rgba(0,204,255,0.04)',
+                                border:`1px solid ${hasTask ? 'rgba(0,204,255,0.35)' : 'rgba(0,204,255,0.1)'}`,
+                                borderRadius:'2px',
+                                color: hasTask ? '#00ccff' : T.border,
+                                fontSize:'12px', fontWeight:700,
+                              }}>
+                                {['①','②','③','④','⑤'][i]}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
 
                     {/* DELEGATED（委任中） */}
