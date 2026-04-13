@@ -35,6 +35,9 @@
     @keyframes blink { 0%,100%{opacity:1;} 50%{opacity:0.3;} }
     @keyframes fadeInOut { 0%{opacity:0;transform:scale(0.8)} 30%{opacity:1;transform:scale(1)} 70%{opacity:1} 100%{opacity:0;transform:scale(1.1)} }
     @keyframes completedPop { 0%{opacity:0;transform:translateY(-10px)} 20%{opacity:1;transform:translateY(-10px)} 75%{opacity:1;transform:translateY(-10px)} 100%{opacity:0;transform:translateY(0px)} }
+    @keyframes focusFlashNew { 0%{opacity:0;transform:scale(0.96)} 30%{opacity:1;transform:scale(1.01)} 100%{opacity:1;transform:scale(1)} }
+    @keyframes focusFlashUpdate { 0%{filter:brightness(1.6)} 100%{filter:brightness(1)} }
+    @keyframes focusPulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
     /* DEV バナー */
     #dev-banner {
       position: fixed; top: 0; left: 0; right: 0; z-index: 9999;
@@ -47,7 +50,7 @@
   </style>
 </head>
 <body>
-  <div id="dev-banner">⚠ DEV BUILD — v0.9.8-dev — NOT FOR PRODUCTION ⚠</div>
+  <div id="dev-banner">⚠ DEV BUILD — v0.9.9-dev — NOT FOR PRODUCTION ⚠</div>
   <div id="root" style="padding-top:22px;"></div>
 
   <!-- Firebase 初期化 -->
@@ -455,9 +458,15 @@
     // ======================================================
     // リリースノート
     // ======================================================
-    const APP_VERSION = 'v0.9.8-dev';
+    const APP_VERSION = 'v0.9.9-dev';
 
     const RELEASE_NOTES = [
+      {
+        version: "v0.9.9-dev", date: "2026-04-13",
+        changes: [
+          "⛶ 全画面モードが他端末の変更に自動連動（LIVE/NEW TASK/UPDATEDインジケーター付き）",
+        ],
+      },
       {
         version: "v0.9.8-dev", date: "2026-04-13",
         changes: [
@@ -4187,6 +4196,39 @@
       const [completedAnimRect, setCompletedAnimRect] = useState(null);
       // アクティブタスク全画面フォーカスモード
       const [activeFocusMode, setActiveFocusMode] = useState(false);
+      // 全画面フォーカスモード: 他端末からの変更検知
+      const [focusFlash, setFocusFlash] = useState(null); // 'new-task' | 'updated' | null
+      const prevActiveIdRef = useRef(null);
+      const prevActiveDataRef = useRef(null);
+      useEffect(() => {
+        if (!activeFocusMode) return;
+        const activeTask = tasks.find(t => t.status === 'active');
+        const prevId   = prevActiveIdRef.current;
+        const prevData = prevActiveDataRef.current;
+        if (activeTask) {
+          if (prevId && prevId !== activeTask.id) {
+            // 別のタスクに切り替わった
+            setFocusFlash('new-task');
+            setTimeout(() => setFocusFlash(null), 1200);
+          } else if (prevData && prevId === activeTask.id) {
+            // 同じタスクだが内容が変わった
+            const changed =
+              prevData.title !== activeTask.title ||
+              prevData.description !== activeTask.description ||
+              JSON.stringify(prevData.checkItems) !== JSON.stringify(activeTask.checkItems) ||
+              JSON.stringify(prevData.routineSteps) !== JSON.stringify(activeTask.routineSteps);
+            if (changed) {
+              setFocusFlash('updated');
+              setTimeout(() => setFocusFlash(null), 1000);
+            }
+          }
+          prevActiveIdRef.current   = activeTask.id;
+          prevActiveDataRef.current = { title: activeTask.title, description: activeTask.description, checkItems: activeTask.checkItems, routineSteps: activeTask.routineSteps };
+        } else {
+          prevActiveIdRef.current   = null;
+          prevActiveDataRef.current = null;
+        }
+      }, [tasks, activeFocusMode]);
       // 毎日1回目起動時サマリー通知
       const [dailySummary, setDailySummary] = useState(null);
       const handleCompletedAnim = useCallback((rect) => {
@@ -5354,6 +5396,7 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                   width: '14px', flexShrink: 0,
                   background: task ? pri.color : T.border,
                   opacity: 0.85,
+                  animation: focusFlash === 'new-task' ? 'focusPulse 0.4s ease 3' : 'none',
                 }} />
 
                 {/* メインエリア */}
@@ -5361,6 +5404,7 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                   flex: 1, display: 'flex', flexDirection: 'column',
                   background: task ? `linear-gradient(135deg, ${pri.bg} 0%, ${T.bg} 60%)` : T.bg,
                   overflow: 'hidden',
+                  animation: focusFlash === 'new-task' ? 'focusFlashNew 0.5s ease forwards' : focusFlash === 'updated' ? 'focusFlashUpdate 0.6s ease forwards' : 'none',
                 }}>
 
                   {/* トップバー */}
@@ -5385,6 +5429,22 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                           # {task.stripId || task.id?.slice(0, 6)}
                         </span>
                       )}
+                      {/* LIVE インジケーター */}
+                      <span style={{
+                        display: 'flex', alignItems: 'center', gap: '5px',
+                        color: focusFlash ? '#00ff88' : T.textMuted,
+                        fontSize: '10px', letterSpacing: '0.1em',
+                        transition: 'color 0.3s',
+                      }}>
+                        <span style={{
+                          width: '6px', height: '6px', borderRadius: '50%',
+                          background: focusFlash ? '#00ff88' : T.border,
+                          display: 'inline-block',
+                          boxShadow: focusFlash ? '0 0 6px #00ff88' : 'none',
+                          transition: 'all 0.3s',
+                        }} />
+                        {focusFlash === 'new-task' ? 'NEW TASK' : focusFlash === 'updated' ? 'UPDATED' : 'LIVE'}
+                      </span>
                     </div>
                     <button
                       onClick={() => setActiveFocusMode(false)}
