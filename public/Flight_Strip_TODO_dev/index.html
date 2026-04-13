@@ -50,7 +50,7 @@
   </style>
 </head>
 <body>
-  <div id="dev-banner">⚠ DEV BUILD — v0.10.1-dev — NOT FOR PRODUCTION ⚠</div>
+  <div id="dev-banner">⚠ DEV BUILD — v0.10.2-dev — NOT FOR PRODUCTION ⚠</div>
   <div id="root" style="padding-top:22px;"></div>
 
   <!-- Firebase 初期化 -->
@@ -458,9 +458,15 @@
     // ======================================================
     // リリースノート
     // ======================================================
-    const APP_VERSION = 'v0.10.1-dev';
+    const APP_VERSION = 'v0.10.2-dev';
 
     const RELEASE_NOTES = [
+      {
+        version: "v0.10.2-dev", date: "2026-04-14",
+        changes: [
+          "⛶ 全画面モードのチェックリスト・ルーティンステップをタップで更新できるよう修正",
+        ],
+      },
       {
         version: "v0.10.1-dev", date: "2026-04-14",
         changes: [
@@ -4922,8 +4928,8 @@
       const handleCheckRoutineStep = useCallback(async (taskId, stepId, checked) => {
         const task = tasks.find(t => t.id === taskId);
         if (!task) return;
-        const updatedSteps = (task.routineSteps || []).map(s =>
-          s.id === stepId ? { ...s, checked } : s
+        const updatedSteps = (task.routineSteps || []).map((s, idx) =>
+          (typeof stepId === 'string' ? s.id === stepId : idx === stepId) ? { ...s, checked } : s
         );
         await tasksRef.doc(taskId).update({
           routineSteps: updatedSteps,
@@ -4939,8 +4945,11 @@
       const handleCheckItem = useCallback(async (taskId, itemId, checked) => {
         const task = tasks.find(t => t.id === taskId);
         if (!task) return;
-        const updated = (task.checkItems || []).map(ci =>
-          ci.id === itemId ? { ...ci, checked } : ci
+        // itemId が文字列IDの場合はID一致、数値の場合はインデックス一致（全画面モード等のフォールバック）
+        const updated = (task.checkItems || []).map((ci, idx) =>
+          (typeof itemId === 'string' ? ci.id === itemId : idx === itemId)
+            ? { ...ci, checked }
+            : ci
         );
         await tasksRef.doc(taskId).update({ checkItems: updated, updatedAt: ts() });
       }, [tasks, tasksRef]);
@@ -5584,29 +5593,29 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                               color: T.textMuted, fontSize: '11px', letterSpacing: '0.15em',
                               marginBottom: '10px', fontWeight: 700,
                             }}>
-                              🔄 ROUTINE — {task.routineSteps.filter(s => s.done).length}/{task.routineSteps.length}
+                              🔄 ROUTINE — {task.routineSteps.filter(s => s.checked).length}/{task.routineSteps.length}
                             </div>
                             {task.routineSteps.map((step, idx) => (
                               <div key={step.id || idx}
-                                onClick={() => handleCheckRoutineStep(task.id, step.id || idx, !step.done)}
+                                onClick={() => handleCheckRoutineStep(task.id, step.id || idx, !step.checked)}
                                 style={{
                                   display: 'flex', alignItems: 'center', gap: '14px',
                                   padding: 'clamp(10px, 2vh, 18px) 16px',
                                   marginBottom: '8px',
-                                  background: step.done ? `${T.border}18` : 'rgba(0,204,255,0.08)',
-                                  border: `1px solid ${step.done ? T.border : 'rgba(0,204,255,0.3)'}`,
+                                  background: step.checked ? `${T.border}18` : 'rgba(0,204,255,0.08)',
+                                  border: `1px solid ${step.checked ? T.border : 'rgba(0,204,255,0.3)'}`,
                                   borderRadius: '4px', cursor: 'pointer',
                                 }}>
                                 <span style={{
                                   fontSize: 'clamp(20px, 3vw, 28px)',
-                                  color: step.done ? '#00ff88' : '#00ccff', lineHeight: 1,
+                                  color: step.checked ? '#00ff88' : '#00ccff', lineHeight: 1,
                                 }}>
-                                  {step.done ? '☑' : '○'}
+                                  {step.checked ? '☑' : '○'}
                                 </span>
                                 <span style={{
-                                  color: step.done ? T.textDim : T.text,
+                                  color: step.checked ? T.textDim : T.text,
                                   fontSize: 'clamp(16px, 2.5vw, 24px)',
-                                  textDecoration: step.done ? 'line-through' : 'none',
+                                  textDecoration: step.checked ? 'line-through' : 'none',
                                 }}>
                                   {step.title || step.text || step.name || `ステップ ${idx + 1}`}
                                 </span>
