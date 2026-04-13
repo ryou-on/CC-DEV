@@ -47,7 +47,7 @@
   </style>
 </head>
 <body>
-  <div id="dev-banner">⚠ DEV BUILD — v0.9.2-dev — NOT FOR PRODUCTION ⚠</div>
+  <div id="dev-banner">⚠ DEV BUILD — v0.9.3-dev — NOT FOR PRODUCTION ⚠</div>
   <div id="root" style="padding-top:22px;"></div>
 
   <!-- Firebase 初期化 -->
@@ -455,9 +455,15 @@
     // ======================================================
     // リリースノート
     // ======================================================
-    const APP_VERSION = 'v0.9.2-dev';
+    const APP_VERSION = 'v0.9.3-dev';
 
     const RELEASE_NOTES = [
+      {
+        version: "v0.9.3-dev", date: "2026-04-13",
+        changes: [
+          "📋 NEXTスロットに①〜⑤番号を表示、締め切り順デフォルトソート、手動並べ替えに対応",
+        ],
+      },
       {
         version: "v0.9.2-dev", date: "2026-04-13",
         changes: [
@@ -2551,7 +2557,7 @@
       return `${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
     };
 
-    const FlightStrip = ({ task, isSelected, isMultiSelected, dropState, onDragStart, onDragOver, onDragEnd, onDrop, onStatusChange, onDelete, onEdit, isTimerRunning, elapsedMs, totalLoggedMs, onTimerStart, onTimerStop, onTouchStart, onTouchMove, onTouchEnd, titleFontSize=13, projects=[], onSkipProject, projectTasks=[], onEditSeqTask, onAddNextTask, onCheckRoutineStep, onCheckItem, onFullscreen, onDone }) => {
+    const FlightStrip = ({ task, isSelected, isMultiSelected, dropState, onDragStart, onDragOver, onDragEnd, onDrop, onStatusChange, onDelete, onEdit, isTimerRunning, elapsedMs, totalLoggedMs, onTimerStart, onTimerStop, onTouchStart, onTouchMove, onTouchEnd, titleFontSize=13, projects=[], onSkipProject, projectTasks=[], onEditSeqTask, onAddNextTask, onCheckRoutineStep, onCheckItem, onFullscreen, onDone, nextRank }) => {
       const T = useT();
       const pri = PRIORITIES[task.priority] || PRIORITIES.normal;
       const cat = CATEGORIES[task.category] || { label: task.category || "OTHER", color: "#888888" };
@@ -2632,6 +2638,12 @@
             ...dropStyle,
           }}>
           <div style={{ position:"absolute", inset:0, background:"repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,255,136,0.015) 2px,rgba(0,255,136,0.015) 4px)", pointerEvents:"none" }} />
+          {/* NEXT列番号バッジ（①〜⑤） */}
+          {nextRank && nextRank <= 5 && (
+            <div style={{ flexShrink:0, width:'16px', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'11px', color:T.accent2, borderRight:`1px solid ${T.border}`, alignSelf:'stretch', letterSpacing:0 }}>
+              {['①','②','③','④','⑤'][nextRank - 1]}
+            </div>
+          )}
           {/* 左：コンテンツ */}
           <div style={{ flex:1, minWidth:0, padding:0 }}>
             <div style={{ display:"flex", alignItems:"center", padding:"6px 8px 2px", gap:"6px" }}>
@@ -4575,6 +4587,18 @@
             return dir * sa.localeCompare(sb);
           });
         }
+        // NEXT列: nextOrder設定済みは昇順、未設定は日付+時刻昇順
+        if (status === 'next' && columnSort === 'manual') {
+          return [...col].sort((a, b) => {
+            const aHas = a.nextOrder != null, bHas = b.nextOrder != null;
+            if (aHas && bHas) return a.nextOrder - b.nextOrder;
+            if (aHas) return -1;
+            if (bHas) return 1;
+            const aKey = (a.scheduledDate || 'zzzz') + '|' + (a.time || '99:99');
+            const bKey = (b.scheduledDate || 'zzzz') + '|' + (b.time || '99:99');
+            return aKey < bKey ? -1 : aKey > bKey ? 1 : 0;
+          });
+        }
         // manual（デフォルト）
         return col.sort((a,b) => (b.sortOrder??0) - (a.sortOrder??0));
       }, [filteredTasks, columnSort, columnSortDir]);
@@ -4672,7 +4696,8 @@
         const lifecycleFields = {};
         if (s === 'active') lifecycleFields.activatedAt = ts();
         if (['completed', 'cleared', 'lost'].includes(s)) lifecycleFields.completedAt = ts();
-        await tasksRef.doc(id).update({ status: s, updatedAt: ts(), ...lifecycleFields });
+        const leavingNext = tasks.find(t => t.id === id)?.status === 'next' && s !== 'next';
+        await tasksRef.doc(id).update({ status: s, updatedAt: ts(), ...lifecycleFields, ...(leavingNext ? { nextOrder: null } : {}) });
 
         // 繰り返しタスク: 完了・LOST時に次回インスタンスを自動生成
         if (s === 'completed' || s === 'cleared' || s === 'lost') {
@@ -4870,20 +4895,32 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
         }
       }, [tasks, handleTimerStop]);
 
-      // --- 並べ替え（↑↓キー）: sortOrder値を入れ替え ---
+      // --- 並べ替え（↑↓キー）: NEXT列はnextOrder、他列はsortOrderで入れ替え ---
       const handleMoveInColumn = useCallback(async (taskId, direction) => {
         const task = tasks.find(t => t.id === taskId);
         if (!task) return;
-        const col = tasks.filter(t => t.status === task.status).sort((a,b) => (b.sortOrder??0) - (a.sortOrder??0));
-        const idx = col.findIndex(t => t.id === taskId);
-        const targetIdx = direction === "up" ? idx - 1 : idx + 1;
-        if (targetIdx < 0 || targetIdx >= col.length) return;
-        const target = col[targetIdx];
-        const mySO = task.sortOrder ?? 0;
-        const thSO = target.sortOrder ?? 0;
-        await tasksRef.doc(taskId).update({ sortOrder: thSO });
-        await tasksRef.doc(target.id).update({ sortOrder: mySO });
-      }, [tasks, tasksRef]);
+        if (task.status === 'next') {
+          // NEXT列: nextOrderベースで並べ替え
+          const col = getColTasks('next');
+          const idx = col.findIndex(t => t.id === taskId);
+          const targetIdx = direction === "up" ? idx - 1 : idx + 1;
+          if (targetIdx < 0 || targetIdx >= col.length) return;
+          const newOrder = [...col];
+          const [moved] = newOrder.splice(idx, 1);
+          newOrder.splice(targetIdx, 0, moved);
+          await Promise.all(newOrder.map((t, i) => tasksRef.doc(t.id).update({ nextOrder: i + 1, updatedAt: ts() })));
+        } else {
+          const col = tasks.filter(t => t.status === task.status).sort((a,b) => (b.sortOrder??0) - (a.sortOrder??0));
+          const idx = col.findIndex(t => t.id === taskId);
+          const targetIdx = direction === "up" ? idx - 1 : idx + 1;
+          if (targetIdx < 0 || targetIdx >= col.length) return;
+          const target = col[targetIdx];
+          const mySO = task.sortOrder ?? 0;
+          const thSO = target.sortOrder ?? 0;
+          await tasksRef.doc(taskId).update({ sortOrder: thSO });
+          await tasksRef.doc(target.id).update({ sortOrder: mySO });
+        }
+      }, [tasks, tasksRef, getColTasks]);
 
       // --- ドラッグ ---
       const handleDragStart = (e, id) => {
@@ -4921,17 +4958,25 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
           return;
         }
 
-        // 同じカラム内並べ替え
-        const col = tasks.filter(t => t.status === draggedTask.status).sort((a,b) => (b.sortOrder??0) - (a.sortOrder??0));
+        // 同じカラム内並べ替え（NEXT列はnextOrder、他列はsortOrderを使用）
+        const isNext = draggedTask.status === 'next';
+        const col = isNext
+          ? getColTasks('next')
+          : tasks.filter(t => t.status === draggedTask.status).sort((a,b) => (b.sortOrder??0) - (a.sortOrder??0));
         const withoutDragged = col.filter(t => t.id !== dId);
         const targetIdx = withoutDragged.findIndex(t => t.id === targetId);
         const insertIdx = ds.pos === "before" ? targetIdx : targetIdx + 1;
         const newOrder = [...withoutDragged];
         newOrder.splice(insertIdx, 0, draggedTask);
 
-        // sortOrderを再割り当て（降順: 先頭が最大値）
-        const base = Date.now();
-        await Promise.all(newOrder.map((t, i) => tasksRef.doc(t.id).update({ sortOrder: base - i * 10000, updatedAt: ts() })));
+        if (isNext) {
+          // NEXT列: nextOrderを1始まりで再割り当て
+          await Promise.all(newOrder.map((t, i) => tasksRef.doc(t.id).update({ nextOrder: i + 1, updatedAt: ts() })));
+        } else {
+          // 他列: sortOrderを再割り当て（降順: 先頭が最大値）
+          const base = Date.now();
+          await Promise.all(newOrder.map((t, i) => tasksRef.doc(t.id).update({ sortOrder: base - i * 10000, updatedAt: ts() })));
+        }
       };
 
       const handleDropOnColumn = async (e, colId) => {
@@ -5454,7 +5499,7 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
 
               // モバイルレイアウト
               if (isMobile) {
-                const renderStripMobile = (task) => (
+                const renderStripMobile = (task, nextRank) => (
                   <div key={task.id} style={{ position:'relative' }}
                     onClick={e => handleStripClick(e, task.id)}
                     onContextMenu={e => handleStripContextMenu(e, task.id)}
@@ -5489,6 +5534,7 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                       onCheckItem={handleCheckItem}
                       onFullscreen={id => setFullscreenTaskId(id)}
                       onDone={handleDone}
+                      nextRank={nextRank}
                     />
                   </div>
                 );
@@ -5551,7 +5597,7 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                       <div data-col-id={mobileTab}
                         onDrop={e => handleDropOnColumn(e, mobileTab)} onDragOver={e => e.preventDefault()}
                         style={{ background:T.bgCard, border:`1px solid ${T.border}`, borderRadius:'4px', padding:'10px', marginBottom:'10px' }}>
-                        {getColTasks(mobileTab).map(renderStripMobile)}
+                        {getColTasks(mobileTab).map((task, idx) => renderStripMobile(task, mobileTab === 'next' ? idx + 1 : undefined))}
                         {mobileTab === 'next' && Array.from({ length: Math.max(0, 5 - getColTasks('next').length) }).map((_, i) => (
                           <div key={`slot-${i}`} style={{ height:'36px', border:`1px dashed ${T.border}22`, borderRadius:'2px', marginBottom:'6px', display:'flex', alignItems:'center', justifyContent:'center' }}>
                             <span style={{ color:T.border, fontSize:'8px' }}>SLOT {getColTasks('next').length + i + 1}</span>
@@ -5582,8 +5628,8 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
               }
 
               // デスクトップレイアウト（共通ストリップレンダラー）
-              // 共通ストリップレンダラー
-              const renderStrip = (task) => (
+              // 共通ストリップレンダラー（nextRank: NEXT列の順番バッジ用）
+              const renderStrip = (task, nextRank) => (
                 <div key={task.id} style={{ position:'relative' }}
                   onClick={e => handleStripClick(e, task.id)}
                   onContextMenu={e => handleStripContextMenu(e, task.id)}
@@ -5618,6 +5664,7 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                     onCheckItem={handleCheckItem}
                     onFullscreen={id => setFullscreenTaskId(id)}
                     onDone={handleDone}
+                    nextRank={nextRank}
                   />
                 </div>
               );
@@ -5668,7 +5715,7 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                     {/* NEXT ACTION（5スロット） */}
                     <div data-col-id="next" style={colBox({ border:`1px solid #00ccff33` })} {...dropCol("next")}>
                       {colHeader(COLUMNS[1], nextTasks.length)}
-                      {nextTasks.map(renderStrip)}
+                      {nextTasks.map((task, idx) => renderStrip(task, idx + 1))}
                       {/* 空きスロット表示 */}
                       {Array.from({ length: Math.max(0, 5 - nextTasks.length) }).map((_, i) => (
                         <div key={`empty-${i}`} style={{ height:"28px", border:`1px dashed ${T.border}22`, borderRadius:"2px", marginBottom:"6px", display:"flex", alignItems:"center", justifyContent:"center" }}>
