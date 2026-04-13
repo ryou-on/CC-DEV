@@ -2550,7 +2550,7 @@
       return `${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
     };
 
-    const FlightStrip = ({ task, isSelected, isMultiSelected, dropState, onDragStart, onDragOver, onDragEnd, onDrop, onStatusChange, onDelete, onEdit, isTimerRunning, elapsedMs, totalLoggedMs, onTimerStart, onTimerStop, onTouchStart, onTouchMove, onTouchEnd, titleFontSize=13, projects=[], onSkipProject, projectTasks=[], onEditSeqTask, onAddNextTask, onCheckRoutineStep, onCheckItem, onFullscreen }) => {
+    const FlightStrip = ({ task, isSelected, isMultiSelected, dropState, onDragStart, onDragOver, onDragEnd, onDrop, onStatusChange, onDelete, onEdit, isTimerRunning, elapsedMs, totalLoggedMs, onTimerStart, onTimerStop, onTouchStart, onTouchMove, onTouchEnd, titleFontSize=13, projects=[], onSkipProject, projectTasks=[], onEditSeqTask, onAddNextTask, onCheckRoutineStep, onCheckItem, onFullscreen, completedAnim=false }) => {
       const T = useT();
       const pri = PRIORITIES[task.priority] || PRIORITIES.normal;
       const cat = CATEGORIES[task.category] || { label: task.category || "OTHER", color: "#888888" };
@@ -2565,6 +2565,16 @@
       const [routineExpanded, setRoutineExpanded] = useState(false);
       // ER-0069: COMPLETE アニメーション
       const [showComplete, setShowComplete] = useState(false);
+      // ER-0075: COMPLETED アニメーション位置（getBoundingClientRect）
+      const [animRect, setAnimRect] = useState(null);
+      useEffect(() => {
+        if (completedAnim && stripRef.current) {
+          const r = stripRef.current.getBoundingClientRect();
+          setAnimRect({ top: r.top, left: r.left, width: r.width });
+        } else {
+          setAnimRect(null);
+        }
+      }, [completedAnim]);
       // ER-0070: チェックリスト展開
       const [checkExpanded, setCheckExpanded] = useState(false);
       // ER-0061: 次タスク追加フォーム
@@ -2605,6 +2615,7 @@
       }, [task.id, onTouchMove]);
 
       return (
+        <>
         <div
           ref={stripRef}
           data-task-id={task.id}
@@ -2971,6 +2982,14 @@
             <button onClick={e=>{e.stopPropagation();onDelete(task.id);}} title="削除 (D)" style={{ background:"rgba(255,0,0,0.2)", border:"1px solid #ff333366", color:"#ff6666", fontSize:"10px", padding:"2px 5px", borderRadius:"2px", cursor:"pointer", lineHeight:1 }}>✕</button>
           </div>
         </div>
+        {/* ER-0075: COMPLETED アニメーション（portal で fixed 配置） */}
+        {animRect && ReactDOM.createPortal(
+          <div style={{ position:'fixed', top: animRect.top + 4, left: animRect.left, width: animRect.width, zIndex:9999, pointerEvents:'none', textAlign:'center', animation:'fadeInOut 1.4s ease forwards' }}>
+            <span style={{ color: T.id==='LIGHT' ? '#888' : '#fff', fontSize:'10px', fontWeight:800, letterSpacing:'0.22em', fontFamily:"'JetBrains Mono',monospace" }}>COMPLETED</span>
+          </div>,
+          document.body
+        )}
+        </>
       );
     };
 
@@ -5444,13 +5463,8 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                       onCheckRoutineStep={handleCheckRoutineStep}
                       onCheckItem={handleCheckItem}
                       onFullscreen={id => setFullscreenTaskId(id)}
+                      completedAnim={completedAnimId === task.id}
                     />
-                    {/* ER-0075: タスク完了アニメーション（モバイル） */}
-                    {completedAnimId === task.id && (
-                      <div style={{ position:'absolute', top:'4px', left:0, right:0, zIndex:20, pointerEvents:'none', display:'flex', justifyContent:'center', animation:'fadeInOut 1.4s ease forwards' }}>
-                        <span style={{ color: T.id==='LIGHT' ? '#888' : '#fff', fontSize:'10px', fontWeight:800, letterSpacing:'0.22em', fontFamily:"'JetBrains Mono',monospace" }}>COMPLETED</span>
-                      </div>
-                    )}
                   </div>
                 );
 
@@ -5578,13 +5592,8 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                     onCheckRoutineStep={handleCheckRoutineStep}
                     onCheckItem={handleCheckItem}
                     onFullscreen={id => setFullscreenTaskId(id)}
+                    completedAnim={completedAnimId === task.id}
                   />
-                  {/* ER-0075: タスク完了アニメーション（デスクトップ） */}
-                  {completedAnimId === task.id && (
-                    <div style={{ position:'absolute', top:'4px', left:0, right:0, zIndex:20, pointerEvents:'none', display:'flex', justifyContent:'center', animation:'fadeInOut 1.4s ease forwards' }}>
-                      <span style={{ color: T.id==='LIGHT' ? '#888' : '#fff', fontSize:'10px', fontWeight:800, letterSpacing:'0.22em', fontFamily:"'JetBrains Mono',monospace" }}>COMPLETED</span>
-                    </div>
-                  )}
                 </div>
               );
 
