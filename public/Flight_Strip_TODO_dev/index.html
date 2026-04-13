@@ -47,7 +47,7 @@
   </style>
 </head>
 <body>
-  <div id="dev-banner">⚠ DEV BUILD — v0.9.7-dev — NOT FOR PRODUCTION ⚠</div>
+  <div id="dev-banner">⚠ DEV BUILD — v0.9.8-dev — NOT FOR PRODUCTION ⚠</div>
   <div id="root" style="padding-top:22px;"></div>
 
   <!-- Firebase 初期化 -->
@@ -455,9 +455,15 @@
     // ======================================================
     // リリースノート
     // ======================================================
-    const APP_VERSION = 'v0.9.7-dev';
+    const APP_VERSION = 'v0.9.8-dev';
 
     const RELEASE_NOTES = [
+      {
+        version: "v0.9.8-dev", date: "2026-04-13",
+        changes: [
+          "⛶ 全画面フォーカスモードをストリップ拡大デザインにリデザイン（優先度カラー・大文字・clampレスポンシブ）",
+        ],
+      },
       {
         version: "v0.9.7-dev", date: "2026-04-13",
         changes: [
@@ -5334,205 +5340,264 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
           {activeFocusMode && (() => {
             const activeTasks = getColTasks('active');
             const task = activeTasks[0];
+            const pri = task ? (PRIORITIES[task.priority] || PRIORITIES.normal) : PRIORITIES.normal;
+            const nextTask = getColTasks('next')[0];
             return ReactDOM.createPortal(
               <div style={{
                 position: 'fixed', inset: 0, zIndex: 8000,
-                background: T.bg,
-                display: 'flex', flexDirection: 'column',
+                display: 'flex',
                 fontFamily: "'JetBrains Mono', monospace",
+                background: T.bg,
               }}>
-                {/* ヘッダー */}
+                {/* 左アクセントバー（ストリップの左ボーダーを拡大） */}
                 <div style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  padding: '12px 16px',
-                  borderBottom: `1px solid ${T.border}`,
-                  background: T.bgCard,
+                  width: '14px', flexShrink: 0,
+                  background: task ? pri.color : T.border,
+                  opacity: 0.85,
+                }} />
+
+                {/* メインエリア */}
+                <div style={{
+                  flex: 1, display: 'flex', flexDirection: 'column',
+                  background: task ? `linear-gradient(135deg, ${pri.bg} 0%, ${T.bg} 60%)` : T.bg,
+                  overflow: 'hidden',
                 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ color: T.accent, fontSize: '11px', fontWeight: 700, letterSpacing: '0.15em' }}>▶ ACTIVE</span>
-                    <span style={{ color: T.textMuted, fontSize: '9px' }}>全画面フォーカスモード</span>
-                  </div>
-                  <button
-                    onClick={() => setActiveFocusMode(false)}
-                    style={{
-                      background: 'rgba(255,80,80,0.15)', border: '1px solid rgba(255,80,80,0.3)',
-                      color: '#ff6666', fontSize: '11px', padding: '4px 12px', borderRadius: '4px',
-                      cursor: 'pointer', fontWeight: 700, letterSpacing: '0.1em',
-                    }}
-                  >✕ 閉じる</button>
-                </div>
 
-                {/* メインコンテンツ */}
-                <div style={{ flex: 1, overflowY: 'auto', padding: '20px 16px' }}>
-                  {task ? (
-                    <div style={{ maxWidth: '720px', margin: '0 auto', width: '100%' }}>
-                      {/* ストリップID */}
-                      <div style={{ color: T.textMuted, fontSize: '10px', letterSpacing: '0.15em', marginBottom: '8px' }}>
-                        # {task.stripId || task.id?.slice(0, 6)}
-                      </div>
-
-                      {/* タスクタイトル */}
-                      <div style={{
-                        color: T.text, fontSize: 'clamp(22px, 4vw, 36px)', fontWeight: 700,
-                        lineHeight: 1.4, marginBottom: '16px',
-                        letterSpacing: '0.02em',
-                      }}>
-                        {task.title}
-                      </div>
-
-                      {/* 説明文 */}
-                      {task.description && (
-                        <div style={{
-                          color: T.textDim, fontSize: '14px', lineHeight: 1.7,
-                          marginBottom: '20px',
-                          padding: '12px 16px',
-                          background: `${T.border}22`,
-                          borderRadius: '4px',
-                          borderLeft: `3px solid ${T.border}`,
-                          whiteSpace: 'pre-wrap',
-                        }}>
-                          {task.description}
-                        </div>
+                  {/* トップバー */}
+                  <div style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '10px 20px',
+                    borderBottom: `1px solid ${pri.color}33`,
+                    background: `${T.bgCard}cc`,
+                    backdropFilter: 'blur(4px)',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      {task && (
+                        <span style={{
+                          color: pri.color, fontSize: '11px', fontWeight: 700,
+                          padding: '2px 8px', border: `1px solid ${pri.color}`, borderRadius: '2px',
+                          letterSpacing: '0.15em',
+                        }}>{pri.label}</span>
                       )}
-
-                      {/* チェックリスト */}
-                      {task.checkItems && task.checkItems.length > 0 && (
-                        <div style={{ marginBottom: '20px' }}>
-                          <div style={{ color: T.textMuted, fontSize: '10px', letterSpacing: '0.1em', marginBottom: '8px' }}>
-                            CHECKLIST — {task.checkItems.filter(i => i.checked).length}/{task.checkItems.length}
-                          </div>
-                          {task.checkItems.map((item, idx) => (
-                            <div key={item.id || idx}
-                              onClick={() => handleCheckItem(task.id, item.id || idx, !item.checked)}
-                              style={{
-                                display: 'flex', alignItems: 'center', gap: '10px',
-                                padding: '10px 12px', marginBottom: '6px',
-                                background: item.checked ? `${T.border}18` : `${T.accent}0a`,
-                                border: `1px solid ${item.checked ? T.border : T.accent + '33'}`,
-                                borderRadius: '3px', cursor: 'pointer',
-                                transition: 'all 0.15s',
-                              }}>
-                              <span style={{ fontSize: '16px', color: item.checked ? '#00ff88' : T.border }}>
-                                {item.checked ? '☑' : '☐'}
-                              </span>
-                              <span style={{
-                                color: item.checked ? T.textDim : T.text,
-                                fontSize: '14px',
-                                textDecoration: item.checked ? 'line-through' : 'none',
-                              }}>
-                                {item.text}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
+                      <span style={{ color: T.accent, fontSize: '13px', fontWeight: 700, letterSpacing: '0.15em' }}>▶ ACTIVE</span>
+                      {task && (
+                        <span style={{ color: T.textMuted, fontSize: '11px', letterSpacing: '0.1em' }}>
+                          # {task.stripId || task.id?.slice(0, 6)}
+                        </span>
                       )}
-
-                      {/* ルーティンステップ */}
-                      {task.isRoutine && task.routineSteps && task.routineSteps.length > 0 && (
-                        <div style={{ marginBottom: '20px' }}>
-                          <div style={{ color: T.textMuted, fontSize: '10px', letterSpacing: '0.1em', marginBottom: '8px' }}>
-                            🔄 ROUTINE — {task.routineSteps.filter(s => s.done).length}/{task.routineSteps.length}
-                          </div>
-                          {task.routineSteps.map((step, idx) => (
-                            <div key={step.id || idx}
-                              onClick={() => handleCheckRoutineStep(task.id, step.id || idx, !step.done)}
-                              style={{
-                                display: 'flex', alignItems: 'center', gap: '10px',
-                                padding: '10px 12px', marginBottom: '6px',
-                                background: step.done ? `${T.border}18` : 'rgba(0,204,255,0.08)',
-                                border: `1px solid ${step.done ? T.border : 'rgba(0,204,255,0.25)'}`,
-                                borderRadius: '3px', cursor: 'pointer',
-                              }}>
-                              <span style={{ fontSize: '16px', color: step.done ? '#00ff88' : '#00ccff' }}>
-                                {step.done ? '☑' : '○'}
-                              </span>
-                              <span style={{
-                                color: step.done ? T.textDim : T.text,
-                                fontSize: '14px',
-                                textDecoration: step.done ? 'line-through' : 'none',
-                              }}>
-                                {step.title || step.text || step.name || `ステップ ${idx + 1}`}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* メタ情報 */}
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '24px' }}>
-                        {task.scheduledDate && (
-                          <span style={{ background: 'rgba(255,170,0,0.12)', border: '1px solid rgba(255,170,0,0.3)', color: '#ffaa00', fontSize: '11px', padding: '3px 10px', borderRadius: '12px' }}>
-                            📅 {task.scheduledDate}
-                          </span>
-                        )}
-                        {task.time && (
-                          <span style={{ background: 'rgba(0,204,255,0.1)', border: '1px solid rgba(0,204,255,0.3)', color: '#00ccff', fontSize: '11px', padding: '3px 10px', borderRadius: '12px' }}>
-                            🕐 {task.time}
-                          </span>
-                        )}
-                        {task.categoryId && (
-                          <span style={{ background: `${T.border}18`, border: `1px solid ${T.border}`, color: T.textDim, fontSize: '11px', padding: '3px 10px', borderRadius: '12px' }}>
-                            {task.categoryId}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* アクションボタン */}
-                      <div style={{ display: 'flex', gap: '12px' }}>
-                        <button
-                          onClick={() => { handleDone(task.id, null); setActiveFocusMode(false); }}
-                          style={{
-                            flex: 1, padding: '18px', fontSize: 'clamp(14px, 2vw, 18px)', fontWeight: 700,
-                            background: 'rgba(0,255,136,0.12)', border: '1px solid rgba(0,255,136,0.35)',
-                            color: '#00ff88', borderRadius: '4px', cursor: 'pointer',
-                            letterSpacing: '0.1em',
-                          }}
-                        >
-                          ✓ DONE
-                        </button>
-                        <button
-                          onClick={() => setEditTaskId(task.id)}
-                          style={{
-                            padding: '18px 24px', fontSize: 'clamp(14px, 2vw, 18px)',
-                            background: `${T.accent}15`, border: `1px solid ${T.accent}44`,
-                            color: T.accent, borderRadius: '4px', cursor: 'pointer',
-                          }}
-                        >
-                          ✎
-                        </button>
-                      </div>
                     </div>
+                    <button
+                      onClick={() => setActiveFocusMode(false)}
+                      style={{
+                        background: 'rgba(255,80,80,0.12)', border: '1px solid rgba(255,80,80,0.3)',
+                        color: '#ff6666', fontSize: '12px', padding: '5px 14px', borderRadius: '3px',
+                        cursor: 'pointer', fontWeight: 700, letterSpacing: '0.1em',
+                      }}
+                    >✕ 閉じる</button>
+                  </div>
+
+                  {task ? (
+                    <>
+                      {/* スクロール可能コンテンツ */}
+                      <div style={{ flex: 1, overflowY: 'auto', padding: '32px 28px 20px' }}>
+
+                        {/* タスクタイトル（大きく） */}
+                        <div style={{
+                          color: T.text,
+                          fontSize: 'clamp(28px, 5vw, 56px)',
+                          fontWeight: 700,
+                          lineHeight: 1.35,
+                          marginBottom: '20px',
+                          letterSpacing: '0.02em',
+                        }}>
+                          {task.title}
+                        </div>
+
+                        {/* 説明文 */}
+                        {task.description && (
+                          <div style={{
+                            color: T.textDim,
+                            fontSize: 'clamp(14px, 2vw, 20px)',
+                            lineHeight: 1.75,
+                            marginBottom: '28px',
+                            padding: '16px 20px',
+                            background: `${T.border}1a`,
+                            borderRadius: '4px',
+                            borderLeft: `4px solid ${pri.color}66`,
+                            whiteSpace: 'pre-wrap',
+                          }}>
+                            {task.description}
+                          </div>
+                        )}
+
+                        {/* チェックリスト */}
+                        {task.checkItems && task.checkItems.length > 0 && (
+                          <div style={{ marginBottom: '24px' }}>
+                            <div style={{
+                              color: T.textMuted, fontSize: '11px', letterSpacing: '0.15em',
+                              marginBottom: '10px', fontWeight: 700,
+                            }}>
+                              CHECKLIST — {task.checkItems.filter(i => i.checked).length}/{task.checkItems.length}
+                            </div>
+                            {task.checkItems.map((item, idx) => (
+                              <div key={item.id || idx}
+                                onClick={() => handleCheckItem(task.id, item.id || idx, !item.checked)}
+                                style={{
+                                  display: 'flex', alignItems: 'center', gap: '14px',
+                                  padding: 'clamp(10px, 2vh, 18px) 16px',
+                                  marginBottom: '8px',
+                                  background: item.checked ? `${T.border}18` : `${T.accent}0d`,
+                                  border: `1px solid ${item.checked ? T.border : T.accent + '44'}`,
+                                  borderRadius: '4px', cursor: 'pointer',
+                                  transition: 'all 0.15s',
+                                }}>
+                                <span style={{
+                                  fontSize: 'clamp(20px, 3vw, 28px)',
+                                  color: item.checked ? '#00ff88' : T.border,
+                                  lineHeight: 1,
+                                }}>
+                                  {item.checked ? '☑' : '☐'}
+                                </span>
+                                <span style={{
+                                  color: item.checked ? T.textDim : T.text,
+                                  fontSize: 'clamp(16px, 2.5vw, 24px)',
+                                  textDecoration: item.checked ? 'line-through' : 'none',
+                                }}>
+                                  {item.text}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* ルーティンステップ */}
+                        {task.isRoutine && task.routineSteps && task.routineSteps.length > 0 && (
+                          <div style={{ marginBottom: '24px' }}>
+                            <div style={{
+                              color: T.textMuted, fontSize: '11px', letterSpacing: '0.15em',
+                              marginBottom: '10px', fontWeight: 700,
+                            }}>
+                              🔄 ROUTINE — {task.routineSteps.filter(s => s.done).length}/{task.routineSteps.length}
+                            </div>
+                            {task.routineSteps.map((step, idx) => (
+                              <div key={step.id || idx}
+                                onClick={() => handleCheckRoutineStep(task.id, step.id || idx, !step.done)}
+                                style={{
+                                  display: 'flex', alignItems: 'center', gap: '14px',
+                                  padding: 'clamp(10px, 2vh, 18px) 16px',
+                                  marginBottom: '8px',
+                                  background: step.done ? `${T.border}18` : 'rgba(0,204,255,0.08)',
+                                  border: `1px solid ${step.done ? T.border : 'rgba(0,204,255,0.3)'}`,
+                                  borderRadius: '4px', cursor: 'pointer',
+                                }}>
+                                <span style={{
+                                  fontSize: 'clamp(20px, 3vw, 28px)',
+                                  color: step.done ? '#00ff88' : '#00ccff', lineHeight: 1,
+                                }}>
+                                  {step.done ? '☑' : '○'}
+                                </span>
+                                <span style={{
+                                  color: step.done ? T.textDim : T.text,
+                                  fontSize: 'clamp(16px, 2.5vw, 24px)',
+                                  textDecoration: step.done ? 'line-through' : 'none',
+                                }}>
+                                  {step.title || step.text || step.name || `ステップ ${idx + 1}`}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* メタ情報バッジ */}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                          {task.scheduledDate && (
+                            <span style={{
+                              background: 'rgba(255,170,0,0.12)', border: '1px solid rgba(255,170,0,0.35)',
+                              color: '#ffaa00', fontSize: 'clamp(12px, 1.8vw, 16px)',
+                              padding: '5px 14px', borderRadius: '20px',
+                            }}>📅 {task.scheduledDate}</span>
+                          )}
+                          {task.time && (
+                            <span style={{
+                              background: 'rgba(0,204,255,0.1)', border: '1px solid rgba(0,204,255,0.35)',
+                              color: '#00ccff', fontSize: 'clamp(12px, 1.8vw, 16px)',
+                              padding: '5px 14px', borderRadius: '20px',
+                            }}>🕐 {task.time}</span>
+                          )}
+                          {task.categoryId && (
+                            <span style={{
+                              background: `${T.border}18`, border: `1px solid ${T.border}`,
+                              color: T.textDim, fontSize: 'clamp(12px, 1.8vw, 16px)',
+                              padding: '5px 14px', borderRadius: '20px',
+                            }}>{task.categoryId}</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* ボトム：アクションボタン + NEXT preview */}
+                      <div style={{
+                        borderTop: `1px solid ${pri.color}33`,
+                        background: `${T.bgCard}ee`,
+                        backdropFilter: 'blur(4px)',
+                      }}>
+                        {/* NEXT① プレビュー */}
+                        {nextTask && (
+                          <div style={{
+                            padding: '8px 28px',
+                            borderBottom: `1px solid ${T.border}33`,
+                            display: 'flex', alignItems: 'center', gap: '10px',
+                          }}>
+                            <span style={{ color: '#00ccff', fontSize: '10px', fontWeight: 700, letterSpacing: '0.15em', flexShrink: 0 }}>NEXT ①</span>
+                            <span style={{
+                              color: T.textDim, fontSize: '13px',
+                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            }}>{nextTask.title}</span>
+                          </div>
+                        )}
+                        {/* ボタン */}
+                        <div style={{ display: 'flex', gap: '10px', padding: '14px 28px' }}>
+                          <button
+                            onClick={() => { handleDone(task.id, null); setActiveFocusMode(false); }}
+                            style={{
+                              flex: 1,
+                              padding: 'clamp(14px, 2.5vh, 22px) 16px',
+                              fontSize: 'clamp(16px, 2.5vw, 22px)',
+                              fontWeight: 700,
+                              background: 'rgba(0,255,136,0.12)',
+                              border: '2px solid rgba(0,255,136,0.4)',
+                              color: '#00ff88', borderRadius: '4px', cursor: 'pointer',
+                              letterSpacing: '0.15em',
+                              fontFamily: "'JetBrains Mono', monospace",
+                            }}
+                          >✓ DONE</button>
+                          <button
+                            onClick={() => setEditTaskId(task.id)}
+                            style={{
+                              padding: 'clamp(14px, 2.5vh, 22px) 24px',
+                              fontSize: 'clamp(16px, 2.5vw, 22px)',
+                              background: `${T.accent}15`, border: `2px solid ${T.accent}44`,
+                              color: T.accent, borderRadius: '4px', cursor: 'pointer',
+                              fontFamily: "'JetBrains Mono', monospace",
+                            }}
+                          >✎</button>
+                        </div>
+                      </div>
+                    </>
                   ) : (
                     /* タスクなし */
                     <div style={{
-                      maxWidth: '720px', margin: '0 auto', width: '100%',
-                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                      height: '60vh', color: T.border,
+                      flex: 1, display: 'flex', flexDirection: 'column',
+                      alignItems: 'center', justifyContent: 'center',
+                      color: T.border,
                     }}>
-                      <div style={{ fontSize: '48px', marginBottom: '16px' }}>▷</div>
-                      <div style={{ fontSize: '13px', letterSpacing: '0.2em' }}>ACTIVE タスクなし</div>
-                      <div style={{ fontSize: '10px', marginTop: '8px', color: T.textMuted }}>
+                      <div style={{ fontSize: 'clamp(48px, 8vw, 80px)', marginBottom: '20px', opacity: 0.4 }}>▷</div>
+                      <div style={{ fontSize: 'clamp(16px, 2.5vw, 24px)', letterSpacing: '0.2em', color: T.textDim }}>ACTIVE タスクなし</div>
+                      <div style={{ fontSize: 'clamp(12px, 1.5vw, 16px)', marginTop: '10px', color: T.textMuted }}>
                         PCでタスクをアクティブにしてください
                       </div>
                     </div>
                   )}
                 </div>
-
-                {/* フッター：次のタスク情報 */}
-                {getColTasks('next').length > 0 && (
-                  <div style={{
-                    padding: '10px 16px',
-                    borderTop: `1px solid ${T.border}`,
-                    background: T.bgCard,
-                  }}>
-                    <div style={{ maxWidth: '720px', margin: '0 auto', width: '100%' }}>
-                      <div style={{ color: T.textMuted, fontSize: '9px', letterSpacing: '0.1em', marginBottom: '4px' }}>NEXT ①</div>
-                      <div style={{ color: T.textDim, fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {getColTasks('next')[0]?.title}
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>,
               document.body
             );
