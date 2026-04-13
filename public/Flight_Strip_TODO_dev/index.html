@@ -3247,6 +3247,8 @@
       const [dateInput,setDateInput]= useState(''); // YYYY-MM-DD
       const [showCal,  setShowCal]  = useState(false);
       const [estimatedMinutes, setEstimatedMinutes] = useState("");
+      const [checkItems,   setCheckItems]   = useState([]);
+      const [checkInput,   setCheckInput]   = useState("");
       const calRef = useRef(null);
       const titleRef = useRef(null);
 
@@ -3277,6 +3279,7 @@
           recurrence,
           scheduledDate,
           estimatedMinutes: estimatedMinutes ? parseInt(estimatedMinutes) : null,
+          checkItems: checkItems.length > 0 ? checkItems : null,
           sortOrder: Date.now(),
         });
         onClose();
@@ -3322,6 +3325,35 @@
               <option value="">⏱ 予定時間（未設定）</option>
               {[15,30,45,60,90,120].map(m => <option key={m} value={m}>⏱ {m}分</option>)}
             </select>
+            {/* ☑ チェックリスト */}
+            <div style={{ border:`1px solid ${checkItems.length>0?T.accent+'33':T.border2}`, borderRadius:"4px", padding:"8px 10px", background:checkItems.length>0?`${T.accent}06`:'transparent' }}>
+              <div style={{ fontSize:"10px", color:checkItems.length>0?T.accent:T.textDim, fontWeight:700, marginBottom:"6px" }}>
+                ☑ チェックリスト {checkItems.length>0 && <span style={{ color:T.accent, fontWeight:400 }}>({checkItems.length}件)</span>}
+              </div>
+              <div style={{ display:"flex", gap:"6px", marginBottom: checkItems.length>0?"6px":"0" }}>
+                <input style={{ ...inp, fontSize:"11px" }} placeholder="チェック項目を追加..."
+                  value={checkInput} onChange={e=>setCheckInput(e.target.value)}
+                  onKeyDown={e=>{
+                    if(e.key==="Enter"&&!e.nativeEvent.isComposing&&checkInput.trim()){
+                      setCheckItems(p=>[...p,{id:`ci_${Date.now()}`,text:checkInput.trim(),checked:false}]);
+                      setCheckInput("");
+                      e.preventDefault();
+                    }
+                  }} />
+                <button type="button" onClick={()=>{
+                  if(!checkInput.trim()) return;
+                  setCheckItems(p=>[...p,{id:`ci_${Date.now()}`,text:checkInput.trim(),checked:false}]);
+                  setCheckInput("");
+                }} style={{ background:`${T.accent}22`, border:`1px solid ${T.accent}66`, color:T.accent, padding:"6px 12px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontFamily:"'JetBrains Mono',monospace", whiteSpace:"nowrap" }}>＋</button>
+              </div>
+              {checkItems.map((ci,i) => (
+                <div key={ci.id} style={{ display:"flex", alignItems:"center", gap:"6px", padding:"3px 4px", borderRadius:"2px", background:`${T.accent}06`, marginBottom:"3px" }}>
+                  <span style={{ fontSize:"10px", color:T.textDim, flex:1 }}>□ {ci.text}</span>
+                  <button type="button" onClick={()=>setCheckItems(p=>p.filter(x=>x.id!==ci.id))}
+                    style={{ background:"transparent", border:"none", color:T.textMuted, cursor:"pointer", fontSize:"11px", padding:"0 4px" }}>✕</button>
+                </div>
+              ))}
+            </div>
             {/* ♻ 繰り返し */}
             <div style={{ background:recurOn?`${T.accent}08`:'transparent', border:`1px solid ${recurOn?T.accent+'33':T.border2}`, borderRadius:"4px", padding:"8px 10px" }}>
               <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:recurOn?"8px":"0" }}>
