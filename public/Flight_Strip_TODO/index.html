@@ -280,6 +280,12 @@
     // ======================================================
     const RELEASE_NOTES = [
       {
+        version: "v0.5.4", date: "2026-04-13",
+        changes: [
+          "毎日1回目の起動時に昨日のタスク登録・完了数を通知",
+        ],
+      },
+      {
         version: "v0.5.3", date: "2026-04-11",
         changes: [
           "フィードバック機能追加 — ロゴ横 [フィードバック] ボタンから送信",
@@ -1041,6 +1047,8 @@
       // カテゴリ（Firestore同期）
       const [categories,    setCategories]    = useState(DEFAULT_CATEGORIES);
       const [showCatEditor, setShowCatEditor] = useState(false);
+      // 毎日1回目起動時サマリー通知
+      const [dailySummary, setDailySummary] = useState(null);
 
       const tasksRef = useMemo(() => db.collection(`users/${user.uid}/tasks`), [user.uid]);
       const metaRef  = useMemo(() => db.collection(`users/${user.uid}/meta`),  [user.uid]);
@@ -1058,12 +1066,41 @@
             month: now.toISOString().slice(0,7),
             hour:  now.getHours(),
             dow:   now.getDay(),
-            version: 'v0.5.3',
+            version: 'v0.5.4',
             build:   'stable',
             createdAt: firebase.firestore.FieldValue.serverTimestamp(),
           }).catch(() => {});
         } catch(e) {}
       }, []);
+
+      // 毎日1回目起動時: 昨日のサマリーを表示
+      const dailySummaryShownRef = useRef(false);
+      useEffect(() => {
+        if (tasks.length === 0) return;  // タスク未ロード
+        if (dailySummaryShownRef.current) return;  // このセッションで既に確認済み
+        dailySummaryShownRef.current = true;
+        const today = new Date().toISOString().slice(0, 10);
+        const storageKey = 'fst_daily_summary_' + (user?.uid || 'anon');
+        const lastShown = localStorage.getItem(storageKey);
+        if (lastShown === today) return;  // 今日すでに表示済み
+        localStorage.setItem(storageKey, today);
+        // 昨日の日付
+        const yd = new Date();
+        yd.setDate(yd.getDate() - 1);
+        const yesterday = yd.toISOString().slice(0, 10);
+        // 昨日のタスク集計
+        const created = tasks.filter(t => {
+          if (!t.createdAt) return false;
+          const d = t.createdAt.toDate ? t.createdAt.toDate() : new Date(t.createdAt);
+          return d.toISOString().slice(0, 10) === yesterday;
+        }).length;
+        const completed = tasks.filter(t => {
+          if (!t.completedAt) return false;
+          const d = t.completedAt.toDate ? t.completedAt.toDate() : new Date(t.completedAt);
+          return d.toISOString().slice(0, 10) === yesterday;
+        }).length;
+        setDailySummary({ created, completed, yesterday });
+      }, [tasks, user]);
 
       // カテゴリ Firestore 同期
       useEffect(() => {
@@ -1486,6 +1523,27 @@
           {showFeedback && <FeedbackModal user={user} build="stable" onClose={() => setShowFeedback(false)} />}
           {showCatEditor && <CategoryEditor categories={categories} onSave={handleSaveCats} onClose={() => setShowCatEditor(false)} />}
           {editTaskId && editTask && <EditStripModal task={editTask} onSave={handleEditSave} onClose={() => setEditTaskId(null)} />}
+          {/* 毎日1回目起動時サマリー */}
+          {dailySummary && (
+            <div style={{ position:'fixed', inset:0, zIndex:9000, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.5)' }}
+              onClick={() => setDailySummary(null)}>
+              <div style={{ background:T.bgCard, border:`1px solid ${T.accent}44`, borderRadius:'6px', padding:'28px 32px', maxWidth:'340px', width:'90%', textAlign:'center', boxShadow:`0 8px 40px rgba(0,0,0,0.6)` }}
+                onClick={e => e.stopPropagation()}>
+                <div style={{ fontSize:'28px', marginBottom:'12px' }}>📋</div>
+                <div style={{ color:T.text, fontSize:'14px', fontWeight:600, marginBottom:'8px', lineHeight:1.6 }}>
+                  昨日登録されたタスク <span style={{ color:T.accent, fontWeight:800, fontSize:'18px' }}>{dailySummary.created}</span> 件、<br/>
+                  昨日完了したタスク <span style={{ color:'#00ff88', fontWeight:800, fontSize:'18px' }}>{dailySummary.completed}</span> 件
+                </div>
+                <div style={{ color:T.textDim, fontSize:'12px', marginBottom:'20px', letterSpacing:'0.05em' }}>
+                  今日もタスクをこなしていきましょう。
+                </div>
+                <button onClick={() => setDailySummary(null)}
+                  style={{ background:`${T.accent}22`, border:`1px solid ${T.accent}44`, color:T.accent, padding:'8px 24px', borderRadius:'4px', cursor:'pointer', fontSize:'12px', fontWeight:700, letterSpacing:'0.1em' }}>
+                  OK
+                </button>
+              </div>
+            </div>
+          )}
 
           <div style={{ position:"relative", zIndex:2, maxWidth:"1200px", margin:"0 auto", padding:"16px" }}>
 
@@ -1810,7 +1868,7 @@
 
             {/* フッター */}
             <footer style={{ marginTop:"20px", paddingTop:"10px", borderTop:`1px solid ${T.border}`, display:"flex", justifyContent:"space-between", alignItems:"center", color:T.textMuted, fontSize:"9px", letterSpacing:"0.1em" }}>
-              <span>FLIGHT STRIP TODO · ATC-SYS v0.5.1</span>
+              <span>FLIGHT STRIP TODO · ATC-SYS v0.5.4</span>
               <div style={{ display:"flex", gap:"8px", alignItems:"center" }}>
                 <span>{currentTime.toLocaleDateString("ja-JP")} · STRIPS: {tasks.length}</span>
                 <button onClick={handleConsoleCopy} style={{ background:`${T.accent}10`, border:`1px solid ${T.accent}22`, color:T.textDim, padding:"2px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"8px", fontFamily:"'JetBrains Mono',monospace", letterSpacing:"0.05em" }}>📋 CONSOLE COPY</button>

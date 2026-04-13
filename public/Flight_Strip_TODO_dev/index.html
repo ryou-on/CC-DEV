@@ -47,7 +47,7 @@
   </style>
 </head>
 <body>
-  <div id="dev-banner">⚠ DEV BUILD — v0.9.4-dev — NOT FOR PRODUCTION ⚠</div>
+  <div id="dev-banner">⚠ DEV BUILD — v0.9.5-dev — NOT FOR PRODUCTION ⚠</div>
   <div id="root" style="padding-top:22px;"></div>
 
   <!-- Firebase 初期化 -->
@@ -455,9 +455,16 @@
     // ======================================================
     // リリースノート
     // ======================================================
-    const APP_VERSION = 'v0.9.4-dev';
+    const APP_VERSION = 'v0.9.5-dev';
 
     const RELEASE_NOTES = [
+      {
+        version: "v0.9.5-dev", date: "2026-04-13",
+        changes: [
+          "📊 毎日1回目の起動時に昨日のタスク登録・完了数をサマリー通知",
+          "🐛 完了ボタンのhandleStatusChangeRef修正（Firestoreリスナー更新時の古い参照バグを解消）",
+        ],
+      },
       {
         version: "v0.9.4-dev", date: "2026-04-13",
         changes: [
@@ -4160,10 +4167,40 @@
       const [fullscreenTaskId, setFullscreenTaskId] = useState(null);
       // ER-0075: タスク完了アニメーション（クリック時の座標）
       const [completedAnimRect, setCompletedAnimRect] = useState(null);
+      // 毎日1回目起動時サマリー通知
+      const [dailySummary, setDailySummary] = useState(null);
       const handleCompletedAnim = useCallback((rect) => {
         setCompletedAnimRect({ top: rect.top, left: rect.left, width: rect.width });
         setTimeout(() => setCompletedAnimRect(null), 1400);
       }, []);
+      // 毎日1回目起動時: 昨日のサマリーを表示
+      const dailySummaryShownRef = useRef(false);
+      useEffect(() => {
+        if (tasks.length === 0) return;  // タスク未ロード
+        if (dailySummaryShownRef.current) return;  // このセッションで既に確認済み
+        dailySummaryShownRef.current = true;
+        const today = new Date().toISOString().slice(0, 10);
+        const storageKey = 'fst_daily_summary_' + (user?.uid || 'anon');
+        const lastShown = localStorage.getItem(storageKey);
+        if (lastShown === today) return;  // 今日すでに表示済み
+        localStorage.setItem(storageKey, today);
+        // 昨日の日付
+        const yd = new Date();
+        yd.setDate(yd.getDate() - 1);
+        const yesterday = yd.toISOString().slice(0, 10);
+        // 昨日のタスク集計
+        const created = tasks.filter(t => {
+          if (!t.createdAt) return false;
+          const d = t.createdAt.toDate ? t.createdAt.toDate() : new Date(t.createdAt);
+          return d.toISOString().slice(0, 10) === yesterday;
+        }).length;
+        const completed = tasks.filter(t => {
+          if (!t.completedAt) return false;
+          const d = t.completedAt.toDate ? t.completedAt.toDate() : new Date(t.completedAt);
+          return d.toISOString().slice(0, 10) === yesterday;
+        }).length;
+        setDailySummary({ created, completed, yesterday });
+      }, [tasks, user]);
       // Undo: 遅延完了タイマーと確定済みステータス変更履歴
       const pendingCompletedRef = useRef(null);
       const isUndoingRef = useRef(false);
@@ -4749,16 +4786,19 @@
           } catch(e){}
         }
       }, [tasks, tasksRef, user.uid]);
-      // handleDone: アニメーション → 1.4秒後に完了（handleStatusChange の後に定義）
+      // handleDone用: 常に最新のhandleStatusChangeを参照するref
+      const handleStatusChangeRef = useRef(null);
+      handleStatusChangeRef.current = handleStatusChange;
+      // handleDone: アニメーション → 1.4秒後に完了（handleStatusChangeRef経由で常に最新の関数を呼ぶ）
       const handleDone = useCallback((taskId, rect) => {
         if (rect) handleCompletedAnim(rect);
         if (pendingCompletedRef.current) clearTimeout(pendingCompletedRef.current.timeoutId);
         const timeoutId = setTimeout(() => {
           pendingCompletedRef.current = null;
-          handleStatusChange(taskId, 'completed');
+          handleStatusChangeRef.current && handleStatusChangeRef.current(taskId, 'completed');
         }, 1400);
         pendingCompletedRef.current = { timeoutId, taskId };
-      }, [handleCompletedAnim, handleStatusChange]);
+      }, [handleCompletedAnim]);
       const handleSkipProjectTask = useCallback(async (taskId) => {
         const task = tasks.find(t => t.id === taskId);
         if (!task?.projectId) return;
@@ -5275,6 +5315,27 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
               <span style={{ color: T.id==='LIGHT' ? '#888' : '#fff', fontSize:'10px', fontWeight:800, letterSpacing:'0.22em', fontFamily:"'JetBrains Mono',monospace" }}>COMPLETED</span>
             </div>,
             document.body
+          )}
+          {/* 毎日1回目起動時サマリー */}
+          {dailySummary && (
+            <div style={{ position:'fixed', inset:0, zIndex:9000, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.5)' }}
+              onClick={() => setDailySummary(null)}>
+              <div style={{ background:T.bgCard, border:`1px solid ${T.accent}44`, borderRadius:'6px', padding:'28px 32px', maxWidth:'340px', width:'90%', textAlign:'center', boxShadow:`0 8px 40px rgba(0,0,0,0.6)` }}
+                onClick={e => e.stopPropagation()}>
+                <div style={{ fontSize:'28px', marginBottom:'12px' }}>📋</div>
+                <div style={{ color:T.text, fontSize:'14px', fontWeight:600, marginBottom:'8px', lineHeight:1.6 }}>
+                  昨日登録されたタスク <span style={{ color:T.accent, fontWeight:800, fontSize:'18px' }}>{dailySummary.created}</span> 件、<br/>
+                  昨日完了したタスク <span style={{ color:'#00ff88', fontWeight:800, fontSize:'18px' }}>{dailySummary.completed}</span> 件
+                </div>
+                <div style={{ color:T.textDim, fontSize:'12px', marginBottom:'20px', letterSpacing:'0.05em' }}>
+                  今日もタスクをこなしていきましょう。
+                </div>
+                <button onClick={() => setDailySummary(null)}
+                  style={{ background:`${T.accent}22`, border:`1px solid ${T.accent}44`, color:T.accent, padding:'8px 24px', borderRadius:'4px', cursor:'pointer', fontSize:'12px', fontWeight:700, letterSpacing:'0.1em' }}>
+                  OK
+                </button>
+              </div>
+            </div>
           )}
           {/* ER-0060: ルーティンモーダル */}
           {showRoutines && <RoutineModal tasks={tasks} tasksRef={tasksRef} projectsRef={projectsRef} onClose={() => setShowRoutines(false)} />}
