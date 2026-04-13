@@ -50,7 +50,7 @@
   </style>
 </head>
 <body>
-  <div id="dev-banner">⚠ DEV BUILD — v0.9.9-dev — NOT FOR PRODUCTION ⚠</div>
+  <div id="dev-banner">⚠ DEV BUILD — v0.10.0-dev — NOT FOR PRODUCTION ⚠</div>
   <div id="root" style="padding-top:22px;"></div>
 
   <!-- Firebase 初期化 -->
@@ -458,9 +458,15 @@
     // ======================================================
     // リリースノート
     // ======================================================
-    const APP_VERSION = 'v0.9.9-dev';
+    const APP_VERSION = 'v0.10.0-dev';
 
     const RELEASE_NOTES = [
+      {
+        version: "v0.10.0-dev", date: "2026-04-13",
+        changes: [
+          "⛶ 全画面モード: ブラウザFullscreen API対応・タスク取得をフィルター非依存に修正",
+        ],
+      },
       {
         version: "v0.9.9-dev", date: "2026-04-13",
         changes: [
@@ -4196,6 +4202,33 @@
       const [completedAnimRect, setCompletedAnimRect] = useState(null);
       // アクティブタスク全画面フォーカスモード
       const [activeFocusMode, setActiveFocusMode] = useState(false);
+      // 全画面フォーカスモード: ブラウザ全画面API
+      useEffect(() => {
+        if (activeFocusMode) {
+          const el = document.documentElement;
+          if (el.requestFullscreen) el.requestFullscreen().catch(() => {});
+          else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+        } else {
+          if (document.fullscreenElement || document.webkitFullscreenElement) {
+            if (document.exitFullscreen) document.exitFullscreen().catch(() => {});
+            else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+          }
+        }
+      }, [activeFocusMode]);
+      // ブラウザのEscキー等でfullscreenが解除された場合にstateも同期
+      useEffect(() => {
+        const onFsChange = () => {
+          if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+            setActiveFocusMode(false);
+          }
+        };
+        document.addEventListener('fullscreenchange', onFsChange);
+        document.addEventListener('webkitfullscreenchange', onFsChange);
+        return () => {
+          document.removeEventListener('fullscreenchange', onFsChange);
+          document.removeEventListener('webkitfullscreenchange', onFsChange);
+        };
+      }, []);
       // 全画面フォーカスモード: 他端末からの変更検知
       const [focusFlash, setFocusFlash] = useState(null); // 'new-task' | 'updated' | null
       const prevActiveIdRef = useRef(null);
@@ -5380,13 +5413,18 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
           )}
           {/* アクティブタスク全画面フォーカスモード */}
           {activeFocusMode && (() => {
-            const activeTasks = getColTasks('active');
-            const task = activeTasks[0];
+            // filteredTasks ではなく tasks から直接取得（フィルター状態に依存しない）
+            const task     = tasks.find(t => t.status === 'active');
+            const nextTask = tasks.filter(t => t.status === 'next').sort((a, b) => {
+              const aKey = (a.scheduledDate || 'zzzz') + '|' + (a.time || '99:99');
+              const bKey = (b.scheduledDate || 'zzzz') + '|' + (b.time || '99:99');
+              return aKey < bKey ? -1 : aKey > bKey ? 1 : 0;
+            })[0];
             const pri = task ? (PRIORITIES[task.priority] || PRIORITIES.normal) : PRIORITIES.normal;
-            const nextTask = getColTasks('next')[0];
             return ReactDOM.createPortal(
               <div style={{
-                position: 'fixed', inset: 0, zIndex: 8000,
+                position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                zIndex: 8000,
                 display: 'flex',
                 fontFamily: "'JetBrains Mono', monospace",
                 background: T.bg,
