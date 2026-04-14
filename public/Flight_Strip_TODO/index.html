@@ -280,6 +280,14 @@
     // ======================================================
     const RELEASE_NOTES = [
       {
+        version: "v0.5.7", date: "2026-04-15",
+        changes: [
+          "NEXT ACTIONスロットの左側に①〜⑤番号バーを配置",
+          "タイムラインの表示時間帯（開始・終了時刻）をユーザーが自由に設定可能に",
+          "CLEARED列の幅を短縮 — 全ステータスでSTRIPカード幅を統一",
+        ],
+      },
+      {
         version: "v0.5.6", date: "2026-04-13",
         changes: [
           "NEXT ACTION スロットを最大5枚に制限",
@@ -1042,15 +1050,32 @@
     // ======================================================
     const TimelineView = ({ tasks, currentTime }) => {
       const T = useT();
-      const hours = Array.from({ length: 13 }, (_, i) => i + 7);
+      // タイムライン表示時間をlocalStorageから読み込む（デフォルト 7〜20）
+      const [tlStart, setTlStart] = useState(() => parseInt(localStorage.getItem('fst_tl_start') || '7'));
+      const [tlEnd,   setTlEnd]   = useState(() => parseInt(localStorage.getItem('fst_tl_end')   || '20'));
+      const hours = Array.from({ length: Math.max(1, tlEnd - tlStart) }, (_, i) => i + tlStart);
+      const handleTlStartChange = (v) => { const n=parseInt(v); setTlStart(n); localStorage.setItem('fst_tl_start',n); };
+      const handleTlEndChange   = (v) => { const n=parseInt(v); setTlEnd(n);   localStorage.setItem('fst_tl_end',n); };
       const currentHour = currentTime.getHours();
       const currentMin  = currentTime.getMinutes();
 
       return (
         <div style={{ background:T.bgCard, border:`1px solid ${T.border}`, borderRadius:"4px", padding:"12px", overflowX:"auto" }}>
-          <div style={{ display:"flex", alignItems:"center", gap:"8px", marginBottom:"10px", color:T.accent, fontSize:"11px", fontWeight:700, letterSpacing:"0.15em", fontFamily:"'JetBrains Mono',monospace" }}>
-            <span>◈</span><span>TIMELINE</span>
-            <span style={{ color:T.textMuted }}>━━━━━━━━━━━━━━━━━━━━━━</span>
+          <div style={{ display:"flex", alignItems:"center", gap:"8px", marginBottom:"10px", fontFamily:"'JetBrains Mono',monospace", flexWrap:"wrap" }}>
+            <span style={{ color:T.accent, fontSize:"11px", fontWeight:700, letterSpacing:"0.15em" }}>◈ TIMELINE</span>
+            {/* 表示時間設定 */}
+            <div style={{ display:"flex", alignItems:"center", gap:"4px", fontSize:"9px", color:T.textDim }}>
+              <span>表示時間:</span>
+              <select value={tlStart} onChange={e => handleTlStartChange(e.target.value)}
+                style={{ background:T.bgInput||T.bgCard, border:`1px solid ${T.border}`, color:T.text, fontSize:"9px", padding:"1px 3px", borderRadius:"2px", fontFamily:"'JetBrains Mono',monospace", cursor:"pointer" }}>
+                {Array.from({length:24},(_,i)=>i).map(h=><option key={h} value={h}>{String(h).padStart(2,'0')}時</option>)}
+              </select>
+              <span>〜</span>
+              <select value={tlEnd} onChange={e => handleTlEndChange(e.target.value)}
+                style={{ background:T.bgInput||T.bgCard, border:`1px solid ${T.border}`, color:T.text, fontSize:"9px", padding:"1px 3px", borderRadius:"2px", fontFamily:"'JetBrains Mono',monospace", cursor:"pointer" }}>
+                {Array.from({length:24},(_,i)=>i+1).map(h=><option key={h} value={h}>{String(h).padStart(2,'0')}時</option>)}
+              </select>
+            </div>
           </div>
           <div style={{ position:"relative", height:"100px" }}>
             <div style={{ display:"flex", height:"100%", position:"relative" }}>
@@ -1059,9 +1084,9 @@
                 const isCurrent = h === currentHour;
                 return (
                   <div key={h} style={{ flex:1, borderRight:`1px solid ${T.border}`, position:"relative", background:isCurrent?`${T.accent}08`:"transparent" }}>
-                    <span style={{ position:"absolute", top:0, left:"4px", fontSize:"9px", color:isCurrent?T.accent:T.textMuted, fontFamily:"'JetBrains Mono',monospace", fontWeight:isCurrent?700:400 }}>{String(h).padStart(2,"0")}:00</span>
+                    <span style={{ position:"absolute", top:0, left:"4px", fontSize:"9px", color:isCurrent?T.accent:T.textMuted, fontFamily:"'JetBrains Mono',monospace", fontWeight:isCurrent?700:400 }}>{String(h).padStart(2,"0")}</span>
                     {tasksAtHour.map((t,i) => (
-                      <div key={t.id} style={{ position:"absolute", top:24+i*26, left:"4px", right:"4px", background:PRIORITIES[t.priority]?.bg, border:`1px solid ${PRIORITIES[t.priority]?.color}44`, borderLeft:`3px solid ${PRIORITIES[t.priority]?.color}`, borderRadius:"2px", padding:"2px 6px", fontSize:"9px", color:T.textDim, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", fontFamily:"'JetBrains Mono',monospace" }}>
+                      <div key={t.id} style={{ position:"absolute", top:20+i*26, left:"4px", right:"4px", background:PRIORITIES[t.priority]?.bg, border:`1px solid ${PRIORITIES[t.priority]?.color}44`, borderLeft:`3px solid ${PRIORITIES[t.priority]?.color}`, borderRadius:"2px", padding:"2px 6px", fontSize:"9px", color:T.textDim, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", fontFamily:"'JetBrains Mono',monospace" }}>
                         <span style={{ color:PRIORITIES[t.priority]?.color, marginRight:"4px" }}>●</span>{t.title}
                       </div>
                     ))}
@@ -1069,9 +1094,11 @@
                 );
               })}
             </div>
-            <div style={{ position:"absolute", left:`${((currentHour-7)+currentMin/60)/13*100}%`, top:0, bottom:0, width:"2px", background:"#ff3333", boxShadow:"0 0 8px #ff333388", zIndex:10 }}>
-              <div style={{ position:"absolute", top:"-3px", left:"-3px", width:"8px", height:"8px", background:"#ff3333", borderRadius:"50%" }} />
-            </div>
+            {currentHour >= tlStart && currentHour < tlEnd && (
+              <div style={{ position:"absolute", left:`${((currentHour-tlStart)+currentMin/60)/hours.length*100}%`, top:0, bottom:0, width:"2px", background:"#ff3333", boxShadow:"0 0 8px #ff333388", zIndex:10 }}>
+                <div style={{ position:"absolute", top:"-3px", left:"-3px", width:"8px", height:"8px", background:"#ff3333", borderRadius:"50%" }} />
+              </div>
+            )}
           </div>
         </div>
       );
@@ -1195,7 +1222,7 @@
             month: now.toISOString().slice(0,7),
             hour:  now.getHours(),
             dow:   now.getDay(),
-            version: 'v0.5.5',
+            version: 'v0.5.7',
             build:   'stable',
             createdAt: firebase.firestore.FieldValue.serverTimestamp(),
           }).catch(() => {});
@@ -1723,7 +1750,7 @@
                 <div style={{ fontSize:"9px", color:T.textMuted, letterSpacing:"0.3em", marginTop:"4px" }}>
                   <span onClick={() => setShowRelease(true)} style={{ cursor:"pointer", color:T.textDim, borderBottom:`1px solid ${T.border2}`, paddingBottom:"1px", transition:"color 0.15s" }}
                     onMouseEnter={e=>e.target.style.color=T.accent} onMouseLeave={e=>e.target.style.color=T.textDim}>
-                    ATC-SYS v0.5.5
+                    ATC-SYS v0.5.7
                   </span>
                   &nbsp;· <span style={{ color:syncColor, animation:syncStatus==="connecting"?"blink 1s infinite":"none" }}>{syncLabel}</span>
                   &nbsp;· <span style={{ color:T.textMuted }}>? でショートカット</span>
@@ -1995,16 +2022,35 @@
                       )}
                     </div>
 
-                    {/* NEXT ACTION（5スロット） */}
+                    {/* NEXT ACTION（5スロット ①〜⑤番号バー） */}
                     <div data-col-id="next" style={colBox({ border:`1px solid #00ccff33` })} {...dropCol("next")}>
                       {colHeader(COLUMNS[1], nextTasks.length)}
-                      {nextTasks.map(renderStrip)}
-                      {/* 空きスロット表示 */}
-                      {Array.from({ length: Math.max(0, 5 - nextTasks.length) }).map((_, i) => (
-                        <div key={`empty-${i}`} style={{ height:"28px", border:`1px dashed ${T.border}22`, borderRadius:"2px", marginBottom:"6px", display:"flex", alignItems:"center", justifyContent:"center" }}>
-                          <span style={{ color:T.border, fontSize:"8px", letterSpacing:"0.1em" }}>SLOT {nextTasks.length + i + 1}</span>
-                        </div>
-                      ))}
+                      {/* 各スロット: 番号セル + ストリップを1行ずつ横並び */}
+                      {Array.from({ length: 5 }).map((_, i) => {
+                        const task = nextTasks[i];
+                        return (
+                          <div key={i} style={{ display:'flex', alignItems:'stretch', gap:'4px', marginBottom:'6px' }}>
+                            {/* 番号セル */}
+                            <div style={{
+                              flexShrink:0, width:'20px',
+                              display:'flex', alignItems:'center', justifyContent:'center',
+                              background: task ? 'rgba(0,204,255,0.12)' : 'rgba(0,204,255,0.04)',
+                              border:`1px solid ${task ? 'rgba(0,204,255,0.35)' : 'rgba(0,204,255,0.1)'}`,
+                              borderRadius:'2px',
+                              color: task ? '#00ccff' : T.border,
+                              fontSize:'12px', fontWeight:700,
+                            }}>
+                              {['①','②','③','④','⑤'][i]}
+                            </div>
+                            {/* ストリップ */}
+                            <div style={{ flex:1, minWidth:0, marginBottom:'-6px' }}>
+                              {task ? renderStrip(task) : (
+                                <div style={{ height:'34px', border:`1px dashed ${T.border}22`, borderRadius:'2px' }} />
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
 
                     {/* DELEGATED（委任中） */}
@@ -2016,7 +2062,7 @@
                   </div>
 
                   {/* 右パネル: HOLDING + CLEARED */}
-                  <div style={{ flex:1, display:"grid", gridTemplateColumns:"1fr 1fr", gap:"12px" }}>
+                  <div style={{ flex:1, display:"grid", gridTemplateColumns:"1fr minmax(0,clamp(230px,19vw,285px))", gap:"12px" }}>
                     <div data-col-id="pending" style={colBox({})} {...dropCol("pending")}>
                       {colHeader(COLUMNS[3], pendingTasks.length)}
                       {pendingTasks.map(renderStrip)}
@@ -2035,7 +2081,7 @@
 
             {/* フッター */}
             <footer style={{ marginTop:"20px", paddingTop:"10px", borderTop:`1px solid ${T.border}`, display:"flex", justifyContent:"space-between", alignItems:"center", color:T.textMuted, fontSize:"9px", letterSpacing:"0.1em" }}>
-              <span>FLIGHT STRIP TODO · ATC-SYS v0.5.5</span>
+              <span>FLIGHT STRIP TODO · ATC-SYS v0.5.7</span>
               <div style={{ display:"flex", gap:"8px", alignItems:"center" }}>
                 <span>{currentTime.toLocaleDateString("ja-JP")} · STRIPS: {tasks.length}</span>
                 <button onClick={handleConsoleCopy} style={{ background:`${T.accent}10`, border:`1px solid ${T.accent}22`, color:T.textDim, padding:"2px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"8px", fontFamily:"'JetBrains Mono',monospace", letterSpacing:"0.05em" }}>📋 CONSOLE COPY</button>
