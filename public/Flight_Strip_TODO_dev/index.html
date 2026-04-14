@@ -50,7 +50,7 @@
   </style>
 </head>
 <body>
-  <div id="dev-banner">⚠ DEV BUILD — v0.10.3-dev — NOT FOR PRODUCTION ⚠</div>
+  <div id="dev-banner">⚠ DEV BUILD — v0.10.6-dev — NOT FOR PRODUCTION ⚠</div>
   <div id="root" style="padding-top:22px;"></div>
 
   <!-- Firebase 初期化 -->
@@ -459,9 +459,17 @@
     // ======================================================
     // リリースノート
     // ======================================================
-    const APP_VERSION = 'v0.10.5-dev';
+    const APP_VERSION = 'v0.10.6-dev';
 
     const RELEASE_NOTES = [
+      {
+        version: "v0.10.6-dev", date: "2026-04-14",
+        changes: [
+          "🔀 プロジェクトに「自由順モード」を追加 — タスクを任意の順番で完了できるように",
+          "🔀 プロジェクトモーダルに「順番通り／自由順」トグルボタンを追加",
+          "🔀 自由順モードでは全タスクがボード上に同時表示され、完了時は残りの先頭タスクが自動昇格",
+        ],
+      },
       {
         version: "v0.10.5-dev", date: "2026-04-14",
         changes: [
@@ -3868,14 +3876,26 @@
                     <div style={{ display:'flex', alignItems:'center', gap:'8px', paddingBottom:'8px', borderBottom:`1px solid ${T.border2}`, flexShrink:0 }}>
                       <span style={{ width:'10px', height:'10px', borderRadius:'50%', background:selectedProj.color||'#00aaff', flexShrink:0 }} />
                       <span style={{ fontSize:'13px', color:T.text, fontWeight:700 }}>{selectedProj.name}</span>
-                      <span style={{ fontSize:'9px', color:T.textDim }}>— {projTasks.length}タスク シーケンス</span>
+                      <span style={{ fontSize:'9px', color:T.textDim }}>— {projTasks.length}タスク</span>
                       <div style={{ flex:1 }} />
+                      {/* strictOrderトグル */}
+                      <button
+                        onClick={async () => {
+                          const newVal = selectedProj.strictOrder === false ? true : false;
+                          await projectsRef.doc(selectedProjId).update({ strictOrder: newVal, updatedAt: ts() });
+                        }}
+                        title={selectedProj.strictOrder === false ? '現在: 自由順（クリックで順番通りに変更）' : '現在: 順番通り（クリックで自由順に変更）'}
+                        style={{ background: selectedProj.strictOrder === false ? 'rgba(100,200,100,0.15)' : `${T.accent}18`, border: `1px solid ${selectedProj.strictOrder === false ? 'rgba(100,200,100,0.5)' : T.accent+'44'}`, color: selectedProj.strictOrder === false ? '#88dd88' : T.accent, padding:'2px 8px', borderRadius:'2px', cursor:'pointer', fontSize:'9px', fontFamily:"'JetBrains Mono',monospace", whiteSpace:'nowrap' }}>
+                        {selectedProj.strictOrder === false ? '🔀 自由順' : '🔢 順番通り'}
+                      </button>
                       <button onClick={() => deleteProject(selectedProjId)} style={{ background:'rgba(255,50,50,0.1)', border:'1px solid rgba(255,50,50,0.3)', color:'#ff8888', padding:'2px 8px', borderRadius:'2px', cursor:'pointer', fontSize:'9px', fontFamily:"'JetBrains Mono',monospace" }}>削除</button>
                     </div>
 
                     {/* シーケンス説明 */}
                     <div style={{ fontSize:'9px', color:T.textMuted, padding:'4px 0' }}>
-                      ▶ 現在のタスクが完了すると、次のタスクが自動的に NEXT ACTION に移動します
+                      {selectedProj.strictOrder === false
+                        ? '🔀 自由順モード — タスクを任意の順番で完了できます。完了時は残りの先頭タスクが自動昇格します'
+                        : '▶ 順番通りモード — 現在のタスクが完了すると、次のタスクが自動的に NEXT ACTION に移動します'}
                     </div>
 
                     {/* タスクシーケンスリスト */}
@@ -3883,7 +3903,12 @@
                       {projTasks.map((task, idx) => {
                         const pri = PRIORITIES[task.priority] || PRIORITIES.normal;
                         const isDone = ['completed','cleared','lost'].includes(task.status);
-                        const isCurrent = !isDone && projTasks.slice(0, idx).every(t => ['completed','cleared','lost'].includes(t.status));
+                        // 自由順: active/nextのタスクをisCurrent扱い / 順番通り: 前タスクが全完了なら当該タスクがcurrent
+                        const isCurrent = !isDone && (
+                          selectedProj.strictOrder === false
+                            ? ['active','next'].includes(task.status)
+                            : projTasks.slice(0, idx).every(t => ['completed','cleared','lost'].includes(t.status))
+                        );
                         const isFuture = !isDone && !isCurrent;
                         return (
                           <div key={task.id}>
@@ -4798,9 +4823,11 @@
           if (t.fromRecurring && t.scheduledDate && t.scheduledDate > today) return false;
           return true;
         });
-        // プロジェクト未来タスクを非表示（前のタスクが未完了なら隠す）
+        // プロジェクト未来タスクを非表示（strictOrder=falseのプロジェクトは全タスク表示）
         return base.filter(task => {
           if (!task.projectId) return true;
+          const proj = projects.find(p => p.id === task.projectId);
+          if (proj?.strictOrder === false) return true; // 自由順: 全タスク表示
           const hasEarlierActive = tasks.some(t =>
             t.projectId === task.projectId &&
             t.id !== task.id &&
@@ -4809,7 +4836,7 @@
           );
           return !hasEarlierActive;
         });
-      }, [tasks, filterPriority, filterCategory]);
+      }, [tasks, filterPriority, filterCategory, projects]);
 
       // カラム別タスク取得（sortOrder降順: 大きいほど上）
       const PRIORITY_RANK = { high: 0, normal: 1, low: 2 };
@@ -4961,11 +4988,15 @@
           const task = tasks.find(t => t.id === id);
           // プロジェクトシーケンス: 次タスクを自動アクティブ化（activeだった場合はactiveに、そうでなければnextに）
           if (task?.projectId) {
+            const proj = projects.find(p => p.id === task.projectId);
             const wasActive = task.status === 'active';
-            const seq = tasks
+            const remaining = tasks
               .filter(t => t.projectId === task.projectId && t.id !== id && !['completed','cleared','lost'].includes(t.status))
               .sort((a, b) => (a.projectOrder ?? 0) - (b.projectOrder ?? 0));
-            const next = seq.find(t => (t.projectOrder ?? 0) > (task.projectOrder ?? 0));
+            // 自由順: 残りの先頭タスク / 順番通り: 現タスクより大きいorderの次タスク
+            const next = proj?.strictOrder === false
+              ? remaining[0]
+              : remaining.find(t => (t.projectOrder ?? 0) > (task.projectOrder ?? 0));
             if (next) await tasksRef.doc(next.id).update({ status: wasActive ? 'active' : 'next', updatedAt: ts() });
           }
           if (task?.recurrence) {
