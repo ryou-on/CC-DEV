@@ -50,7 +50,7 @@
   </style>
 </head>
 <body>
-  <div id="dev-banner">⚠ DEV BUILD — v0.10.11-dev — NOT FOR PRODUCTION ⚠</div>
+  <div id="dev-banner">⚠ DEV BUILD — v0.10.12-dev — NOT FOR PRODUCTION ⚠</div>
   <div id="root" style="padding-top:22px;"></div>
 
   <!-- Firebase 初期化 -->
@@ -462,9 +462,15 @@
     // ======================================================
     // リリースノート
     // ======================================================
-    const APP_VERSION = 'v0.10.11-dev';
+    const APP_VERSION = 'v0.10.12-dev';
 
     const RELEASE_NOTES = [
+      {
+        version: "v0.10.12-dev", date: "2026-04-15",
+        changes: [
+          "📬 フィードバック受信箱に返信機能を追加（AIアシスタントで下書き生成・mailto送信・送信済みトグル）",
+        ],
+      },
       {
         version: "v0.10.11-dev", date: "2026-04-15",
         changes: [
@@ -1408,10 +1414,16 @@
       // INBOXタブ state
       const [inboxItems, setInboxItems] = useState([]);
       const [inboxLoading, setInboxLoading] = useState(false);
-      const [replyOpenId, setReplyOpenId] = useState(null); // 返信フォームを開いているfbId
+      const [replyOpenId, setReplyOpenId] = useState(null);
       const [replyText, setReplyText] = useState('');
       const [replySending, setReplySending] = useState(false);
       const [replyError, setReplyError] = useState('');
+      // AI下書き
+      const [aiLoading, setAiLoading] = useState(false);
+      const [aiCharCount, setAiCharCount] = useState(0);
+      // Anthropic API Key（localStorageに保存）
+      const [anthropicKey, setAnthropicKey] = useState(() => localStorage.getItem('fst_anthropic_key') || '');
+      const [showApiKeyInput, setShowApiKeyInput] = useState(false);
 
       // Broadcast読み込み
       useEffect(() => {
@@ -1542,28 +1554,106 @@
         setInboxItems(list => list.map(it => it.docId === item.docId ? { ...it, _registered: true } : it));
       };
 
-      // フィードバックへの返信送信
+      // AI下書き生成（Claude API ストリーミング）
+      const handleAiDraft = async (item) => {
+        if (!anthropicKey) { setReplyError('Anthropic APIキーが未設定です（上の⚙ API KEY欄に入力してください）'); return; }
+        setAiLoading(true); setAiCharCount(0); setReplyText(''); setReplyError('');
+        const latestRN = RELEASE_NOTES[0];
+        const prompt = `あなたはFlight Strip TODOというタスク管理Webアプリの開発者です。ユーザーからのフィードバックに丁寧に返信するメール本文を書いてください。
+
+【受信したフィードバック】
+件名: ${item.subject || '（件名なし）'}
+内容: ${item.message || '（内容なし）'}
+
+【最新バージョン情報】
+バージョン: ${latestRN?.version || ''} (${latestRN?.date || ''})
+変更内容:
+${(latestRN?.changes || []).map(c => '・' + c).join('\n')}
+
+【返信のルール】
+- フィードバックへの感謝から始める
+- フィードバック内容に関連する最新アップデートがあれば具体的に言及する
+- 継続的な改善への意欲を示す
+- 締めは「引き続きよろしくお願いいたします。\n\nFlight Strip TODO 開発チーム」
+- 本文のみ出力（件名・宛先不要）
+- 200〜300字程度の日本語`;
+        try {
+          const resp = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-api-key': anthropicKey,
+              'anthropic-version': '2023-06-01',
+              'anthropic-dangerous-allow-browser': 'true',
+            },
+            body: JSON.stringify({
+              model: 'claude-sonnet-4-20250514',
+              max_tokens: 1024,
+              stream: true,
+              messages: [{ role: 'user', content: prompt }],
+            }),
+          });
+          if (!resp.ok) throw new Error(`API error ${resp.status}`);
+          const reader = resp.body.getReader();
+          const decoder = new TextDecoder();
+          let buf = '';
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buf += decoder.decode(value, { stream: true });
+            const lines = buf.split('\n');
+            buf = lines.pop() || '';
+            for (const line of lines) {
+              if (!line.startsWith('data: ')) continue;
+              const data = line.slice(6);
+              if (data === '[DONE]') continue;
+              try {
+                const parsed = JSON.parse(data);
+                if (parsed.type === 'content_block_delta' && parsed.delta?.type === 'text_delta') {
+                  setReplyText(prev => { const next = prev + parsed.delta.text; setAiCharCount(next.length); return next; });
+                }
+              } catch {}
+            }
+          }
+        } catch(e) { setReplyError('AI生成に失敗しました: ' + e.message); }
+        finally { setAiLoading(false); }
+      };
+
+      // メールクライアントで送信（mailto + BCC）
+      const handleOpenMailto = (item) => {
+        if (!replyText.trim()) { setReplyError('返信内容を入力してください'); return; }
+        const subject = encodeURIComponent(`Re: [${item.fbId || ''}] ${item.subject || 'フィードバックへの返信'}`);
+        const body = encodeURIComponent(replyText.trim());
+        const bcc = encodeURIComponent('junpei.omote@gmail.com');
+        window.open(`mailto:${item.email}?bcc=${bcc}&subject=${subject}&body=${body}`, '_blank');
+      };
+
+      // 送信済みトグル（Firestore + ローカル state）
+      const handleToggleSent = async (item) => {
+        const newStatus = item.status === 'replied' ? 'new' : 'replied';
+        await db2.collection('fst_feedback').doc(item.docId).update({
+          status: newStatus,
+          ...(newStatus === 'replied'
+            ? { replyText: replyText.trim() || item.replyText || '', repliedAt: firebase.firestore.FieldValue.serverTimestamp() }
+            : { repliedAt: null }),
+        }).catch(() => {});
+        setInboxItems(list => list.map(it =>
+          it.docId === item.docId ? { ...it, status: newStatus } : it
+        ));
+        if (newStatus === 'replied') { setReplyOpenId(null); setReplyText(''); }
+      };
+
+      // フィードバックへの返信送信（Firestoreへの保存 + mailto起動）
       const handleSendReply = async (item) => {
         if (!replyText.trim()) { setReplyError('返信内容を入力してください'); return; }
         setReplySending(true); setReplyError('');
         try {
-          // EmailJS で返信メール送信（設定済みの場合）
-          if (EMAILJS_CONFIG.publicKey && EMAILJS_CONFIG.serviceId && EMAILJS_CONFIG.replyTemplateId && item.email) {
-            await window.emailjs.send(
-              EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.replyTemplateId,
-              { to_email: item.email, fb_id: item.fbId,
-                subject: item.subject || '', original_message: item.message || '',
-                reply_message: replyText.trim() },
-              EMAILJS_CONFIG.publicKey
-            );
-          }
-          // Firestore に返信内容を保存
+          handleOpenMailto(item);
           await db2.collection('fst_feedback').doc(item.docId).update({
             replyText: replyText.trim(),
             repliedAt: firebase.firestore.FieldValue.serverTimestamp(),
             status: 'replied',
           });
-          // ローカル state を更新
           setInboxItems(list => list.map(it =>
             it.docId === item.docId ? { ...it, replyText: replyText.trim(), status: 'replied' } : it
           ));
@@ -1924,10 +2014,39 @@
                 </div>
               )}
 
-              {/* INBOXタブ (ER-0056) */}
+              {/* INBOXタブ */}
               {tab === 'inbox' && (
                 <div>
-                  <div style={{ fontSize:'10px', color:T.textDim, letterSpacing:'0.1em', marginBottom:'14px' }}>受信したフィードバック一覧。ERに登録ボタンで直接エンハンスリクエストに追加できます。</div>
+                  {/* API KEY 設定パネル */}
+                  <div style={{ marginBottom:'14px', padding:'8px 12px', background:'rgba(100,120,140,0.08)', border:`1px solid ${T.border2}`, borderRadius:'3px' }}>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                      <span style={{ fontSize:'9px', color:T.textDim, letterSpacing:'0.1em' }}>
+                        ⚙ API KEY — {anthropicKey ? '✓ 設定済み' : '未設定（AI下書きに必要）'}
+                      </span>
+                      <button onClick={() => setShowApiKeyInput(p => !p)}
+                        style={{ fontSize:'9px', background:'transparent', border:`1px solid ${T.border2}`, color:T.textDim, padding:'2px 8px', borderRadius:'2px', cursor:'pointer', fontFamily:"'JetBrains Mono',monospace" }}>
+                        {showApiKeyInput ? '閉じる' : '設定'}
+                      </button>
+                    </div>
+                    {showApiKeyInput && (
+                      <div style={{ marginTop:'8px', display:'flex', gap:'6px' }}>
+                        <input
+                          type="password"
+                          value={anthropicKey}
+                          onChange={e => setAnthropicKey(e.target.value)}
+                          placeholder="sk-ant-..."
+                          style={{ flex:1, background:T.bgInput, border:`1px solid ${T.border2}`, color:T.text, padding:'5px 8px', borderRadius:'2px', fontSize:'11px', fontFamily:"'JetBrains Mono',monospace", outline:'none' }}
+                        />
+                        <button onClick={() => { localStorage.setItem('fst_anthropic_key', anthropicKey); setShowApiKeyInput(false); }}
+                          style={{ background:`${T.accent}22`, border:`1px solid ${T.accent}55`, color:T.accent, padding:'5px 12px', borderRadius:'2px', cursor:'pointer', fontSize:'10px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace" }}>
+                          保存
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ fontSize:'10px', color:T.textDim, letterSpacing:'0.1em', marginBottom:'14px' }}>受信したフィードバック一覧。返信・ER登録・AI下書きが可能です。</div>
+
                   {inboxLoading ? (
                     <div style={{ color:T.textDim, fontSize:'12px' }}>読み込み中...</div>
                   ) : inboxItems.length === 0 ? (
@@ -1936,80 +2055,104 @@
                     <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
                       {inboxItems.map(item => {
                         const isRegistered = item._registered || localStorage.getItem(`fst_fb_er_registered_${item.docId}`) === '1';
-                        const isReplied = item.status === 'replied' || !!item.replyText;
+                        const isReplied = item.status === 'replied';
                         const isReplyOpen = replyOpenId === item.docId;
                         return (
-                          <div key={item.docId} style={{ padding:'12px 14px', border:`1px solid ${isReplied ? '#44aa7744' : T.border2}`, borderRadius:'2px', background: isReplied ? 'rgba(68,170,119,0.05)' : isRegistered ? `${T.accent}08` : 'transparent' }}>
+                          <div key={item.docId} style={{ padding:'12px 14px', border:`1px solid ${isReplied ? '#44aa7744' : T.border2}`, borderRadius:'3px', background: isReplied ? 'rgba(68,170,119,0.05)' : 'transparent' }}>
+                            {/* ヘッダー行 */}
                             <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:'10px', marginBottom:'6px' }}>
-                              <div style={{ flex:1 }}>
-                                <div style={{ display:'flex', gap:'8px', alignItems:'center', marginBottom:'4px', flexWrap:'wrap' }}>
-                                  <span style={{ fontSize:'9px', color:T.textDim, letterSpacing:'0.05em' }}>{item.fbId}</span>
-                                  {item.build && <span style={{ fontSize:'9px', padding:'1px 5px', background:'rgba(255,102,0,0.15)', color:'#ff8844', borderRadius:'2px' }}>{item.build}</span>}
-                                  {isReplied && <span style={{ fontSize:'9px', padding:'1px 5px', background:'rgba(68,170,119,0.2)', color:'#44aa77', borderRadius:'2px' }}>✓ 返信済み</span>}
-                                  {item.email && <span style={{ fontSize:'9px', color:T.textDim }}>{item.email}</span>}
+                              <div style={{ flex:1, minWidth:0 }}>
+                                <div style={{ display:'flex', gap:'6px', alignItems:'center', marginBottom:'4px', flexWrap:'wrap' }}>
+                                  <span style={{ fontSize:'9px', color:T.textDim, letterSpacing:'0.05em', flexShrink:0 }}>{item.fbId}</span>
+                                  {item.build && <span style={{ fontSize:'9px', padding:'1px 5px', background:'rgba(255,102,0,0.15)', color:'#ff8844', borderRadius:'2px', flexShrink:0 }}>{item.build}</span>}
+                                  {item.createdAt?.toDate && <span style={{ fontSize:'9px', color:T.textMuted, flexShrink:0 }}>{item.createdAt.toDate().toLocaleDateString('ja-JP')}</span>}
+                                  {isReplied && <span style={{ fontSize:'9px', padding:'1px 6px', background:'rgba(68,170,119,0.2)', color:'#44aa77', borderRadius:'2px', fontWeight:700, flexShrink:0 }}>✓ 返信済み</span>}
+                                  {item.email && <span style={{ fontSize:'9px', color:'#6699ff', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.email}</span>}
                                 </div>
                                 {item.subject && <div style={{ fontSize:'11px', fontWeight:700, color:T.text, marginBottom:'4px' }}>{item.subject}</div>}
-                                <div style={{ fontSize:'11px', color:T.textDim, whiteSpace:'pre-wrap', wordBreak:'break-word', maxHeight:'80px', overflowY:'auto' }}>{item.message}</div>
+                                <div style={{ fontSize:'11px', color:T.textDim, whiteSpace:'pre-wrap', wordBreak:'break-word', maxHeight:'80px', overflowY:'auto', lineHeight:1.5 }}>{item.message}</div>
+                                {/* 送信済み返信プレビュー */}
                                 {isReplied && item.replyText && (
-                                  <div style={{ marginTop:'8px', padding:'8px 10px', background:'rgba(68,170,119,0.08)', border:'1px solid rgba(68,170,119,0.2)', borderRadius:'2px' }}>
-                                    <div style={{ fontSize:'8px', color:'#44aa77', letterSpacing:'0.1em', marginBottom:'4px' }}>REPLY SENT</div>
+                                  <div style={{ marginTop:'8px', padding:'8px 10px', background:'rgba(68,170,119,0.07)', border:'1px solid rgba(68,170,119,0.2)', borderRadius:'2px' }}>
+                                    <div style={{ fontSize:'8px', color:'#44aa77', letterSpacing:'0.12em', marginBottom:'4px' }}>↩ REPLY SENT — 送信元: lobby@ps7.co.jp</div>
                                     <div style={{ fontSize:'11px', color:T.textDim, whiteSpace:'pre-wrap', wordBreak:'break-word' }}>{item.replyText}</div>
                                   </div>
                                 )}
                               </div>
-                              <div style={{ display:'flex', flexDirection:'column', gap:'6px', flexShrink:0 }}>
-                                <button
-                                  onClick={() => !isRegistered && handleRegisterAsER(item)}
-                                  disabled={isRegistered}
-                                  style={{ padding:'5px 10px', borderRadius:'2px', cursor: isRegistered ? 'default' : 'pointer', fontSize:'10px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace", letterSpacing:'0.05em',
-                                    background: isRegistered ? `${T.accent}18` : `${T.accent}22`,
-                                    border: isRegistered ? `1px solid ${T.accent}44` : `1px solid ${T.accent}66`,
-                                    color: T.accent, opacity: isRegistered ? 0.7 : 1,
-                                  }}>
-                                  {isRegistered ? '✓ 登録済み' : '＋ ERに登録'}
+                              {/* アクションボタン群 */}
+                              <div style={{ display:'flex', flexDirection:'column', gap:'5px', flexShrink:0 }}>
+                                {/* ERに登録 */}
+                                <button onClick={() => !isRegistered && handleRegisterAsER(item)} disabled={isRegistered}
+                                  style={{ padding:'4px 10px', borderRadius:'2px', cursor: isRegistered ? 'default' : 'pointer', fontSize:'9px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace",
+                                    background: isRegistered ? `${T.accent}12` : `${T.accent}22`,
+                                    border: `1px solid ${isRegistered ? T.accent+'33' : T.accent+'66'}`,
+                                    color: T.accent, opacity: isRegistered ? 0.65 : 1 }}>
+                                  {isRegistered ? '✓ ER登録済' : '＋ ERに登録'}
                                 </button>
+                                {/* 返信フォーム開閉 */}
                                 {item.email && (
-                                  <button
-                                    onClick={() => {
-                                      if (isReplyOpen) { setReplyOpenId(null); setReplyText(''); setReplyError(''); }
-                                      else { setReplyOpenId(item.docId); setReplyText(''); setReplyError(''); }
-                                    }}
-                                    style={{ padding:'5px 10px', borderRadius:'2px', cursor:'pointer', fontSize:'10px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace", letterSpacing:'0.05em',
-                                      background: isReplyOpen ? 'rgba(68,170,119,0.2)' : 'rgba(68,170,119,0.1)',
-                                      border: `1px solid rgba(68,170,119,${isReplyOpen ? '0.6' : '0.3'})`,
-                                      color: '#44aa77',
-                                    }}>
+                                  <button onClick={() => { if (isReplyOpen) { setReplyOpenId(null); setReplyText(''); setReplyError(''); } else { setReplyOpenId(item.docId); setReplyText(item.replyText || ''); setReplyError(''); } }}
+                                    style={{ padding:'4px 10px', borderRadius:'2px', cursor:'pointer', fontSize:'9px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace",
+                                      background: isReplyOpen ? 'rgba(68,170,119,0.22)' : 'rgba(68,170,119,0.1)',
+                                      border: `1px solid rgba(68,170,119,${isReplyOpen ? '0.6' : '0.3'})`, color:'#44aa77' }}>
                                     {isReplyOpen ? '✕ 閉じる' : isReplied ? '↩ 再返信' : '↩ 返信'}
                                   </button>
                                 )}
+                                {/* 送信済みトグル */}
+                                <button onClick={() => handleToggleSent(item)}
+                                  style={{ padding:'4px 10px', borderRadius:'2px', cursor:'pointer', fontSize:'9px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace",
+                                    background: isReplied ? 'rgba(68,170,119,0.18)' : 'rgba(100,120,140,0.1)',
+                                    border: `1px solid ${isReplied ? 'rgba(68,170,119,0.5)' : T.border2}`,
+                                    color: isReplied ? '#44aa77' : T.textDim }}>
+                                  {isReplied ? '✓ 送信済み' : '○ 未返信'}
+                                </button>
                               </div>
                             </div>
+
+                            {/* 返信フォーム */}
                             {isReplyOpen && (
-                              <div style={{ marginTop:'10px', padding:'10px', background:`${T.bgCard}`, border:`1px solid ${T.border2}`, borderRadius:'2px' }}>
-                                <div style={{ fontSize:'9px', color:'#44aa77', letterSpacing:'0.1em', marginBottom:'6px' }}>↩ REPLY TO {item.email}</div>
+                              <div style={{ marginTop:'10px', padding:'12px', background:T.bgInput, border:`1px solid rgba(68,170,119,0.3)`, borderRadius:'3px' }}>
+                                {/* 返信先情報 */}
+                                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'8px', flexWrap:'wrap', gap:'4px' }}>
+                                  <div style={{ fontSize:'9px', color:'#44aa77', letterSpacing:'0.08em' }}>
+                                    ↩ TO: <span style={{ color:'#6699ff' }}>{item.email}</span>
+                                    {'　'}FROM: lobby@ps7.co.jp{'　'}BCC: junpei.omote@gmail.com
+                                  </div>
+                                  {/* AI下書きボタン */}
+                                  <button onClick={() => handleAiDraft(item)} disabled={aiLoading}
+                                    style={{ display:'flex', alignItems:'center', gap:'4px', padding:'3px 10px', borderRadius:'2px', cursor: aiLoading ? 'default' : 'pointer', fontSize:'9px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace",
+                                      background: aiLoading ? 'rgba(180,120,255,0.1)' : 'rgba(180,120,255,0.18)',
+                                      border:'1px solid rgba(180,120,255,0.45)', color:'#bb88ff',
+                                      opacity: aiLoading ? 0.7 : 1 }}>
+                                    🤖 {aiLoading ? `生成中...（${aiCharCount}字）` : 'AI下書き'}
+                                  </button>
+                                </div>
+                                {/* テキストエリア */}
                                 <textarea
                                   value={replyText}
                                   onChange={e => { setReplyText(e.target.value); setReplyError(''); }}
-                                  rows={4}
-                                  placeholder="返信メッセージを入力..."
-                                  style={{ width:'100%', background:T.bgInput, border:`1px solid ${T.border2}`, color:T.text, padding:'8px 10px', borderRadius:'2px', fontSize:'11px', fontFamily:"'JetBrains Mono',monospace", resize:'vertical', outline:'none', boxSizing:'border-box' }}
+                                  rows={6}
+                                  placeholder="返信メッセージを入力...（またはAI下書きボタンで自動生成）"
+                                  style={{ width:'100%', background:T.bgModal, border:`1px solid ${T.border2}`, color:T.text, padding:'8px 10px', borderRadius:'2px', fontSize:'11px', fontFamily:"'JetBrains Mono',monospace", resize:'vertical', outline:'none', boxSizing:'border-box', lineHeight:1.6 }}
                                 />
-                                {replyError && <div style={{ fontSize:'10px', color:'#ff6666', marginTop:'4px' }}>{replyError}</div>}
-                                {!EMAILJS_CONFIG.replyTemplateId && (
-                                  <div style={{ fontSize:'9px', color:'#ff8844', marginTop:'4px' }}>⚠ EmailJS未設定のため、Firestoreへの保存のみ行われます（メール送信なし）</div>
-                                )}
-                                <div style={{ display:'flex', justifyContent:'flex-end', gap:'6px', marginTop:'8px' }}>
-                                  <button onClick={() => { setReplyOpenId(null); setReplyText(''); setReplyError(''); }}
-                                    style={{ padding:'5px 12px', borderRadius:'2px', cursor:'pointer', fontSize:'10px', background:'transparent', border:`1px solid ${T.border2}`, color:T.textDim, fontFamily:"'JetBrains Mono',monospace" }}>
-                                    キャンセル
-                                  </button>
-                                  <button onClick={() => handleSendReply(item)} disabled={replySending}
-                                    style={{ padding:'5px 14px', borderRadius:'2px', cursor:'pointer', fontSize:'10px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace",
-                                      background:'rgba(68,170,119,0.2)', border:'1px solid rgba(68,170,119,0.5)', color:'#44aa77',
-                                      opacity: replySending ? 0.6 : 1 }}>
-                                    {replySending ? '送信中...' : '送信'}
-                                  </button>
+                                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginTop:'8px', flexWrap:'wrap', gap:'6px' }}>
+                                  <div style={{ fontSize:'9px', color:T.textMuted }}>
+                                    {replyText.length > 0 && `${replyText.length}字`}
+                                  </div>
+                                  <div style={{ display:'flex', gap:'6px' }}>
+                                    <button onClick={() => { setReplyOpenId(null); setReplyText(''); setReplyError(''); }}
+                                      style={{ padding:'5px 12px', borderRadius:'2px', cursor:'pointer', fontSize:'10px', background:'transparent', border:`1px solid ${T.border2}`, color:T.textDim, fontFamily:"'JetBrains Mono',monospace" }}>
+                                      キャンセル
+                                    </button>
+                                    <button onClick={() => handleSendReply(item)} disabled={replySending || !item.email}
+                                      style={{ padding:'5px 14px', borderRadius:'2px', cursor:'pointer', fontSize:'10px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace",
+                                        background:'rgba(68,170,119,0.2)', border:'1px solid rgba(68,170,119,0.55)', color:'#44aa77',
+                                        opacity: (replySending || !item.email) ? 0.5 : 1 }}>
+                                      {replySending ? '送信中...' : '📧 メール送信'}
+                                    </button>
+                                  </div>
                                 </div>
+                                {replyError && <div style={{ fontSize:'10px', color:'#ff6666', marginTop:'6px' }}>{replyError}</div>}
                               </div>
                             )}
                           </div>
