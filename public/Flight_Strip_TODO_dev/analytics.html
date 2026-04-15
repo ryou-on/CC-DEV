@@ -54,6 +54,17 @@
   const DOW_LABELS = ['日','月','火','水','木','金','土'];
   const DOW_COLORS = ['#ff6688','#00aaff','#00aaff','#00aaff','#00aaff','#00aaff','#ff6688'];
 
+  const RELEASE_NOTES = [
+    { version:'v0.10.12-dev', date:'2026-04-15', changes:['📬 フィードバック受信箱に返信機能を追加（AIアシスタントで下書き生成・mailto送信・送信済みトグル）'] },
+    { version:'v0.10.11-dev', date:'2026-04-15', changes:['🖱 STRIPホバー時のアクションボタンを整理（✎編集 / ⛶全画面 / ✕削除の3つに集約）'] },
+    { version:'v0.10.10-dev', date:'2026-04-15', changes:['📊 管理画面にVERSIONSタブを追加 — バージョン分布グラフ＋リリースノート対応表'] },
+    { version:'v0.10.9-dev',  date:'2026-04-15', changes:['🗓 日付カレンダーがモーダル内で見切れる問題を修正（ポータル描画に変更）'] },
+    { version:'v0.10.8-dev',  date:'2026-04-15', changes:['📌 HOLDINGカラム幅をACTIVE/NEXT/DELEGATEDと同幅に統一','🪟 ポップアップ/モーダルの表示位置ズレを修正（ReactDOM.createPortal対応）'] },
+    { version:'v0.5.8',       date:'2026-04-15', changes:['🪟 ポップアップ表示位置ズレを修正','📌 HOLDINGカラム幅を統一','🖱 ホバーアイコンを整理（✎編集 / ✕削除）'] },
+    { version:'v0.5.7',       date:'2026-04-14', changes:['📋 タスク詳細モーダルにサブタスクリストを追加','🎯 プロジェクトフィルターのUI改善'] },
+    { version:'v0.5.5',       date:'2026-04-08', changes:['🔔 通知機能の追加（期限切れアラート）','📱 モバイル表示の改善'] },
+  ];
+
   // ── ログイン画面 ──────────────────────────────
   const Login = () => {
     const [loading, setLoading] = useState(false);
@@ -487,6 +498,7 @@ HAVE A NICE TRIP！
     const [range,        setRange]        = useState(30);
     const [buildFilter,  setBuildFilter]  = useState('all'); // 'all' | 'stable' | 'dev'
     const [activeTab,    setActiveTab]    = useState('stats'); // 'stats' | 'inbox'
+    const [showRNotes,   setShowRNotes]   = useState(false);
 
     useEffect(() => {
       const cutoff = new Date();
@@ -663,8 +675,15 @@ HAVE A NICE TRIP！
 
           {/* ヘッダー */}
           <header style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'20px', paddingBottom:'12px', borderBottom:`1px solid ${BORDER}`, flexWrap:'wrap', gap:'8px' }}>
-            <div>
-              <div style={{ fontSize:'16px', fontWeight:800, color:ACC, letterSpacing:'0.2em', textShadow:`0 0 20px ${ACC}44` }}>◈ FLIGHT STRIP ANALYTICS</div>
+            <div style={{ position:'relative' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+                <div style={{ fontSize:'16px', fontWeight:800, color:ACC, letterSpacing:'0.2em', textShadow:`0 0 20px ${ACC}44` }}>◈ FLIGHT STRIP ANALYTICS</div>
+                {/* バージョンバッジ */}
+                <button onClick={() => setShowRNotes(p => !p)}
+                  style={{ fontSize:'9px', fontWeight:700, color: RELEASE_NOTES[0].version.includes('dev') ? DEV : ACC, background:'transparent', border:`1px solid ${RELEASE_NOTES[0].version.includes('dev') ? DEV : ACC}44`, borderRadius:'3px', padding:'2px 7px', cursor:'pointer', fontFamily:"'JetBrains Mono',monospace", letterSpacing:'0.05em' }}>
+                  {RELEASE_NOTES[0].version}
+                </button>
+              </div>
               <div style={{ fontSize:'8px', color:DIM, letterSpacing:'0.25em', marginTop:'3px' }}>
                 <a href="./index.html" style={{ color:DIM, textDecoration:'none', borderBottom:`1px solid ${BORDER}` }}
                   onMouseEnter={e=>e.target.style.color=ACC} onMouseLeave={e=>e.target.style.color=DIM}>
@@ -672,6 +691,27 @@ HAVE A NICE TRIP！
                 </a>
                 &nbsp;·&nbsp;{user.email}
               </div>
+              {/* リリースノートドロップダウン */}
+              {showRNotes && (
+                <div style={{ position:'absolute', top:'100%', left:0, marginTop:'6px', width:'360px', maxHeight:'320px', overflowY:'auto', background:'#0a1020', border:`1px solid ${BORDER}`, borderRadius:'6px', zIndex:9999, boxShadow:'0 8px 32px rgba(0,0,0,0.6)' }}
+                  onMouseLeave={() => {}}>
+                  <div style={{ padding:'10px 14px', borderBottom:`1px solid ${BORDER}`, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                    <span style={{ fontSize:'9px', color:ACC, fontWeight:700, letterSpacing:'0.15em' }}>RELEASE NOTES</span>
+                    <button onClick={() => setShowRNotes(false)} style={{ background:'transparent', border:'none', color:DIM, cursor:'pointer', fontSize:'12px', lineHeight:1 }}>✕</button>
+                  </div>
+                  {RELEASE_NOTES.map((rn, i) => (
+                    <div key={rn.version} style={{ padding:'10px 14px', borderBottom: i < RELEASE_NOTES.length-1 ? `1px solid ${BORDER}` : 'none' }}>
+                      <div style={{ display:'flex', gap:'8px', alignItems:'center', marginBottom:'5px' }}>
+                        <span style={{ fontSize:'10px', fontWeight:700, color: rn.version.includes('dev') ? DEV : ACC, fontFamily:"'JetBrains Mono',monospace" }}>{rn.version}</span>
+                        <span style={{ fontSize:'8px', color:DIM }}>{rn.date}</span>
+                      </div>
+                      {rn.changes.map((c, j) => (
+                        <div key={j} style={{ fontSize:'10px', color:TEXT, lineHeight:1.6, paddingLeft:'4px' }}>· {c}</div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div style={{ display:'flex', alignItems:'center', gap:'8px', flexWrap:'wrap' }}>
 
