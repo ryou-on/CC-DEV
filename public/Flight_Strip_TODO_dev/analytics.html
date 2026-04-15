@@ -197,8 +197,16 @@
 
   // ── フィードバック受信箱 ──────────────────────
   const Inbox = () => {
-    const [feedbacks, setFeedbacks] = useState([]);
-    const [loading,   setLoading]   = useState(true);
+    const [feedbacks,       setFeedbacks]       = useState([]);
+    const [loading,         setLoading]         = useState(true);
+    const [replyOpenId,     setReplyOpenId]     = useState(null);
+    const [replyText,       setReplyText]       = useState('');
+    const [replySending,    setReplySending]    = useState(false);
+    const [replyError,      setReplyError]      = useState('');
+    const [aiLoading,       setAiLoading]       = useState(false);
+    const [aiCharCount,     setAiCharCount]     = useState(0);
+    const [anthropicKey,    setAnthropicKey]    = useState(() => localStorage.getItem('fst_anthropic_key') || '');
+    const [showApiKeyInput, setShowApiKeyInput] = useState(false);
 
     useEffect(() => {
       db.collection('fst_feedback')
@@ -206,20 +214,140 @@
         .limit(200)
         .get()
         .then(snap => {
-          setFeedbacks(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+          setFeedbacks(snap.docs.map(d => ({ docId: d.id, ...d.data() })));
           setLoading(false);
         })
         .catch(() => setLoading(false));
     }, []);
 
-    const markRead = async (fbId) => {
-      await db.collection('fst_feedback').doc(fbId).update({ status: 'read' });
-      setFeedbacks(prev => prev.map(f => f.fbId === fbId ? { ...f, status: 'read' } : f));
+    const markRead = async (f) => {
+      if (f.status !== 'new') return;
+      await db.collection('fst_feedback').doc(f.docId).update({ status: 'read' }).catch(()=>{});
+      setFeedbacks(prev => prev.map(x => x.docId === f.docId ? { ...x, status: 'read' } : x));
+    };
+
+    const handleToggleSent = async (f) => {
+      const newStatus = f.status === 'replied' ? 'new' : 'replied';
+      await db.collection('fst_feedback').doc(f.docId).update({
+        status: newStatus,
+        ...(newStatus === 'replied'
+          ? { replyText: replyText.trim() || f.replyText || '', repliedAt: firebase.firestore.FieldValue.serverTimestamp() }
+          : { repliedAt: null }),
+      }).catch(()=>{});
+      setFeedbacks(prev => prev.map(x => x.docId === f.docId ? { ...x, status: newStatus } : x));
+      if (newStatus === 'replied') { setReplyOpenId(null); setReplyText(''); }
+    };
+
+    const handleOpenMailto = (f) => {
+      const subject = encodeURIComponent(`Re: [${f.fbId}] ${f.subject || 'フィードバックへの返信'}`);
+      const body    = encodeURIComponent(replyText.trim());
+      const bcc     = encodeURIComponent('junpei.omote@gmail.com');
+      window.open(`mailto:${f.email}?bcc=${bcc}&subject=${subject}&body=${body}`, '_blank');
+    };
+
+    const handleSendReply = async (f) => {
+      if (!replyText.trim()) { setReplyError('返信内容を入力してください'); return; }
+      setReplySending(true); setReplyError('');
+      try {
+        handleOpenMailto(f);
+        await db.collection('fst_feedback').doc(f.docId).update({
+          replyText: replyText.trim(),
+          repliedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          status: 'replied',
+        });
+        setFeedbacks(prev => prev.map(x => x.docId === f.docId ? { ...x, replyText: replyText.trim(), status: 'replied' } : x));
+        setReplyOpenId(null); setReplyText('');
+      } catch(e) { setReplyError('送信に失敗しました: ' + e.message); }
+      finally { setReplySending(false); }
+    };
+
+    const handleAiDraft = async (f) => {
+      if (!anthropicKey) { setReplyError('Anthropic APIキーが未設定です（上の⚙ API KEY欄に入力してください）'); return; }
+      setAiLoading(true); setAiCharCount(0); setReplyText(''); setReplyError('');
+      const prompt = `あなたはFlight Strip TODOというタスク管理Webアプリの開発者「ロビー」です。ユーザーからのフィードバックへの返信メール本文を書いてください。
+
+【受信したフィードバック】
+ID: ${f.fbId || ''}
+件名: ${f.subject || '（件名なし）'}
+内容: ${f.message || '（内容なし）'}
+バージョン種別: ${f.build === 'dev' ? '開発版' : '安定版'}
+
+【出力フォーマット（このテンプレートに忠実に従うこと）】
+---
+FLIGHT STRIP TODO制作者のロビーです。
+フィードバックいただきありがとうございます。
+
+
+${f.fbId || ''}
+${f.build === 'dev' ? '開発版' : '安定版'}
+
+件名
+${f.subject || ''}
+コメント
+${f.message || ''}
+
+【${f.fbId || ''} 返信文】
+（ここに200〜300字の返信本文。フィードバックへの感謝、関連するアップデートへの言及、継続改善への意欲を含める）
+
+HAVE A NICE TRIP！
+---
+
+【ルール】
+- 本文のみ出力（件名・宛先行は不要）
+- 日本語`;
+      try {
+        const resp = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': anthropicKey,
+            'anthropic-version': '2023-06-01',
+            'anthropic-dangerous-allow-browser': 'true',
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 1024,
+            stream: true,
+            messages: [{ role: 'user', content: prompt }],
+          }),
+        });
+        if (!resp.ok) throw new Error(`API error ${resp.status}`);
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split('\n');
+          buf = lines.pop() || '';
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            const data = line.slice(6).trim();
+            if (data === '[DONE]') continue;
+            try {
+              const j = JSON.parse(data);
+              const delta = j.delta?.text || (j.type === 'content_block_delta' ? j.delta?.text : '');
+              if (delta) {
+                setReplyText(prev => { const t = prev + delta; setAiCharCount(t.length); return t; });
+              }
+            } catch {}
+          }
+        }
+      } catch(e) { setReplyError('AI生成エラー: ' + e.message); }
+      finally { setAiLoading(false); }
     };
 
     const unreadCount = feedbacks.filter(f => f.status === 'new').length;
 
     if (loading) return <div style={{ textAlign:'center', padding:'40px', color:DIM, fontSize:'11px' }}>読み込み中...</div>;
+
+    // ボタン共通スタイル
+    const btnStyle = (color) => ({
+      fontSize:'9px', fontWeight:700, letterSpacing:'0.05em', fontFamily:"'JetBrains Mono',monospace",
+      background:`${color}18`, border:`1px solid ${color}55`, color, padding:'3px 10px',
+      borderRadius:'2px', cursor:'pointer', whiteSpace:'nowrap',
+    });
 
     return (
       <div>
@@ -231,26 +359,50 @@
           <span style={{ fontSize:'9px', color:DIM, marginLeft:'auto' }}>全 {feedbacks.length} 件</span>
         </div>
 
+        {/* API KEY設定パネル */}
+        <div style={{ marginBottom:'14px', padding:'8px 12px', background:'rgba(100,120,140,0.08)', border:`1px solid ${BORDER}`, borderRadius:'3px' }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+            <span style={{ fontSize:'9px', color:DIM, letterSpacing:'0.1em' }}>
+              ⚙ API KEY — {anthropicKey ? '✓ 設定済み' : '未設定（AI下書きに必要）'}
+            </span>
+            <button onClick={() => setShowApiKeyInput(p => !p)}
+              style={{ fontSize:'9px', background:'transparent', border:`1px solid ${BORDER}`, color:DIM, padding:'2px 8px', borderRadius:'2px', cursor:'pointer', fontFamily:"'JetBrains Mono',monospace" }}>
+              {showApiKeyInput ? '閉じる' : '設定'}
+            </button>
+          </div>
+          {showApiKeyInput && (
+            <div style={{ marginTop:'8px', display:'flex', gap:'6px' }}>
+              <input type="password" value={anthropicKey} onChange={e => setAnthropicKey(e.target.value)}
+                placeholder="sk-ant-..."
+                style={{ flex:1, background:'rgba(10,15,30,0.8)', border:`1px solid ${BORDER}`, color:TEXT, padding:'5px 8px', borderRadius:'2px', fontSize:'11px', fontFamily:"'JetBrains Mono',monospace", outline:'none' }} />
+              <button onClick={() => { localStorage.setItem('fst_anthropic_key', anthropicKey); setShowApiKeyInput(false); }}
+                style={{ ...btnStyle(ACC), padding:'5px 12px' }}>保存</button>
+            </div>
+          )}
+        </div>
+
         {feedbacks.length === 0 ? (
           <div style={{ textAlign:'center', padding:'40px', color:DIM, fontSize:'11px' }}>フィードバックはまだありません</div>
         ) : (
           <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
             {feedbacks.map(f => {
-              const isNew = f.status === 'new';
+              const isNew     = f.status === 'new';
+              const isReplied = f.status === 'replied';
               const buildColor = f.build === 'dev' ? DEV : STABLE;
               const date = f.createdAt?.toDate ? f.createdAt.toDate().toLocaleString('ja-JP') : '---';
+              const isOpen = replyOpenId === f.docId;
               return (
-                <div key={f.id}
-                  style={{ background: isNew ? 'rgba(255,255,255,0.97)' : 'rgba(255,255,255,0.92)', border:`1px solid ${isNew ? ACC+'88' : '#cccccc'}`, borderRadius:'6px', padding:'14px 16px', cursor: isNew ? 'pointer' : 'default', transition:'border-color 0.15s' }}
-                  onClick={() => isNew && markRead(f.fbId)}>
+                <div key={f.docId}
+                  style={{ background: isNew ? 'rgba(255,255,255,0.97)' : 'rgba(255,255,255,0.92)', border:`1px solid ${isNew ? ACC+'88' : isReplied ? '#2277cc55' : '#cccccc'}`, borderRadius:'6px', padding:'14px 16px', transition:'border-color 0.15s' }}
+                  onClick={() => isNew && markRead(f)}>
                   {/* ヘッダー行 */}
                   <div style={{ display:'flex', alignItems:'center', gap:'8px', marginBottom:'12px', flexWrap:'wrap' }}>
                     <span style={{ fontSize:'12px', fontWeight:800, color: isNew ? '#008855' : '#446688', letterSpacing:'0.1em', fontFamily:"'JetBrains Mono',monospace" }}>{f.fbId}</span>
                     <span style={{ fontSize:'9px', fontWeight:700, color:'#fff', background: buildColor, borderRadius:'3px', padding:'2px 7px', opacity: f.build === 'dev' ? 0.85 : 0.75 }}>
                       {f.build === 'dev' ? '開発版' : '安定版'}
                     </span>
-                    {isNew && <span style={{ fontSize:'9px', color:'#fff', background:'#e03030', borderRadius:'3px', padding:'2px 7px', fontWeight:800, letterSpacing:'0.05em' }}>NEW</span>}
-                    {f.replySent && <span style={{ fontSize:'9px', color:'#fff', background:'#2277cc', borderRadius:'3px', padding:'2px 7px' }}>✓ 返信済</span>}
+                    {isNew     && <span style={{ fontSize:'9px', color:'#fff', background:'#e03030', borderRadius:'3px', padding:'2px 7px', fontWeight:800, letterSpacing:'0.05em' }}>NEW</span>}
+                    {isReplied && <span style={{ fontSize:'9px', color:'#fff', background:'#2277cc', borderRadius:'3px', padding:'2px 7px' }}>✓ 返信済</span>}
                     <span style={{ fontSize:'9px', color:'#889999', marginLeft:'auto' }}>{date}</span>
                   </div>
                   {/* 件名 */}
@@ -264,9 +416,60 @@
                     <div style={{ fontSize:'12px', color:'#334455', lineHeight:1.7, whiteSpace:'pre-wrap' }}>{f.message}</div>
                   </div>
                   {f.email && (
-                    <div style={{ fontSize:'10px', color:'#3377bb', letterSpacing:'0.05em' }}>✉ {f.email}</div>
+                    <div style={{ fontSize:'10px', color:'#3377bb', letterSpacing:'0.05em', marginBottom:'10px' }}>✉ {f.email}</div>
                   )}
-                  {isNew && <div style={{ fontSize:'9px', color:'#aabbcc', marginTop:'8px', textAlign:'right' }}>タップ / クリックで既読にする</div>}
+
+                  {/* アクションボタン行 */}
+                  <div onClick={e => e.stopPropagation()} style={{ display:'flex', gap:'6px', flexWrap:'wrap', marginTop:'4px' }}>
+                    <button style={{ ...btnStyle('#5599ff'), fontSize:'10px' }}
+                      onClick={() => {
+                        if (isOpen) { setReplyOpenId(null); setReplyText(''); setReplyError(''); }
+                        else { setReplyOpenId(f.docId); setReplyText(''); setReplyError(''); }
+                      }}>
+                      {isOpen ? '✕ 閉じる' : '↩ 返信'}
+                    </button>
+                    <button style={{ ...btnStyle(isReplied ? '#2277cc' : '#889999'), fontSize:'10px' }}
+                      onClick={() => handleToggleSent(f)}>
+                      {isReplied ? '✓ 送信済み' : '○ 未返信'}
+                    </button>
+                  </div>
+
+                  {/* 返信フォーム */}
+                  {isOpen && (
+                    <div onClick={e => e.stopPropagation()} style={{ marginTop:'12px', padding:'12px', background:'rgba(0,0,0,0.06)', border:'1px solid #ccddee', borderRadius:'4px' }}>
+                      <div style={{ fontSize:'8px', color:'#889999', letterSpacing:'0.1em', marginBottom:'6px' }}>
+                        TO: {f.email || '（メールなし）'} &nbsp;|&nbsp; FROM: lobby@ps7.co.jp &nbsp;|&nbsp; BCC: junpei.omote@gmail.com
+                      </div>
+                      <textarea
+                        value={replyText}
+                        onChange={e => setReplyText(e.target.value)}
+                        placeholder="返信内容を入力..."
+                        rows={8}
+                        style={{ width:'100%', background:'rgba(255,255,255,0.95)', border:'1px solid #aabbcc', color:'#1a2a3a', padding:'8px', borderRadius:'2px', fontSize:'12px', fontFamily:"'JetBrains Mono',monospace", lineHeight:1.7, outline:'none', resize:'vertical' }}
+                      />
+                      {replyError && <div style={{ fontSize:'10px', color:'#cc4444', marginTop:'4px' }}>{replyError}</div>}
+                      <div style={{ display:'flex', gap:'6px', marginTop:'8px', flexWrap:'wrap', alignItems:'center' }}>
+                        <button onClick={() => handleAiDraft(f)} disabled={aiLoading}
+                          style={{ ...btnStyle('#aa66ff'), opacity: aiLoading ? 0.6 : 1 }}>
+                          {aiLoading ? `🤖 生成中...（${aiCharCount}字）` : '🤖 AI下書き'}
+                        </button>
+                        {f.email && (
+                          <button onClick={() => handleSendReply(f)} disabled={replySending || !replyText.trim()}
+                            style={{ ...btnStyle('#00cc77'), opacity: (!replyText.trim() || replySending) ? 0.5 : 1 }}>
+                            {replySending ? '送信中...' : '📧 メール送信'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 送信済みプレビュー */}
+                  {isReplied && f.replyText && !isOpen && (
+                    <div style={{ marginTop:'10px', padding:'8px 12px', background:'rgba(34,119,204,0.08)', border:'1px solid #2277cc44', borderRadius:'3px' }}>
+                      <div style={{ fontSize:'8px', color:'#2277cc', letterSpacing:'0.1em', marginBottom:'4px' }}>送信済み返信</div>
+                      <div style={{ fontSize:'11px', color:'#334455', lineHeight:1.6, whiteSpace:'pre-wrap' }}>{f.replyText}</div>
+                    </div>
+                  )}
                 </div>
               );
             })}
