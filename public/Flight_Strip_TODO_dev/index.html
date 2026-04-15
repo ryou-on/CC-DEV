@@ -50,7 +50,7 @@
   </style>
 </head>
 <body>
-  <div id="dev-banner">⚠ DEV BUILD — v0.10.12-dev — NOT FOR PRODUCTION ⚠</div>
+  <div id="dev-banner">⚠ DEV BUILD — v0.10.13-dev — NOT FOR PRODUCTION ⚠</div>
   <div id="root" style="padding-top:22px;"></div>
 
   <!-- Firebase 初期化 -->
@@ -462,9 +462,15 @@
     // ======================================================
     // リリースノート
     // ======================================================
-    const APP_VERSION = 'v0.10.12-dev';
+    const APP_VERSION = 'v0.10.13-dev';
 
     const RELEASE_NOTES = [
+      {
+        version: "v0.10.13-dev", date: "2026-04-15",
+        changes: [
+          "☑ 全画面表示でチェックリストのON/OFF切替・新規追加が可能に",
+        ],
+      },
       {
         version: "v0.10.12-dev", date: "2026-04-15",
         changes: [
@@ -2838,12 +2844,26 @@ HAVE A NICE TRIP！
     // ======================================================
     // ER-0071: タスクフルスクリーンモーダル
     // ======================================================
-    const TaskFullscreenModal = ({ task, onClose, onStatusChange, onEdit, T }) => {
+    const TaskFullscreenModal = ({ task, onClose, onStatusChange, onEdit, onUpdateCheckItems, T }) => {
       if (!task) return null;
       const pri = PRIORITIES[task.priority] || PRIORITIES.normal;
       const cat = CATEGORIES[task.category] || CATEGORIES.work;
       const isCompleted = ['completed','cleared'].includes(task.status);
       const isLost = task.status === 'lost';
+      const [localCheckItems, setLocalCheckItems] = useState(task.checkItems || []);
+      const [newItemText, setNewItemText] = useState('');
+      const handleToggleCheck = (id) => {
+        const updated = localCheckItems.map(ci => ci.id === id ? { ...ci, checked: !ci.checked } : ci);
+        setLocalCheckItems(updated);
+        onUpdateCheckItems && onUpdateCheckItems(task.id, updated);
+      };
+      const handleAddItem = () => {
+        if (!newItemText.trim()) return;
+        const updated = [...localCheckItems, { id: Date.now().toString(), text: newItemText.trim(), checked: false }];
+        setLocalCheckItems(updated);
+        setNewItemText('');
+        onUpdateCheckItems && onUpdateCheckItems(task.id, updated);
+      };
 
       const statusButtons = [
         { id:'active',    label:'▶ ACTIVE',    color:'#00ff88' },
@@ -2893,19 +2913,29 @@ HAVE A NICE TRIP！
               </div>
 
               {/* チェックリスト（checkItems） */}
-              {task.checkItems && task.checkItems.length > 0 && (
+              {(localCheckItems.length > 0 || true) && (
                 <div style={{ marginBottom:'20px', border:`1px solid ${T.border2}`, borderRadius:'4px', padding:'14px 16px' }}>
                   <div style={{ fontSize:'10px', color:T.textDim, letterSpacing:'0.1em', marginBottom:'10px' }}>
-                    ☑ チェックリスト — {task.checkItems.filter(ci=>ci.checked).length}/{task.checkItems.length}
+                    ☑ チェックリスト — {localCheckItems.filter(ci=>ci.checked).length}/{localCheckItems.length}
                   </div>
-                  {task.checkItems.map(ci => (
-                    <div key={ci.id} style={{ display:'flex', alignItems:'center', gap:'10px', padding:'5px 0', borderBottom:`1px solid ${T.border2}22` }}>
-                      <div style={{ width:'16px', height:'16px', border:`1.5px solid ${ci.checked?T.accent:T.border2}`, borderRadius:'3px', background:ci.checked?T.accent:'transparent', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  {localCheckItems.map(ci => (
+                    <div key={ci.id} onClick={() => handleToggleCheck(ci.id)}
+                      style={{ display:'flex', alignItems:'center', gap:'10px', padding:'7px 0', borderBottom:`1px solid ${T.border2}22`, cursor:'pointer', userSelect:'none' }}>
+                      <div style={{ width:'16px', height:'16px', border:`1.5px solid ${ci.checked?T.accent:T.border2}`, borderRadius:'3px', background:ci.checked?T.accent:'transparent', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.1s' }}>
                         {ci.checked && <span style={{ color:'#000', fontSize:'10px', fontWeight:700 }}>✓</span>}
                       </div>
-                      <span style={{ fontSize:'12px', color:ci.checked?T.textDim:T.text, textDecoration:ci.checked?'line-through':'none' }}>{ci.text}</span>
+                      <span style={{ fontSize:'13px', color:ci.checked?T.textDim:T.text, textDecoration:ci.checked?'line-through':'none' }}>{ci.text}</span>
                     </div>
                   ))}
+                  {/* アイテム追加 */}
+                  <div style={{ display:'flex', gap:'6px', marginTop:'10px' }}>
+                    <input value={newItemText} onChange={e => setNewItemText(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleAddItem()}
+                      placeholder="+ アイテムを追加..."
+                      style={{ flex:1, background:T.bgInput, border:`1px solid ${T.border2}`, color:T.text, padding:'6px 10px', borderRadius:'3px', fontSize:'12px', fontFamily:"'JetBrains Mono',monospace", outline:'none' }} />
+                    <button onClick={handleAddItem}
+                      style={{ background:`${T.accent}18`, border:`1px solid ${T.accent}55`, color:T.accent, padding:'6px 12px', borderRadius:'3px', cursor:'pointer', fontSize:'12px', fontFamily:"'JetBrains Mono',monospace" }}>＋</button>
+                  </div>
                 </div>
               )}
 
@@ -5914,7 +5944,7 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
           {/* ER-0068: チュートリアル */}
           {showTutorial && ReactDOM.createPortal(<TutorialOverlay onClose={() => setShowTutorial(false)} />, document.body)}
           {/* ER-0071: フルスクリーン */}
-          {fullscreenTaskId && ReactDOM.createPortal(<TaskFullscreenModal task={tasks.find(t=>t.id===fullscreenTaskId)} onClose={()=>setFullscreenTaskId(null)} onStatusChange={handleStatusChange} onEdit={id=>{ setEditTaskId(id); setFullscreenTaskId(null); }} T={T} />, document.body)}
+          {fullscreenTaskId && ReactDOM.createPortal(<TaskFullscreenModal task={tasks.find(t=>t.id===fullscreenTaskId)} onClose={()=>setFullscreenTaskId(null)} onStatusChange={handleStatusChange} onEdit={id=>{ setEditTaskId(id); setFullscreenTaskId(null); }} onUpdateCheckItems={async (taskId, newItems) => { await tasksRef.doc(taskId).update({ checkItems: newItems, updatedAt: ts() }); setTasks(prev => prev.map(t => t.id===taskId ? { ...t, checkItems: newItems } : t)); }} T={T} />, document.body)}
           {/* ER-0075: COMPLETED アニメーション（クリック位置に fixed 表示） */}
           {completedAnimRect && ReactDOM.createPortal(
             <div style={{ position:'fixed', top: completedAnimRect.top + 4, left: completedAnimRect.left, width: completedAnimRect.width, zIndex:9999, pointerEvents:'none', textAlign:'center', animation:'completedPop 1.4s ease forwards' }}>
