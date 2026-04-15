@@ -459,9 +459,16 @@
     // ======================================================
     // リリースノート
     // ======================================================
-    const APP_VERSION = 'v0.10.8-dev';
+    const APP_VERSION = 'v0.10.9-dev';
 
     const RELEASE_NOTES = [
+      {
+        version: "v0.10.9-dev", date: "2026-04-15",
+        changes: [
+          "🗓 日付カレンダーがモーダル内で見切れる問題を修正（ポータル描画に変更）",
+          "🔲 ポップアップ・モーダル類をすべてポータル描画に統一（表示位置のズレを修正）",
+        ],
+      },
       {
         version: "v0.10.8-dev", date: "2026-04-15",
         changes: [
@@ -1906,7 +1913,9 @@
     // ======================================================
     // ミニカレンダーコンポーネント
     // ======================================================
-    const MiniCalendar = ({ value, onChange, onClose }) => {
+    // anchorRect: getBoundingClientRect() of the trigger button
+    // → provided時はポータル経由でposition:fixed、省略時はposition:absolute（後方互換）
+    const MiniCalendar = ({ value, onChange, onClose, anchorRect }) => {
       const T = useT();
       const today = new Date();
       // valueは "YYYY-MM-DD" or "" → 表示用
@@ -1925,8 +1934,17 @@
       const isToday    = (d) => today.getFullYear()===viewYear && today.getMonth()===viewMonth && today.getDate()===d;
       const MONTH_NAMES = ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月'];
       const DAY_NAMES = ['日','月','火','水','木','金','土'];
-      return (
-        <div style={{ position:"absolute", zIndex:200, background:T.bgModal, border:`1px solid ${T.accent}55`, borderRadius:"6px", padding:"10px", boxShadow:"0 6px 24px rgba(0,0,0,0.5)", minWidth:"220px", fontFamily:"'JetBrains Mono',monospace" }}>
+      // anchorRect が渡された場合は画面内に収まるよう座標を調整
+      const posStyle = anchorRect
+        ? {
+            position: "fixed",
+            top: Math.min(anchorRect.bottom + 4, window.innerHeight - 290),
+            left: Math.min(anchorRect.left, window.innerWidth - 240),
+            zIndex: 9999,
+          }
+        : { position: "absolute" };
+      const content = (
+        <div data-mini-cal="true" style={{ ...posStyle, background:T.bgModal, border:`1px solid ${T.accent}55`, borderRadius:"6px", padding:"10px", boxShadow:"0 6px 24px rgba(0,0,0,0.5)", minWidth:"220px", fontFamily:"'JetBrains Mono',monospace" }}>
           {/* ヘッダー */}
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:"8px" }}>
             <button onClick={() => { let m=viewMonth-1, y=viewYear; if(m<0){m=11;y--;} setViewMonth(m); setViewYear(y); }} style={{ background:"transparent", border:"none", color:T.textDim, cursor:"pointer", fontSize:"14px", padding:"2px 6px" }}>‹</button>
@@ -1974,6 +1992,7 @@
           </div>
         </div>
       );
+      return anchorRect ? ReactDOM.createPortal(content, document.body) : content;
     };
 
     // 時間プルダウン（15分刻み）
@@ -2034,11 +2053,16 @@
       const fromYMD = (s) => s.replace(/-/g,'').length===8 ? `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}` : s;
       const [dateInput, setDateInput] = useState(task.scheduledDate || ''); // YYYY-MM-DD
       const [showCal,   setShowCal]   = useState(false);
+      const [calRect,   setCalRect]   = useState(null);
       const calRef = useRef(null);
-      // カレンダー外クリックで閉じる
+      // カレンダー外クリックで閉じる（ポータル描画のカレンダー本体も除外）
       useEffect(() => {
         if (!showCal) return;
-        const handler = (e) => { if (calRef.current && !calRef.current.contains(e.target)) setShowCal(false); };
+        const handler = (e) => {
+          const inTrigger = calRef.current && calRef.current.contains(e.target);
+          const inPopup = !!e.target.closest('[data-mini-cal]');
+          if (!inTrigger && !inPopup) setShowCal(false);
+        };
         document.addEventListener('mousedown', handler);
         return () => document.removeEventListener('mousedown', handler);
       }, [showCal]);
@@ -2121,12 +2145,12 @@
                 </div>
                 <div ref={calRef} style={{ flex:"0 0 130px", position:"relative" }}>
                   <div style={lbl}>📅 DATE</div>
-                  <div onClick={() => setShowCal(p=>!p)}
+                  <div onClick={() => { if (!showCal) setCalRect(calRef.current.getBoundingClientRect()); setShowCal(p=>!p); }}
                     style={{ ...inp, cursor:"pointer", color: dateInput ? "#00ccff" : T.textMuted, borderColor: dateInput ? "#00ccff66" : T.border2, display:"flex", alignItems:"center", justifyContent:"space-between", userSelect:"none" }}>
                     <span>{dateInput ? dateInput.replace(/-/g,'') : '未設定'}</span>
                     <span style={{ fontSize:"10px", opacity:0.6 }}>📅</span>
                   </div>
-                  {showCal && <MiniCalendar value={dateInput} onChange={setDateInput} onClose={() => setShowCal(false)} />}
+                  {showCal && <MiniCalendar value={dateInput} onChange={setDateInput} onClose={() => setShowCal(false)} anchorRect={calRect} />}
                 </div>
                 <div style={{ flex:1 }}>
                   <div style={lbl}>TAGS（カンマ区切り）</div>
@@ -3451,6 +3475,7 @@
       const [recurMDay,setRecurMDay]= useState(1);
       const [dateInput,setDateInput]= useState(''); // YYYY-MM-DD
       const [showCal,  setShowCal]  = useState(false);
+      const [calRect,  setCalRect]  = useState(null);
       const [estimatedMinutes, setEstimatedMinutes] = useState("");
       const [checkItems,   setCheckItems]   = useState([]);
       const [checkInput,   setCheckInput]   = useState("");
@@ -3460,7 +3485,12 @@
       useEffect(() => { titleRef.current?.focus(); }, []);
       useEffect(() => {
         if (!showCal) return;
-        const handler = (e) => { if (calRef.current && !calRef.current.contains(e.target)) setShowCal(false); };
+        // ポータル描画のカレンダー本体も除外して外クリック判定
+        const handler = (e) => {
+          const inTrigger = calRef.current && calRef.current.contains(e.target);
+          const inPopup = !!e.target.closest('[data-mini-cal]');
+          if (!inTrigger && !inPopup) setShowCal(false);
+        };
         document.addEventListener('mousedown', handler);
         return () => document.removeEventListener('mousedown', handler);
       }, [showCal]);
@@ -3516,12 +3546,12 @@
                 {TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
               <div ref={calRef} style={{ position:"relative", width:"120px" }}>
-                <div onClick={() => setShowCal(p=>!p)}
+                <div onClick={() => { if (!showCal) setCalRect(calRef.current.getBoundingClientRect()); setShowCal(p=>!p); }}
                   style={{ ...inp, cursor:"pointer", color:dateInput?"#00ccff":T.textMuted, borderColor:dateInput?"#00ccff66":T.border2, display:"flex", alignItems:"center", justifyContent:"space-between", userSelect:"none" }}>
                   <span style={{ fontSize:"11px" }}>{dateInput ? dateInput.replace(/-/g,'') : '日付'}</span>
                   <span style={{ fontSize:"10px", opacity:0.6 }}>📅</span>
                 </div>
-                {showCal && <MiniCalendar value={dateInput} onChange={setDateInput} onClose={() => setShowCal(false)} />}
+                {showCal && <MiniCalendar value={dateInput} onChange={setDateInput} onClose={() => setShowCal(false)} anchorRect={calRect} />}
               </div>
             </div>
             <input style={inp} placeholder="タグ（カンマ区切り）" value={tagInput} onChange={e=>setTagInput(e.target.value)} />
@@ -5587,25 +5617,26 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
             <div style={{ position:"fixed", inset:0, background:`repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,${T.scanAlpha}) 3px,rgba(0,0,0,${T.scanAlpha}) 6px)`, pointerEvents:"none", zIndex:1 }} />
           )}
 
-          {showHelp    && <ShortcutHelp  onClose={() => setShowHelp(false)} />}
-          {showRelease && <ReleaseNotes  onClose={() => setShowRelease(false)} onShowTutorial={() => { setShowRelease(false); setShowTutorial(true); }} />}
-          {showFeedback && <FeedbackModal user={user} build="dev" onClose={() => setShowFeedback(false)} />}
-          {showCatEditor && <CategoryEditor categories={categories} onSave={handleSaveCats} onClose={() => setShowCatEditor(false)} />}
-          {showER && <ERModal ers={ers} onSave={handleSaveERs} onClose={() => setShowER(false)} currentUserEmail={user.email} />}
-          {showProjects && <ProjectModal tasks={tasks} tasksRef={tasksRef} projects={projects} projectsRef={projectsRef} onClose={() => setShowProjects(false)} onEditTask={id => { setShowProjects(false); setEditTaskId(id); }} />}
-          {editTaskId && editTask && <EditStripModal task={editTask} onSave={handleEditSave} onClose={() => setEditTaskId(null)} />}
+          {/* ポップアップ類はすべてportalでbodyに直接レンダリング（position:fixedのズレを防止） */}
+          {showHelp     && ReactDOM.createPortal(<ShortcutHelp  onClose={() => setShowHelp(false)} />, document.body)}
+          {showRelease  && ReactDOM.createPortal(<ReleaseNotes  onClose={() => setShowRelease(false)} onShowTutorial={() => { setShowRelease(false); setShowTutorial(true); }} />, document.body)}
+          {showFeedback && ReactDOM.createPortal(<FeedbackModal user={user} build="dev" onClose={() => setShowFeedback(false)} />, document.body)}
+          {showCatEditor && ReactDOM.createPortal(<CategoryEditor categories={categories} onSave={handleSaveCats} onClose={() => setShowCatEditor(false)} />, document.body)}
+          {showER && ReactDOM.createPortal(<ERModal ers={ers} onSave={handleSaveERs} onClose={() => setShowER(false)} currentUserEmail={user.email} />, document.body)}
+          {showProjects && ReactDOM.createPortal(<ProjectModal tasks={tasks} tasksRef={tasksRef} projects={projects} projectsRef={projectsRef} onClose={() => setShowProjects(false)} onEditTask={id => { setShowProjects(false); setEditTaskId(id); }} />, document.body)}
+          {editTaskId && editTask && ReactDOM.createPortal(<EditStripModal task={editTask} onSave={handleEditSave} onClose={() => setEditTaskId(null)} />, document.body)}
           {/* ER-040: リリースノートポップアップ */}
-          {showRnPopup && <ReleaseNotePopup onClose={() => setShowRnPopup(false)} />}
+          {showRnPopup && ReactDOM.createPortal(<ReleaseNotePopup onClose={() => setShowRnPopup(false)} />, document.body)}
           {/* ER-0063: 管理画面モーダル群 */}
-          {showAdminPanel && <AdminPanel user={user} ers={ers} onSaveERs={handleSaveERs} onClose={() => setShowAdminPanel(false)} />}
+          {showAdminPanel && ReactDOM.createPortal(<AdminPanel user={user} ers={ers} onSaveERs={handleSaveERs} onClose={() => setShowAdminPanel(false)} />, document.body)}
           {/* ER-0066: おつかれさまモード */}
-          {showOtsukare && <OtsukarePopup tasks={tasks} onClose={() => setShowOtsukare(false)} />}
+          {showOtsukare && ReactDOM.createPortal(<OtsukarePopup tasks={tasks} onClose={() => setShowOtsukare(false)} />, document.body)}
           {/* ER-0067: タスクログ */}
-          {showTaskLog && <TaskLogModal tasks={tasks} categories={categories} onClose={() => setShowTaskLog(false)} />}
+          {showTaskLog && ReactDOM.createPortal(<TaskLogModal tasks={tasks} categories={categories} onClose={() => setShowTaskLog(false)} />, document.body)}
           {/* ER-0068: チュートリアル */}
-          {showTutorial && <TutorialOverlay onClose={() => setShowTutorial(false)} />}
+          {showTutorial && ReactDOM.createPortal(<TutorialOverlay onClose={() => setShowTutorial(false)} />, document.body)}
           {/* ER-0071: フルスクリーン */}
-          {fullscreenTaskId && <TaskFullscreenModal task={tasks.find(t=>t.id===fullscreenTaskId)} onClose={()=>setFullscreenTaskId(null)} onStatusChange={handleStatusChange} onEdit={id=>{ setEditTaskId(id); setFullscreenTaskId(null); }} T={T} />}
+          {fullscreenTaskId && ReactDOM.createPortal(<TaskFullscreenModal task={tasks.find(t=>t.id===fullscreenTaskId)} onClose={()=>setFullscreenTaskId(null)} onStatusChange={handleStatusChange} onEdit={id=>{ setEditTaskId(id); setFullscreenTaskId(null); }} T={T} />, document.body)}
           {/* ER-0075: COMPLETED アニメーション（クリック位置に fixed 表示） */}
           {completedAnimRect && ReactDOM.createPortal(
             <div style={{ position:'fixed', top: completedAnimRect.top + 4, left: completedAnimRect.left, width: completedAnimRect.width, zIndex:9999, pointerEvents:'none', textAlign:'center', animation:'completedPop 1.4s ease forwards' }}>
@@ -5621,7 +5652,7 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
               if (activeDropConfirm.taskId) await handleStatusChange(activeDropConfirm.taskId, 'active');
               setActiveDropConfirm(null);
             };
-            return (
+            return ReactDOM.createPortal(
               <div style={{ position:'fixed', inset:0, zIndex:600, background:'rgba(0,0,0,0.75)', display:'flex', alignItems:'center', justifyContent:'center', padding:'16px' }}>
                 <div style={{ background:T.bgModal, border:`1px solid ${T.accent}44`, borderRadius:'6px', padding:'24px', maxWidth:'400px', width:'100%', fontFamily:"'JetBrains Mono',monospace", boxShadow:'0 8px 40px rgba(0,0,0,0.6)' }}>
                   <div style={{ fontSize:'12px', fontWeight:700, color:T.accent, letterSpacing:'0.15em', marginBottom:'16px' }}>⚡ ACTIVE を変更しますか？</div>
@@ -5642,7 +5673,8 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                     </button>
                   </div>
                 </div>
-              </div>
+              </div>,
+              document.body
             );
           })()}
 
