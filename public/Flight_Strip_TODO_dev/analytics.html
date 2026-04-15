@@ -273,7 +273,9 @@
     };
 
     const handleAiDraft = async (f) => {
-      if (!anthropicKey) { setReplyError('Anthropic APIキーが未設定です（上の⚙ API KEY欄に入力してください）'); return; }
+      const key = anthropicKey.trim();
+      if (!key) { setReplyError('Anthropic APIキーが未設定です（上の⚙ API KEY欄に入力してください）'); return; }
+      if (!key.startsWith('sk-ant-')) { setReplyError('APIキーの形式が正しくありません（sk-ant- で始まる必要があります）'); return; }
       setAiLoading(true); setAiCharCount(0); setReplyText(''); setReplyError('');
       const prompt = `あなたはFlight Strip TODOというタスク管理Webアプリの開発者「ロビー」です。ユーザーからのフィードバックへの返信メール本文を書いてください。
 
@@ -309,20 +311,24 @@ HAVE A NICE TRIP！
       try {
         const resp = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
+          mode: 'cors',
           headers: {
             'Content-Type': 'application/json',
-            'x-api-key': anthropicKey,
+            'x-api-key': key,
             'anthropic-version': '2023-06-01',
             'anthropic-dangerous-allow-browser': 'true',
           },
           body: JSON.stringify({
-            model: 'claude-sonnet-4-20250514',
+            model: 'claude-sonnet-4-6',
             max_tokens: 1024,
             stream: true,
             messages: [{ role: 'user', content: prompt }],
           }),
         });
-        if (!resp.ok) throw new Error(`API error ${resp.status}`);
+        if (!resp.ok) {
+          const errText = await resp.text().catch(() => '');
+          throw new Error(`HTTP ${resp.status}: ${errText.slice(0,100)}`);
+        }
         const reader = resp.body.getReader();
         const decoder = new TextDecoder();
         let buf = '';
@@ -345,7 +351,14 @@ HAVE A NICE TRIP！
             } catch {}
           }
         }
-      } catch(e) { setReplyError('AI生成エラー: ' + e.message); }
+      } catch(e) {
+        const msg = e.message || '';
+        if (msg.includes('Failed to fetch')) {
+          setReplyError('通信エラー: api.anthropic.com に接続できません。ブラウザ拡張（uBlock等）やネットワーク設定を確認してください。');
+        } else {
+          setReplyError('AI生成エラー: ' + msg);
+        }
+      }
       finally { setAiLoading(false); }
     };
 
