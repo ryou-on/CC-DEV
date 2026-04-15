@@ -280,6 +280,14 @@
     // ======================================================
     const RELEASE_NOTES = [
       {
+        version: "v0.5.8", date: "2026-04-15",
+        changes: [
+          "ポップアップ・モーダルの表示位置ズレを修正",
+          "HOLDINGカラムの幅を他カラムと統一",
+          "STRIPホバー時のアクションボタンを整理（重なりを解消）",
+        ],
+      },
+      {
         version: "v0.5.7", date: "2026-04-15",
         changes: [
           "NEXT ACTIONスロットの左側に①〜⑤番号バーを配置",
@@ -1033,13 +1041,10 @@
             </span>
           </button>
 
-          {/* ホバーアクションボタン（編集・削除・ステータス変更） */}
-          <div className="opacity-0 group-hover:opacity-100" style={{ position:"absolute", top:"4px", right:"48px", display:"flex", gap:"2px", transition:"opacity 0.15s ease" }}>
-            <button onClick={e=>{e.stopPropagation();onEdit(task.id);}} title="編集 (E)" style={{ background:`${T.accent}20`, border:`1px solid ${T.accent}44`, color:T.accent, fontSize:"10px", padding:"2px 6px", borderRadius:"2px", cursor:"pointer", lineHeight:1 }}>✎</button>
-            {COLUMNS.filter(c=>c.id!==task.status && c.id!=="completed").map(col => (
-              <button key={col.id} onClick={e=>{e.stopPropagation();onStatusChange(task.id,col.id);}} title={`→ ${col.label}`} style={{ background:`rgba(0,0,0,0.7)`, border:`1px solid ${T.border}`, color:T.textDim, fontSize:"10px", padding:"2px 5px", borderRadius:"2px", cursor:"pointer", lineHeight:1 }}>{col.icon}</button>
-            ))}
-            <button onClick={e=>{e.stopPropagation();onDelete(task.id);}} title="削除 (D)" style={{ background:"rgba(255,0,0,0.2)", border:"1px solid #ff333366", color:"#ff6666", fontSize:"10px", padding:"2px 5px", borderRadius:"2px", cursor:"pointer", lineHeight:1 }}>✕</button>
+          {/* ホバーアクションボタン（✎編集 / ✕削除） */}
+          <div className="opacity-0 group-hover:opacity-100" style={{ position:"absolute", top:"24px", right:"70px", display:"flex", gap:"3px", transition:"opacity 0.15s ease", background:"rgba(10,15,20,0.82)", borderRadius:"3px", padding:"2px 4px", backdropFilter:"blur(4px)" }}>
+            <button onClick={e=>{e.stopPropagation();onEdit(task.id);}} title="編集 (E)" style={{ background:`${T.accent}22`, border:`1px solid ${T.accent}55`, color:T.accent, fontSize:"11px", padding:"3px 7px", borderRadius:"2px", cursor:"pointer", lineHeight:1 }}>✎</button>
+            <button onClick={e=>{e.stopPropagation();onDelete(task.id);}} title="削除 (D)" style={{ background:"rgba(255,50,50,0.18)", border:"1px solid #ff333366", color:"#ff6666", fontSize:"11px", padding:"3px 6px", borderRadius:"2px", cursor:"pointer", lineHeight:1 }}>✕</button>
           </div>
         </div>
       );
@@ -1708,11 +1713,12 @@
             <div style={{ position:"fixed", inset:0, background:`repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,${T.scanAlpha}) 3px,rgba(0,0,0,${T.scanAlpha}) 6px)`, pointerEvents:"none", zIndex:1 }} />
           )}
 
-          {showHelp    && <ShortcutHelp  onClose={() => setShowHelp(false)} />}
-          {showRelease && <ReleaseNotes  onClose={() => setShowRelease(false)} />}
-          {showFeedback && <FeedbackModal user={user} build="stable" onClose={() => setShowFeedback(false)} />}
-          {showCatEditor && <CategoryEditor categories={categories} onSave={handleSaveCats} onClose={() => setShowCatEditor(false)} />}
-          {editTaskId && editTask && <EditStripModal task={editTask} onSave={handleEditSave} onClose={() => setEditTaskId(null)} />}
+          {/* ポップアップ類はportalでbody直下に描画（position:fixedのズレを防止） */}
+          {showHelp     && ReactDOM.createPortal(<ShortcutHelp  onClose={() => setShowHelp(false)} />, document.body)}
+          {showRelease  && ReactDOM.createPortal(<ReleaseNotes  onClose={() => setShowRelease(false)} />, document.body)}
+          {showFeedback && ReactDOM.createPortal(<FeedbackModal user={user} build="stable" onClose={() => setShowFeedback(false)} />, document.body)}
+          {showCatEditor && ReactDOM.createPortal(<CategoryEditor categories={categories} onSave={handleSaveCats} onClose={() => setShowCatEditor(false)} />, document.body)}
+          {editTaskId && editTask && ReactDOM.createPortal(<EditStripModal task={editTask} onSave={handleEditSave} onClose={() => setEditTaskId(null)} />, document.body)}
           {/* 毎日1回目起動時サマリー */}
           {dailySummary && (
             <div style={{ position:'fixed', inset:0, zIndex:9000, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.5)' }}
@@ -1750,7 +1756,7 @@
                 <div style={{ fontSize:"9px", color:T.textMuted, letterSpacing:"0.3em", marginTop:"4px" }}>
                   <span onClick={() => setShowRelease(true)} style={{ cursor:"pointer", color:T.textDim, borderBottom:`1px solid ${T.border2}`, paddingBottom:"1px", transition:"color 0.15s" }}
                     onMouseEnter={e=>e.target.style.color=T.accent} onMouseLeave={e=>e.target.style.color=T.textDim}>
-                    ATC-SYS v0.5.7
+                    ATC-SYS v0.5.8
                   </span>
                   &nbsp;· <span style={{ color:syncColor, animation:syncStatus==="connecting"?"blink 1s infinite":"none" }}>{syncLabel}</span>
                   &nbsp;· <span style={{ color:T.textMuted }}>? でショートカット</span>
@@ -2061,8 +2067,8 @@
                     </div>
                   </div>
 
-                  {/* 右パネル: HOLDING + CLEARED */}
-                  <div style={{ flex:1, display:"grid", gridTemplateColumns:"1fr minmax(0,clamp(230px,19vw,285px))", gap:"12px" }}>
+                  {/* 右パネル: HOLDING + CLEARED（HOLDINGは左パネルと同幅に固定） */}
+                  <div style={{ display:"grid", gridTemplateColumns:"minmax(0,clamp(280px,22vw,360px)) minmax(0,clamp(230px,19vw,285px))", gap:"12px", alignItems:"start" }}>
                     <div data-col-id="pending" style={colBox({})} {...dropCol("pending")}>
                       {colHeader(COLUMNS[3], pendingTasks.length)}
                       {pendingTasks.map(renderStrip)}
