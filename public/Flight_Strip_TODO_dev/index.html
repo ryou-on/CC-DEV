@@ -50,7 +50,7 @@
   </style>
 </head>
 <body>
-  <div id="dev-banner">⚠ DEV BUILD — v0.10.7-dev — NOT FOR PRODUCTION ⚠</div>
+  <div id="dev-banner">⚠ DEV BUILD — v0.10.8-dev — NOT FOR PRODUCTION ⚠</div>
   <div id="root" style="padding-top:22px;"></div>
 
   <!-- Firebase 初期化 -->
@@ -459,9 +459,18 @@
     // ======================================================
     // リリースノート
     // ======================================================
-    const APP_VERSION = 'v0.10.7-dev';
+    const APP_VERSION = 'v0.10.8-dev';
 
     const RELEASE_NOTES = [
+      {
+        version: "v0.10.8-dev", date: "2026-04-15",
+        changes: [
+          "⚡ ACTIVEスロットにドロップ時の挙動設定を追加（確認あり / 確認なし / 変更禁止）",
+          "⚙ ACTIVEカラムヘッダーに歯車設定ボタンを追加",
+          "📝 タスク登録フォームをモーダル表示に変更（ボタンが画面外に消えない）",
+          "🔤 STRIPタイトルの最大行数制限（3行）でレイアウト崩れを防止",
+        ],
+      },
       {
         version: "v0.10.7-dev", date: "2026-04-15",
         changes: [
@@ -2851,7 +2860,7 @@
             )}
             <div style={{ padding:"4px 8px 2px", display:"flex", alignItems:"center", gap:"6px" }}>
               {task.isRoutine && <span style={{ fontSize:"14px", flexShrink:0 }}>🔄</span>}
-              <span style={{ color:isTerminal?T.textDim:T.text, fontSize:`${titleFontSize}px`, fontWeight:600, textDecoration:isTerminal?"line-through":"none", lineHeight:1.3, flex:1 }}>{task.title}</span>
+              <span style={{ color:isTerminal?T.textDim:T.text, fontSize:`${titleFontSize}px`, fontWeight:600, textDecoration:isTerminal?"line-through":"none", lineHeight:1.3, flex:1, overflow:"hidden", display:"-webkit-box", WebkitLineClamp:3, WebkitBoxOrient:"vertical" }}>{task.title}</span>
               {task.isRoutine && (() => {
                 const steps = task.routineSteps || [];
                 const done = steps.filter(s => s.checked).length;
@@ -3484,7 +3493,8 @@
       const inp = { background:T.bgInput, border:`1px solid ${T.border2}`, color:T.text, padding:"6px 10px", borderRadius:"2px", fontSize:"12px", fontFamily:"'JetBrains Mono',monospace", outline:"none", width:"100%", boxSizing:"border-box" };
 
       return (
-        <div style={{ background:T.bgModal, border:`1px solid ${T.accent}44`, borderRadius:"4px", padding:"16px", marginBottom:"12px", boxShadow:`0 0 20px ${T.accent}12` }}>
+  <div style={{ position:"fixed", inset:0, zIndex:500, background:"rgba(0,0,0,0.75)", display:"flex", alignItems:"center", justifyContent:"center", padding:"16px" }} onClick={onClose}>
+  <div style={{ background:T.bgModal, border:`1px solid ${T.accent}44`, borderRadius:"4px", padding:"16px", boxShadow:`0 0 20px ${T.accent}12`, width:"100%", maxWidth:"560px", maxHeight:"85vh", overflowY:"auto" }} onClick={e=>e.stopPropagation()}>
           <div style={{ color:T.accent, fontSize:"11px", fontWeight:700, letterSpacing:"0.15em", marginBottom:"12px", fontFamily:"'JetBrains Mono',monospace", display:"flex", justifyContent:"space-between" }}>
             <span>◈ NEW STRIP</span>
             <span style={{ color:T.textMuted, fontSize:"9px", fontWeight:400 }}>N キーで開閉 · Esc で閉じる</span>
@@ -3594,6 +3604,7 @@
             </div>
           </div>
         </div>
+  </div>
       );
     };
 
@@ -4360,6 +4371,11 @@
       const [completedAnimRect, setCompletedAnimRect] = useState(null);
       // アクティブタスク全画面フォーカスモード
       const [activeFocusMode, setActiveFocusMode] = useState(false);
+      // ACTIVEドロップ挙動設定: 'confirm'（確認）| 'silent'（確認なし）| 'locked'（禁止）
+      const [activeDropMode, setActiveDropMode] = useState(() => localStorage.getItem('fst_active_drop_mode') || 'confirm');
+      const [activeDropConfirm, setActiveDropConfirm] = useState(null); // { taskId } | null
+      const [showActiveDropSettings, setShowActiveDropSettings] = useState(false);
+      const handleActiveDropModeChange = (mode) => { setActiveDropMode(mode); localStorage.setItem('fst_active_drop_mode', mode); setShowActiveDropSettings(false); };
       // 全画面フォーカスモード: ブラウザ全画面API
       useEffect(() => {
         if (activeFocusMode) {
@@ -5293,6 +5309,25 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
           alert('⚠ ACTIVEへは1つのみ登録できます');
           return;
         }
+        // ACTIVEスロットに既存タスクがある場合の挙動制御
+        if (colId === 'active') {
+          const existing = tasks.find(t => t.status === 'active');
+          const movingTask = tasks.find(t => t.id === dId);
+          if (existing && movingTask && existing.id !== dId) {
+            if (activeDropMode === 'locked') {
+              // 禁止モード: 何もしない
+              if (multiSelected.size > 0) setMultiSelected(new Set());
+              return;
+            }
+            if (activeDropMode === 'confirm') {
+              // 確認モード: ダイアログ表示（移動は保留）
+              setActiveDropConfirm({ taskId: dId, multiIds: idsToMove.length > 1 ? idsToMove : null });
+              if (multiSelected.size > 0) setMultiSelected(new Set());
+              return;
+            }
+            // silentモード: そのまま続行
+          }
+        }
         for (const id of idsToMove) {
           const t = tasks.find(x => x.id === id);
           if (t && t.status !== colId) await handleStatusChange(id, colId);
@@ -5578,6 +5613,39 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
             </div>,
             document.body
           )}
+          {/* ACTIVEドロップ確認ダイアログ */}
+          {activeDropConfirm && (() => {
+            const movingTask = tasks.find(t => t.id === activeDropConfirm.taskId);
+            const existingTask = tasks.find(t => t.status === 'active');
+            const doConfirm = async () => {
+              if (activeDropConfirm.taskId) await handleStatusChange(activeDropConfirm.taskId, 'active');
+              setActiveDropConfirm(null);
+            };
+            return (
+              <div style={{ position:'fixed', inset:0, zIndex:600, background:'rgba(0,0,0,0.75)', display:'flex', alignItems:'center', justifyContent:'center', padding:'16px' }}>
+                <div style={{ background:T.bgModal, border:`1px solid ${T.accent}44`, borderRadius:'6px', padding:'24px', maxWidth:'400px', width:'100%', fontFamily:"'JetBrains Mono',monospace", boxShadow:'0 8px 40px rgba(0,0,0,0.6)' }}>
+                  <div style={{ fontSize:'12px', fontWeight:700, color:T.accent, letterSpacing:'0.15em', marginBottom:'16px' }}>⚡ ACTIVE を変更しますか？</div>
+                  <div style={{ fontSize:'11px', color:T.textDim, marginBottom:'8px' }}>
+                    現在: <span style={{ color:T.text, fontWeight:700 }}>{existingTask?.title || '—'}</span>
+                  </div>
+                  <div style={{ fontSize:'11px', color:T.textDim, marginBottom:'20px' }}>
+                    変更後: <span style={{ color:T.accent, fontWeight:700 }}>{movingTask?.title || '—'}</span>
+                  </div>
+                  <div style={{ display:'flex', gap:'8px', justifyContent:'flex-end' }}>
+                    <button onClick={() => setActiveDropConfirm(null)}
+                      style={{ background:'transparent', border:`1px solid ${T.border2}`, color:T.textDim, padding:'6px 16px', borderRadius:'3px', cursor:'pointer', fontSize:'11px' }}>
+                      キャンセル
+                    </button>
+                    <button onClick={doConfirm}
+                      style={{ background:`${T.accent}22`, border:`1px solid ${T.accent}66`, color:T.accent, padding:'6px 20px', borderRadius:'3px', cursor:'pointer', fontSize:'11px', fontWeight:700 }}>
+                      変更する
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* アクティブタスク全画面フォーカスモード */}
           {activeFocusMode && (() => {
             // filteredTasks ではなく tasks から直接取得（フィルター状態に依存しない）
@@ -6132,7 +6200,7 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                         style={{ background:T.bgCard, border:`1px solid ${T.accent}44`, borderRadius:'4px', padding:'10px', boxShadow:`0 4px 20px ${T.accent}10` }}>
                         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'6px', paddingBottom:'6px', borderBottom:`1px solid ${T.border}` }}>
                           <span style={{ color:T.accent, fontSize:'12px', fontWeight:700, letterSpacing:'0.15em' }}>▶ ACTIVE</span>
-                          <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+                          <div style={{ display:'flex', alignItems:'center', gap:'6px' }}>
                             <button
                               onClick={() => setActiveFocusMode(true)}
                               title="全画面フォーカスモード"
@@ -6144,6 +6212,32 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                                 letterSpacing: '0.05em', fontFamily: "'JetBrains Mono', monospace",
                               }}
                             >⛶ 全画面</button>
+                            <div style={{ position:"relative" }}>
+                              <button onClick={e => { e.stopPropagation(); setShowActiveDropSettings(p => !p); }}
+                                title="ACTIVEスロット設定"
+                                style={{ background:'transparent', border:`1px solid ${T.accent}33`, color:T.textDim, fontSize:'13px', padding:'2px 6px', borderRadius:'3px', cursor:'pointer', lineHeight:1 }}>
+                                ⚙
+                              </button>
+                              {showActiveDropSettings && (
+                                <>
+                                  <div style={{ position:"fixed", inset:0, zIndex:98 }} onClick={() => setShowActiveDropSettings(false)} />
+                                  <div style={{ position:"absolute", top:"calc(100% + 4px)", right:0, zIndex:99, background:T.bgModal, border:`1px solid ${T.border}`, borderRadius:"4px", padding:"8px", minWidth:"200px", boxShadow:"0 4px 20px rgba(0,0,0,0.4)", fontFamily:"'JetBrains Mono',monospace" }}>
+                                    <div style={{ fontSize:"9px", color:T.textMuted, letterSpacing:"0.15em", marginBottom:"8px" }}>ACTIVEドロップ時の挙動</div>
+                                    {[
+                                      { id:'confirm', label:'確認して変更', desc:'変更前に確認' },
+                                      { id:'silent',  label:'確認なしで変更', desc:'即座に切り替え' },
+                                      { id:'locked',  label:'変更を禁止', desc:'手動操作のみ可' },
+                                    ].map(opt => (
+                                      <button key={opt.id} onClick={() => handleActiveDropModeChange(opt.id)}
+                                        style={{ display:"block", width:"100%", textAlign:"left", padding:"7px 10px", background:activeDropMode===opt.id?`${T.accent}18`:"transparent", border:`1px solid ${activeDropMode===opt.id?T.accent+"44":T.border2}`, borderRadius:"3px", cursor:"pointer", marginBottom:"4px", color:activeDropMode===opt.id?T.accent:T.textDim }}>
+                                        <div style={{ fontSize:"11px", fontWeight:700 }}>{activeDropMode===opt.id?"◉ ":""}{opt.label}</div>
+                                        <div style={{ fontSize:"9px", color:T.textMuted, marginTop:"2px" }}>{opt.desc}</div>
+                                      </button>
+                                    ))}
+                                  </div>
+                                </>
+                              )}
+                            </div>
                             <span style={{ fontSize:'9px', color:T.textMuted }}>max 1</span>
                           </div>
                         </div>
@@ -6293,13 +6387,41 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                     </div>
                     <div style={{ display:"flex", alignItems:"center", gap:"6px" }}>
                       {col.id === "active" && (
-                        <button
-                          onClick={() => setActiveFocusMode(true)}
-                          style={{ background:`${T.accent}18`, border:`1px solid ${T.accent}55`, color:T.accent,
-                            fontSize:"10px", padding:"2px 9px", borderRadius:"2px", cursor:"pointer",
-                            fontWeight:700, letterSpacing:"0.08em", fontFamily:"'JetBrains Mono',monospace" }}>
-                          全画面
-                        </button>
+                        <>
+                          <button
+                            onClick={() => setActiveFocusMode(true)}
+                            style={{ background:`${T.accent}18`, border:`1px solid ${T.accent}55`, color:T.accent,
+                              fontSize:"10px", padding:"2px 9px", borderRadius:"2px", cursor:"pointer",
+                              fontWeight:700, letterSpacing:"0.08em", fontFamily:"'JetBrains Mono',monospace" }}>
+                            全画面
+                          </button>
+                          <div style={{ position:"relative" }}>
+                            <button onClick={e => { e.stopPropagation(); setShowActiveDropSettings(p => !p); }}
+                              title="ACTIVEスロット設定"
+                              style={{ background:showActiveDropSettings?`${T.accent}22`:"transparent", border:`1px solid ${T.accent}33`, color:T.textDim, fontSize:"11px", padding:"2px 6px", borderRadius:"2px", cursor:"pointer", lineHeight:1 }}>
+                              ⚙
+                            </button>
+                            {showActiveDropSettings && (
+                              <>
+                                <div style={{ position:"fixed", inset:0, zIndex:98 }} onClick={() => setShowActiveDropSettings(false)} />
+                                <div style={{ position:"absolute", top:"calc(100% + 4px)", right:0, zIndex:99, background:T.bgModal, border:`1px solid ${T.border}`, borderRadius:"4px", padding:"8px", minWidth:"220px", boxShadow:"0 4px 20px rgba(0,0,0,0.4)", fontFamily:"'JetBrains Mono',monospace" }}>
+                                  <div style={{ fontSize:"9px", color:T.textMuted, letterSpacing:"0.15em", marginBottom:"8px" }}>ACTIVEドロップ時の挙動</div>
+                                  {[
+                                    { id:'confirm', label:'確認して変更', desc:'変更前に確認ダイアログを表示' },
+                                    { id:'silent',  label:'確認なしで変更', desc:'即座に切り替え' },
+                                    { id:'locked',  label:'変更を禁止', desc:'自分でACTIVEから外すまで変更不可' },
+                                  ].map(opt => (
+                                    <button key={opt.id} onClick={() => handleActiveDropModeChange(opt.id)}
+                                      style={{ display:"block", width:"100%", textAlign:"left", padding:"7px 10px", background:activeDropMode===opt.id?`${T.accent}18`:"transparent", border:`1px solid ${activeDropMode===opt.id?T.accent+"44":T.border2}`, borderRadius:"3px", cursor:"pointer", marginBottom:"4px", color:activeDropMode===opt.id?T.accent:T.textDim }}>
+                                      <div style={{ fontSize:"11px", fontWeight:700 }}>{activeDropMode===opt.id?"◉ ":""}{opt.label}</div>
+                                      <div style={{ fontSize:"9px", color:T.textMuted, marginTop:"2px" }}>{opt.desc}</div>
+                                    </button>
+                                  ))}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        </>
                       )}
                       <span style={{ background:"rgba(100,120,140,0.2)", color:T.textDim, fontSize:"9px", padding:"1px 6px", borderRadius:"10px" }}>{tasksCount}{col.limit?`/${col.limit}`:""}</span>
                     </div>
