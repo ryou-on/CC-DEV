@@ -50,7 +50,7 @@
   </style>
 </head>
 <body>
-  <div id="dev-banner">⚠ DEV BUILD — v0.10.17-dev — NOT FOR PRODUCTION ⚠</div>
+  <div id="dev-banner">⚠ DEV BUILD — v0.10.18-dev — NOT FOR PRODUCTION ⚠</div>
   <div id="root" style="padding-top:22px;"></div>
 
   <!-- Firebase 初期化 -->
@@ -462,9 +462,15 @@
     // ======================================================
     // リリースノート
     // ======================================================
-    const APP_VERSION = 'v0.10.17-dev';
+    const APP_VERSION = 'v0.10.18-dev';
 
     const RELEASE_NOTES = [
+      {
+        version: "v0.10.18-dev", date: "2026-04-18",
+        changes: [
+          "📦 LOSTタスクもアーカイブ対応（全選択チェックボックス付き）",
+        ],
+      },
       {
         version: "v0.10.17-dev", date: "2026-04-18",
         changes: [
@@ -6983,9 +6989,51 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                       {completedTasks.filter(t=>!t.archived).length === 0 && emptyMsg}
                     </div>
                     <div data-col-id="lost" style={colBox({ border:`1px solid #ff550022` })} {...dropCol("lost")}>
-                      {colHeader(COLUMNS[5], lostTasks.length)}
-                      {lostTasks.map(renderStrip)}
-                      {lostTasks.length === 0 && emptyMsg}
+                      {/* LOSTヘッダー + アーカイブモードトグル */}
+                      {(() => {
+                        const visibleLost = lostTasks.filter(t => !t.archived);
+                        const lostIds = visibleLost.map(t => t.id);
+                        const allLostSel = lostIds.length > 0 && lostIds.every(id => archiveSel.has(id));
+                        return (<>
+                          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'8px' }}>
+                            {colHeader(COLUMNS[5], visibleLost.length)}
+                            <button onClick={() => { setArchiveMode(p=>!p); setArchiveSel(new Set()); }}
+                              style={{ fontSize:'9px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace",
+                                background: archiveMode ? `rgba(255,170,0,0.2)` : `${T.accent}10`,
+                                border: `1px solid ${archiveMode ? '#ffaa00' : T.border2}`,
+                                color: archiveMode ? '#ffaa00' : T.textDim,
+                                padding:'3px 8px', borderRadius:'2px', cursor:'pointer', letterSpacing:'0.05em' }}>
+                              📦 {archiveMode ? 'キャンセル' : 'アーカイブ'}
+                            </button>
+                          </div>
+                          {archiveMode && archiveSel.size > 0 && (
+                            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'6px', padding:'5px 8px', background:'rgba(255,170,0,0.12)', border:'1px solid #ffaa0055', borderRadius:'3px' }}>
+                              <span style={{ fontSize:'9px', color:'#ffaa00' }}>{archiveSel.size} 件選択中</span>
+                              <button onClick={handleArchive}
+                                style={{ fontSize:'9px', fontWeight:700, background:'rgba(255,170,0,0.25)', border:'1px solid #ffaa00', color:'#ffaa00', padding:'3px 10px', borderRadius:'2px', cursor:'pointer', fontFamily:"'JetBrains Mono',monospace" }}>
+                                📦 アーカイブする
+                              </button>
+                            </div>
+                          )}
+                          {archiveMode && visibleLost.length > 0 && (
+                            <div style={{ display:'flex', alignItems:'center', gap:'6px', padding:'4px 8px', marginBottom:'4px', background:`${T.accent}08`, borderRadius:'3px', border:`1px solid ${T.border2}` }}>
+                              <input type="checkbox" checked={allLostSel} onChange={() => toggleGroupSel(lostIds)}
+                                style={{ cursor:'pointer', accentColor:'#ffaa00', width:'13px', height:'13px', flexShrink:0 }} />
+                              <span style={{ fontSize:'9px', color:T.textDim, letterSpacing:'0.1em' }}>すべて選択</span>
+                            </div>
+                          )}
+                          {visibleLost.map(t => (
+                            <div key={t.id} style={{ display:'flex', alignItems:'flex-start', gap:'4px' }}>
+                              {archiveMode && (
+                                <input type="checkbox" checked={archiveSel.has(t.id)} onChange={() => toggleArchiveSel(t.id)}
+                                  style={{ marginTop:'8px', cursor:'pointer', accentColor:'#ffaa00', width:'13px', height:'13px', flexShrink:0 }} />
+                              )}
+                              <div style={{ flex:1, minWidth:0 }}>{renderStrip(t)}</div>
+                            </div>
+                          ))}
+                          {visibleLost.length === 0 && emptyMsg}
+                        </>);
+                      })()}
                     </div>
                   </div>
 
