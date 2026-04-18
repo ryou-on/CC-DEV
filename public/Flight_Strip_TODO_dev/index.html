@@ -50,7 +50,7 @@
   </style>
 </head>
 <body>
-  <div id="dev-banner">⚠ DEV BUILD — v0.10.18-dev — NOT FOR PRODUCTION ⚠</div>
+  <div id="dev-banner">⚠ DEV BUILD — v0.10.19-dev — NOT FOR PRODUCTION ⚠</div>
   <div id="root" style="padding-top:22px;"></div>
 
   <!-- Firebase 初期化 -->
@@ -462,9 +462,15 @@
     // ======================================================
     // リリースノート
     // ======================================================
-    const APP_VERSION = 'v0.10.18-dev';
+    const APP_VERSION = 'v0.10.19-dev';
 
     const RELEASE_NOTES = [
+      {
+        version: "v0.10.19-dev", date: "2026-04-18",
+        changes: [
+          "📋 アーカイブ一覧モーダル追加 — CLEARED/LOSTに分類表示・「↩ 戻す」で元のカラムに復元可能",
+        ],
+      },
       {
         version: "v0.10.18-dev", date: "2026-04-18",
         changes: [
@@ -4747,6 +4753,7 @@ HAVE A NICE TRIP！
       const [showTutorial, setShowTutorial] = useState(false);
       // ER-0060: ルーティンモーダル
       const [showRoutines, setShowRoutines] = useState(false);
+      const [showArchiveView, setShowArchiveView] = useState(false);
       // ER-0071: フルスクリーンタスク
       const [fullscreenTaskId, setFullscreenTaskId] = useState(null);
       // ER-0075: タスク完了アニメーション（クリック時の座標）
@@ -4883,6 +4890,9 @@ HAVE A NICE TRIP！
         archiveSel.forEach(id => batch.update(tasksRef.doc(id), { archived: true, updatedAt: ts() }));
         await batch.commit();
         setArchiveSel(new Set()); setArchiveMode(false);
+      };
+      const handleRestore = async (id, status) => {
+        await tasksRef.doc(id).update({ archived: false, status, updatedAt: ts() });
       };
       // PROJ/ROUTINE ドロップダウン
       const [showProjMenu, setShowProjMenu] = useState(false);
@@ -6329,6 +6339,61 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
           )}
           {/* ER-0060: ルーティンモーダル */}
           {showRoutines && <RoutineModal tasks={tasks} tasksRef={tasksRef} projectsRef={projectsRef} onClose={() => setShowRoutines(false)} />}
+          {/* アーカイブ一覧モーダル */}
+          {showArchiveView && ReactDOM.createPortal(
+            (() => {
+              const archivedTasks = tasks.filter(t => t.archived).sort((a,b) =>
+                (b.completedAt?.toDate?.() || b.updatedAt?.toDate?.() || new Date(0)).getTime() -
+                (a.completedAt?.toDate?.() || a.updatedAt?.toDate?.() || new Date(0)).getTime()
+              );
+              const cleared = archivedTasks.filter(t => t.status === 'completed');
+              const lost    = archivedTasks.filter(t => t.status === 'lost');
+              const renderSection = (title, color, items, restoreStatus) => items.length === 0 ? null : (
+                <div style={{ marginBottom:'20px' }}>
+                  <div style={{ fontSize:'9px', fontWeight:700, color, letterSpacing:'0.15em', marginBottom:'8px', paddingBottom:'4px', borderBottom:`1px solid ${color}33` }}>
+                    {title} ({items.length})
+                  </div>
+                  {items.map(t => {
+                    const dateStr = (t.completedAt?.toDate?.() || t.updatedAt?.toDate?.() || new Date(0)).toLocaleDateString('ja-JP');
+                    return (
+                      <div key={t.id} style={{ display:'flex', alignItems:'center', gap:'8px', padding:'7px 10px', marginBottom:'4px', background:`${T.bgInput}`, border:`1px solid ${T.border2}`, borderRadius:'3px' }}>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:'12px', color:T.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{t.title}</div>
+                          <div style={{ fontSize:'9px', color:T.textDim, marginTop:'2px' }}>{dateStr} · {t.stripId || ''}{t.category ? ` · ${CATEGORIES[t.category]?.label||t.category}` : ''}</div>
+                        </div>
+                        <button onClick={() => handleRestore(t.id, restoreStatus)}
+                          style={{ fontSize:'9px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace", background:`${color}18`, border:`1px solid ${color}55`, color, padding:'3px 10px', borderRadius:'2px', cursor:'pointer', whiteSpace:'nowrap', flexShrink:0 }}>
+                          ↩ 戻す
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+              return (
+                <div style={{ position:'fixed', inset:0, zIndex:500, background:'rgba(0,0,0,0.82)', display:'flex', alignItems:'center', justifyContent:'center' }}
+                  onClick={() => setShowArchiveView(false)}>
+                  <div onClick={e => e.stopPropagation()}
+                    style={{ background:T.bgModal, border:`1px solid ${T.accent}44`, borderRadius:'6px', width:'min(580px,95vw)', maxHeight:'85vh', display:'flex', flexDirection:'column', boxShadow:`0 0 60px ${T.accent}18`, fontFamily:"'JetBrains Mono',monospace" }}>
+                    <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'14px 20px', borderBottom:`1px solid ${T.border2}`, flexShrink:0 }}>
+                      <span style={{ fontSize:'13px', fontWeight:700, color:'#ffaa00', letterSpacing:'0.15em' }}>📦 ARCHIVE ({archivedTasks.length})</span>
+                      <button onClick={() => setShowArchiveView(false)}
+                        style={{ background:'transparent', border:`1px solid ${T.border2}`, color:T.textDim, padding:'4px 10px', borderRadius:'2px', cursor:'pointer', fontSize:'12px' }}>✕</button>
+                    </div>
+                    <div style={{ overflowY:'auto', padding:'16px 20px', flex:1 }}>
+                      {archivedTasks.length === 0 ? (
+                        <div style={{ textAlign:'center', padding:'40px', color:T.textDim, fontSize:'11px' }}>アーカイブされたタスクはありません</div>
+                      ) : (<>
+                        {renderSection('CLEARED', '#00ff88', cleared, 'completed')}
+                        {renderSection('LOST',    '#ff6600', lost,    'lost')}
+                      </>)}
+                    </div>
+                  </div>
+                </div>
+              );
+            })(),
+            document.body
+          )}
           {broadcastMsg && <BroadcastPopup title={broadcastMsg.title} message={broadcastMsg.message} onClose={() => setBroadcastMsg(null)} />}
           {activeSurvey && <SurveyPopup survey={activeSurvey} uidHash={btoa(user.uid).replace(/[^a-zA-Z0-9]/g,'').slice(0,12)} onClose={() => setActiveSurvey(null)} />}
           {forceUpdateMsg && (
@@ -6925,17 +6990,25 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                       {pendingTasks.length === 0 && emptyMsg}
                     </div>
                     <div data-col-id="completed" style={colBox({})} {...dropCol("completed")}>
-                      {/* CLEAREDヘッダー + アーカイブモードトグル */}
-                      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'8px' }}>
+                      {/* CLEAREDヘッダー + アーカイブ操作ボタン */}
+                      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'8px', gap:'4px' }}>
                         {colHeader(COLUMNS[4], completedTasks.filter(t=>!t.archived).length)}
-                        <button onClick={() => { setArchiveMode(p=>!p); setArchiveSel(new Set()); }}
-                          style={{ fontSize:'9px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace",
-                            background: archiveMode ? `rgba(255,170,0,0.2)` : `${T.accent}10`,
-                            border: `1px solid ${archiveMode ? '#ffaa00' : T.border2}`,
-                            color: archiveMode ? '#ffaa00' : T.textDim,
-                            padding:'3px 8px', borderRadius:'2px', cursor:'pointer', letterSpacing:'0.05em' }}>
-                          📦 {archiveMode ? 'キャンセル' : 'アーカイブ'}
-                        </button>
+                        <div style={{ display:'flex', gap:'4px', flexShrink:0 }}>
+                          <button onClick={() => setShowArchiveView(true)}
+                            style={{ fontSize:'9px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace",
+                              background:`${T.accent}10`, border:`1px solid ${T.border2}`, color:T.textDim,
+                              padding:'3px 6px', borderRadius:'2px', cursor:'pointer' }} title="アーカイブ一覧">
+                            📋
+                          </button>
+                          <button onClick={() => { setArchiveMode(p=>!p); setArchiveSel(new Set()); }}
+                            style={{ fontSize:'9px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace",
+                              background: archiveMode ? `rgba(255,170,0,0.2)` : `${T.accent}10`,
+                              border: `1px solid ${archiveMode ? '#ffaa00' : T.border2}`,
+                              color: archiveMode ? '#ffaa00' : T.textDim,
+                              padding:'3px 8px', borderRadius:'2px', cursor:'pointer', letterSpacing:'0.05em' }}>
+                            📦 {archiveMode ? 'Cancel' : 'Archive'}
+                          </button>
+                        </div>
                       </div>
                       {/* アーカイブ実行バー */}
                       {archiveMode && archiveSel.size > 0 && (
