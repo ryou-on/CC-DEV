@@ -50,7 +50,7 @@
   </style>
 </head>
 <body>
-  <div id="dev-banner">⚠ DEV BUILD — v0.10.14-dev — NOT FOR PRODUCTION ⚠</div>
+  <div id="dev-banner">⚠ DEV BUILD — v0.10.15-dev — NOT FOR PRODUCTION ⚠</div>
   <div id="root" style="padding-top:22px;"></div>
 
   <!-- Firebase 初期化 -->
@@ -462,9 +462,15 @@
     // ======================================================
     // リリースノート
     // ======================================================
-    const APP_VERSION = 'v0.10.14-dev';
+    const APP_VERSION = 'v0.10.15-dev';
 
     const RELEASE_NOTES = [
+      {
+        version: "v0.10.15-dev", date: "2026-04-18",
+        changes: [
+          "🚦 NEXT ACTIONスロットが5件満杯の場合、自動でHOLDINGに振り替え（D&D・ステータス変更・新規追加すべて対応）",
+        ],
+      },
       {
         version: "v0.10.14-dev", date: "2026-04-17",
         changes: [
@@ -4182,9 +4188,9 @@ HAVE A NICE TRIP！
 
               {/* 左: プロジェクト一覧 */}
               <div style={{ width:'170px', flexShrink:0, display:'flex', flexDirection:'column', gap:'4px', overflowY:'auto' }}>
-                <div style={{ fontSize:'8px', color:T.textMuted, letterSpacing:'0.12em', padding:'2px 4px', marginBottom:'2px' }}>PROJECTS ({projects.length})</div>
-                {projects.length === 0 && <div style={{ fontSize:'10px', color:T.textMuted, padding:'12px 4px', textAlign:'center' }}>なし</div>}
-                {projects.map(proj => {
+                <div style={{ fontSize:'8px', color:T.textMuted, letterSpacing:'0.12em', padding:'2px 4px', marginBottom:'2px' }}>PROJECTS ({projects.filter(p=>!p.type||p.type!=='routine').length})</div>
+                {projects.filter(p=>!p.type||p.type!=='routine').length === 0 && <div style={{ fontSize:'10px', color:T.textMuted, padding:'12px 4px', textAlign:'center' }}>なし</div>}
+                {projects.filter(p=>!p.type||p.type!=='routine').map(proj => {
                   const ptasks = tasks.filter(t => t.projectId === proj.id);
                   const done = ptasks.filter(t => ['completed','cleared','lost'].includes(t.status)).length;
                   const isSel = proj.id === selectedProjId;
@@ -4421,10 +4427,16 @@ HAVE A NICE TRIP！
         const unsub = projectsRef.where('type','==','routine').onSnapshot(snap => {
           const list = snap.docs.map(d => ({ id:d.id, ...d.data() }));
           setRoutines(list);
-          if (list.length > 0 && !selectedRoutineId) setSelectedRoutineId(list[0].id);
-        });
+        }, err => console.error('routines snapshot error:', err));
         return unsub;
-      }, [projectsRef]); // eslint-disable-line
+      }, [projectsRef]);
+
+      // ルーティン一覧更新時、未選択なら先頭を自動選択
+      useEffect(() => {
+        if (routines.length > 0 && !selectedRoutineId) {
+          setSelectedRoutineId(routines[0].id);
+        }
+      }, [routines, selectedRoutineId]);
 
       const selectedRoutine = routines.find(r => r.id === selectedRoutineId);
       // ルーティンのステップ（tasks内のroutineId一致）
@@ -4818,6 +4830,15 @@ HAVE A NICE TRIP！
       const pendingCompletedRef = useRef(null);
       const isUndoingRef = useRef(false);
       const [undoStack, setUndoStack] = useState([]);
+      const [flashMsg,  setFlashMsg]  = useState('');
+      const flashNext = (msg) => { setFlashMsg(msg); setTimeout(() => setFlashMsg(''), 3000); };
+      const NEXT_LIMIT = 5;
+      // NEXTスロット数を確認して超過する場合はpendingに振り替える
+      const safeNext = (excludeId = null) => {
+        const cnt = tasks.filter(t => t.status === 'next' && t.id !== excludeId).length;
+        if (cnt >= NEXT_LIMIT) { flashNext(`⚠ NEXT ACTION は最大 ${NEXT_LIMIT} スロットです。HOLDINGに追加しました。`); return 'pending'; }
+        return 'next';
+      };
       // ER-0054: 一括操作ドロップダウン
       const [showBulkMenu, setShowBulkMenu] = useState(false);
       const [clearedOpen,  setClearedOpen]  = useState({'今日': true, '昨日': true});
@@ -5314,7 +5335,7 @@ HAVE A NICE TRIP！
       }, [tasksRef, user.uid]);
       // ER-0061: 次タスク追加ハンドラー
       const handleAddNextTask  = useCallback(({ title, priority, category }) => {
-        tasksRef.add({ stripId:`FS${String(Date.now()).slice(-4)}`, title, status:'next', priority: priority||'normal', category: category||'work', createdAt:ts(), updatedAt:ts(), sortOrder:Date.now() });
+        tasksRef.add({ stripId:`FS${String(Date.now()).slice(-4)}`, title, status:safeNext(), priority: priority||'normal', category: category||'work', createdAt:ts(), updatedAt:ts(), sortOrder:Date.now() });
         // タスク作成イベントを記録
         try {
           const uidHash = btoa(user.uid).replace(/[^a-zA-Z0-9]/g,'').slice(0,12);
@@ -5340,11 +5361,13 @@ HAVE A NICE TRIP！
           const prev = tasks.find(t => t.id === id);
           if (prev) setUndoStack(p => [...p.slice(-19), { taskId: id, fromStatus: prev.status }]);
         }
+        // NEXTスロット上限チェック
+        if (s === 'next') s = safeNext(id);
         // activeに変更する場合: 既存のactiveタスクをnextに移動
         if (s === 'active') {
           const currentActives = tasks.filter(t => t.status === 'active' && t.id !== id);
           for (const t of currentActives) {
-            await tasksRef.doc(t.id).update({ status: 'next', updatedAt: ts() });
+            await tasksRef.doc(t.id).update({ status: safeNext(t.id), updatedAt: ts() });
           }
         }
         // ER-0065: ライフサイクルタイムスタンプ記録
@@ -5748,7 +5771,8 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
           const targetTask  = tasks.find(t => t.id === ds.id);
           if (!draggedTask || !targetTask) return;
           if (draggedTask.status !== targetTask.status) {
-            await tasksRef.doc(taskId).update({ status: targetTask.status, updatedAt: ts() });
+            const newSt = targetTask.status === 'next' ? safeNext(taskId) : targetTask.status;
+            await tasksRef.doc(taskId).update({ status: newSt, updatedAt: ts() });
             return;
           }
           const col = tasks.filter(t => t.status === draggedTask.status).sort((a,b) => (b.sortOrder??0)-(a.sortOrder??0));
@@ -5899,6 +5923,12 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
 
       return (
         <div style={{ minHeight:"100vh", background:T.bgGrad, color:T.text, fontFamily:"'JetBrains Mono',monospace", position:"relative" }}>
+          {/* NEXTスロット超過フラッシュ通知 */}
+          {flashMsg && (
+            <div style={{ position:'fixed', bottom:'24px', left:'50%', transform:'translateX(-50%)', zIndex:9999, background:'rgba(255,170,0,0.95)', color:'#000', padding:'10px 20px', borderRadius:'4px', fontSize:'11px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace", boxShadow:'0 4px 16px rgba(0,0,0,0.4)', whiteSpace:'nowrap', letterSpacing:'0.03em' }}>
+              {flashMsg}
+            </div>
+          )}
           {/* タッチDnDゴースト */}
           {touchGhostPos && (() => {
             const task = tasks.find(t => t.id === touchGhostPos.taskId);

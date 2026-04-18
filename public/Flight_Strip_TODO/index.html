@@ -280,6 +280,12 @@
     // ======================================================
     const RELEASE_NOTES = [
       {
+        version: "v0.5.9", date: "2026-04-18",
+        changes: [
+          "🚦 NEXT ACTIONスロットが5件満杯の場合、自動でHOLDINGに振り替え（見えないタスクが発生しない）",
+        ],
+      },
+      {
         version: "v0.5.8", date: "2026-04-15",
         changes: [
           "ポップアップ・モーダルの表示位置ズレを修正",
@@ -699,6 +705,245 @@
               <div style={{ display:"flex", gap:"8px", justifyContent:"flex-end", marginTop:"4px" }}>
                 <button onClick={onClose} style={{ background:"transparent", border:`1px solid ${T.border2}`, color:T.textDim, padding:"6px 16px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontFamily:"'JetBrains Mono',monospace" }}>CANCEL</button>
                 <button onClick={handleSave} style={{ background:`${T.accent}22`, border:`1px solid ${T.accent}66`, color:T.accent, padding:"6px 16px", borderRadius:"2px", cursor:"pointer", fontSize:"11px", fontWeight:700, fontFamily:"'JetBrains Mono',monospace" }}>SAVE ↵</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // ======================================================
+    // ルーティンモーダル
+    // ======================================================
+    const RoutineModal = ({ tasks, tasksRef, projectsRef, onClose }) => {
+      const T = useT();
+      const ts = () => firebase.firestore.FieldValue.serverTimestamp();
+      const _now = new Date();
+      const todayStr = `${_now.getFullYear()}-${String(_now.getMonth()+1).padStart(2,'0')}-${String(_now.getDate()).padStart(2,'0')}`;
+
+      const [routines, setRoutines] = useState([]);
+      const [selectedRoutineId, setSelectedRoutineId] = useState(null);
+      const [showNewForm, setShowNewForm] = useState(false);
+      const [newName, setNewName] = useState('');
+      const [newColor, setNewColor] = useState('#ffaa00');
+      const [newStepTitle, setNewStepTitle] = useState('');
+      const [newStepPri, setNewStepPri] = useState('normal');
+      const [addingStep, setAddingStep] = useState(false);
+      const [generatingMsg, setGeneratingMsg] = useState('');
+
+      useEffect(() => {
+        const unsub = projectsRef.where('type','==','routine').onSnapshot(snap => {
+          const list = snap.docs.map(d => ({ id:d.id, ...d.data() }));
+          setRoutines(list);
+          if (list.length > 0 && !selectedRoutineId) setSelectedRoutineId(list[0].id);
+        });
+        return unsub;
+      }, [projectsRef]); // eslint-disable-line
+
+      const selectedRoutine = routines.find(r => r.id === selectedRoutineId);
+      const routineSteps = tasks
+        .filter(t => t.routineId === selectedRoutineId && t.isRoutineTemplate)
+        .sort((a,b) => (a.routineOrder??0)-(b.routineOrder??0));
+
+      const createRoutine = async () => {
+        if (!newName.trim()) return;
+        const ref = await projectsRef.add({ name:newName.trim(), color:newColor, type:'routine', createdAt:ts(), updatedAt:ts() });
+        setSelectedRoutineId(ref.id);
+        setNewName(''); setShowNewForm(false);
+      };
+
+      const deleteRoutine = async (id) => {
+        if (!window.confirm('ルーティンを削除しますか？')) return;
+        await projectsRef.doc(id).delete();
+        const tmpl = tasks.filter(t => t.routineId === id && t.isRoutineTemplate);
+        for (const t of tmpl) await tasksRef.doc(t.id).delete();
+        setSelectedRoutineId(routines.find(r => r.id !== id)?.id || null);
+      };
+
+      const addStep = async () => {
+        if (!newStepTitle.trim() || !selectedRoutineId) return;
+        const maxOrder = routineSteps.reduce((m,t) => Math.max(m, t.routineOrder??0), -1);
+        await tasksRef.add({
+          title: newStepTitle.trim(), priority: newStepPri,
+          status: 'pending', category: 'work', tags: [], time: '',
+          stripId: `RT${String(Date.now()).slice(-4)}`,
+          routineId: selectedRoutineId, routineOrder: maxOrder + 1,
+          isRoutineTemplate: true,
+          sortOrder: Date.now(), createdAt: ts(), updatedAt: ts(),
+        });
+        setNewStepTitle(''); setAddingStep(false);
+      };
+
+      const removeStep = async (taskId) =>
+        tasksRef.doc(taskId).update({ routineId: null, isRoutineTemplate: false, updatedAt: ts() });
+
+      const moveStep = async (taskId, dir) => {
+        const idx = routineSteps.findIndex(t => t.id === taskId);
+        const tIdx = dir === 'up' ? idx - 1 : idx + 1;
+        if (tIdx < 0 || tIdx >= routineSteps.length) return;
+        const target = routineSteps[tIdx];
+        const myO = routineSteps[idx].routineOrder ?? idx;
+        const thO = target.routineOrder ?? tIdx;
+        await tasksRef.doc(taskId).update({ routineOrder: thO, updatedAt: ts() });
+        await tasksRef.doc(target.id).update({ routineOrder: myO, updatedAt: ts() });
+      };
+
+      const startToday = async () => {
+        if (!selectedRoutineId || routineSteps.length === 0) return;
+        const key = `fst_routine_ran_${selectedRoutineId}_${todayStr}`;
+        if (localStorage.getItem(key)) {
+          setGeneratingMsg('今日はすでに作成済みです');
+          setTimeout(() => setGeneratingMsg(''), 2500);
+          return;
+        }
+        const steps = routineSteps.map((step, i) => ({
+          id: `step_${i}_${Date.now()}`,
+          text: step.title || step.text || String(step),
+          checked: false,
+        }));
+        await tasksRef.add({
+          title: selectedRoutine.name,
+          status: 'next',
+          priority: 'normal',
+          category: '',
+          tags: [],
+          time: '',
+          stripId: `RT${String(Date.now()).slice(-4)}`,
+          isRoutine: true,
+          routineId: selectedRoutineId,
+          routineSteps: steps,
+          sortOrder: Date.now(),
+          createdAt: ts(), updatedAt: ts(),
+        });
+        localStorage.setItem(key, '1');
+        setGeneratingMsg(`✓「${selectedRoutine.name}」のルーティンを開始しました`);
+        setTimeout(() => setGeneratingMsg(''), 3000);
+      };
+
+      const inp = { background:T.bgInput, border:`1px solid ${T.border2}`, color:T.text, padding:'6px 10px', borderRadius:'2px', fontSize:'11px', fontFamily:"'JetBrains Mono',monospace" };
+      const alreadyRan = selectedRoutineId && !!localStorage.getItem(`fst_routine_ran_${selectedRoutineId}_${todayStr}`);
+
+      return (
+        <div style={{ position:'fixed', inset:0, zIndex:100, background:'rgba(0,0,0,0.82)', display:'flex', alignItems:'center', justifyContent:'center' }} onClick={onClose}>
+          <div onClick={e => e.stopPropagation()} style={{ background:T.bgModal, border:`1px solid ${T.accent}44`, borderRadius:'6px', padding:'24px', maxWidth:'680px', width:'95%', maxHeight:'85vh', display:'flex', flexDirection:'column', gap:'12px', boxShadow:`0 0 40px ${T.accent}18`, fontFamily:"'JetBrains Mono',monospace" }}>
+
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+              <span style={{ color:'#ffaa00', fontSize:'13px', fontWeight:700, letterSpacing:'0.15em' }}>🔄 ROUTINES</span>
+              <div style={{ display:'flex', gap:'8px' }}>
+                <button onClick={() => setShowNewForm(p=>!p)} style={{ background:'rgba(255,170,0,0.18)', border:'1px solid rgba(255,170,0,0.5)', color:'#ffaa00', padding:'4px 12px', borderRadius:'2px', cursor:'pointer', fontSize:'10px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace" }}>+ NEW ROUTINE</button>
+                <button onClick={onClose} style={{ background:'transparent', border:`1px solid ${T.border2}`, color:T.textDim, padding:'4px 10px', borderRadius:'2px', cursor:'pointer', fontSize:'12px' }}>✕</button>
+              </div>
+            </div>
+
+            {showNewForm && (
+              <div style={{ background:'rgba(255,170,0,0.06)', border:'1px solid rgba(255,170,0,0.3)', borderRadius:'3px', padding:'10px', display:'flex', gap:'8px', flexWrap:'wrap', alignItems:'center' }}>
+                <input value={newName} onChange={e => setNewName(e.target.value)}
+                  onKeyDown={e => { if(e.key==='Enter' && !e.nativeEvent.isComposing) createRoutine(); if(e.key==='Escape') setShowNewForm(false); }}
+                  placeholder="ルーティン名（例: 朝のルーティン）..." autoFocus
+                  style={{ ...inp, flex:'1 1 160px' }} />
+                <div style={{ display:'flex', gap:'4px' }}>
+                  {['#ffaa00','#ff6600','#00ff88','#ff2299','#00aaff','#cc44ff','#ff3333','#00ccaa'].map(c => (
+                    <button key={c} onClick={() => setNewColor(c)}
+                      style={{ width:'18px', height:'18px', borderRadius:'50%', background:c, border:`2px solid ${newColor===c?'#fff':'transparent'}`, cursor:'pointer', padding:0, flexShrink:0 }} />
+                  ))}
+                </div>
+                <button onClick={createRoutine} style={{ background:'rgba(255,170,0,0.22)', border:'1px solid rgba(255,170,0,0.6)', color:'#ffaa00', padding:'6px 14px', borderRadius:'2px', cursor:'pointer', fontSize:'10px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace" }}>作成</button>
+              </div>
+            )}
+
+            <div style={{ display:'flex', gap:'16px', flex:1, minHeight:0, overflow:'hidden' }}>
+
+              <div style={{ width:'170px', flexShrink:0, display:'flex', flexDirection:'column', gap:'4px', overflowY:'auto' }}>
+                <div style={{ fontSize:'8px', color:T.textMuted, letterSpacing:'0.12em', padding:'2px 4px', marginBottom:'2px' }}>ROUTINES ({routines.length})</div>
+                {routines.length === 0 && <div style={{ fontSize:'10px', color:T.textMuted, padding:'12px 4px', textAlign:'center' }}>なし</div>}
+                {routines.map(r => {
+                  const isSel = r.id === selectedRoutineId;
+                  const ranToday = !!localStorage.getItem(`fst_routine_ran_${r.id}_${todayStr}`);
+                  return (
+                    <div key={r.id} onClick={() => setSelectedRoutineId(r.id)}
+                      style={{ padding:'8px 10px', borderRadius:'3px', border:`1px solid ${isSel?r.color+'66':T.border2}`, background:isSel?`${r.color}12`:'transparent', cursor:'pointer', transition:'all 0.1s' }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:'6px' }}>
+                        <span style={{ width:'8px', height:'8px', borderRadius:'50%', background:r.color||'#ffaa00', flexShrink:0 }} />
+                        <span style={{ fontSize:'11px', color:isSel?T.text:T.textDim, fontWeight:isSel?700:400, flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{r.name}</span>
+                      </div>
+                      {ranToday && <div style={{ fontSize:'8px', color:'#00ff88', marginTop:'3px', paddingLeft:'14px' }}>✓ 今日実施済み</div>}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div style={{ flex:1, display:'flex', flexDirection:'column', gap:'8px', overflowY:'auto', minWidth:0 }}>
+                {!selectedRoutine ? (
+                  <div style={{ fontSize:'11px', color:T.textMuted, textAlign:'center', marginTop:'32px' }}>ルーティンを選択または作成してください</div>
+                ) : (
+                  <>
+                    <div style={{ display:'flex', alignItems:'center', gap:'8px', paddingBottom:'8px', borderBottom:`1px solid ${T.border2}`, flexShrink:0 }}>
+                      <span style={{ width:'10px', height:'10px', borderRadius:'50%', background:selectedRoutine.color||'#ffaa00', flexShrink:0 }} />
+                      <span style={{ fontSize:'13px', color:T.text, fontWeight:700 }}>{selectedRoutine.name}</span>
+                      <span style={{ fontSize:'9px', color:T.textDim }}>— {routineSteps.length}ステップ</span>
+                      <div style={{ flex:1 }} />
+                      <button onClick={() => deleteRoutine(selectedRoutineId)} style={{ background:'rgba(255,50,50,0.1)', border:'1px solid rgba(255,50,50,0.3)', color:'#ff8888', padding:'2px 8px', borderRadius:'2px', cursor:'pointer', fontSize:'9px', fontFamily:"'JetBrains Mono',monospace" }}>削除</button>
+                    </div>
+
+                    <div style={{ display:'flex', alignItems:'center', gap:'10px', padding:'10px', background:alreadyRan?'rgba(0,255,136,0.06)':'rgba(255,170,0,0.08)', border:`1px solid ${alreadyRan?'rgba(0,255,136,0.3)':'rgba(255,170,0,0.3)'}`, borderRadius:'3px', flexShrink:0 }}>
+                      <div style={{ flex:1 }}>
+                        <div style={{ fontSize:'11px', color:alreadyRan?'#00ff88':'#ffaa00', fontWeight:700 }}>
+                          {alreadyRan ? '✓ 今日はすでに実施済みです' : `🔄 今日のルーティンを開始（${routineSteps.length}ステップ）`}
+                        </div>
+                        <div style={{ fontSize:'9px', color:T.textMuted, marginTop:'2px' }}>1枚のストリップを NEXT に追加します</div>
+                      </div>
+                      {!alreadyRan && (
+                        <button onClick={startToday} style={{ background:'rgba(255,170,0,0.22)', border:'1px solid rgba(255,170,0,0.6)', color:'#ffaa00', padding:'6px 14px', borderRadius:'2px', cursor:'pointer', fontSize:'10px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace", whiteSpace:'nowrap' }}>今日を開始 ▶</button>
+                      )}
+                    </div>
+                    {generatingMsg && (
+                      <div style={{ fontSize:'11px', color:'#00ff88', textAlign:'center', padding:'4px', background:'rgba(0,255,136,0.08)', borderRadius:'3px' }}>{generatingMsg}</div>
+                    )}
+
+                    <div style={{ display:'flex', flexDirection:'column', gap:'4px' }}>
+                      <div style={{ fontSize:'9px', color:T.textMuted, padding:'2px 0' }}>ステップ</div>
+                      {routineSteps.map((step, idx) => {
+                        const pri = PRIORITIES[step.priority] || PRIORITIES.normal;
+                        return (
+                          <div key={step.id} style={{ display:'flex', alignItems:'center', gap:'8px', padding:'6px 8px', borderRadius:'3px', border:`1px solid ${T.border2}`, background:'transparent' }}>
+                            <span style={{ fontSize:'10px', color:T.textMuted, minWidth:'18px', textAlign:'right', fontWeight:700 }}>{idx+1}</span>
+                            <span style={{ flex:1, fontSize:'11px', color:T.text, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{step.title}</span>
+                            <span style={{ fontSize:'8px', color:pri.color, padding:'1px 4px', border:`1px solid ${pri.color}44`, borderRadius:'2px', flexShrink:0 }}>{pri.label}</span>
+                            <div style={{ display:'flex', gap:'2px', flexShrink:0 }}>
+                              <button onClick={() => moveStep(step.id,'up')} disabled={idx===0} style={{ background:'transparent', border:`1px solid ${T.border2}`, color:idx===0?T.textMuted:T.textDim, padding:'1px 5px', borderRadius:'2px', cursor:idx===0?'default':'pointer', fontSize:'9px' }}>↑</button>
+                              <button onClick={() => moveStep(step.id,'down')} disabled={idx===routineSteps.length-1} style={{ background:'transparent', border:`1px solid ${T.border2}`, color:idx===routineSteps.length-1?T.textMuted:T.textDim, padding:'1px 5px', borderRadius:'2px', cursor:idx===routineSteps.length-1?'default':'pointer', fontSize:'9px' }}>↓</button>
+                              <button onClick={() => removeStep(step.id)} style={{ background:'rgba(255,50,50,0.1)', border:'1px solid rgba(255,50,50,0.25)', color:'#ff8888', padding:'1px 5px', borderRadius:'2px', cursor:'pointer', fontSize:'9px' }}>✕</button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {routineSteps.length === 0 && (
+                        <div style={{ textAlign:'center', padding:'20px', fontSize:'10px', color:T.textMuted, border:`1px dashed ${T.border}`, borderRadius:'3px' }}>ステップを追加してください</div>
+                      )}
+                    </div>
+
+                    {addingStep ? (
+                      <div style={{ display:'flex', gap:'6px', alignItems:'center', flexWrap:'wrap', padding:'8px', border:`1px solid rgba(255,170,0,0.3)`, borderRadius:'3px', background:'rgba(255,170,0,0.06)', flexShrink:0 }}>
+                        <input value={newStepTitle} onChange={e => setNewStepTitle(e.target.value)}
+                          onKeyDown={e => { if(e.key==='Enter' && !e.nativeEvent.isComposing) addStep(); if(e.key==='Escape') setAddingStep(false); }}
+                          placeholder="ステップ名..." autoFocus
+                          style={{ ...inp, flex:'1 1 140px' }} />
+                        <select value={newStepPri} onChange={e => setNewStepPri(e.target.value)} style={{ ...inp, cursor:'pointer' }}>
+                          <option value="high">🔴 URG</option>
+                          <option value="normal">🟢 NRM</option>
+                          <option value="low">⚫ LOW</option>
+                        </select>
+                        <button onClick={addStep} style={{ background:'rgba(255,170,0,0.22)', border:'1px solid rgba(255,170,0,0.6)', color:'#ffaa00', padding:'6px 12px', borderRadius:'2px', cursor:'pointer', fontSize:'10px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace" }}>追加 ↵</button>
+                        <button onClick={() => setAddingStep(false)} style={{ background:'transparent', border:`1px solid ${T.border2}`, color:T.textDim, padding:'6px 8px', borderRadius:'2px', cursor:'pointer', fontSize:'10px' }}>✕</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => setAddingStep(true)}
+                        style={{ background:'rgba(255,170,0,0.08)', border:'1px dashed rgba(255,170,0,0.5)', color:'#ffaa00', padding:'10px', borderRadius:'3px', cursor:'pointer', fontSize:'11px', fontFamily:"'JetBrains Mono',monospace", width:'100%', flexShrink:0, fontWeight:700, letterSpacing:'0.05em' }}>
+                        ＋ ステップを追加
+                      </button>
+                    )}
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -1191,6 +1436,14 @@
       const [selectedId,     setSelectedId]     = useState(null);
       const [editTaskId,     setEditTaskId]     = useState(null);
       const [syncStatus,     setSyncStatus]     = useState("connecting");
+      const [flashMsg,  setFlashMsg]  = useState('');
+      const flashNext = (msg) => { setFlashMsg(msg); setTimeout(() => setFlashMsg(''), 3000); };
+      const NEXT_LIMIT = 5;
+      const safeNext = (excludeId = null) => {
+        const cnt = tasks.filter(t => t.status === 'next' && t.id !== excludeId).length;
+        if (cnt >= NEXT_LIMIT) { flashNext(`⚠ NEXT ACTION は最大 ${NEXT_LIMIT} スロットです。HOLDINGに追加しました。`); return 'pending'; }
+        return 'next';
+      };
       // activeTimer はタスクの timerRunning / timerStartedAt から導出（Firestore同期）
       const [mobileTab,      setMobileTab]      = useState("active");
       const [stripFontSize,  setStripFontSize]  = useState(() => localStorage.getItem("fst-fontsize") || "md");
@@ -1208,11 +1461,13 @@
       // カテゴリ（Firestore同期）
       const [categories,    setCategories]    = useState(DEFAULT_CATEGORIES);
       const [showCatEditor, setShowCatEditor] = useState(false);
+      const [showRoutines,  setShowRoutines]  = useState(false);
       // 毎日1回目起動時サマリー通知
       const [dailySummary, setDailySummary] = useState(null);
 
-      const tasksRef = useMemo(() => db.collection(`users/${user.uid}/tasks`), [user.uid]);
-      const metaRef  = useMemo(() => db.collection(`users/${user.uid}/meta`),  [user.uid]);
+      const tasksRef    = useMemo(() => db.collection(`users/${user.uid}/tasks`),    [user.uid]);
+      const metaRef     = useMemo(() => db.collection(`users/${user.uid}/meta`),     [user.uid]);
+      const projectsRef = useMemo(() => db.collection(`users/${user.uid}/projects`), [user.uid]);
       const ts = () => firebase.firestore.FieldValue.serverTimestamp();
 
       // セッション記録（Analytics用）
@@ -1306,8 +1561,11 @@
       }, [tasksRef]);
 
       const filteredTasks = useMemo(() => tasks.filter(t => {
+        // ルーティンテンプレートはメインボードに表示しない
+        if (t.isRoutineTemplate) return false;
         if (filterPriority !== "all" && t.priority !== filterPriority) return false;
-        if (filterCategory !== "all" && t.category !== filterCategory) return false;
+        // ルーティンインスタンスはcategory:''のためカテゴリフィルターを無視
+        if (!t.isRoutine && filterCategory !== "all" && t.category !== filterCategory) return false;
         return true;
       }), [tasks, filterPriority, filterCategory]);
 
@@ -1331,20 +1589,13 @@
         setSelectedId(p => p===id ? null : p);
       }, [tasksRef]);
       const handleStatusChange = useCallback(async (id, s) => {
-        // 上限チェック: limitがある列への移動を制御
-        const col = COLUMNS.find(c => c.id === s);
-        if (col?.limit) {
-          const existing = tasks.filter(t => t.status === s && t.id !== id).length;
-          if (existing >= col.limit) {
-            alert(`⚠ ${col.label} は最大 ${col.limit} スロットです`);
-            return;
-          }
-        }
-        // activeに変更する場合: 既存のactiveタスクをnextに移動
+        // NEXTスロット上限チェック（上限超過はHOLDINGへ振り替え）
+        if (s === 'next') s = safeNext(id);
+        // ACTIVEが1件制限を超える場合（既存ACTIVEをNEXTへ）
         if (s === 'active') {
           const currentActives = tasks.filter(t => t.status === 'active' && t.id !== id);
           for (const t of currentActives) {
-            await tasksRef.doc(t.id).update({ status: 'next', updatedAt: ts() });
+            await tasksRef.doc(t.id).update({ status: safeNext(t.id), updatedAt: ts() });
           }
         }
         tasksRef.doc(id).update({ status: s, updatedAt: ts() });
@@ -1678,6 +1929,12 @@
 
       return (
         <div style={{ minHeight:"100vh", background:T.bgGrad, color:T.text, fontFamily:"'JetBrains Mono',monospace", position:"relative" }}>
+          {/* NEXTスロット超過フラッシュ通知 */}
+          {flashMsg && (
+            <div style={{ position:'fixed', bottom:'24px', left:'50%', transform:'translateX(-50%)', zIndex:9999, background:'rgba(255,170,0,0.95)', color:'#000', padding:'10px 20px', borderRadius:'4px', fontSize:'11px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace", boxShadow:'0 4px 16px rgba(0,0,0,0.4)', whiteSpace:'nowrap', letterSpacing:'0.03em' }}>
+              {flashMsg}
+            </div>
+          )}
           {/* タッチDnDゴースト */}
           {touchGhostPos && (() => {
             const task = tasks.find(t => t.id === touchGhostPos.taskId);
@@ -1719,6 +1976,7 @@
           {showFeedback && ReactDOM.createPortal(<FeedbackModal user={user} build="stable" onClose={() => setShowFeedback(false)} />, document.body)}
           {showCatEditor && ReactDOM.createPortal(<CategoryEditor categories={categories} onSave={handleSaveCats} onClose={() => setShowCatEditor(false)} />, document.body)}
           {editTaskId && editTask && ReactDOM.createPortal(<EditStripModal task={editTask} onSave={handleEditSave} onClose={() => setEditTaskId(null)} />, document.body)}
+          {showRoutines && ReactDOM.createPortal(<RoutineModal tasks={tasks} tasksRef={tasksRef} projectsRef={projectsRef} onClose={() => setShowRoutines(false)} />, document.body)}
           {/* 毎日1回目起動時サマリー */}
           {dailySummary && (
             <div style={{ position:'fixed', inset:0, zIndex:9000, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.5)' }}
@@ -1810,6 +2068,7 @@
                   {Object.entries(CATEGORIES).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
                 </select>
                 <button onClick={() => setShowCatEditor(true)} style={{ background:"transparent", border:`1px solid ${T.border2}`, color:T.textDim, padding:"4px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"10px", fontWeight:700, fontFamily:"'JetBrains Mono',monospace", letterSpacing:"0.05em" }}>CAT ✎</button>
+                <button onClick={() => setShowRoutines(true)} style={{ background:"transparent", border:`1px solid rgba(255,170,0,0.4)`, color:"#ffaa00", padding:"4px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"10px", fontWeight:700, fontFamily:"'JetBrains Mono',monospace", letterSpacing:"0.05em" }}>🔄 ROUTINE</button>
                 <ThemePicker currentId={themeId} onChange={setTheme} />
                 <DataMenu tasks={tasks} tasksRef={tasksRef} />
                 <button onClick={cycleFontSize} title="文字サイズ切替（小→中→大）" style={{ background:"transparent", border:`1px solid ${T.border2}`, color:T.accent, padding:"4px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"13px", fontWeight:700, fontFamily:"'JetBrains Mono',monospace", letterSpacing:"0.05em", minWidth:"52px" }}>
