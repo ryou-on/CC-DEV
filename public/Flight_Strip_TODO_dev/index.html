@@ -50,7 +50,7 @@
   </style>
 </head>
 <body>
-  <div id="dev-banner">⚠ DEV BUILD — v0.10.16-dev — NOT FOR PRODUCTION ⚠</div>
+  <div id="dev-banner">⚠ DEV BUILD — v0.10.17-dev — NOT FOR PRODUCTION ⚠</div>
   <div id="root" style="padding-top:22px;"></div>
 
   <!-- Firebase 初期化 -->
@@ -462,9 +462,15 @@
     // ======================================================
     // リリースノート
     // ======================================================
-    const APP_VERSION = 'v0.10.16-dev';
+    const APP_VERSION = 'v0.10.17-dev';
 
     const RELEASE_NOTES = [
+      {
+        version: "v0.10.17-dev", date: "2026-04-18",
+        changes: [
+          "📦 CLEAREDタスクのアーカイブ機能追加 — 個別・グループ一括チェックでFirestoreから非表示化",
+        ],
+      },
       {
         version: "v0.10.16-dev", date: "2026-04-18",
         changes: [
@@ -4856,6 +4862,22 @@ HAVE A NICE TRIP！
       // ER-0054: 一括操作ドロップダウン
       const [showBulkMenu, setShowBulkMenu] = useState(false);
       const [clearedOpen,  setClearedOpen]  = useState({'今日': true, '昨日': true});
+      const [archiveMode,  setArchiveMode]  = useState(false);
+      const [archiveSel,   setArchiveSel]   = useState(new Set());
+      const toggleArchiveSel = (id) => setArchiveSel(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+      const toggleGroupSel = (taskIds) => setArchiveSel(prev => {
+        const n = new Set(prev);
+        const allSelected = taskIds.every(id => n.has(id));
+        taskIds.forEach(id => allSelected ? n.delete(id) : n.add(id));
+        return n;
+      });
+      const handleArchive = async () => {
+        if (archiveSel.size === 0) return;
+        const batch = db.batch();
+        archiveSel.forEach(id => batch.update(tasksRef.doc(id), { archived: true, updatedAt: ts() }));
+        await batch.commit();
+        setArchiveSel(new Set()); setArchiveMode(false);
+      };
       // PROJ/ROUTINE ドロップダウン
       const [showProjMenu, setShowProjMenu] = useState(false);
       const projMenuRef = useRef(null);
@@ -5295,7 +5317,7 @@ HAVE A NICE TRIP！
 
       // ER-0074: 完了タスクを日付グループに分類
       const getClearedGrouped = (status) => {
-        const col = getColTasks(status);
+        const col = getColTasks(status).filter(t => !t.archived);
         const today = new Date();
         const groups = {};
         col.forEach(t => {
@@ -6897,26 +6919,68 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                       {pendingTasks.length === 0 && emptyMsg}
                     </div>
                     <div data-col-id="completed" style={colBox({})} {...dropCol("completed")}>
-                      {colHeader(COLUMNS[4], completedTasks.length)}
-                      {getClearedGrouped('completed').map(({ label, tasks }) => (
-                        <div key={label}>
-                          <div
-                            onClick={() => setClearedOpen(p => ({ ...p, [label]: !p[label] }))}
-                            style={{ display:'flex', alignItems:'center', justifyContent:'space-between',
-                              padding:'4px 8px', cursor:'pointer', userSelect:'none',
-                              background:`${T.accent}08`, borderRadius:'3px', marginBottom:'4px',
-                              border:`1px solid ${T.border2 || T.border}` }}>
-                            <span style={{ fontSize:'9px', color:T.textDim, letterSpacing:'0.1em' }}>
-                              {label} <span style={{ color:T.accent }}>({tasks.length})</span>
-                            </span>
-                            <span style={{ fontSize:'9px', color:T.textDim }}>
-                              {clearedOpen[label] !== false ? '▲' : '▼'}
-                            </span>
-                          </div>
-                          {clearedOpen[label] !== false && tasks.map(t => renderStrip(t))}
+                      {/* CLEAREDヘッダー + アーカイブモードトグル */}
+                      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'8px' }}>
+                        {colHeader(COLUMNS[4], completedTasks.filter(t=>!t.archived).length)}
+                        <button onClick={() => { setArchiveMode(p=>!p); setArchiveSel(new Set()); }}
+                          style={{ fontSize:'9px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace",
+                            background: archiveMode ? `rgba(255,170,0,0.2)` : `${T.accent}10`,
+                            border: `1px solid ${archiveMode ? '#ffaa00' : T.border2}`,
+                            color: archiveMode ? '#ffaa00' : T.textDim,
+                            padding:'3px 8px', borderRadius:'2px', cursor:'pointer', letterSpacing:'0.05em' }}>
+                          📦 {archiveMode ? 'キャンセル' : 'アーカイブ'}
+                        </button>
+                      </div>
+                      {/* アーカイブ実行バー */}
+                      {archiveMode && archiveSel.size > 0 && (
+                        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'6px', padding:'5px 8px', background:'rgba(255,170,0,0.12)', border:'1px solid #ffaa0055', borderRadius:'3px' }}>
+                          <span style={{ fontSize:'9px', color:'#ffaa00' }}>{archiveSel.size} 件選択中</span>
+                          <button onClick={handleArchive}
+                            style={{ fontSize:'9px', fontWeight:700, background:'rgba(255,170,0,0.25)', border:'1px solid #ffaa00', color:'#ffaa00', padding:'3px 10px', borderRadius:'2px', cursor:'pointer', fontFamily:"'JetBrains Mono',monospace" }}>
+                            📦 アーカイブする
+                          </button>
                         </div>
-                      ))}
-                      {completedTasks.length === 0 && emptyMsg}
+                      )}
+                      {getClearedGrouped('completed').map(({ label, tasks: grpTasks }) => {
+                        const isToday = label === '今日';
+                        const archivable = !isToday; // 今日以外がアーカイブ対象
+                        const grpIds = grpTasks.map(t => t.id);
+                        const allGrpSel = grpIds.every(id => archiveSel.has(id));
+                        return (
+                          <div key={label}>
+                            <div style={{ display:'flex', alignItems:'center', gap:'4px', padding:'4px 8px', marginBottom:'4px',
+                              background:`${T.accent}08`, borderRadius:'3px', border:`1px solid ${T.border2 || T.border}` }}>
+                              {/* グループ全選択チェックボックス */}
+                              {archiveMode && archivable && (
+                                <input type="checkbox" checked={allGrpSel}
+                                  onChange={() => toggleGroupSel(grpIds)}
+                                  onClick={e => e.stopPropagation()}
+                                  style={{ cursor:'pointer', accentColor:'#ffaa00', width:'13px', height:'13px', flexShrink:0 }} />
+                              )}
+                              <div onClick={() => setClearedOpen(p => ({ ...p, [label]: !p[label] }))}
+                                style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flex:1, cursor:'pointer', userSelect:'none' }}>
+                                <span style={{ fontSize:'9px', color:T.textDim, letterSpacing:'0.1em' }}>
+                                  {label} <span style={{ color:T.accent }}>({grpTasks.length})</span>
+                                </span>
+                                <span style={{ fontSize:'9px', color:T.textDim }}>
+                                  {clearedOpen[label] !== false ? '▲' : '▼'}
+                                </span>
+                              </div>
+                            </div>
+                            {clearedOpen[label] !== false && grpTasks.map(t => (
+                              <div key={t.id} style={{ display:'flex', alignItems:'flex-start', gap:'4px' }}>
+                                {archiveMode && archivable && (
+                                  <input type="checkbox" checked={archiveSel.has(t.id)}
+                                    onChange={() => toggleArchiveSel(t.id)}
+                                    style={{ marginTop:'8px', cursor:'pointer', accentColor:'#ffaa00', width:'13px', height:'13px', flexShrink:0 }} />
+                                )}
+                                <div style={{ flex:1, minWidth:0 }}>{renderStrip(t)}</div>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })}
+                      {completedTasks.filter(t=>!t.archived).length === 0 && emptyMsg}
                     </div>
                     <div data-col-id="lost" style={colBox({ border:`1px solid #ff550022` })} {...dropCol("lost")}>
                       {colHeader(COLUMNS[5], lostTasks.length)}
