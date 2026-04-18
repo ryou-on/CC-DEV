@@ -50,7 +50,7 @@
   </style>
 </head>
 <body>
-  <div id="dev-banner">⚠ DEV BUILD — v0.10.15-dev — NOT FOR PRODUCTION ⚠</div>
+  <div id="dev-banner">⚠ DEV BUILD — v0.10.16-dev — NOT FOR PRODUCTION ⚠</div>
   <div id="root" style="padding-top:22px;"></div>
 
   <!-- Firebase 初期化 -->
@@ -462,9 +462,15 @@
     // ======================================================
     // リリースノート
     // ======================================================
-    const APP_VERSION = 'v0.10.15-dev';
+    const APP_VERSION = 'v0.10.16-dev';
 
     const RELEASE_NOTES = [
+      {
+        version: "v0.10.16-dev", date: "2026-04-18",
+        changes: [
+          "⏰ タスク登録時の時刻が現在時刻（15分単位）にデフォルト設定・「時間なし」選択も可能に",
+        ],
+      },
       {
         version: "v0.10.15-dev", date: "2026-04-18",
         changes: [
@@ -2295,11 +2301,19 @@ HAVE A NICE TRIP！
 
     // 時間プルダウン（15分刻み）
     const TIME_OPTIONS = (() => {
-      const opts = [];
+      const opts = [''];
       for (let h = 0; h < 24; h++) for (let m = 0; m < 60; m += 15)
         opts.push(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`);
       return opts;
     })();
+    // 現在時刻を15分単位で丸めた文字列を返す
+    const defaultTime = () => {
+      const now = new Date();
+      const rounded = Math.round(now.getMinutes() / 15) * 15;
+      const h = (now.getHours() + (rounded === 60 ? 1 : 0)) % 24;
+      const m = rounded === 60 ? 0 : rounded;
+      return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+    };
 
     // ======================================================
     const ShortcutHelp = ({ onClose }) => {
@@ -2333,7 +2347,7 @@ HAVE A NICE TRIP！
       const [title,    setTitle]    = useState(task.title || "");
       const [priority, setPriority] = useState(task.priority || "normal");
       const [category, setCategory] = useState(task.category || "work");
-      const [time,     setTime]     = useState(task.time || "09:00");
+      const [time,     setTime]     = useState(task.time ?? "");
       const [tagInput, setTagInput] = useState((task.tags || []).join(", "));
       const [assignee, setAssignee] = useState(task.assignee || "");
       const [link,     setLink]     = useState(task.link || "");
@@ -2438,7 +2452,7 @@ HAVE A NICE TRIP！
                 <div style={{ flex:"0 0 110px" }}>
                   <div style={lbl}>TIME</div>
                   <select value={time} onChange={e => setTime(e.target.value)} style={{ ...inp, cursor:"pointer" }}>
-                    {TIME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+                    {TIME_OPTIONS.map(t => <option key={t || '__none'} value={t}>{t || '時間なし'}</option>)}
                   </select>
                 </div>
                 <div ref={calRef} style={{ flex:"0 0 130px", position:"relative" }}>
@@ -3785,7 +3799,7 @@ HAVE A NICE TRIP！
       const [title,    setTitle]    = useState("");
       const [priority, setPriority] = useState("normal");
       const [category, setCategory] = useState("work");
-      const [time,     setTime]     = useState("09:00");
+      const [time,     setTime]     = useState(defaultTime);
       const [tagInput, setTagInput] = useState("");
       const [assignee, setAssignee] = useState("");
       const [link,     setLink]     = useState("");
