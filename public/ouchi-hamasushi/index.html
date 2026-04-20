@@ -683,6 +683,11 @@ function renderTabs() {
   });
 }
 
+// ===== カスタム画像の読み込み =====
+function getCustomImage(name) {
+  return localStorage.getItem('image_' + name) || null;
+}
+
 // ===== メニューグリッド生成 =====
 function renderMenu() {
   const grid = document.getElementById('menuGrid');
@@ -691,9 +696,14 @@ function renderMenu() {
   items.forEach((item, idx) => {
     const card = document.createElement('div');
     card.className = 'menu-card';
+    // カスタム画像があれば優先、なければ絵文字
+    const customImg = getCustomImage(item.name);
+    const visual = customImg
+      ? `<img src="${customImg}" alt="${item.name}">`
+      : `<span class="menu-emoji">${item.emoji}</span>`;
     card.innerHTML = `
       <div class="menu-emoji-wrap">
-        <span class="menu-emoji">${item.emoji}</span>
+        ${visual}
         <span class="price-badge">${item.price}</span>
       </div>
       <div class="menu-label">
@@ -1058,9 +1068,13 @@ function init() {
     getOtousanAudio();
     log('確認音声プリロード完了');
   }, 500);
-  // 管理画面からの音声更新を監視
+  // 管理画面からの音声・画像更新を監視
   window.addEventListener('storage', (e) => {
     if (e.key === 'voices_updated') log('音声データ更新を検知');
+    if (e.key === 'images_updated') {
+      log('画像データ更新を検知 → 再描画');
+      renderMenu();
+    }
   });
   log('アプリ初期化完了');
 }

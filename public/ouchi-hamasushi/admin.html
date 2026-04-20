@@ -136,6 +136,42 @@
     .btn-stop { background: #e74c3c; color: white; display: none; }
     .btn-stop.show { display: inline-block; }
 
+    /* 画像管理アイテム */
+    .image-item {
+      background: #0f3460;
+      border-radius: 10px;
+      padding: 10px;
+      text-align: center;
+      border: 2px solid transparent;
+      transition: border-color 0.2s;
+    }
+    .image-item.has-custom { border-color: #2ecc71; }
+    .image-item .name { font-size: 12px; font-weight: 700; margin-bottom: 6px; }
+    .image-item .preview {
+      width: 100%;
+      aspect-ratio: 1;
+      background: #1a1a2e;
+      border-radius: 8px;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 44px;
+      overflow: hidden;
+    }
+    .image-item .preview img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .image-item .status {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-bottom: 6px;
+      display: inline-block;
+    }
+
     /* 録音プレビュー */
     .rec-preview {
       display: none;
@@ -290,6 +326,7 @@
 
 <div class="tabs">
   <button class="tab-btn active" onclick="switchTab('voices')">🎙️ 音声</button>
+  <button class="tab-btn" onclick="switchTab('images')">🖼️ 画像</button>
   <button class="tab-btn" onclick="switchTab('log')">📊 アクセスログ</button>
   <button class="tab-btn" onclick="switchTab('release')">📋 リリースノート</button>
   <button class="tab-btn" onclick="switchTab('settings')">⚙️ 設定</button>
@@ -310,6 +347,35 @@
     <div class="card">
       <h2>📢 確認音声（声優選択時）</h2>
       <div class="voice-grid" id="confirm-grid"></div>
+    </div>
+  </div>
+
+  <!-- 画像管理 -->
+  <div class="section" id="section-images">
+    <div class="card">
+      <h2>🖼️ メニュー画像</h2>
+      <p style="font-size:11px;color:#888;margin-bottom:12px;line-height:1.5">
+        画像をアップロードすると絵文字の代わりに料理写真が表示されます。<br>
+        ファイルは自動で <strong>400px以下のJPEG</strong> にリサイズ・圧縮されます。
+      </p>
+      <div class="voice-grid" id="image-grid"></div>
+    </div>
+    <div class="card">
+      <h2>🗑 画像の一括管理</h2>
+      <div class="setting-row">
+        <div class="setting-label">
+          すべての画像を削除
+          <small>絵文字表示に戻ります</small>
+        </div>
+        <button class="danger-btn" onclick="resetAllImages()">リセット</button>
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">
+          使用容量
+          <small>localStorage の画像データ合計</small>
+        </div>
+        <span id="image-storage-size" style="font-size:13px;color:#2ecc71;font-weight:700">0 KB</span>
+      </div>
     </div>
   </div>
 
@@ -388,7 +454,7 @@
       <div class="setting-row">
         <div class="setting-label">
           設定をエクスポート
-          <small>バックアップ用JSON</small>
+          <small>音声・画像・設定をJSONで書き出し</small>
         </div>
         <button class="back-btn" onclick="exportSettings()" style="background:#27ae60">書き出し</button>
       </div>
@@ -467,6 +533,7 @@ function switchTab(name) {
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
   event.target.classList.add('active');
   document.getElementById('section-' + name).classList.add('active');
+  if (name === 'images') renderImageGrid();
   if (name === 'log') renderLog();
   if (name === 'release') renderRelease();
   if (name === 'settings') loadSettings();
@@ -627,6 +694,128 @@ function resetAllVoices() {
   }
 }
 
+// ===== 画像管理 =====
+const IMAGE_MAX_SIZE = 400; // px
+const IMAGE_QUALITY = 0.85;
+
+function getCustomImage(name) {
+  return localStorage.getItem('image_' + name);
+}
+function setCustomImage(name, dataUri) {
+  localStorage.setItem('image_' + name, dataUri);
+}
+function removeCustomImage(name) {
+  localStorage.removeItem('image_' + name);
+}
+
+// ファイルを Canvas で縮小して JPEG data URI に変換
+function resizeImageFile(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let w = img.width, h = img.height;
+      if (w > h && w > IMAGE_MAX_SIZE) { h = h * IMAGE_MAX_SIZE / w; w = IMAGE_MAX_SIZE; }
+      else if (h > IMAGE_MAX_SIZE) { w = w * IMAGE_MAX_SIZE / h; h = IMAGE_MAX_SIZE; }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      // 背景を白で塗る（透過PNG対策）
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', IMAGE_QUALITY));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('画像を読み込めませんでした')); };
+    img.src = url;
+  });
+}
+
+function renderImageGrid() {
+  const grid = document.getElementById('image-grid');
+  grid.innerHTML = '';
+  MENU_ITEMS.forEach(item => {
+    const custom = getCustomImage(item.name);
+    const hasCustom = !!custom;
+    const div = document.createElement('div');
+    div.className = 'image-item' + (hasCustom ? ' has-custom' : '');
+    div.id = 'img_' + item.name;
+    div.innerHTML = `
+      <div class="preview">
+        ${hasCustom ? `<img src="${custom}" alt="${item.name}">` : item.emoji}
+      </div>
+      <div class="name">${item.name}</div>
+      <div class="status ${hasCustom ? 'custom' : 'builtin'}">
+        ${hasCustom ? '✅ カスタム' : '📦 絵文字'}
+      </div>
+      <div class="btn-group">
+        <label class="btn btn-upload" title="画像をアップロード">📁 選ぶ
+          <input type="file" accept="image/*" onchange="uploadImage('${item.name}', this)">
+        </label>
+        ${hasCustom ? `<button class="btn btn-reset" onclick="resetImage('${item.name}')">↩</button>` : ''}
+      </div>
+    `;
+    grid.appendChild(div);
+  });
+  updateImageStorageSize();
+}
+
+async function uploadImage(name, input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = ''; // 同じファイルを再選択できるように
+  try {
+    showToast('🔄 画像を処理中...');
+    const dataUri = await resizeImageFile(file);
+    try {
+      setCustomImage(name, dataUri);
+    } catch (e) {
+      // QuotaExceededError
+      showToast('❌ 容量不足。他の画像を削除してください');
+      return;
+    }
+    showToast(`📁 ${name} の画像を保存！`);
+    renderImageGrid();
+    // メインアプリに通知
+    localStorage.setItem('images_updated', Date.now());
+  } catch (e) {
+    showToast('❌ 画像処理失敗: ' + e.message);
+  }
+}
+
+function resetImage(name) {
+  if (confirm(`「${name}」の画像を絵文字に戻しますか？`)) {
+    removeCustomImage(name);
+    showToast('↩ 絵文字に戻しました');
+    renderImageGrid();
+    localStorage.setItem('images_updated', Date.now());
+  }
+}
+
+function resetAllImages() {
+  if (!confirm('すべてのカスタム画像を削除しますか？')) return;
+  Object.keys(localStorage)
+    .filter(k => k.startsWith('image_'))
+    .forEach(k => localStorage.removeItem(k));
+  showToast('すべてリセットしました');
+  renderImageGrid();
+  localStorage.setItem('images_updated', Date.now());
+}
+
+function updateImageStorageSize() {
+  let bytes = 0;
+  Object.keys(localStorage)
+    .filter(k => k.startsWith('image_'))
+    .forEach(k => { bytes += (localStorage.getItem(k) || '').length; });
+  const kb = Math.round(bytes / 1024);
+  const el = document.getElementById('image-storage-size');
+  if (el) {
+    el.textContent = kb > 1024 ? (kb / 1024).toFixed(1) + ' MB' : kb + ' KB';
+    el.style.color = kb > 4000 ? '#e74c3c' : (kb > 2000 ? '#f39c12' : '#2ecc71');
+  }
+}
+
 // ===== アクセスログ =====
 function getLog() {
   try { return JSON.parse(localStorage.getItem('access_log') || '[]'); } catch { return []; }
@@ -737,7 +926,7 @@ function exportSettings() {
   const data = {};
   for (let i = 0; i < localStorage.length; i++) {
     const k = localStorage.key(i);
-    if (k.startsWith('setting_') || k.startsWith('voice_')) {
+    if (k.startsWith('setting_') || k.startsWith('voice_') || k.startsWith('image_')) {
       data[k] = localStorage.getItem(k);
     }
   }
