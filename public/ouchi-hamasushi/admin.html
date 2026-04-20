@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>おうち巴寿司 管理画面</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body {
+      font-family: 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      min-height: 100dvh;
+      padding-bottom: env(safe-area-inset-bottom);
+    }
+
+    /* ヘッダー */
+    .header {
+      background: linear-gradient(135deg, #c8102e, #e8192c);
+      padding: 12px 16px;
+      padding-top: calc(12px + env(safe-area-inset-top));
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+    }
+    .header h1 { font-size: 18px; font-weight: 900; color: white; }
+    .back-btn {
+      background: rgba(255,255,255,0.2);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: none;
+    }
+
+    /* タブ */
+    .tabs {
+      display: flex;
+      background: #16213e;
+      border-bottom: 2px solid #c8102e;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .tabs::-webkit-scrollbar { display: none; }
+    .tab-btn {
+      flex-shrink: 0;
+      padding: 12px 20px;
+      font-size: 13px;
+      font-weight: 700;
+      color: #888;
+      background: none;
+      border: none;
+      border-bottom: 3px solid transparent;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .tab-btn.active { color: #c8102e; border-bottom-color: #c8102e; }
+
+    /* コンテンツ */
+    .content { padding: 16px; max-width: 800px; margin: 0 auto; }
+    .section { display: none; }
+    .section.active { display: block; }
+
+    /* カード */
+    .card {
+      background: #16213e;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      border: 1px solid #0f3460;
+    }
+    .card h2 {
+      font-size: 15px;
+      font-weight: 900;
+      color: #c8102e;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* 音声管理 */
+    .voice-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      gap: 10px;
+    }
+    .voice-item {
+      background: #0f3460;
+      border-radius: 10px;
+      padding: 12px;
+      text-align: center;
+      border: 2px solid transparent;
+      transition: border-color 0.2s;
+    }
+    .voice-item.has-custom { border-color: #2ecc71; }
+    .voice-item .name { font-size: 13px; font-weight: 700; margin-bottom: 8px; }
+    .voice-item .emoji { font-size: 24px; margin-bottom: 6px; }
+    .voice-item .status {
+      font-size: 10px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-bottom: 8px;
+      display: inline-block;
+    }
+    .status.builtin { background: #444; color: #aaa; }
+    .status.custom { background: #1a5c36; color: #2ecc71; }
+    .status.recording { background: #5c1a1a; color: #e74c3c; animation: blink 1s infinite; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    .btn-group { display: flex; gap: 4px; justify-content: center; flex-wrap: wrap; }
+    .btn {
+      padding: 5px 8px;
+      border: none;
+      border-radius: 6px;
+      font-size: 10px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .btn:active { opacity: 0.7; }
+    .btn-play { background: #2980b9; color: white; }
+    .btn-rec { background: #c0392b; color: white; }
+    .btn-upload { background: #27ae60; color: white; }
+    .btn-reset { background: #555; color: white; }
+    .btn-stop { background: #e74c3c; color: white; display: none; }
+    .btn-stop.show { display: inline-block; }
+
+    /* 録音プレビュー */
+    .rec-preview {
+      display: none;
+      margin-top: 8px;
+      padding: 8px;
+      background: #0a2240;
+      border-radius: 8px;
+    }
+    .rec-preview.show { display: block; }
+    .rec-preview audio { width: 100%; margin-bottom: 6px; }
+    .rec-preview .save-btn {
+      width: 100%;
+      padding: 8px;
+      background: #27ae60;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    /* アクセスログ */
+    .log-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+    }
+    .log-table th {
+      background: #0f3460;
+      padding: 8px;
+      text-align: left;
+      color: #aaa;
+      font-weight: 700;
+    }
+    .log-table td { padding: 8px; border-bottom: 1px solid #1a3a6a; }
+    .log-table tr:hover td { background: #1a2a4a; }
+
+    .log-stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .stat-card {
+      background: #0f3460;
+      border-radius: 10px;
+      padding: 12px;
+      text-align: center;
+    }
+    .stat-card .num { font-size: 24px; font-weight: 900; color: #c8102e; }
+    .stat-card .label { font-size: 10px; color: #888; margin-top: 4px; }
+
+    /* リリースノート */
+    .release-item {
+      border-left: 3px solid #c8102e;
+      padding-left: 12px;
+      margin-bottom: 16px;
+    }
+    .release-item .ver { font-size: 16px; font-weight: 900; color: #c8102e; }
+    .release-item .date { font-size: 11px; color: #888; margin-bottom: 6px; }
+    .release-item ul { font-size: 13px; color: #ccc; padding-left: 16px; }
+    .release-item li { margin-bottom: 4px; }
+
+    /* 設定 */
+    .setting-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 0;
+      border-bottom: 1px solid #0f3460;
+    }
+    .setting-row:last-child { border-bottom: none; }
+    .setting-label { font-size: 13px; }
+    .setting-label small { display: block; font-size: 11px; color: #888; margin-top: 2px; }
+    .toggle {
+      width: 44px;
+      height: 24px;
+      background: #444;
+      border-radius: 12px;
+      position: relative;
+      cursor: pointer;
+      transition: background 0.2s;
+      border: none;
+    }
+    .toggle.on { background: #c8102e; }
+    .toggle::after {
+      content: '';
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      background: white;
+      border-radius: 50%;
+      top: 3px;
+      left: 3px;
+      transition: left 0.2s;
+    }
+    .toggle.on::after { left: 23px; }
+
+    input[type="text"], input[type="number"] {
+      background: #0f3460;
+      border: 1px solid #1a5080;
+      color: white;
+      padding: 8px 10px;
+      border-radius: 8px;
+      font-size: 13px;
+      width: 120px;
+    }
+
+    /* アップロード隠し */
+    input[type="file"] { display: none; }
+
+    /* ログクリアボタン */
+    .danger-btn {
+      background: #c0392b;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .empty-msg { color: #666; text-align: center; padding: 20px; font-size: 13px; }
+
+    /* toast */
+    .toast {
+      position: fixed;
+      bottom: 80px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: rgba(0,0,0,0.85);
+      color: white;
+      padding: 10px 20px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 700;
+      opacity: 0;
+      transition: all 0.3s;
+      z-index: 999;
+      white-space: nowrap;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🔧 管理画面</h1>
+  <a href="index.html" class="back-btn">← アプリへ</a>
+</div>
+
+<div class="tabs">
+  <button class="tab-btn active" onclick="switchTab('voices')">🎙️ 音声</button>
+  <button class="tab-btn" onclick="switchTab('log')">📊 アクセスログ</button>
+  <button class="tab-btn" onclick="switchTab('release')">📋 リリースノート</button>
+  <button class="tab-btn" onclick="switchTab('settings')">⚙️ 設定</button>
+</div>
+
+<div class="content">
+
+  <!-- 音声管理 -->
+  <div class="section active" id="section-voices">
+    <div class="card">
+      <h2>👨 おとうさん音声</h2>
+      <div class="voice-grid" id="otousan-grid"></div>
+    </div>
+    <div class="card">
+      <h2>👩 おかあさん音声</h2>
+      <div class="voice-grid" id="okasan-grid"></div>
+    </div>
+    <div class="card">
+      <h2>📢 確認音声（声優選択時）</h2>
+      <div class="voice-grid" id="confirm-grid"></div>
+    </div>
+  </div>
+
+  <!-- アクセスログ -->
+  <div class="section" id="section-log">
+    <div class="log-stats">
+      <div class="stat-card">
+        <div class="num" id="stat-total">0</div>
+        <div class="label">総タップ数</div>
+      </div>
+      <div class="stat-card">
+        <div class="num" id="stat-today">0</div>
+        <div class="label">今日</div>
+      </div>
+      <div class="stat-card">
+        <div class="num" id="stat-top">-</div>
+        <div class="label">人気No.1</div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>📋 タップ履歴</h2>
+      <div id="log-content"></div>
+      <div style="margin-top:12px; text-align:right">
+        <button class="danger-btn" onclick="clearLog()">🗑 ログをクリア</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>🏆 人気ランキング</h2>
+      <div id="ranking-content"></div>
+    </div>
+  </div>
+
+  <!-- リリースノート -->
+  <div class="section" id="section-release">
+    <div class="card">
+      <h2>📋 リリースノート</h2>
+      <div id="release-notes"></div>
+    </div>
+  </div>
+
+  <!-- 設定 -->
+  <div class="section" id="section-settings">
+    <div class="card">
+      <h2>⚙️ アプリ設定</h2>
+      <div class="setting-row">
+        <div class="setting-label">
+          アプリ名
+          <small>ヘッダーに表示される名前</small>
+        </div>
+        <input type="text" id="app-name" value="おうち巴寿司" onchange="saveSetting('appName', this.value)">
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">
+          サブタイトル
+          <small>アプリ名の下に表示</small>
+        </div>
+        <input type="text" id="app-subtitle" value="ともえのおきにいり🌸" onchange="saveSetting('appSubtitle', this.value)">
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">
+          デバッグモード
+          <small>ログバーを常時表示</small>
+        </div>
+        <button class="toggle" id="toggle-debug" onclick="toggleSetting('debugMode', this)"></button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>🗑 データ管理</h2>
+      <div class="setting-row">
+        <div class="setting-label">
+          カスタム音声をすべてリセット
+          <small>組み込み音声に戻ります</small>
+        </div>
+        <button class="danger-btn" onclick="resetAllVoices()">リセット</button>
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">
+          設定をエクスポート
+          <small>バックアップ用JSON</small>
+        </div>
+        <button class="back-btn" onclick="exportSettings()" style="background:#27ae60">書き出し</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ===== 定数 =====
+const MENU_ITEMS = [
+  { name: 'まぐろ',     emoji: '🐟', category: 'おすすめ' },
+  { name: 'サーモン',   emoji: '🐠', category: 'おすすめ' },
+  { name: 'えび',       emoji: '🦐', category: 'おすすめ' },
+  { name: 'いか',       emoji: '🦑', category: 'おすすめ' },
+  { name: 'たまご',     emoji: '🥚', category: 'おすすめ' },
+  { name: 'かっぱまき', emoji: '🥒', category: 'おすすめ' },
+  { name: 'ほたて',     emoji: '🐚', category: 'にぎり' },
+  { name: 'はまち',     emoji: '🐡', category: 'にぎり' },
+  { name: 'かに',       emoji: '🦀', category: 'にぎり' },
+  { name: 'たこ',       emoji: '🐙', category: 'にぎり' },
+  { name: 'うに',       emoji: '🌟', category: 'にぎり' },
+  { name: 'いくら',     emoji: '🟠', category: 'にぎり' },
+  { name: 'アイス',     emoji: '🍦', category: 'デザート' },
+  { name: 'プリン',     emoji: '🍮', category: 'デザート' },
+  { name: 'チーズケーキ', emoji: '🍰', category: 'デザート' },
+  { name: 'ジュース',   emoji: '🧃', category: 'デザート' },
+  { name: 'ポテト',     emoji: '🍟', category: 'デザート' },
+  { name: 'うどん',     emoji: '🍜', category: 'デザート' },
+];
+
+const CONFIRM_ITEMS = [
+  { name: 'おかあさん確認', emoji: '👩', key: 'okasan_confirm' },
+  { name: 'おとうさん確認', emoji: '👨', key: 'otousan_confirm' },
+];
+
+const RELEASE_NOTES = [
+  {
+    version: 'v1.2.0',
+    date: '2026-04-20',
+    items: [
+      'iPhone/iPad全画面対応（PWA）',
+      'おとうさん確認音声を追加',
+      'ジュース・ポテト・うどんの音声を追加',
+      '管理画面を追加（音声差し替え・録音・ログ）',
+      'バージョン表示・リリースノートを追加',
+      '使い方ページを追加',
+    ]
+  },
+  {
+    version: 'v1.1.0',
+    date: '2026-04-19',
+    items: [
+      'おとうさん音声マッピングのバグを修正',
+      'MIMEタイプをaudio/mpegに統一',
+      'safe-area対応を追加',
+    ]
+  },
+  {
+    version: 'v1.0.0',
+    date: '2026-04-19',
+    items: [
+      '初回リリース',
+      'おすすめ・にぎり・デザートカテゴリ',
+      'おかあさん・おとうさん音声切替',
+      '注文リスト・お会計機能',
+    ]
+  },
+];
+
+// ===== タブ切替 =====
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('section-' + name).classList.add('active');
+  if (name === 'log') renderLog();
+  if (name === 'release') renderRelease();
+  if (name === 'settings') loadSettings();
+}
+
+// ===== Toast =====
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+// ===== 音声管理 =====
+let recorders = {};
+
+function getCustomVoice(key) {
+  return localStorage.getItem('voice_' + key);
+}
+function setCustomVoice(key, dataUri) {
+  localStorage.setItem('voice_' + key, dataUri);
+}
+function removeCustomVoice(key) {
+  localStorage.removeItem('voice_' + key);
+}
+
+function renderVoiceGrid(containerId, items, prefix) {
+  const grid = document.getElementById(containerId);
+  grid.innerHTML = '';
+  items.forEach(item => {
+    const key = prefix + '_' + item.name;
+    const hasCustom = !!getCustomVoice(key);
+    const div = document.createElement('div');
+    div.className = 'voice-item' + (hasCustom ? ' has-custom' : '');
+    div.id = 'vi_' + key;
+    div.innerHTML = `
+      <div class="emoji">${item.emoji}</div>
+      <div class="name">${item.name}</div>
+      <div class="status ${hasCustom ? 'custom' : 'builtin'}" id="status_${key}">
+        ${hasCustom ? '✅ カスタム' : '📦 標準'}
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-play" onclick="playVoice('${key}')">▶</button>
+        <button class="btn btn-rec" id="rec_${key}" onclick="startRec('${key}', this)">🎤</button>
+        <button class="btn btn-stop" id="stop_${key}" onclick="stopRec('${key}')">⏹</button>
+        <label class="btn btn-upload" title="ファイルから">📁
+          <input type="file" accept="audio/*" onchange="uploadVoice('${key}', this)">
+        </label>
+        ${hasCustom ? `<button class="btn btn-reset" onclick="resetVoice('${key}')">↩</button>` : ''}
+      </div>
+      <div class="rec-preview" id="preview_${key}">
+        <audio id="prev_audio_${key}" controls></audio>
+        <button class="save-btn" onclick="saveRecording('${key}')">💾 この音声を保存</button>
+      </div>
+    `;
+    grid.appendChild(div);
+  });
+}
+
+function renderAllVoices() {
+  renderVoiceGrid('otousan-grid', MENU_ITEMS, 'otousan');
+  renderVoiceGrid('okasan-grid', MENU_ITEMS, 'okasan');
+  renderVoiceGrid('confirm-grid', CONFIRM_ITEMS, 'confirm');
+}
+
+function playVoice(key) {
+  const custom = getCustomVoice(key);
+  if (custom) {
+    const a = new Audio(custom);
+    a.play().catch(e => showToast('再生失敗: ' + e.message));
+  } else {
+    showToast('標準音声はアプリ側で再生されます');
+  }
+}
+
+async function startRec(key, btn) {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const recorder = new MediaRecorder(stream);
+    const chunks = [];
+    recorder.ondataavailable = e => chunks.push(e.data);
+    recorder.onstop = () => {
+      const blob = new Blob(chunks, { type: 'audio/webm' });
+      const url = URL.createObjectURL(blob);
+      const prevAudio = document.getElementById('prev_audio_' + key);
+      prevAudio.src = url;
+      prevAudio._blob = blob;
+      document.getElementById('preview_' + key).classList.add('show');
+      stream.getTracks().forEach(t => t.stop());
+    };
+    recorder.start();
+    recorders[key] = recorder;
+
+    btn.style.display = 'none';
+    document.getElementById('stop_' + key).classList.add('show');
+    document.getElementById('status_' + key).className = 'status recording';
+    document.getElementById('status_' + key).textContent = '🔴 録音中';
+  } catch(e) {
+    showToast('マイクのアクセスが必要です');
+  }
+}
+
+function stopRec(key) {
+  if (recorders[key]) {
+    recorders[key].stop();
+    delete recorders[key];
+  }
+  document.getElementById('rec_' + key).style.display = 'inline-block';
+  document.getElementById('stop_' + key).classList.remove('show');
+  const hasCustom = !!getCustomVoice(key);
+  document.getElementById('status_' + key).className = 'status ' + (hasCustom ? 'custom' : 'builtin');
+  document.getElementById('status_' + key).textContent = hasCustom ? '✅ カスタム' : '📦 標準';
+}
+
+async function saveRecording(key) {
+  const audio = document.getElementById('prev_audio_' + key);
+  const blob = audio._blob;
+  if (!blob) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    setCustomVoice(key, reader.result);
+    document.getElementById('preview_' + key).classList.remove('show');
+    showToast('💾 保存しました！');
+    renderAllVoices();
+    // メインアプリに通知
+    localStorage.setItem('voices_updated', Date.now());
+  };
+  reader.readAsDataURL(blob);
+}
+
+function uploadVoice(key, input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    setCustomVoice(key, reader.result);
+    showToast('📁 アップロード完了！');
+    renderAllVoices();
+    localStorage.setItem('voices_updated', Date.now());
+  };
+  reader.readAsDataURL(file);
+}
+
+function resetVoice(key) {
+  if (confirm(`「${key}」の音声を標準に戻しますか？`)) {
+    removeCustomVoice(key);
+    showToast('↩ 標準音声に戻しました');
+    renderAllVoices();
+    localStorage.setItem('voices_updated', Date.now());
+  }
+}
+
+function resetAllVoices() {
+  if (confirm('すべてのカスタム音声を削除して標準に戻しますか？')) {
+    Object.keys(localStorage).filter(k => k.startsWith('voice_')).forEach(k => localStorage.removeItem(k));
+    showToast('すべてリセットしました');
+    renderAllVoices();
+  }
+}
+
+// ===== アクセスログ =====
+function getLog() {
+  try { return JSON.parse(localStorage.getItem('access_log') || '[]'); } catch { return []; }
+}
+
+function renderLog() {
+  const logs = getLog();
+  const today = new Date().toDateString();
+  const todayLogs = logs.filter(l => new Date(l.ts).toDateString() === today);
+
+  // 統計
+  document.getElementById('stat-total').textContent = logs.length;
+  document.getElementById('stat-today').textContent = todayLogs.length;
+
+  // ランキング
+  const counts = {};
+  logs.forEach(l => { counts[l.name] = (counts[l.name] || 0) + 1; });
+  const sorted = Object.entries(counts).sort((a,b) => b[1]-a[1]);
+  document.getElementById('stat-top').textContent = sorted[0] ? sorted[0][0] : '-';
+
+  // 履歴テーブル
+  const logDiv = document.getElementById('log-content');
+  if (logs.length === 0) {
+    logDiv.innerHTML = '<div class="empty-msg">まだタップ履歴がありません</div>';
+  } else {
+    const recent = [...logs].reverse().slice(0, 50);
+    logDiv.innerHTML = `
+      <table class="log-table">
+        <thead><tr><th>時刻</th><th>メニュー</th><th>声優</th></tr></thead>
+        <tbody>
+          ${recent.map(l => `
+            <tr>
+              <td>${new Date(l.ts).toLocaleString('ja-JP', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</td>
+              <td>${l.emoji || ''} ${l.name}</td>
+              <td>${l.voice === 2 ? '👨' : '👩'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+  }
+
+  // ランキング
+  const rankDiv = document.getElementById('ranking-content');
+  if (sorted.length === 0) {
+    rankDiv.innerHTML = '<div class="empty-msg">データがありません</div>';
+  } else {
+    const medals = ['🥇','🥈','🥉'];
+    rankDiv.innerHTML = sorted.slice(0, 10).map(([name, cnt], i) => {
+      const item = MENU_ITEMS.find(m => m.name === name);
+      const emoji = item ? item.emoji : '🍣';
+      const pct = Math.round(cnt / logs.length * 100);
+      return `
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #0f3460">
+          <span style="font-size:18px">${medals[i] || (i+1)+'位'}</span>
+          <span style="font-size:16px">${emoji}</span>
+          <span style="flex:1;font-size:13px;font-weight:700">${name}</span>
+          <span style="font-size:12px;color:#c8102e;font-weight:700">${cnt}回</span>
+          <span style="font-size:10px;color:#888">${pct}%</span>
+        </div>
+      `;
+    }).join('');
+  }
+}
+
+function clearLog() {
+  if (confirm('アクセスログをすべて削除しますか？')) {
+    localStorage.removeItem('access_log');
+    renderLog();
+    showToast('🗑 ログを削除しました');
+  }
+}
+
+// ===== リリースノート =====
+function renderRelease() {
+  document.getElementById('release-notes').innerHTML = RELEASE_NOTES.map(r => `
+    <div class="release-item">
+      <div class="ver">${r.version}</div>
+      <div class="date">${r.date}</div>
+      <ul>${r.items.map(i => `<li>${i}</li>`).join('')}</ul>
+    </div>
+  `).join('');
+}
+
+// ===== 設定 =====
+function loadSettings() {
+  const name = localStorage.getItem('setting_appName');
+  const sub = localStorage.getItem('setting_appSubtitle');
+  const debug = localStorage.getItem('setting_debugMode') === 'true';
+  if (name) document.getElementById('app-name').value = name;
+  if (sub) document.getElementById('app-subtitle').value = sub;
+  const toggle = document.getElementById('toggle-debug');
+  if (debug) toggle.classList.add('on');
+}
+
+function saveSetting(key, value) {
+  localStorage.setItem('setting_' + key, value);
+  showToast('設定を保存しました');
+}
+
+function toggleSetting(key, btn) {
+  const isOn = btn.classList.toggle('on');
+  localStorage.setItem('setting_' + key, isOn);
+  showToast(isOn ? 'ON' : 'OFF');
+}
+
+function exportSettings() {
+  const data = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k.startsWith('setting_') || k.startsWith('voice_')) {
+      data[k] = localStorage.getItem(k);
+    }
+  }
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'hamasushi_backup.json';
+  a.click();
+  showToast('📤 エクスポートしました');
+}
+
+// ===== 初期化 =====
+renderAllVoices();
+</script>
+</body>
+</html>

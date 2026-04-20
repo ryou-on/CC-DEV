@@ -2,10 +2,13 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <!-- PWA対応（iPadホーム画面追加用） -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <!-- PWA・全画面対応 -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="おうち巴寿司">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#c8102e">
   <title>おうち巴寿司</title>
   <style>
     /* ===== リセット・基本 ===== */
@@ -14,10 +17,15 @@
       font-family: 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
       background: #f5f0e8;
       height: 100dvh;
+      height: -webkit-fill-available;
       display: flex;
       flex-direction: column;
       overflow: hidden;
       user-select: none;
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+      padding-left: env(safe-area-inset-left);
+      padding-right: env(safe-area-inset-right);
     }
 
     /* ===== ヘッダー（はま寿司風 赤いロゴバー） ===== */
@@ -38,6 +46,22 @@
       text-shadow: 0 2px 4px rgba(0,0,0,0.3);
     }
     .logo span { font-size: 13px; display: block; font-weight: 500; letter-spacing: 1px; opacity: 0.9; }
+    .version-badge {
+      display: inline-block !important;
+      font-size: 9px !important;
+      font-weight: 700 !important;
+      letter-spacing: 0 !important;
+      opacity: 0.7 !important;
+      background: rgba(0,0,0,0.2);
+      padding: 1px 5px;
+      border-radius: 4px;
+      margin-left: 6px;
+      vertical-align: middle;
+      cursor: pointer;
+      border: 1px solid rgba(255,255,255,0.3);
+      transition: opacity 0.2s;
+    }
+    .version-badge:active { opacity: 1 !important; }
     .header-fish { font-size: 28px; animation: swim 3s ease-in-out infinite; }
     @keyframes swim { 0%,100%{transform:translateX(0) rotate(-5deg)} 50%{transform:translateX(6px) rotate(5deg)} }
 
@@ -285,6 +309,8 @@
       display: flex;
       gap: 8px;
       padding: 8px 10px;
+      padding-bottom: calc(8px + env(safe-area-inset-bottom));
+      padding-left: calc(10px + env(safe-area-inset-left));
       z-index: 50;
     }
     /* 声優切り替えボタン（はま寿司の「音声を変更する」風） */
@@ -461,8 +487,8 @@
 
 <!-- ===== ヘッダー ===== -->
 <div class="header">
-  <div class="logo">
-    おうち巴寿司
+  <div class="logo" onclick="window.open('help.html','_blank')" style="cursor:pointer">
+    おうち巴寿司<span class="version-badge" id="versionBadge" onclick="event.stopPropagation(); showReleaseModal()">v1.2.0</span>
     <span>ともえのおきにいり🌸</span>
   </div>
   <div class="header-fish">🐟</div>
@@ -501,6 +527,16 @@
     <h2>🍣 きょうのちゅうもん</h2>
     <div class="modal-list" id="modalList"></div>
     <button class="modal-close" onclick="closeModal()">とじる</button>
+  </div>
+</div>
+
+
+<!-- ===== リリースノートモーダル ===== -->
+<div class="modal-overlay" id="releaseModal" style="display:none">
+  <div class="modal" style="max-height:80vh;overflow-y:auto;text-align:left">
+    <h2 style="text-align:center">📋 リリースノート</h2>
+    <div id="releaseModalContent" style="font-size:13px;margin-bottom:16px"></div>
+    <button class="modal-close" onclick="closeReleaseModal()">とじる</button>
   </div>
 </div>
 
@@ -680,11 +716,14 @@ function onMenuTap(item, card) {
   // バナー表示
   showBanner(item.emoji, item.name);
 
-  // 音声再生（mp3 優先 → Web Speech API フォールバック）
-  playAudio(item);
+  // 音声再生（カスタム → 組み込み → TTS）
+  playAudioWithCustom(item);
 
   // 注文リストに追加
   addToOrder(item);
+
+  // アクセスログ記録
+  logAccess(item);
 
   log(`タップ: ${item.name} | audio: /audio/${item.audioFile}.mp3`);
 }
@@ -918,6 +957,97 @@ document.querySelector('.logo').addEventListener('click', () => {
   }
 });
 
+// ===== リリースノート =====
+const RELEASE_NOTES = [
+  {
+    version: 'v1.2.0',
+    date: '2026-04-20',
+    items: [
+      'iPhone/iPad全画面対応（PWA）',
+      'おとうさん確認音声を追加',
+      'ジュース・ポテト・うどんの音声を追加',
+      '管理画面を追加（音声差し替え・録音・ログ）',
+      'バージョン表示・リリースノートを追加',
+      '使い方ページを追加',
+      'アクセスログ機能を追加',
+    ]
+  },
+  {
+    version: 'v1.1.0',
+    date: '2026-04-19',
+    items: [
+      'おとうさん音声マッピングのバグを修正',
+      'MIMEタイプをaudio/mpegに統一',
+      'safe-area対応を追加',
+    ]
+  },
+  {
+    version: 'v1.0.0',
+    date: '2026-04-19',
+    items: [
+      '初回リリース',
+      'おすすめ・にぎり・デザートカテゴリ',
+      'おかあさん・おとうさん音声切替',
+      '注文リスト・お会計機能',
+    ]
+  },
+];
+
+function showReleaseModal() {
+  const modal = document.getElementById('releaseModal');
+  const content = document.getElementById('releaseModalContent');
+  content.innerHTML = RELEASE_NOTES.map(r => `
+    <div style="border-left:3px solid #c8102e;padding-left:10px;margin-bottom:14px">
+      <div style="font-size:15px;font-weight:900;color:#c8102e">${r.version}</div>
+      <div style="font-size:10px;color:#999;margin-bottom:6px">${r.date}</div>
+      <ul style="padding-left:16px;color:#333">${r.items.map(i=>`<li style="margin-bottom:3px">${i}</li>`).join('')}</ul>
+    </div>
+  `).join('');
+  modal.style.display = 'flex';
+}
+
+function closeReleaseModal() {
+  document.getElementById('releaseModal').style.display = 'none';
+}
+
+// ===== アクセスログ記録 =====
+function logAccess(item) {
+  try {
+    const logs = JSON.parse(localStorage.getItem('access_log') || '[]');
+    logs.push({
+      ts: Date.now(),
+      name: item.name,
+      emoji: item.emoji,
+      voice: appliedVoice,
+    });
+    // 最大1000件保持
+    if (logs.length > 1000) logs.splice(0, logs.length - 1000);
+    localStorage.setItem('access_log', JSON.stringify(logs));
+  } catch(e) {}
+}
+
+// ===== カスタム音声の読み込み =====
+function getCustomVoice(key) {
+  return localStorage.getItem('voice_' + key) || null;
+}
+
+function playAudioWithCustom(item) {
+  const voicePrefix = appliedVoice === 2 ? 'otousan' : 'okasan';
+  const customKey = voicePrefix + '_' + item.name;
+  const customVoice = getCustomVoice(customKey);
+
+  if (customVoice) {
+    log(`カスタム音声再生: ${item.name}`);
+    const audio = new Audio(customVoice);
+    audio.play().catch(err => {
+      log(`カスタム音声失敗、フォールバック: ${err.message}`);
+      playAudio(item);
+    });
+  } else {
+    playAudio(item);
+  }
+}
+
 // ===== 初期化 =====
 function init() {
   renderTabs();
@@ -928,6 +1058,10 @@ function init() {
     getOtousanAudio();
     log('確認音声プリロード完了');
   }, 500);
+  // 管理画面からの音声更新を監視
+  window.addEventListener('storage', (e) => {
+    if (e.key === 'voices_updated') log('音声データ更新を検知');
+  });
   log('アプリ初期化完了');
 }
 init();
