@@ -22,11 +22,27 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
-const DEFAULT_FAMILY_CODE = 'default';
+// このファミリーのデフォルト家族コード。新しいブラウザでプレイヤーを開くと
+// 自動的にこのコードで接続される → 全端末で同じ録音データが鳴る
+const DEFAULT_FAMILY_CODE = 'tomoe3030';
 const FAMILY_KEY = 'setting_familyCode';
 const MAX_DATA_SIZE = 900 * 1024; // 900KB (Firestore 1MB 制限に余裕)
 
+// 家族コードの決定優先順位:
+//   1. URLパラメータ ?family=xxx が最優先（共有URL用）
+//   2. localStorage に保存済みならそれ
+//   3. デフォルト (tomoe3030)
 function getFamilyCode() {
+  // URLパラメータが指定されていれば最優先 + localStorage にも保存
+  try {
+    const url = new URL(window.location.href);
+    const urlCode = (url.searchParams.get('family') || '').trim();
+    if (urlCode) {
+      localStorage.setItem(FAMILY_KEY, urlCode);
+      return urlCode;
+    }
+  } catch (e) { /* 無視 */ }
+  // localStorage > デフォルト
   return localStorage.getItem(FAMILY_KEY) || DEFAULT_FAMILY_CODE;
 }
 
