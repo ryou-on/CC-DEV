@@ -348,10 +348,25 @@
       <h2>📢 確認音声（声優選択時）</h2>
       <div class="voice-grid" id="confirm-grid"></div>
     </div>
+    <div class="card">
+      <h2>🛎️ システム音声（注文・会計）</h2>
+      <p style="font-size:11px;color:#888;margin-bottom:10px;line-height:1.5">
+        「ちゅうもんする」「かいけい」ボタン押下時に再生される音声。<br>
+        声優ごとに録音できます（未録音なら TTS 読み上げ）。
+      </p>
+      <div class="voice-grid" id="system-grid"></div>
+    </div>
   </div>
 
   <!-- 画像管理 -->
   <div class="section" id="section-images">
+    <div class="card">
+      <h2>👨👩 お父さん・お母さんの画像</h2>
+      <p style="font-size:11px;color:#888;margin-bottom:12px;line-height:1.5">
+        「こえをかえる」モーダルで絵文字の代わりに表示される顔写真。
+      </p>
+      <div class="voice-grid" id="avatar-grid"></div>
+    </div>
     <div class="card">
       <h2>🖼️ メニュー画像</h2>
       <p style="font-size:11px;color:#888;margin-bottom:12px;line-height:1.5">
@@ -493,7 +508,38 @@ const CONFIRM_ITEMS = [
   { name: 'おとうさん確認', emoji: '👨', key: 'otousan_confirm' },
 ];
 
+// 注文・会計ボタンで再生されるシステム音声
+// 推奨セリフ:
+//  - order_*    : 「ごちゅうもんありがとうございました」
+//  - checkout_* : 「まいどありがとうございました」
+// 親のアバター画像（こえをかえるモーダルに表示される顔写真）
+const AVATAR_ITEMS = [
+  { name: 'おかあさん', emoji: '👩', key: 'avatar_okasan' },
+  { name: 'おとうさん', emoji: '👨', key: 'avatar_otousan' },
+];
+
+const SYSTEM_VOICE_ITEMS = [
+  { name: 'ご注文(おかあさん)', emoji: '🛎️', key: 'order_okasan' },
+  { name: 'ご注文(おとうさん)', emoji: '🛎️', key: 'order_otousan' },
+  { name: 'お会計(おかあさん)', emoji: '💰', key: 'checkout_okasan' },
+  { name: 'お会計(おとうさん)', emoji: '💰', key: 'checkout_otousan' },
+];
+
 const RELEASE_NOTES = [
+  {
+    version: 'v1.3.0',
+    date: '2026-04-21',
+    items: [
+      'メニューカードを大型化（子供がタップしやすいよう絵文字・写真サイズ拡大）',
+      '「ちゅうもんする」「かいけい」の2段階ボタン化',
+      '注文・会計ボイスを管理画面で差し替え可能に（おとうさん／おかあさん別）',
+      'お父さん・お母さんのアバター画像を管理画面で設定可能に',
+      '管理画面で画像アップロード機能を追加（自動400px JPEG圧縮）',
+      '確認音声の差し替え不具合を修正（applyVoice が localStorage を参照）',
+      'admin録音のMIMEタイプ不整合（webm決め打ち）を修正、iOS再生対応',
+      'カスタム画像対応：メニューカードに料理写真を表示可能',
+    ]
+  },
   {
     version: 'v1.2.0',
     date: '2026-04-20',
@@ -650,6 +696,7 @@ function renderAllVoices() {
   renderVoiceGrid('otousan-grid', MENU_ITEMS, 'otousan');
   renderVoiceGrid('okasan-grid', MENU_ITEMS, 'okasan');
   renderVoiceGrid('confirm-grid', CONFIRM_ITEMS, 'confirm');
+  renderVoiceGrid('system-grid', SYSTEM_VOICE_ITEMS, 'system');
 }
 
 function playVoice(key) {
@@ -787,14 +834,20 @@ function resetAllVoices() {
 const IMAGE_MAX_SIZE = 400; // px
 const IMAGE_QUALITY = 0.85;
 
-function getCustomImage(name) {
-  return localStorage.getItem('image_' + name);
+// key には 'まぐろ' や 'avatar_okasan' などメニュー名orアバターキーが入る
+function getCustomImage(key) {
+  return localStorage.getItem('image_' + key);
 }
-function setCustomImage(name, dataUri) {
-  localStorage.setItem('image_' + name, dataUri);
+function setCustomImage(key, dataUri) {
+  try {
+    localStorage.setItem('image_' + key, dataUri);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e, name: e && e.name };
+  }
 }
-function removeCustomImage(name) {
-  localStorage.removeItem('image_' + name);
+function removeCustomImage(key) {
+  localStorage.removeItem('image_' + key);
 }
 
 // ファイルを Canvas で縮小して JPEG data URI に変換
@@ -821,15 +874,19 @@ function resizeImageFile(file) {
   });
 }
 
-function renderImageGrid() {
-  const grid = document.getElementById('image-grid');
+// 汎用グリッド描画。items は {name, emoji, key?} の配列
+// key が指定されていればそれを localStorage キーに使う（例: avatar_okasan）、
+// 未指定なら item.name をキーに使う（メニュー画像）
+function renderItemImageGrid(containerId, items) {
+  const grid = document.getElementById(containerId);
+  if (!grid) return;
   grid.innerHTML = '';
-  MENU_ITEMS.forEach(item => {
-    const custom = getCustomImage(item.name);
+  items.forEach(item => {
+    const storageKey = item.key || item.name;
+    const custom = getCustomImage(storageKey);
     const hasCustom = !!custom;
     const div = document.createElement('div');
     div.className = 'image-item' + (hasCustom ? ' has-custom' : '');
-    div.id = 'img_' + item.name;
     div.innerHTML = `
       <div class="preview">
         ${hasCustom ? `<img src="${custom}" alt="${item.name}">` : item.emoji}
@@ -840,31 +897,37 @@ function renderImageGrid() {
       </div>
       <div class="btn-group">
         <label class="btn btn-upload" title="画像をアップロード">📁 選ぶ
-          <input type="file" accept="image/*" onchange="uploadImage('${item.name}', this)">
+          <input type="file" accept="image/*" onchange="uploadImage('${storageKey}', '${item.name.replace(/'/g, "\\'")}', this)">
         </label>
-        ${hasCustom ? `<button class="btn btn-reset" onclick="resetImage('${item.name}')">↩</button>` : ''}
+        ${hasCustom ? `<button class="btn btn-reset" onclick="resetImage('${storageKey}', '${item.name.replace(/'/g, "\\'")}')">↩</button>` : ''}
       </div>
     `;
     grid.appendChild(div);
   });
+}
+
+function renderImageGrid() {
+  renderItemImageGrid('avatar-grid', AVATAR_ITEMS);
+  renderItemImageGrid('image-grid', MENU_ITEMS);
   updateImageStorageSize();
 }
 
-async function uploadImage(name, input) {
+async function uploadImage(storageKey, displayName, input) {
   const file = input.files[0];
   if (!file) return;
   input.value = ''; // 同じファイルを再選択できるように
   try {
     showToast('🔄 画像を処理中...');
     const dataUri = await resizeImageFile(file);
-    try {
-      setCustomImage(name, dataUri);
-    } catch (e) {
-      // QuotaExceededError
-      showToast('❌ 容量不足。他の画像を削除してください');
+    const result = setCustomImage(storageKey, dataUri);
+    if (!result.ok) {
+      const msg = result.name === 'QuotaExceededError'
+        ? `❌ 容量不足。他の画像を削除してください`
+        : `❌ 保存失敗 (${result.name || 'エラー'})`;
+      showToast(msg);
       return;
     }
-    showToast(`📁 ${name} の画像を保存！`);
+    showToast(`📁 ${displayName} の画像を保存！`);
     renderImageGrid();
     // メインアプリに通知
     localStorage.setItem('images_updated', Date.now());
@@ -873,9 +936,9 @@ async function uploadImage(name, input) {
   }
 }
 
-function resetImage(name) {
-  if (confirm(`「${name}」の画像を絵文字に戻しますか？`)) {
-    removeCustomImage(name);
+function resetImage(storageKey, displayName) {
+  if (confirm(`「${displayName}」の画像を絵文字に戻しますか？`)) {
+    removeCustomImage(storageKey);
     showToast('↩ 絵文字に戻しました');
     renderImageGrid();
     localStorage.setItem('images_updated', Date.now());
