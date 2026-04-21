@@ -550,11 +550,36 @@ function showToast(msg) {
 // ===== 音声管理 =====
 let recorders = {};
 
+// MediaRecorder で使うMIMEタイプを環境に合わせて選択
+// 優先: audio/mp4 (iOS Safari対応) > opus付きwebm > webm > mpeg
+function pickRecordingMimeType() {
+  const candidates = [
+    'audio/mp4',
+    'audio/mp4;codecs=mp4a.40.2',
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/mpeg',
+  ];
+  if (typeof MediaRecorder === 'undefined') return '';
+  for (const t of candidates) {
+    try { if (MediaRecorder.isTypeSupported(t)) return t; } catch(e) {}
+  }
+  return '';
+}
+
 function getCustomVoice(key) {
   return localStorage.getItem('voice_' + key);
 }
+// localStorage の容量超過をキャッチして呼び出し側にエラーを返す
 function setCustomVoice(key, dataUri) {
-  localStorage.setItem('voice_' + key, dataUri);
+  try {
+    localStorage.setItem('voice_' + key, dataUri);
+    return { ok: true };
+  } catch (e) {
+    // QuotaExceededError など
+    const sizeKB = Math.round((dataUri || '').length / 1024);
+    return { ok: false, error: e, sizeKB, name: e && e.name };
+  }
 }
 function removeCustomVoice(key) {
   localStorage.removeItem('voice_' + key);
@@ -612,15 +637,23 @@ function playVoice(key) {
 async function startRec(key, btn) {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    const recorder = new MediaRecorder(stream);
+    const preferredType = pickRecordingMimeType();
+    // 指定できる場合のみ mimeType を渡す（未指定ならブラウザデフォルト）
+    const recorder = preferredType
+      ? new MediaRecorder(stream, { mimeType: preferredType })
+      : new MediaRecorder(stream);
     const chunks = [];
-    recorder.ondataavailable = e => chunks.push(e.data);
+    recorder.ondataavailable = e => { if (e.data && e.data.size > 0) chunks.push(e.data); };
     recorder.onstop = () => {
-      const blob = new Blob(chunks, { type: 'audio/webm' });
+      // ⚠️ Bug fix: Blob type は MediaRecorder が実際に生成した mimeType と一致させる
+      // （iOS Safari は mp4、Chrome は webm。決め打ちで webm 保存すると iOS で再生不可）
+      const actualType = recorder.mimeType || (chunks[0] && chunks[0].type) || 'audio/webm';
+      const blob = new Blob(chunks, { type: actualType });
       const url = URL.createObjectURL(blob);
       const prevAudio = document.getElementById('prev_audio_' + key);
       prevAudio.src = url;
       prevAudio._blob = blob;
+      prevAudio._mimeType = actualType;
       document.getElementById('preview_' + key).classList.add('show');
       stream.getTracks().forEach(t => t.stop());
     };
@@ -654,12 +687,27 @@ async function saveRecording(key) {
   if (!blob) return;
   const reader = new FileReader();
   reader.onload = () => {
-    setCustomVoice(key, reader.result);
+    const result = setCustomVoice(key, reader.result);
+    if (!result.ok) {
+      // 容量超過など。保存成功したフリをしない
+      const mime = audio._mimeType || blob.type || '不明';
+      const msg = result.name === 'QuotaExceededError'
+        ? `❌ 容量不足 (${result.sizeKB}KB)。他の音声を削除してください`
+        : `❌ 保存失敗 (${result.name || 'エラー'})`;
+      showToast(msg);
+      console.error('[saveRecording失敗]', { key, mime, sizeKB: result.sizeKB, error: result.error });
+      return;
+    }
     document.getElementById('preview_' + key).classList.remove('show');
-    showToast('💾 保存しました！');
+    const sizeKB = Math.round((reader.result || '').length / 1024);
+    const mime = audio._mimeType || blob.type || 'unknown';
+    showToast(`💾 保存しました (${sizeKB}KB, ${mime})`);
     renderAllVoices();
     // メインアプリに通知
     localStorage.setItem('voices_updated', Date.now());
+  };
+  reader.onerror = () => {
+    showToast('❌ ファイル読み込み失敗');
   };
   reader.readAsDataURL(blob);
 }
@@ -667,12 +715,25 @@ async function saveRecording(key) {
 function uploadVoice(key, input) {
   const file = input.files[0];
   if (!file) return;
+  input.value = ''; // 同じファイルを再選択できるように
   const reader = new FileReader();
   reader.onload = () => {
-    setCustomVoice(key, reader.result);
-    showToast('📁 アップロード完了！');
+    const result = setCustomVoice(key, reader.result);
+    if (!result.ok) {
+      const msg = result.name === 'QuotaExceededError'
+        ? `❌ 容量不足 (${result.sizeKB}KB)。他の音声を削除してください`
+        : `❌ 保存失敗 (${result.name || 'エラー'})`;
+      showToast(msg);
+      console.error('[uploadVoice失敗]', { key, type: file.type, sizeKB: result.sizeKB, error: result.error });
+      return;
+    }
+    const sizeKB = Math.round((reader.result || '').length / 1024);
+    showToast(`📁 アップロード完了 (${sizeKB}KB, ${file.type})`);
     renderAllVoices();
     localStorage.setItem('voices_updated', Date.now());
+  };
+  reader.onerror = () => {
+    showToast('❌ ファイル読み込み失敗');
   };
   reader.readAsDataURL(file);
 }
