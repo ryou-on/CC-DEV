@@ -65,6 +65,27 @@
     .header-fish { font-size: 28px; animation: swim 3s ease-in-out infinite; }
     @keyframes swim { 0%,100%{transform:translateX(0) rotate(-5deg)} 50%{transform:translateX(6px) rotate(5deg)} }
 
+    /* ===== クラウド接続状況インジケーター ===== */
+    .cloud-status {
+      position: fixed;
+      top: calc(env(safe-area-inset-top) + 8px);
+      left: 8px;
+      background: rgba(0,0,0,0.75);
+      color: white;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 12px;
+      z-index: 500;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+    }
+    .cloud-status.show { opacity: 1; }
+    .cloud-status.connecting { background: rgba(243,156,18,0.9); }
+    .cloud-status.success { background: rgba(46,204,113,0.9); }
+    .cloud-status.error { background: rgba(231,76,60,0.9); }
+
     /* ===== カテゴリタブ（はま寿司風） ===== */
     .category-tabs {
       background: #fff;
@@ -493,6 +514,9 @@
 <!-- ===== Firestore クラウドストレージ（ES module） ===== -->
 <script type="module" src="cloud-store.js"></script>
 
+<!-- ===== クラウド接続状況（デバッグ兼確認用、自動フェード） ===== -->
+<div class="cloud-status connecting show" id="cloudStatus">☁️ 同期中...</div>
+
 <!-- ===== ヘッダー ===== -->
 <div class="header">
   <div class="logo" onclick="window.open('help.html','_blank')" style="cursor:pointer">
@@ -689,9 +713,23 @@ function renderTabs() {
   });
 }
 
+// ===== アセット読み取り共通ヘルパー =====
+// localStorage → メモリキャッシュ（クラウド由来）の順で値を取得
+// シークレットモード等で localStorage が動かないケースでもクラウドデータを表示できる
+function readAsset(key) {
+  try {
+    const ls = localStorage.getItem(key);
+    if (ls) return ls;
+  } catch (e) { /* ignore */ }
+  if (window.cloudStore && typeof window.cloudStore.getAsset === 'function') {
+    return window.cloudStore.getAsset(key);
+  }
+  return null;
+}
+
 // ===== カスタム画像の読み込み =====
 function getCustomImage(name) {
-  return localStorage.getItem('image_' + name) || null;
+  return readAsset('image_' + name);
 }
 
 // ===== メニューグリッド生成 =====
@@ -840,7 +878,7 @@ function clearOrder() {
 function playSystemVoice(type /* 'order' | 'checkout' */) {
   const voiceSuffix = appliedVoice === 2 ? 'otousan' : 'okasan';
   const key = `voice_${type}_${voiceSuffix}`;
-  const custom = localStorage.getItem(key);
+  const custom = readAsset(key);
   if (custom) {
     log(`システム音声再生: ${type} (${voiceSuffix})`);
     const audio = new Audio(custom);
@@ -901,7 +939,7 @@ function refreshVoiceAvatars() {
   mapping.forEach(m => {
     const el = document.getElementById(m.id);
     if (!el) return;
-    const custom = localStorage.getItem(m.key);
+    const custom = readAsset(m.key);
     if (custom) {
       el.innerHTML = `<img src="${custom}" alt="">`;
     } else {
@@ -946,7 +984,7 @@ let _otousanAudio = null;
 
 function getConfirmSrc(voiceKey, fallbackB64) {
   // voiceKey: 'okasan_confirm' or 'otousan_confirm'
-  const custom = localStorage.getItem('voice_' + voiceKey);
+  const custom = readAsset('voice_' + voiceKey);
   return custom || fallbackB64;
 }
 function getOkasanAudio() {
@@ -1054,15 +1092,25 @@ function copyDebug() {
     .then(() => alert('ログをコピーしました'))
     .catch(() => log('コピー失敗'));
 }
-// 5回タップで開発者モード（デバッグバー表示）
+// 右上のお魚アイコンを5連打で開発者モード（デバッグバー表示）
+// ロゴは help.html へのリンクになっているため、別要素をトリガーに
 let tapCount = 0;
-document.querySelector('.logo').addEventListener('click', () => {
-  tapCount++;
-  if (tapCount >= 5) {
-    tapCount = 0;
-    document.getElementById('debugBar').classList.toggle('show');
-  }
-});
+let lastTapTime = 0;
+const fishEl = document.querySelector('.header-fish');
+if (fishEl) {
+  fishEl.style.cursor = 'pointer';
+  fishEl.addEventListener('click', () => {
+    const now = Date.now();
+    // 2秒以上間が空いたらカウントリセット（誤操作防止）
+    if (now - lastTapTime > 2000) tapCount = 0;
+    lastTapTime = now;
+    tapCount++;
+    if (tapCount >= 5) {
+      tapCount = 0;
+      document.getElementById('debugBar').classList.toggle('show');
+    }
+  });
+}
 
 // ===== リリースノート =====
 const RELEASE_NOTES = [
@@ -1160,7 +1208,7 @@ function logAccess(item) {
 
 // ===== カスタム音声の読み込み =====
 function getCustomVoice(key) {
-  return localStorage.getItem('voice_' + key) || null;
+  return readAsset('voice_' + key);
 }
 
 function playAudioWithCustom(item) {
@@ -1184,6 +1232,19 @@ function playAudioWithCustom(item) {
 function ensureCloudStore(cb) {
   if (window.cloudStore) cb();
   else window.addEventListener('cloud-store-ready', cb, { once: true });
+}
+
+// ===== クラウド接続状況インジケーター =====
+function updateCloudStatus(kind /* 'connecting' | 'success' | 'error' */, text) {
+  const el = document.getElementById('cloudStatus');
+  if (!el) return;
+  el.classList.remove('connecting', 'success', 'error');
+  el.classList.add(kind, 'show');
+  el.textContent = text;
+}
+function hideCloudStatus() {
+  const el = document.getElementById('cloudStatus');
+  if (el) el.classList.remove('show');
 }
 
 // ===== 初期化 =====
@@ -1222,15 +1283,28 @@ function init() {
   ensureCloudStore(() => {
     const code = window.cloudStore.getFamilyCode();
     log(`☁️ クラウド接続: ${code}`);
+    updateCloudStatus('connecting', `☁️ 接続中 (${code})`);
     window.cloudStore.subscribe(code, (info) => {
       log(`☁️ クラウド応答 (firstLoad=${info.firstLoad}, changes=${info.changes}, total=${info.totalDocs}件)`);
       renderMenu();
       refreshVoiceAvatars();
       invalidateConfirmAudioCache();
+      updateCloudStatus('success', `☁️ 同期完了 (${info.totalDocs}件)`);
+      // 成功時は 3 秒後にフェードアウト
+      setTimeout(() => hideCloudStatus(), 3000);
     }, (err) => {
-      log(`☁️ クラウドエラー: ${err && err.code} ${err && err.message}`);
+      const c = err && err.code ? err.code : 'error';
+      log(`☁️ クラウドエラー: ${c} ${err && err.message}`);
+      updateCloudStatus('error', `⚠️ ${c}`);
     });
   });
+  // クラウド接続が 15 秒来なかったら警告（SDK ロード失敗等）
+  setTimeout(() => {
+    const el = document.getElementById('cloudStatus');
+    if (el && el.classList.contains('connecting')) {
+      updateCloudStatus('error', '⚠️ クラウド接続タイムアウト');
+    }
+  }, 15000);
   log('アプリ初期化完了');
 }
 init();

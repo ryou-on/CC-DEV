@@ -57,6 +57,19 @@ let currentCode = null;
 let currentOnUpdate = null;
 let currentOnError = null;
 
+// インメモリキャッシュ。シークレットモード等で localStorage が動かない場合の
+// フォールバック用。onSnapshot 受信時に必ずここへも書き込む
+const memCache = {};
+
+// 永続層（localStorage）→ メモリキャッシュの順で値を取得
+function getAsset(key) {
+  try {
+    const ls = localStorage.getItem(key);
+    if (ls) return ls;
+  } catch (e) { /* quota/privacy で失敗する可能性 */ }
+  return memCache[key] || null;
+}
+
 // familyCode の assets コレクションを監視。
 // onUpdate(info) は初回接続時(empty含む)と変更時に呼ばれる
 //   info: { firstLoad: bool, changes: number, totalDocs: number }
@@ -76,19 +89,20 @@ function subscribe(familyCode, onUpdate, onError) {
     let changes = 0;
     snap.docChanges().forEach(change => {
       const key = change.doc.id;
-      try {
-        if (change.type === 'removed') {
-          localStorage.removeItem(key);
-          changes++;
-        } else {
-          const data = change.doc.data();
-          if (data && typeof data.data === 'string') {
-            localStorage.setItem(key, data.data);
-            changes++;
+      if (change.type === 'removed') {
+        delete memCache[key];
+        try { localStorage.removeItem(key); } catch (e) {}
+        changes++;
+      } else {
+        const data = change.doc.data();
+        if (data && typeof data.data === 'string') {
+          // まずメモリキャッシュに必ず保存（インコグニト等で localStorage が使えなくても動く）
+          memCache[key] = data.data;
+          try { localStorage.setItem(key, data.data); } catch (e) {
+            console.warn('[cloudStore] localStorage write failed (memCache only):', key, e && e.name);
           }
+          changes++;
         }
-      } catch (e) {
-        console.warn('[cloudStore] localStorage write failed:', key, e);
       }
     });
     // 空のスナップショット・初回接続でも onUpdate を呼んで UI 側に成功を通知
@@ -112,6 +126,10 @@ function wipeLocalAssets() {
   const keys = Object.keys(localStorage)
     .filter(k => k.startsWith('voice_') || k.startsWith('image_'));
   keys.forEach(k => localStorage.removeItem(k));
+  // memCache もクリア
+  Object.keys(memCache)
+    .filter(k => k.startsWith('voice_') || k.startsWith('image_'))
+    .forEach(k => delete memCache[k]);
   return keys.length;
 }
 
@@ -149,6 +167,8 @@ window.cloudStore = {
   wipeLocalAssets,
   setAsset,
   removeAsset,
+  getAsset,      // localStorage → memCache の順で値を取得
+  memCache,      // デバッグ用に露出
   MAX_DATA_SIZE,
 };
 window.dispatchEvent(new Event('cloud-store-ready'));
