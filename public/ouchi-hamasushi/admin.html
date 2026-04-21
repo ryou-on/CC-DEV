@@ -319,6 +319,9 @@
 </head>
 <body>
 
+<!-- ===== Firestore クラウドストレージ（ES module） ===== -->
+<script type="module" src="cloud-store.js"></script>
+
 <div class="header">
   <h1>🔧 管理画面</h1>
   <a href="index.html" class="back-btn">← アプリへ</a>
@@ -434,6 +437,31 @@
   <!-- 設定 -->
   <div class="section" id="section-settings">
     <div class="card">
+      <h2>☁️ クラウド同期（家族コード）</h2>
+      <p style="font-size:11px;color:#888;margin-bottom:12px;line-height:1.5">
+        同じ<strong>家族コード</strong>を入れた端末同士で、録音・画像が自動同期されます。<br>
+        初期値は <code>default</code>。推測されにくい文字列をおすすめします。
+      </p>
+      <div class="setting-row">
+        <div class="setting-label">
+          家族コード
+          <small>英数字・小文字推奨</small>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input type="text" id="family-code" value="default" style="width:140px">
+          <button class="back-btn" onclick="saveFamilyCode()" style="background:#27ae60">せってい</button>
+        </div>
+      </div>
+      <div class="setting-row">
+        <div class="setting-label">
+          接続状態
+          <small>Firestore との接続</small>
+        </div>
+        <span id="cloud-status" style="font-size:12px;color:#f39c12;font-weight:700">接続中...</span>
+      </div>
+    </div>
+
+    <div class="card">
       <h2>⚙️ アプリ設定</h2>
       <div class="setting-row">
         <div class="setting-label">
@@ -527,6 +555,16 @@ const SYSTEM_VOICE_ITEMS = [
 
 const RELEASE_NOTES = [
   {
+    version: 'v1.4.0',
+    date: '2026-04-21',
+    items: [
+      '☁️ クラウド同期対応（家族コード方式）',
+      'Firestore に音声・画像を保存、端末間で自動反映',
+      '設定タブで家族コードを変更・接続状態を確認可能',
+      'ローカルキャッシュ併用でオフライン時も再生可能',
+    ]
+  },
+  {
     version: 'v1.3.0',
     date: '2026-04-21',
     items: [
@@ -616,19 +654,26 @@ function pickRecordingMimeType() {
 function getCustomVoice(key) {
   return localStorage.getItem('voice_' + key);
 }
-// localStorage の容量超過をキャッチして呼び出し側にエラーを返す
-function setCustomVoice(key, dataUri) {
+// クラウド（Firestore）に保存し、同時に localStorage にキャッシュ
+async function setCustomVoice(key, dataUri, mimeType) {
+  const assetKey = 'voice_' + key;
+  const sizeKB = Math.round((dataUri || '').length / 1024);
   try {
-    localStorage.setItem('voice_' + key, dataUri);
-    return { ok: true };
+    await window.cloudStore.setAsset(window.cloudStore.getFamilyCode(), assetKey, dataUri, mimeType);
+    return { ok: true, sizeKB };
   } catch (e) {
-    // QuotaExceededError など
-    const sizeKB = Math.round((dataUri || '').length / 1024);
-    return { ok: false, error: e, sizeKB, name: e && e.name };
+    return { ok: false, error: e, sizeKB, name: e && e.name, message: e && e.message };
   }
 }
-function removeCustomVoice(key) {
-  localStorage.removeItem('voice_' + key);
+async function removeCustomVoice(key) {
+  try {
+    await window.cloudStore.removeAsset(window.cloudStore.getFamilyCode(), 'voice_' + key);
+    return { ok: true };
+  } catch (e) {
+    // ローカルだけは掃除
+    localStorage.removeItem('voice_' + key);
+    return { ok: false, error: e };
+  }
 }
 
 // 旧キー（confirm_日本語）→ 新キー（okasan_confirm / otousan_confirm）へ移行
@@ -760,30 +805,23 @@ async function saveRecording(key) {
   const audio = document.getElementById('prev_audio_' + key);
   const blob = audio._blob;
   if (!blob) return;
+  const mime = audio._mimeType || blob.type || 'audio/mp4';
   const reader = new FileReader();
-  reader.onload = () => {
-    const result = setCustomVoice(key, reader.result);
+  reader.onload = async () => {
+    showToast('☁️ クラウド保存中...');
+    const result = await setCustomVoice(key, reader.result, mime);
     if (!result.ok) {
-      // 容量超過など。保存成功したフリをしない
-      const mime = audio._mimeType || blob.type || '不明';
-      const msg = result.name === 'QuotaExceededError'
-        ? `❌ 容量不足 (${result.sizeKB}KB)。他の音声を削除してください`
-        : `❌ 保存失敗 (${result.name || 'エラー'})`;
-      showToast(msg);
+      const msg = result.message || `❌ 保存失敗 (${result.name || 'エラー'})`;
+      showToast('❌ ' + msg);
       console.error('[saveRecording失敗]', { key, mime, sizeKB: result.sizeKB, error: result.error });
       return;
     }
     document.getElementById('preview_' + key).classList.remove('show');
-    const sizeKB = Math.round((reader.result || '').length / 1024);
-    const mime = audio._mimeType || blob.type || 'unknown';
-    showToast(`💾 保存しました (${sizeKB}KB, ${mime})`);
+    showToast(`💾 保存しました (${result.sizeKB}KB, ${mime}) ☁️`);
     renderAllVoices();
-    // メインアプリに通知
     localStorage.setItem('voices_updated', Date.now());
   };
-  reader.onerror = () => {
-    showToast('❌ ファイル読み込み失敗');
-  };
+  reader.onerror = () => showToast('❌ ファイル読み込み失敗');
   reader.readAsDataURL(blob);
 }
 
@@ -792,42 +830,46 @@ function uploadVoice(key, input) {
   if (!file) return;
   input.value = ''; // 同じファイルを再選択できるように
   const reader = new FileReader();
-  reader.onload = () => {
-    const result = setCustomVoice(key, reader.result);
+  reader.onload = async () => {
+    showToast('☁️ クラウド保存中...');
+    const result = await setCustomVoice(key, reader.result, file.type);
     if (!result.ok) {
-      const msg = result.name === 'QuotaExceededError'
-        ? `❌ 容量不足 (${result.sizeKB}KB)。他の音声を削除してください`
-        : `❌ 保存失敗 (${result.name || 'エラー'})`;
-      showToast(msg);
+      const msg = result.message || `❌ 保存失敗 (${result.name || 'エラー'})`;
+      showToast('❌ ' + msg);
       console.error('[uploadVoice失敗]', { key, type: file.type, sizeKB: result.sizeKB, error: result.error });
       return;
     }
-    const sizeKB = Math.round((reader.result || '').length / 1024);
-    showToast(`📁 アップロード完了 (${sizeKB}KB, ${file.type})`);
+    showToast(`📁 アップロード完了 (${result.sizeKB}KB, ${file.type}) ☁️`);
     renderAllVoices();
     localStorage.setItem('voices_updated', Date.now());
   };
-  reader.onerror = () => {
-    showToast('❌ ファイル読み込み失敗');
-  };
+  reader.onerror = () => showToast('❌ ファイル読み込み失敗');
   reader.readAsDataURL(file);
 }
 
-function resetVoice(key) {
-  if (confirm(`「${key}」の音声を標準に戻しますか？`)) {
-    removeCustomVoice(key);
-    showToast('↩ 標準音声に戻しました');
-    renderAllVoices();
-    localStorage.setItem('voices_updated', Date.now());
-  }
+async function resetVoice(key) {
+  if (!confirm(`「${key}」の音声を標準に戻しますか？`)) return;
+  const result = await removeCustomVoice(key);
+  if (result.ok) showToast('↩ 標準音声に戻しました ☁️');
+  else showToast('⚠️ クラウド削除失敗（ローカルのみ削除）');
+  renderAllVoices();
+  localStorage.setItem('voices_updated', Date.now());
 }
 
-function resetAllVoices() {
-  if (confirm('すべてのカスタム音声を削除して標準に戻しますか？')) {
-    Object.keys(localStorage).filter(k => k.startsWith('voice_')).forEach(k => localStorage.removeItem(k));
-    showToast('すべてリセットしました');
-    renderAllVoices();
+async function resetAllVoices() {
+  if (!confirm('すべてのカスタム音声を削除して標準に戻しますか？\n（クラウド上のデータも削除されます）')) return;
+  const keys = Object.keys(localStorage).filter(k => k.startsWith('voice_'));
+  // 'voice_' プレフィックスを剥がして cloudStore に渡す
+  showToast(`☁️ ${keys.length}件を削除中...`);
+  const errors = [];
+  for (const fullKey of keys) {
+    const k = fullKey.substring('voice_'.length);
+    const r = await removeCustomVoice(k);
+    if (!r.ok) errors.push(k);
   }
+  if (errors.length === 0) showToast(`すべてリセットしました (${keys.length}件) ☁️`);
+  else showToast(`⚠️ ${errors.length}件のクラウド削除失敗`);
+  renderAllVoices();
 }
 
 // ===== 画像管理 =====
@@ -838,16 +880,23 @@ const IMAGE_QUALITY = 0.85;
 function getCustomImage(key) {
   return localStorage.getItem('image_' + key);
 }
-function setCustomImage(key, dataUri) {
+async function setCustomImage(key, dataUri, mimeType) {
+  const assetKey = 'image_' + key;
   try {
-    localStorage.setItem('image_' + key, dataUri);
+    await window.cloudStore.setAsset(window.cloudStore.getFamilyCode(), assetKey, dataUri, mimeType || 'image/jpeg');
     return { ok: true };
   } catch (e) {
-    return { ok: false, error: e, name: e && e.name };
+    return { ok: false, error: e, name: e && e.name, message: e && e.message };
   }
 }
-function removeCustomImage(key) {
-  localStorage.removeItem('image_' + key);
+async function removeCustomImage(key) {
+  try {
+    await window.cloudStore.removeAsset(window.cloudStore.getFamilyCode(), 'image_' + key);
+    return { ok: true };
+  } catch (e) {
+    localStorage.removeItem('image_' + key);
+    return { ok: false, error: e };
+  }
 }
 
 // ファイルを Canvas で縮小して JPEG data URI に変換
@@ -919,15 +968,14 @@ async function uploadImage(storageKey, displayName, input) {
   try {
     showToast('🔄 画像を処理中...');
     const dataUri = await resizeImageFile(file);
-    const result = setCustomImage(storageKey, dataUri);
+    showToast('☁️ クラウド保存中...');
+    const result = await setCustomImage(storageKey, dataUri, 'image/jpeg');
     if (!result.ok) {
-      const msg = result.name === 'QuotaExceededError'
-        ? `❌ 容量不足。他の画像を削除してください`
-        : `❌ 保存失敗 (${result.name || 'エラー'})`;
-      showToast(msg);
+      const msg = result.message || `❌ 保存失敗 (${result.name || 'エラー'})`;
+      showToast('❌ ' + msg);
       return;
     }
-    showToast(`📁 ${displayName} の画像を保存！`);
+    showToast(`📁 ${displayName} の画像を保存！ ☁️`);
     renderImageGrid();
     // メインアプリに通知
     localStorage.setItem('images_updated', Date.now());
@@ -936,21 +984,27 @@ async function uploadImage(storageKey, displayName, input) {
   }
 }
 
-function resetImage(storageKey, displayName) {
-  if (confirm(`「${displayName}」の画像を絵文字に戻しますか？`)) {
-    removeCustomImage(storageKey);
-    showToast('↩ 絵文字に戻しました');
-    renderImageGrid();
-    localStorage.setItem('images_updated', Date.now());
-  }
+async function resetImage(storageKey, displayName) {
+  if (!confirm(`「${displayName}」の画像を絵文字に戻しますか？`)) return;
+  const result = await removeCustomImage(storageKey);
+  if (result.ok) showToast('↩ 絵文字に戻しました ☁️');
+  else showToast('⚠️ クラウド削除失敗（ローカルのみ削除）');
+  renderImageGrid();
+  localStorage.setItem('images_updated', Date.now());
 }
 
-function resetAllImages() {
-  if (!confirm('すべてのカスタム画像を削除しますか？')) return;
-  Object.keys(localStorage)
-    .filter(k => k.startsWith('image_'))
-    .forEach(k => localStorage.removeItem(k));
-  showToast('すべてリセットしました');
+async function resetAllImages() {
+  if (!confirm('すべてのカスタム画像を削除しますか？\n（クラウド上のデータも削除されます）')) return;
+  const keys = Object.keys(localStorage).filter(k => k.startsWith('image_'));
+  showToast(`☁️ ${keys.length}件を削除中...`);
+  const errors = [];
+  for (const fullKey of keys) {
+    const k = fullKey.substring('image_'.length);
+    const r = await removeCustomImage(k);
+    if (!r.ok) errors.push(k);
+  }
+  if (errors.length === 0) showToast(`すべてリセットしました (${keys.length}件) ☁️`);
+  else showToast(`⚠️ ${errors.length}件のクラウド削除失敗`);
   renderImageGrid();
   localStorage.setItem('images_updated', Date.now());
 }
@@ -1061,6 +1115,38 @@ function loadSettings() {
   if (sub) document.getElementById('app-subtitle').value = sub;
   const toggle = document.getElementById('toggle-debug');
   if (debug) toggle.classList.add('on');
+  // 家族コード
+  const codeInput = document.getElementById('family-code');
+  if (codeInput && window.cloudStore) {
+    codeInput.value = window.cloudStore.getFamilyCode();
+  }
+}
+
+function saveFamilyCode() {
+  const input = document.getElementById('family-code');
+  const code = (input.value || '').trim();
+  if (!code) { showToast('コードを入力してください'); return; }
+  if (!window.cloudStore) { showToast('クラウド未接続'); return; }
+  const prev = window.cloudStore.getFamilyCode();
+  if (prev === code) { showToast('同じコードです'); return; }
+  window.cloudStore.setFamilyCode(code);
+  // ローカルキャッシュをクリアして新コードで再サブスクライブ
+  const wiped = window.cloudStore.wipeLocalAssets();
+  setCloudStatus('🔄 切替中...', '#f39c12');
+  window.cloudStore.subscribe(code, () => {
+    renderAllVoices();
+    renderImageGrid();
+    setCloudStatus('✅ 接続中: ' + code, '#2ecc71');
+  });
+  showToast(`家族コード: ${code} (${wiped}件キャッシュクリア)`);
+  // 切替後の空描画
+  renderAllVoices();
+  renderImageGrid();
+}
+
+function setCloudStatus(text, color) {
+  const el = document.getElementById('cloud-status');
+  if (el) { el.textContent = text; el.style.color = color; }
 }
 
 function saveSetting(key, value) {
@@ -1090,9 +1176,27 @@ function exportSettings() {
   showToast('📤 エクスポートしました');
 }
 
+// ===== クラウド準備待ち =====
+function ensureCloudStore(cb) {
+  if (window.cloudStore) cb();
+  else window.addEventListener('cloud-store-ready', cb, { once: true });
+}
+
 // ===== 初期化 =====
 migrateConfirmKeys();
 renderAllVoices();
+renderImageGrid();
+// クラウドストアの準備が完了したら subscribe
+ensureCloudStore(() => {
+  const code = window.cloudStore.getFamilyCode();
+  setCloudStatus('🔄 接続中...', '#f39c12');
+  window.cloudStore.subscribe(code, () => {
+    // Firestore からデータが届いたら再描画
+    renderAllVoices();
+    renderImageGrid();
+    setCloudStatus('✅ 接続中: ' + code, '#2ecc71');
+  });
+});
 </script>
 </body>
 </html>

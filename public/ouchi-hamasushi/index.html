@@ -490,10 +490,13 @@
 </head>
 <body>
 
+<!-- ===== Firestore クラウドストレージ（ES module） ===== -->
+<script type="module" src="cloud-store.js"></script>
+
 <!-- ===== ヘッダー ===== -->
 <div class="header">
   <div class="logo" onclick="window.open('help.html','_blank')" style="cursor:pointer">
-    おうち巴寿司<span class="version-badge" id="versionBadge" onclick="event.stopPropagation(); showReleaseModal()">v1.3.0</span>
+    おうち巴寿司<span class="version-badge" id="versionBadge" onclick="event.stopPropagation(); showReleaseModal()">v1.4.0</span>
     <span>ともえのおきにいり🌸</span>
   </div>
   <div class="header-fish">🐟</div>
@@ -1064,6 +1067,16 @@ document.querySelector('.logo').addEventListener('click', () => {
 // ===== リリースノート =====
 const RELEASE_NOTES = [
   {
+    version: 'v1.4.0',
+    date: '2026-04-21',
+    items: [
+      '☁️ クラウド同期対応（家族コード方式）— 同じコードの端末で音声・画像を共有',
+      'Firestore に音声・画像を保存、どの端末でも自動反映',
+      '管理画面の設定タブで家族コード設定・接続状態確認が可能',
+      'ローカルキャッシュ（localStorage）併用でオフラインでも再生可能',
+    ]
+  },
+  {
     version: 'v1.3.0',
     date: '2026-04-21',
     items: [
@@ -1165,6 +1178,12 @@ function playAudioWithCustom(item) {
   }
 }
 
+// ===== クラウド準備待ち =====
+function ensureCloudStore(cb) {
+  if (window.cloudStore) cb();
+  else window.addEventListener('cloud-store-ready', cb, { once: true });
+}
+
 // ===== 初期化 =====
 function init() {
   // v1.2.x で誤保存された確認音声キーを新形式へ移行
@@ -1177,12 +1196,11 @@ function init() {
     getOtousanAudio();
     log('確認音声プリロード完了');
   }, 500);
-  // 管理画面からの音声・画像更新を監視
+  // 管理画面からの音声・画像更新を監視（同一オリジンの別タブ）
   window.addEventListener('storage', (e) => {
     if (e.key === 'voices_updated') {
       log('音声データ更新を検知 → 確認音声キャッシュクリア');
       invalidateConfirmAudioCache();
-      // 再プリロード
       setTimeout(() => { getOkasanAudio(); getOtousanAudio(); }, 100);
     }
     if (e.key === 'images_updated') {
@@ -1197,6 +1215,17 @@ function init() {
       log('bfcache復元 → 確認音声キャッシュクリア');
       invalidateConfirmAudioCache();
     }
+  });
+  // クラウド（Firestore）購読：他端末からの変更をリアルタイム反映
+  ensureCloudStore(() => {
+    const code = window.cloudStore.getFamilyCode();
+    log(`☁️ クラウド接続: ${code}`);
+    window.cloudStore.subscribe(code, () => {
+      log('☁️ クラウド更新 → 再描画');
+      renderMenu();
+      refreshVoiceAvatars();
+      invalidateConfirmAudioCache();
+    });
   });
   log('アプリ初期化完了');
 }

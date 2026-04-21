@@ -43,6 +43,19 @@ service cloud.firestore {
       allow read, write: if true;
     }
 
+    // おうち巴寿司: 家族コードを知っている人同士で音声・画像を共有
+    // ouchi-hamasushi/{familyCode}/assets/{assetKey}
+    // assetKey は voice_otousan_まぐろ / image_avatar_okasan などの形式
+    match /ouchi-hamasushi/{familyCode}/assets/{assetKey} {
+      allow read: if true;
+      // data URI 1件 <= 950KB、mimeType/size/updatedAt のみ受け付け
+      allow create, update: if
+        request.resource.data.keys().hasOnly(['data','mimeType','size','updatedAt']) &&
+        request.resource.data.data is string &&
+        request.resource.data.data.size() <= 950000;
+      allow delete: if true;
+    }
+
     // その他は全拒否
     match /{document=**} {
       allow read, write: if false;
