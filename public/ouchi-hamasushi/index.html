@@ -878,15 +878,49 @@ function updateVoiceCards() {
 
 // 「せっていする」→ 適用・確認音声を再生して閉じる
 // ===== 確認音声Audioオブジェクトを事前生成（iOS対策） =====
+// localStorage に voice_okasan_confirm / voice_otousan_confirm があれば優先
 let _okasanAudio = null;
 let _otousanAudio = null;
+
+function getConfirmSrc(voiceKey, fallbackB64) {
+  // voiceKey: 'okasan_confirm' or 'otousan_confirm'
+  const custom = localStorage.getItem('voice_' + voiceKey);
+  return custom || fallbackB64;
+}
 function getOkasanAudio() {
-  if (!_okasanAudio) { _okasanAudio = new Audio(OKASAN_AUDIO_B64); }
+  if (!_okasanAudio) { _okasanAudio = new Audio(getConfirmSrc('okasan_confirm', OKASAN_AUDIO_B64)); }
   return _okasanAudio;
 }
 function getOtousanAudio() {
-  if (!_otousanAudio) { _otousanAudio = new Audio(OTOUSAN_AUDIO_B64); }
+  if (!_otousanAudio) { _otousanAudio = new Audio(getConfirmSrc('otousan_confirm', OTOUSAN_AUDIO_B64)); }
   return _otousanAudio;
+}
+// 管理画面でカスタム確認音声を更新した時にキャッシュをクリアさせるため
+function invalidateConfirmAudioCache() {
+  _okasanAudio = null;
+  _otousanAudio = null;
+}
+
+// 旧キー（v1.2.x で誤保存された confirm_日本語）→ 新キーへ移行
+function migrateConfirmKeys() {
+  const map = {
+    'voice_confirm_おかあさん確認': 'voice_okasan_confirm',
+    'voice_confirm_おとうさん確認': 'voice_otousan_confirm',
+  };
+  let migrated = 0;
+  for (const [oldKey, newKey] of Object.entries(map)) {
+    const val = localStorage.getItem(oldKey);
+    if (val && !localStorage.getItem(newKey)) {
+      try {
+        localStorage.setItem(newKey, val);
+        localStorage.removeItem(oldKey);
+        migrated++;
+      } catch(e) {}
+    } else if (val && localStorage.getItem(newKey)) {
+      localStorage.removeItem(oldKey);
+    }
+  }
+  if (migrated > 0) log(`確認音声キー移行: ${migrated}件`);
 }
 
 function applyVoice() {
@@ -901,6 +935,7 @@ function applyVoice() {
       .catch(err => {
         log('おかあさん再生失敗、再生成: ' + err.message);
         _okasanAudio = null;
+        // カスタムが壊れている場合は組み込みに明示フォールバック
         const a2 = new Audio(OKASAN_AUDIO_B64);
         a2.play().catch(e => log('再試行失敗: ' + e.message));
       });
@@ -1060,6 +1095,8 @@ function playAudioWithCustom(item) {
 
 // ===== 初期化 =====
 function init() {
+  // v1.2.x で誤保存された確認音声キーを新形式へ移行
+  migrateConfirmKeys();
   renderTabs();
   renderMenu();
   // 確認音声を事前ロード（iOS対策）
@@ -1070,10 +1107,22 @@ function init() {
   }, 500);
   // 管理画面からの音声・画像更新を監視
   window.addEventListener('storage', (e) => {
-    if (e.key === 'voices_updated') log('音声データ更新を検知');
+    if (e.key === 'voices_updated') {
+      log('音声データ更新を検知 → 確認音声キャッシュクリア');
+      invalidateConfirmAudioCache();
+      // 再プリロード
+      setTimeout(() => { getOkasanAudio(); getOtousanAudio(); }, 100);
+    }
     if (e.key === 'images_updated') {
       log('画像データ更新を検知 → 再描画');
       renderMenu();
+    }
+  });
+  // bfcache から復元された場合も確認音声キャッシュを更新
+  window.addEventListener('pageshow', (e) => {
+    if (e.persisted) {
+      log('bfcache復元 → 確認音声キャッシュクリア');
+      invalidateConfirmAudioCache();
     }
   });
   log('アプリ初期化完了');

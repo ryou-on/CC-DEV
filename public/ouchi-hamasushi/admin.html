@@ -585,11 +585,39 @@ function removeCustomVoice(key) {
   localStorage.removeItem('voice_' + key);
 }
 
+// 旧キー（confirm_日本語）→ 新キー（okasan_confirm / otousan_confirm）へ移行
+// v1.2.x で誤保存された確認音声を救済。一度実行すれば冪等
+function migrateConfirmKeys() {
+  const map = {
+    'voice_confirm_おかあさん確認': 'voice_okasan_confirm',
+    'voice_confirm_おとうさん確認': 'voice_otousan_confirm',
+  };
+  let migrated = 0;
+  for (const [oldKey, newKey] of Object.entries(map)) {
+    const val = localStorage.getItem(oldKey);
+    if (val && !localStorage.getItem(newKey)) {
+      try {
+        localStorage.setItem(newKey, val);
+        localStorage.removeItem(oldKey);
+        migrated++;
+      } catch(e) { console.warn('migrate失敗', oldKey, e); }
+    } else if (val && localStorage.getItem(newKey)) {
+      // 新キー優先、旧キーは掃除
+      localStorage.removeItem(oldKey);
+    }
+  }
+  if (migrated > 0) {
+    console.log(`[migrate] 確認音声キーを ${migrated} 件移行`);
+    localStorage.setItem('voices_updated', Date.now());
+  }
+}
+
 function renderVoiceGrid(containerId, items, prefix) {
   const grid = document.getElementById(containerId);
   grid.innerHTML = '';
   items.forEach(item => {
-    const key = prefix + '_' + item.name;
+    // item に key プロパティがあれば優先（確認音声は okasan_confirm / otousan_confirm）
+    const key = item.key || (prefix + '_' + item.name);
     const hasCustom = !!getCustomVoice(key);
     const div = document.createElement('div');
     div.className = 'voice-item' + (hasCustom ? ' has-custom' : '');
@@ -1000,6 +1028,7 @@ function exportSettings() {
 }
 
 // ===== 初期化 =====
+migrateConfirmKeys();
 renderAllVoices();
 </script>
 </body>
