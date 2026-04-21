@@ -1133,10 +1133,14 @@ function saveFamilyCode() {
   // ローカルキャッシュをクリアして新コードで再サブスクライブ
   const wiped = window.cloudStore.wipeLocalAssets();
   setCloudStatus('🔄 切替中...', '#f39c12');
-  window.cloudStore.subscribe(code, () => {
+  window.cloudStore.subscribe(code, (info) => {
     renderAllVoices();
     renderImageGrid();
-    setCloudStatus('✅ 接続中: ' + code, '#2ecc71');
+    setCloudStatus(`✅ 接続中: ${code} (${info.totalDocs}件)`, '#2ecc71');
+  }, (err) => {
+    const code2 = err && err.code ? err.code : 'unknown';
+    setCloudStatus(`❌ 接続失敗: ${code2}`, '#e74c3c');
+    showToast(`⚠️ ${code2}: Firestore Rules が未デプロイの可能性`);
   });
   showToast(`家族コード: ${code} (${wiped}件キャッシュクリア)`);
   // 切替後の空描画
@@ -1190,11 +1194,17 @@ renderImageGrid();
 ensureCloudStore(() => {
   const code = window.cloudStore.getFamilyCode();
   setCloudStatus('🔄 接続中...', '#f39c12');
-  window.cloudStore.subscribe(code, () => {
-    // Firestore からデータが届いたら再描画
+  window.cloudStore.subscribe(code, (info) => {
+    // Firestore から（空でも）初回応答があれば接続成功とみなす
     renderAllVoices();
     renderImageGrid();
-    setCloudStatus('✅ 接続中: ' + code, '#2ecc71');
+    setCloudStatus(`✅ 接続中: ${code} (${info.totalDocs}件)`, '#2ecc71');
+  }, (err) => {
+    const code2 = err && err.code ? err.code : 'unknown';
+    setCloudStatus(`❌ 接続失敗: ${code2}`, '#e74c3c');
+    if (code2 === 'permission-denied') {
+      showToast('⚠️ Firestore Rules が未デプロイ。コンソールで公開してください');
+    }
   });
 });
 </script>

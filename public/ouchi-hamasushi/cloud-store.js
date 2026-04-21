@@ -39,41 +39,52 @@ function setFamilyCode(code) {
 let currentUnsubscribe = null;
 let currentCode = null;
 let currentOnUpdate = null;
+let currentOnError = null;
 
-// familyCode の assets コレクションを監視。変更があれば localStorage に反映し onUpdate() を呼ぶ
-function subscribe(familyCode, onUpdate) {
+// familyCode の assets コレクションを監視。
+// onUpdate(info) は初回接続時(empty含む)と変更時に呼ばれる
+//   info: { firstLoad: bool, changes: number, totalDocs: number }
+// onError(err) は permission-denied などエラー時に呼ばれる
+function subscribe(familyCode, onUpdate, onError) {
   if (currentUnsubscribe) {
     currentUnsubscribe();
     currentUnsubscribe = null;
   }
   currentCode = familyCode;
   currentOnUpdate = onUpdate;
+  currentOnError = onError;
 
+  let firstLoad = true;
   const col = collection(db, 'ouchi-hamasushi', familyCode, 'assets');
   currentUnsubscribe = onSnapshot(col, (snap) => {
-    let changed = false;
+    let changes = 0;
     snap.docChanges().forEach(change => {
       const key = change.doc.id;
       try {
         if (change.type === 'removed') {
           localStorage.removeItem(key);
-          changed = true;
+          changes++;
         } else {
           const data = change.doc.data();
           if (data && typeof data.data === 'string') {
             localStorage.setItem(key, data.data);
-            changed = true;
+            changes++;
           }
         }
       } catch (e) {
         console.warn('[cloudStore] localStorage write failed:', key, e);
       }
     });
-    if (changed && typeof currentOnUpdate === 'function') {
-      currentOnUpdate();
+    // 空のスナップショット・初回接続でも onUpdate を呼んで UI 側に成功を通知
+    if (typeof currentOnUpdate === 'function') {
+      currentOnUpdate({ firstLoad, changes, totalDocs: snap.size });
     }
+    firstLoad = false;
   }, (err) => {
-    console.error('[cloudStore] subscribe error:', err);
+    console.error('[cloudStore] subscribe error:', err && err.code, err && err.message);
+    if (typeof currentOnError === 'function') {
+      currentOnError(err);
+    }
   });
 
   return currentUnsubscribe;
