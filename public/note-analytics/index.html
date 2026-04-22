@@ -246,7 +246,7 @@
         <div class="font-bold mb-1" style="color:var(--note-green);">🔖 Chrome自動取得の使い方</div>
         <ol class="text-sm space-y-2 mt-2" style="color:var(--text);list-style:decimal;padding-left:18px;">
           <li>下のボタンを右クリック →「ブックマークに追加」<br>（または長押しドラッグでブックマークバーへ）</li>
-          <li>note.comのダッシュボード統計ページを開く<br>（ <a href="https://note.com/stats" target="_blank" style="color:var(--note-green);">https://note.com/stats</a> ）</li>
+          <li>note.comのアクセス状況ページを開く（週表示）<br>（ <a href="https://note.com/sitesettings/stats" target="_blank" style="color:var(--note-green);">https://note.com/sitesettings/stats</a> ）</li>
           <li>追加したブックマークをクリック</li>
           <li>データが自動的にこのアプリに取り込まれます</li>
         </ol>
@@ -653,36 +653,40 @@ function compressImage(dataUrl, maxWidth = 1600, quality = 0.85) {
 }
 
 const OCR_PROMPT = `あなたはnote.comの統計ページを読み取る専門家です。
-このスクリーンショットはnote.comのクリエイターダッシュボード（統計ページ）です。
+このスクリーンショットはnote.comのクリエイターダッシュボード（note.com/sitesettings/stats）の週次アクセス状況です。
 
-【抽出ルール】
-画面に表示されている数値をそのまま読み取ってください。
+【必ず抽出する項目】
 
-- views（閲覧数/ビュー数）:
-  「ビュー」「閲覧」「views」「PV」などのラベルの隣の数値
-  グラフがある場合は合計値や最新の数値
+1. weekStart（週の開始日）:
+   画面上部に「◀ 2026年2月10日 - 2026年2月16日 ▶」のような週ナビゲーターが表示されています。
+   その「最初の日付」をYYYY-MM-DD形式に変換してください。
+   例: 「2026年2月10日 - 2026年2月16日」→ "2026-02-10"
+   例: 「2025年12月1日 - 2025年12月7日」→ "2025-12-01"
+   ※週ナビゲーターが見つからない場合は null
 
-- likes（スキ数）:
-  「スキ」「♡」「like」などのラベルの隣の数値
+2. views（全体ビュー数）:
+   「全体ビュー」と書かれた数値。画面中央の大きな数字。
 
-- followers（フォロワー数）:
-  「フォロワー」「followers」のラベルの隣の数値
+3. comments（コメント数）:
+   「コメント」と書かれた数値。
 
-- comments（コメント数）:
-  「コメント」「comment」のラベルの隣の数値
+4. likes（スキ数）:
+   「スキ」と書かれた数値（ハートマーク❤の横）。
 
-【数値の変換ルール】
+5. followers（フォロワー数）:
+   「フォロワー」と書かれた数値。表示されていない場合は 0。
+
+【数値変換ルール】
 - カンマ区切り: 1,234 → 1234
-- K表記: 1.2K → 1200、5K → 5000
+- K表記: 1.2K → 1200
 - 万表記: 1.2万 → 12000
-- 該当する数値が画面に存在しない場合は 0
+- 表示なし → 0
 
-【重要】
-- 推測や計算は行わない。画面に表示されている数値のみを読む
-- 合計値と期間別値が両方ある場合は、より大きい合計値を使う
-- 必ず以下のJSON形式のみで返答（説明文・コメント一切不要）:
+【絶対ルール】
+- 画面に表示されている値のみを使う（推測・補完禁止）
+- JSON以外の文字を一切含めない
 
-{"views": 数値, "likes": 数値, "followers": 数値, "comments": 数値}`;
+{"weekStart": "YYYY-MM-DD または null", "views": 数値, "likes": 数値, "followers": 数値, "comments": 数値}`;
 
 async function callClaudeVision(base64) {
   const endpoint = getApiEndpoint();
@@ -747,7 +751,17 @@ async function runOcrAll() {
       // 3) JSON 抽出
       const match = text.match(/\{[\s\S]*?\}/);
       if (!match) throw new Error('JSONが見つかりません: ' + text.slice(0, 80));
-      item.data = JSON.parse(match[0]);
+      const parsed = JSON.parse(match[0]);
+      item.data = parsed;
+
+      // 4) 画像内の weekStart を優先（ファイル名日付より正確）
+      if (parsed.weekStart && /^\d{4}-\d{2}-\d{2}$/.test(parsed.weekStart)) {
+        item.weekStart = parsed.weekStart;
+        log(`[${item.file.name}] 画像から週開始日: ${parsed.weekStart}`);
+      } else {
+        log(`[${item.file.name}] 週開始日は画像から取得できず→ファイル名推定値を使用: ${item.weekStart}`);
+      }
+
       item.status = 'done';
 
     } catch (err) {
@@ -836,7 +850,11 @@ async function retryOcr(id) {
     const text = resp.content[0].text;
     const match = text.match(/\{[\s\S]*?\}/);
     if (!match) throw new Error('JSONが見つかりません');
-    item.data = JSON.parse(match[0]);
+    const parsed = JSON.parse(match[0]);
+    item.data = parsed;
+    if (parsed.weekStart && /^\d{4}-\d{2}-\d{2}$/.test(parsed.weekStart)) {
+      item.weekStart = parsed.weekStart;
+    }
     item.status = 'done';
     showToast('✅ 再試行成功', 'success');
   } catch (err) {
