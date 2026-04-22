@@ -559,10 +559,28 @@ function handleFileSelect(e) {
   e.target.value = ''; // 同じファイルの再選択を許可
 }
 
+// ファイル名から日付を抽出して週の月曜日を返す
+// 対応パターン: CleanShot 2026-04-20 at ...  / 2026-04-20_... / Screenshot 2026-04-20 ...
+function extractWeekStartFromFilename(filename) {
+  const match = filename.match(/(\d{4})[.\-_/ ](\d{2})[.\-_/ ](\d{2})/);
+  if (match) {
+    const dateStr = `${match[1]}-${match[2]}-${match[3]}`;
+    const d = new Date(dateStr + 'T12:00:00'); // 正午で解釈（タイムゾーンずれ防止）
+    if (!isNaN(d)) {
+      const monday = getMondayStr(d);
+      log(`ファイル名から日付検出: ${filename} → ${dateStr} → 週: ${monday}`);
+      return monday;
+    }
+  }
+  log(`ファイル名から日付不明: ${filename} → 今週を使用`);
+  return getMondayStr(new Date());
+}
+
 function addFilesToQueue(files) {
   files.forEach(file => {
     const id = ++queueIdSeq;
-    const item = { id, file, dataUrl: null, base64: null, status: 'pending', data: null, weekStart: getMondayStr(new Date()), error: null };
+    const weekStart = extractWeekStartFromFilename(file.name); // ← ファイル名から自動抽出
+    const item = { id, file, dataUrl: null, base64: null, status: 'pending', data: null, weekStart, error: null };
     imgQueue.push(item);
     const reader = new FileReader();
     reader.onload = ev => {
@@ -634,18 +652,37 @@ function compressImage(dataUrl, maxWidth = 1600, quality = 0.85) {
   });
 }
 
-const OCR_PROMPT = `このnote.comのダッシュボード・統計・クリエイターページのスクリーンショットから数値を抽出してください。
+const OCR_PROMPT = `あなたはnote.comの統計ページを読み取る専門家です。
+このスクリーンショットはnote.comのクリエイターダッシュボード（統計ページ）です。
 
-抽出する項目：
-- views: 閲覧数（ビュー数）
-- likes: スキ数（♡やハートマークの数）
-- followers: フォロワー数
-- comments: コメント数
+【抽出ルール】
+画面に表示されている数値をそのまま読み取ってください。
 
-必ず以下のJSON形式のみで返答してください（説明文は不要）：
-{"views": 数値, "likes": 数値, "followers": 数値, "comments": 数値}
+- views（閲覧数/ビュー数）:
+  「ビュー」「閲覧」「views」「PV」などのラベルの隣の数値
+  グラフがある場合は合計値や最新の数値
 
-数値が見つからない場合は0にしてください。カンマ区切りの数値（例: 1,234）はそのまま数値（1234）に変換してください。`;
+- likes（スキ数）:
+  「スキ」「♡」「like」などのラベルの隣の数値
+
+- followers（フォロワー数）:
+  「フォロワー」「followers」のラベルの隣の数値
+
+- comments（コメント数）:
+  「コメント」「comment」のラベルの隣の数値
+
+【数値の変換ルール】
+- カンマ区切り: 1,234 → 1234
+- K表記: 1.2K → 1200、5K → 5000
+- 万表記: 1.2万 → 12000
+- 該当する数値が画面に存在しない場合は 0
+
+【重要】
+- 推測や計算は行わない。画面に表示されている数値のみを読む
+- 合計値と期間別値が両方ある場合は、より大きい合計値を使う
+- 必ず以下のJSON形式のみで返答（説明文・コメント一切不要）:
+
+{"views": 数値, "likes": 数値, "followers": 数値, "comments": 数値}`;
 
 async function callClaudeVision(base64) {
   const endpoint = getApiEndpoint();
@@ -767,9 +804,14 @@ function renderOcrResults() {
               <input type="number" min="0" value="${item.data?.comments||0}"
                 onchange="updateQueueItem(${item.id},'comments',this.value)" style="padding:4px 6px;font-size:12px;"></div>
           </div>
-          <div class="mt-2"><div class="text-xs mb-1" style="color:var(--muted);">📅 週の開始日</div>
-            <input type="date" value="${item.weekStart}"
-              onchange="updateQueueItem(${item.id},'weekStart',this.value)" style="padding:4px 6px;font-size:12px;width:auto;"></div>
+          <div class="mt-2 flex items-center gap-2 flex-wrap">
+            <div>
+              <div class="text-xs mb-1" style="color:var(--muted);">📅 週の開始日（ファイル名から自動推定）</div>
+              <input type="date" value="${item.weekStart}"
+                onchange="updateQueueItem(${item.id},'weekStart',this.value)" style="padding:4px 6px;font-size:12px;width:auto;">
+            </div>
+            <div class="text-xs" style="color:var(--muted);margin-top:16px;">← ファイル: ${item.file.name}</div>
+          </div>
           `}
         </div>
       </div>
