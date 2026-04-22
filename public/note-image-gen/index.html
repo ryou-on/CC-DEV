@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>note画像生成ツール</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spin { animation: spin 1s linear infinite; display: inline-block; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    .fade-in { animation: fadeIn 0.35s ease forwards; }
+    select option { background: #111827; }
+    textarea { font-family: ui-monospace, monospace; }
+  </style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+
+<!-- Settings Modal -->
+<div id="modalSettings" class="hidden fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+  <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-lg shadow-2xl">
+    <h2 class="text-lg font-bold mb-5">⚙️ API設定</h2>
+    <div class="space-y-4">
+      <div>
+        <label class="text-sm text-gray-400 block mb-1.5">Anthropic APIキー <span class="text-purple-400 text-xs">(プロンプト生成)</span></label>
+        <input id="inp_anthropicKey" type="password" placeholder="sk-ant-api03-..."
+          class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"/>
+      </div>
+      <div>
+        <label class="text-sm text-gray-400 block mb-1.5">OpenAI APIキー <span class="text-blue-400 text-xs">(DALL-E 3 画像生成)</span></label>
+        <input id="inp_openaiKey" type="password" placeholder="sk-..."
+          class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"/>
+      </div>
+      <p class="text-xs text-gray-600">キーはlocalStorageに保存されます。外部サーバーには送信されません。</p>
+    </div>
+    <div class="flex gap-3 mt-6">
+      <button onclick="saveSettings()" class="flex-1 bg-blue-600 hover:bg-blue-500 rounded-xl py-2.5 font-semibold text-sm transition">保存</button>
+      <button onclick="closeModal('modalSettings')" class="flex-1 bg-gray-700 hover:bg-gray-600 rounded-xl py-2.5 font-semibold text-sm transition">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- Main App -->
+<div class="max-w-5xl mx-auto px-4 py-8">
+
+  <!-- Header -->
+  <div class="flex items-center justify-between mb-8">
+    <div>
+      <h1 class="text-2xl font-bold tracking-tight">📝 note画像生成ツール</h1>
+      <p class="text-gray-600 text-sm mt-1">Claude → プロンプト最適化 → DALL-E 3 × 3案並列生成 | 1792×1024px</p>
+    </div>
+    <button onclick="openModal('modalSettings')"
+      class="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-xl px-4 py-2 text-sm transition flex items-center gap-2">
+      ⚙️ 設定
+      <span id="keyStatus" class="w-2 h-2 rounded-full bg-red-500 inline-block"></span>
+    </button>
+  </div>
+
+  <!-- Input Card -->
+  <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6 mb-4 space-y-4">
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-sm text-gray-400 mb-1.5 font-medium">記事タイトル / テーマ</label>
+        <input id="inp_title" type="text" placeholder="例: AIと人間の役割分担"
+          class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-700"/>
+      </div>
+      <div>
+        <label class="block text-sm text-gray-400 mb-1.5 font-medium">テンプレートから選ぶ</label>
+        <select id="inp_template" onchange="applyTemplate(this.value)"
+          class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-300">
+          <option value="">── テンプレートを選択 ──</option>
+        </select>
+      </div>
+    </div>
+
+    <div>
+      <label class="block text-sm text-gray-400 mb-1.5 font-medium">
+        シーン説明 <span class="text-gray-600 font-normal text-xs">(日本語で自由記述 — テンプレート選択で自動入力)</span>
+      </label>
+      <textarea id="inp_scene" rows="6"
+        placeholder="例: ロビーがノートパソコンの前で目を丸くしている場面。画面には動画プレーヤーが表示されていて、動画の中からインタラクティブなメニューが飛び出してきている演出..."
+        class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-700 resize-none leading-relaxed"></textarea>
+    </div>
+
+    <div class="flex gap-3 pt-1">
+      <button onclick="runGeneratePrompts()" id="btn_genPrompt"
+        class="flex-1 bg-purple-700 hover:bg-purple-600 rounded-xl py-3 font-semibold text-sm transition flex items-center justify-center gap-2">
+        🤖 AIプロンプト生成
+      </button>
+      <button onclick="runGenerateAll()" id="btn_genImages"
+        class="flex-1 bg-blue-700 hover:bg-blue-600 rounded-xl py-3 font-semibold text-sm transition flex items-center justify-center gap-2">
+        🎨 3案を一括生成
+      </button>
+    </div>
+  </div>
+
+  <!-- Prompt Preview -->
+  <div id="sec_prompts" class="hidden bg-gray-900 border border-gray-800 rounded-2xl p-6 mb-4">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="font-semibold text-gray-300 text-sm">生成されたプロンプト <span class="text-gray-600 font-normal">(編集可)</span></h2>
+      <button onclick="runGenerateImagesFromPrompts()"
+        class="bg-blue-700 hover:bg-blue-600 rounded-xl px-4 py-1.5 text-sm font-medium transition">
+        ↑ この内容で画像生成
+      </button>
+    </div>
+    <div id="list_prompts" class="space-y-3"></div>
+  </div>
+
+  <!-- Image Results -->
+  <div id="sec_images" class="hidden mb-4">
+    <div class="flex items-center gap-2 mb-3">
+      <h2 class="font-semibold text-gray-300 text-sm">生成結果</h2>
+      <span id="lbl_imgCount" class="text-gray-600 text-xs"></span>
+    </div>
+    <div id="grid_images" class="grid grid-cols-1 md:grid-cols-3 gap-4"></div>
+  </div>
+
+  <!-- Log -->
+  <div class="mt-4">
+    <div class="flex items-center justify-between mb-2">
+      <span class="text-xs text-gray-700 font-medium">実行ログ</span>
+      <button onclick="copyLogs()" class="text-xs text-gray-600 hover:text-gray-400 bg-gray-900 border border-gray-800 px-2.5 py-1 rounded-lg transition">
+        📋 コピー
+      </button>
+    </div>
+    <div id="area_log" class="bg-gray-900 border border-gray-800 rounded-xl p-3 text-xs text-gray-600 font-mono h-28 overflow-y-auto space-y-0.5"></div>
+  </div>
+
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+// CHARACTER & STYLE DEFINITIONS
+// ─────────────────────────────────────────────
+const CLAUDE_SYSTEM = `You are an expert image prompt writer for Japanese anime chibi-style illustration.
+
+Generate English prompts for DALL-E 3 to create note.com blog header images (16:9, 1792x1024).
+
+## MANDATORY STYLE (append verbatim to every prompt):
+"Japanese anime chibi illustration style, bold clean black outlines, flat cel-shading coloring, expressive cute eyes, chibi proportions (2.5-head-ratio body), simple white or very light gradient background, no text overlay, no watermarks, no logos, professional commercial illustration quality, landscape 16:9 format"
+
+## CHARACTER DEFINITIONS (use exactly when character appears in the scene):
+- Robby (ロビー): Chibi Japanese male, very voluminous wavy-messy black hair with natural body and lift, short stubble beard with small chin goatee, wears black mock-neck turtleneck sweater OR gray pullover hoodie, black slim pants, black New Balance 574 sneakers, cheerful energetic enthusiastic expression, brown warm eyes
+- Yoshio (よしお): Chibi Japanese male, neat short straight black hair, black rectangular-framed glasses, wears navy blue business suit with light striped tie OR dark olive green craftsman apron with badge lanyard, brown oxford shoes, warm friendly smile
+- Masami (まさみ): Chibi Japanese female, long straight black hair slightly past shoulders, black button-up cardigan over dark crimson ribbed turtleneck sweater, dark navy blue jeans, white canvas sneakers, calm composed professional expression
+
+## TASK:
+Read the Japanese article title and scene description. Generate 3 English image prompts for the same scene with subtle variations (different camera angle, slightly different expression/pose, or minor compositional change). Always append the MANDATORY STYLE at the end of each prompt.
+
+Return ONLY valid JSON with no markdown fences:
+{"prompts":["prompt1","prompt2","prompt3"]}`;
+
+// ─────────────────────────────────────────────
+// TEMPLATES
+// ─────────────────────────────────────────────
+const TEMPLATES = [
+  { id:'01', title:'01 ビフォーアフター：LP動画エンゲージメント', scene:`ビフォーアフターの左右分割イラスト（16:9）。左側（BEFORE）：ロビーがノートパソコンでLPを見ている場面。画面には普通の紹介動画が再生されているが、再生バーが途中で止まっている。ロビーは頬杖をついて困り顔。背景にグラフが右肩下がりのモニター。全体的にグレーっぽいトーン。右側（AFTER）：まさみがノートパソコンの前に座っている場面。画面にはインタラクティブ動画が表示されていて、CTAボタンが光っている。まさみは陶器カップを片手に余裕の表情。背景にグラフが右肩上がり（134%↑）のモニター。キラキラエフェクト。よしおが後ろで「おお！」と驚いた表情でモニターを指差している。真ん中に点線の縦ラインで区切り。` },
+  { id:'02', title:'02 AIと人間の役割分担', scene:`まさみの隣に、頭脳を象徴するAIロボット（人型ではなく、光る球体に顔がある親しみやすいデザイン）が浮かんでいる。AIロボットの周りには数式、データ、検索結果のアイコンが回転している。一方、まさみの頭上には天秤のアイコンと「A↔B」の選択矢印が浮かんでいる。まさみはAIロボットと横に並んで前を見つめ、パートナーシップを感じさせる堂々とした表情。背景は近未来的なオフィス、青と白のクリーンなトーン。16:9。` },
+  { id:'03', title:'03 消防士の訓練：座学 vs インタラクティブ動画', scene:`画面を左右に分割した対比イラスト。左側：よしおが机に向かって紙のテストを解いている場面。ゆったりした雰囲気。よしおはアゴに手を当てて「うーん、Bかな」と余裕で考え込んでいる。頭の上に時計が「30分経過」を示している。右側：よしおがモニターの前で目を見開いている場面。画面には火災現場の映像とカウントダウンタイマー「00:03」。よしおは汗をかきながら必死に選択肢を選ぼうとしている。左側はのんびりした暖色、右側は赤みがかった緊迫トーン。16:9。` },
+  { id:'04', title:'04 360度パイロット体験ヘッダー', scene:`ロビーがパイロットのヘッドセットを付けて、大きなモニターの前に座っている場面。モニターにはコックピットからの360度パノラマ映像が映っていて、雲の上の壮大な景色が広がっている。画面の上にクイズのポップアップ「WHAT NOW?」と選択肢ボタンが2つ表示されている。ロビーは目を輝かせてモニターに見入っている興奮した表情。ロビーの周りに矢印アイコン（←→）がぐるっと回る演出。暗めの背景に画面の光が映える映画的な雰囲気。16:9。` },
+  { id:'05', title:'05 採点の山に埋もれるよしお', scene:`よしおが大量の答案用紙の山に囲まれて机に座っている場面。答案用紙は机の上だけでなく床にも積み上がっていて、よしおの顔が紙の山から半分だけ見えている状態。よしおは赤ペンを持って採点しているが、疲弊しきった表情で目の下にクマがある。机の上の時計は深夜を示している。答案用紙の山の向こう側に、パソコン画面が光っていて「AI自動採点：完了」のメッセージが表示されているが、よしおはそれに気づいていない。暗めの照明。16:9。` },
+  { id:'06', title:'06 迷いの波形が宝になるグラフ', scene:`まさみが大きなモニターの前に立っている場面。モニターには受講者ごとの「回答時間」の波形グラフが表示されている。グラフは心電図のように上下しているが、波形の山の部分（迷った部分）がキラキラと光っていて、宝石のようにハイライトされている。波形の谷の部分（即答）は暗くくすんでいる。まさみはグラフの光る山を指差しながら、発見の表情。背景はダークトーンのオフィス。16:9。` },
+  { id:'07', title:'07 iFrameで動画からWebが飛び出す', scene:`ロビーが大きなモニターの前で腕組みをして満足げに立っている場面。モニターには動画が再生されていて、動画の中からWebページの要素が飛び出してきている演出。カレンダー、地図、フォーム、3Dモデル、電卓のアイコンが動画の画面枠を突き破るように浮かび上がっている。ロビーは両手を広げて驚きと興奮の表情。背景はダークトーン、画面から溢れる光がカラフルに照らしている。16:9。` },
+  { id:'08', title:'08 採用動画の職種選択', scene:`ロビーがスマホを持って採用動画を見ている場面。スマホの画面には企業紹介動画が再生されていて、画面上に「研究・開発」「設計・施工」「営業」「管理部門」の4つの選択肢ボタンが並んでいる。ロビーの背後に、スーツ姿の若い社員、白衣の研究者、ヘルメットをかぶった施工管理者のシルエットがうっすら見えて、「どの道を選ぶ？」という雰囲気。ロビーは真剣に画面を見つめている表情。明るく爽やかなトーン。16:9。` },
+  { id:'09', title:'09 コンテンツ制作ノウハウの転用', scene:`画面左側に「教育コンテンツ制作ノウハウ」と書かれた大きなツールボックスが描かれている。ツールボックスから矢印が2本伸びていて、上の矢印の先に「大学・専門学校」のアイコン、下の矢印の先に「企業研修・資格スクール」のアイコン。2つのアイコンの上にインタラクティブ動画プレーヤーのアイコンが重なっていて「新技術との組み合わせで差別化」のラベルが付いている。ロビーがツールボックスの横に立って、気づきの表情でガッツポーズ。白背景、フラットデザイン。16:9。` },
+  { id:'10', title:'10 動画の中から問題が飛び出す', scene:`大きな動画プレーヤーが画面中央に表示されていて、動画が再生されている途中で一時停止した場面。動画の画面から「？」マークが3D的に飛び出してきていて、画面の枠を突き破るような迫力のある演出。飛び出した「？」の周りに選択肢A・B・Cのボタンが光りながら浮かんでいる。動画プレーヤーの前にロビーが座っていて、「？」マークが飛び出してきたことに驚きながらも前のめりになっている表情。背景はダークトーンの教室。16:9。` },
+  { id:'11', title:'11 アダプティブラーニングの分岐フロー', scene:`画面上部に動画プレーヤーのアイコンと「確認問題」のボックスが描かれている。ボックスから2本の矢印が下に伸びている。左の矢印「✓ 正解」→ 緑色の道、道の先に「次のトピックへ進む」の動画アイコン。右の矢印「✗ 誤答」→ オレンジ色の道、道の先に「補足説明動画を視聴」の動画アイコン。補足動画の後、再び「確認問題」に戻る矢印。2本の道の終点が合流して同じゴールに到達。ロビーとまさみが2本の道のそれぞれを歩いていて最後に同じゴールで合流している。白背景、緑とオレンジの配色。16:9。` },
+  { id:'12', title:'12 Googleスライドが動画に変わる発見', scene:`ロビーがノートパソコンの前に座っている場面。パソコンの画面にはGoogleスライドのプレゼン資料が表示されていて、メニューから「動画にする」ボタンが光ってハイライトされている。画面から矢印が伸びて、その先に完成した動画プレーヤーがぽんと出現している演出。ロビーは「え、これだけで動画になるの？」と目を丸くして驚いている表情。明るいオフィス背景、発見の瞬間を捉えた雰囲気。16:9。` },
+  { id:'13', title:'13 AI停滞層に光を届ける', scene:`オフィスのフロアに社員のシルエットが10人ほど並んでいる場面。そのうち2〜3人だけがカラフルに光っていて（積極層）、残りの7〜8人はグレーアウトして立ち止まっている（停滞層）。グレーの社員たちの頭上に「？」マークが浮かんでいる。フロアの中央にロビーが立っていて、手にタブレットを持ち上げている。タブレットの画面から光の線が放射状にグレーの社員たちに伸びていて、光が当たった社員が少しずつカラフルになり始めている演出。青とオレンジのコントラスト。16:9。` },
+  { id:'14', title:'14 暗黙知継承：工房の1枚シーン', scene:`工房の作業台を中心にした1枚のシーンイラスト。画面中央によしおが作業台で手作業をしている。よしおの手元にズームサークルが3つ浮かんでいて、それぞれ「指の角度」「手首の返し」「目線」をクローズアップしている。作業台の部品から音声波形が立ち上っていて、緑の波形（正常）と赤の波形（異常）が並んでいる。よしおの横にビデオカメラが置いてあり、録画中の赤いランプが点灯している。温かい工房の照明、職人的な雰囲気。16:9。` },
+  { id:'15', title:'15「聞くだけ」vs「考えながら聞く」の脳内対比', scene:`画面を左右に分割した対比イラスト。左側（見るだけ授業）：ロビーがソファに横たわって動画を見ている。目は半開きで、頭の中（頭のシルエット内部）は真っ白でがらんどう。情報が頭の上をすり抜けて消えていく演出。上部ラベル「見るだけ授業」、足元に「記憶定着：低」。右側（考える授業）：同じロビーが前のめりで画面を見ている。頭の中にニューロンが光りながら繋がっていく演出。画面には動画の途中に「？」のクイズが表示されていてロビーが選択肢を指差している。上部ラベル「考える授業」、足元に「記憶定着：3倍」。左はグレーで眠そうなトーン、右は青白く活気のある雰囲気。16:9。` },
+];
+
+// ─────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────
+let generatedPrompts = ['', '', ''];
+let settings = { anthropicKey: '', openaiKey: '' };
+
+// ─────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────
+function init() {
+  settings.anthropicKey = localStorage.getItem('nig_anthropic') || '';
+  settings.openaiKey    = localStorage.getItem('nig_openai')    || '';
+  updateKeyStatus();
+  populateTemplates();
+  log('✅ note画像生成ツール 起動完了');
+}
+
+function updateKeyStatus() {
+  const ok = settings.anthropicKey && settings.openaiKey;
+  document.getElementById('keyStatus').className =
+    `w-2 h-2 rounded-full inline-block ${ok ? 'bg-green-500' : 'bg-red-500'}`;
+}
+
+function openModal(id) {
+  if (id === 'modalSettings') {
+    document.getElementById('inp_anthropicKey').value = settings.anthropicKey;
+    document.getElementById('inp_openaiKey').value    = settings.openaiKey;
+  }
+  document.getElementById(id).classList.remove('hidden');
+}
+
+function closeModal(id) {
+  document.getElementById(id).classList.add('hidden');
+}
+
+function saveSettings() {
+  settings.anthropicKey = document.getElementById('inp_anthropicKey').value.trim();
+  settings.openaiKey    = document.getElementById('inp_openaiKey').value.trim();
+  localStorage.setItem('nig_anthropic', settings.anthropicKey);
+  localStorage.setItem('nig_openai',    settings.openaiKey);
+  closeModal('modalSettings');
+  updateKeyStatus();
+  log('✅ APIキーを保存しました');
+}
+
+function populateTemplates() {
+  const sel = document.getElementById('inp_template');
+  TEMPLATES.forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t.id;
+    opt.textContent = t.title;
+    sel.appendChild(opt);
+  });
+}
+
+function applyTemplate(id) {
+  if (!id) return;
+  const t = TEMPLATES.find(x => x.id === id);
+  if (!t) return;
+  document.getElementById('inp_title').value = t.title.replace(/^\d+ /, '');
+  document.getElementById('inp_scene').value = t.scene;
+  log(`📋 テンプレート「${t.title}」を適用`);
+}
+
+// ─────────────────────────────────────────────
+// CLAUDE API
+// ─────────────────────────────────────────────
+async function callClaude(userMsg) {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': settings.anthropicKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 2000,
+      system: CLAUDE_SYSTEM,
+      messages: [{ role: 'user', content: userMsg }]
+    })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(`Claude API: ${err.error?.message || res.status}`);
+  }
+  const data = await res.json();
+  return data.content[0].text;
+}
+
+// ─────────────────────────────────────────────
+// DALL-E 3 API
+// ─────────────────────────────────────────────
+async function callDallE(prompt) {
+  const res = await fetch('https://api.openai.com/v1/images/generations', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${settings.openaiKey}`
+    },
+    body: JSON.stringify({
+      model: 'dall-e-3',
+      prompt,
+      n: 1,
+      size: '1792x1024',
+      quality: 'hd',
+      style: 'vivid',
+      response_format: 'url'
+    })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(`DALL-E: ${err.error?.message || res.status}`);
+  }
+  const data = await res.json();
+  return { url: data.data[0].url, revised: data.data[0].revised_prompt };
+}
+
+// ─────────────────────────────────────────────
+// GENERATE PROMPTS
+// ─────────────────────────────────────────────
+async function runGeneratePrompts() {
+  if (!settings.anthropicKey) {
+    alert('Anthropic APIキーを設定してください');
+    openModal('modalSettings');
+    return false;
+  }
+  const scene = document.getElementById('inp_scene').value.trim();
+  if (!scene) { alert('シーン説明を入力してください'); return false; }
+
+  const btn = document.getElementById('btn_genPrompt');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin">⏳</span> 生成中...';
+
+  try {
+    log('🤖 Claude にプロンプト生成を依頼中...');
+    const title = document.getElementById('inp_title').value.trim();
+    const raw = await callClaude(
+      `記事タイトル: ${title || '（未入力）'}\n\nシーン説明:\n${scene}`
+    );
+    log('✅ Claude 応答受信');
+
+    let parsed;
+    try {
+      const match = raw.match(/\{[\s\S]*\}/);
+      parsed = JSON.parse(match ? match[0] : raw);
+    } catch(e) {
+      throw new Error('JSONパース失敗: ' + raw.slice(0, 120));
+    }
+
+    generatedPrompts = (parsed.prompts || []).slice(0, 3);
+    while (generatedPrompts.length < 3) generatedPrompts.push('');
+
+    showPromptSection();
+    log(`✅ ${generatedPrompts.filter(Boolean).length}件のプロンプトを生成しました`);
+    return true;
+  } catch(e) {
+    log(`❌ ${e.message}`);
+    alert('プロンプト生成に失敗しました: ' + e.message);
+    return false;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '🤖 AIプロンプト生成';
+  }
+}
+
+function showPromptSection() {
+  const list = document.getElementById('list_prompts');
+  list.innerHTML = '';
+  generatedPrompts.forEach((p, i) => {
+    const div = document.createElement('div');
+    div.innerHTML = `
+      <label class="block text-xs text-gray-500 mb-1 font-medium">案 ${i + 1}</label>
+      <textarea id="prompt_${i}" rows="3"
+        class="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none text-gray-300"
+      >${p}</textarea>`;
+    list.appendChild(div);
+  });
+  const sec = document.getElementById('sec_prompts');
+  sec.classList.remove('hidden');
+  sec.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// ─────────────────────────────────────────────
+// GENERATE IMAGES
+// ─────────────────────────────────────────────
+async function runGenerateAll() {
+  if (!settings.openaiKey) {
+    alert('OpenAI APIキーを設定してください');
+    openModal('modalSettings');
+    return;
+  }
+  const ok = await runGeneratePrompts();
+  if (!ok) return;
+  await runGenerateImagesFromPrompts();
+}
+
+async function runGenerateImagesFromPrompts() {
+  if (!settings.openaiKey) {
+    alert('OpenAI APIキーを設定してください');
+    openModal('modalSettings');
+    return;
+  }
+
+  const prompts = [0, 1, 2]
+    .map(i => { const ta = document.getElementById(`prompt_${i}`); return ta ? ta.value.trim() : generatedPrompts[i]; })
+    .filter(Boolean);
+
+  if (!prompts.length) { alert('プロンプトがありません'); return; }
+
+  const btn = document.getElementById('btn_genImages');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin">⏳</span> 画像生成中...';
+
+  showImagePlaceholders(prompts.length);
+
+  try {
+    log(`🎨 DALL-E 3 で${prompts.length}案を並列生成中... (HD 1792×1024px)`);
+
+    const tasks = prompts.map((p, i) =>
+      callDallE(p)
+        .then(r => ({ i, ...r }))
+        .catch(e => ({ i, error: e.message }))
+    );
+    const results = await Promise.all(tasks);
+
+    results.forEach(r => {
+      if (r.error) {
+        log(`❌ 案${r.i + 1} エラー: ${r.error}`);
+        updateImageCard(r.i, null, r.error);
+      } else {
+        log(`✅ 案${r.i + 1} 生成完了`);
+        updateImageCard(r.i, r.url, null, r.revised);
+      }
+    });
+
+    const success = results.filter(r => !r.error).length;
+    log(`🎉 ${success}/${prompts.length}件の画像生成完了`);
+  } catch(e) {
+    log(`❌ ${e.message}`);
+    alert('画像生成に失敗しました: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '🎨 3案を一括生成';
+  }
+}
+
+function showImagePlaceholders(count) {
+  const grid = document.getElementById('grid_images');
+  grid.innerHTML = '';
+  for (let i = 0; i < count; i++) {
+    const card = document.createElement('div');
+    card.id = `imgCard_${i}`;
+    card.className = 'bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden';
+    card.innerHTML = `
+      <div class="aspect-video bg-gray-800 flex items-center justify-center">
+        <div class="text-center text-gray-600">
+          <div class="spin text-3xl mb-2 block">⏳</div>
+          <div class="text-sm">案${i + 1} 生成中...</div>
+          <div class="text-xs mt-1 text-gray-700">DALL-E 3 HD (30〜60秒)</div>
+        </div>
+      </div>
+      <div class="p-3 flex items-center justify-between">
+        <span class="text-xs text-gray-600">案 ${i + 1}</span>
+        <span class="text-xs bg-gray-800 text-gray-600 rounded-lg px-3 py-1.5">生成中...</span>
+      </div>`;
+    grid.appendChild(card);
+  }
+  const sec = document.getElementById('sec_images');
+  sec.classList.remove('hidden');
+  document.getElementById('lbl_imgCount').textContent = `(${count}案)`;
+  sec.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function updateImageCard(i, url, error, revised) {
+  const card = document.getElementById(`imgCard_${i}`);
+  if (!card) return;
+  if (error) {
+    card.innerHTML = `
+      <div class="aspect-video bg-gray-800 flex items-center justify-center p-4">
+        <div class="text-center text-red-400">
+          <div class="text-2xl mb-2">❌</div>
+          <div class="text-xs leading-relaxed">${error}</div>
+        </div>
+      </div>
+      <div class="p-3">
+        <span class="text-xs text-gray-600">案 ${i + 1} — エラー</span>
+      </div>`;
+  } else {
+    const ts = Date.now();
+    card.className = 'bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden fade-in';
+    card.innerHTML = `
+      <div class="aspect-video bg-gray-800 overflow-hidden relative group">
+        <img src="${url}" alt="生成画像${i + 1}" class="w-full h-full object-cover cursor-pointer"
+          onclick="window.open('${url}', '_blank')" title="クリックで拡大"/>
+        <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-3">
+          <button onclick="downloadImage('${url}', 'note_img_${i+1}_${ts}.png')"
+            class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg px-4 py-2 transition">⬇ DL</button>
+          <button onclick="window.open('${url}', '_blank')"
+            class="bg-gray-700 hover:bg-gray-600 text-white text-xs font-semibold rounded-lg px-4 py-2 transition">↗ 開く</button>
+        </div>
+      </div>
+      <div class="p-3 flex items-center justify-between gap-2">
+        <span class="text-xs text-gray-600 truncate flex-1">案 ${i + 1}</span>
+        <button onclick="downloadImage('${url}', 'note_img_${i+1}_${ts}.png')"
+          class="text-xs bg-blue-700 hover:bg-blue-600 rounded-lg px-3 py-1.5 transition whitespace-nowrap flex-shrink-0">⬇ DL</button>
+        <button onclick="window.open('${url}', '_blank')"
+          class="text-xs bg-gray-700 hover:bg-gray-600 rounded-lg px-3 py-1.5 transition whitespace-nowrap flex-shrink-0">↗ 開く</button>
+      </div>
+      ${revised ? `<div class="px-3 pb-3"><p class="text-xs text-gray-700 leading-relaxed line-clamp-2" title="${revised.replace(/"/g,'&quot;')}">DALL-E revised: ${revised.slice(0,80)}...</p></div>` : ''}`;
+  }
+}
+
+async function downloadImage(url, filename) {
+  try {
+    log(`⬇ ダウンロード中: ${filename}`);
+    const res = await fetch(url);
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(blobUrl);
+    log(`✅ ダウンロード完了: ${filename}`);
+  } catch(e) {
+    log(`⚠️ 直接DL失敗 → 新しいタブで開きます`);
+    window.open(url, '_blank');
+  }
+}
+
+// ─────────────────────────────────────────────
+// LOG
+// ─────────────────────────────────────────────
+function log(msg) {
+  const area = document.getElementById('area_log');
+  const ts = new Date().toLocaleTimeString('ja-JP', { hour12: false });
+  const line = document.createElement('div');
+  line.textContent = `[${ts}] ${msg}`;
+  area.appendChild(line);
+  area.scrollTop = area.scrollHeight;
+  console.log(`[NoteImageGen] ${msg}`);
+}
+
+function copyLogs() {
+  const text = document.getElementById('area_log').innerText;
+  navigator.clipboard.writeText(text).then(() => log('📋 ログをコピーしました'));
+}
+
+// ─────────────────────────────────────────────
+// BOOT
+// ─────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>
