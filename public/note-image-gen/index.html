@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>note画像生成ツール</title>
+  <title>note画像生成ツール v0.2</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -27,9 +27,14 @@
           class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"/>
       </div>
       <div>
-        <label class="text-sm text-gray-400 block mb-1.5">OpenAI APIキー <span class="text-blue-400 text-xs">(DALL-E 3 画像生成)</span></label>
+        <label class="text-sm text-gray-400 block mb-1.5">OpenAI APIキー <span class="text-blue-400 text-xs">(DALL-E 3)</span></label>
         <input id="inp_openaiKey" type="password" placeholder="sk-..."
           class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"/>
+      </div>
+      <div>
+        <label class="text-sm text-gray-400 block mb-1.5">Google AI APIキー <span class="text-green-400 text-xs">(Gemini Imagen 3)</span></label>
+        <input id="inp_geminiKey" type="password" placeholder="AIza..."
+          class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"/>
       </div>
       <p class="text-xs text-gray-600">キーはlocalStorageに保存されます。外部サーバーには送信されません。</p>
     </div>
@@ -47,7 +52,7 @@
   <div class="flex items-center justify-between mb-8">
     <div>
       <h1 class="text-2xl font-bold tracking-tight">📝 note画像生成ツール</h1>
-      <p class="text-gray-600 text-sm mt-1">Claude → プロンプト最適化 → DALL-E 3 × 3案並列生成 | 1792×1024px</p>
+      <p class="text-gray-600 text-sm mt-1">Claude → プロンプト最適化 → 3案並列生成 | 1792×1024px</p>
     </div>
     <button onclick="openModal('modalSettings')"
       class="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-xl px-4 py-2 text-sm transition flex items-center gap-2">
@@ -58,6 +63,18 @@
 
   <!-- Input Card -->
   <div class="bg-gray-900 border border-gray-800 rounded-2xl p-6 mb-4 space-y-4">
+
+    <!-- Engine Selector -->
+    <div class="flex gap-2 p-1 bg-gray-800 rounded-xl w-fit">
+      <button id="eng_dalle" onclick="setEngine('dalle')"
+        class="px-4 py-1.5 rounded-lg text-sm font-medium transition bg-blue-700 text-white">
+        DALL-E 3
+      </button>
+      <button id="eng_gemini" onclick="setEngine('gemini')"
+        class="px-4 py-1.5 rounded-lg text-sm font-medium transition text-gray-400 hover:text-gray-200">
+        Gemini Imagen 3
+      </button>
+    </div>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div>
@@ -176,7 +193,8 @@ const TEMPLATES = [
 // STATE
 // ─────────────────────────────────────────────
 let generatedPrompts = ['', '', ''];
-let settings = { anthropicKey: '', openaiKey: '' };
+let settings = { anthropicKey: '', openaiKey: '', geminiKey: '' };
+let engine = 'dalle'; // 'dalle' | 'gemini'
 
 // ─────────────────────────────────────────────
 // INIT
@@ -184,21 +202,41 @@ let settings = { anthropicKey: '', openaiKey: '' };
 function init() {
   settings.anthropicKey = localStorage.getItem('nig_anthropic') || '';
   settings.openaiKey    = localStorage.getItem('nig_openai')    || '';
+  settings.geminiKey    = localStorage.getItem('nig_gemini')    || '';
+  engine = localStorage.getItem('nig_engine') || 'dalle';
   updateKeyStatus();
+  setEngine(engine, false);
   populateTemplates();
-  log('✅ note画像生成ツール 起動完了');
+  log('✅ note画像生成ツール v0.2 起動完了');
 }
 
 function updateKeyStatus() {
-  const ok = settings.anthropicKey && settings.openaiKey;
+  const hasPrompt = !!settings.anthropicKey;
+  const hasImage  = engine === 'dalle' ? !!settings.openaiKey : !!settings.geminiKey;
   document.getElementById('keyStatus').className =
-    `w-2 h-2 rounded-full inline-block ${ok ? 'bg-green-500' : 'bg-red-500'}`;
+    `w-2 h-2 rounded-full inline-block ${hasPrompt && hasImage ? 'bg-green-500' : 'bg-red-500'}`;
+}
+
+function setEngine(e, save = true) {
+  engine = e;
+  if (save) localStorage.setItem('nig_engine', e);
+  const dalleBtn  = document.getElementById('eng_dalle');
+  const geminiBtn = document.getElementById('eng_gemini');
+  if (e === 'dalle') {
+    dalleBtn.className  = 'px-4 py-1.5 rounded-lg text-sm font-medium transition bg-blue-700 text-white';
+    geminiBtn.className = 'px-4 py-1.5 rounded-lg text-sm font-medium transition text-gray-400 hover:text-gray-200';
+  } else {
+    geminiBtn.className = 'px-4 py-1.5 rounded-lg text-sm font-medium transition bg-green-700 text-white';
+    dalleBtn.className  = 'px-4 py-1.5 rounded-lg text-sm font-medium transition text-gray-400 hover:text-gray-200';
+  }
+  updateKeyStatus();
 }
 
 function openModal(id) {
   if (id === 'modalSettings') {
     document.getElementById('inp_anthropicKey').value = settings.anthropicKey;
     document.getElementById('inp_openaiKey').value    = settings.openaiKey;
+    document.getElementById('inp_geminiKey').value    = settings.geminiKey;
   }
   document.getElementById(id).classList.remove('hidden');
 }
@@ -210,8 +248,10 @@ function closeModal(id) {
 function saveSettings() {
   settings.anthropicKey = document.getElementById('inp_anthropicKey').value.trim();
   settings.openaiKey    = document.getElementById('inp_openaiKey').value.trim();
+  settings.geminiKey    = document.getElementById('inp_geminiKey').value.trim();
   localStorage.setItem('nig_anthropic', settings.anthropicKey);
   localStorage.setItem('nig_openai',    settings.openaiKey);
+  localStorage.setItem('nig_gemini',    settings.geminiKey);
   closeModal('modalSettings');
   updateKeyStatus();
   log('✅ APIキーを保存しました');
@@ -264,6 +304,13 @@ async function callClaude(userMsg) {
 }
 
 // ─────────────────────────────────────────────
+// IMAGE API (router)
+// ─────────────────────────────────────────────
+async function callImageAPI(prompt) {
+  return engine === 'gemini' ? callGeminiImagen(prompt) : callDallE(prompt);
+}
+
+// ─────────────────────────────────────────────
 // DALL-E 3 API
 // ─────────────────────────────────────────────
 async function callDallE(prompt) {
@@ -289,6 +336,36 @@ async function callDallE(prompt) {
   }
   const data = await res.json();
   return { url: data.data[0].url, revised: data.data[0].revised_prompt };
+}
+
+// ─────────────────────────────────────────────
+// GEMINI IMAGEN 3 API
+// ─────────────────────────────────────────────
+async function callGeminiImagen(prompt) {
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/imagen-3.0-generate-002:predict?key=${settings.geminiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        instances: [{ prompt }],
+        parameters: {
+          sampleCount: 1,
+          aspectRatio: '16:9',
+          safetyFilterLevel: 'block_few',
+          personGeneration: 'allow_adult'
+        }
+      })
+    }
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(`Gemini Imagen: ${err.error?.message || res.status}`);
+  }
+  const data = await res.json();
+  const b64 = data.predictions?.[0]?.bytesBase64Encoded;
+  if (!b64) throw new Error('Gemini Imagen: 画像データなし');
+  return { url: `data:image/png;base64,${b64}`, revised: null };
 }
 
 // ─────────────────────────────────────────────
@@ -360,8 +437,9 @@ function showPromptSection() {
 // GENERATE IMAGES
 // ─────────────────────────────────────────────
 async function runGenerateAll() {
-  if (!settings.openaiKey) {
-    alert('OpenAI APIキーを設定してください');
+  const imgKey = engine === 'dalle' ? settings.openaiKey : settings.geminiKey;
+  if (!imgKey) {
+    alert(`${engine === 'dalle' ? 'OpenAI' : 'Google AI'} APIキーを設定してください`);
     openModal('modalSettings');
     return;
   }
@@ -371,8 +449,9 @@ async function runGenerateAll() {
 }
 
 async function runGenerateImagesFromPrompts() {
-  if (!settings.openaiKey) {
-    alert('OpenAI APIキーを設定してください');
+  const imgKey = engine === 'dalle' ? settings.openaiKey : settings.geminiKey;
+  if (!imgKey) {
+    alert(`${engine === 'dalle' ? 'OpenAI' : 'Google AI'} APIキーを設定してください`);
     openModal('modalSettings');
     return;
   }
@@ -390,10 +469,11 @@ async function runGenerateImagesFromPrompts() {
   showImagePlaceholders(prompts.length);
 
   try {
-    log(`🎨 DALL-E 3 で${prompts.length}案を並列生成中... (HD 1792×1024px)`);
+    const engineLabel = engine === 'dalle' ? 'DALL-E 3 HD 1792×1024px' : 'Gemini Imagen 3 16:9';
+    log(`🎨 ${engineLabel} で${prompts.length}案を並列生成中...`);
 
     const tasks = prompts.map((p, i) =>
-      callDallE(p)
+      callImageAPI(p)
         .then(r => ({ i, ...r }))
         .catch(e => ({ i, error: e.message }))
     );
@@ -489,19 +569,24 @@ function updateImageCard(i, url, error, revised) {
 async function downloadImage(url, filename) {
   try {
     log(`⬇ ダウンロード中: ${filename}`);
-    const res = await fetch(url);
-    const blob = await res.blob();
-    const blobUrl = URL.createObjectURL(blob);
+    let blobUrl;
+    if (url.startsWith('data:')) {
+      blobUrl = url;
+    } else {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      blobUrl = URL.createObjectURL(blob);
+    }
     const a = document.createElement('a');
     a.href = blobUrl;
     a.download = filename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    URL.revokeObjectURL(blobUrl);
+    if (!url.startsWith('data:')) URL.revokeObjectURL(blobUrl);
     log(`✅ ダウンロード完了: ${filename}`);
   } catch(e) {
-    log(`⚠️ 直接DL失敗 → 新しいタブで開きます`);
+    log(`⚠️ DL失敗 → 新しいタブで開きます`);
     window.open(url, '_blank');
   }
 }
