@@ -444,18 +444,28 @@ function renderQueue() {
 function statusColor(s) { return {pending:'var(--border)',processing:'#fac83c',done:'var(--note-green)',error:'#e05454'}[s]||'var(--border)'; }
 function statusIcon(s)  { return {pending:'⏳',processing:'🔄',done:'✅',error:'❌'}[s]||''; }
 
-async function runOcrAll() {
-  if (imgQueue.length === 0) { showToast('画像を追加してください', 'error'); return; }
-  if (!apiKey) { showToast('設定からClaude APIキーを入力してください', 'error'); document.getElementById('settingsPanel').style.display = 'block'; return; }
+// ===== 画像を圧縮（Canvas でリサイズ → JPEG 変換） =====
+// CleanShot @2x などの大きい画像は縮小してから API に送る
+function compressImage(dataUrl, maxWidth = 1600, quality = 0.85) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      let w = img.width, h = img.height;
+      if (w > maxWidth) { h = Math.round(h * maxWidth / w); w = maxWidth; }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      const compressed = canvas.toDataURL('image/jpeg', quality);
+      const base64 = compressed.split(',')[1];
+      log(`圧縮: ${img.width}×${img.height} → ${w}×${h}  base64=${Math.round(base64.length/1024)}KB`);
+      resolve(base64);
+    };
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+}
 
-  const pending = imgQueue.filter(i => i.status !== 'done');
-  if (pending.length === 0) { showToast('全て解析済みです', 'success'); return; }
-
-  document.getElementById('ocrAllBtn').disabled = true;
-  document.getElementById('ocrProgress').style.display = 'inline';
-  document.getElementById('ocrResultList').style.display = 'block';
-
-  const prompt = `このnote.comのダッシュボード・統計・クリエイターページのスクリーンショットから数値を抽出してください。
+const OCR_PROMPT = `このnote.comのダッシュボード・統計・クリエイターページのスクリーンショットから数値を抽出してください。
 
 抽出する項目：
 - views: 閲覧数（ビュー数）
@@ -468,55 +478,92 @@ async function runOcrAll() {
 
 数値が見つからない場合は0にしてください。カンマ区切りの数値（例: 1,234）はそのまま数値（1234）に変換してください。`;
 
+async function callClaudeVision(base64) {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+      'anthropic-dangerous-direct-browser-calls': 'true',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 256,
+      messages: [{ role: 'user', content: [
+        { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: base64 } },
+        { type: 'text', text: OCR_PROMPT }
+      ]}]
+    })
+  });
+  if (!res.ok) {
+    const errText = await res.text().catch(() => res.statusText);
+    throw new Error(`HTTP ${res.status}: ${errText.slice(0, 120)}`);
+  }
+  return res.json();
+}
+
+async function runOcrAll() {
+  if (imgQueue.length === 0) { showToast('画像を追加してください', 'error'); return; }
+  if (!apiKey) {
+    showToast('設定からClaude APIキーを入力してください', 'error');
+    document.getElementById('settingsPanel').style.display = 'block';
+    return;
+  }
+
+  const pending = imgQueue.filter(i => i.status !== 'done');
+  if (pending.length === 0) { showToast('全て解析済みです', 'success'); return; }
+
+  document.getElementById('ocrAllBtn').disabled = true;
+  document.getElementById('ocrProgress').style.display = 'inline';
+  document.getElementById('ocrResultList').style.display = 'block';
+
   for (let i = 0; i < pending.length; i++) {
     const item = pending[i];
     item.status = 'processing';
     renderQueue();
-    document.getElementById('ocrProgress').textContent = `解析中 ${i+1}/${pending.length}...`;
+    document.getElementById('ocrProgress').textContent = `解析中 ${i+1}/${pending.length}（圧縮→送信）...`;
     renderOcrResults();
 
     try {
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'content-type': 'application/json',
-          'anthropic-dangerous-direct-browser-calls': 'true',
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 200,
-          messages: [{ role: 'user', content: [
-            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: item.base64 } },
-            { type: 'text', text: prompt }
-          ]}]
-        })
-      });
-      const resp = await res.json();
+      // 1) Canvas で画像を圧縮（@2x 対策）
+      const compressed = await compressImage(item.dataUrl);
+
+      // 2) Claude Vision API を呼ぶ
+      const resp = await callClaudeVision(compressed);
       if (resp.error) throw new Error(resp.error.message);
+
       const text = resp.content[0].text;
-      log(`[${item.file.name}] API応答:`, text);
-      const match = text.match(/\{[^}]+\}/);
-      if (!match) throw new Error('JSONが見つかりません');
+      log(`[${item.file.name}] 応答:`, text);
+
+      // 3) JSON 抽出
+      const match = text.match(/\{[\s\S]*?\}/);
+      if (!match) throw new Error('JSONが見つかりません: ' + text.slice(0, 80));
       item.data = JSON.parse(match[0]);
       item.status = 'done';
+
     } catch (err) {
       item.status = 'error';
-      item.error = err.message;
+      // CORS / ネットワーク エラーを分かりやすく
+      if (err.message === 'Failed to fetch') {
+        item.error = 'ネットワーク/CORSエラー。APIキーを確認し、再試行してください。';
+      } else {
+        item.error = err.message;
+      }
       log(`[${item.file.name}] エラー:`, err.message);
     }
 
     renderQueue();
     renderOcrResults();
-    // API rate limit 対策（連続呼び出し間に少し待つ）
-    if (i < pending.length - 1) await new Promise(r => setTimeout(r, 500));
+    if (i < pending.length - 1) await new Promise(r => setTimeout(r, 600));
   }
 
   document.getElementById('ocrAllBtn').disabled = false;
   document.getElementById('ocrProgress').style.display = 'none';
   const doneCount = imgQueue.filter(i => i.status === 'done').length;
-  showToast(`✅ ${doneCount}枚の解析が完了しました`, 'success');
+  const errCount  = imgQueue.filter(i => i.status === 'error').length;
+  if (errCount > 0) showToast(`✅ ${doneCount}枚完了 / ❌ ${errCount}枚エラー`, doneCount > 0 ? 'success' : 'error');
+  else showToast(`✅ ${doneCount}枚の解析が完了しました`, 'success');
 }
 
 function renderOcrResults() {
@@ -531,7 +578,10 @@ function renderOcrResults() {
             <div class="text-sm font-semibold" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.file.name}</div>
             <button onclick="removeFromQueue(${item.id})" class="btn-ghost text-xs ml-2" style="color:#e05454;flex-shrink:0;">削除</button>
           </div>
-          ${item.status === 'error' ? `<div class="text-xs" style="color:#e05454;">❌ ${item.error}</div>` : `
+          ${item.status === 'error' ? `
+            <div class="text-xs mb-2" style="color:#e05454;">❌ ${item.error}</div>
+            <button onclick="retryOcr(${item.id})" class="btn-ghost text-xs" style="color:var(--note-green);border-color:var(--note-green);">🔄 再試行</button>
+          ` : `
           <div class="grid gap-2" style="grid-template-columns:repeat(4,1fr);">
             <div><div class="text-xs mb-1" style="color:var(--muted);">👁 閲覧数</div>
               <input type="number" min="0" value="${item.data?.views||0}"
@@ -554,6 +604,36 @@ function renderOcrResults() {
       </div>
     </div>
   `).join('');
+}
+
+async function retryOcr(id) {
+  const item = imgQueue.find(i => i.id === id);
+  if (!item) return;
+  item.status = 'pending';
+  item.error = null;
+  renderQueue();
+  renderOcrResults();
+  // runOcrAll と同じ処理を単体で実行
+  item.status = 'processing';
+  renderQueue(); renderOcrResults();
+  try {
+    const compressed = await compressImage(item.dataUrl);
+    const resp = await callClaudeVision(compressed);
+    if (resp.error) throw new Error(resp.error.message);
+    const text = resp.content[0].text;
+    const match = text.match(/\{[\s\S]*?\}/);
+    if (!match) throw new Error('JSONが見つかりません');
+    item.data = JSON.parse(match[0]);
+    item.status = 'done';
+    showToast('✅ 再試行成功', 'success');
+  } catch (err) {
+    item.status = 'error';
+    item.error = err.message === 'Failed to fetch'
+      ? 'ネットワーク/CORSエラー。APIキーを確認し、再試行してください。'
+      : err.message;
+    log('再試行エラー:', err.message);
+  }
+  renderQueue(); renderOcrResults();
 }
 
 function updateQueueItem(id, key, value) {
