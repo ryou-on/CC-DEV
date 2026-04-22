@@ -144,34 +144,40 @@
 
     <!-- スクリーンショットタブ -->
     <div id="panel-screenshot">
-      <p class="text-sm mb-3" style="color:var(--muted);">note.comのダッシュボードやクリエイターページのスクリーンショットをアップロードすると、Claude AIが数値を自動認識します。</p>
+      <p class="text-sm mb-3" style="color:var(--muted);">複数のスクリーンショットをまとめてアップロードできます。Claude AIが週ごとに数値を自動認識します。</p>
+
+      <!-- ドロップゾーン -->
       <div id="dropZone" class="drop-zone mb-4" onclick="document.getElementById('imgInput').click()">
         <div style="font-size:36px;margin-bottom:8px;">🖼</div>
-        <div class="font-semibold">クリックまたはドラッグ＆ドロップ</div>
-        <div class="text-sm mt-1" style="color:var(--muted);">PNG / JPG / WebP</div>
-        <input type="file" id="imgInput" accept="image/*" style="display:none;" onchange="handleFileSelect(event)">
+        <div class="font-semibold">クリックまたはドラッグ＆ドロップ（複数可）</div>
+        <div class="text-sm mt-1" style="color:var(--muted);">PNG / JPG / WebP · 何枚でもOK</div>
+        <input type="file" id="imgInput" accept="image/*" multiple style="display:none;" onchange="handleFileSelect(event)">
       </div>
-      <div id="previewArea" style="display:none;" class="mb-4">
-        <img id="previewImg" style="max-height:200px;border-radius:8px;border:1px solid var(--border);" alt="preview">
-        <button onclick="clearPreview()" class="btn-ghost text-sm mt-2">✕ クリア</button>
-      </div>
-      <div id="ocrResult" style="display:none;" class="metric-card mb-4">
-        <div class="font-semibold text-sm mb-2">🔍 AI解析結果（確認・編集可）</div>
-        <div class="grid gap-2" style="grid-template-columns:repeat(2,1fr);">
-          <div><label class="text-xs" style="color:var(--muted);">閲覧数</label><input type="number" id="ocr-views" min="0"></div>
-          <div><label class="text-xs" style="color:var(--muted);">スキ数</label><input type="number" id="ocr-likes" min="0"></div>
-          <div><label class="text-xs" style="color:var(--muted);">フォロワー数</label><input type="number" id="ocr-followers" min="0"></div>
-          <div><label class="text-xs" style="color:var(--muted);">コメント数</label><input type="number" id="ocr-comments" min="0"></div>
+
+      <!-- キューサムネイル -->
+      <div id="queueGrid" style="display:none;margin-bottom:16px;">
+        <div class="flex items-center justify-between mb-2">
+          <div class="text-sm font-semibold" id="queueCount"></div>
+          <button onclick="clearQueue()" class="btn-ghost text-xs">🗑 全てクリア</button>
         </div>
-        <div class="mt-3"><label class="text-xs" style="color:var(--muted);">週の開始日</label><input type="date" id="ocr-date"></div>
-        <button onclick="saveOcrData()" class="btn-primary mt-3 w-full">💾 保存する</button>
+        <div id="queueThumbs" style="display:flex;flex-wrap:wrap;gap:10px;"></div>
       </div>
-      <button id="ocrBtn" onclick="runOcr()" class="btn-primary" style="display:none;">
-        🤖 AIで数値を読み取る
-      </button>
-      <div id="ocrLoading" style="display:none;" class="text-center py-4">
-        <div class="spinner mx-auto mb-2"></div>
-        <div class="text-sm" style="color:var(--muted);" id="ocrLoadingText">Claude AIが解析中...</div>
+
+      <!-- 一括解析ボタン -->
+      <div id="ocrActions" style="display:none;margin-bottom:16px;" class="flex items-center gap-3">
+        <button id="ocrAllBtn" onclick="runOcrAll()" class="btn-primary">
+          🤖 まとめてAI解析
+        </button>
+        <div id="ocrProgress" style="display:none;color:var(--muted);font-size:13px;"></div>
+      </div>
+
+      <!-- 結果リスト -->
+      <div id="ocrResultList" style="display:none;">
+        <div class="flex items-center justify-between mb-3">
+          <div class="font-semibold text-sm">🔍 AI解析結果（確認・編集可）</div>
+          <button onclick="saveAllOcr()" class="btn-primary text-sm" id="saveAllBtn">💾 全て保存</button>
+        </div>
+        <div id="ocrItems" class="flex flex-col gap-4"></div>
       </div>
     </div>
 
@@ -292,7 +298,8 @@ const db = firebase.firestore();
 let snapshots = [];       // 週次データ配列
 let chart = null;
 let currentMetric = 'views';
-let currentImgBase64 = null;
+let imgQueue = [];        // { id, file, dataUrl, base64, status, data, weekStart, error }
+let queueIdSeq = 0;
 let userId = localStorage.getItem('na_userId') || 'default';
 let apiKey = localStorage.getItem('na_apiKey') || '';
 
@@ -348,56 +355,87 @@ function switchTab(tab) {
   document.getElementById(`tab-${tabId}`).classList.add('active');
 }
 
-// ===== スクリーンショット処理 =====
+// ===== スクリーンショット処理（複数対応） =====
 const dropZone = document.getElementById('dropZone');
 dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
 dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
 dropZone.addEventListener('drop', e => {
   e.preventDefault();
   dropZone.classList.remove('drag-over');
-  const file = e.dataTransfer.files[0];
-  if (file && file.type.startsWith('image/')) processImage(file);
+  addFilesToQueue([...e.dataTransfer.files].filter(f => f.type.startsWith('image/')));
 });
 
 function handleFileSelect(e) {
-  const file = e.target.files[0];
-  if (file) processImage(file);
+  addFilesToQueue([...e.target.files]);
+  e.target.value = ''; // 同じファイルの再選択を許可
 }
 
-function processImage(file) {
-  const reader = new FileReader();
-  reader.onload = ev => {
-    const dataUrl = ev.target.result;
-    currentImgBase64 = dataUrl.split(',')[1];
-    document.getElementById('previewImg').src = dataUrl;
-    document.getElementById('previewArea').style.display = 'block';
-    document.getElementById('ocrBtn').style.display = 'inline-block';
-    document.getElementById('ocrResult').style.display = 'none';
-    log('画像読み込み完了:', file.name, `${Math.round(file.size/1024)}KB`);
-  };
-  reader.readAsDataURL(file);
+function addFilesToQueue(files) {
+  files.forEach(file => {
+    const id = ++queueIdSeq;
+    const item = { id, file, dataUrl: null, base64: null, status: 'pending', data: null, weekStart: getMondayStr(new Date()), error: null };
+    imgQueue.push(item);
+    const reader = new FileReader();
+    reader.onload = ev => {
+      item.dataUrl = ev.target.result;
+      item.base64 = ev.target.result.split(',')[1];
+      log(`画像追加: ${file.name} (${Math.round(file.size/1024)}KB)`);
+      renderQueue();
+    };
+    reader.readAsDataURL(file);
+  });
+  renderQueue();
 }
 
-function clearPreview() {
-  currentImgBase64 = null;
-  document.getElementById('previewImg').src = '';
-  document.getElementById('previewArea').style.display = 'none';
-  document.getElementById('ocrBtn').style.display = 'none';
-  document.getElementById('ocrResult').style.display = 'none';
-  document.getElementById('imgInput').value = '';
+function clearQueue() {
+  imgQueue = [];
+  renderQueue();
+  document.getElementById('ocrResultList').style.display = 'none';
 }
 
-async function runOcr() {
-  if (!currentImgBase64) { showToast('画像を選択してください', 'error'); return; }
+function removeFromQueue(id) {
+  imgQueue = imgQueue.filter(i => i.id !== id);
+  renderQueue();
+  renderOcrResults();
+}
+
+function renderQueue() {
+  const hasItems = imgQueue.length > 0;
+  document.getElementById('queueGrid').style.display   = hasItems ? 'block' : 'none';
+  document.getElementById('ocrActions').style.display  = hasItems ? 'flex' : 'none';
+
+  document.getElementById('queueCount').textContent = `📸 ${imgQueue.length}枚 選択中`;
+
+  const thumbs = document.getElementById('queueThumbs');
+  thumbs.innerHTML = imgQueue.map(item => `
+    <div style="position:relative;width:80px;text-align:center;">
+      <img src="${item.dataUrl || ''}"
+           style="width:80px;height:60px;object-fit:cover;border-radius:6px;border:2px solid ${statusColor(item.status)};"
+           alt="${item.file.name}">
+      <div style="font-size:9px;margin-top:3px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:80px;"
+           title="${item.file.name}">${item.file.name}</div>
+      <div style="font-size:11px;margin-top:1px;">${statusIcon(item.status)}</div>
+      <button onclick="removeFromQueue(${item.id})"
+              style="position:absolute;top:-5px;right:-5px;width:18px;height:18px;background:#e05454;border:none;border-radius:50%;color:#fff;font-size:10px;cursor:pointer;line-height:18px;padding:0;">✕</button>
+    </div>
+  `).join('');
+}
+
+function statusColor(s) { return {pending:'var(--border)',processing:'#fac83c',done:'var(--note-green)',error:'#e05454'}[s]||'var(--border)'; }
+function statusIcon(s)  { return {pending:'⏳',processing:'🔄',done:'✅',error:'❌'}[s]||''; }
+
+async function runOcrAll() {
+  if (imgQueue.length === 0) { showToast('画像を追加してください', 'error'); return; }
   if (!apiKey) { showToast('設定からClaude APIキーを入力してください', 'error'); document.getElementById('settingsPanel').style.display = 'block'; return; }
 
-  document.getElementById('ocrBtn').style.display = 'none';
-  document.getElementById('ocrLoading').style.display = 'block';
-  document.getElementById('ocrResult').style.display = 'none';
-  log('OCR開始...');
+  const pending = imgQueue.filter(i => i.status !== 'done');
+  if (pending.length === 0) { showToast('全て解析済みです', 'success'); return; }
 
-  try {
-    const prompt = `このnote.comのダッシュボード・統計・クリエイターページのスクリーンショットから、以下の数値を抽出してください。
+  document.getElementById('ocrAllBtn').disabled = true;
+  document.getElementById('ocrProgress').style.display = 'inline';
+  document.getElementById('ocrResultList').style.display = 'block';
+
+  const prompt = `このnote.comのダッシュボード・統計・クリエイターページのスクリーンショットから数値を抽出してください。
 
 抽出する項目：
 - views: 閲覧数（ビュー数）
@@ -410,68 +448,123 @@ async function runOcr() {
 
 数値が見つからない場合は0にしてください。カンマ区切りの数値（例: 1,234）はそのまま数値（1234）に変換してください。`;
 
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-        'anthropic-dangerous-direct-browser-calls': 'true',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 200,
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: currentImgBase64 } },
+  for (let i = 0; i < pending.length; i++) {
+    const item = pending[i];
+    item.status = 'processing';
+    renderQueue();
+    document.getElementById('ocrProgress').textContent = `解析中 ${i+1}/${pending.length}...`;
+    renderOcrResults();
+
+    try {
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+          'anthropic-dangerous-direct-browser-calls': 'true',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 200,
+          messages: [{ role: 'user', content: [
+            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: item.base64 } },
             { type: 'text', text: prompt }
-          ]
-        }]
-      })
-    });
+          ]}]
+        })
+      });
+      const resp = await res.json();
+      if (resp.error) throw new Error(resp.error.message);
+      const text = resp.content[0].text;
+      log(`[${item.file.name}] API応答:`, text);
+      const match = text.match(/\{[^}]+\}/);
+      if (!match) throw new Error('JSONが見つかりません');
+      item.data = JSON.parse(match[0]);
+      item.status = 'done';
+    } catch (err) {
+      item.status = 'error';
+      item.error = err.message;
+      log(`[${item.file.name}] エラー:`, err.message);
+    }
 
-    const data = await res.json();
-    log('API応答:', data.content?.[0]?.text);
-
-    if (data.error) throw new Error(data.error.message);
-
-    const text = data.content[0].text;
-    const match = text.match(/\{[^}]+\}/);
-    if (!match) throw new Error('JSONが見つかりません: ' + text);
-
-    const parsed = JSON.parse(match[0]);
-    log('解析結果:', parsed);
-
-    document.getElementById('ocr-views').value = parsed.views || 0;
-    document.getElementById('ocr-likes').value = parsed.likes || 0;
-    document.getElementById('ocr-followers').value = parsed.followers || 0;
-    document.getElementById('ocr-comments').value = parsed.comments || 0;
-    document.getElementById('ocr-date').value = getMondayStr(new Date());
-    document.getElementById('ocrResult').style.display = 'block';
-    showToast('✅ 数値を読み取りました', 'success');
-  } catch (err) {
-    log('OCRエラー:', err.message);
-    showToast('❌ エラー: ' + err.message, 'error');
-    document.getElementById('ocrBtn').style.display = 'inline-block';
-  } finally {
-    document.getElementById('ocrLoading').style.display = 'none';
+    renderQueue();
+    renderOcrResults();
+    // API rate limit 対策（連続呼び出し間に少し待つ）
+    if (i < pending.length - 1) await new Promise(r => setTimeout(r, 500));
   }
+
+  document.getElementById('ocrAllBtn').disabled = false;
+  document.getElementById('ocrProgress').style.display = 'none';
+  const doneCount = imgQueue.filter(i => i.status === 'done').length;
+  showToast(`✅ ${doneCount}枚の解析が完了しました`, 'success');
 }
 
-async function saveOcrData() {
-  const snap = {
-    weekStart: document.getElementById('ocr-date').value,
-    views:     parseInt(document.getElementById('ocr-views').value) || 0,
-    likes:     parseInt(document.getElementById('ocr-likes').value) || 0,
-    followers: parseInt(document.getElementById('ocr-followers').value) || 0,
-    comments:  parseInt(document.getElementById('ocr-comments').value) || 0,
-    source: 'screenshot',
-  };
-  if (!snap.weekStart) { showToast('週の開始日を選択してください', 'error'); return; }
-  await saveSnapshot(snap);
-  document.getElementById('ocrResult').style.display = 'none';
-  clearPreview();
+function renderOcrResults() {
+  const results = imgQueue.filter(i => i.status === 'done' || i.status === 'error');
+  const container = document.getElementById('ocrItems');
+  container.innerHTML = results.map(item => `
+    <div class="metric-card" style="border-color:${statusColor(item.status)};">
+      <div class="flex items-start gap-3">
+        <img src="${item.dataUrl}" style="width:80px;height:60px;object-fit:cover;border-radius:6px;flex-shrink:0;" alt="">
+        <div style="flex:1;min-width:0;">
+          <div class="flex items-center justify-between mb-2">
+            <div class="text-sm font-semibold" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${item.file.name}</div>
+            <button onclick="removeFromQueue(${item.id})" class="btn-ghost text-xs ml-2" style="color:#e05454;flex-shrink:0;">削除</button>
+          </div>
+          ${item.status === 'error' ? `<div class="text-xs" style="color:#e05454;">❌ ${item.error}</div>` : `
+          <div class="grid gap-2" style="grid-template-columns:repeat(4,1fr);">
+            <div><div class="text-xs mb-1" style="color:var(--muted);">👁 閲覧数</div>
+              <input type="number" min="0" value="${item.data?.views||0}"
+                onchange="updateQueueItem(${item.id},'views',this.value)" style="padding:4px 6px;font-size:12px;"></div>
+            <div><div class="text-xs mb-1" style="color:var(--muted);">💚 スキ</div>
+              <input type="number" min="0" value="${item.data?.likes||0}"
+                onchange="updateQueueItem(${item.id},'likes',this.value)" style="padding:4px 6px;font-size:12px;"></div>
+            <div><div class="text-xs mb-1" style="color:var(--muted);">👥 フォロワー</div>
+              <input type="number" min="0" value="${item.data?.followers||0}"
+                onchange="updateQueueItem(${item.id},'followers',this.value)" style="padding:4px 6px;font-size:12px;"></div>
+            <div><div class="text-xs mb-1" style="color:var(--muted);">💬 コメント</div>
+              <input type="number" min="0" value="${item.data?.comments||0}"
+                onchange="updateQueueItem(${item.id},'comments',this.value)" style="padding:4px 6px;font-size:12px;"></div>
+          </div>
+          <div class="mt-2"><div class="text-xs mb-1" style="color:var(--muted);">📅 週の開始日</div>
+            <input type="date" value="${item.weekStart}"
+              onchange="updateQueueItem(${item.id},'weekStart',this.value)" style="padding:4px 6px;font-size:12px;width:auto;"></div>
+          `}
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function updateQueueItem(id, key, value) {
+  const item = imgQueue.find(i => i.id === id);
+  if (!item) return;
+  if (key === 'weekStart') { item.weekStart = value; }
+  else { if (!item.data) item.data = {}; item.data[key] = parseInt(value) || 0; }
+}
+
+async function saveAllOcr() {
+  const toSave = imgQueue.filter(i => i.status === 'done');
+  if (toSave.length === 0) { showToast('保存できるデータがありません', 'error'); return; }
+
+  let saved = 0;
+  for (const item of toSave) {
+    if (!item.weekStart) { showToast(`${item.file.name}: 週の開始日を設定してください`, 'error'); continue; }
+    await saveSnapshot({
+      weekStart: item.weekStart,
+      views:     item.data?.views || 0,
+      likes:     item.data?.likes || 0,
+      followers: item.data?.followers || 0,
+      comments:  item.data?.comments || 0,
+      source: 'screenshot',
+    });
+    saved++;
+  }
+  if (saved > 0) {
+    showToast(`✅ ${saved}件を保存しました`, 'success');
+    clearQueue();
+    document.getElementById('ocrResultList').style.display = 'none';
+  }
 }
 
 // ===== ブックマークレット =====
