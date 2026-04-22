@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>note Analytics</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+  <style>
+    :root {
+      --note-green: #41C9B4;
+      --note-green-dark: #2ea897;
+      --bg: #0f0f13;
+      --surface: #1a1a24;
+      --surface2: #22222f;
+      --border: #2e2e3e;
+      --text: #e8e8f0;
+      --muted: #7070a0;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: -apple-system, 'Hiragino Kaku Gothic ProN', sans-serif; min-height: 100vh; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; }
+    .btn-primary { background: var(--note-green); color: #000; font-weight: 700; border-radius: 8px; padding: 10px 20px; cursor: pointer; border: none; transition: background .15s; }
+    .btn-primary:hover { background: var(--note-green-dark); }
+    .btn-outline { background: transparent; border: 1.5px solid var(--note-green); color: var(--note-green); font-weight: 600; border-radius: 8px; padding: 9px 20px; cursor: pointer; transition: all .15s; }
+    .btn-outline:hover { background: var(--note-green); color: #000; }
+    .btn-ghost { background: var(--surface2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 16px; cursor: pointer; transition: all .15s; }
+    .btn-ghost:hover { border-color: var(--note-green); color: var(--note-green); }
+    input, textarea { background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 8px 12px; width: 100%; outline: none; transition: border .15s; }
+    input:focus, textarea:focus { border-color: var(--note-green); }
+    .tab-btn { padding: 8px 20px; border-radius: 8px; cursor: pointer; border: none; font-weight: 600; transition: all .15s; }
+    .tab-btn.active { background: var(--note-green); color: #000; }
+    .tab-btn:not(.active) { background: var(--surface2); color: var(--muted); }
+    .tab-btn:not(.active):hover { color: var(--text); }
+    .metric-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+    .badge { font-size: 11px; padding: 2px 8px; border-radius: 99px; font-weight: 600; }
+    .badge-green { background: rgba(65,201,180,.15); color: var(--note-green); }
+    .badge-yellow { background: rgba(250,200,60,.15); color: #fac83c; }
+    .drop-zone { border: 2px dashed var(--border); border-radius: 12px; padding: 40px; text-align: center; transition: all .2s; cursor: pointer; }
+    .drop-zone.drag-over, .drop-zone:hover { border-color: var(--note-green); background: rgba(65,201,180,.05); }
+    .console-box { background: #0a0a10; border: 1px solid var(--border); border-radius: 8px; font-family: monospace; font-size: 12px; padding: 12px; max-height: 150px; overflow-y: auto; color: #8888aa; }
+    .spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--note-green); border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .toast { position: fixed; bottom: 24px; right: 24px; z-index: 999; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 18px; max-width: 320px; font-size: 14px; box-shadow: 0 8px 32px rgba(0,0,0,.5); transform: translateY(80px); opacity: 0; transition: all .3s; }
+    .toast.show { transform: translateY(0); opacity: 1; }
+    .toast.success { border-color: var(--note-green); }
+    .toast.error { border-color: #e05454; }
+    ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+    .week-row:hover { background: rgba(65,201,180,.05); }
+    canvas { max-width: 100%; }
+  </style>
+</head>
+<body>
+
+<!-- Toast -->
+<div id="toast" class="toast"></div>
+
+<!-- Header -->
+<header style="border-bottom:1px solid var(--border); padding:14px 24px;" class="flex items-center justify-between">
+  <div class="flex items-center gap-3">
+    <div style="width:32px;height:32px;background:var(--note-green);border-radius:8px;display:flex;align-items:center;justify-content:center;font-weight:900;color:#000;font-size:14px;">n</div>
+    <span style="font-size:18px;font-weight:700;">note Analytics</span>
+    <span class="badge badge-green">BETA</span>
+  </div>
+  <div class="flex items-center gap-3">
+    <button id="settingsBtn" class="btn-ghost text-sm">⚙ 設定</button>
+    <span id="userIdDisplay" style="color:var(--muted);font-size:13px;"></span>
+  </div>
+</header>
+
+<main style="max-width:1100px;margin:0 auto;padding:24px 20px;">
+
+  <!-- 設定パネル -->
+  <div id="settingsPanel" class="card p-4 mb-6" style="display:none;">
+    <h3 class="font-bold mb-3" style="font-size:15px;">⚙ 設定</h3>
+    <div class="grid gap-3" style="grid-template-columns:1fr 1fr;">
+      <div>
+        <label class="text-sm mb-1 block" style="color:var(--muted);">Claude API キー</label>
+        <input type="password" id="apiKeyInput" placeholder="sk-ant-..." />
+      </div>
+      <div>
+        <label class="text-sm mb-1 block" style="color:var(--muted);">ユーザーID（任意）</label>
+        <input type="text" id="userIdInput" placeholder="例: your_note_id" />
+      </div>
+    </div>
+    <button onclick="saveSettings()" class="btn-primary mt-3 text-sm">保存</button>
+  </div>
+
+  <!-- サマリーカード -->
+  <div id="summaryCards" class="grid gap-4 mb-6" style="grid-template-columns:repeat(4,1fr);">
+    <div class="metric-card">
+      <div class="text-xs mb-1" style="color:var(--muted);">👁 閲覧数（最新週）</div>
+      <div class="text-2xl font-bold" id="sum-views">—</div>
+      <div id="sum-views-diff" class="text-xs mt-1" style="color:var(--muted);">前週比：—</div>
+    </div>
+    <div class="metric-card">
+      <div class="text-xs mb-1" style="color:var(--muted);">💚 スキ数（最新週）</div>
+      <div class="text-2xl font-bold" id="sum-likes">—</div>
+      <div id="sum-likes-diff" class="text-xs mt-1" style="color:var(--muted);">前週比：—</div>
+    </div>
+    <div class="metric-card">
+      <div class="text-xs mb-1" style="color:var(--muted);">👥 フォロワー数</div>
+      <div class="text-2xl font-bold" id="sum-followers">—</div>
+      <div id="sum-followers-diff" class="text-xs mt-1" style="color:var(--muted);">前週比：—</div>
+    </div>
+    <div class="metric-card">
+      <div class="text-xs mb-1" style="color:var(--muted);">💬 コメント数</div>
+      <div class="text-2xl font-bold" id="sum-comments">—</div>
+      <div id="sum-comments-diff" class="text-xs mt-1" style="color:var(--muted);">前週比：—</div>
+    </div>
+  </div>
+
+  <!-- チャートエリア -->
+  <div class="card p-5 mb-6">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="font-bold" style="font-size:16px;">📊 週次トレンド</h2>
+      <div class="flex gap-2">
+        <button onclick="setChartMetric('views')" id="chart-btn-views" class="btn-ghost text-xs active-chart-btn">閲覧数</button>
+        <button onclick="setChartMetric('likes')" id="chart-btn-likes" class="btn-ghost text-xs">スキ</button>
+        <button onclick="setChartMetric('followers')" id="chart-btn-followers" class="btn-ghost text-xs">フォロワー</button>
+        <button onclick="setChartMetric('comments')" id="chart-btn-comments" class="btn-ghost text-xs">コメント</button>
+        <button onclick="setChartMetric('all')" id="chart-btn-all" class="btn-ghost text-xs">全指標</button>
+      </div>
+    </div>
+    <canvas id="mainChart" height="80"></canvas>
+    <div id="noDataMsg" class="text-center py-8" style="color:var(--muted);display:none;">
+      📭 まだデータがありません。下記から週次データを取り込んでください。
+    </div>
+  </div>
+
+  <!-- データ取込みセクション -->
+  <div class="card p-5 mb-6">
+    <h2 class="font-bold mb-4" style="font-size:16px;">📥 データ取込み</h2>
+
+    <!-- タブ -->
+    <div class="flex gap-2 mb-5">
+      <button class="tab-btn active" id="tab-ss" onclick="switchTab('screenshot')">📸 スクリーンショット</button>
+      <button class="tab-btn" id="tab-bm" onclick="switchTab('bookmarklet')">🔖 Chrome自動取得</button>
+      <button class="tab-btn" id="tab-manual" onclick="switchTab('manual')">✏️ 手動入力</button>
+    </div>
+
+    <!-- スクリーンショットタブ -->
+    <div id="panel-screenshot">
+      <p class="text-sm mb-3" style="color:var(--muted);">note.comのダッシュボードやクリエイターページのスクリーンショットをアップロードすると、Claude AIが数値を自動認識します。</p>
+      <div id="dropZone" class="drop-zone mb-4" onclick="document.getElementById('imgInput').click()">
+        <div style="font-size:36px;margin-bottom:8px;">🖼</div>
+        <div class="font-semibold">クリックまたはドラッグ＆ドロップ</div>
+        <div class="text-sm mt-1" style="color:var(--muted);">PNG / JPG / WebP</div>
+        <input type="file" id="imgInput" accept="image/*" style="display:none;" onchange="handleFileSelect(event)">
+      </div>
+      <div id="previewArea" style="display:none;" class="mb-4">
+        <img id="previewImg" style="max-height:200px;border-radius:8px;border:1px solid var(--border);" alt="preview">
+        <button onclick="clearPreview()" class="btn-ghost text-sm mt-2">✕ クリア</button>
+      </div>
+      <div id="ocrResult" style="display:none;" class="metric-card mb-4">
+        <div class="font-semibold text-sm mb-2">🔍 AI解析結果（確認・編集可）</div>
+        <div class="grid gap-2" style="grid-template-columns:repeat(2,1fr);">
+          <div><label class="text-xs" style="color:var(--muted);">閲覧数</label><input type="number" id="ocr-views" min="0"></div>
+          <div><label class="text-xs" style="color:var(--muted);">スキ数</label><input type="number" id="ocr-likes" min="0"></div>
+          <div><label class="text-xs" style="color:var(--muted);">フォロワー数</label><input type="number" id="ocr-followers" min="0"></div>
+          <div><label class="text-xs" style="color:var(--muted);">コメント数</label><input type="number" id="ocr-comments" min="0"></div>
+        </div>
+        <div class="mt-3"><label class="text-xs" style="color:var(--muted);">週の開始日</label><input type="date" id="ocr-date"></div>
+        <button onclick="saveOcrData()" class="btn-primary mt-3 w-full">💾 保存する</button>
+      </div>
+      <button id="ocrBtn" onclick="runOcr()" class="btn-primary" style="display:none;">
+        🤖 AIで数値を読み取る
+      </button>
+      <div id="ocrLoading" style="display:none;" class="text-center py-4">
+        <div class="spinner mx-auto mb-2"></div>
+        <div class="text-sm" style="color:var(--muted);" id="ocrLoadingText">Claude AIが解析中...</div>
+      </div>
+    </div>
+
+    <!-- ブックマークレットタブ -->
+    <div id="panel-bookmarklet" style="display:none;">
+      <div class="mb-4 p-4" style="background:rgba(65,201,180,.07);border:1px solid rgba(65,201,180,.3);border-radius:10px;">
+        <div class="font-bold mb-1" style="color:var(--note-green);">🔖 Chrome自動取得の使い方</div>
+        <ol class="text-sm space-y-2 mt-2" style="color:var(--text);list-style:decimal;padding-left:18px;">
+          <li>下のボタンを右クリック →「ブックマークに追加」<br>（または長押しドラッグでブックマークバーへ）</li>
+          <li>note.comのダッシュボード統計ページを開く<br>（ <a href="https://note.com/stats" target="_blank" style="color:var(--note-green);">https://note.com/stats</a> ）</li>
+          <li>追加したブックマークをクリック</li>
+          <li>データが自動的にこのアプリに取り込まれます</li>
+        </ol>
+      </div>
+
+      <!-- ブックマークレットリンク -->
+      <div class="mb-4 flex items-center gap-3 flex-wrap">
+        <a id="bookmarkletLink" href="#" class="btn-primary text-sm" style="text-decoration:none;"
+           onclick="return confirmBookmarklet(event)">
+          📌 note Analyticsで取得
+        </a>
+        <span class="text-sm" style="color:var(--muted);">← これをブックマークバーにドラッグ</span>
+      </div>
+
+      <details class="mb-4">
+        <summary class="text-sm cursor-pointer" style="color:var(--muted);">スクリプト内容を確認する</summary>
+        <pre id="bookmarkletCode" class="console-box mt-2 text-xs" style="white-space:pre-wrap;color:#7070a0;"></pre>
+      </details>
+
+      <div class="mb-4 p-3" style="background:var(--surface2);border-radius:8px;">
+        <div class="text-sm font-semibold mb-1">⚡ 別の方法：コンソールから実行</div>
+        <div class="text-xs mb-2" style="color:var(--muted);">note.comで F12 → コンソール に貼り付けて Enter</div>
+        <div style="position:relative;">
+          <pre id="consoleCode" class="console-box" style="white-space:pre-wrap;"></pre>
+          <button onclick="copyConsoleCode()" class="btn-ghost text-xs" style="position:absolute;top:6px;right:6px;">📋 コピー</button>
+        </div>
+      </div>
+
+      <!-- インポート受信エリア（URL経由でデータが来た場合） -->
+      <div id="importReceivedArea" style="display:none;" class="metric-card">
+        <div class="font-semibold text-sm mb-2">📨 データを受信しました（確認・編集可）</div>
+        <div class="grid gap-2" style="grid-template-columns:repeat(2,1fr);">
+          <div><label class="text-xs" style="color:var(--muted);">閲覧数</label><input type="number" id="imp-views" min="0"></div>
+          <div><label class="text-xs" style="color:var(--muted);">スキ数</label><input type="number" id="imp-likes" min="0"></div>
+          <div><label class="text-xs" style="color:var(--muted);">フォロワー数</label><input type="number" id="imp-followers" min="0"></div>
+          <div><label class="text-xs" style="color:var(--muted);">コメント数</label><input type="number" id="imp-comments" min="0"></div>
+        </div>
+        <div class="mt-3"><label class="text-xs" style="color:var(--muted);">週の開始日</label><input type="date" id="imp-date"></div>
+        <button onclick="saveImportData()" class="btn-primary mt-3 w-full">💾 保存する</button>
+      </div>
+    </div>
+
+    <!-- 手動入力タブ -->
+    <div id="panel-manual" style="display:none;">
+      <div class="grid gap-3" style="grid-template-columns:repeat(2,1fr);">
+        <div><label class="text-xs mb-1 block" style="color:var(--muted);">週の開始日 *</label><input type="date" id="m-date"></div>
+        <div><label class="text-xs mb-1 block" style="color:var(--muted);">閲覧数</label><input type="number" id="m-views" min="0" placeholder="0"></div>
+        <div><label class="text-xs mb-1 block" style="color:var(--muted);">スキ数</label><input type="number" id="m-likes" min="0" placeholder="0"></div>
+        <div><label class="text-xs mb-1 block" style="color:var(--muted);">フォロワー数</label><input type="number" id="m-followers" min="0" placeholder="0"></div>
+        <div><label class="text-xs mb-1 block" style="color:var(--muted);">コメント数</label><input type="number" id="m-comments" min="0" placeholder="0"></div>
+        <div><label class="text-xs mb-1 block" style="color:var(--muted);">記事数</label><input type="number" id="m-articles" min="0" placeholder="0"></div>
+      </div>
+      <button onclick="saveManualData()" class="btn-primary mt-4">💾 保存する</button>
+    </div>
+  </div>
+
+  <!-- 週次データ一覧 -->
+  <div class="card p-5 mb-6">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="font-bold" style="font-size:16px;">📅 週次データ一覧</h2>
+      <button onclick="exportCsv()" class="btn-ghost text-sm">📤 CSVエクスポート</button>
+    </div>
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:13px;">
+        <thead>
+          <tr style="color:var(--muted);border-bottom:1px solid var(--border);">
+            <th style="text-align:left;padding:8px 10px;">週開始日</th>
+            <th style="text-align:right;padding:8px 10px;">👁 閲覧数</th>
+            <th style="text-align:right;padding:8px 10px;">💚 スキ</th>
+            <th style="text-align:right;padding:8px 10px;">👥 フォロワー</th>
+            <th style="text-align:right;padding:8px 10px;">💬 コメント</th>
+            <th style="text-align:center;padding:8px 10px;">取得方法</th>
+            <th style="text-align:center;padding:8px 10px;">操作</th>
+          </tr>
+        </thead>
+        <tbody id="historyTable">
+          <tr><td colspan="7" class="text-center py-6" style="color:var(--muted);">データなし</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- デバッグコンソール -->
+  <div class="card p-4 mb-6">
+    <div class="flex items-center justify-between mb-2">
+      <div class="text-sm font-semibold" style="color:var(--muted);">🐛 デバッグコンソール</div>
+      <button onclick="copyConsole()" class="btn-ghost text-xs">📋 コピー</button>
+    </div>
+    <div id="debugConsole" class="console-box"></div>
+  </div>
+
+</main>
+
+<script>
+// ===== Firebase 初期化 =====
+const firebaseConfig = {
+  apiKey: "AIzaSyDPlsAhtxbJBihy-EAHck9P7XbuMdzV0ds",
+  authDomain: "cc-dev-ps7.firebaseapp.com",
+  projectId: "cc-dev-ps7",
+  storageBucket: "cc-dev-ps7.firebasestorage.app",
+  messagingSenderId: "1029579090333",
+  appId: "1:1029579090333:web:c699eb13e9279f467f2774"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+// ===== 状態管理 =====
+let snapshots = [];       // 週次データ配列
+let chart = null;
+let currentMetric = 'views';
+let currentImgBase64 = null;
+let userId = localStorage.getItem('na_userId') || 'default';
+let apiKey = localStorage.getItem('na_apiKey') || '';
+
+// ===== デバッグログ =====
+function log(...args) {
+  const msg = args.map(a => typeof a === 'object' ? JSON.stringify(a, null, 1) : String(a)).join(' ');
+  console.log('[note-analytics]', msg);
+  const box = document.getElementById('debugConsole');
+  const ts = new Date().toLocaleTimeString('ja-JP');
+  box.innerHTML += `<div>[${ts}] ${msg.replace(/</g,'&lt;')}</div>`;
+  box.scrollTop = box.scrollHeight;
+}
+function copyConsole() {
+  navigator.clipboard.writeText(document.getElementById('debugConsole').innerText);
+  showToast('コピーしました', 'success');
+}
+
+// ===== Toast =====
+function showToast(msg, type = 'success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `toast ${type} show`;
+  setTimeout(() => t.className = 'toast', 3000);
+}
+
+// ===== 設定 =====
+document.getElementById('settingsBtn').addEventListener('click', () => {
+  const p = document.getElementById('settingsPanel');
+  p.style.display = p.style.display === 'none' ? 'block' : 'none';
+  document.getElementById('apiKeyInput').value = apiKey;
+  document.getElementById('userIdInput').value = userId;
+});
+function saveSettings() {
+  apiKey = document.getElementById('apiKeyInput').value.trim();
+  userId = document.getElementById('userIdInput').value.trim() || 'default';
+  localStorage.setItem('na_apiKey', apiKey);
+  localStorage.setItem('na_userId', userId);
+  document.getElementById('settingsPanel').style.display = 'none';
+  document.getElementById('userIdDisplay').textContent = userId;
+  showToast('設定を保存しました', 'success');
+  log('設定保存:', { userId, hasApiKey: !!apiKey });
+}
+document.getElementById('userIdDisplay').textContent = userId;
+
+// ===== タブ切替 =====
+function switchTab(tab) {
+  ['screenshot','bookmarklet','manual'].forEach(t => {
+    document.getElementById(`panel-${t}`).style.display = 'none';
+    document.getElementById(`tab-${t === 'screenshot' ? 'ss' : t === 'bookmarklet' ? 'bm' : 'manual'}`).classList.remove('active');
+  });
+  document.getElementById(`panel-${tab}`).style.display = 'block';
+  const tabId = tab === 'screenshot' ? 'ss' : tab === 'bookmarklet' ? 'bm' : 'manual';
+  document.getElementById(`tab-${tabId}`).classList.add('active');
+}
+
+// ===== スクリーンショット処理 =====
+const dropZone = document.getElementById('dropZone');
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file && file.type.startsWith('image/')) processImage(file);
+});
+
+function handleFileSelect(e) {
+  const file = e.target.files[0];
+  if (file) processImage(file);
+}
+
+function processImage(file) {
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const dataUrl = ev.target.result;
+    currentImgBase64 = dataUrl.split(',')[1];
+    document.getElementById('previewImg').src = dataUrl;
+    document.getElementById('previewArea').style.display = 'block';
+    document.getElementById('ocrBtn').style.display = 'inline-block';
+    document.getElementById('ocrResult').style.display = 'none';
+    log('画像読み込み完了:', file.name, `${Math.round(file.size/1024)}KB`);
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearPreview() {
+  currentImgBase64 = null;
+  document.getElementById('previewImg').src = '';
+  document.getElementById('previewArea').style.display = 'none';
+  document.getElementById('ocrBtn').style.display = 'none';
+  document.getElementById('ocrResult').style.display = 'none';
+  document.getElementById('imgInput').value = '';
+}
+
+async function runOcr() {
+  if (!currentImgBase64) { showToast('画像を選択してください', 'error'); return; }
+  if (!apiKey) { showToast('設定からClaude APIキーを入力してください', 'error'); document.getElementById('settingsPanel').style.display = 'block'; return; }
+
+  document.getElementById('ocrBtn').style.display = 'none';
+  document.getElementById('ocrLoading').style.display = 'block';
+  document.getElementById('ocrResult').style.display = 'none';
+  log('OCR開始...');
+
+  try {
+    const prompt = `このnote.comのダッシュボード・統計・クリエイターページのスクリーンショットから、以下の数値を抽出してください。
+
+抽出する項目：
+- views: 閲覧数（ビュー数）
+- likes: スキ数（♡やハートマークの数）
+- followers: フォロワー数
+- comments: コメント数
+
+必ず以下のJSON形式のみで返答してください（説明文は不要）：
+{"views": 数値, "likes": 数値, "followers": 数値, "comments": 数値}
+
+数値が見つからない場合は0にしてください。カンマ区切りの数値（例: 1,234）はそのまま数値（1234）に変換してください。`;
+
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+        'anthropic-dangerous-direct-browser-calls': 'true',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 200,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: currentImgBase64 } },
+            { type: 'text', text: prompt }
+          ]
+        }]
+      })
+    });
+
+    const data = await res.json();
+    log('API応答:', data.content?.[0]?.text);
+
+    if (data.error) throw new Error(data.error.message);
+
+    const text = data.content[0].text;
+    const match = text.match(/\{[^}]+\}/);
+    if (!match) throw new Error('JSONが見つかりません: ' + text);
+
+    const parsed = JSON.parse(match[0]);
+    log('解析結果:', parsed);
+
+    document.getElementById('ocr-views').value = parsed.views || 0;
+    document.getElementById('ocr-likes').value = parsed.likes || 0;
+    document.getElementById('ocr-followers').value = parsed.followers || 0;
+    document.getElementById('ocr-comments').value = parsed.comments || 0;
+    document.getElementById('ocr-date').value = getMondayStr(new Date());
+    document.getElementById('ocrResult').style.display = 'block';
+    showToast('✅ 数値を読み取りました', 'success');
+  } catch (err) {
+    log('OCRエラー:', err.message);
+    showToast('❌ エラー: ' + err.message, 'error');
+    document.getElementById('ocrBtn').style.display = 'inline-block';
+  } finally {
+    document.getElementById('ocrLoading').style.display = 'none';
+  }
+}
+
+async function saveOcrData() {
+  const snap = {
+    weekStart: document.getElementById('ocr-date').value,
+    views:     parseInt(document.getElementById('ocr-views').value) || 0,
+    likes:     parseInt(document.getElementById('ocr-likes').value) || 0,
+    followers: parseInt(document.getElementById('ocr-followers').value) || 0,
+    comments:  parseInt(document.getElementById('ocr-comments').value) || 0,
+    source: 'screenshot',
+  };
+  if (!snap.weekStart) { showToast('週の開始日を選択してください', 'error'); return; }
+  await saveSnapshot(snap);
+  document.getElementById('ocrResult').style.display = 'none';
+  clearPreview();
+}
+
+// ===== ブックマークレット =====
+function buildBookmarkletCode(appUrl) {
+  // note.com上で実行されるスクリプト
+  return `(function(){
+  var appUrl = '${appUrl}';
+  var result = {views:0,likes:0,followers:0,comments:0,articles:0};
+
+  // 方法1: note.com Stats API を叩く（同一オリジン）
+  function tryApi() {
+    return fetch('/api/v1/stats/note?context=dashboard', {credentials:'include'})
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(d && d.data){
+          result.views = d.data.total_views || d.data.view_count || 0;
+          result.likes = d.data.total_likes || d.data.like_count || 0;
+        }
+        return fetch('/api/v2/creators/me',{credentials:'include'});
+      })
+      .then(function(r){ return r.json(); })
+      .then(function(d){
+        if(d && d.data){
+          result.followers = d.data.follower_count || 0;
+          result.articles  = d.data.note_count || 0;
+        }
+      })
+      .catch(function(){});
+  }
+
+  // 方法2: DOMから読み取る
+  function tryDom() {
+    var texts = Array.from(document.querySelectorAll('*')).map(function(el){return el.innerText || '';});
+    var allText = texts.join(' ');
+    // 数値パターン抽出
+    function extract(keywords) {
+      for(var i=0;i<keywords.length;i++){
+        var re = new RegExp(keywords[i]+'[^0-9]*([0-9,]+)');
+        var m = allText.match(re);
+        if(m) return parseInt(m[1].replace(/,/g,''));
+      }
+      return 0;
+    }
+    result.views     = extract(['ビュー','閲覧','view']) || result.views;
+    result.likes     = extract(['スキ','like','♡','❤']) || result.likes;
+    result.followers = extract(['フォロワー','follower']) || result.followers;
+    result.comments  = extract(['コメント','comment']) || result.comments;
+  }
+
+  tryApi().then(function(){
+    tryDom();
+    var q = encodeURIComponent(JSON.stringify(result));
+    window.location.href = appUrl + '?import=' + q;
+  });
+})();`;
+}
+
+function initBookmarklet() {
+  const appUrl = window.location.origin + window.location.pathname;
+  const code = buildBookmarkletCode(appUrl);
+  const bm = 'javascript:' + encodeURIComponent(code);
+  document.getElementById('bookmarkletLink').href = bm;
+  document.getElementById('bookmarkletCode').textContent = code;
+  document.getElementById('consoleCode').textContent = code;
+}
+
+function confirmBookmarklet(e) {
+  showToast('ブックマークバーにドラッグして追加してください', 'success');
+  return false;
+}
+
+function copyConsoleCode() {
+  const code = document.getElementById('consoleCode').textContent;
+  navigator.clipboard.writeText(code);
+  showToast('コピーしました', 'success');
+}
+
+// URLパラメータからインポートデータを受信
+function checkImportFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const importData = params.get('import');
+  if (!importData) return;
+
+  try {
+    const data = JSON.parse(decodeURIComponent(importData));
+    log('URLからデータ受信:', data);
+
+    switchTab('bookmarklet');
+    document.getElementById('imp-views').value = data.views || 0;
+    document.getElementById('imp-likes').value = data.likes || 0;
+    document.getElementById('imp-followers').value = data.followers || 0;
+    document.getElementById('imp-comments').value = data.comments || 0;
+    document.getElementById('imp-date').value = getMondayStr(new Date());
+    document.getElementById('importReceivedArea').style.display = 'block';
+
+    // URLをクリーン
+    window.history.replaceState({}, '', window.location.pathname);
+    showToast('📨 note.comからデータを受信しました', 'success');
+  } catch (e) {
+    log('インポートエラー:', e.message);
+  }
+}
+
+async function saveImportData() {
+  const snap = {
+    weekStart: document.getElementById('imp-date').value,
+    views:     parseInt(document.getElementById('imp-views').value) || 0,
+    likes:     parseInt(document.getElementById('imp-likes').value) || 0,
+    followers: parseInt(document.getElementById('imp-followers').value) || 0,
+    comments:  parseInt(document.getElementById('imp-comments').value) || 0,
+    source: 'chrome-auto',
+  };
+  if (!snap.weekStart) { showToast('週の開始日を選択してください', 'error'); return; }
+  await saveSnapshot(snap);
+  document.getElementById('importReceivedArea').style.display = 'none';
+}
+
+// ===== 手動入力 =====
+function initManualDate() {
+  document.getElementById('m-date').value = getMondayStr(new Date());
+}
+async function saveManualData() {
+  const snap = {
+    weekStart: document.getElementById('m-date').value,
+    views:     parseInt(document.getElementById('m-views').value) || 0,
+    likes:     parseInt(document.getElementById('m-likes').value) || 0,
+    followers: parseInt(document.getElementById('m-followers').value) || 0,
+    comments:  parseInt(document.getElementById('m-comments').value) || 0,
+    articles:  parseInt(document.getElementById('m-articles').value) || 0,
+    source: 'manual',
+  };
+  if (!snap.weekStart) { showToast('日付を選択してください', 'error'); return; }
+  await saveSnapshot(snap);
+}
+
+// ===== Firestore CRUD =====
+function getCol() {
+  return db.collection('note-analytics').doc(userId).collection('snapshots');
+}
+
+async function saveSnapshot(snap) {
+  const docId = snap.weekStart.replace(/-/g, '');
+  snap.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+  snap.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
+  try {
+    await getCol().doc(docId).set(snap, { merge: true });
+    log('保存完了:', docId, snap);
+    showToast('✅ データを保存しました', 'success');
+    loadSnapshots();
+  } catch (e) {
+    log('保存エラー:', e.message);
+    showToast('❌ 保存失敗: ' + e.message, 'error');
+  }
+}
+
+async function deleteSnapshot(docId) {
+  if (!confirm('このデータを削除しますか？')) return;
+  await getCol().doc(docId).delete();
+  showToast('削除しました', 'success');
+  loadSnapshots();
+}
+
+async function loadSnapshots() {
+  try {
+    const qs = await getCol().orderBy('weekStart', 'asc').get();
+    snapshots = qs.docs.map(d => ({ id: d.id, ...d.data() }));
+    log(`データ読み込み: ${snapshots.length}件`);
+    renderAll();
+  } catch (e) {
+    log('読み込みエラー:', e.message);
+    // Firestoreが空の場合はローカルストレージから復元
+    const local = localStorage.getItem('na_snapshots_' + userId);
+    if (local) snapshots = JSON.parse(local);
+    renderAll();
+  }
+}
+
+// ===== 表示更新 =====
+function renderAll() {
+  renderSummary();
+  renderChart();
+  renderTable();
+}
+
+function renderSummary() {
+  if (snapshots.length === 0) return;
+  const latest = snapshots[snapshots.length - 1];
+  const prev   = snapshots.length > 1 ? snapshots[snapshots.length - 2] : null;
+
+  ['views','likes','followers','comments'].forEach(key => {
+    document.getElementById(`sum-${key}`).textContent = fmtNum(latest[key] || 0);
+    const diffEl = document.getElementById(`sum-${key}-diff`);
+    if (prev && prev[key] != null) {
+      const diff = (latest[key] || 0) - (prev[key] || 0);
+      const sign = diff >= 0 ? '+' : '';
+      diffEl.textContent = `前週比：${sign}${fmtNum(diff)}`;
+      diffEl.style.color = diff > 0 ? 'var(--note-green)' : diff < 0 ? '#e05454' : 'var(--muted)';
+    } else {
+      diffEl.textContent = '前週比：—';
+    }
+  });
+}
+
+function renderChart() {
+  const noDataMsg = document.getElementById('noDataMsg');
+  if (snapshots.length === 0) {
+    noDataMsg.style.display = 'block';
+    if (chart) { chart.destroy(); chart = null; }
+    return;
+  }
+  noDataMsg.style.display = 'none';
+
+  const labels = snapshots.map(s => s.weekStart);
+  const colors = {
+    views:     { line: '#41C9B4', bg: 'rgba(65,201,180,.15)' },
+    likes:     { line: '#ff6b9d', bg: 'rgba(255,107,157,.15)' },
+    followers: { line: '#fac83c', bg: 'rgba(250,200,60,.15)' },
+    comments:  { line: '#7c8cf8', bg: 'rgba(124,140,248,.15)' },
+  };
+
+  let datasets;
+  if (currentMetric === 'all') {
+    datasets = Object.entries(colors).map(([key, c]) => ({
+      label: { views:'閲覧数', likes:'スキ', followers:'フォロワー', comments:'コメント' }[key],
+      data: snapshots.map(s => s[key] || 0),
+      borderColor: c.line, backgroundColor: c.bg, tension: .35,
+      pointBackgroundColor: c.line, pointRadius: 4, fill: false,
+    }));
+  } else {
+    const c = colors[currentMetric] || colors.views;
+    datasets = [{
+      label: { views:'閲覧数', likes:'スキ', followers:'フォロワー', comments:'コメント' }[currentMetric],
+      data: snapshots.map(s => s[currentMetric] || 0),
+      borderColor: c.line, backgroundColor: c.bg, tension: .35,
+      pointBackgroundColor: c.line, pointRadius: 5, fill: true,
+    }];
+  }
+
+  if (chart) chart.destroy();
+  const ctx = document.getElementById('mainChart').getContext('2d');
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { labels: { color: '#e8e8f0', font: { size: 12 } } },
+        tooltip: { backgroundColor: '#1a1a24', titleColor: '#e8e8f0', bodyColor: '#aaa', borderColor: '#2e2e3e', borderWidth: 1 }
+      },
+      scales: {
+        x: { ticks: { color: '#7070a0', maxRotation: 45 }, grid: { color: '#2e2e3e' } },
+        y: { ticks: { color: '#7070a0', callback: v => fmtNum(v) }, grid: { color: '#2e2e3e' }, beginAtZero: true }
+      }
+    }
+  });
+}
+
+function setChartMetric(metric) {
+  currentMetric = metric;
+  ['views','likes','followers','comments','all'].forEach(m => {
+    const btn = document.getElementById(`chart-btn-${m}`);
+    if (m === metric) { btn.style.borderColor = 'var(--note-green)'; btn.style.color = 'var(--note-green)'; }
+    else { btn.style.borderColor = ''; btn.style.color = ''; }
+  });
+  renderChart();
+}
+
+function renderTable() {
+  const tbody = document.getElementById('historyTable');
+  if (snapshots.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center py-6" style="color:var(--muted);">データなし</td></tr>';
+    return;
+  }
+  // 新しい順で表示
+  const sorted = [...snapshots].reverse();
+  tbody.innerHTML = sorted.map(s => {
+    const srcBadge = {
+      screenshot: '<span class="badge badge-green">📸 スクショ</span>',
+      'chrome-auto': '<span class="badge badge-yellow">🔖 Chrome</span>',
+      manual: '<span style="font-size:11px;color:var(--muted);">✏️ 手動</span>',
+    }[s.source] || '<span style="font-size:11px;color:var(--muted);">—</span>';
+
+    return `<tr class="week-row" style="border-bottom:1px solid var(--border);">
+      <td style="padding:10px;font-weight:600;">${s.weekStart}</td>
+      <td style="text-align:right;padding:10px;">${fmtNum(s.views||0)}</td>
+      <td style="text-align:right;padding:10px;">${fmtNum(s.likes||0)}</td>
+      <td style="text-align:right;padding:10px;">${fmtNum(s.followers||0)}</td>
+      <td style="text-align:right;padding:10px;">${fmtNum(s.comments||0)}</td>
+      <td style="text-align:center;padding:10px;">${srcBadge}</td>
+      <td style="text-align:center;padding:10px;">
+        <button onclick="deleteSnapshot('${s.id}')" class="btn-ghost text-xs" style="color:#e05454;border-color:#e05454;">削除</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// ===== CSVエクスポート =====
+function exportCsv() {
+  if (snapshots.length === 0) { showToast('データがありません', 'error'); return; }
+  const header = '週開始日,閲覧数,スキ数,フォロワー数,コメント数,取得方法\n';
+  const rows = snapshots.map(s =>
+    [s.weekStart, s.views||0, s.likes||0, s.followers||0, s.comments||0, s.source||''].join(',')
+  ).join('\n');
+  const blob = new Blob(['\uFEFF' + header + rows], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `note-analytics-${userId}-${Date.now()}.csv`;
+  a.click(); URL.revokeObjectURL(url);
+  showToast('CSVをダウンロードしました', 'success');
+}
+
+// ===== ユーティリティ =====
+function fmtNum(n) {
+  return Number(n).toLocaleString('ja-JP');
+}
+function getMondayStr(d) {
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  const monday = new Date(d.setDate(diff));
+  return monday.toISOString().split('T')[0];
+}
+
+// ===== 初期化 =====
+async function init() {
+  log('note Analytics 起動');
+  initManualDate();
+  initBookmarklet();
+  checkImportFromUrl();
+  setChartMetric('views');
+  await loadSnapshots();
+}
+
+init();
+</script>
+</body>
+</html>
