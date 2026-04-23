@@ -313,27 +313,36 @@ async function generatePromptText(userMsg) {
       log(`⚠️ Claude エラー → Gemini にフォールバック: ${e.message}`);
     }
   }
-  // 2nd: Gemini 2.5 Flash
+  // 2nd: Gemini (複数モデルでフォールバック)
   if (!settings.geminiKey) throw new Error('AnthropicもGeminiもAPIキーが設定されていません');
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${settings.geminiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: CLAUDE_SYSTEM }] },
-        contents: [{ parts: [{ text: userMsg }] }],
-        generationConfig: { responseMimeType: 'application/json' }
-      })
+  const textModels = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.5-pro', 'gemini-2.0-flash-lite'];
+  for (const model of textModels) {
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${settings.geminiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            system_instruction: { parts: [{ text: CLAUDE_SYSTEM }] },
+            contents: [{ parts: [{ text: userMsg }] }],
+            generationConfig: { responseMimeType: 'application/json' }
+          })
+        }
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        log(`⚠️ ${model} 失敗 → 次を試します: ${(err.error?.message || res.status).slice(0, 60)}`);
+        continue;
+      }
+      const data = await res.json();
+      log(`✅ ${model} で生成しました`);
+      return data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+    } catch(e) {
+      log(`⚠️ ${model} エラー → 次を試します`);
     }
-  );
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(`Gemini Flash: ${err.error?.message || res.status}`);
   }
-  const data = await res.json();
-  log('✅ Gemini 2.5 Flash で生成しました');
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+  throw new Error('Gemini: 全モデルが失敗しました。しばらく待ってから再試行してください');
 }
 
 // ─────────────────────────────────────────────
