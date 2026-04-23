@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>名刺スキャナー → Salesforce</title>
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #0a0e1a;
+      --surface: #111827;
+      --surface2: #1a2235;
+      --border: #2a3650;
+      --accent: #00d4ff;
+      --accent2: #7c3aed;
+      --success: #10b981;
+      --warn: #f59e0b;
+      --danger: #ef4444;
+      --text: #e2e8f0;
+      --text2: #94a3b8;
+      --text3: #64748b;
+      --radius: 12px;
+      --shadow: 0 4px 24px rgba(0,0,0,0.4);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Noto Sans JP', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      min-height: -webkit-fill-available;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+    .header {
+      background: linear-gradient(135deg, #0a0e1a 0%, #111827 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header-title { font-family: 'Space Mono', monospace; font-size: 14px; color: var(--accent); letter-spacing: 0.1em; }
+    .header-badge { background: var(--accent2); color: white; font-size: 10px; padding: 2px 8px; border-radius: 20px; font-family: 'Space Mono', monospace; }
+    .container { max-width: 520px; margin: 0 auto; padding: 20px 16px; }
+    .steps { display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 24px; }
+    .step { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text3); font-family: 'Space Mono', monospace; }
+    .step.active { color: var(--accent); }
+    .step.done { color: var(--success); }
+    .step-num { width: 22px; height: 22px; border-radius: 50%; border: 1px solid currentColor; display: flex; align-items: center; justify-content: center; font-size: 10px; }
+    .step-line { width: 24px; height: 1px; background: var(--border); }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; }
+
+    /* 設定バナー */
+    .config-banner {
+      background: rgba(124, 58, 237, 0.1);
+      border: 1px solid var(--accent2);
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-bottom: 16px;
+      font-size: 12px;
+      color: var(--text2);
+    }
+    .config-banner strong { color: var(--accent2); }
+    .config-banner a { color: var(--accent); }
+
+    .upload-area {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 40px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      background: var(--surface2);
+    }
+    .upload-area:hover, .upload-area.dragover { border-color: var(--accent); background: rgba(0, 212, 255, 0.05); }
+    .upload-icon { font-size: 48px; margin-bottom: 12px; display: block; }
+    .upload-text { font-size: 14px; color: var(--text2); margin-bottom: 6px; }
+    .upload-sub { font-size: 11px; color: var(--text3); }
+    #fileInput { display: none; }
+
+    .preview-wrap { position: relative; border-radius: var(--radius); overflow: hidden; margin-bottom: 16px; border: 1px solid var(--border); }
+    .preview-img { width: 100%; max-height: 220px; object-fit: cover; display: block; }
+    .preview-overlay { position: absolute; top: 8px; right: 8px; }
+    .btn-icon { background: rgba(0,0,0,0.7); border: 1px solid var(--border); color: var(--text); width: 32px; height: 32px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+
+    .btn { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 20px; border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer; border: none; transition: all 0.2s; width: 100%; }
+    .btn-primary { background: linear-gradient(135deg, var(--accent), #0099cc); color: #000; font-weight: 700; }
+    .btn-primary:hover { opacity: 0.9; transform: translateY(-1px); }
+    .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+    .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-success { background: linear-gradient(135deg, var(--success), #059669); color: white; font-weight: 700; }
+    .btn-success:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-sm { padding: 8px 14px; font-size: 12px; width: auto; }
+
+    .loading-wrap { text-align: center; padding: 40px 20px; }
+    .spinner { width: 48px; height: 48px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 16px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-text { font-size: 13px; color: var(--text2); }
+    .loading-count { font-family: 'Space Mono', monospace; color: var(--accent); font-size: 12px; margin-top: 4px; }
+
+    .form-section { margin-bottom: 20px; }
+    .form-section-title { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--accent); letter-spacing: 0.15em; text-transform: uppercase; margin-bottom: 12px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+    .form-grid { display: grid; gap: 12px; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .field label { display: block; font-size: 11px; color: var(--text3); margin-bottom: 4px; }
+    .field input, .field select { width: 100%; background: var(--surface2); border: 1px solid var(--border); color: var(--text); padding: 10px 12px; border-radius: 8px; font-size: 13px; font-family: 'Noto Sans JP', sans-serif; transition: border-color 0.2s; outline: none; }
+    .field input:focus, .field select:focus { border-color: var(--accent); }
+    .field input.warn { border-color: var(--warn); }
+
+    .dup-banner { background: rgba(245, 158, 11, 0.1); border: 1px solid var(--warn); border-radius: 8px; padding: 12px 14px; display: flex; align-items: flex-start; gap: 10px; margin-bottom: 16px; }
+    .dup-banner-icon { font-size: 18px; flex-shrink: 0; }
+    .dup-banner-text { font-size: 12px; color: var(--warn); }
+    .dup-banner-name { font-weight: 700; }
+    .dup-sf-link { color: var(--accent); font-size: 11px; text-decoration: none; margin-top: 4px; display: inline-block; }
+
+    .account-mode { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+    .account-mode-btn { padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface2); color: var(--text2); font-size: 12px; cursor: pointer; text-align: center; transition: all 0.2s; }
+    .account-mode-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(0,212,255,0.05); }
+
+    .search-results { margin-top: 8px; }
+    .search-result-item { padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px; cursor: pointer; margin-top: 6px; background: var(--surface2); transition: border-color 0.2s; }
+    .search-result-item:hover { border-color: var(--accent); color: var(--accent); }
+    .search-loading { font-size: 12px; color: var(--text3); padding: 8px 0; }
+
+    .success-wrap { text-align: center; padding: 40px 20px; }
+    .success-icon { font-size: 64px; margin-bottom: 16px; }
+    .success-title { font-size: 20px; font-weight: 700; margin-bottom: 8px; }
+    .success-sub { font-size: 13px; color: var(--text2); margin-bottom: 24px; white-space: pre-line; }
+    .sf-link { display: inline-flex; align-items: center; gap: 6px; padding: 10px 16px; background: var(--surface2); border: 1px solid var(--accent); border-radius: 8px; color: var(--accent); font-size: 12px; text-decoration: none; font-family: 'Space Mono', monospace; margin-bottom: 20px; }
+
+    .debug-wrap { position: fixed; bottom: 16px; right: 16px; z-index: 200; }
+    .debug-toggle { background: var(--surface2); border: 1px solid var(--border); color: var(--text3); padding: 6px 10px; border-radius: 8px; font-size: 10px; font-family: 'Space Mono', monospace; cursor: pointer; }
+    .debug-panel { position: absolute; bottom: 36px; right: 0; width: 300px; max-height: 220px; background: #050810; border: 1px solid var(--border); border-radius: 8px; padding: 10px; overflow-y: auto; display: none; }
+    .debug-panel.open { display: block; }
+    .debug-log { font-size: 10px; font-family: 'Space Mono', monospace; color: #4ade80; line-height: 1.6; white-space: pre-wrap; }
+    .debug-copy { display: block; margin-top: 6px; font-size: 10px; color: var(--text3); cursor: pointer; text-align: right; }
+
+    .hidden { display: none !important; }
+    .gap-8 { display: flex; flex-direction: column; gap: 8px; }
+    .text-sm { font-size: 12px; color: var(--text3); }
+    .mt-12 { margin-top: 12px; }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <span class="header-title">📇 MEISHI → SF</span>
+  <span class="header-badge" id="phaseBadge">Phase 1 Mock</span>
+</div>
+
+<div class="container">
+
+  <!-- ステップ表示 -->
+  <div class="steps" id="stepsBar">
+    <div class="step active" id="step1"><div class="step-num">1</div><span>撮影</span></div>
+    <div class="step-line"></div>
+    <div class="step" id="step2"><div class="step-num">2</div><span>確認</span></div>
+    <div class="step-line"></div>
+    <div class="step" id="step3"><div class="step-num">3</div><span>登録</span></div>
+  </div>
+
+  <!-- SCREEN 1: アップロード -->
+  <div id="screenUpload">
+    <!-- Worker未設定時のバナー -->
+    <div class="config-banner" id="configBanner">
+      <strong>⚙️ セットアップが必要です</strong><br>
+      Cloudflare Worker URLとトークンを設定してください。<br>
+      設定済みの場合は自動的に非表示になります。<br>
+      ※「デモデータで試す」はWorkerなしでも動作します。
+    </div>
+
+    <div class="card">
+      <div id="previewWrap" class="preview-wrap hidden">
+        <img id="previewImg" class="preview-img" alt="名刺プレビュー" />
+        <div class="preview-overlay">
+          <button class="btn-icon" onclick="resetUpload()" title="やり直す">✕</button>
+        </div>
+      </div>
+
+      <div class="upload-area" id="dropArea" onclick="document.getElementById('fileInput').click()">
+        <span class="upload-icon">📷</span>
+        <p class="upload-text">名刺をスキャン・撮影</p>
+        <p class="upload-sub">タップしてカメラ起動 / 画像選択<br>またはドラッグ＆ドロップ</p>
+      </div>
+      <input type="file" id="fileInput" accept="image/*" capture="environment" onchange="handleFile(event)" />
+
+      <div class="mt-12 gap-8">
+        <button class="btn btn-primary" id="btnAnalyze" onclick="analyzeCard()" disabled>
+          🔍 AIで名刺を解析する
+        </button>
+        <button class="btn btn-secondary" onclick="useDemoData()">
+          📋 デモデータで試す
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN 2: ローディング -->
+  <div id="screenLoading" class="hidden">
+    <div class="card">
+      <div class="loading-wrap">
+        <div class="spinner"></div>
+        <p class="loading-text" id="loadingText">名刺を解析しています...</p>
+        <p class="loading-count" id="charCount"></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- SCREEN 3: 確認・編集フォーム -->
+  <div id="screenForm" class="hidden">
+    <div class="dup-banner hidden" id="dupBanner">
+      <span class="dup-banner-icon">⚠️</span>
+      <div class="dup-banner-text">
+        <div class="dup-banner-name" id="dupName"></div>
+        <div>同名の取引先担当者が既に存在します。登録前に確認してください。</div>
+        <a href="#" class="dup-sf-link" id="dupLink" target="_blank">🔗 Salesforceで確認する</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="form-section">
+        <div class="form-section-title">👤 取引先担当者</div>
+        <div class="form-grid">
+          <div class="form-row">
+            <div class="field"><label>姓 *</label><input type="text" id="lastName" placeholder="山田" /></div>
+            <div class="field"><label>名 *</label><input type="text" id="firstName" placeholder="太郎" /></div>
+          </div>
+          <div class="field"><label>メールアドレス</label><input type="email" id="email" placeholder="yamada@example.com" /></div>
+          <div class="form-row">
+            <div class="field"><label>電話番号</label><input type="tel" id="phone" placeholder="03-1234-5678" /></div>
+            <div class="field"><label>携帯番号</label><input type="tel" id="mobile" placeholder="090-0000-0000" /></div>
+          </div>
+          <div class="form-row">
+            <div class="field"><label>部署</label><input type="text" id="department" placeholder="営業部" /></div>
+            <div class="field"><label>役職</label><input type="text" id="title" placeholder="部長" /></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="form-section">
+        <div class="form-section-title">🏢 取引先（会社）</div>
+        <div class="account-mode">
+          <button class="account-mode-btn active" id="modeNew" onclick="setAccountMode('new')">＋ 新規作成</button>
+          <button class="account-mode-btn" id="modeExist" onclick="setAccountMode('exist')">🔗 既存に紐付け</button>
+        </div>
+        <div id="accountNewFields" class="form-grid">
+          <div class="field"><label>会社名 *</label><input type="text" id="accountName" placeholder="株式会社サンプル" /></div>
+          <div class="form-row">
+            <div class="field"><label>業種</label><input type="text" id="industry" placeholder="IT・通信" /></div>
+            <div class="field"><label>Web サイト</label><input type="url" id="website" placeholder="https://..." /></div>
+          </div>
+          <div class="field"><label>住所</label><input type="text" id="address" placeholder="東京都渋谷区..." /></div>
+        </div>
+        <div id="accountExistFields" class="hidden">
+          <div class="field">
+            <label>取引先名で検索</label>
+            <input type="text" id="accountSearch" placeholder="会社名を入力..." oninput="searchAccountDebounced(this.value)" />
+          </div>
+          <div id="accountResults" class="search-results"></div>
+          <input type="hidden" id="selectedAccountId" />
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="form-section">
+        <div class="form-section-title">📝 メモ（任意）</div>
+        <div class="field">
+          <input type="text" id="memo" placeholder="展示会で名刺交換 / 興味あり など" />
+        </div>
+      </div>
+    </div>
+
+    <div class="gap-8">
+      <button class="btn btn-success" id="btnRegister" onclick="registerContact()">
+        ☁️ Salesforce に登録する
+      </button>
+      <button class="btn btn-secondary" onclick="goBack()">← やり直す</button>
+    </div>
+  </div>
+
+  <!-- SCREEN 4: 完了 -->
+  <div id="screenDone" class="hidden">
+    <div class="card">
+      <div class="success-wrap">
+        <div class="success-icon">✅</div>
+        <div class="success-title">登録完了！</div>
+        <div class="success-sub" id="doneMessage"></div>
+        <a href="#" class="sf-link" id="sfLink" target="_blank">🔗 Salesforceで確認する</a>
+        <div class="gap-8">
+          <button class="btn btn-primary" onclick="nextCard()">📇 次の名刺へ</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- デバッグコンソール -->
+<div class="debug-wrap">
+  <button class="debug-toggle" onclick="toggleDebug()">🐛 DEBUG</button>
+  <div class="debug-panel" id="debugPanel">
+    <div class="debug-log" id="debugLog">// ログがここに表示されます</div>
+    <span class="debug-copy" onclick="copyDebug()">📋 コピー</span>
+  </div>
+</div>
+
+<script>
+// ===== ⚙️ 設定（Phase 2: Worker URLとトークンをここに入力） =====
+const WORKER_URL = '';       // 例: https://meishi-sf-proxy.xxxxx.workers.dev
+const WORKER_TOKEN = '';     // wrangler secret で設定した SHARED_TOKEN
+const SF_INSTANCE_URL = '';  // 例: https://yourorg.my.salesforce.com
+
+// Phase 2が有効かどうか
+const PHASE2_ENABLED = WORKER_URL !== '' && WORKER_TOKEN !== '';
+
+// ===== 状態管理 =====
+let currentImage = null;
+let extractedData = {};
+let accountMode = 'new';
+let debugLogs = [];
+let accountSearchTimer = null;
+let dupContactId = null;
+
+// ===== 初期化 =====
+(function init() {
+  if (PHASE2_ENABLED) {
+    document.getElementById('configBanner').classList.add('hidden');
+    document.getElementById('phaseBadge').textContent = 'Phase 2';
+    document.getElementById('phaseBadge').style.background = '#059669';
+    log('🚀 Phase 2 モード: Cloudflare Worker経由');
+  } else {
+    log('⚠️ Phase 1 モック: WORKER_URL未設定');
+  }
+  log('📱 名刺スキャナー起動');
+})();
+
+// ===== ログ =====
+function log(msg) {
+  const time = new Date().toLocaleTimeString('ja-JP');
+  const line = `[${time}] ${msg}`;
+  debugLogs.push(line);
+  document.getElementById('debugLog').textContent = debugLogs.slice(-50).join('\n');
+  console.log(line);
+}
+
+function toggleDebug() { document.getElementById('debugPanel').classList.toggle('open'); }
+function copyDebug() { navigator.clipboard.writeText(debugLogs.join('\n')); log('📋 コピー済み'); }
+
+// ===== 画面遷移 =====
+function showScreen(name) {
+  ['Upload','Loading','Form','Done'].forEach(s => {
+    document.getElementById('screen' + s).classList.add('hidden');
+  });
+  document.getElementById('screen' + name).classList.remove('hidden');
+  const stepMap = { Upload: 1, Loading: 1, Form: 2, Done: 3 };
+  updateSteps(stepMap[name]);
+}
+
+function updateSteps(active) {
+  [1,2,3].forEach(i => {
+    const el = document.getElementById('step' + i);
+    el.classList.remove('active','done');
+    if (i < active) el.classList.add('done');
+    else if (i === active) el.classList.add('active');
+  });
+}
+
+// ===== ファイル選択・ドロップ =====
+function handleFile(e) {
+  const file = e.target.files[0];
+  if (file) loadImage(file);
+}
+
+const dropArea = document.getElementById('dropArea');
+dropArea.addEventListener('dragover', e => { e.preventDefault(); dropArea.classList.add('dragover'); });
+dropArea.addEventListener('dragleave', () => dropArea.classList.remove('dragover'));
+dropArea.addEventListener('drop', e => {
+  e.preventDefault();
+  dropArea.classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if (file) loadImage(file);
+});
+
+function loadImage(file) {
+  // 大画像はCanvasでリサイズ（max 1280px）
+  const img = new Image();
+  const url = URL.createObjectURL(file);
+  img.onload = () => {
+    URL.revokeObjectURL(url);
+    const MAX = 1280;
+    let w = img.width, h = img.height;
+    if (w > MAX || h > MAX) {
+      if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+      else { w = Math.round(w * MAX / h); h = MAX; }
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+    currentImage = dataUrl.split(',')[1];
+    document.getElementById('previewImg').src = dataUrl;
+    document.getElementById('previewWrap').classList.remove('hidden');
+    document.getElementById('dropArea').classList.add('hidden');
+    document.getElementById('btnAnalyze').disabled = false;
+    log(`📎 画像読み込み: ${file.name} → ${w}×${h}px (${(currentImage.length * 0.75 / 1024).toFixed(0)}KB)`);
+  };
+  img.src = url;
+}
+
+function resetUpload() {
+  currentImage = null;
+  document.getElementById('previewWrap').classList.add('hidden');
+  document.getElementById('dropArea').classList.remove('hidden');
+  document.getElementById('btnAnalyze').disabled = true;
+  document.getElementById('fileInput').value = '';
+  log('🔄 リセット');
+}
+
+// ===== AI解析 =====
+async function analyzeCard() {
+  if (!currentImage) return;
+  showScreen('Loading');
+  document.getElementById('loadingText').textContent = '名刺を解析しています...';
+
+  let charCount = 0;
+  const countEl = document.getElementById('charCount');
+  const timer = setInterval(() => {
+    charCount += Math.floor(Math.random() * 5 + 1);
+    countEl.textContent = `解析中... ${charCount}文字`;
+  }, 200);
+
+  try {
+    let data;
+    if (PHASE2_ENABLED) {
+      log('🤖 Worker経由でClaude Vision API呼び出し...');
+      const res = await fetch(`${WORKER_URL}/analyze`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${WORKER_TOKEN}`
+        },
+        body: JSON.stringify({ image: currentImage, mediaType: 'image/jpeg' })
+      });
+      if (!res.ok) throw new Error(`Worker error: ${res.status} ${await res.text()}`);
+      data = await res.json();
+    } else {
+      // Phase 1: 直接API（APIキーが必要）
+      log('⚠️ Phase 1 直接API呼び出し（APIキー未設定の場合は失敗します）');
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': '', 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 1000,
+          messages: [{ role: 'user', content: [
+            { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: currentImage } },
+            { type: 'text', text: EXTRACT_PROMPT }
+          ]}]
+        })
+      });
+      const raw = await res.json();
+      const text = raw.content?.map(c => c.text || '').join('') || '';
+      data = JSON.parse(text.replace(/```json|```/g, '').trim());
+    }
+
+    clearInterval(timer);
+    log(`✅ 抽出完了: ${data.lastName} ${data.firstName} / ${data.accountName}`);
+    extractedData = data;
+    fillForm(data);
+    await checkDuplicate(data);
+    showScreen('Form');
+  } catch (err) {
+    clearInterval(timer);
+    log(`❌ エラー: ${err.message}`);
+    alert('解析に失敗しました。\n' + err.message);
+    showScreen('Upload');
+  }
+}
+
+const EXTRACT_PROMPT = `この名刺画像から情報を抽出してください。必ずJSONのみで返答してください。マークダウン不要。
+{
+  "lastName": "姓",
+  "firstName": "名",
+  "lastNameKana": "セイ（不明なら空文字）",
+  "firstNameKana": "メイ（不明なら空文字）",
+  "email": "メールアドレス",
+  "phone": "電話番号",
+  "mobile": "携帯番号",
+  "department": "部署名",
+  "title": "役職",
+  "accountName": "会社名",
+  "industry": "業種（推測でも可）",
+  "website": "WebサイトURL",
+  "address": "住所"
+}`;
+
+// ===== デモデータ =====
+function useDemoData() {
+  log('📋 デモデータ使用');
+  extractedData = {
+    lastName: '田中', firstName: '誠一郎',
+    lastNameKana: 'タナカ', firstNameKana: 'セイイチロウ',
+    email: 'tanaka.s@techcorp-japan.co.jp',
+    phone: '03-5678-9012', mobile: '090-1234-5678',
+    department: '営業本部 第一営業部', title: '部長',
+    accountName: '株式会社テックコープジャパン',
+    industry: 'IT・通信', website: 'https://techcorp-japan.co.jp',
+    address: '東京都港区赤坂2-3-4 テックビル10F'
+  };
+  fillForm(extractedData);
+  checkDuplicate({ lastName: '田中', firstName: '誠一郎', email: extractedData.email });
+  showScreen('Form');
+}
+
+// ===== フォーム入力 =====
+function fillForm(d) {
+  ['lastName','firstName','email','phone','mobile','department','title','accountName','industry','website','address']
+    .forEach(f => { const el = document.getElementById(f); if (el) el.value = d[f] || ''; });
+}
+
+// ===== 重複チェック =====
+async function checkDuplicate(d) {
+  dupContactId = null;
+  const banner = document.getElementById('dupBanner');
+
+  if (!PHASE2_ENABLED) {
+    // Phase 1モック
+    const isDup = d.lastName === '田中' || (d.email && d.email.includes('tanaka'));
+    if (isDup) {
+      document.getElementById('dupName').textContent = `${d.lastName} ${d.firstName}`;
+      document.getElementById('dupLink').href = '#';
+      document.getElementById('dupLink').textContent = '🔗 Salesforceで確認する（Mock）';
+      banner.classList.remove('hidden');
+      log('⚠️ 重複候補検出（モック）');
+    } else {
+      banner.classList.add('hidden');
+    }
+    return;
+  }
+
+  try {
+    const params = new URLSearchParams();
+    if (d.email) params.set('email', d.email);
+    if (d.lastName) params.set('lastName', d.lastName);
+    if (d.firstName) params.set('firstName', d.firstName);
+    log(`🔍 重複チェック: ${d.lastName} ${d.firstName} / ${d.email}`);
+
+    const res = await fetch(`${WORKER_URL}/sf/search/contact?${params}`, {
+      headers: { 'Authorization': `Bearer ${WORKER_TOKEN}` }
+    });
+    if (!res.ok) { log(`⚠️ 重複チェックスキップ: ${res.status}`); return; }
+
+    const result = await res.json();
+    if (result.records && result.records.length > 0) {
+      const dup = result.records[0];
+      dupContactId = dup.Id;
+      document.getElementById('dupName').textContent = `${dup.LastName} ${dup.FirstName || ''} (${dup.Account?.Name || '取引先なし'})`;
+      const sfUrl = SF_INSTANCE_URL
+        ? `${SF_INSTANCE_URL}/lightning/r/Contact/${dup.Id}/view`
+        : `https://login.salesforce.com/${dup.Id}`;
+      document.getElementById('dupLink').href = sfUrl;
+      document.getElementById('dupLink').textContent = '🔗 Salesforceで確認する';
+      banner.classList.remove('hidden');
+      log(`⚠️ 重複検出: ${dup.LastName} ${dup.FirstName || ''} (ID: ${dup.Id})`);
+    } else {
+      banner.classList.add('hidden');
+      log('✅ 重複なし');
+    }
+  } catch (err) {
+    log(`⚠️ 重複チェックエラー（スキップ）: ${err.message}`);
+    banner.classList.add('hidden');
+  }
+}
+
+// ===== 取引先モード切替 =====
+function setAccountMode(mode) {
+  accountMode = mode;
+  document.getElementById('modeNew').classList.toggle('active', mode === 'new');
+  document.getElementById('modeExist').classList.toggle('active', mode === 'exist');
+  document.getElementById('accountNewFields').classList.toggle('hidden', mode !== 'new');
+  document.getElementById('accountExistFields').classList.toggle('hidden', mode !== 'exist');
+  log(`🏢 取引先モード: ${mode}`);
+}
+
+// ===== 取引先検索（デバウンス） =====
+function searchAccountDebounced(q) {
+  clearTimeout(accountSearchTimer);
+  if (q.length < 2) { document.getElementById('accountResults').innerHTML = ''; return; }
+  accountSearchTimer = setTimeout(() => searchAccount(q), 500);
+}
+
+async function searchAccount(q) {
+  const el = document.getElementById('accountResults');
+  document.getElementById('selectedAccountId').value = '';
+
+  if (!PHASE2_ENABLED) {
+    // モック
+    const mock = ['株式会社テックコープジャパン','株式会社サンプルホールディングス','スプライングローバル株式会社']
+      .filter(a => a.includes(q));
+    el.innerHTML = mock.map(a =>
+      `<div class="search-result-item" onclick="selectAccount('', '${a}')">🏢 ${a}</div>`
+    ).join('');
+    return;
+  }
+
+  el.innerHTML = '<div class="search-loading">🔍 検索中...</div>';
+  try {
+    const res = await fetch(`${WORKER_URL}/sf/search/account?q=${encodeURIComponent(q)}`, {
+      headers: { 'Authorization': `Bearer ${WORKER_TOKEN}` }
+    });
+    if (!res.ok) throw new Error(`${res.status}`);
+    const result = await res.json();
+    if (!result.records || result.records.length === 0) {
+      el.innerHTML = '<div class="search-loading">該当なし</div>';
+      return;
+    }
+    el.innerHTML = result.records.map(a =>
+      `<div class="search-result-item" onclick="selectAccount('${a.Id}', '${a.Name.replace(/'/g, "\\'")}')">🏢 ${a.Name}</div>`
+    ).join('');
+  } catch (err) {
+    el.innerHTML = `<div class="search-loading" style="color:var(--danger)">エラー: ${err.message}</div>`;
+    log(`❌ 取引先検索エラー: ${err.message}`);
+  }
+}
+
+function selectAccount(id, name) {
+  document.getElementById('accountSearch').value = name;
+  document.getElementById('selectedAccountId').value = id;
+  document.getElementById('accountResults').innerHTML = '';
+  log(`✅ 取引先選択: ${name} (ID: ${id || 'mock'})`);
+}
+
+// ===== Salesforce登録 =====
+async function registerContact() {
+  const last = document.getElementById('lastName').value.trim();
+  const first = document.getElementById('firstName').value.trim();
+  let accountId = '';
+  let accountName = '';
+
+  if (accountMode === 'new') {
+    accountName = document.getElementById('accountName').value.trim();
+  } else {
+    accountName = document.getElementById('accountSearch').value.trim();
+    accountId = document.getElementById('selectedAccountId').value;
+  }
+
+  if (!last) { alert('姓は必須です'); return; }
+  if (!accountName) { alert('会社名は必須です'); return; }
+
+  const btn = document.getElementById('btnRegister');
+  btn.disabled = true;
+  btn.textContent = '登録中...';
+
+  log(`📤 登録開始: ${last} ${first} / ${accountName}`);
+
+  if (!PHASE2_ENABLED) {
+    // Phase 1モック
+    await new Promise(r => setTimeout(r, 800));
+    const mockId = '003' + Math.random().toString(36).substr(2,12).toUpperCase();
+    document.getElementById('doneMessage').textContent =
+      `${last} ${first}（${accountName}）を登録しました。\nレコードID: ${mockId}\n\n⚠️ Phase 1 モック（実際には登録されていません）`;
+    document.getElementById('sfLink').href = '#';
+    document.getElementById('sfLink').textContent = '🔗 Salesforceで確認する（Mock）';
+    showScreen('Done');
+    btn.disabled = false;
+    btn.textContent = '☁️ Salesforce に登録する';
+    return;
+  }
+
+  try {
+    // Step 1: Account作成 or 既存ID使用
+    if (accountMode === 'new') {
+      log('🏢 取引先（Account）新規作成...');
+      const accRes = await fetch(`${WORKER_URL}/sf/account`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${WORKER_TOKEN}` },
+        body: JSON.stringify({
+          Name: accountName,
+          Industry: document.getElementById('industry').value || undefined,
+          Website: document.getElementById('website').value || undefined,
+          BillingStreet: document.getElementById('address').value || undefined,
+        })
+      });
+      if (!accRes.ok) throw new Error(`Account作成失敗: ${accRes.status} ${await accRes.text()}`);
+      const accData = await accRes.json();
+      accountId = accData.id;
+      log(`✅ Account作成: ID=${accountId}`);
+    }
+
+    // Step 2: Contact作成
+    log('👤 取引先担当者（Contact）作成...');
+    const contactPayload = {
+      LastName: last,
+      FirstName: first || undefined,
+      Email: document.getElementById('email').value || undefined,
+      Phone: document.getElementById('phone').value || undefined,
+      MobilePhone: document.getElementById('mobile').value || undefined,
+      Department: document.getElementById('department').value || undefined,
+      Title: document.getElementById('title').value || undefined,
+      Description: document.getElementById('memo').value || undefined,
+    };
+    if (accountId) contactPayload.AccountId = accountId;
+
+    const conRes = await fetch(`${WORKER_URL}/sf/contact`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${WORKER_TOKEN}` },
+      body: JSON.stringify(contactPayload)
+    });
+    if (!conRes.ok) throw new Error(`Contact作成失敗: ${conRes.status} ${await conRes.text()}`);
+    const conData = await conRes.json();
+    const contactId = conData.id;
+    log(`✅ Contact作成: ID=${contactId}`);
+
+    const sfBaseUrl = SF_INSTANCE_URL || 'https://login.salesforce.com';
+    document.getElementById('doneMessage').textContent =
+      `${last} ${first}（${accountName}）\nContactID: ${contactId}`;
+    document.getElementById('sfLink').href = `${sfBaseUrl}/lightning/r/Contact/${contactId}/view`;
+    document.getElementById('sfLink').textContent = '🔗 Salesforceで確認する';
+    showScreen('Done');
+  } catch (err) {
+    log(`❌ 登録エラー: ${err.message}`);
+    alert('登録に失敗しました。\n' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '☁️ Salesforce に登録する';
+  }
+}
+
+function goBack() { resetUpload(); showScreen('Upload'); }
+
+function nextCard() {
+  resetUpload();
+  extractedData = {};
+  dupContactId = null;
+  document.getElementById('dupBanner').classList.add('hidden');
+  showScreen('Upload');
+}
+</script>
+</body>
+</html>
