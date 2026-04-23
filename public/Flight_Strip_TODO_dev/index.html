@@ -50,7 +50,7 @@
   </style>
 </head>
 <body>
-  <div id="dev-banner">⚠ DEV BUILD — v0.10.23-dev — NOT FOR PRODUCTION ⚠</div>
+  <div id="dev-banner">⚠ DEV BUILD — v0.10.24-dev — NOT FOR PRODUCTION ⚠</div>
   <div id="root" style="padding-top:22px;"></div>
 
   <!-- Firebase 初期化 -->
@@ -462,9 +462,15 @@
     // ======================================================
     // リリースノート
     // ======================================================
-    const APP_VERSION = 'v0.10.23-dev';
+    const APP_VERSION = 'v0.10.24-dev';
 
     const RELEASE_NOTES = [
+      {
+        version: "v0.10.24-dev", date: "2026-04-23",
+        changes: [
+          "🚦 NEXT満杯時に確認ダイアログを表示（はい/いいえ）・「常に許可する」チェックボックス付き",
+        ],
+      },
       {
         version: "v0.10.23-dev", date: "2026-04-23",
         changes: [
@@ -2910,6 +2916,50 @@ HAVE A NICE TRIP！
     };
 
     // ======================================================
+    // NEXTオーバーフロー確認ダイアログ
+    // ======================================================
+    const NextOverflowDialog = ({ onConfirm, onCancel, T }) => {
+      const [alwaysAllow, setAlwaysAllow] = useState(false);
+      const handleConfirm = () => {
+        if (alwaysAllow) localStorage.setItem('fst-alwaysAllowNext', '1');
+        onConfirm();
+      };
+      return (
+        <div style={{ position:'fixed', inset:0, zIndex:600, background:'rgba(0,0,0,0.75)', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:"'JetBrains Mono',monospace" }}
+          onClick={onCancel}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background:T.bgModal, border:`1px solid ${T.accent}55`, borderRadius:'6px', padding:'28px 32px', maxWidth:'380px', width:'92%', boxShadow:`0 0 60px rgba(0,0,0,0.8)` }}>
+            {/* タイトル */}
+            <div style={{ fontSize:'12px', fontWeight:700, color:'#ffcc44', letterSpacing:'0.12em', marginBottom:'12px' }}>⚠ NEXT ACTION が満杯です</div>
+            {/* 説明 */}
+            <div style={{ fontSize:'12px', color:T.textDim, lineHeight:1.7, marginBottom:'20px' }}>
+              NEXT ACTION は最大5スロットです。<br/>このタスクをNEXTに追加しますか？
+            </div>
+            {/* 常に許可するチェックボックス */}
+            <label style={{ display:'flex', alignItems:'center', gap:'8px', fontSize:'11px', color:T.textDim, marginBottom:'24px', cursor:'pointer', userSelect:'none' }}>
+              <input type="checkbox" checked={alwaysAllow} onChange={e => setAlwaysAllow(e.target.checked)}
+                style={{ width:'14px', height:'14px', cursor:'pointer', accentColor:T.accent }} />
+              常に許可する（次回から確認しない）
+            </label>
+            {/* ボタン */}
+            <div style={{ display:'flex', gap:'10px' }}>
+              <button onClick={handleConfirm}
+                style={{ flex:1, padding:'10px', borderRadius:'3px', cursor:'pointer', fontSize:'12px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace", letterSpacing:'0.08em',
+                  background:'rgba(0,255,136,0.12)', border:'1px solid #00ff8866', color:'#00ff88' }}>
+                はい（NEXTへ）
+              </button>
+              <button onClick={onCancel}
+                style={{ flex:1, padding:'10px', borderRadius:'3px', cursor:'pointer', fontSize:'12px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace", letterSpacing:'0.08em',
+                  background:'transparent', border:`1px solid ${T.border2}`, color:T.textDim }}>
+                いいえ（HOLDINGへ）
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // ======================================================
     // ER-0071: タスクフルスクリーンモーダル
     // ======================================================
     const TaskFullscreenModal = ({ task, onClose, onStatusChange, onEdit, onUpdateCheckItems, onTimerStart, onTimerStop, T }) => {
@@ -4952,11 +5002,19 @@ HAVE A NICE TRIP！
       const [flashMsg,  setFlashMsg]  = useState('');
       const flashNext = (msg) => { setFlashMsg(msg); setTimeout(() => setFlashMsg(''), 3000); };
       const NEXT_LIMIT = 5;
-      // NEXTスロット数を確認して超過する場合はpendingに振り替える
+      const ALWAYS_ALLOW_NEXT_KEY = 'fst-alwaysAllowNext';
+      // NEXTスロット数を確認して超過する場合はpendingに振り替える（内部自動移動用・同期版）
       const safeNext = (excludeId = null) => {
         const cnt = tasks.filter(t => t.status === 'next' && t.id !== excludeId).length;
-        if (cnt >= NEXT_LIMIT) { flashNext(`⚠ NEXT ACTION は最大 ${NEXT_LIMIT} スロットです。HOLDINGに追加しました。`); return 'pending'; }
+        if (cnt >= NEXT_LIMIT && localStorage.getItem(ALWAYS_ALLOW_NEXT_KEY) !== '1') return 'pending';
         return 'next';
+      };
+      // ユーザー操作用: 満杯時に確認ダイアログを出す非同期版
+      const [nextOverflowDialog, setNextOverflowDialog] = useState(null);
+      const safeNextAsync = (excludeId = null) => {
+        const cnt = tasks.filter(t => t.status === 'next' && t.id !== excludeId).length;
+        if (cnt < NEXT_LIMIT || localStorage.getItem(ALWAYS_ALLOW_NEXT_KEY) === '1') return Promise.resolve('next');
+        return new Promise(resolve => setNextOverflowDialog({ resolve }));
       };
       // ER-0054: 一括操作ドロップダウン
       const [showBulkMenu, setShowBulkMenu] = useState(false);
@@ -5477,8 +5535,9 @@ HAVE A NICE TRIP！
         } catch(e){}
       }, [tasksRef, user.uid]);
       // ER-0061: 次タスク追加ハンドラー
-      const handleAddNextTask  = useCallback(({ title, priority, category }) => {
-        tasksRef.add({ stripId:`FS${String(Date.now()).slice(-4)}`, title, status:safeNext(), priority: priority||'normal', category: category||'work', createdAt:ts(), updatedAt:ts(), sortOrder:Date.now() });
+      const handleAddNextTask  = useCallback(async ({ title, priority, category }) => {
+        const status = await safeNextAsync();
+        tasksRef.add({ stripId:`FS${String(Date.now()).slice(-4)}`, title, status, priority: priority||'normal', category: category||'work', createdAt:ts(), updatedAt:ts(), sortOrder:Date.now() });
         // タスク作成イベントを記録
         try {
           const uidHash = btoa(user.uid).replace(/[^a-zA-Z0-9]/g,'').slice(0,12);
@@ -5504,9 +5563,9 @@ HAVE A NICE TRIP！
           const prev = tasks.find(t => t.id === id);
           if (prev) setUndoStack(p => [...p.slice(-19), { taskId: id, fromStatus: prev.status }]);
         }
-        // NEXTスロット上限チェック
-        if (s === 'next') s = safeNext(id);
-        // activeに変更する場合: 既存のactiveタスクをnextに移動
+        // NEXTスロット上限チェック（ユーザー操作 → ダイアログ確認）
+        if (s === 'next') s = await safeNextAsync(id);
+        // activeに変更する場合: 既存のactiveタスクをnextに移動（自動移動 → ダイアログなし）
         if (s === 'active') {
           const currentActives = tasks.filter(t => t.status === 'active' && t.id !== id);
           for (const t of currentActives) {
@@ -5914,7 +5973,7 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
           const targetTask  = tasks.find(t => t.id === ds.id);
           if (!draggedTask || !targetTask) return;
           if (draggedTask.status !== targetTask.status) {
-            const newSt = targetTask.status === 'next' ? safeNext(taskId) : targetTask.status;
+            const newSt = targetTask.status === 'next' ? await safeNextAsync(taskId) : targetTask.status;
             await tasksRef.doc(taskId).update({ status: newSt, updatedAt: ts() });
             return;
           }
@@ -5931,14 +5990,19 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
           const draggedTask = tasks.find(t => t.id === taskId);
           if (draggedTask && draggedTask.status !== ds.colId) {
             const col = COLUMNS.find(c => c.id === ds.colId);
-            if (col?.limit) {
+            if (col?.limit && ds.colId === 'next') {
+              const newSt = await safeNextAsync(taskId);
+              await tasksRef.doc(taskId).update({ status: newSt, updatedAt: ts() });
+            } else if (col?.limit) {
               const existing = tasks.filter(t => t.status === ds.colId && t.id !== taskId).length;
               if (existing >= col.limit) {
-                alert(`⚠ ${col.label} は最大 ${col.limit} スロットです`);
+                flashNext(`⚠ ${col.label} は最大 ${col.limit} スロットです`);
                 return;
               }
+              await tasksRef.doc(taskId).update({ status: ds.colId, updatedAt: ts() });
+            } else {
+              await tasksRef.doc(taskId).update({ status: ds.colId, updatedAt: ts() });
             }
-            await tasksRef.doc(taskId).update({ status: ds.colId, updatedAt: ts() });
           }
         }
       }, [tasks, tasksRef]);
@@ -6125,6 +6189,14 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
           {showTaskLog && ReactDOM.createPortal(<TaskLogModal tasks={tasks} categories={categories} onClose={() => setShowTaskLog(false)} />, document.body)}
           {/* ER-0068: チュートリアル */}
           {showTutorial && ReactDOM.createPortal(<TutorialOverlay onClose={() => setShowTutorial(false)} />, document.body)}
+          {/* NEXTオーバーフロー確認ダイアログ */}
+          {nextOverflowDialog && ReactDOM.createPortal(
+            <NextOverflowDialog
+              T={T}
+              onConfirm={() => { nextOverflowDialog.resolve('next'); setNextOverflowDialog(null); }}
+              onCancel={() => { nextOverflowDialog.resolve('pending'); setNextOverflowDialog(null); flashNext('HOLDINGに追加しました'); }}
+            />, document.body
+          )}
           {/* ER-0071: フルスクリーン */}
           {fullscreenTaskId && ReactDOM.createPortal(<TaskFullscreenModal task={tasks.find(t=>t.id===fullscreenTaskId)} onClose={()=>setFullscreenTaskId(null)} onStatusChange={handleStatusChange} onEdit={id=>{ setEditTaskId(id); setFullscreenTaskId(null); }} onUpdateCheckItems={async (taskId, newItems) => { await tasksRef.doc(taskId).update({ checkItems: newItems, updatedAt: ts() }); setTasks(prev => prev.map(t => t.id===taskId ? { ...t, checkItems: newItems } : t)); }} onTimerStart={handleTimerStart} onTimerStop={handleTimerStop} T={T} />, document.body)}
           {/* ER-0075: COMPLETED アニメーション（クリック位置に fixed 表示） */}
