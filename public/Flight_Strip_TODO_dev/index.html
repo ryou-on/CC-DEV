@@ -50,7 +50,7 @@
   </style>
 </head>
 <body>
-  <div id="dev-banner">⚠ DEV BUILD — v0.10.25-dev — NOT FOR PRODUCTION ⚠</div>
+  <div id="dev-banner">⚠ DEV BUILD — v0.10.26-dev — NOT FOR PRODUCTION ⚠</div>
   <div id="root" style="padding-top:22px;"></div>
 
   <!-- Firebase 初期化 -->
@@ -462,9 +462,15 @@
     // ======================================================
     // リリースノート
     // ======================================================
-    const APP_VERSION = 'v0.10.25-dev';
+    const APP_VERSION = 'v0.10.26-dev';
 
     const RELEASE_NOTES = [
+      {
+        version: "v0.10.26-dev", date: "2026-04-23",
+        changes: [
+          "⏱ フォーカスモードのタイマーを右サイドパネルに移動（モバイルでスクロール不要に）",
+        ],
+      },
       {
         version: "v0.10.25-dev", date: "2026-04-23",
         changes: [
@@ -6302,6 +6308,11 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
 
                   {task ? (
                     <>
+                      {/* 横並びレイアウト: 左コンテンツ + 右タイマーパネル */}
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'row', overflow: 'hidden' }}>
+
+                      {/* 左: スクロール可能コンテンツ + DONEボタン */}
+                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                       {/* スクロール可能コンテンツ */}
                       <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: 'clamp(40px,6vh,60px) clamp(20px,5vw,48px) 20px' }}>
 
@@ -6421,7 +6432,7 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                         )}
 
                         {/* メタ情報バッジ */}
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '32px' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
                           {task.scheduledDate && (
                             <span style={{
                               background: 'rgba(255,170,0,0.12)', border: '1px solid rgba(255,170,0,0.35)',
@@ -6444,68 +6455,9 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                             }}>{task.categoryId}</span>
                           )}
                         </div>
+                      </div>{/* スクロールエリア end */}
 
-                        {/* タイマー */}
-                        {(() => {
-                          const timerStartMs = task.timerStartedAt?.toMillis?.()
-                            ?? (task.timerStartedAt?.seconds ? task.timerStartedAt.seconds * 1000 : 0);
-                          const elapsedMs = task.timerRunning ? Math.max(0, currentTime.getTime() - timerStartMs) : 0;
-                          const totalLoggedMs = (task.timeLogs || []).reduce((sum, l) => sum + (l.durationMs || 0), 0);
-                          const totalMs = totalLoggedMs + elapsedMs;
-                          return (
-                            <div style={{
-                              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px',
-                              padding: 'clamp(20px,4vh,36px) 24px',
-                              background: task.timerRunning ? 'rgba(0,255,136,0.06)' : 'rgba(255,255,255,0.03)',
-                              border: `1px solid ${task.timerRunning ? '#00ff8840' : T.border + '40'}`,
-                              borderRadius: '8px',
-                              transition: 'all 0.4s',
-                              boxShadow: task.timerRunning ? '0 0 40px rgba(0,255,136,0.06)' : 'none',
-                            }}>
-                              {/* タイマー数値 */}
-                              <div style={{
-                                fontSize: 'clamp(52px, 10vw, 96px)',
-                                fontWeight: 700,
-                                fontFamily: "'JetBrains Mono', monospace",
-                                letterSpacing: '0.06em',
-                                color: task.timerRunning ? '#00ff88' : T.textDim,
-                                lineHeight: 1,
-                                textShadow: task.timerRunning ? '0 0 30px rgba(0,255,136,0.45)' : 'none',
-                                transition: 'color 0.3s, text-shadow 0.3s',
-                                fontVariantNumeric: 'tabular-nums',
-                              }}>
-                                {formatDuration(totalMs)}
-                              </div>
-                              {/* ログ済み内訳 */}
-                              {totalLoggedMs > 0 && (
-                                <div style={{ fontSize: 'clamp(11px, 1.5vw, 14px)', color: T.textMuted, letterSpacing: '0.08em' }}>
-                                  ログ済: {formatDuration(totalLoggedMs)}{task.timerRunning ? ` ＋ 今回: ${formatDuration(elapsedMs)}` : ''}
-                                </div>
-                              )}
-                              {/* START / STOP ボタン */}
-                              <button
-                                onClick={() => task.timerRunning ? handleTimerStop(task.id) : handleTimerStart(task.id)}
-                                style={{
-                                  padding: 'clamp(10px,2vh,16px) clamp(32px,6vw,60px)',
-                                  borderRadius: '6px', cursor: 'pointer',
-                                  fontSize: 'clamp(14px, 2vw, 20px)',
-                                  fontWeight: 700,
-                                  fontFamily: "'JetBrains Mono', monospace",
-                                  letterSpacing: '0.15em',
-                                  background: task.timerRunning ? 'rgba(255,80,80,0.12)' : 'rgba(0,255,136,0.1)',
-                                  border: `1px solid ${task.timerRunning ? '#ff505088' : '#00ff8866'}`,
-                                  color: task.timerRunning ? '#ff6060' : '#00ff88',
-                                  transition: 'all 0.2s',
-                                  touchAction: 'manipulation',
-                                }}>
-                                {task.timerRunning ? '⏹ STOP' : '▶ START'}
-                              </button>
-                            </div>
-                          );
-                        })()}
-                      </div>
-
-                      {/* ボトム：DONE ボタンのみ */}
+                      {/* ボトム：DONE ボタン */}
                       <div style={{ padding: 'clamp(12px,2.5vh,20px) clamp(20px,5vw,48px)', borderTop: `1px solid ${pri.color}22` }}>
                         <button
                           onClick={() => { handleDone(task.id, null); setActiveFocusMode(false); }}
@@ -6523,6 +6475,72 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                           }}
                         >✓ DONE</button>
                       </div>
+                      </div>{/* 左カラム end */}
+
+                      {/* 右: タイマーパネル */}
+                      {(() => {
+                        const timerStartMs = task.timerStartedAt?.toMillis?.()
+                          ?? (task.timerStartedAt?.seconds ? task.timerStartedAt.seconds * 1000 : 0);
+                        const elapsedMs = task.timerRunning ? Math.max(0, currentTime.getTime() - timerStartMs) : 0;
+                        const totalLoggedMs = (task.timeLogs || []).reduce((sum, l) => sum + (l.durationMs || 0), 0);
+                        const totalMs = totalLoggedMs + elapsedMs;
+                        return (
+                          <div style={{
+                            width: 'clamp(110px, 20vw, 180px)',
+                            flexShrink: 0,
+                            display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                            gap: '12px',
+                            padding: '16px 8px',
+                            borderLeft: `1px solid ${task.timerRunning ? '#00ff8830' : T.border + '30'}`,
+                            background: task.timerRunning ? 'rgba(0,255,136,0.04)' : 'transparent',
+                            transition: 'all 0.4s',
+                          }}>
+                            {/* ラベル */}
+                            <div style={{ fontSize: '9px', color: T.textMuted, letterSpacing: '0.15em', fontWeight: 700 }}>TIMER</div>
+                            {/* タイマー数値 */}
+                            <div style={{
+                              fontSize: 'clamp(20px, 4vw, 38px)',
+                              fontWeight: 700,
+                              fontFamily: "'JetBrains Mono', monospace",
+                              letterSpacing: '0.03em',
+                              color: task.timerRunning ? '#00ff88' : T.textDim,
+                              lineHeight: 1,
+                              textShadow: task.timerRunning ? '0 0 20px rgba(0,255,136,0.5)' : 'none',
+                              transition: 'color 0.3s, text-shadow 0.3s',
+                              fontVariantNumeric: 'tabular-nums',
+                              textAlign: 'center',
+                            }}>
+                              {formatDuration(totalMs)}
+                            </div>
+                            {/* ログ済み内訳 */}
+                            {totalLoggedMs > 0 && (
+                              <div style={{ fontSize: '9px', color: T.textMuted, letterSpacing: '0.04em', textAlign: 'center', lineHeight: 1.7 }}>
+                                LOG {formatDuration(totalLoggedMs)}{task.timerRunning ? <><br/>+NOW {formatDuration(elapsedMs)}</> : ''}
+                              </div>
+                            )}
+                            {/* START / STOP ボタン */}
+                            <button
+                              onClick={() => task.timerRunning ? handleTimerStop(task.id) : handleTimerStart(task.id)}
+                              style={{
+                                width: '80%',
+                                padding: 'clamp(10px,2vh,14px) 4px',
+                                borderRadius: '6px', cursor: 'pointer',
+                                fontSize: 'clamp(11px, 1.8vw, 13px)',
+                                fontWeight: 700,
+                                fontFamily: "'JetBrains Mono', monospace",
+                                letterSpacing: '0.08em',
+                                background: task.timerRunning ? 'rgba(255,80,80,0.12)' : 'rgba(0,255,136,0.1)',
+                                border: `1px solid ${task.timerRunning ? '#ff505088' : '#00ff8866'}`,
+                                color: task.timerRunning ? '#ff6060' : '#00ff88',
+                                transition: 'all 0.2s',
+                                touchAction: 'manipulation',
+                              }}>
+                              {task.timerRunning ? '⏹ STOP' : '▶ START'}
+                            </button>
+                          </div>
+                        );
+                      })()}
+                      </div>{/* 横並びレイアウト end */}
                     </>
                   ) : (
                     /* タスクなし */
