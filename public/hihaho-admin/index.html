@@ -327,7 +327,7 @@ const log=m=>console.log('[admin] '+m);
 Object.assign(window,{
   showPage,uploadLogoFile,updateLogoPreview,clearLogoUrl,openEdit,setMode,toggleF,toggleV,switchFTab,
   clearSel,publishPlaylist,resetCreate,closeMo,copyPubUrl,openPubUrl,
-  deletePlaylist,copyUrl,previewThumb,saveThumbs,clearThumb,
+  deletePlaylist,duplicatePlaylist,copyUrl,previewThumb,saveThumbs,clearThumb,
   switchThumbFolder, filterThumbFolders, uploadThumb,
   copyConsole:()=>navigator.clipboard.writeText(clog.join('\n')||'（ログなし）').then(()=>toast('コピーしました','suc'))
 });
@@ -394,6 +394,7 @@ async function renderPlaylists(){
             <button class="btn bs bsm" onclick="window.open('${url}')">▶ 開く</button>
             <button class="btn bs bsm" onclick="copyUrl('${url}')">📋 コピー</button>
             <button class="btn bs bsm" onclick="openEdit('${p.id}')">✏ 編集</button>
+            <button class="btn bs bsm" onclick="duplicatePlaylist('${p.id}')">📋 複製</button>
             <button class="btn bd bsm" onclick="deletePlaylist('${p.id}')">🗑 削除</button>
           </div>
         </div>
@@ -582,6 +583,16 @@ async function deletePlaylist(id){
   if(!confirm('このプレイリストを削除しますか？\n公開URLが無効になります。')) return;
   try{await deleteDoc(doc(db,'playlists',id));toast('削除しました','suc');renderPlaylists();}
   catch(e){toast('削除エラー: '+e.message,'err');}
+}
+async function duplicatePlaylist(id){
+  try{
+    const snap=await getDoc(doc(db,'playlists',id));
+    if(!snap.exists()){toast('プレイリストが見つかりません','err');return;}
+    const d=snap.data();
+    await addDoc(collection(db,'playlists'),{...d,name:d.name+'のコピー',createdAt:serverTimestamp()});
+    toast('複製しました','suc');
+    renderPlaylists();
+  }catch(e){toast('複製エラー: '+e.message,'err');}
 }
 
 async function openEdit(id){
