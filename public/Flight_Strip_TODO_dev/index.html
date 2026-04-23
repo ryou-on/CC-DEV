@@ -50,7 +50,7 @@
   </style>
 </head>
 <body>
-  <div id="dev-banner">⚠ DEV BUILD — v0.10.26-dev — NOT FOR PRODUCTION ⚠</div>
+  <div id="dev-banner">⚠ DEV BUILD — v0.10.27-dev — NOT FOR PRODUCTION ⚠</div>
   <div id="root" style="padding-top:22px;"></div>
 
   <!-- Firebase 初期化 -->
@@ -462,9 +462,15 @@
     // ======================================================
     // リリースノート
     // ======================================================
-    const APP_VERSION = 'v0.10.26-dev';
+    const APP_VERSION = 'v0.10.27-dev';
 
     const RELEASE_NOTES = [
+      {
+        version: "v0.10.27-dev", date: "2026-04-23",
+        changes: [
+          "☑ チェックリストにスプレッドシートからの複数行ペーストに対応（改行で一括登録・タブは空白に変換）",
+        ],
+      },
       {
         version: "v0.10.26-dev", date: "2026-04-23",
         changes: [
@@ -2420,6 +2426,15 @@ HAVE A NICE TRIP！
         setCheckItems(p => [...p, { id: `ci-${Date.now()}`, text: checkInput.trim(), checked: false }]);
         setCheckInput('');
       };
+      // スプレッドシートなど複数行ペースト対応
+      const handleCheckPaste = (e) => {
+        const text = e.clipboardData.getData('text');
+        const lines = text.split(/\r?\n/).map(l => l.split('\t').join(' ').trim()).filter(Boolean);
+        if (lines.length <= 1) return; // 1行はそのまま通常入力
+        e.preventDefault();
+        setCheckItems(p => [...p, ...lines.map((t, i) => ({ id: `ci-${Date.now()}-${i}`, text: t, checked: false }))]);
+        setCheckInput('');
+      };
       const removeCheckItem = (id) => setCheckItems(p => p.filter(ci => ci.id !== id));
       // 日付（YYYYMMDD ↔ YYYY-MM-DD）
       const fromYMD = (s) => s.replace(/-/g,'').length===8 ? `${s.slice(0,4)}-${s.slice(4,6)}-${s.slice(6,8)}` : s;
@@ -2558,7 +2573,8 @@ HAVE A NICE TRIP！
                 <div style={{ display:'flex', gap:'6px', marginTop:'6px' }}>
                   <input value={checkInput} onChange={e => setCheckInput(e.target.value)}
                     onKeyDown={e => { if (e.key==='Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); addCheckItem(); } }}
-                    placeholder="アイテムを追加..."
+                    onPaste={handleCheckPaste}
+                    placeholder="アイテムを追加… 複数行ペースト対応"
                     style={{ ...inp, flex:1, fontSize:'11px' }} />
                   <button type="button" onClick={addCheckItem} style={{ background:`${T.accent}20`, border:`1px solid ${T.accent}55`, color:T.accent, padding:'4px 10px', borderRadius:'2px', cursor:'pointer', fontSize:'11px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace", flexShrink:0 }}>＋</button>
                 </div>
@@ -3008,6 +3024,18 @@ HAVE A NICE TRIP！
         setNewItemText('');
         onUpdateCheckItems && onUpdateCheckItems(task.id, updated);
       };
+      // スプレッドシートなど複数行ペースト対応
+      const handleCheckPaste = (e) => {
+        const text = e.clipboardData.getData('text');
+        const lines = text.split(/\r?\n/).map(l => l.split('\t').join(' ').trim()).filter(Boolean);
+        if (lines.length <= 1) return;
+        e.preventDefault();
+        const newItems = lines.map((t, i) => ({ id: `${Date.now()}-${i}`, text: t, checked: false }));
+        const updated = [...localCheckItems, ...newItems];
+        setLocalCheckItems(updated);
+        setNewItemText('');
+        onUpdateCheckItems && onUpdateCheckItems(task.id, updated);
+      };
 
       const statusButtons = [
         { id:'active',    label:'▶ ACTIVE',    color:'#00ff88' },
@@ -3102,7 +3130,8 @@ HAVE A NICE TRIP！
                   <div style={{ display:'flex', gap:'6px', marginTop:'10px' }}>
                     <input value={newItemText} onChange={e => setNewItemText(e.target.value)}
                       onKeyDown={e => e.key === 'Enter' && handleAddItem()}
-                      placeholder="+ アイテムを追加..."
+                      onPaste={handleCheckPaste}
+                      placeholder="+ アイテムを追加… 複数行ペースト対応"
                       style={{ flex:1, background:T.bgInput, border:`1px solid ${T.border2}`, color:T.text, padding:'6px 10px', borderRadius:'3px', fontSize:'12px', fontFamily:"'JetBrains Mono',monospace", outline:'none' }} />
                     <button onClick={handleAddItem}
                       style={{ background:`${T.accent}18`, border:`1px solid ${T.accent}55`, color:T.accent, padding:'6px 12px', borderRadius:'3px', cursor:'pointer', fontSize:'12px', fontFamily:"'JetBrains Mono',monospace" }}>＋</button>
@@ -4046,7 +4075,7 @@ HAVE A NICE TRIP！
                 ☑ チェックリスト {checkItems.length>0 && <span style={{ color:T.accent, fontWeight:400 }}>({checkItems.length}件)</span>}
               </div>
               <div style={{ display:"flex", gap:"6px", marginBottom: checkItems.length>0?"6px":"0" }}>
-                <input style={{ ...inp, fontSize:"11px" }} placeholder="チェック項目を追加..."
+                <input style={{ ...inp, fontSize:"11px" }} placeholder="チェック項目を追加… 複数行ペースト対応"
                   value={checkInput} onChange={e=>setCheckInput(e.target.value)}
                   onKeyDown={e=>{
                     if(e.key==="Enter"&&!e.nativeEvent.isComposing&&checkInput.trim()){
@@ -4054,6 +4083,14 @@ HAVE A NICE TRIP！
                       setCheckInput("");
                       e.preventDefault();
                     }
+                  }}
+                  onPaste={e=>{
+                    const text = e.clipboardData.getData('text');
+                    const lines = text.split(/\r?\n/).map(l=>l.split('\t').join(' ').trim()).filter(Boolean);
+                    if(lines.length<=1) return;
+                    e.preventDefault();
+                    setCheckItems(p=>[...p,...lines.map((t,i)=>({id:`ci_${Date.now()}_${i}`,text:t,checked:false}))]);
+                    setCheckInput("");
                   }} />
                 <button type="button" onClick={()=>{
                   if(!checkInput.trim()) return;
