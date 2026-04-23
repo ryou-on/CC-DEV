@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>バランスホイール 管理画面</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0f0f13; color: #e8e6df; font-family: 'Noto Serif JP', serif; min-height: 100vh; padding: 24px 16px 80px; }
+    h1 { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
+    .sub { color: #9ca3af; font-size: 13px; margin-bottom: 24px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .card { background: #1a1a24; border-radius: 14px; padding: 18px 20px; }
+    .card-title { font-size: 13px; color: #9ca3af; margin-bottom: 12px; letter-spacing: 0.05em; }
+    .big-num { font-family: 'DM Mono', monospace; font-size: 42px; font-weight: 500; color: #4ade80; line-height: 1; }
+    .big-label { font-size: 12px; color: #6b7280; margin-top: 4px; }
+    /* バーチャート */
+    .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .bar-label { width: 110px; font-size: 12px; color: #d1d5db; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bar-track { flex: 1; height: 8px; background: #2a2a3a; border-radius: 4px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 4px; transition: width 0.5s ease; }
+    .bar-value { width: 42px; text-align: right; font-family: 'DM Mono', monospace; font-size: 12px; color: #9ca3af; flex-shrink: 0; }
+    /* スコア分布 */
+    .hist-wrap { display: flex; align-items: flex-end; gap: 3px; height: 80px; padding-top: 4px; }
+    .hist-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+    .hist-bar { width: 100%; border-radius: 3px 3px 0 0; min-height: 2px; transition: height 0.5s ease; }
+    .hist-label { font-size: 9px; color: #6b7280; font-family: 'DM Mono', monospace; }
+    /* 3択比率 */
+    .ratio-row { display: flex; height: 18px; border-radius: 4px; overflow: hidden; margin-bottom: 8px; }
+    .ratio-seg { display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; color: rgba(0,0,0,0.7); transition: width 0.5s ease; min-width: 0; overflow: hidden; }
+    .q-label { font-size: 12px; color: #d1d5db; margin-bottom: 4px; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    /* 最近の診断 */
+    .entry { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #1e1e2e; }
+    .entry:last-child { border-bottom: none; }
+    .entry-date { font-size: 12px; color: #9ca3af; }
+    .entry-score { font-family: 'DM Mono', monospace; font-size: 18px; color: #4ade80; }
+    .empty { color: #4b5563; font-size: 14px; padding: 20px 0; text-align: center; }
+    .tab-row { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+    .tab { background: #1a1a24; border: none; color: #9ca3af; border-radius: 8px; padding: 6px 14px; font-size: 12px; cursor: pointer; font-family: 'Noto Serif JP', serif; }
+    .tab.active { background: #2a2a3a; color: #e8e6df; }
+    a.back { display: inline-block; color: #6b7280; font-size: 13px; text-decoration: none; margin-bottom: 20px; }
+    a.back:hover { color: #9ca3af; }
+    .section-title { font-size: 15px; font-weight: 600; margin-bottom: 12px; margin-top: 8px; }
+    .export-btn { background: #1a1a24; border: 1px solid #333; color: #9ca3af; border-radius: 8px; padding: 8px 16px; font-size: 12px; cursor: pointer; font-family: 'Noto Serif JP', serif; }
+    .export-btn:hover { background: #2a2a3a; color: #e8e6df; }
+    .clear-btn { background: transparent; border: 1px solid #ef4444; color: #ef4444; border-radius: 8px; padding: 8px 16px; font-size: 12px; cursor: pointer; font-family: 'Noto Serif JP', serif; }
+    .clear-btn:hover { background: #ef4444; color: #fff; }
+    .flex-gap { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
+    .tag { display: inline-block; background: #1e1e2e; border-radius: 20px; padding: 3px 10px; font-size: 11px; color: #9ca3af; }
+  </style>
+</head>
+<body>
+
+<a class="back" href="./index.html">← アプリに戻る</a>
+<h1>⚖️ バランスホイール 管理画面</h1>
+<p class="sub" id="last-updated">読み込み中...</p>
+
+<div id="no-data" class="empty" style="display:none">
+  まだ診断データがありません。アプリで診断を行って保存してください。
+</div>
+
+<!-- KPI -->
+<div class="grid" id="kpi-grid"></div>
+
+<!-- タブ -->
+<div class="tab-row">
+  <button class="tab active" onclick="showTab('category')">カテゴリ別平均</button>
+  <button class="tab" onclick="showTab('distribution')">スコア分布</button>
+  <button class="tab" onclick="showTab('questions')">質問別回答比率</button>
+  <button class="tab" onclick="showTab('history')">診断履歴</button>
+</div>
+
+<div id="tab-category"></div>
+<div id="tab-distribution" style="display:none"></div>
+<div id="tab-questions" style="display:none"></div>
+<div id="tab-history" style="display:none"></div>
+
+<!-- アクション -->
+<div class="flex-gap" style="margin-top:24px">
+  <button class="export-btn" onclick="exportJSON()">📥 JSONエクスポート</button>
+  <button class="clear-btn" onclick="clearAll()">🗑 全データ削除</button>
+</div>
+
+<script>
+const STORAGE_KEY = 'balance_wheel_v2_history';
+
+const CATEGORIES = [
+  { id: 'health',   label: '健康',        emoji: '💪', color: '#4ade80' },
+  { id: 'family',   label: '家族',        emoji: '🏠', color: '#f97316' },
+  { id: 'friends',  label: '友人・人間関係', emoji: '🤝', color: '#60a5fa' },
+  { id: 'hobby',    label: '趣味・楽しみ', emoji: '🎨', color: '#e879f9' },
+  { id: 'learning', label: '学び・成長',  emoji: '📚', color: '#facc15' },
+  { id: 'work',     label: '仕事・職業',  emoji: '💼', color: '#38bdf8' },
+  { id: 'money',    label: 'お金・経済',  emoji: '💰', color: '#a3e635' },
+  { id: 'social',   label: '社会貢献',    emoji: '🌱', color: '#2dd4bf' },
+];
+
+const ALL_QUESTIONS = [
+  { catId: 'health',   key: 'health_0',   text: '毎日7〜8時間の睡眠が取れていますか？' },
+  { catId: 'health',   key: 'health_1',   text: '週に3回以上、体を動かす機会がありますか？' },
+  { catId: 'health',   key: 'health_2',   text: '食事のバランスに気を配っていますか？' },
+  { catId: 'health',   key: 'health_3',   text: '自分の体調の変化に気づき、適切に対処できていますか？' },
+  { catId: 'family',   key: 'family_0',   text: '家族との時間を十分に取れていますか？' },
+  { catId: 'family',   key: 'family_1',   text: '家族との関係に満足していますか？' },
+  { catId: 'family',   key: 'family_2',   text: '家族のことを心からサポートできていますか？' },
+  { catId: 'friends',  key: 'friends_0',  text: '信頼できる友人と定期的に会えていますか？' },
+  { catId: 'friends',  key: 'friends_1',  text: '周囲の人との関係が良好だと感じますか？' },
+  { catId: 'friends',  key: 'friends_2',  text: '困ったとき頼れる人が身近にいますか？' },
+  { catId: 'hobby',    key: 'hobby_0',    text: '自分の趣味や楽しみの時間を確保できていますか？' },
+  { catId: 'hobby',    key: 'hobby_1',    text: '日常の中でワクワクする瞬間がありますか？' },
+  { catId: 'learning', key: 'learning_0', text: '新しいことを学ぶ機会が定期的にありますか？' },
+  { catId: 'learning', key: 'learning_1', text: '自分の成長を実感できていますか？' },
+  { catId: 'learning', key: 'learning_2', text: '将来に向けてスキルを磨いていますか？' },
+  { catId: 'work',     key: 'work_0',     text: '仕事にやりがいを感じていますか？' },
+  { catId: 'work',     key: 'work_1',     text: 'ワークライフバランスが取れていますか？' },
+  { catId: 'work',     key: 'work_2',     text: '職場の人間関係は良好ですか？' },
+  { catId: 'work',     key: 'work_3',     text: 'キャリアの方向性に納得していますか？' },
+  { catId: 'money',    key: 'money_0',    text: '毎月の収支が安定していますか？' },
+  { catId: 'money',    key: 'money_1',    text: '将来の備え（貯蓄・投資）ができていますか？' },
+  { catId: 'money',    key: 'money_2',    text: 'お金のことで過度なストレスを感じていませんか？' },
+  { catId: 'social',   key: 'social_0',   text: '社会や地域に対して何か貢献できていますか？' },
+  { catId: 'social',   key: 'social_1',   text: '自分の行動が誰かの役に立っていると感じますか？' },
+];
+
+function loadHistory() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); } catch { return []; }
+}
+
+function render() {
+  const history = loadHistory();
+  const n = history.length;
+
+  document.getElementById('last-updated').textContent =
+    n > 0 ? `最終更新: ${history[0].date} | ${n}件のデータ` : 'データなし';
+
+  if (n === 0) {
+    document.getElementById('no-data').style.display = 'block';
+    document.getElementById('kpi-grid').innerHTML = '';
+    return;
+  }
+  document.getElementById('no-data').style.display = 'none';
+
+  const overalls = history.map(h => h.overall);
+  const avgOverall = Math.round(overalls.reduce((s, v) => s + v, 0) / n);
+  const maxScore = Math.max(...overalls);
+  const minScore = Math.min(...overalls);
+
+  // KPI
+  document.getElementById('kpi-grid').innerHTML = `
+    <div class="card">
+      <div class="card-title">TOTAL DIAGNOSES</div>
+      <div class="big-num">${n}</div>
+      <div class="big-label">回の診断</div>
+    </div>
+    <div class="card">
+      <div class="card-title">AVERAGE SCORE</div>
+      <div class="big-num" style="color:#60a5fa">${avgOverall}</div>
+      <div class="big-label">平均総合スコア</div>
+    </div>
+    <div class="card">
+      <div class="card-title">RANGE</div>
+      <div class="big-num" style="color:#facc15; font-size:28px">${minScore} – ${maxScore}</div>
+      <div class="big-label">最低 – 最高スコア</div>
+    </div>
+  `;
+
+  renderCategory(history);
+  renderDistribution(history);
+  renderQuestions(history);
+  renderHistoryList(history);
+}
+
+// ---- カテゴリ別平均 ----
+function renderCategory(history) {
+  const avgBycat = CATEGORIES.map(cat => {
+    const scores = history.map(h => {
+      const cs = h.catScores?.find(c => c.id === cat.id);
+      return cs ? cs.pct : null;
+    }).filter(v => v !== null);
+    const avg = scores.length ? Math.round(scores.reduce((s, v) => s + v, 0) / scores.length) : 0;
+    return { ...cat, avg };
+  }).sort((a, b) => b.avg - a.avg);
+
+  const rows = avgBycat.map(c => `
+    <div class="bar-row">
+      <div class="bar-label">${c.emoji} ${c.label}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${c.avg}%;background:${c.color}"></div></div>
+      <div class="bar-value">${c.avg}点</div>
+    </div>
+  `).join('');
+
+  document.getElementById('tab-category').innerHTML = `
+    <div class="card">
+      <div class="card-title">カテゴリ別平均スコア（高い順）</div>
+      ${rows}
+    </div>
+  `;
+}
+
+// ---- スコア分布 ----
+function renderDistribution(history) {
+  const buckets = Array(10).fill(0); // 0-9,10-19,...,90-100
+  history.forEach(h => {
+    const b = Math.min(9, Math.floor(h.overall / 10));
+    buckets[b]++;
+  });
+  const maxBucket = Math.max(...buckets, 1);
+
+  const cols = buckets.map((v, i) => {
+    const pct = Math.round((v / maxBucket) * 100);
+    const label = i === 9 ? '100' : `${i * 10}`;
+    return `
+      <div class="hist-col">
+        <div class="hist-bar" style="height:${Math.max(pct * 0.68, v > 0 ? 4 : 0)}px;background:#4ade80;opacity:${0.4 + pct * 0.006}"></div>
+        <div class="hist-label">${label}</div>
+      </div>
+    `;
+  }).join('');
+
+  // カテゴリ別分布もテーブルで
+  const catRows = CATEGORIES.map(cat => {
+    const scores = history.map(h => h.catScores?.find(c => c.id === cat.id)?.pct ?? null).filter(v => v !== null);
+    if (!scores.length) return '';
+    const avg = Math.round(scores.reduce((s, v) => s + v, 0) / scores.length);
+    const low = scores.filter(v => v < 40).length;
+    const mid = scores.filter(v => v >= 40 && v < 70).length;
+    const high = scores.filter(v => v >= 70).length;
+    return `
+      <div class="bar-row">
+        <div class="bar-label">${cat.emoji} ${cat.label}</div>
+        <div class="bar-track" style="height:12px">
+          <div style="height:100%;display:flex">
+            <div style="width:${(high/scores.length)*100}%;background:${cat.color};opacity:1"></div>
+            <div style="width:${(mid/scores.length)*100}%;background:${cat.color};opacity:0.5"></div>
+            <div style="width:${(low/scores.length)*100}%;background:#374151;"></div>
+          </div>
+        </div>
+        <div class="bar-value">${avg}点</div>
+      </div>
+    `;
+  }).join('');
+
+  document.getElementById('tab-distribution').innerHTML = `
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-title">総合スコア分布</div>
+      <div class="hist-wrap">${cols}</div>
+    </div>
+    <div class="card">
+      <div class="card-title">カテゴリ別スコア帯 <span class="tag">■ 70+ 高 ■ 40-69 中 ■ -39 低</span></div>
+      ${catRows}
+    </div>
+  `;
+}
+
+// ---- 質問別回答比率 ----
+function renderQuestions(history) {
+  const sections = CATEGORIES.map(cat => {
+    const qs = ALL_QUESTIONS.filter(q => q.catId === cat.id);
+    const qRows = qs.map(q => {
+      const vals = history.map(h => h.answers?.[q.key]).filter(v => v !== undefined);
+      if (!vals.length) return '';
+      const yes = vals.filter(v => v === 1.0).length;
+      const little = vals.filter(v => v === 0.5).length;
+      const no = vals.filter(v => v === 0.0).length;
+      const total = vals.length;
+      const yesPct = Math.round((yes / total) * 100);
+      const littlePct = Math.round((little / total) * 100);
+      const noPct = 100 - yesPct - littlePct;
+      return `
+        <div style="margin-bottom:14px">
+          <span class="q-label">${q.text}</span>
+          <div class="ratio-row">
+            ${yesPct > 5 ? `<div class="ratio-seg" style="width:${yesPct}%;background:#4ade80">${yesPct}%</div>` : `<div style="width:${yesPct}%;background:#4ade80;min-width:${yesPct > 0 ? 2 : 0}px"></div>`}
+            ${littlePct > 5 ? `<div class="ratio-seg" style="width:${littlePct}%;background:#facc15">${littlePct}%</div>` : `<div style="width:${littlePct}%;background:#facc15;min-width:${littlePct > 0 ? 2 : 0}px"></div>`}
+            ${noPct > 5 ? `<div class="ratio-seg" style="width:${noPct}%;background:#374151;color:#9ca3af">${noPct}%</div>` : `<div style="width:${noPct}%;background:#374151;min-width:${noPct > 0 ? 2 : 0}px"></div>`}
+          </div>
+          <div style="display:flex;gap:12px;font-size:10px;color:#6b7280;margin-top:2px">
+            <span>😊 はい ${yesPct}%</span>
+            <span>🤔 少し ${littlePct}%</span>
+            <span>😔 いいえ ${noPct}%</span>
+            <span style="margin-left:auto">${total}件</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    return `
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-title">${cat.emoji} ${cat.label}</div>
+        ${qRows || '<div class="empty">データなし</div>'}
+      </div>
+    `;
+  }).join('');
+
+  document.getElementById('tab-questions').innerHTML = sections;
+}
+
+// ---- 履歴一覧 ----
+function renderHistoryList(history) {
+  const rows = history.slice(0, 50).map(h => {
+    const bars = (h.catScores || []).map(c =>
+      `<div style="width:8px;height:${Math.max(4, Math.round(c.pct * 0.28))}px;background:${c.color};border-radius:2px;display:inline-block;margin:1px" title="${c.label} ${c.pct}点"></div>`
+    ).join('');
+    return `
+      <div class="entry">
+        <div>
+          <div class="entry-date">${h.date}</div>
+          <div style="margin-top:4px">${bars}</div>
+        </div>
+        <div class="entry-score">${h.overall}点</div>
+      </div>
+    `;
+  }).join('');
+
+  document.getElementById('tab-history').innerHTML = `
+    <div class="card">
+      <div class="card-title">最近の診断（最大50件）</div>
+      ${rows || '<div class="empty">データなし</div>'}
+    </div>
+  `;
+}
+
+// ---- タブ切り替え ----
+function showTab(name) {
+  ['category', 'distribution', 'questions', 'history'].forEach(t => {
+    document.getElementById('tab-' + t).style.display = t === name ? '' : 'none';
+  });
+  document.querySelectorAll('.tab').forEach((b, i) => {
+    b.classList.toggle('active', ['category','distribution','questions','history'][i] === name);
+  });
+}
+
+// ---- エクスポート ----
+function exportJSON() {
+  const data = loadHistory();
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `balance-wheel-${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+}
+
+// ---- 全削除 ----
+function clearAll() {
+  if (confirm('全データを削除しますか？この操作は取り消せません。')) {
+    localStorage.removeItem(STORAGE_KEY);
+    render();
+  }
+}
+
+render();
+</script>
+</body>
+</html>
