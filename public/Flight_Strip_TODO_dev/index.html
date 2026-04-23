@@ -50,7 +50,7 @@
   </style>
 </head>
 <body>
-  <div id="dev-banner">⚠ DEV BUILD — v0.10.24-dev — NOT FOR PRODUCTION ⚠</div>
+  <div id="dev-banner">⚠ DEV BUILD — v0.10.25-dev — NOT FOR PRODUCTION ⚠</div>
   <div id="root" style="padding-top:22px;"></div>
 
   <!-- Firebase 初期化 -->
@@ -462,9 +462,15 @@
     // ======================================================
     // リリースノート
     // ======================================================
-    const APP_VERSION = 'v0.10.24-dev';
+    const APP_VERSION = 'v0.10.25-dev';
 
     const RELEASE_NOTES = [
+      {
+        version: "v0.10.25-dev", date: "2026-04-23",
+        changes: [
+          "⏱ ACTIVEフォーカスモード（全画面）にタイマーを大きく表示・START/STOPボタン付き",
+        ],
+      },
       {
         version: "v0.10.24-dev", date: "2026-04-23",
         changes: [
@@ -6415,7 +6421,7 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                         )}
 
                         {/* メタ情報バッジ */}
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '32px' }}>
                           {task.scheduledDate && (
                             <span style={{
                               background: 'rgba(255,170,0,0.12)', border: '1px solid rgba(255,170,0,0.35)',
@@ -6438,6 +6444,65 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                             }}>{task.categoryId}</span>
                           )}
                         </div>
+
+                        {/* タイマー */}
+                        {(() => {
+                          const timerStartMs = task.timerStartedAt?.toMillis?.()
+                            ?? (task.timerStartedAt?.seconds ? task.timerStartedAt.seconds * 1000 : 0);
+                          const elapsedMs = task.timerRunning ? Math.max(0, currentTime.getTime() - timerStartMs) : 0;
+                          const totalLoggedMs = (task.timeLogs || []).reduce((sum, l) => sum + (l.durationMs || 0), 0);
+                          const totalMs = totalLoggedMs + elapsedMs;
+                          return (
+                            <div style={{
+                              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px',
+                              padding: 'clamp(20px,4vh,36px) 24px',
+                              background: task.timerRunning ? 'rgba(0,255,136,0.06)' : 'rgba(255,255,255,0.03)',
+                              border: `1px solid ${task.timerRunning ? '#00ff8840' : T.border + '40'}`,
+                              borderRadius: '8px',
+                              transition: 'all 0.4s',
+                              boxShadow: task.timerRunning ? '0 0 40px rgba(0,255,136,0.06)' : 'none',
+                            }}>
+                              {/* タイマー数値 */}
+                              <div style={{
+                                fontSize: 'clamp(52px, 10vw, 96px)',
+                                fontWeight: 700,
+                                fontFamily: "'JetBrains Mono', monospace",
+                                letterSpacing: '0.06em',
+                                color: task.timerRunning ? '#00ff88' : T.textDim,
+                                lineHeight: 1,
+                                textShadow: task.timerRunning ? '0 0 30px rgba(0,255,136,0.45)' : 'none',
+                                transition: 'color 0.3s, text-shadow 0.3s',
+                                fontVariantNumeric: 'tabular-nums',
+                              }}>
+                                {formatDuration(totalMs)}
+                              </div>
+                              {/* ログ済み内訳 */}
+                              {totalLoggedMs > 0 && (
+                                <div style={{ fontSize: 'clamp(11px, 1.5vw, 14px)', color: T.textMuted, letterSpacing: '0.08em' }}>
+                                  ログ済: {formatDuration(totalLoggedMs)}{task.timerRunning ? ` ＋ 今回: ${formatDuration(elapsedMs)}` : ''}
+                                </div>
+                              )}
+                              {/* START / STOP ボタン */}
+                              <button
+                                onClick={() => task.timerRunning ? handleTimerStop(task.id) : handleTimerStart(task.id)}
+                                style={{
+                                  padding: 'clamp(10px,2vh,16px) clamp(32px,6vw,60px)',
+                                  borderRadius: '6px', cursor: 'pointer',
+                                  fontSize: 'clamp(14px, 2vw, 20px)',
+                                  fontWeight: 700,
+                                  fontFamily: "'JetBrains Mono', monospace",
+                                  letterSpacing: '0.15em',
+                                  background: task.timerRunning ? 'rgba(255,80,80,0.12)' : 'rgba(0,255,136,0.1)',
+                                  border: `1px solid ${task.timerRunning ? '#ff505088' : '#00ff8866'}`,
+                                  color: task.timerRunning ? '#ff6060' : '#00ff88',
+                                  transition: 'all 0.2s',
+                                  touchAction: 'manipulation',
+                                }}>
+                                {task.timerRunning ? '⏹ STOP' : '▶ START'}
+                              </button>
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       {/* ボトム：DONE ボタンのみ */}
