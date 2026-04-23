@@ -50,7 +50,7 @@
   </style>
 </head>
 <body>
-  <div id="dev-banner">⚠ DEV BUILD — v0.10.20-dev — NOT FOR PRODUCTION ⚠</div>
+  <div id="dev-banner">⚠ DEV BUILD — v0.10.21-dev — NOT FOR PRODUCTION ⚠</div>
   <div id="root" style="padding-top:22px;"></div>
 
   <!-- Firebase 初期化 -->
@@ -462,9 +462,15 @@
     // ======================================================
     // リリースノート
     // ======================================================
-    const APP_VERSION = 'v0.10.20-dev';
+    const APP_VERSION = 'v0.10.21-dev';
 
     const RELEASE_NOTES = [
+      {
+        version: "v0.10.21-dev", date: "2026-04-23",
+        changes: [
+          "🔄 ルーティンの多重登録を防止（別デバイス・セッション間でも重複しなくなった）",
+        ],
+      },
       {
         version: "v0.10.20-dev", date: "2026-04-22",
         changes: [
@@ -4530,7 +4536,20 @@ HAVE A NICE TRIP！
       const startToday = async () => {
         if (!selectedRoutineId || routineSteps.length === 0) return;
         const key = `fst_routine_ran_${selectedRoutineId}_${todayStr}`;
+        // localStorageチェック（高速パス）
         if (localStorage.getItem(key)) {
+          setGeneratingMsg('今日はすでに作成済みです');
+          setTimeout(() => setGeneratingMsg(''), 2500);
+          return;
+        }
+        // Firestoreの実データでも重複チェック（別デバイス・localStorage削除後の多重登録防止）
+        const alreadyExists = tasks.some(t =>
+          t.isRoutine &&
+          t.routineId === selectedRoutineId &&
+          !['completed', 'cleared', 'lost'].includes(t.status)
+        );
+        if (alreadyExists) {
+          localStorage.setItem(key, '1'); // 次回のために保存
           setGeneratingMsg('今日はすでに作成済みです');
           setTimeout(() => setGeneratingMsg(''), 2500);
           return;
