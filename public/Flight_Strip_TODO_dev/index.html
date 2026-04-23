@@ -50,7 +50,7 @@
   </style>
 </head>
 <body>
-  <div id="dev-banner">⚠ DEV BUILD — v0.10.22-dev — NOT FOR PRODUCTION ⚠</div>
+  <div id="dev-banner">⚠ DEV BUILD — v0.10.23-dev — NOT FOR PRODUCTION ⚠</div>
   <div id="root" style="padding-top:22px;"></div>
 
   <!-- Firebase 初期化 -->
@@ -462,9 +462,15 @@
     // ======================================================
     // リリースノート
     // ======================================================
-    const APP_VERSION = 'v0.10.22-dev';
+    const APP_VERSION = 'v0.10.23-dev';
 
     const RELEASE_NOTES = [
+      {
+        version: "v0.10.23-dev", date: "2026-04-23",
+        changes: [
+          "⏱ 全画面表示モーダルにタイマーを大きく表示・START/STOPボタンで操作可能に",
+        ],
+      },
       {
         version: "v0.10.22-dev", date: "2026-04-23",
         changes: [
@@ -2906,7 +2912,7 @@ HAVE A NICE TRIP！
     // ======================================================
     // ER-0071: タスクフルスクリーンモーダル
     // ======================================================
-    const TaskFullscreenModal = ({ task, onClose, onStatusChange, onEdit, onUpdateCheckItems, T }) => {
+    const TaskFullscreenModal = ({ task, onClose, onStatusChange, onEdit, onUpdateCheckItems, onTimerStart, onTimerStop, T }) => {
       if (!task) return null;
       const pri = PRIORITIES[task.priority] || PRIORITIES.normal;
       const cat = CATEGORIES[task.category] || CATEGORIES.work;
@@ -2914,6 +2920,20 @@ HAVE A NICE TRIP！
       const isLost = task.status === 'lost';
       const [localCheckItems, setLocalCheckItems] = useState(task.checkItems || []);
       const [newItemText, setNewItemText] = useState('');
+      // タイマー: 1秒ごとに再レンダリング
+      const [, setTick] = useState(0);
+      useEffect(() => {
+        if (!task.timerRunning) return;
+        const id = setInterval(() => setTick(t => t + 1), 1000);
+        return () => clearInterval(id);
+      }, [task.timerRunning]);
+      // 累計ログ時間
+      const totalLoggedMs = (task.timeLogs || []).reduce((acc, l) => acc + (l.durationMs || 0), 0);
+      // 現在のセッション経過時間
+      const currentMs = task.timerRunning && task.timerStartedAt
+        ? Date.now() - (task.timerStartedAt?.toMillis?.() ?? Date.now())
+        : 0;
+      const totalMs = totalLoggedMs + currentMs;
       const handleToggleCheck = (id) => {
         const updated = localCheckItems.map(ci => ci.id === id ? { ...ci, checked: !ci.checked } : ci);
         setLocalCheckItems(updated);
@@ -2965,12 +2985,39 @@ HAVE A NICE TRIP！
                 {task.title}
               </div>
 
+              {/* タイマー表示 */}
+              <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:'12px', marginBottom:'28px', padding:'20px', background:'rgba(0,0,0,0.25)', borderRadius:'6px', border:`1px solid ${task.timerRunning ? '#00ff8844' : T.border2}`, boxShadow: task.timerRunning ? '0 0 20px rgba(0,255,136,0.08)' : 'none', transition:'all 0.3s' }}>
+                {/* タイマー数値 */}
+                <div style={{ fontSize:'56px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace", letterSpacing:'0.08em', color: task.timerRunning ? '#00ff88' : T.textDim, lineHeight:1, textShadow: task.timerRunning ? '0 0 20px rgba(0,255,136,0.5)' : 'none', transition:'color 0.3s' }}>
+                  {formatDuration(totalMs)}
+                </div>
+                {/* 内訳（ログ済み + 現在セッション） */}
+                {totalLoggedMs > 0 && (
+                  <div style={{ fontSize:'10px', color:T.textMuted, letterSpacing:'0.1em' }}>
+                    ログ済: {formatDuration(totalLoggedMs)}{task.timerRunning ? ` + 今回: ${formatDuration(currentMs)}` : ''}
+                  </div>
+                )}
+                {/* START / STOP ボタン */}
+                {(onTimerStart || onTimerStop) && (
+                  <button
+                    onClick={() => task.timerRunning ? onTimerStop(task.id) : onTimerStart(task.id)}
+                    style={{ padding:'10px 36px', borderRadius:'4px', cursor:'pointer', fontSize:'13px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace", letterSpacing:'0.15em',
+                      background: task.timerRunning ? 'rgba(255,80,80,0.15)' : 'rgba(0,255,136,0.12)',
+                      border: `1px solid ${task.timerRunning ? '#ff5050aa' : '#00ff88aa'}`,
+                      color: task.timerRunning ? '#ff5050' : '#00ff88',
+                      transition:'all 0.2s',
+                    }}>
+                    {task.timerRunning ? '⏹ STOP' : '▶ START'}
+                  </button>
+                )}
+              </div>
+
               {/* メタ情報 */}
               <div style={{ display:'flex', gap:'10px', flexWrap:'wrap', marginBottom:'20px' }}>
                 {task.time && <span style={{ fontSize:'12px', color:T.textDim, padding:'4px 10px', background:`${T.bgInput}`, border:`1px solid ${T.border2}`, borderRadius:'3px' }}>🕐 {task.time}</span>}
                 {task.scheduledDate && <span style={{ fontSize:'12px', color:'#00ccff', padding:'4px 10px', background:'rgba(0,204,255,0.08)', border:'1px solid rgba(0,204,255,0.3)', borderRadius:'3px' }}>📅 {task.scheduledDate.replace(/-/g,'')}</span>}
                 {task.estimatedMinutes && <span style={{ fontSize:'12px', color:'#ffcc44', padding:'4px 10px', background:'rgba(255,200,68,0.08)', border:'1px solid rgba(255,200,68,0.3)', borderRadius:'3px' }}>⏱ {task.estimatedMinutes}m</span>}
-                {task.assignee && <span style={{ fontSize:'12px', color:'#ffaa00', padding:'4px 10px', background:'rgba(255,170,0,0.08)', border:'1px solid rgba(255,170,0,0.3)', borderRadius:'3px' }}>✈ {task.assignee}</span>}
+                {task.assignee && <span style={{ fontSize:'12px', color:'#ffaa00', padding:'4px 10px', background:'rgba(255,170,0,0.08)', border:`1px solid rgba(255,170,0,0.3)`, borderRadius:'3px' }}>✈ {task.assignee}</span>}
                 {task.link && <a href={task.link} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{ fontSize:'12px', color:'#66aaff', padding:'4px 10px', background:'rgba(100,150,255,0.1)', border:'1px solid rgba(100,150,255,0.3)', borderRadius:'3px', textDecoration:'none' }}>🔗 LINK</a>}
               </div>
 
@@ -6079,7 +6126,7 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
           {/* ER-0068: チュートリアル */}
           {showTutorial && ReactDOM.createPortal(<TutorialOverlay onClose={() => setShowTutorial(false)} />, document.body)}
           {/* ER-0071: フルスクリーン */}
-          {fullscreenTaskId && ReactDOM.createPortal(<TaskFullscreenModal task={tasks.find(t=>t.id===fullscreenTaskId)} onClose={()=>setFullscreenTaskId(null)} onStatusChange={handleStatusChange} onEdit={id=>{ setEditTaskId(id); setFullscreenTaskId(null); }} onUpdateCheckItems={async (taskId, newItems) => { await tasksRef.doc(taskId).update({ checkItems: newItems, updatedAt: ts() }); setTasks(prev => prev.map(t => t.id===taskId ? { ...t, checkItems: newItems } : t)); }} T={T} />, document.body)}
+          {fullscreenTaskId && ReactDOM.createPortal(<TaskFullscreenModal task={tasks.find(t=>t.id===fullscreenTaskId)} onClose={()=>setFullscreenTaskId(null)} onStatusChange={handleStatusChange} onEdit={id=>{ setEditTaskId(id); setFullscreenTaskId(null); }} onUpdateCheckItems={async (taskId, newItems) => { await tasksRef.doc(taskId).update({ checkItems: newItems, updatedAt: ts() }); setTasks(prev => prev.map(t => t.id===taskId ? { ...t, checkItems: newItems } : t)); }} onTimerStart={handleTimerStart} onTimerStop={handleTimerStop} T={T} />, document.body)}
           {/* ER-0075: COMPLETED アニメーション（クリック位置に fixed 表示） */}
           {completedAnimRect && ReactDOM.createPortal(
             <div style={{ position:'fixed', top: completedAnimRect.top + 4, left: completedAnimRect.left, width: completedAnimRect.width, zIndex:9999, pointerEvents:'none', textAlign:'center', animation:'completedPop 1.4s ease forwards' }}>
