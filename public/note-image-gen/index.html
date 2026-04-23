@@ -365,33 +365,46 @@ async function listGeminiModels() {
 }
 
 // ─────────────────────────────────────────────
-// IMAGEN 4 API (predict endpoint)
+// GEMINI IMAGE GENERATION (generateContent + responseModalities)
 // ─────────────────────────────────────────────
+const GEMINI_IMAGE_MODELS = [
+  'gemini-2.5-flash-image',
+  'gemini-3.1-flash-image-preview',
+  'gemini-3-pro-image-preview',
+];
+
 async function callGeminiImagen(prompt) {
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${settings.geminiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        instances: [{ prompt }],
-        parameters: {
-          sampleCount: 1,
-          aspectRatio: '16:9',
-          safetyFilterLevel: 'block_few',
-          personGeneration: 'allow_adult'
+  let lastError = null;
+  for (const model of GEMINI_IMAGE_MODELS) {
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${settings.geminiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt + ' Output a landscape 16:9 image only, no text.' }] }],
+            generationConfig: { responseModalities: ['IMAGE'] }
+          })
         }
-      })
+      );
+      const data = await res.json();
+      if (!res.ok) {
+        const msg = data.error?.message || res.status;
+        log(`⚠️ ${model} 失敗: ${msg.slice(0, 80)}`);
+        lastError = msg;
+        continue;
+      }
+      const part = data.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+      if (!part) { lastError = `${model}: 画像データなし`; continue; }
+      log(`✅ モデル ${model} で生成成功`);
+      const { mimeType, data: b64 } = part.inlineData;
+      return { url: `data:${mimeType};base64,${b64}`, revised: null };
+    } catch(e) {
+      lastError = e.message;
     }
-  );
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(`Imagen 4: ${err.error?.message || res.status}`);
   }
-  const data = await res.json();
-  const pred = data.predictions?.[0];
-  if (!pred?.bytesBase64Encoded) throw new Error('Imagen 4: 画像データなし');
-  return { url: `data:image/png;base64,${pred.bytesBase64Encoded}`, revised: null };
+  throw new Error(lastError || 'Gemini: 全モデル失敗');
 }
 
 // ─────────────────────────────────────────────
