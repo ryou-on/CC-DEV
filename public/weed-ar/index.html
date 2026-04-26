@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>🌿 雑草スカウター</title>
+<style>
+  /* ── フォント読み込み ── */
+  @import url('https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;700;900&family=Share+Tech+Mono&display=swap');
+
+  :root {
+    --red:    #ff2d55;
+    --yellow: #ffd60a;
+    --green:  #30d158;
+    --bg:     #0a0a0a;
+    --panel:  rgba(15,15,15,0.85);
+    --border: rgba(255,255,255,0.08);
+    --scan-color: #30d158;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: #fff;
+    font-family: 'Zen Kaku Gothic New', sans-serif;
+    height: 100dvh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── ヘッダー ── */
+  header {
+    position: relative;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    background: linear-gradient(180deg, rgba(0,0,0,0.9) 0%, transparent 100%);
+  }
+  header h1 {
+    font-size: 18px;
+    font-weight: 900;
+    letter-spacing: 0.1em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .api-key-btn {
+    font-size: 11px;
+    padding: 5px 10px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: var(--panel);
+    color: #aaa;
+    cursor: pointer;
+    font-family: 'Share Tech Mono', monospace;
+  }
+  .api-key-btn:hover { color: #fff; border-color: rgba(255,255,255,0.3); }
+
+  /* ── カメラエリア ── */
+  .camera-wrapper {
+    position: relative;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  #video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1); /* フロントカメラ用ミラー */
+  }
+
+  /* スキャンライン演出 */
+  .scan-line {
+    position: absolute;
+    left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--scan-color), transparent);
+    opacity: 0;
+    pointer-events: none;
+    z-index: 5;
+  }
+  .scan-line.scanning {
+    animation: scanMove 1.8s ease-in-out infinite;
+    opacity: 1;
+  }
+  @keyframes scanMove {
+    0%   { top: 0%; opacity: 0; }
+    10%  { opacity: 1; }
+    90%  { opacity: 1; }
+    100% { top: 100%; opacity: 0; }
+  }
+
+  /* コーナーブラケット演出 */
+  .brackets {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 5;
+  }
+  .brackets::before,
+  .brackets::after {
+    content: '';
+    position: absolute;
+    width: 40px; height: 40px;
+    border-color: rgba(255,255,255,0.4);
+    border-style: solid;
+  }
+  .brackets::before {
+    top: 60px; left: 24px;
+    border-width: 2px 0 0 2px;
+  }
+  .brackets::after {
+    top: 60px; right: 24px;
+    border-width: 2px 2px 0 0;
+  }
+
+  /* ── 判定結果オーバーレイ ── */
+  #result-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    padding-bottom: 120px;
+    z-index: 8;
+    pointer-events: none;
+  }
+
+  .result-card {
+    width: calc(100% - 32px);
+    max-width: 420px;
+    border-radius: 16px;
+    padding: 16px 20px;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1.5px solid rgba(255,255,255,0.12);
+    background: rgba(10,10,10,0.75);
+    transform: translateY(20px);
+    opacity: 0;
+    transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+    pointer-events: auto;
+  }
+  .result-card.show {
+    transform: translateY(0);
+    opacity: 1;
+  }
+
+  /* 危険度バー */
+  .danger-bar {
+    height: 4px;
+    border-radius: 2px;
+    margin-bottom: 12px;
+    transition: background 0.3s, width 0.6s;
+  }
+
+  .result-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    padding: 4px 12px;
+    border-radius: 20px;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+  }
+
+  .result-name {
+    font-size: 22px;
+    font-weight: 900;
+    line-height: 1.2;
+    margin-bottom: 6px;
+  }
+  .result-name .jp { font-size: 15px; font-weight: 400; color: #aaa; margin-left: 8px; }
+
+  .result-desc {
+    font-size: 13px;
+    color: #ccc;
+    line-height: 1.6;
+  }
+
+  /* 危険度別カラー */
+  .danger-high  { --accent: var(--red); }
+  .danger-mid   { --accent: var(--yellow); }
+  .danger-low   { --accent: var(--green); }
+
+  .danger-bar   { background: var(--accent); }
+  .result-badge { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); }
+  .result-name  { color: var(--accent); }
+
+  /* ── シャッターボタン ── */
+  .controls {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    z-index: 10;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 24px;
+    padding: 20px 0 calc(20px + env(safe-area-inset-bottom));
+    background: linear-gradient(0deg, rgba(0,0,0,0.85) 0%, transparent 100%);
+  }
+
+  .shutter-btn {
+    width: 72px; height: 72px;
+    border-radius: 50%;
+    background: #fff;
+    border: 4px solid rgba(255,255,255,0.3);
+    cursor: pointer;
+    position: relative;
+    transition: transform 0.15s;
+    box-shadow: 0 0 0 6px rgba(255,255,255,0.1);
+  }
+  .shutter-btn:active { transform: scale(0.92); }
+  .shutter-btn::before {
+    content: '📸';
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+  }
+  .shutter-btn.loading::before { content: '⏳'; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* 自動判定トグル */
+  .auto-toggle {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+  }
+  .auto-toggle label {
+    font-size: 10px;
+    color: #888;
+    cursor: pointer;
+  }
+  .toggle-switch {
+    width: 44px; height: 24px;
+    background: #333;
+    border-radius: 12px;
+    position: relative;
+    cursor: pointer;
+    transition: background 0.3s;
+  }
+  .toggle-switch.on { background: var(--green); }
+  .toggle-switch::after {
+    content: '';
+    position: absolute;
+    top: 3px; left: 3px;
+    width: 18px; height: 18px;
+    background: #fff;
+    border-radius: 50%;
+    transition: left 0.3s;
+  }
+  .toggle-switch.on::after { left: 23px; }
+
+  /* カメラ切替ボタン */
+  .cam-switch-btn {
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: #fff;
+    font-size: 22px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* ── APIキー入力モーダル ── */
+  .modal-bg {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-bg.show { display: flex; }
+  .modal {
+    background: #1a1a1a;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 24px;
+    width: calc(100% - 40px);
+    max-width: 400px;
+  }
+  .modal h2 { font-size: 16px; margin-bottom: 8px; }
+  .modal p  { font-size: 12px; color: #888; margin-bottom: 16px; line-height: 1.6; }
+  .modal input {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: #111;
+    color: #fff;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 13px;
+    margin-bottom: 12px;
+  }
+  .modal-btn {
+    width: 100%;
+    padding: 13px;
+    border-radius: 10px;
+    background: #fff;
+    color: #000;
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+    border: none;
+  }
+
+  /* ── デバッグコンソール ── */
+  #debug-panel {
+    display: none;
+    position: fixed;
+    bottom: 120px; left: 0; right: 0;
+    z-index: 50;
+    padding: 0 16px;
+  }
+  #debug-panel.show { display: block; }
+  #debug-log {
+    background: rgba(0,0,0,0.9);
+    border: 1px solid #333;
+    border-radius: 10px;
+    padding: 10px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: #0f0;
+    max-height: 120px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+  }
+  .debug-copy-btn {
+    position: absolute;
+    top: 6px; right: 22px;
+    font-size: 10px;
+    padding: 2px 8px;
+    background: #333;
+    color: #aaa;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  /* ── 起動画面 ── */
+  #start-screen {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    z-index: 200;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 32px;
+    text-align: center;
+  }
+  #start-screen h1 { font-size: 32px; font-weight: 900; }
+  #start-screen p  { font-size: 14px; color: #888; line-height: 1.8; }
+  .start-btn {
+    margin-top: 8px;
+    padding: 15px 40px;
+    background: var(--green);
+    color: #000;
+    font-weight: 900;
+    font-size: 16px;
+    border-radius: 40px;
+    border: none;
+    cursor: pointer;
+    letter-spacing: 0.05em;
+  }
+  .weed-icons { font-size: 48px; letter-spacing: 4px; }
+</style>
+</head>
+<body>
+
+<!-- 起動画面 -->
+<div id="start-screen">
+  <div class="weed-icons">🌿🔍🚨</div>
+  <h1>雑草スカウター</h1>
+  <p>カメラで雑草を映すと<br>AIがリアルタイムで危険度判定！<br>
+    <span style="color:var(--red)">🔴 やべえ雑草</span> /
+    <span style="color:var(--yellow)">🟡 微妙な雑草</span> /
+    <span style="color:var(--green)">🟢 安心な雑草</span>
+  </p>
+  <p style="font-size:12px;color:#555;">※ APIキーはローカル保存されます</p>
+  <button class="start-btn" id="start-btn">カメラを起動する</button>
+</div>
+
+<!-- ヘッダー -->
+<header>
+  <h1>🌿 雑草スカウター</h1>
+  <div style="display:flex;gap:8px;align-items:center;">
+    <button class="api-key-btn" id="debug-toggle-btn">LOG</button>
+    <button class="api-key-btn" id="api-key-open-btn">🔑 APIキー</button>
+  </div>
+</header>
+
+<!-- カメラ -->
+<div class="camera-wrapper">
+  <video id="video" autoplay playsinline muted></video>
+  <canvas id="canvas" style="display:none;"></canvas>
+  <div class="scan-line" id="scan-line"></div>
+  <div class="brackets"></div>
+
+  <!-- 判定結果 -->
+  <div id="result-overlay">
+    <div class="result-card" id="result-card">
+      <div class="danger-bar" id="danger-bar" style="width:100%;"></div>
+      <div class="result-badge" id="result-badge">—</div>
+      <div class="result-name" id="result-name">雑草を映してください</div>
+      <div class="result-desc" id="result-desc">シャッターを押すか、自動判定をONにしてカメラを向けてください</div>
+    </div>
+  </div>
+</div>
+
+<!-- コントロール -->
+<div class="controls">
+  <div class="auto-toggle">
+    <div class="toggle-switch" id="auto-toggle"></div>
+    <label>自動判定</label>
+  </div>
+
+  <button class="shutter-btn" id="shutter-btn"></button>
+
+  <button class="cam-switch-btn" id="cam-switch-btn">🔄</button>
+</div>
+
+<!-- デバッグコンソール -->
+<div id="debug-panel">
+  <div style="position:relative;">
+    <pre id="debug-log"></pre>
+    <button class="debug-copy-btn" id="debug-copy-btn">コピー</button>
+  </div>
+</div>
+
+<!-- APIキーモーダル -->
+<div class="modal-bg" id="api-modal">
+  <div class="modal">
+    <h2>🔑 Anthropic APIキー設定</h2>
+    <p>Claude Vision APIを使用します。<br>キーはブラウザのlocalStorageにのみ保存されます。</p>
+    <input type="password" id="api-key-input" placeholder="sk-ant-api03-..." />
+    <button class="modal-btn" id="api-key-save-btn">保存して閉じる</button>
+  </div>
+</div>
+
+<script>
+// ── 状態管理 ──────────────────────────────────────────────
+let stream = null;           // カメラストリーム
+let useFrontCamera = true;   // フロントカメラフラグ
+let isAnalyzing = false;     // 解析中フラグ
+let autoMode = false;        // 自動判定モード
+let autoTimer = null;        // 自動判定タイマー
+let debugLog = '';           // デバッグログバッファ
+
+const video      = document.getElementById('video');
+const canvas     = document.getElementById('canvas');
+const ctx        = canvas.getContext('2d');
+const scanLine   = document.getElementById('scan-line');
+const resultCard = document.getElementById('result-card');
+const shutterBtn = document.getElementById('shutter-btn');
+const autoToggle = document.getElementById('auto-toggle');
+
+// ── ログ関数 ──────────────────────────────────────────────
+function log(msg) {
+  const ts = new Date().toTimeString().slice(0,8);
+  const line = `[${ts}] ${msg}\n`;
+  debugLog += line;
+  document.getElementById('debug-log').textContent = debugLog;
+  console.log(msg);
+}
+
+// ── APIキー管理 ───────────────────────────────────────────
+function getApiKey() { return localStorage.getItem('weed_ar_api_key') || ''; }
+function setApiKey(k) { localStorage.setItem('weed_ar_api_key', k); }
+
+document.getElementById('api-key-open-btn').onclick = () =>
+  document.getElementById('api-modal').classList.add('show');
+document.getElementById('api-key-save-btn').onclick = () => {
+  const k = document.getElementById('api-key-input').value.trim();
+  if (k) { setApiKey(k); log('APIキー保存完了'); }
+  document.getElementById('api-modal').classList.remove('show');
+};
+// モーダルの外をタップで閉じる
+document.getElementById('api-modal').onclick = (e) => {
+  if (e.target === document.getElementById('api-modal'))
+    document.getElementById('api-modal').classList.remove('show');
+};
+
+// ── デバッグコンソール ────────────────────────────────────
+document.getElementById('debug-toggle-btn').onclick = () =>
+  document.getElementById('debug-panel').classList.toggle('show');
+document.getElementById('debug-copy-btn').onclick = () => {
+  navigator.clipboard.writeText(debugLog);
+  document.getElementById('debug-copy-btn').textContent = '✓ コピー済';
+  setTimeout(() => document.getElementById('debug-copy-btn').textContent = 'コピー', 2000);
+};
+
+// ── カメラ起動 ────────────────────────────────────────────
+async function startCamera() {
+  try {
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: useFrontCamera ? 'user' : 'environment',
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      }
+    });
+    video.srcObject = stream;
+    log(`カメラ起動: ${useFrontCamera ? 'フロント' : 'リア'}`);
+  } catch (e) {
+    log(`カメラエラー: ${e.message}`);
+    alert('カメラへのアクセスが必要です。ブラウザの許可設定を確認してください。');
+  }
+}
+
+// カメラ切替ボタン
+document.getElementById('cam-switch-btn').onclick = () => {
+  useFrontCamera = !useFrontCamera;
+  // フロントカメラはミラー表示
+  video.style.transform = useFrontCamera ? 'scaleX(-1)' : 'scaleX(1)';
+  startCamera();
+};
+
+// 起動ボタン
+document.getElementById('start-btn').onclick = async () => {
+  await startCamera();
+  document.getElementById('start-screen').style.display = 'none';
+  // 保存済みAPIキーをインプットにセット
+  const k = getApiKey();
+  if (k) document.getElementById('api-key-input').value = k;
+  // キーがなければ自動的にモーダルを出す
+  if (!k) document.getElementById('api-modal').classList.add('show');
+};
+
+// ── フレームキャプチャ → Base64 ───────────────────────────
+function captureFrame() {
+  canvas.width  = video.videoWidth  || 640;
+  canvas.height = video.videoHeight || 480;
+  // フロントカメラはミラー補正してキャプチャ
+  if (useFrontCamera) {
+    ctx.save();
+    ctx.translate(canvas.width, 0);
+    ctx.scale(-1, 1);
+  }
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  if (useFrontCamera) ctx.restore();
+  // 品質0.8のJPEGでBase64取得
+  return canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+}
+
+// ── Claude API 呼び出し ────────────────────────────────────
+async function analyzeWeed() {
+  if (isAnalyzing) return;
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    document.getElementById('api-modal').classList.add('show');
+    return;
+  }
+
+  isAnalyzing = true;
+  shutterBtn.classList.add('loading');
+  scanLine.classList.add('scanning');
+  log('解析開始...');
+
+  const imageBase64 = captureFrame();
+
+  // システムプロンプト: JSON形式で回答させる
+  const systemPrompt = `あなたは日本の雑草専門家です。
+画像に映っている植物を分析し、必ず以下のJSON形式のみで回答してください。余分なテキストは一切含めないでください。
+
+{
+  "found": true/false,
+  "name_jp": "植物の日本語名",
+  "name_scientific": "学名（あれば）",
+  "danger": "high" | "mid" | "low",
+  "badge": "⚠️ やべえ雑草" | "🌿 気になる雑草" | "✅ 安心な雑草",
+  "reason": "判定理由（50字以内）",
+  "tips": "対処アドバイス（40字以内）"
+}
+
+危険度の基準:
+- high（赤）: ドクダミ、ヤブガラシ、スギナ、クズ、セイタカアワダチソウ、オオキンケイギク、ヒメジョオン大量繁殖など、根が深い・繁殖力が強い・除草が困難・毒性がある雑草
+- mid（黄）: メヒシバ、エノコログサ、ハコベ、カタバミ、ヨモギ、オオバコ、ムラサキカタバミ など、放置すると増えるが管理可能な雑草
+- low（緑）: タンポポ（観賞可）、シロツメクサ、ナズナ、ハルジオンなど、見た目が良い・毒性なし・比較的管理しやすい雑草
+
+植物が写っていない場合は found: false とし、他のフィールドは null にしてください。`;
+
+  try {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: 'claude-opus-4-5',
+        max_tokens: 512,
+        system: systemPrompt,
+        messages: [{
+          role: 'user',
+          content: [{
+            type: 'image',
+            source: { type: 'base64', media_type: 'image/jpeg', data: imageBase64 }
+          }, {
+            type: 'text',
+            text: 'この画像に写っている植物を判定してください。'
+          }]
+        }]
+      })
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      throw new Error(`API ${response.status}: ${err}`);
+    }
+
+    const data = await response.json();
+    const rawText = data.content?.[0]?.text || '{}';
+    log(`APIレスポンス: ${rawText.slice(0, 100)}`);
+
+    // JSONパース（バッククォートを除去）
+    const clean = rawText.replace(/```json|```/g, '').trim();
+    const result = JSON.parse(clean);
+
+    showResult(result);
+
+  } catch (e) {
+    log(`エラー: ${e.message}`);
+    showError(e.message);
+  } finally {
+    isAnalyzing = false;
+    shutterBtn.classList.remove('loading');
+    scanLine.classList.remove('scanning');
+  }
+}
+
+// ── 結果表示 ──────────────────────────────────────────────
+function showResult(r) {
+  const card = resultCard;
+
+  if (!r.found) {
+    card.className = 'result-card danger-low show';
+    document.getElementById('result-badge').textContent = '🌱 植物なし';
+    document.getElementById('result-name').textContent = '植物が検出されませんでした';
+    document.getElementById('result-desc').textContent = 'もう少し近づけてみてください';
+    return;
+  }
+
+  // 危険度クラスの設定
+  const dangerClass = {
+    high: 'danger-high',
+    mid:  'danger-mid',
+    low:  'danger-low'
+  }[r.danger] || 'danger-low';
+
+  card.className = `result-card ${dangerClass} show`;
+  document.getElementById('result-badge').textContent = r.badge || '不明';
+  document.getElementById('result-name').innerHTML =
+    `${r.name_jp || '不明'}` +
+    (r.name_scientific ? `<span class="jp">${r.name_scientific}</span>` : '');
+  document.getElementById('result-desc').textContent =
+    `${r.reason || ''}${r.tips ? `　💡 ${r.tips}` : ''}`;
+
+  // スキャンカラーを危険度に連動
+  const accentColors = { high: '#ff2d55', mid: '#ffd60a', low: '#30d158' };
+  document.documentElement.style.setProperty('--scan-color', accentColors[r.danger] || '#30d158');
+
+  log(`判定: ${r.name_jp} [${r.danger}]`);
+}
+
+function showError(msg) {
+  resultCard.className = 'result-card danger-mid show';
+  document.getElementById('result-badge').textContent = '⚠️ エラー';
+  document.getElementById('result-name').textContent = '判定に失敗しました';
+  document.getElementById('result-desc').textContent = msg.slice(0, 80);
+}
+
+// ── シャッターボタン ──────────────────────────────────────
+shutterBtn.onclick = analyzeWeed;
+
+// ── 自動判定トグル ────────────────────────────────────────
+autoToggle.onclick = () => {
+  autoMode = !autoMode;
+  autoToggle.classList.toggle('on', autoMode);
+  log(`自動判定: ${autoMode ? 'ON' : 'OFF'}`);
+
+  if (autoMode) {
+    // 3秒ごとに自動解析
+    autoTimer = setInterval(() => {
+      if (!isAnalyzing) analyzeWeed();
+    }, 3000);
+  } else {
+    clearInterval(autoTimer);
+    autoTimer = null;
+  }
+};
+</script>
+</body>
+</html>
