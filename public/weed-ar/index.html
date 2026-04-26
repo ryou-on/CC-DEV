@@ -95,6 +95,37 @@
     100% { top: 100%; opacity: 0; }
   }
 
+  /* 写真プレビュー（カメラロール選択時） */
+  #photo-preview {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #000;
+    z-index: 4;
+    display: none;
+  }
+  #photo-preview.show { display: block; }
+
+  .photo-close-btn {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: rgba(0,0,0,0.6);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: #fff;
+    font-size: 18px;
+    cursor: pointer;
+    z-index: 9;
+    display: none;
+    align-items: center;
+    justify-content: center;
+  }
+  .photo-close-btn.show { display: flex; }
+
   /* コーナーブラケット演出 */
   .brackets {
     position: absolute;
@@ -412,6 +443,8 @@
 <div class="camera-wrapper">
   <video id="video" autoplay playsinline muted></video>
   <canvas id="canvas" style="display:none;"></canvas>
+  <img id="photo-preview" alt="選択した写真" />
+  <button class="photo-close-btn" id="photo-close-btn" aria-label="カメラに戻る">×</button>
   <div class="scan-line" id="scan-line"></div>
   <div class="brackets"></div>
 
@@ -435,7 +468,9 @@
 
   <button class="shutter-btn" id="shutter-btn"></button>
 
+  <button class="cam-switch-btn" id="photo-pick-btn" aria-label="写真から選択">🖼️</button>
   <button class="cam-switch-btn" id="cam-switch-btn">🔄</button>
+  <input type="file" accept="image/*" id="photo-input" style="display:none;" />
 </div>
 
 <!-- デバッグコンソール -->
@@ -464,6 +499,7 @@ let isAnalyzing = false;     // 解析中フラグ
 let autoMode = false;        // 自動判定モード
 let autoTimer = null;        // 自動判定タイマー
 let debugLog = '';           // デバッグログバッファ
+let isPhotoMode = false;     // 写真モード（カメラロール選択中）
 
 const video      = document.getElementById('video');
 const canvas     = document.getElementById('canvas');
@@ -529,6 +565,7 @@ async function startCamera() {
 
 // カメラ切替ボタン
 document.getElementById('cam-switch-btn').onclick = () => {
+  if (isPhotoMode) exitPhotoMode();
   useFrontCamera = !useFrontCamera;
   // フロントカメラはミラー表示
   video.style.transform = useFrontCamera ? 'scaleX(-1)' : 'scaleX(1)';
@@ -548,6 +585,10 @@ document.getElementById('start-btn').onclick = async () => {
 
 // ── フレームキャプチャ → Base64 ───────────────────────────
 function captureFrame() {
+  // 写真モードなら canvas は既にロード済みなのでそのまま返す
+  if (isPhotoMode) {
+    return canvas.toDataURL('image/jpeg', 0.85).split(',')[1];
+  }
   canvas.width  = video.videoWidth  || 640;
   canvas.height = video.videoHeight || 480;
   // フロントカメラはミラー補正してキャプチャ
@@ -561,6 +602,66 @@ function captureFrame() {
   // 品質0.8のJPEGでBase64取得
   return canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
 }
+
+// ── カメラロールから写真ロード ────────────────────────────
+function loadPhotoFile(file) {
+  if (!file || !file.type.startsWith('image/')) {
+    log('画像ファイルではありません');
+    return;
+  }
+  // 自動判定中ならOFFに
+  if (autoMode) autoToggle.click();
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = async () => {
+      // 長辺1280pxにリサイズしてcanvasに描画
+      const maxSize = 1280;
+      let w = img.naturalWidth, h = img.naturalHeight;
+      if (Math.max(w, h) > maxSize) {
+        const ratio = maxSize / Math.max(w, h);
+        w = Math.round(w * ratio);
+        h = Math.round(h * ratio);
+      }
+      canvas.width = w;
+      canvas.height = h;
+      ctx.drawImage(img, 0, 0, w, h);
+
+      // プレビュー表示
+      const preview = document.getElementById('photo-preview');
+      preview.src = canvas.toDataURL('image/jpeg', 0.85);
+      preview.classList.add('show');
+      document.getElementById('photo-close-btn').classList.add('show');
+      isPhotoMode = true;
+
+      log(`写真ロード: ${img.naturalWidth}×${img.naturalHeight} → ${w}×${h}`);
+      // 自動で判定実行
+      analyzeWeed();
+    };
+    img.onerror = () => log('画像の読み込みに失敗しました');
+    img.src = reader.result;
+  };
+  reader.onerror = () => log('ファイル読込エラー');
+  reader.readAsDataURL(file);
+}
+
+function exitPhotoMode() {
+  isPhotoMode = false;
+  document.getElementById('photo-preview').classList.remove('show');
+  document.getElementById('photo-close-btn').classList.remove('show');
+  document.getElementById('photo-input').value = '';
+  log('カメラビューに復帰');
+}
+
+// ── 写真選択ボタン ────────────────────────────────────────
+document.getElementById('photo-pick-btn').onclick = () =>
+  document.getElementById('photo-input').click();
+document.getElementById('photo-input').onchange = (e) => {
+  const file = e.target.files && e.target.files[0];
+  if (file) loadPhotoFile(file);
+};
+document.getElementById('photo-close-btn').onclick = exitPhotoMode;
 
 // ── Claude API 呼び出し ────────────────────────────────────
 async function analyzeWeed() {
@@ -701,9 +802,11 @@ autoToggle.onclick = () => {
   log(`自動判定: ${autoMode ? 'ON' : 'OFF'}`);
 
   if (autoMode) {
+    // 写真モードでは自動判定を無効化
+    if (isPhotoMode) exitPhotoMode();
     // 3秒ごとに自動解析
     autoTimer = setInterval(() => {
-      if (!isAnalyzing) analyzeWeed();
+      if (!isAnalyzing && !isPhotoMode) analyzeWeed();
     }, 3000);
   } else {
     clearInterval(autoTimer);
