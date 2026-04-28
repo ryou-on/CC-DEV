@@ -346,10 +346,26 @@ async function generatePromptText(userMsg) {
 }
 
 // ─────────────────────────────────────────────
-// IMAGE API (router)
+// IMAGE API (router + 自動フォールバック)
 // ─────────────────────────────────────────────
 async function callImageAPI(prompt) {
-  return engine === 'gemini' ? callGeminiImagen(prompt) : callDallE(prompt);
+  // 選択エンジンを先に試す
+  try {
+    if (engine === 'gemini' && settings.geminiKey) return await callGeminiImagen(prompt);
+    if (engine === 'dalle'  && settings.openaiKey)  return await callDallE(prompt);
+  } catch(e) {
+    log(`⚠️ ${engine === 'gemini' ? 'Gemini' : 'GPT Image'} 失敗 → 反対エンジンで再試行: ${e.message.slice(0,60)}`);
+  }
+  // 反対エンジンにフォールバック
+  if (engine === 'gemini' && settings.openaiKey) {
+    log('🔄 GPT Image 1.5 にフォールバック');
+    return await callDallE(prompt);
+  }
+  if (engine === 'dalle' && settings.geminiKey) {
+    log('🔄 Gemini Imagen にフォールバック');
+    return await callGeminiImagen(prompt);
+  }
+  throw new Error('全エンジンが失敗しました。APIキーと残高を確認してください');
 }
 
 // ─────────────────────────────────────────────
