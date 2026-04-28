@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>note画像生成ツール v0.2</title>
+  <title>note画像生成ツール v0.3</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -27,12 +27,12 @@
           class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"/>
       </div>
       <div>
-        <label class="text-sm text-gray-400 block mb-1.5">OpenAI APIキー <span class="text-blue-400 text-xs">(DALL-E 3)</span></label>
+        <label class="text-sm text-gray-400 block mb-1.5">OpenAI APIキー <span class="text-blue-400 text-xs">(GPT Image 1.5)</span></label>
         <input id="inp_openaiKey" type="password" placeholder="sk-..."
           class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"/>
       </div>
       <div>
-        <label class="text-sm text-gray-400 block mb-1.5">Google AI APIキー <span class="text-green-400 text-xs">(Gemini Imagen 3)</span></label>
+        <label class="text-sm text-gray-400 block mb-1.5">Google AI APIキー <span class="text-green-400 text-xs">(Gemini Imagen)</span></label>
         <input id="inp_geminiKey" type="password" placeholder="AIza..."
           class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"/>
       </div>
@@ -52,7 +52,7 @@
   <div class="flex items-center justify-between mb-8">
     <div>
       <h1 class="text-2xl font-bold tracking-tight">📝 note画像生成ツール</h1>
-      <p class="text-gray-600 text-sm mt-1">Claude → プロンプト最適化 → 3案並列生成 | 1792×1024px</p>
+      <p class="text-gray-600 text-sm mt-1">Claude → プロンプト最適化 → ヘッダー3案 + 記事内画像 + タグ提案</p>
     </div>
     <button onclick="openModal('modalSettings')"
       class="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-xl px-4 py-2 text-sm transition flex items-center gap-2">
@@ -107,34 +107,63 @@
     <div class="flex gap-3 pt-1">
       <button onclick="runGeneratePrompts()" id="btn_genPrompt"
         class="flex-1 bg-purple-700 hover:bg-purple-600 rounded-xl py-3 font-semibold text-sm transition flex items-center justify-center gap-2">
-        🤖 AIプロンプト生成
+        🤖 AIプロンプト生成 + タグ提案
       </button>
       <button onclick="runGenerateAll()" id="btn_genImages"
         class="flex-1 bg-blue-700 hover:bg-blue-600 rounded-xl py-3 font-semibold text-sm transition flex items-center justify-center gap-2">
-        🎨 3案を一括生成
+        🎨 全案を一括生成
       </button>
     </div>
   </div>
 
   <!-- Prompt Preview -->
   <div id="sec_prompts" class="hidden bg-gray-900 border border-gray-800 rounded-2xl p-6 mb-4">
-    <div class="flex items-center justify-between mb-4">
-      <h2 class="font-semibold text-gray-300 text-sm">生成されたプロンプト <span class="text-gray-600 font-normal">(編集可)</span></h2>
+
+    <!-- Tags -->
+    <div id="sec_tags_preview" class="mb-5 hidden">
+      <div class="flex items-center justify-between mb-2">
+        <h3 class="font-semibold text-yellow-400 text-sm">🏷️ 推奨タグ</h3>
+        <button onclick="copyTags()" class="text-xs bg-gray-700 hover:bg-gray-600 rounded-lg px-3 py-1 transition">📋 全タグコピー</button>
+      </div>
+      <div id="list_tags" class="flex flex-wrap gap-2"></div>
+    </div>
+
+    <!-- Header prompts -->
+    <div class="mb-5">
+      <h3 class="font-semibold text-blue-400 text-sm mb-3">🖼️ メインヘッダー画像 (3案)</h3>
+      <div id="list_header_prompts" class="space-y-3"></div>
+    </div>
+
+    <!-- Article image prompts -->
+    <div id="sec_article_prompts_wrapper" class="hidden">
+      <h3 class="font-semibold text-green-400 text-sm mb-3">📸 記事内画像</h3>
+      <div id="list_article_prompts" class="space-y-4"></div>
+    </div>
+
+    <!-- Generate button -->
+    <div class="mt-5 pt-4 border-t border-gray-800">
       <button onclick="runGenerateImagesFromPrompts()"
-        class="bg-blue-700 hover:bg-blue-600 rounded-xl px-4 py-1.5 text-sm font-medium transition">
-        ↑ この内容で画像生成
+        class="w-full bg-blue-700 hover:bg-blue-600 rounded-xl py-2.5 text-sm font-semibold transition">
+        🎨 この内容で全画像を生成
       </button>
     </div>
-    <div id="list_prompts" class="space-y-3"></div>
   </div>
 
   <!-- Image Results -->
   <div id="sec_images" class="hidden mb-4">
-    <div class="flex items-center gap-2 mb-3">
-      <h2 class="font-semibold text-gray-300 text-sm">生成結果</h2>
-      <span id="lbl_imgCount" class="text-gray-600 text-xs"></span>
+    <h2 class="font-semibold text-gray-300 text-sm mb-4">生成結果</h2>
+
+    <!-- Header images -->
+    <div class="mb-6">
+      <h3 class="text-xs text-blue-400 font-medium mb-2 flex items-center gap-1">
+        🖼️ メインヘッダー画像
+        <span id="lbl_headerCount" class="text-gray-600 font-normal"></span>
+      </h3>
+      <div id="grid_header_images" class="grid grid-cols-1 md:grid-cols-3 gap-4"></div>
     </div>
-    <div id="grid_images" class="grid grid-cols-1 md:grid-cols-3 gap-4"></div>
+
+    <!-- Article image groups -->
+    <div id="sec_article_image_groups"></div>
   </div>
 
   <!-- Log -->
@@ -154,9 +183,9 @@
 // ─────────────────────────────────────────────
 // CHARACTER & STYLE DEFINITIONS
 // ─────────────────────────────────────────────
-const CLAUDE_SYSTEM = `You are "note Banner Maker", an expert image prompt writer for Japanese anime SD (chibi) style blog header illustrations.
+const CLAUDE_SYSTEM = `You are "note Banner Maker", an expert image prompt writer for Japanese anime SD (chibi) style blog illustrations.
 
-Generate English image prompts to create note.com article header images at aspect ratio 1.91:1 (landscape).
+Generate English image prompts to create note.com article images at aspect ratio 1.91:1 (landscape).
 
 ## MANDATORY STYLE (append verbatim to every prompt):
 "Japanese anime SD chibi illustration style, bold clean black outlines, flat cel-shading with subtle 3D depth, expressive cute chibi eyes, 2.5-head-ratio chibi body proportions, bright clean background matching the article theme, no watermarks, no logos, no complex Japanese text, professional commercial illustration quality, landscape 1.91:1 aspect ratio"
@@ -197,10 +226,16 @@ Generate English image prompts to create note.com article header images at aspec
 - Props and poses must reflect the article theme (PC, book, coffee, gadgets, etc.)
 
 ## TASK:
-Read the Japanese article title and scene description. First, decide which character(s) best fit the genre. Then generate 3 English image prompts for the same scene with subtle variations (different angle, expression, or composition). Always append the MANDATORY STYLE.
+Read the Japanese article title and scene description.
+1. Decide which character(s) best fit the genre.
+2. Generate 3 header image prompts (landscape 1.91:1) — subtle variations of the same scene (angle, expression, or composition).
+3. Generate 2–3 in-article image scenes, each with 2 prompt variations. These should be DIFFERENT scenes from the header — supporting illustrations that work mid-article (e.g., close-up, action shot, result/outcome scene).
+4. Generate 6–8 relevant Japanese hashtags for note.com (starting with #, mix of broad and niche tags).
+
+Always append the MANDATORY STYLE to every image prompt.
 
 Return ONLY valid JSON with no markdown fences:
-{"prompts":["prompt1","prompt2","prompt3"]}`;
+{"header_prompts":["prompt1","prompt2","prompt3"],"article_images":[{"title":"シーン名1","prompts":["prompt1","prompt2"]},{"title":"シーン名2","prompts":["prompt1","prompt2"]},{"title":"シーン名3","prompts":["prompt1","prompt2"]}],"tags":["#タグ1","#タグ2","#タグ3","#タグ4","#タグ5","#タグ6","#タグ7","#タグ8"]}`;
 
 // ─────────────────────────────────────────────
 // TEMPLATES
@@ -226,7 +261,9 @@ const TEMPLATES = [
 // ─────────────────────────────────────────────
 // STATE
 // ─────────────────────────────────────────────
-let generatedPrompts = ['', '', ''];
+let generatedHeaderPrompts = ['', '', ''];
+let generatedArticleScenes = []; // [{title, prompts:[p1,p2]}, ...]
+let generatedTags = [];
 let settings = { anthropicKey: '', openaiKey: '', geminiKey: '' };
 let engine = 'dalle'; // 'dalle' | 'gemini'
 
@@ -241,7 +278,7 @@ function init() {
   updateKeyStatus();
   setEngine(engine, false);
   populateTemplates();
-  log('✅ note画像生成ツール v0.2 起動完了');
+  log('✅ note画像生成ツール v0.3 起動完了');
 }
 
 function updateKeyStatus() {
@@ -327,7 +364,7 @@ async function generatePromptText(userMsg) {
         },
         body: JSON.stringify({
           model: 'claude-sonnet-4-6',
-          max_tokens: 2000,
+          max_tokens: 4000,
           system: CLAUDE_SYSTEM,
           messages: [{ role: 'user', content: userMsg }]
         })
@@ -362,7 +399,7 @@ async function generatePromptText(userMsg) {
       );
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        log(`⚠️ ${model} 失敗 → 次を試します: ${(err.error?.message || res.status).slice(0, 60)}`);
+        log(`⚠️ ${model} 失敗 → 次を試します: ${(err.error?.message || res.status).toString().slice(0, 60)}`);
         continue;
       }
       const data = await res.json();
@@ -399,7 +436,7 @@ async function callImageAPI(prompt) {
 }
 
 // ─────────────────────────────────────────────
-// GPT Image 2 API
+// GPT Image 1.5 API
 // ─────────────────────────────────────────────
 async function callDallE(prompt) {
   const res = await fetch('https://api.openai.com/v1/images/generations', {
@@ -419,7 +456,7 @@ async function callDallE(prompt) {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(`GPT Image 2: ${err.error?.message || res.status}`);
+    throw new Error(`GPT Image 1.5: ${err.error?.message || res.status}`);
   }
   const data = await res.json();
   const b64 = data.data[0].b64_json;
@@ -475,7 +512,7 @@ async function callGeminiImagen(prompt) {
       const data = await res.json();
       if (!res.ok) {
         const msg = data.error?.message || res.status;
-        log(`⚠️ ${model} 失敗: ${msg.slice(0, 80)}`);
+        log(`⚠️ ${model} 失敗: ${msg.toString().slice(0, 80)}`);
         lastError = msg;
         continue;
       }
@@ -508,7 +545,7 @@ async function runGeneratePrompts() {
   btn.innerHTML = '<span class="spin">⏳</span> 生成中...';
 
   try {
-    log('🤖 プロンプト生成中...');
+    log('🤖 プロンプト + タグ生成中...');
     const title = document.getElementById('inp_title').value.trim();
     const raw = await generatePromptText(
       `記事タイトル: ${title || '（未入力）'}\n\nシーン説明:\n${scene}`
@@ -522,11 +559,21 @@ async function runGeneratePrompts() {
       throw new Error('JSONパース失敗: ' + raw.slice(0, 120));
     }
 
-    generatedPrompts = (parsed.prompts || []).slice(0, 3);
-    while (generatedPrompts.length < 3) generatedPrompts.push('');
+    // 新フォーマット対応（後方互換: prompts キーもサポート）
+    generatedHeaderPrompts = (parsed.header_prompts || parsed.prompts || []).slice(0, 3);
+    while (generatedHeaderPrompts.length < 3) generatedHeaderPrompts.push('');
+
+    generatedArticleScenes = (parsed.article_images || []).map(s => ({
+      title: s.title || 'シーン',
+      prompts: (s.prompts || []).slice(0, 2)
+    }));
+
+    generatedTags = parsed.tags || [];
 
     showPromptSection();
-    log(`✅ ${generatedPrompts.filter(Boolean).length}件のプロンプトを生成しました`);
+
+    const articleCount = generatedArticleScenes.reduce((sum, s) => sum + s.prompts.length, 0);
+    log(`✅ ヘッダー${generatedHeaderPrompts.filter(Boolean).length}案 + 記事内画像${articleCount}枚 + タグ${generatedTags.length}件を生成しました`);
     return true;
   } catch(e) {
     log(`❌ ${e.message}`);
@@ -534,22 +581,70 @@ async function runGeneratePrompts() {
     return false;
   } finally {
     btn.disabled = false;
-    btn.innerHTML = '🤖 AIプロンプト生成';
+    btn.innerHTML = '🤖 AIプロンプト生成 + タグ提案';
   }
 }
 
 function showPromptSection() {
-  const list = document.getElementById('list_prompts');
-  list.innerHTML = '';
-  generatedPrompts.forEach((p, i) => {
+  // Tags
+  const tagsSection = document.getElementById('sec_tags_preview');
+  const tagsList = document.getElementById('list_tags');
+  tagsList.innerHTML = '';
+  if (generatedTags.length > 0) {
+    generatedTags.forEach(tag => {
+      const span = document.createElement('span');
+      span.className = 'bg-gray-800 text-yellow-300 text-xs rounded-lg px-3 py-1.5 cursor-pointer hover:bg-yellow-400/20 transition select-all';
+      span.textContent = tag;
+      span.title = 'クリックでコピー';
+      span.onclick = () => {
+        navigator.clipboard.writeText(tag);
+        log(`📋 ${tag} をコピー`);
+      };
+      tagsList.appendChild(span);
+    });
+    tagsSection.classList.remove('hidden');
+  } else {
+    tagsSection.classList.add('hidden');
+  }
+
+  // Header prompts
+  const headerList = document.getElementById('list_header_prompts');
+  headerList.innerHTML = '';
+  generatedHeaderPrompts.forEach((p, i) => {
     const div = document.createElement('div');
     div.innerHTML = `
       <label class="block text-xs text-gray-500 mb-1 font-medium">案 ${i + 1}</label>
-      <textarea id="prompt_${i}" rows="3"
-        class="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none text-gray-300"
+      <textarea id="header_prompt_${i}" rows="3"
+        class="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none text-gray-300"
       >${p}</textarea>`;
-    list.appendChild(div);
+    headerList.appendChild(div);
   });
+
+  // Article image prompts
+  const articleWrapper = document.getElementById('sec_article_prompts_wrapper');
+  const articleList = document.getElementById('list_article_prompts');
+  articleList.innerHTML = '';
+  if (generatedArticleScenes.length > 0) {
+    generatedArticleScenes.forEach((scene, si) => {
+      const div = document.createElement('div');
+      div.className = 'bg-gray-800/50 border border-gray-700/50 rounded-xl p-4';
+      const promptsHtml = scene.prompts.map((p, pi) => `
+        <div>
+          <label class="block text-xs text-gray-600 mb-1">案 ${pi + 1}</label>
+          <textarea id="article_prompt_${si}_${pi}" rows="3"
+            class="w-full bg-gray-800 border border-gray-700 rounded-xl px-3 py-2 text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-green-500 resize-none text-gray-300"
+          >${p}</textarea>
+        </div>`).join('');
+      div.innerHTML = `
+        <h4 class="text-xs font-semibold text-green-400 mb-3">シーン ${si + 1}: ${scene.title}</h4>
+        <div class="space-y-2">${promptsHtml}</div>`;
+      articleList.appendChild(div);
+    });
+    articleWrapper.classList.remove('hidden');
+  } else {
+    articleWrapper.classList.add('hidden');
+  }
+
   const sec = document.getElementById('sec_prompts');
   sec.classList.remove('hidden');
   sec.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -578,80 +673,150 @@ async function runGenerateImagesFromPrompts() {
     return;
   }
 
-  const prompts = [0, 1, 2]
-    .map(i => { const ta = document.getElementById(`prompt_${i}`); return ta ? ta.value.trim() : generatedPrompts[i]; })
-    .filter(Boolean);
+  // ヘッダープロンプト収集
+  const headerPrompts = generatedHeaderPrompts.map((_, i) => {
+    const ta = document.getElementById(`header_prompt_${i}`);
+    return ta ? ta.value.trim() : generatedHeaderPrompts[i];
+  }).filter(Boolean);
 
-  if (!prompts.length) { alert('プロンプトがありません'); return; }
+  // 記事内プロンプト収集
+  const articlePromptMap = generatedArticleScenes.map((scene, si) => ({
+    title: scene.title,
+    prompts: scene.prompts.map((_, pi) => {
+      const ta = document.getElementById(`article_prompt_${si}_${pi}`);
+      return ta ? ta.value.trim() : scene.prompts[pi];
+    }).filter(Boolean)
+  })).filter(s => s.prompts.length > 0);
+
+  const totalCount = headerPrompts.length + articlePromptMap.reduce((sum, s) => sum + s.prompts.length, 0);
+  if (!totalCount) { alert('プロンプトがありません'); return; }
 
   const btn = document.getElementById('btn_genImages');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spin">⏳</span> 画像生成中...';
+  btn.innerHTML = `<span class="spin">⏳</span> 生成中... 0/${totalCount}`;
 
-  showImagePlaceholders(prompts.length);
+  // 画像セクション初期化
+  showImageSections(headerPrompts.length, articlePromptMap);
 
   try {
-    const engineLabel = engine === 'dalle' ? 'GPT Image 1.5 (1536×1024)' : 'Gemini Imagen 4 (16:9)';
-    log(`🎨 ${engineLabel} で${prompts.length}案を並列生成中...`);
+    const engineLabel = engine === 'dalle' ? 'GPT Image 1.5' : 'Gemini Imagen';
+    log(`🎨 ${engineLabel} で合計${totalCount}枚を並列生成中...`);
 
-    const tasks = prompts.map((p, i) =>
+    let completed = 0;
+    const updateProgress = () => {
+      completed++;
+      btn.innerHTML = `<span class="spin">⏳</span> 生成中... ${completed}/${totalCount}`;
+    };
+
+    // ヘッダー画像タスク
+    const headerTasks = headerPrompts.map((p, i) =>
       callImageAPI(p)
-        .then(r => ({ i, ...r }))
-        .catch(e => ({ i, error: e.message }))
+        .then(r => { updateProgress(); return { type: 'header', i, ...r }; })
+        .catch(e => { updateProgress(); return { type: 'header', i, error: e.message }; })
     );
-    const results = await Promise.all(tasks);
+
+    // 記事内画像タスク
+    const articleTasks = [];
+    articlePromptMap.forEach((scene, si) => {
+      scene.prompts.forEach((p, pi) => {
+        articleTasks.push(
+          callImageAPI(p)
+            .then(r => { updateProgress(); return { type: 'article', si, pi, title: scene.title, ...r }; })
+            .catch(e => { updateProgress(); return { type: 'article', si, pi, title: scene.title, error: e.message }; })
+        );
+      });
+    });
+
+    const results = await Promise.all([...headerTasks, ...articleTasks]);
 
     results.forEach(r => {
-      if (r.error) {
-        log(`❌ 案${r.i + 1} エラー: ${r.error}`);
-        updateImageCard(r.i, null, r.error);
+      if (r.type === 'header') {
+        const label = `ヘッダー案${r.i + 1}`;
+        if (r.error) {
+          log(`❌ ${label} エラー: ${r.error}`);
+          updateImageCard(`header_${r.i}`, null, r.error, label);
+        } else {
+          log(`✅ ${label} 完了`);
+          updateImageCard(`header_${r.i}`, r.url, null, label, r.revised);
+        }
       } else {
-        log(`✅ 案${r.i + 1} 生成完了`);
-        updateImageCard(r.i, r.url, null, r.revised);
+        const label = `${r.title} 案${r.pi + 1}`;
+        if (r.error) {
+          log(`❌ ${label} エラー: ${r.error}`);
+          updateImageCard(`article_${r.si}_${r.pi}`, null, r.error, label);
+        } else {
+          log(`✅ ${label} 完了`);
+          updateImageCard(`article_${r.si}_${r.pi}`, r.url, null, label, r.revised);
+        }
       }
     });
 
     const success = results.filter(r => !r.error).length;
-    log(`🎉 ${success}/${prompts.length}件の画像生成完了`);
+    log(`🎉 ${success}/${totalCount}枚の生成完了`);
   } catch(e) {
     log(`❌ ${e.message}`);
     alert('画像生成に失敗しました: ' + e.message);
   } finally {
     btn.disabled = false;
-    btn.innerHTML = '🎨 3案を一括生成';
+    btn.innerHTML = '🎨 全案を一括生成';
   }
 }
 
-function showImagePlaceholders(count) {
-  const grid = document.getElementById('grid_images');
-  grid.innerHTML = '';
-  for (let i = 0; i < count; i++) {
-    const card = document.createElement('div');
-    card.id = `imgCard_${i}`;
-    card.className = 'bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden';
-    card.innerHTML = `
-      <div class="aspect-video bg-gray-800 flex items-center justify-center">
-        <div class="text-center text-gray-600">
-          <div class="spin text-3xl mb-2 block">⏳</div>
-          <div class="text-sm">案${i + 1} 生成中...</div>
-          <div class="text-xs mt-1 text-gray-700">DALL-E 3 HD (30〜60秒)</div>
-        </div>
-      </div>
-      <div class="p-3 flex items-center justify-between">
-        <span class="text-xs text-gray-600">案 ${i + 1}</span>
-        <span class="text-xs bg-gray-800 text-gray-600 rounded-lg px-3 py-1.5">生成中...</span>
-      </div>`;
-    grid.appendChild(card);
+function showImageSections(headerCount, articlePromptMap) {
+  // ヘッダー画像グリッド
+  const headerGrid = document.getElementById('grid_header_images');
+  headerGrid.innerHTML = '';
+  for (let i = 0; i < headerCount; i++) {
+    headerGrid.appendChild(createPlaceholderCard(`header_${i}`, `ヘッダー案 ${i + 1}`));
   }
+  document.getElementById('lbl_headerCount').textContent = `(${headerCount}案)`;
+
+  // 記事内画像グループ
+  const articleGroups = document.getElementById('sec_article_image_groups');
+  articleGroups.innerHTML = '';
+  articlePromptMap.forEach((scene, si) => {
+    if (!scene.prompts.length) return;
+    const section = document.createElement('div');
+    section.className = 'mb-5';
+    const cols = Math.min(scene.prompts.length, 2);
+    section.innerHTML = `<h3 class="text-xs text-green-400 font-medium mb-2">📸 ${scene.title}</h3>`;
+    const grid = document.createElement('div');
+    grid.className = `grid grid-cols-${cols} md:grid-cols-${cols} gap-4`;
+    scene.prompts.forEach((_, pi) => {
+      grid.appendChild(createPlaceholderCard(`article_${si}_${pi}`, `${scene.title} 案${pi + 1}`));
+    });
+    section.appendChild(grid);
+    articleGroups.appendChild(section);
+  });
+
   const sec = document.getElementById('sec_images');
   sec.classList.remove('hidden');
-  document.getElementById('lbl_imgCount').textContent = `(${count}案)`;
   sec.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-function updateImageCard(i, url, error, revised) {
-  const card = document.getElementById(`imgCard_${i}`);
+function createPlaceholderCard(cardId, label) {
+  const card = document.createElement('div');
+  card.id = `imgCard_${cardId}`;
+  card.className = 'bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden';
+  card.innerHTML = `
+    <div class="aspect-video bg-gray-800 flex items-center justify-center">
+      <div class="text-center text-gray-600">
+        <div class="spin text-2xl mb-2 block">⏳</div>
+        <div class="text-xs">${label}</div>
+        <div class="text-xs mt-1 text-gray-700">生成中...</div>
+      </div>
+    </div>
+    <div class="p-3">
+      <span class="text-xs text-gray-600">${label}</span>
+    </div>`;
+  return card;
+}
+
+function updateImageCard(cardId, url, error, label, revised) {
+  const card = document.getElementById(`imgCard_${cardId}`);
   if (!card) return;
+  const ts = Date.now();
+  const filename = `note_${cardId}_${ts}.png`;
   if (error) {
     card.innerHTML = `
       <div class="aspect-video bg-gray-800 flex items-center justify-center p-4">
@@ -661,30 +826,29 @@ function updateImageCard(i, url, error, revised) {
         </div>
       </div>
       <div class="p-3">
-        <span class="text-xs text-gray-600">案 ${i + 1} — エラー</span>
+        <span class="text-xs text-gray-600">${label} — エラー</span>
       </div>`;
   } else {
-    const ts = Date.now();
     card.className = 'bg-gray-900 border border-gray-800 rounded-2xl overflow-hidden fade-in';
     card.innerHTML = `
       <div class="aspect-video bg-gray-800 overflow-hidden relative group">
-        <img src="${url}" alt="生成画像${i + 1}" class="w-full h-full object-cover cursor-pointer"
+        <img src="${url}" alt="${label}" class="w-full h-full object-cover cursor-pointer"
           onclick="window.open('${url}', '_blank')" title="クリックで拡大"/>
         <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center gap-3">
-          <button onclick="downloadImage('${url}', 'note_img_${i+1}_${ts}.png')"
+          <button onclick="downloadImage('${url}', '${filename}')"
             class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-lg px-4 py-2 transition">⬇ DL</button>
           <button onclick="window.open('${url}', '_blank')"
             class="bg-gray-700 hover:bg-gray-600 text-white text-xs font-semibold rounded-lg px-4 py-2 transition">↗ 開く</button>
         </div>
       </div>
       <div class="p-3 flex items-center justify-between gap-2">
-        <span class="text-xs text-gray-600 truncate flex-1">案 ${i + 1}</span>
-        <button onclick="downloadImage('${url}', 'note_img_${i+1}_${ts}.png')"
+        <span class="text-xs text-gray-600 truncate flex-1">${label}</span>
+        <button onclick="downloadImage('${url}', '${filename}')"
           class="text-xs bg-blue-700 hover:bg-blue-600 rounded-lg px-3 py-1.5 transition whitespace-nowrap flex-shrink-0">⬇ DL</button>
         <button onclick="window.open('${url}', '_blank')"
           class="text-xs bg-gray-700 hover:bg-gray-600 rounded-lg px-3 py-1.5 transition whitespace-nowrap flex-shrink-0">↗ 開く</button>
       </div>
-      ${revised ? `<div class="px-3 pb-3"><p class="text-xs text-gray-700 leading-relaxed line-clamp-2" title="${revised.replace(/"/g,'&quot;')}">DALL-E revised: ${revised.slice(0,80)}...</p></div>` : ''}`;
+      ${revised ? `<div class="px-3 pb-3"><p class="text-xs text-gray-700 leading-relaxed line-clamp-2" title="${revised.replace(/"/g,'&quot;')}">revised: ${revised.slice(0,80)}...</p></div>` : ''}`;
   }
 }
 
@@ -711,6 +875,14 @@ async function downloadImage(url, filename) {
     log(`⚠️ DL失敗 → 新しいタブで開きます`);
     window.open(url, '_blank');
   }
+}
+
+// ─────────────────────────────────────────────
+// TAGS
+// ─────────────────────────────────────────────
+function copyTags() {
+  const text = generatedTags.join(' ');
+  navigator.clipboard.writeText(text).then(() => log(`📋 タグ全件コピー: ${text}`));
 }
 
 // ─────────────────────────────────────────────
