@@ -50,7 +50,7 @@
   </style>
 </head>
 <body>
-  <div id="dev-banner">⚠ DEV BUILD — v0.10.27-dev — NOT FOR PRODUCTION ⚠</div>
+  <div id="dev-banner">⚠ DEV BUILD — v0.10.28-dev — NOT FOR PRODUCTION ⚠</div>
   <div id="root" style="padding-top:22px;"></div>
 
   <!-- Firebase 初期化 -->
@@ -462,9 +462,17 @@
     // ======================================================
     // リリースノート
     // ======================================================
-    const APP_VERSION = 'v0.10.27-dev';
+    const APP_VERSION = 'v0.10.28-dev';
 
     const RELEASE_NOTES = [
+      {
+        version: "v0.10.28-dev", date: "2026-04-23",
+        changes: [
+          "📝 タスクにメモ欄を追加（新規作成・編集モーダル・全画面表示・フォーカスモードで表示）",
+          "🚦 NEXT上限（5件）を全経路で強制適用（新規追加・プロジェクト昇格もチェック対象に）",
+          "🔄 繰り返しタスクの重複登録を修正（未完了インスタンスが存在する場合は新規作成しない）",
+        ],
+      },
       {
         version: "v0.10.27-dev", date: "2026-04-23",
         changes: [
@@ -2418,6 +2426,7 @@ HAVE A NICE TRIP！
       const [assignee, setAssignee] = useState(task.assignee || "");
       const [link,     setLink]     = useState(task.link || "");
       const [estimatedMinutes, setEstimatedMinutes] = useState(task.estimatedMinutes || "");
+      const [memo, setMemo] = useState(task.memo || "");
       // ER-0070: チェックリスト
       const [checkItems, setCheckItems] = useState(task.checkItems || []);
       const [checkInput, setCheckInput] = useState('');
@@ -2477,6 +2486,7 @@ HAVE A NICE TRIP！
           tags: tagInput ? tagInput.split(",").map(s => s.trim()).filter(Boolean) : [],
           assignee: assignee.trim(),
           link: link.trim(),
+          memo: memo.trim() || null,
           recurrence,
           scheduledDate: scheduledDate || null,
           estimatedMinutes: estimatedMinutes ? parseInt(estimatedMinutes) : null,
@@ -2553,6 +2563,12 @@ HAVE A NICE TRIP！
                 <div style={lbl}>🔗 LINK</div>
                 <input value={link} onChange={e => setLink(e.target.value)} placeholder="https://..."
                   style={{ ...inp, borderColor: link?"#6699ff66":T.border2 }} />
+              </div>
+              <div>
+                <div style={lbl}>📝 メモ</div>
+                <textarea value={memo} onChange={e => setMemo(e.target.value)} placeholder="メモ・補足情報..."
+                  rows={3}
+                  style={{ ...inp, resize:"vertical", lineHeight:1.6 }} />
               </div>
               <div>
                 <div style={lbl}>⏱ 予定時間</div>
@@ -3110,6 +3126,14 @@ HAVE A NICE TRIP！
                 {task.assignee && <span style={{ fontSize:'12px', color:'#ffaa00', padding:'4px 10px', background:'rgba(255,170,0,0.08)', border:`1px solid rgba(255,170,0,0.3)`, borderRadius:'3px' }}>✈ {task.assignee}</span>}
                 {task.link && <a href={task.link} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{ fontSize:'12px', color:'#66aaff', padding:'4px 10px', background:'rgba(100,150,255,0.1)', border:'1px solid rgba(100,150,255,0.3)', borderRadius:'3px', textDecoration:'none' }}>🔗 LINK</a>}
               </div>
+
+              {/* メモ */}
+              {task.memo && (
+                <div style={{ marginBottom:'20px', padding:'12px 16px', background:`${T.bgInput}`, border:`1px solid ${T.border2}`, borderRadius:'4px' }}>
+                  <div style={{ fontSize:'10px', color:T.textMuted, letterSpacing:'0.1em', marginBottom:'8px' }}>📝 MEMO</div>
+                  <div style={{ fontSize:'13px', color:T.textDim, whiteSpace:'pre-wrap', lineHeight:1.7 }}>{task.memo}</div>
+                </div>
+              )}
 
               {/* チェックリスト（checkItems） */}
               {(localCheckItems.length > 0 || true) && (
@@ -3985,6 +4009,7 @@ HAVE A NICE TRIP！
       const [showCal,  setShowCal]  = useState(false);
       const [calRect,  setCalRect]  = useState(null);
       const [estimatedMinutes, setEstimatedMinutes] = useState("");
+      const [memo,         setMemo]         = useState("");
       const [checkItems,   setCheckItems]   = useState([]);
       const [checkInput,   setCheckInput]   = useState("");
       const calRef = useRef(null);
@@ -4019,6 +4044,7 @@ HAVE A NICE TRIP！
           tags: tagInput ? tagInput.split(",").map(s=>s.trim()).filter(Boolean) : [],
           assignee: assignee.trim(),
           link: link.trim(),
+          memo: memo.trim() || null,
           recurrence,
           scheduledDate,
           estimatedMinutes: estimatedMinutes ? parseInt(estimatedMinutes) : null,
@@ -4065,6 +4091,7 @@ HAVE A NICE TRIP！
             <input style={inp} placeholder="タグ（カンマ区切り）" value={tagInput} onChange={e=>setTagInput(e.target.value)} />
             <input style={{ ...inp, borderColor:assignee?"#ffaa0066":T.border2 }} placeholder="✈ HANDOFF先（委任者名、空欄＝自分）" value={assignee} onChange={e=>setAssignee(e.target.value)} />
             <input style={{ ...inp, borderColor:link?"#6699ff66":T.border2 }} placeholder="🔗 URL（任意）" value={link} onChange={e=>setLink(e.target.value)} />
+            <textarea style={{ ...inp, resize:"vertical", lineHeight:1.6 }} placeholder="📝 メモ（任意）" rows={2} value={memo} onChange={e=>setMemo(e.target.value)} />
             <select style={{ ...inp, cursor:"pointer" }} value={estimatedMinutes} onChange={e=>setEstimatedMinutes(e.target.value)}>
               <option value="">⏱ 予定時間（未設定）</option>
               {[15,30,45,60,90,120].map(m => <option key={m} value={m}>⏱ {m}分</option>)}
@@ -5567,8 +5594,13 @@ HAVE A NICE TRIP！
       }, [getColTasks]);
 
       // --- CRUD ハンドラー ---
-      const handleAdd          = useCallback(t => {
-        tasksRef.add({ ...t, createdAt:ts(), updatedAt:ts() });
+      const handleAdd          = useCallback(async t => {
+        // NEXT上限を強制適用（NewStripForm は常に status:'next' を送るので上限チェックが必要）
+        let status = t.status;
+        if (status === 'next') {
+          status = await safeNextAsync();
+        }
+        tasksRef.add({ ...t, status, createdAt:ts(), updatedAt:ts() });
         // タスク作成イベントを記録
         try {
           const uidHash = btoa(user.uid).replace(/[^a-zA-Z0-9]/g,'').slice(0,12);
@@ -5642,27 +5674,39 @@ HAVE A NICE TRIP！
             const next = proj?.strictOrder === false
               ? remaining[0]
               : remaining.find(t => (t.projectOrder ?? 0) > (task.projectOrder ?? 0));
-            if (next) await tasksRef.doc(next.id).update({ status: wasActive ? 'active' : 'next', updatedAt: ts() });
+            if (next) {
+              const projNextStatus = wasActive ? 'active' : safeNext(next.id);
+              await tasksRef.doc(next.id).update({ status: projNextStatus, updatedAt: ts() });
+            }
           }
           if (task?.recurrence) {
             const nextDate = calcNextOccurrence(task.recurrence);
             if (nextDate) {
               const dateStr = nextDate.toISOString().slice(0, 10);
-              const { id: _id, createdAt: _c, updatedAt: _u, timerRunning: _tr,
-                      timerStartedAt: _ts, timeLogs: _tl, ...rest } = task;
-              await tasksRef.add({
-                ...rest,
-                stripId:    `FS${String(Date.now()).slice(-4)}`,
-                status:     'pending',
-                scheduledDate: dateStr,
-                fromRecurring: id,
-                sortOrder:  Date.now() + 1,
-                createdAt:  ts(),
-                updatedAt:  ts(),
-                timerRunning: false,
-                timerStartedAt: null,
-                timeLogs:   [],
-              });
+              // 重複防止: 同じ繰り返し元（fromRecurring or 自身のid）の未完了インスタンスが既に存在する場合はスキップ
+              const recurRootId = task.fromRecurring || id;
+              const alreadyExists = tasks.some(t =>
+                !['completed', 'cleared', 'lost'].includes(t.status) &&
+                t.id !== id &&
+                (t.fromRecurring === recurRootId || t.fromRecurring === id)
+              );
+              if (!alreadyExists) {
+                const { id: _id, createdAt: _c, updatedAt: _u, timerRunning: _tr,
+                        timerStartedAt: _ts, timeLogs: _tl, ...rest } = task;
+                await tasksRef.add({
+                  ...rest,
+                  stripId:    `FS${String(Date.now()).slice(-4)}`,
+                  status:     'pending',
+                  scheduledDate: dateStr,
+                  fromRecurring: recurRootId,
+                  sortOrder:  Date.now() + 1,
+                  createdAt:  ts(),
+                  updatedAt:  ts(),
+                  timerRunning: false,
+                  timerStartedAt: null,
+                  timeLogs:   [],
+                });
+              }
             }
           }
         }
@@ -6379,6 +6423,19 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                             whiteSpace: 'pre-wrap',
                           }}>
                             {task.description}
+                          </div>
+                        )}
+
+                        {/* メモ */}
+                        {task.memo && (
+                          <div style={{
+                            color: T.textDim, fontSize: 'clamp(13px, 1.8vw, 17px)', lineHeight: 1.7,
+                            marginBottom: '24px', padding: '14px 18px',
+                            background: `${T.border}12`, borderRadius: '4px',
+                            borderLeft: `3px solid ${T.border}66`, whiteSpace: 'pre-wrap',
+                          }}>
+                            <span style={{ fontSize:'10px', color:T.textMuted, letterSpacing:'0.1em', display:'block', marginBottom:'6px' }}>📝 MEMO</span>
+                            {task.memo}
                           </div>
                         )}
 
