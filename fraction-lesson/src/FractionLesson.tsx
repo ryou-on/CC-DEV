@@ -7,7 +7,7 @@ import {
   interpolate,
 } from "remotion";
 import { Character } from "./Character";
-import { getCurrentLine, SCRIPT, FPS } from "./script";
+import { getCurrentLine, SCRIPT, FPS, TOTAL_FRAMES } from "./script";
 
 // 吹き出し
 const SpeechBubble: React.FC<{ text: string }> = ({ text }) => {
@@ -230,7 +230,10 @@ export const FractionLesson: React.FC = () => {
           ) : (
             <>
               {sceneType === "try" && <TryCorner />}
-              <SpeechBubble text={currentLine.text} />
+              {/* テキストがある時だけ吹き出し表示 */}
+              {currentLine.text !== "" && (
+                <SpeechBubble text={currentLine.text} />
+              )}
             </>
           )}
         </div>
@@ -247,7 +250,7 @@ export const FractionLesson: React.FC = () => {
         <div style={{ width: "100%", height: 8, background: "rgba(0,0,0,0.06)" }}>
           <div style={{
             height: "100%",
-            width: `${(frame / (FPS * 95)) * 100}%`,
+            width: `${(frame / TOTAL_FRAMES) * 100}%`,
             background: sceneType === "problem"
               ? "linear-gradient(90deg, #e74c3c, #c0392b)"
               : sceneType === "try"
@@ -257,10 +260,14 @@ export const FractionLesson: React.FC = () => {
         </div>
       </div>
 
-      {/* 音声 */}
-      {SCRIPT.map((line, i) => (
-        <Sequence key={i} from={line.startFrame} durationInFrames={line.endFrame - line.startFrame}>
-          <Audio src={staticFile(`audio/line_${i}.mp3`)} />
+      {/* 音声（audioIndex が定義されている行のみ再生） */}
+      {SCRIPT.filter((line) => line.audioIndex !== undefined).map((line) => (
+        <Sequence
+          key={line.audioIndex}
+          from={line.startFrame}
+          durationInFrames={line.endFrame - line.startFrame}
+        >
+          <Audio src={staticFile(`audio/line_${line.audioIndex}.mp3`)} />
         </Sequence>
       ))}
     </div>
