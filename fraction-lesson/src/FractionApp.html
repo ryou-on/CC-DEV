@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>分数アプリ</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Hiragino Kaku Gothic ProN', sans-serif;
+    background: #f0f7ff;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .scene { display: none; width: 100%; height: 100%; flex-direction: column; align-items: center; justify-content: center; padding: 20px; }
+  .scene.active { display: flex; }
+
+  /* シーン1: 分数って何？ */
+  .pizza-container { display: flex; gap: 30px; align-items: center; flex-wrap: wrap; justify-content: center; }
+  .pizza-svg { filter: drop-shadow(0 4px 8px rgba(0,0,0,0.15)); }
+  .label-box { background: white; border-radius: 16px; padding: 20px 30px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); text-align: center; }
+  .label-box h2 { font-size: 28px; color: #ff6b35; margin-bottom: 8px; }
+  .label-box p { font-size: 16px; color: #666; }
+
+  /* シーン2: 分母・分子 */
+  .fraction-display { display: flex; flex-direction: column; align-items: center; gap: 20px; }
+  .fraction-big { display: flex; flex-direction: column; align-items: center; font-size: 80px; font-weight: bold; line-height: 1; }
+  .fraction-big .numerator { color: #e74c3c; }
+  .fraction-big .line { width: 100px; height: 6px; background: #333; border-radius: 3px; margin: 10px 0; }
+  .fraction-big .denominator { color: #3498db; }
+  .labels { display: flex; gap: 80px; margin-top: 10px; }
+  .label-n { color: #e74c3c; font-size: 20px; font-weight: bold; text-align: center; }
+  .label-d { color: #3498db; font-size: 20px; font-weight: bold; text-align: center; }
+  .arrow-n { color: #e74c3c; font-size: 28px; }
+  .arrow-d { color: #3498db; font-size: 28px; }
+
+  /* シーン3: 足し算 */
+  .addition-row { display: flex; align-items: center; gap: 20px; font-size: 48px; font-weight: bold; }
+  .frac { display: flex; flex-direction: column; align-items: center; }
+  .frac .num { color: #e74c3c; line-height: 1; font-size: 48px; }
+  .frac .bar { width: 60px; height: 5px; background: #333; margin: 6px 0; border-radius: 3px; }
+  .frac .den { color: #3498db; line-height: 1; font-size: 48px; }
+  .op { color: #27ae60; font-size: 52px; }
+  .eq { color: #8e44ad; font-size: 52px; }
+  .viz-bars { display: flex; gap: 8px; margin-top: 24px; }
+  .bar-seg { width: 40px; height: 60px; border-radius: 8px; border: 3px solid #ccc; }
+  .bar-seg.filled-red { background: #e74c3c; border-color: #e74c3c; }
+  .bar-seg.filled-blue { background: #3498db; border-color: #3498db; }
+  .bar-seg.filled-purple { background: #8e44ad; border-color: #8e44ad; }
+
+  /* シーン4: 約分 */
+  .yakubun { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+  .arrow-down { font-size: 40px; color: #27ae60; }
+  .divbox { background: #fffde7; border: 3px solid #f39c12; border-radius: 16px; padding: 16px 32px; font-size: 22px; color: #e67e22; font-weight: bold; }
+
+  /* シーン5: 通分 */
+  .tsūbun { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .step-row { display: flex; align-items: center; gap: 16px; font-size: 36px; font-weight: bold; }
+  .step-label { font-size: 18px; color: #7f8c8d; font-weight: normal; }
+
+  /* シーン6: まとめ */
+  .summary-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; width: 100%; max-width: 500px; }
+  .summary-card { background: white; border-radius: 16px; padding: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); text-align: center; }
+  .summary-card .icon { font-size: 36px; }
+  .summary-card h3 { font-size: 18px; color: #2c3e50; margin: 8px 0 4px; }
+  .summary-card p { font-size: 14px; color: #7f8c8d; }
+
+  .scene-title {
+    font-size: 26px; font-weight: bold; color: #2c3e50;
+    margin-bottom: 24px; text-align: center;
+  }
+  .highlight { background: #fff3cd; border-radius: 8px; padding: 2px 8px; }
+</style>
+</head>
+<body>
+
+<!-- シーン1: 分数って何？ -->
+<div class="scene" id="scene1">
+  <div class="scene-title">🍕 分数って何だろう？</div>
+  <div class="pizza-container">
+    <svg class="pizza-svg" width="200" height="200" viewBox="0 0 200 200">
+      <!-- ピザ全体 -->
+      <circle cx="100" cy="100" r="90" fill="#f39c12" stroke="#e67e22" stroke-width="3"/>
+      <!-- チーズ -->
+      <circle cx="100" cy="100" r="80" fill="#f1c40f" opacity="0.8"/>
+      <!-- トッピング -->
+      <circle cx="80" cy="80" r="8" fill="#e74c3c"/>
+      <circle cx="120" cy="90" r="8" fill="#e74c3c"/>
+      <circle cx="90" cy="120" r="8" fill="#e74c3c"/>
+      <circle cx="115" cy="125" r="6" fill="#27ae60"/>
+      <circle cx="70" cy="110" r="6" fill="#27ae60"/>
+      <!-- 切り分け線 -->
+      <line x1="100" y1="10" x2="100" y2="190" stroke="#e67e22" stroke-width="3"/>
+      <line x1="10" y1="100" x2="190" y2="100" stroke="#e67e22" stroke-width="3"/>
+      <!-- ハイライト（1/4部分） -->
+      <path d="M100,100 L100,10 A90,90 0 0,1 190,100 Z" fill="#ff6b35" opacity="0.4"/>
+      <text x="145" y="60" font-size="24" font-weight="bold" fill="#fff" text-anchor="middle">1</text>
+    </svg>
+    <div style="font-size:48px; font-weight:bold; color:#333;">→</div>
+    <div class="label-box">
+      <h2>1/4</h2>
+      <p>4つに切った<br>うちの<strong>1切れ</strong></p>
+    </div>
+  </div>
+  <div style="margin-top:24px; font-size:20px; color:#555; text-align:center;">
+    全体を<span class="highlight">同じ大きさに分けた</span>ときの、<br>いくつ分かを表す数が<strong>分数</strong>です！
+  </div>
+</div>
+
+<!-- シーン2: 分母・分子 -->
+<div class="scene" id="scene2">
+  <div class="scene-title">🔢 分母と分子</div>
+  <div class="fraction-display">
+    <div style="display:flex; gap:60px; align-items:flex-start;">
+      <div style="text-align:center;">
+        <div class="arrow-n">↑</div>
+        <div class="label-n">分子<br>（いくつ分）</div>
+      </div>
+      <div class="fraction-big">
+        <span class="numerator">3</span>
+        <div class="line"></div>
+        <span class="denominator">4</span>
+      </div>
+      <div style="text-align:center;">
+        <div class="arrow-d" style="margin-top:80px;">↓</div>
+        <div class="label-d">分母<br>（何等分）</div>
+      </div>
+    </div>
+    <div style="margin-top:20px; background:white; border-radius:16px; padding:20px 40px; box-shadow:0 4px 12px rgba(0,0,0,0.08); text-align:center;">
+      <p style="font-size:20px; color:#555;">4等分したうちの <strong style="color:#e74c3c;">3</strong>つ分</p>
+    </div>
+    <!-- 4分割の視覚化 -->
+    <div style="display:flex; gap:8px; margin-top:16px;">
+      <div style="width:50px;height:50px;background:#e74c3c;border-radius:8px;"></div>
+      <div style="width:50px;height:50px;background:#e74c3c;border-radius:8px;"></div>
+      <div style="width:50px;height:50px;background:#e74c3c;border-radius:8px;"></div>
+      <div style="width:50px;height:50px;background:#ecf0f1;border:3px solid #bdc3c7;border-radius:8px;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- シーン3: 足し算 -->
+<div class="scene" id="scene3">
+  <div class="scene-title">➕ 同じ分母の足し算</div>
+  <div class="addition-row">
+    <div class="frac"><span class="num">1</span><div class="bar"></div><span class="den">4</span></div>
+    <span class="op">＋</span>
+    <div class="frac"><span class="num">2</span><div class="bar"></div><span class="den">4</span></div>
+    <span class="eq">＝</span>
+    <div class="frac"><span class="num" style="color:#8e44ad;">3</span><div class="bar" style="background:#8e44ad;"></div><span class="den">4</span></div>
+  </div>
+  <div style="margin-top:8px; font-size:18px; color:#7f8c8d;">分母が同じなら、分子だけを足す！</div>
+  <div style="display:flex; gap:16px; margin-top:28px; align-items:flex-start;">
+    <div>
+      <div style="font-size:14px; color:#e74c3c; font-weight:bold; margin-bottom:6px; text-align:center;">1/4</div>
+      <div class="viz-bars">
+        <div class="bar-seg filled-red"></div>
+        <div class="bar-seg"></div>
+        <div class="bar-seg"></div>
+        <div class="bar-seg"></div>
+      </div>
+    </div>
+    <div style="font-size:40px; padding-top:20px; color:#27ae60;">+</div>
+    <div>
+      <div style="font-size:14px; color:#3498db; font-weight:bold; margin-bottom:6px; text-align:center;">2/4</div>
+      <div class="viz-bars">
+        <div class="bar-seg filled-blue"></div>
+        <div class="bar-seg filled-blue"></div>
+        <div class="bar-seg"></div>
+        <div class="bar-seg"></div>
+      </div>
+    </div>
+    <div style="font-size:40px; padding-top:20px; color:#8e44ad;">=</div>
+    <div>
+      <div style="font-size:14px; color:#8e44ad; font-weight:bold; margin-bottom:6px; text-align:center;">3/4</div>
+      <div class="viz-bars">
+        <div class="bar-seg filled-purple"></div>
+        <div class="bar-seg filled-purple"></div>
+        <div class="bar-seg filled-purple"></div>
+        <div class="bar-seg"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- シーン4: 約分 -->
+<div class="scene" id="scene4">
+  <div class="scene-title">✂️ 約分（かんたんにしよう）</div>
+  <div class="yakubun">
+    <div class="addition-row">
+      <div class="frac"><span class="num">2</span><div class="bar"></div><span class="den">4</span></div>
+    </div>
+    <div class="divbox">分子と分母を同じ数（2）で割る！</div>
+    <div class="arrow-down">↓ ÷2</div>
+    <div class="addition-row">
+      <div class="frac"><span class="num" style="color:#27ae60;">1</span><div class="bar" style="background:#27ae60;"></div><span class="den" style="color:#27ae60;">2</span></div>
+    </div>
+    <div style="margin-top:16px; display:flex; gap:16px;">
+      <div style="text-align:center;">
+        <div style="font-size:14px;color:#7f8c8d;margin-bottom:6px;">2/4</div>
+        <div style="display:flex;gap:6px;">
+          <div style="width:44px;height:44px;background:#e74c3c;border-radius:6px;"></div>
+          <div style="width:44px;height:44px;background:#e74c3c;border-radius:6px;"></div>
+          <div style="width:44px;height:44px;background:#ecf0f1;border:2px solid #bdc3c7;border-radius:6px;"></div>
+          <div style="width:44px;height:44px;background:#ecf0f1;border:2px solid #bdc3c7;border-radius:6px;"></div>
+        </div>
+      </div>
+      <div style="font-size:28px;padding-top:18px;color:#27ae60;font-weight:bold;">=</div>
+      <div style="text-align:center;">
+        <div style="font-size:14px;color:#7f8c8d;margin-bottom:6px;">1/2</div>
+        <div style="display:flex;gap:6px;">
+          <div style="width:44px;height:44px;background:#27ae60;border-radius:6px;"></div>
+          <div style="width:44px;height:44px;background:#ecf0f1;border:2px solid #bdc3c7;border-radius:6px;"></div>
+        </div>
+      </div>
+    </div>
+    <div style="font-size:16px;color:#7f8c8d;margin-top:8px;">大きさは同じ！よりシンプルな形になった</div>
+  </div>
+</div>
+
+<!-- シーン5: 通分 -->
+<div class="scene" id="scene5">
+  <div class="scene-title">🔄 通分（分母をそろえよう）</div>
+  <div class="tsūbun">
+    <div class="step-row">
+      <div class="frac"><span class="num">1</span><div class="bar" style="width:50px;"></div><span class="den">2</span></div>
+      <span style="color:#7f8c8d;font-size:24px;">＋</span>
+      <div class="frac"><span class="num">1</span><div class="bar" style="width:50px;"></div><span class="den">3</span></div>
+    </div>
+    <div style="font-size:18px;color:#e67e22;font-weight:bold;">↓ 分母を 2×3=6 にそろえる</div>
+    <div class="step-row">
+      <div class="frac"><span class="num" style="color:#e74c3c;">3</span><div class="bar" style="width:50px;background:#e74c3c;"></div><span class="den">6</span></div>
+      <span style="color:#7f8c8d;font-size:24px;">＋</span>
+      <div class="frac"><span class="num" style="color:#3498db;">2</span><div class="bar" style="width:50px;background:#3498db;"></div><span class="den">6</span></div>
+      <span style="color:#8e44ad;font-size:36px;">＝</span>
+      <div class="frac"><span class="num" style="color:#8e44ad;">5</span><div class="bar" style="width:50px;background:#8e44ad;"></div><span class="den">6</span></div>
+    </div>
+    <div style="display:flex;gap:6px;margin-top:8px;">
+      <div style="width:36px;height:36px;background:#e74c3c;border-radius:5px;"></div>
+      <div style="width:36px;height:36px;background:#e74c3c;border-radius:5px;"></div>
+      <div style="width:36px;height:36px;background:#e74c3c;border-radius:5px;"></div>
+      <div style="width:36px;height:36px;background:#3498db;border-radius:5px;"></div>
+      <div style="width:36px;height:36px;background:#3498db;border-radius:5px;"></div>
+      <div style="width:36px;height:36px;background:#ecf0f1;border:2px solid #bdc3c7;border-radius:5px;"></div>
+    </div>
+    <div style="font-size:15px;color:#7f8c8d;">6つのうち5つ分 = 5/6</div>
+  </div>
+</div>
+
+<!-- シーン6: まとめ -->
+<div class="scene" id="scene6">
+  <div class="scene-title">🎉 今日学んだこと！</div>
+  <div class="summary-grid">
+    <div class="summary-card">
+      <div class="icon">🍕</div>
+      <h3>分数とは</h3>
+      <p>全体を等分した<br>うちのいくつか</p>
+    </div>
+    <div class="summary-card">
+      <div class="icon">🔢</div>
+      <h3>分母・分子</h3>
+      <p>下＝何等分<br>上＝いくつ分</p>
+    </div>
+    <div class="summary-card">
+      <div class="icon">➕</div>
+      <h3>足し算</h3>
+      <p>同じ分母なら<br>分子を足すだけ</p>
+    </div>
+    <div class="summary-card">
+      <div class="icon">✂️</div>
+      <h3>約分・通分</h3>
+      <p>同じ数で割る・<br>分母をそろえる</p>
+    </div>
+  </div>
+  <div style="margin-top:20px;font-size:22px;font-weight:bold;color:#27ae60;">よくできました！🌟</div>
+</div>
+
+<script>
+  // URLパラメータでシーンを切り替え
+  function showScene(n) {
+    document.querySelectorAll('.scene').forEach(s => s.classList.remove('active'));
+    const el = document.getElementById('scene' + n);
+    if (el) el.classList.add('active');
+  }
+
+  function getScene() {
+    const params = new URLSearchParams(window.location.search);
+    return parseInt(params.get('scene') || '1');
+  }
+
+  showScene(getScene());
+
+  // メッセージ受信でシーン切り替え
+  window.addEventListener('message', (e) => {
+    if (e.data && e.data.scene) showScene(e.data.scene);
+  });
+</script>
+</body>
+</html>
