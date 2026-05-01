@@ -8,6 +8,7 @@ import {
 } from "remotion";
 import { Character } from "./Character";
 import { getCurrentLine, SCRIPT, FPS, TOTAL_FRAMES } from "./script";
+import { getAmplitude } from "./lipsync";
 
 // 吹き出し
 const SpeechBubble: React.FC<{ text: string }> = ({ text }) => {
@@ -147,6 +148,7 @@ export const FractionLesson: React.FC = () => {
 
   const currentLine = getCurrentLine(frame);
   const sceneType = currentLine.sceneType;
+  const amplitude = getAmplitude(frame);
 
   // 右パネル背景色
   const panelBg = sceneType === "problem" ? "#fff5f5"
@@ -243,6 +245,7 @@ export const FractionLesson: React.FC = () => {
           <Character
             talking={currentLine.talking}
             happy={sceneType === "try" || sceneType === "problem"}
+            amplitude={amplitude}
           />
         </div>
 

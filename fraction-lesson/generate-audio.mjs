@@ -53,7 +53,7 @@ async function generateAudio() {
     try {
       const mp3 = await client.audio.speech.create({
         model: "tts-1",
-        voice: "nova",   // 明るい女性声。shimmer/alloy/echo も試せる
+        voice: "onyx",   // 低めの男性声。echo/fable も試せる
         input: line.text,
         speed: 1.1,      // 少し速め（子ども向けテンポ）
       });
