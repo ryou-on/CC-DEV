@@ -427,14 +427,14 @@ note.com の記事画像（アスペクト比 1.91:1 横長）を生成するた
 1. ジャンルに最も合ったキャラクターを決める。
 2. ヘッダー画像プロンプト3案（横長1.91:1）— 同じシーンの微妙なバリエーション（角度、表情、構図で変化）。
 3. 記事内画像シーン2〜3種類、各2案 — ヘッダーとは異なる支持的なシーン（クローズアップ、アクションショット、結果シーン等）。
-4. note.com向けの日本語ハッシュタグ6〜8個（#から始まる、幅広いものとニッチなものを混ぜる）。
+4. note.com向けの日本語ハッシュタグをちょうど10個（#から始まる、幅広いものとニッチなものをバランスよく混ぜる）。
 
 **プロンプトの長さ制限**: 各プロンプトは150〜250文字以内で簡潔に記述してください。キャラクターの外見説明はキャラクター名と衣装名のみ（例:「まさみ（黒カーディガン、クリムゾンタートル）」）で十分です。全文繰り返し不要。
 
 すべての画像プロンプトに必ず「必須スタイル」を末尾に追加してください。
 
 マークダウンフェンスなしの有効なJSONのみを返してください:
-{"header_prompts":["プロンプト1","プロンプト2","プロンプト3"],"article_images":[{"title":"シーン名1","prompts":["プロンプト1","プロンプト2"]},{"title":"シーン名2","prompts":["プロンプト1","プロンプト2"]},{"title":"シーン名3","prompts":["プロンプト1","プロンプト2"]}],"tags":["#タグ1","#タグ2","#タグ3","#タグ4","#タグ5","#タグ6","#タグ7","#タグ8"]}`;
+{"header_prompts":["プロンプト1","プロンプト2","プロンプト3"],"article_images":[{"title":"シーン名1","prompts":["プロンプト1","プロンプト2"]},{"title":"シーン名2","prompts":["プロンプト1","プロンプト2"]},{"title":"シーン名3","prompts":["プロンプト1","プロンプト2"]}],"tags":["#タグ1","#タグ2","#タグ3","#タグ4","#タグ5","#タグ6","#タグ7","#タグ8","#タグ9","#タグ10"]}`;
 
 // ─────────────────────────────────────────────
 // TEMPLATES
@@ -1287,7 +1287,14 @@ async function downloadAllImages() {
 
     if (!count) throw new Error('データURL形式の画像がありません');
 
-    log(`📦 ZIPを作成中... (${count}枚)`);
+    // tags.txt を追加
+    if (generatedTags.length > 0) {
+      const tagsText = generatedTags.join('\n');
+      folder.file('tags.txt', tagsText);
+      log(`🏷️ tags.txt を追加 (${generatedTags.length}タグ)`);
+    }
+
+    log(`📦 ZIPを作成中... (画像${count}枚 + tags.txt)`);
     const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -1296,7 +1303,7 @@ async function downloadAllImages() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(a.href);
-    log(`✅ ${count}枚をZIPでダウンロードしました（header/ + article/）`);
+    log(`✅ ZIPダウンロード完了（header/ + article/ + tags.txt）`);
   } catch(e) {
     log(`❌ ZIP作成失敗: ${e.message}`);
     alert('ZIP作成に失敗しました: ' + e.message);
