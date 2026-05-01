@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>note画像生成ツール v0.3</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <style>
     @keyframes spin { to { transform: rotate(360deg); } }
     .spin { animation: spin 1s linear infinite; display: inline-block; }
@@ -113,6 +114,10 @@
         class="flex-1 bg-blue-700 hover:bg-blue-600 rounded-xl py-3 font-semibold text-sm transition flex items-center justify-center gap-2">
         🎨 全案を一括生成
       </button>
+      <button onclick="resetAll()" title="入力・結果をすべてリセット"
+        class="bg-gray-700 hover:bg-red-900 border border-gray-600 hover:border-red-700 rounded-xl px-4 py-3 text-sm transition flex items-center justify-center gap-1.5 flex-shrink-0">
+        🔄 リセット
+      </button>
     </div>
   </div>
 
@@ -151,7 +156,13 @@
 
   <!-- Image Results -->
   <div id="sec_images" class="hidden mb-4">
-    <h2 class="font-semibold text-gray-300 text-sm mb-4">生成結果</h2>
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="font-semibold text-gray-300 text-sm">生成結果</h2>
+      <button id="btn_downloadAll" onclick="downloadAllImages()"
+        class="bg-green-700 hover:bg-green-600 rounded-xl px-4 py-1.5 text-sm font-semibold transition flex items-center gap-2">
+        ⬇ まとめてDL
+      </button>
+    </div>
 
     <!-- Header images -->
     <div class="mb-6">
@@ -266,6 +277,7 @@ const TEMPLATES = [
 let generatedHeaderPrompts = ['', '', ''];
 let generatedArticleScenes = []; // [{title, prompts:[p1,p2]}, ...]
 let generatedTags = [];
+let generatedImageUrls = {}; // { cardId: dataUrl } — まとめてDL用
 let settings = { anthropicKey: '', openaiKey: '', geminiKey: '' };
 let engine = 'dalle'; // 'dalle' | 'gemini'
 
@@ -765,6 +777,7 @@ async function runGenerateImagesFromPrompts() {
 }
 
 function showImageSections(headerCount, articlePromptMap) {
+  generatedImageUrls = {}; // 新規生成開始時にリセット
   // ヘッダー画像グリッド
   const headerGrid = document.getElementById('grid_header_images');
   headerGrid.innerHTML = '';
@@ -819,6 +832,7 @@ function updateImageCard(cardId, url, error, label, revised) {
   if (!card) return;
   const ts = Date.now();
   const filename = `note_${cardId}_${ts}.png`;
+  if (url) generatedImageUrls[cardId] = { url, label, filename }; // まとめてDL用
   if (error) {
     card.innerHTML = `
       <div class="aspect-video bg-gray-800 flex items-center justify-center p-4">
@@ -885,6 +899,78 @@ async function downloadImage(url, filename) {
 function copyTags() {
   const text = generatedTags.join(' ');
   navigator.clipboard.writeText(text).then(() => log(`📋 タグ全件コピー: ${text}`));
+}
+
+// ─────────────────────────────────────────────
+// RESET
+// ─────────────────────────────────────────────
+function resetAll() {
+  if (!confirm('入力・生成結果をすべてリセットしますか？')) return;
+  // 入力クリア
+  document.getElementById('inp_title').value = '';
+  document.getElementById('inp_scene').value = '';
+  document.getElementById('inp_template').value = '';
+  // ステートリセット
+  generatedHeaderPrompts = ['', '', ''];
+  generatedArticleScenes = [];
+  generatedTags = [];
+  generatedImageUrls = {};
+  // セクション非表示
+  document.getElementById('sec_prompts').classList.add('hidden');
+  document.getElementById('sec_images').classList.add('hidden');
+  // ログクリア
+  document.getElementById('area_log').innerHTML = '';
+  log('🔄 リセット完了');
+}
+
+// ─────────────────────────────────────────────
+// BULK DOWNLOAD (JSZip)
+// ─────────────────────────────────────────────
+async function downloadAllImages() {
+  const entries = Object.entries(generatedImageUrls);
+  if (!entries.length) { alert('ダウンロードできる画像がありません'); return; }
+
+  const btn = document.getElementById('btn_downloadAll');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin">⏳</span> ZIP作成中...';
+
+  try {
+    if (typeof JSZip === 'undefined') throw new Error('JSZipが読み込まれていません');
+    const zip = new JSZip();
+    const folder = zip.folder('note_images');
+    let count = 0;
+
+    for (const [cardId, { url, label, filename }] of entries) {
+      if (!url || !url.startsWith('data:')) continue;
+      const base64 = url.split(',')[1];
+      const ext = url.includes('image/png') ? 'png' : 'jpg';
+      // ヘッダーか記事内かでフォルダ分け
+      const name = cardId.startsWith('header')
+        ? `header/${filename}`
+        : `article/${filename}`;
+      folder.file(name, base64, { base64: true });
+      count++;
+    }
+
+    if (!count) throw new Error('データURL形式の画像がありません');
+
+    log(`📦 ZIPを作成中... (${count}枚)`);
+    const blob = await zip.generateAsync({ type: 'blob', compression: 'STORE' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `note_images_${Date.now()}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+    log(`✅ ${count}枚をZIPでダウンロードしました（header/ + article/）`);
+  } catch(e) {
+    log(`❌ ZIP作成失敗: ${e.message}`);
+    alert('ZIP作成に失敗しました: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '⬇ まとめてDL';
+  }
 }
 
 // ─────────────────────────────────────────────
