@@ -311,9 +311,17 @@
 // ─────────────────────────────────────────────
 // VERSION & RELEASE NOTES
 // ─────────────────────────────────────────────
-const APP_VERSION = 'v0.3.4';
+const APP_VERSION = 'v0.3.5';
 
 const RELEASE_NOTES = [
+  {
+    version: 'v0.3.5',
+    date: '2026-05-01',
+    changes: [
+      'Gemini画像生成エンジンを刷新: Imagen 3（imagen-3.0-generate-002）+ Gemini generateContent の2段構えに',
+      '参照画像なし → Imagen 3 優先、参照画像あり → Gemini generateContent → Imagen 3 フォールバック',
+    ]
+  },
   {
     version: 'v0.3.4',
     date: '2026-05-01',
@@ -843,18 +851,52 @@ async function listGeminiModels() {
 }
 
 // ─────────────────────────────────────────────
-// GEMINI IMAGE GENERATION (generateContent + responseModalities)
+// GEMINI IMAGE GENERATION
+// ① 参照画像なし → Imagen 3 (:predict) → Gemini generateContent フォールバック
+// ② 参照画像あり → Gemini generateContent (IMAGE modality) → Imagen 3 フォールバック
 // ─────────────────────────────────────────────
-const GEMINI_IMAGE_MODELS = [
-  'gemini-2.0-flash-exp-image-generation', // Google AI Studio 公式 画像生成モデル
-  'gemini-2.0-flash-exp',                  // フォールバック（画像生成対応版）
-];
 
-async function callGeminiImagen(prompt, refImages = []) {
-  let lastError = null;
-  for (const model of GEMINI_IMAGE_MODELS) {
+// Imagen 3 (Google AI Studio :predict エンドポイント / 参照画像非対応)
+async function callImagen3(prompt) {
+  const IMAGEN_MODELS = [
+    'imagen-3.0-generate-002',
+    'imagen-3.0-fast-generate-001',
+  ];
+  let lastErr = null;
+  for (const model of IMAGEN_MODELS) {
     try {
-      // 参照画像をpartsに追加
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:predict?key=${settings.geminiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            instances: [{ prompt: prompt + ' Horizontal 16:9 aspect ratio. No text, no watermarks, no logos.' }],
+            parameters: { sampleCount: 1, aspectRatio: '16:9' }
+          })
+        }
+      );
+      const data = await res.json();
+      if (!res.ok) { lastErr = data.error?.message || res.status; log(`⚠️ ${model} 失敗: ${String(lastErr).slice(0,80)}`); continue; }
+      const pred = data.predictions?.[0];
+      if (!pred?.bytesBase64Encoded) { lastErr = `${model}: 画像データなし`; continue; }
+      log(`✅ Imagen3 (${model}) で生成成功`);
+      return { url: `data:${pred.mimeType || 'image/png'};base64,${pred.bytesBase64Encoded}`, revised: null };
+    } catch(e) { lastErr = e.message; }
+  }
+  throw new Error(lastErr || 'Imagen3: 全モデル失敗');
+}
+
+// Gemini generateContent + responseModalities IMAGE (参照画像対応)
+const GEMINI_CONTENT_IMAGE_MODELS = [
+  'gemini-2.0-flash',
+  'gemini-2.5-flash',
+  'gemini-1.5-flash',
+];
+async function callGeminiContentImage(prompt, refImages = []) {
+  let lastErr = null;
+  for (const model of GEMINI_CONTENT_IMAGE_MODELS) {
+    try {
       const parts = [];
       refImages.forEach(dataUrl => {
         const base64   = dataUrl.split(',')[1];
@@ -863,7 +905,6 @@ async function callGeminiImagen(prompt, refImages = []) {
       });
       const refNote = refImages.length > 0 ? 'この参照画像のキャラクターの外見に忠実に従い、' : '';
       parts.push({ text: refNote + prompt + ' 横長1.91:1の画像のみ出力。テキスト・文字・ロゴ禁止。' });
-
       const res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${settings.geminiKey}`,
         {
@@ -871,27 +912,37 @@ async function callGeminiImagen(prompt, refImages = []) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{ parts }],
-            generationConfig: { responseModalities: ['IMAGE'] }
+            generationConfig: { responseModalities: ['IMAGE', 'TEXT'] }
           })
         }
       );
       const data = await res.json();
-      if (!res.ok) {
-        const msg = data.error?.message || res.status;
-        log(`⚠️ ${model} 失敗: ${msg.toString().slice(0, 80)}`);
-        lastError = msg;
-        continue;
-      }
-      const part = data.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
-      if (!part) { lastError = `${model}: 画像データなし`; continue; }
-      log(`✅ モデル ${model} で生成成功`);
-      const { mimeType, data: b64 } = part.inlineData;
+      if (!res.ok) { lastErr = data.error?.message || res.status; log(`⚠️ ${model} 失敗: ${String(lastErr).slice(0,80)}`); continue; }
+      const imgPart = data.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+      if (!imgPart) { lastErr = `${model}: 画像データなし（テキストのみ返答）`; continue; }
+      log(`✅ Gemini (${model}) で生成成功`);
+      const { mimeType, data: b64 } = imgPart.inlineData;
       return { url: `data:${mimeType};base64,${b64}`, revised: null };
-    } catch(e) {
-      lastError = e.message;
-    }
+    } catch(e) { lastErr = e.message; }
   }
-  throw new Error(lastError || 'Gemini: 全モデル失敗');
+  throw new Error(lastErr || 'Gemini generateContent: 全モデル失敗');
+}
+
+// 統合エントリポイント
+async function callGeminiImagen(prompt, refImages = []) {
+  if (refImages.length === 0) {
+    // 参照なし → Imagen3 優先（高品質）
+    try { return await callImagen3(prompt); } catch(e) {
+      log(`⚠️ Imagen3 全モデル失敗、generateContent へ: ${e.message.slice(0,60)}`);
+    }
+    return await callGeminiContentImage(prompt, []);
+  } else {
+    // 参照あり → Gemini generateContent 優先（参照画像サポート）
+    try { return await callGeminiContentImage(prompt, refImages); } catch(e) {
+      log(`⚠️ Gemini generateContent 失敗、Imagen3 (参照なし) へ: ${e.message.slice(0,60)}`);
+    }
+    return await callImagen3(prompt); // 参照なしでImagen3フォールバック
+  }
 }
 
 // ─────────────────────────────────────────────
