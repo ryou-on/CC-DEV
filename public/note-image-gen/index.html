@@ -105,6 +105,50 @@
         class="w-full bg-gray-800 border border-gray-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-gray-700 resize-none leading-relaxed"></textarea>
     </div>
 
+    <!-- Character Reference Images -->
+    <div class="border-t border-gray-800 pt-4">
+      <div class="flex items-center gap-2 mb-3">
+        <span class="text-sm text-gray-400 font-medium">🧑 参照画像</span>
+        <span class="text-xs text-gray-600">設定するとキャラの外見を固定できます</span>
+        <span id="ref_status" class="ml-auto text-xs text-gray-600"></span>
+      </div>
+      <div class="grid grid-cols-3 gap-3">
+        <!-- よしお -->
+        <div class="relative">
+          <div id="prev_yoshio" onclick="document.getElementById('file_yoshio').click()"
+            class="aspect-square bg-gray-800 border-2 border-dashed border-gray-700 rounded-xl flex items-center justify-center overflow-hidden cursor-pointer hover:border-gray-500 transition">
+            <span class="text-gray-600 text-2xl">＋</span>
+          </div>
+          <input type="file" id="file_yoshio" accept="image/*" class="hidden" onchange="loadCharImage('yoshio', this)"/>
+          <button id="btn_clear_yoshio" onclick="clearCharImage('yoshio')"
+            class="hidden absolute -top-1.5 -right-1.5 bg-red-600 hover:bg-red-500 rounded-full w-5 h-5 text-white text-xs flex items-center justify-center leading-none transition">✕</button>
+          <p class="text-center text-xs text-gray-500 mt-1.5">よしお</p>
+        </div>
+        <!-- ロビー -->
+        <div class="relative">
+          <div id="prev_robby" onclick="document.getElementById('file_robby').click()"
+            class="aspect-square bg-gray-800 border-2 border-dashed border-gray-700 rounded-xl flex items-center justify-center overflow-hidden cursor-pointer hover:border-gray-500 transition">
+            <span class="text-gray-600 text-2xl">＋</span>
+          </div>
+          <input type="file" id="file_robby" accept="image/*" class="hidden" onchange="loadCharImage('robby', this)"/>
+          <button id="btn_clear_robby" onclick="clearCharImage('robby')"
+            class="hidden absolute -top-1.5 -right-1.5 bg-red-600 hover:bg-red-500 rounded-full w-5 h-5 text-white text-xs flex items-center justify-center leading-none transition">✕</button>
+          <p class="text-center text-xs text-gray-500 mt-1.5">ロビー</p>
+        </div>
+        <!-- まさみ -->
+        <div class="relative">
+          <div id="prev_masami" onclick="document.getElementById('file_masami').click()"
+            class="aspect-square bg-gray-800 border-2 border-dashed border-gray-700 rounded-xl flex items-center justify-center overflow-hidden cursor-pointer hover:border-gray-500 transition">
+            <span class="text-gray-600 text-2xl">＋</span>
+          </div>
+          <input type="file" id="file_masami" accept="image/*" class="hidden" onchange="loadCharImage('masami', this)"/>
+          <button id="btn_clear_masami" onclick="clearCharImage('masami')"
+            class="hidden absolute -top-1.5 -right-1.5 bg-red-600 hover:bg-red-500 rounded-full w-5 h-5 text-white text-xs flex items-center justify-center leading-none transition">✕</button>
+          <p class="text-center text-xs text-gray-500 mt-1.5">まさみ</p>
+        </div>
+      </div>
+    </div>
+
     <div class="flex gap-3 pt-1">
       <button onclick="runGeneratePrompts()" id="btn_genPrompt"
         class="flex-1 bg-purple-700 hover:bg-purple-600 rounded-xl py-3 font-semibold text-sm transition flex items-center justify-center gap-2">
@@ -278,7 +322,10 @@ let generatedHeaderPrompts = ['', '', ''];
 let generatedArticleScenes = []; // [{title, prompts:[p1,p2]}, ...]
 let generatedTags = [];
 let generatedImageUrls = {}; // { cardId: dataUrl } — まとめてDL用
-let settings = { anthropicKey: '', openaiKey: '', geminiKey: '' };
+let settings = {
+  anthropicKey: '', openaiKey: '', geminiKey: '',
+  charImages: { yoshio: null, robby: null, masami: null }
+};
 let engine = 'dalle'; // 'dalle' | 'gemini'
 
 // ─────────────────────────────────────────────
@@ -289,7 +336,16 @@ function init() {
   settings.openaiKey    = localStorage.getItem('nig_openai')    || '';
   settings.geminiKey    = localStorage.getItem('nig_gemini')    || '';
   engine = localStorage.getItem('nig_engine') || 'dalle';
+  // キャラクター参照画像を読み込む
+  ['yoshio', 'robby', 'masami'].forEach(key => {
+    const stored = localStorage.getItem(`nig_char_${key}`);
+    if (stored) {
+      settings.charImages[key] = stored;
+      updateCharPreview(key, stored);
+    }
+  });
   updateKeyStatus();
+  updateRefStatus();
   setEngine(engine, false);
   populateTemplates();
   log('✅ note画像生成ツール v0.3 起動完了');
@@ -427,54 +483,92 @@ async function generatePromptText(userMsg) {
 }
 
 // ─────────────────────────────────────────────
-// IMAGE API (router + 自動フォールバック)
+// CHARACTER REFERENCE UTILITIES
+// ─────────────────────────────────────────────
+function detectCharactersFromPrompt(prompt) {
+  const found = [];
+  if (prompt.includes('よしお')) found.push('yoshio');
+  if (prompt.includes('ロビー')) found.push('robby');
+  if (prompt.includes('まさみ')) found.push('masami');
+  return found;
+}
+
+function getRefImages(charKeys) {
+  return charKeys.map(k => settings.charImages[k]).filter(Boolean);
+}
+
+// ─────────────────────────────────────────────
+// IMAGE API (router + 参照画像 + 自動フォールバック)
 // ─────────────────────────────────────────────
 async function callImageAPI(prompt) {
+  const charKeys = detectCharactersFromPrompt(prompt);
+  const refImages = getRefImages(charKeys);
+  const hasRef = refImages.length > 0;
+  if (hasRef) log(`🧑 参照画像あり (${charKeys.join(', ')}) — キャラ一貫性モードで生成`);
+
   // 選択エンジンを先に試す
   try {
-    if (engine === 'gemini' && settings.geminiKey) return await callGeminiImagen(prompt);
-    if (engine === 'dalle'  && settings.openaiKey)  return await callDallE(prompt);
+    if (engine === 'gemini' && settings.geminiKey) return await callGeminiImagen(prompt, refImages);
+    if (engine === 'dalle'  && settings.openaiKey)  return hasRef ? await callDallEWithRef(prompt, refImages) : await callDallE(prompt);
   } catch(e) {
     log(`⚠️ ${engine === 'gemini' ? 'Gemini' : 'GPT Image'} 失敗 → 反対エンジンで再試行: ${e.message.slice(0,60)}`);
   }
   // 反対エンジンにフォールバック
   if (engine === 'gemini' && settings.openaiKey) {
     log('🔄 GPT Image 1.5 にフォールバック');
-    return await callDallE(prompt);
+    return hasRef ? await callDallEWithRef(prompt, refImages) : await callDallE(prompt);
   }
   if (engine === 'dalle' && settings.geminiKey) {
     log('🔄 Gemini Imagen にフォールバック');
-    return await callGeminiImagen(prompt);
+    return await callGeminiImagen(prompt, refImages);
   }
   throw new Error('全エンジンが失敗しました。APIキーと残高を確認してください');
 }
 
 // ─────────────────────────────────────────────
-// GPT Image 1.5 API
+// GPT Image 1.5 — テキストのみ
 // ─────────────────────────────────────────────
 async function callDallE(prompt) {
   const res = await fetch('https://api.openai.com/v1/images/generations', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${settings.openaiKey}`
-    },
-    body: JSON.stringify({
-      model: 'gpt-image-1.5',
-      prompt,
-      n: 1,
-      size: '1536x1024',
-      quality: 'high',
-      output_format: 'png'
-    })
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${settings.openaiKey}` },
+    body: JSON.stringify({ model: 'gpt-image-1', prompt, n: 1, size: '1536x1024', quality: 'high' })
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(`GPT Image 1.5: ${err.error?.message || res.status}`);
+    throw new Error(`GPT Image: ${err.error?.message || res.status}`);
   }
   const data = await res.json();
-  const b64 = data.data[0].b64_json;
-  return { url: `data:image/png;base64,${b64}`, revised: null };
+  return { url: `data:image/png;base64,${data.data[0].b64_json}`, revised: null };
+}
+
+// ─────────────────────────────────────────────
+// GPT Image 1 — 参照画像あり (/v1/images/edits)
+// ─────────────────────────────────────────────
+async function callDallEWithRef(prompt, refImages) {
+  const fd = new FormData();
+  fd.append('model', 'gpt-image-1');
+  fd.append('prompt', prompt);
+  fd.append('size', '1536x1024');
+  fd.append('quality', 'high');
+  fd.append('n', '1');
+  refImages.forEach((dataUrl, i) => {
+    const base64 = dataUrl.split(',')[1];
+    const mime   = (dataUrl.match(/data:([^;]+)/) || [])[1] || 'image/jpeg';
+    const bytes  = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+    fd.append('image[]', new File([bytes], `ref_${i}.png`, { type: mime }));
+  });
+  const res = await fetch('https://api.openai.com/v1/images/edits', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${settings.openaiKey}` },
+    body: fd
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(`GPT Image edits: ${err.error?.message || res.status}`);
+  }
+  const data = await res.json();
+  return { url: `data:image/png;base64,${data.data[0].b64_json}`, revised: null };
 }
 
 // ─────────────────────────────────────────────
@@ -508,17 +602,27 @@ const GEMINI_IMAGE_MODELS = [
   'gemini-3-pro-image-preview',
 ];
 
-async function callGeminiImagen(prompt) {
+async function callGeminiImagen(prompt, refImages = []) {
   let lastError = null;
   for (const model of GEMINI_IMAGE_MODELS) {
     try {
+      // 参照画像をpartsに追加
+      const parts = [];
+      refImages.forEach(dataUrl => {
+        const base64   = dataUrl.split(',')[1];
+        const mimeType = (dataUrl.match(/data:([^;]+)/) || [])[1] || 'image/jpeg';
+        parts.push({ inlineData: { mimeType, data: base64 } });
+      });
+      const refNote = refImages.length > 0 ? 'この参照画像のキャラクターの外見に忠実に従い、' : '';
+      parts.push({ text: refNote + prompt + ' 横長1.91:1の画像のみ出力。テキスト・文字・ロゴ禁止。' });
+
       const res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${settings.geminiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt + ' Output a landscape 16:9 image only, no text.' }] }],
+            contents: [{ parts }],
             generationConfig: { responseModalities: ['IMAGE'] }
           })
         }
@@ -891,6 +995,88 @@ async function downloadImage(url, filename) {
     log(`⚠️ DL失敗 → 新しいタブで開きます`);
     window.open(url, '_blank');
   }
+}
+
+// ─────────────────────────────────────────────
+// CHARACTER REFERENCE IMAGE MANAGEMENT
+// ─────────────────────────────────────────────
+async function loadCharImage(key, input) {
+  const file = input.files[0];
+  if (!file) return;
+  try {
+    const dataUrl = await resizeImageToBase64(file, 1024);
+    settings.charImages[key] = dataUrl;
+    localStorage.setItem(`nig_char_${key}`, dataUrl);
+    updateCharPreview(key, dataUrl);
+    updateRefStatus();
+    log(`✅ ${key} の参照画像を設定しました（${Math.round(dataUrl.length / 1024)}KB）`);
+  } catch(e) {
+    log(`❌ 画像読み込み失敗: ${e.message}`);
+  }
+  input.value = ''; // 同じファイルを再選択できるようリセット
+}
+
+function clearCharImage(key) {
+  settings.charImages[key] = null;
+  localStorage.removeItem(`nig_char_${key}`);
+  updateCharPreview(key, null);
+  updateRefStatus();
+  log(`🗑️ ${key} の参照画像を削除しました`);
+}
+
+function updateCharPreview(key, dataUrl) {
+  const prev     = document.getElementById(`prev_${key}`);
+  const clearBtn = document.getElementById(`btn_clear_${key}`);
+  if (!prev) return;
+  if (dataUrl) {
+    prev.innerHTML = `<img src="${dataUrl}" class="w-full h-full object-cover"/>`;
+    prev.classList.replace('border-dashed', 'border-solid');
+    prev.classList.replace('border-gray-700', 'border-blue-500');
+    clearBtn?.classList.remove('hidden');
+  } else {
+    prev.innerHTML = `<span class="text-gray-600 text-2xl">＋</span>`;
+    prev.classList.replace('border-solid', 'border-dashed');
+    prev.classList.replace('border-blue-500', 'border-gray-700');
+    clearBtn?.classList.add('hidden');
+  }
+}
+
+function updateRefStatus() {
+  const count = Object.values(settings.charImages).filter(Boolean).length;
+  const el = document.getElementById('ref_status');
+  if (!el) return;
+  if (count === 0) {
+    el.textContent = '';
+  } else {
+    el.textContent = `✅ ${count}/3 設定済み — キャラ一貫性モード ON`;
+    el.className = 'ml-auto text-xs text-green-400';
+  }
+}
+
+function resizeImageToBase64(file, maxSize = 1024) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxSize || height > maxSize) {
+          const r = Math.min(maxSize / width, maxSize / height);
+          width  = Math.round(width  * r);
+          height = Math.round(height * r);
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width  = width;
+        canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 // ─────────────────────────────────────────────
