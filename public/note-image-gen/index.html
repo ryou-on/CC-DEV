@@ -17,8 +17,69 @@
 </head>
 <body class="bg-gray-950 text-gray-100 min-h-screen">
 
+<!-- 使い方 Modal -->
+<div id="modalHelp" class="hidden fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onclick="if(event.target===this)closeModal('modalHelp')">
+  <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-xl shadow-2xl max-h-[90vh] overflow-y-auto">
+    <h2 class="text-lg font-bold mb-5">📖 使い方</h2>
+    <div class="space-y-5 text-sm text-gray-300">
+      <div>
+        <h3 class="text-blue-400 font-semibold mb-2">🔧 最初にやること</h3>
+        <ol class="space-y-1.5 text-gray-400 list-decimal list-inside">
+          <li>右上の ⚙️ 設定 からAPIキーを入力して保存</li>
+          <li>キャラクター参照画像をアップロード（任意・一貫性UP）</li>
+        </ol>
+      </div>
+      <div>
+        <h3 class="text-purple-400 font-semibold mb-2">🤖 プロンプト生成のみ</h3>
+        <ol class="space-y-1.5 text-gray-400 list-decimal list-inside">
+          <li>記事タイトルとシーン説明を入力（またはテンプレート選択）</li>
+          <li>「AIプロンプト生成 + タグ提案」をクリック</li>
+          <li>ヘッダー3案・記事内画像プロンプト・タグが表示される</li>
+          <li>各テキストエリアで手動編集も可能</li>
+        </ol>
+      </div>
+      <div>
+        <h3 class="text-green-400 font-semibold mb-2">🎨 画像も一括生成</h3>
+        <ol class="space-y-1.5 text-gray-400 list-decimal list-inside">
+          <li>「全案を一括生成」でプロンプト生成から画像生成まで一気に実行</li>
+          <li>各画像カードの ⬇ DL ボタンで個別ダウンロード</li>
+          <li>「まとめてDL」で全画像をZIPで一括ダウンロード</li>
+        </ol>
+      </div>
+      <div>
+        <h3 class="text-yellow-400 font-semibold mb-2">🧑 キャラクター参照画像</h3>
+        <ul class="space-y-1.5 text-gray-400 list-disc list-inside">
+          <li>よしお・ロビー・まさみのキャラクターシートをアップロード</li>
+          <li>プロンプト中のキャラ名を自動検出して参照画像を添付</li>
+          <li>GPT Image: <code class="text-gray-300 bg-gray-800 px-1 rounded">/images/edits</code> で参照画像を送信</li>
+          <li>Gemini: multipart contents に画像データを追加</li>
+          <li>画像は自動リサイズ（最大1024px）してlocalStorageに保存</li>
+        </ul>
+      </div>
+      <div>
+        <h3 class="text-gray-400 font-semibold mb-2">💡 Tips</h3>
+        <ul class="space-y-1.5 text-gray-500 list-disc list-inside">
+          <li>APIキーはlocalStorageに保存。外部サーバー送信なし</li>
+          <li>Gemini が失敗した場合は自動で GPT Image にフォールバック</li>
+          <li>Claude APIがない場合はGemini テキストモデルでプロンプト生成</li>
+        </ul>
+      </div>
+    </div>
+    <button onclick="closeModal('modalHelp')" class="w-full mt-6 bg-gray-700 hover:bg-gray-600 rounded-xl py-2.5 font-semibold text-sm transition">閉じる</button>
+  </div>
+</div>
+
+<!-- リリースノート Modal -->
+<div id="modalRelease" class="hidden fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onclick="if(event.target===this)closeModal('modalRelease')">
+  <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
+    <h2 class="text-lg font-bold mb-5">📋 リリースノート</h2>
+    <div id="release_notes_content" class="space-y-5 text-sm"></div>
+    <button onclick="closeModal('modalRelease')" class="w-full mt-6 bg-gray-700 hover:bg-gray-600 rounded-xl py-2.5 font-semibold text-sm transition">閉じる</button>
+  </div>
+</div>
+
 <!-- Settings Modal -->
-<div id="modalSettings" class="hidden fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+<div id="modalSettings" class="hidden fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4" onclick="if(event.target===this)closeModal('modalSettings')">
   <div class="bg-gray-900 border border-gray-700 rounded-2xl p-6 w-full max-w-lg shadow-2xl">
     <h2 class="text-lg font-bold mb-5">⚙️ API設定</h2>
     <div class="space-y-4">
@@ -52,8 +113,20 @@
   <!-- Header -->
   <div class="flex items-center justify-between mb-8">
     <div>
-      <h1 class="text-2xl font-bold tracking-tight">📝 note画像生成ツール</h1>
-      <p class="text-gray-600 text-sm mt-1">Claude → プロンプト最適化 → ヘッダー3案 + 記事内画像 + タグ提案</p>
+      <h1 onclick="openModal('modalHelp')"
+        class="text-2xl font-bold tracking-tight cursor-pointer hover:text-blue-400 transition select-none"
+        title="使い方を見る">
+        📝 note画像生成ツール
+      </h1>
+      <div class="flex items-center gap-2 mt-1">
+        <button id="btn_version" onclick="openModal('modalRelease')"
+          class="text-xs text-gray-600 hover:text-yellow-400 transition font-mono select-none"
+          title="リリースノートを見る">
+          <!-- バージョンはJSで挿入 -->
+        </button>
+        <span class="text-gray-800 text-xs">·</span>
+        <p class="text-gray-600 text-xs">Claude → プロンプト最適化 → ヘッダー3案 + 記事内画像 + タグ</p>
+      </div>
     </div>
     <button onclick="openModal('modalSettings')"
       class="bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-xl px-4 py-2 text-sm transition flex items-center gap-2">
@@ -236,6 +309,75 @@
 
 <script>
 // ─────────────────────────────────────────────
+// VERSION & RELEASE NOTES
+// ─────────────────────────────────────────────
+const APP_VERSION = 'v0.3.2';
+
+const RELEASE_NOTES = [
+  {
+    version: 'v0.3.2',
+    date: '2026-05-01',
+    changes: [
+      'ロゴクリックで使い方モーダルを表示',
+      'バージョンクリックでリリースノートを表示',
+      'バージョン番号をヘッダーに常時表示',
+    ]
+  },
+  {
+    version: 'v0.3.1',
+    date: '2026-05-01',
+    changes: [
+      'キャラクター参照画像機能を追加（よしお・ロビー・まさみ）',
+      'GPT Image: /images/edits で参照画像を送信してキャラ一貫性を向上',
+      'Gemini: multipart contents に参照画像をinlineDataで追加',
+      '画像は自動リサイズ（1024px / JPEG 85%）してlocalStorageに保存',
+      'リセットボタン追加（入力・結果・ログをまとめてクリア）',
+      'まとめてDLボタン追加（全画像をZIPで一括ダウンロード・フォルダ分け）',
+    ]
+  },
+  {
+    version: 'v0.3.0',
+    date: '2026-04-30',
+    changes: [
+      'メインヘッダー画像3案 + 記事内画像（シーン別2案ずつ）を並列生成',
+      'note.com向けハッシュタグ6〜8件を自動提案（クリックで個別コピー）',
+      'プロンプトを日本語で生成するよう変更（英語→日本語）',
+      'スタイルを「SDチビ 2.5頭身」から「通常アニメ 4〜5頭身」に修正',
+      'テキスト/ロゴ/ウォーターマーク禁止ルールを強化',
+      'max_tokens 4000→8000 に拡張',
+    ]
+  },
+  {
+    version: 'v0.2.0',
+    date: '2026-04-29',
+    changes: [
+      'Claude APIでプロンプト最適化（Geminiフォールバック対応）',
+      'GPT Image 1.5 / Gemini Imagen 切り替え対応',
+      '3案並列生成・個別ダウンロード',
+      'エンジン障害時の自動フォールバック',
+      '15種類のシーンテンプレートを搭載',
+    ]
+  },
+];
+
+function renderReleaseNotes() {
+  const el = document.getElementById('release_notes_content');
+  if (!el) return;
+  el.innerHTML = RELEASE_NOTES.map(r => `
+    <div class="border border-gray-800 rounded-xl p-4">
+      <div class="flex items-center gap-3 mb-3">
+        <span class="font-mono font-bold text-yellow-400">${r.version}</span>
+        <span class="text-xs text-gray-600">${r.date}</span>
+        ${r.version === APP_VERSION ? '<span class="text-xs bg-blue-800 text-blue-300 rounded-full px-2 py-0.5">最新</span>' : ''}
+      </div>
+      <ul class="space-y-1.5">
+        ${r.changes.map(c => `<li class="text-xs text-gray-400 flex gap-2"><span class="text-gray-600 flex-shrink-0">·</span>${c}</li>`).join('')}
+      </ul>
+    </div>
+  `).join('');
+}
+
+// ─────────────────────────────────────────────
 // CHARACTER & STYLE DEFINITIONS
 // ─────────────────────────────────────────────
 const CLAUDE_SYSTEM = `あなたは「note バナーメーカー」です。日本のアニメ調イラストスタイルのブログ画像プロンプトを作成する専門家です。
@@ -344,11 +486,15 @@ function init() {
       updateCharPreview(key, stored);
     }
   });
+  // バージョン表示
+  const vBtn = document.getElementById('btn_version');
+  if (vBtn) vBtn.textContent = APP_VERSION;
+  renderReleaseNotes();
   updateKeyStatus();
   updateRefStatus();
   setEngine(engine, false);
   populateTemplates();
-  log('✅ note画像生成ツール v0.3 起動完了');
+  log(`✅ note画像生成ツール ${APP_VERSION} 起動完了`);
 }
 
 function updateKeyStatus() {
@@ -379,6 +525,7 @@ function openModal(id) {
     document.getElementById('inp_openaiKey').value    = settings.openaiKey;
     document.getElementById('inp_geminiKey').value    = settings.geminiKey;
   }
+  if (id === 'modalRelease') renderReleaseNotes();
   document.getElementById(id).classList.remove('hidden');
 }
 
