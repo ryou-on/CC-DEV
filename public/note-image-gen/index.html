@@ -690,9 +690,9 @@ async function callDallE(prompt) {
 }
 
 // ─────────────────────────────────────────────
-// GPT Image 1 — 参照画像あり (/v1/images/edits)
+// GPT Image 1 — 参照画像あり (/v1/images/edits) + リトライ
 // ─────────────────────────────────────────────
-async function callDallEWithRef(prompt, refImages) {
+function buildEditFormData(prompt, refImages) {
   const fd = new FormData();
   fd.append('model', 'gpt-image-1');
   fd.append('prompt', prompt);
@@ -705,17 +705,34 @@ async function callDallEWithRef(prompt, refImages) {
     const bytes  = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
     fd.append('image[]', new File([bytes], `ref_${i}.png`, { type: mime }));
   });
-  const res = await fetch('https://api.openai.com/v1/images/edits', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${settings.openaiKey}` },
-    body: fd
-  });
-  if (!res.ok) {
+  return fd;
+}
+
+async function callDallEWithRef(prompt, refImages) {
+  const MAX_RETRY = 4;
+  for (let attempt = 0; attempt < MAX_RETRY; attempt++) {
+    const res = await fetch('https://api.openai.com/v1/images/edits', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${settings.openaiKey}` },
+      body: buildEditFormData(prompt, refImages)
+    });
+    if (res.ok) {
+      const data = await res.json();
+      return { url: `data:image/png;base64,${data.data[0].b64_json}`, revised: null };
+    }
     const err = await res.json().catch(() => ({}));
-    throw new Error(`GPT Image edits: ${err.error?.message || res.status}`);
+    const msg = err.error?.message || String(res.status);
+    // レート制限 → エラーメッセージからwait秒数を取得してリトライ
+    if (res.status === 429) {
+      const match = msg.match(/try again in (\d+)s/i);
+      const waitSec = match ? (parseInt(match[1]) + 3) : (15 * (attempt + 1));
+      log(`⏳ レート制限 → ${waitSec}秒後にリトライ... (${attempt + 1}/${MAX_RETRY - 1})`);
+      await new Promise(r => setTimeout(r, waitSec * 1000));
+      continue;
+    }
+    throw new Error(`GPT Image edits: ${msg}`);
   }
-  const data = await res.json();
-  return { url: `data:image/png;base64,${data.data[0].b64_json}`, revised: null };
+  throw new Error('GPT Image edits: レート制限のリトライ上限に達しました。しばらく待って再試行してください');
 }
 
 // ─────────────────────────────────────────────
@@ -965,7 +982,11 @@ async function runGenerateImagesFromPrompts() {
 
   try {
     const engineLabel = engine === 'dalle' ? 'GPT Image 1.5' : 'Gemini Imagen';
-    log(`🎨 ${engineLabel} で合計${totalCount}枚を並列生成中...`);
+    const hasRef = Object.values(settings.charImages).some(Boolean);
+    // 参照画像あり＆DALL-E: レート制限(5枚/分)のため順次生成
+    const useSequential = hasRef && engine === 'dalle';
+    log(`🎨 ${engineLabel} で合計${totalCount}枚を${useSequential ? '順次' : '並列'}生成中...`);
+    if (useSequential) log('ℹ️ 参照画像モード: レート制限回避のため1枚ずつ生成します');
 
     let completed = 0;
     const updateProgress = () => {
@@ -973,48 +994,47 @@ async function runGenerateImagesFromPrompts() {
       btn.innerHTML = `<span class="spin">⏳</span> 生成中... ${completed}/${totalCount}`;
     };
 
-    // ヘッダー画像タスク
-    const headerTasks = headerPrompts.map((p, i) =>
-      callImageAPI(p)
-        .then(r => { updateProgress(); return { type: 'header', i, ...r }; })
-        .catch(e => { updateProgress(); return { type: 'header', i, error: e.message }; })
+    // 全タスクを配列化（順次・並列どちらでも使う）
+    const allTasks = [];
+    headerPrompts.forEach((p, i)   => allTasks.push({ prompt: p, type: 'header',  i }));
+    articlePromptMap.forEach((scene, si) =>
+      scene.prompts.forEach((p, pi) => allTasks.push({ prompt: p, type: 'article', si, pi, title: scene.title }))
     );
 
-    // 記事内画像タスク
-    const articleTasks = [];
-    articlePromptMap.forEach((scene, si) => {
-      scene.prompts.forEach((p, pi) => {
-        articleTasks.push(
-          callImageAPI(p)
-            .then(r => { updateProgress(); return { type: 'article', si, pi, title: scene.title, ...r }; })
-            .catch(e => { updateProgress(); return { type: 'article', si, pi, title: scene.title, error: e.message }; })
-        );
-      });
-    });
-
-    const results = await Promise.all([...headerTasks, ...articleTasks]);
-
-    results.forEach(r => {
-      if (r.type === 'header') {
-        const label = `ヘッダー案${r.i + 1}`;
-        if (r.error) {
-          log(`❌ ${label} エラー: ${r.error}`);
-          updateImageCard(`header_${r.i}`, null, r.error, label);
-        } else {
-          log(`✅ ${label} 完了`);
-          updateImageCard(`header_${r.i}`, r.url, null, label, r.revised);
-        }
-      } else {
-        const label = `${r.title} 案${r.pi + 1}`;
-        if (r.error) {
-          log(`❌ ${label} エラー: ${r.error}`);
-          updateImageCard(`article_${r.si}_${r.pi}`, null, r.error, label);
-        } else {
-          log(`✅ ${label} 完了`);
-          updateImageCard(`article_${r.si}_${r.pi}`, r.url, null, label, r.revised);
-        }
+    let results;
+    if (useSequential) {
+      // 順次生成（レート制限回避）
+      results = [];
+      for (const task of allTasks) {
+        const r = await callImageAPI(task.prompt)
+          .then(res => ({ ...task, ...res }))
+          .catch(e  => ({ ...task, error: e.message }));
+        updateProgress();
+        results.push(r);
+        // カードをリアルタイム更新
+        const label = task.type === 'header' ? `ヘッダー案${task.i + 1}` : `${task.title} 案${task.pi + 1}`;
+        const cardId = task.type === 'header' ? `header_${task.i}` : `article_${task.si}_${task.pi}`;
+        if (r.error) { log(`❌ ${label}: ${r.error}`); updateImageCard(cardId, null, r.error, label); }
+        else         { log(`✅ ${label} 完了`);          updateImageCard(cardId, r.url, null, label, r.revised); }
       }
-    });
+    } else {
+      // 並列生成（参照画像なし or Gemini）
+      results = await Promise.all(allTasks.map(task =>
+        callImageAPI(task.prompt)
+          .then(res => { updateProgress(); return { ...task, ...res }; })
+          .catch(e  => { updateProgress(); return { ...task, error: e.message }; })
+      ));
+    }
+
+    // 順次生成はループ内でリアルタイム更新済みのため並列時のみ後処理
+    if (!useSequential) {
+      results.forEach(r => {
+        const label  = r.type === 'header' ? `ヘッダー案${r.i + 1}` : `${r.title} 案${r.pi + 1}`;
+        const cardId = r.type === 'header' ? `header_${r.i}`         : `article_${r.si}_${r.pi}`;
+        if (r.error) { log(`❌ ${label}: ${r.error}`); updateImageCard(cardId, null, r.error, label); }
+        else         { log(`✅ ${label} 完了`);          updateImageCard(cardId, r.url, null, label, r.revised); }
+      });
+    }
 
     const success = results.filter(r => !r.error).length;
     log(`🎉 ${success}/${totalCount}枚の生成完了`);
