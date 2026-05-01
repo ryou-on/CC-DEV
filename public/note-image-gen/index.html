@@ -545,23 +545,94 @@ function saveSettings() {
   log('✅ APIキーを保存しました');
 }
 
+const HISTORY_MAX = 15;
+
 function populateTemplates() {
   const sel = document.getElementById('inp_template');
+  // テンプレートをoptgroupでまとめる
+  const grp = document.createElement('optgroup');
+  grp.id    = 'optgrp_templates';
+  grp.label = '📋 テンプレート';
   TEMPLATES.forEach(t => {
     const opt = document.createElement('option');
     opt.value = t.id;
     opt.textContent = t.title;
-    sel.appendChild(opt);
+    grp.appendChild(opt);
   });
+  sel.appendChild(grp);
+  // 履歴を先頭に挿入
+  refreshHistoryOptions();
 }
 
 function applyTemplate(id) {
   if (!id) return;
+  // 履歴アイテム
+  if (id.startsWith('hist_')) {
+    const hist = loadHistory();
+    const item = hist.find(h => h.id === id);
+    if (!item) return;
+    document.getElementById('inp_title').value = item.title;
+    document.getElementById('inp_scene').value = item.scene;
+    log(`📂 履歴「${item.title || item.scene.slice(0, 20)}…」を読み込みました`);
+    return;
+  }
+  // 既存テンプレート
   const t = TEMPLATES.find(x => x.id === id);
   if (!t) return;
   document.getElementById('inp_title').value = t.title.replace(/^\d+ /, '');
   document.getElementById('inp_scene').value = t.scene;
   log(`📋 テンプレート「${t.title}」を適用`);
+}
+
+// ─────────────────────────────────────────────
+// INPUT HISTORY
+// ─────────────────────────────────────────────
+function loadHistory() {
+  try { return JSON.parse(localStorage.getItem('nig_history') || '[]'); }
+  catch { return []; }
+}
+
+function saveToHistory(title, scene) {
+  if (!scene.trim()) return;
+  const hist = loadHistory();
+  // 同じ内容の重複を除去
+  const deduped = hist.filter(h => !(h.title === title && h.scene === scene));
+  const now = new Date();
+  const label = `${now.getMonth()+1}/${now.getDate()} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+  deduped.unshift({
+    id: `hist_${Date.now()}`,
+    title,
+    scene,
+    savedAt: label
+  });
+  localStorage.setItem('nig_history', JSON.stringify(deduped.slice(0, HISTORY_MAX)));
+  refreshHistoryOptions();
+  log(`📂 入力を履歴に保存しました`);
+}
+
+function refreshHistoryOptions() {
+  const sel = document.getElementById('inp_template');
+  // 既存の履歴optgroupを削除
+  document.getElementById('optgrp_history')?.remove();
+
+  const hist = loadHistory();
+  if (!hist.length) return;
+
+  const grp = document.createElement('optgroup');
+  grp.id    = 'optgrp_history';
+  grp.label = '📂 最近使った項目';
+  hist.forEach(h => {
+    const opt = document.createElement('option');
+    opt.value = h.id;
+    const preview = (h.title || h.scene).slice(0, 28);
+    opt.textContent = `${preview}… (${h.savedAt})`;
+    grp.appendChild(opt);
+  });
+
+  // テンプレートoptgroupの前に挿入
+  const templGrp = document.getElementById('optgrp_templates');
+  if (templGrp) sel.insertBefore(grp, templGrp);
+  else sel.appendChild(grp);
 }
 
 // ─────────────────────────────────────────────
@@ -822,13 +893,15 @@ async function runGeneratePrompts() {
   const scene = document.getElementById('inp_scene').value.trim();
   if (!scene) { alert('シーン説明を入力してください'); return false; }
 
+  const title = document.getElementById('inp_title').value.trim();
+  saveToHistory(title, scene); // 生成前に履歴保存
+
   const btn = document.getElementById('btn_genPrompt');
   btn.disabled = true;
   btn.innerHTML = '<span class="spin">⏳</span> 生成中...';
 
   try {
     log('🤖 プロンプト + タグ生成中...');
-    const title = document.getElementById('inp_title').value.trim();
     const raw = await generatePromptText(
       `記事タイトル: ${title || '（未入力）'}\n\nシーン説明:\n${scene}`
     );
