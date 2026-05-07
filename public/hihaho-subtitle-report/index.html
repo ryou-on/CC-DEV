@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>字幕エラー報告</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    .slide-in  { animation: slideIn  0.25s ease forwards; }
+    .slide-out { animation: slideOut 0.2s  ease forwards; }
+    @keyframes slideIn  { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
+    @keyframes slideOut { from { opacity:1; transform:translateY(0); } to { opacity:0; transform:translateY(16px); } }
+  </style>
+</head>
+<body class="bg-transparent">
+
+<!-- ① フローティングボタン（デフォルト表示） -->
+<div id="trigger-btn"
+     class="fixed bottom-4 right-4 z-40">
+  <button onclick="openForm()"
+          class="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800
+                 text-white text-sm font-medium px-4 py-2.5 rounded-full shadow-lg
+                 transition-colors duration-150 focus:outline-none focus:ring-2 focus:ring-indigo-400">
+    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+    </svg>
+    <span id="btn-label">字幕エラーを報告</span>
+  </button>
+</div>
+
+<!-- ② モーダル背景 -->
+<div id="modal-bg"
+     class="fixed inset-0 z-50 bg-black/40 hidden items-center justify-center p-4"
+     onclick="closeOnBg(event)">
+
+  <!-- ③ フォームカード -->
+  <div id="form-card"
+       class="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
+
+    <!-- ヘッダー -->
+    <div class="bg-indigo-600 px-5 py-4 flex items-center justify-between">
+      <h2 id="form-title" class="text-white font-semibold text-base">字幕エラー報告</h2>
+      <!-- 言語切り替え -->
+      <select id="lang-select" onchange="switchLang(this.value)"
+              class="text-sm bg-indigo-500 text-white border border-indigo-400 rounded-lg px-2 py-1
+                     focus:outline-none focus:ring-2 focus:ring-white cursor-pointer">
+        <option value="ja">🇯🇵 日本語</option>
+        <option value="en">🇺🇸 English</option>
+        <option value="zh">🇨🇳 中文</option>
+        <option value="ko">🇰🇷 한국어</option>
+        <option value="vi">🇻🇳 Tiếng Việt</option>
+      </select>
+    </div>
+
+    <!-- フォーム本体 -->
+    <form id="report-form"
+          action="https://formsubmit.co/jumpei.omote@splineglobal.com"
+          method="POST"
+          onsubmit="handleSubmit(event)"
+          class="px-5 py-5 space-y-4">
+
+      <!-- formsubmit 設定 -->
+      <input type="hidden" name="_subject" id="email-subject" value="[hihaho字幕エラー報告]">
+      <input type="hidden" name="_captcha" value="false">
+      <input type="hidden" name="_template" value="table">
+      <input type="hidden" name="報告言語" id="hidden-lang" value="日本語">
+
+      <!-- 間違っている表記 -->
+      <div>
+        <label id="label-wrong" class="block text-sm font-medium text-gray-700 mb-1">
+          間違っている表記
+        </label>
+        <textarea id="field-wrong" name="間違っている表記"
+                  rows="2" required
+                  placeholder="字幕の誤った部分を貼り付けてください"
+                  id-placeholder="wrong"
+                  class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm
+                         focus:outline-none focus:ring-2 focus:ring-indigo-400
+                         resize-none"></textarea>
+      </div>
+
+      <!-- 修正する内容 -->
+      <div>
+        <label id="label-correct" class="block text-sm font-medium text-gray-700 mb-1">
+          修正する内容
+        </label>
+        <textarea id="field-correct" name="修正する内容"
+                  rows="2" required
+                  placeholder="正しい表記を入力してください"
+                  class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm
+                         focus:outline-none focus:ring-2 focus:ring-indigo-400
+                         resize-none"></textarea>
+      </div>
+
+      <!-- ボタン -->
+      <div class="flex gap-3 pt-1">
+        <button type="button" onclick="closeForm()"
+                class="flex-1 border border-gray-300 text-gray-700 text-sm font-medium
+                       py-2.5 rounded-xl hover:bg-gray-50 active:bg-gray-100 transition-colors">
+          <span id="btn-cancel">キャンセル</span>
+        </button>
+        <button type="submit"
+                class="flex-1 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800
+                       text-white text-sm font-medium py-2.5 rounded-xl
+                       transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-400">
+          <span id="btn-send">送信する</span>
+        </button>
+      </div>
+    </form>
+
+    <!-- 送信完了画面 -->
+    <div id="thankyou" class="hidden px-5 py-10 text-center space-y-3">
+      <div class="text-4xl">✅</div>
+      <p id="msg-thanks" class="text-gray-800 font-semibold text-base">ご報告ありがとうございました</p>
+      <p id="msg-sub" class="text-gray-500 text-sm">内容を確認の上、修正いたします。</p>
+      <button onclick="resetForm()"
+              class="mt-4 text-indigo-600 hover:text-indigo-800 text-sm underline underline-offset-2">
+        <span id="btn-another">別の箇所を報告する</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── 多言語テキスト定義 ───────────────────────────────────────────
+const i18n = {
+  ja: {
+    btnLabel:    '字幕エラーを報告',
+    formTitle:   '字幕エラー報告',
+    labelWrong:  '間違っている表記',
+    labelCorrect:'修正する内容',
+    phWrong:     '字幕の誤った部分を貼り付けてください',
+    phCorrect:   '正しい表記を入力してください',
+    btnCancel:   'キャンセル',
+    btnSend:     '送信する',
+    subject:     '[hihaho字幕エラー報告]',
+    hiddenLang:  '日本語',
+    thanks:      'ご報告ありがとうございました',
+    sub:         '内容を確認の上、修正いたします。',
+    another:     '別の箇所を報告する',
+  },
+  en: {
+    btnLabel:    'Report Subtitle Error',
+    formTitle:   'Subtitle Error Report',
+    labelWrong:  'Incorrect subtitle text',
+    labelCorrect:'Suggested correction',
+    phWrong:     'Paste the incorrect subtitle text here',
+    phCorrect:   'Enter the correct text',
+    btnCancel:   'Cancel',
+    btnSend:     'Send',
+    subject:     '[hihaho Subtitle Error Report]',
+    hiddenLang:  'English',
+    thanks:      'Thank you for your report!',
+    sub:         'We will review and correct the subtitle.',
+    another:     'Report another error',
+  },
+  zh: {
+    btnLabel:    '报告字幕错误',
+    formTitle:   '字幕错误报告',
+    labelWrong:  '错误的字幕内容',
+    labelCorrect:'建议的更正内容',
+    phWrong:     '请粘贴错误的字幕文本',
+    phCorrect:   '请输入正确的文本',
+    btnCancel:   '取消',
+    btnSend:     '发送',
+    subject:     '[hihaho字幕错误报告]',
+    hiddenLang:  '中文',
+    thanks:      '感谢您的报告！',
+    sub:         '我们将审核并更正字幕。',
+    another:     '报告其他错误',
+  },
+  ko: {
+    btnLabel:    '자막 오류 신고',
+    formTitle:   '자막 오류 신고',
+    labelWrong:  '잘못된 자막 내용',
+    labelCorrect:'수정 제안 내용',
+    phWrong:     '잘못된 자막을 여기에 붙여넣으세요',
+    phCorrect:   '올바른 텍스트를 입력하세요',
+    btnCancel:   '취소',
+    btnSend:     '전송',
+    subject:     '[hihaho 자막 오류 신고]',
+    hiddenLang:  '한국어',
+    thanks:      '신고해 주셔서 감사합니다!',
+    sub:         '검토 후 자막을 수정하겠습니다.',
+    another:     '다른 오류 신고하기',
+  },
+  vi: {
+    btnLabel:    'Báo lỗi phụ đề',
+    formTitle:   'Báo cáo lỗi phụ đề',
+    labelWrong:  'Nội dung phụ đề sai',
+    labelCorrect:'Nội dung sửa đề xuất',
+    phWrong:     'Dán văn bản phụ đề sai vào đây',
+    phCorrect:   'Nhập văn bản chính xác',
+    btnCancel:   'Hủy',
+    btnSend:     'Gửi',
+    subject:     '[hihaho Báo lỗi phụ đề]',
+    hiddenLang:  'Tiếng Việt',
+    thanks:      'Cảm ơn bạn đã báo cáo!',
+    sub:         'Chúng tôi sẽ xem xét và sửa phụ đề.',
+    another:     'Báo lỗi khác',
+  },
+};
+
+let currentLang = 'ja';
+
+function switchLang(lang) {
+  currentLang = lang;
+  const t = i18n[lang];
+  document.getElementById('btn-label').textContent      = t.btnLabel;
+  document.getElementById('form-title').textContent     = t.formTitle;
+  document.getElementById('label-wrong').textContent    = t.labelWrong;
+  document.getElementById('label-correct').textContent  = t.labelCorrect;
+  document.getElementById('field-wrong').placeholder    = t.phWrong;
+  document.getElementById('field-correct').placeholder  = t.phCorrect;
+  document.getElementById('btn-cancel').textContent     = t.btnCancel;
+  document.getElementById('btn-send').textContent       = t.btnSend;
+  document.getElementById('email-subject').value        = t.subject;
+  document.getElementById('hidden-lang').value          = t.hiddenLang;
+  document.getElementById('msg-thanks').textContent     = t.thanks;
+  document.getElementById('msg-sub').textContent        = t.sub;
+  document.getElementById('btn-another').textContent    = t.another;
+}
+
+// ── モーダル開閉 ──────────────────────────────────────────────────
+function openForm() {
+  const bg   = document.getElementById('modal-bg');
+  const card = document.getElementById('form-card');
+  bg.classList.remove('hidden');
+  bg.classList.add('flex');
+  card.classList.remove('slide-out');
+  card.classList.add('slide-in');
+}
+
+function closeForm() {
+  const bg   = document.getElementById('modal-bg');
+  const card = document.getElementById('form-card');
+  card.classList.remove('slide-in');
+  card.classList.add('slide-out');
+  setTimeout(() => {
+    bg.classList.add('hidden');
+    bg.classList.remove('flex');
+  }, 200);
+}
+
+function closeOnBg(e) {
+  if (e.target === document.getElementById('modal-bg')) closeForm();
+}
+
+// ── 送信処理 ─────────────────────────────────────────────────────
+function handleSubmit(e) {
+  e.preventDefault();
+  const form = document.getElementById('report-form');
+  const data = new FormData(form);
+
+  fetch(form.action, { method: 'POST', body: data, headers: { Accept: 'application/json' } })
+    .then(res => {
+      if (res.ok || res.status === 200) showThankyou();
+      else showThankyou(); // formsubmit は 302 リダイレクトを返すので成功扱い
+    })
+    .catch(() => showThankyou());
+}
+
+function showThankyou() {
+  document.getElementById('report-form').classList.add('hidden');
+  document.getElementById('thankyou').classList.remove('hidden');
+}
+
+function resetForm() {
+  document.getElementById('report-form').reset();
+  document.getElementById('report-form').classList.remove('hidden');
+  document.getElementById('thankyou').classList.add('hidden');
+}
+</script>
+
+</body>
+</html>
