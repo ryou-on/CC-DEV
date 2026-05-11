@@ -398,6 +398,23 @@
       text-align: right;
     }
 
+    /* ===== ルートカラーパレット ===== */
+    .color-palette {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .color-swatch {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 3px solid transparent;
+      transition: transform .15s, border-color .15s;
+    }
+    .color-swatch:hover { transform: scale(1.15); }
+    .color-swatch.selected { border-color: var(--ink); transform: scale(1.15); }
+
     /* ===== 設定ボタン ===== */
     .btn-settings {
       background: transparent;
@@ -959,6 +976,37 @@
   </div>
 </div>
 
+<!-- ===== ルート編集モーダル ===== -->
+<div class="modal-overlay" id="routeEditOverlay">
+  <div class="modal">
+    <h2>🚶 ルートを編集</h2>
+
+    <div class="form-group">
+      <label>ルート名</label>
+      <input type="text" id="reName" placeholder="例: 散歩コース" />
+    </div>
+
+    <div class="form-group">
+      <label>ラインの色</label>
+      <div class="color-palette" id="colorPalette">
+        <!-- JSで生成 -->
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>ラインの太さ: <strong id="weightLabel">4</strong>px</label>
+      <input type="range" id="reWeight" min="2" max="12" step="1" value="4"
+        style="width:100%;accent-color:var(--amber);" />
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn-save" id="btnRouteSave">保存する</button>
+      <button class="btn-cancel" id="btnRouteEditCancel">キャンセル</button>
+      <button class="btn-delete" id="btnRouteDelete">削除</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== メンバー設定モーダル ===== -->
 <div class="modal-overlay" id="memberModalOverlay">
   <div class="modal">
@@ -1061,11 +1109,13 @@ let searchTimer = null;
 
 /** 検索候補を取得（Nominatim） */
 async function geocodeNominatim(query) {
-  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&accept-language=ja`;
-  const res  = await fetch(url, { headers: { 'Accept-Language': 'ja' } });
+  // accept-languageはURLパラメータで指定（カスタムヘッダーはCORSエラーになるため使わない）
+  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&accept-language=ja&addressdetails=1`;
+  const res  = await fetch(url);
+  if (!res.ok) throw new Error(`Nominatim HTTP ${res.status}`);
   const data = await res.json();
   return data.map(d => ({
-    name:    d.display_name.split(',')[0],
+    name:    d.namedetails?.name || d.display_name.split(',')[0],
     address: d.display_name,
     lat:     parseFloat(d.lat),
     lng:     parseFloat(d.lon),
@@ -1655,17 +1705,17 @@ const ROUTE_COLORS = ['#e05c5c','#c8821a','#4a7c59','#3a6fa8','#7c4a7c','#5c8ec8
 /** ルートをマップに描画 */
 function addRouteToMap(route) {
   if (route.points.length < 2) return;
-  const color = ROUTE_COLORS[routes.indexOf(route) % ROUTE_COLORS.length];
-  const line = L.polyline(route.points, {
-    color,
-    weight: 4,
-    opacity: 0.75,
-    dashArray: null,
-  });
+  // route.color / route.weight がなければデフォルト値
+  const color  = route.color  || ROUTE_COLORS[routes.findIndex(r => r.id === route.id) % ROUTE_COLORS.length] || '#c8821a';
+  const weight = route.weight || 4;
+  const line = L.polyline(route.points, { color, weight, opacity: 0.8 });
   line.bindPopup(`
     <b style="font-family:'Zen Maru Gothic',sans-serif">🚶 ${route.name || 'ルート'}</b><br>
-    <span style="font-size:0.72rem;color:#6b5c45">${route.points.length}点 · ${route.date || '日付不明'}</span>
-    <br><button onclick="deleteRoute('${route.id}')" style="margin-top:6px;font-size:0.7rem;padding:2px 8px;border-radius:6px;background:#ffd5d5;border:1px solid #b94040;color:#b94040;cursor:pointer;">削除</button>
+    <span style="font-size:0.72rem;color:#6b5c45">${route.points.length}点 · ${route.date || '日付不明'}</span><br>
+    <div style="display:flex;gap:6px;margin-top:6px;">
+      <button onclick="openRouteEdit('${route.id}')" style="font-size:0.7rem;padding:3px 8px;border-radius:6px;background:#f0d090;border:1px solid #c8821a;color:#2c2416;cursor:pointer;">編集</button>
+      <button onclick="deleteRoute('${route.id}')" style="font-size:0.7rem;padding:3px 8px;border-radius:6px;background:#ffd5d5;border:1px solid #b94040;color:#b94040;cursor:pointer;">削除</button>
+    </div>
   `);
   line.addTo(map);
   routeLayerMap[route.id] = line;
@@ -1680,6 +1730,83 @@ window.deleteRoute = (id) => {
   saveRoutes(routes);
   log('ルート削除:', id);
 };
+
+// ===== ルート編集モーダル =====
+const ROUTE_COLORS_ALL = [
+  '#e05c5c','#c8821a','#e8c030','#4a7c59','#3a6fa8',
+  '#7c4a7c','#5c8ec8','#2c2416','#888888','#e88050',
+];
+const routeEditOverlay = document.getElementById('routeEditOverlay');
+let editingRouteId = null;
+let selectedRouteColor = '#c8821a';
+
+/** ルート編集モーダルを開く */
+window.openRouteEdit = (id) => {
+  const route = routes.find(r => r.id === id);
+  if (!route) return;
+  editingRouteId = id;
+  selectedRouteColor = route.color || '#c8821a';
+
+  document.getElementById('reName').value   = route.name || '';
+  document.getElementById('reWeight').value = route.weight || 4;
+  document.getElementById('weightLabel').textContent = route.weight || 4;
+
+  // カラーパレット生成
+  const palette = document.getElementById('colorPalette');
+  palette.innerHTML = ROUTE_COLORS_ALL.map(c => `
+    <div class="color-swatch ${c === selectedRouteColor ? 'selected' : ''}"
+      style="background:${c}" data-color="${c}"></div>
+  `).join('');
+  palette.querySelectorAll('.color-swatch').forEach(sw => {
+    sw.addEventListener('click', () => {
+      palette.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
+      sw.classList.add('selected');
+      selectedRouteColor = sw.dataset.color;
+    });
+  });
+
+  // 太さスライダーのリアルタイム表示
+  document.getElementById('reWeight').addEventListener('input', (e) => {
+    document.getElementById('weightLabel').textContent = e.target.value;
+  });
+
+  routeEditOverlay.classList.add('open');
+  // ポップアップを閉じる
+  routeLayerMap[id]?.closePopup();
+};
+
+/** ルート編集保存 */
+document.getElementById('btnRouteSave').addEventListener('click', () => {
+  const idx = routes.findIndex(r => r.id === editingRouteId);
+  if (idx < 0) return;
+  routes[idx] = {
+    ...routes[idx],
+    name:   document.getElementById('reName').value.trim() || 'ルート',
+    color:  selectedRouteColor,
+    weight: parseInt(document.getElementById('reWeight').value),
+  };
+  saveRoutes(routes);
+  // マップ上のラインを更新
+  routeLayerMap[editingRouteId]?.remove();
+  delete routeLayerMap[editingRouteId];
+  addRouteToMap(routes[idx]);
+  routeEditOverlay.classList.remove('open');
+  log('ルート更新:', routes[idx].name);
+});
+
+/** ルート編集モーダルからの削除 */
+document.getElementById('btnRouteDelete').addEventListener('click', () => {
+  if (!confirm('このルートを削除しますか？')) return;
+  deleteRoute(editingRouteId);
+  routeEditOverlay.classList.remove('open');
+});
+
+document.getElementById('btnRouteEditCancel').addEventListener('click', () => {
+  routeEditOverlay.classList.remove('open');
+});
+routeEditOverlay.addEventListener('click', e => {
+  if (e.target === routeEditOverlay) routeEditOverlay.classList.remove('open');
+});
 
 // 既存ルートを描画
 routes.forEach(addRouteToMap);
