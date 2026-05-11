@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>COCO-ITTA 🗺️</title>
 
+  <!-- Firebase SDK (compat版: シングルHTMLで使いやすい) -->
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <!-- Google Fonts: Zen Maru Gothic + Crimson Pro -->
@@ -394,7 +398,202 @@
       text-align: right;
     }
 
-    /* Leafletカスタムマーカー */
+    /* ===== ログイン画面 ===== */
+    .login-overlay {
+      position: fixed;
+      inset: 0;
+      background: var(--bg);
+      z-index: 9999;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      /* 背景: 薄い地図グリッド風パターン */
+      background-image:
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+      background-size: 40px 40px;
+    }
+    .login-card {
+      background: var(--paper);
+      border: 2px solid var(--border);
+      border-radius: 20px;
+      padding: 40px 36px;
+      width: 360px;
+      max-width: 95vw;
+      text-align: center;
+      box-shadow: 0 12px 40px var(--shadow);
+    }
+    .login-logo {
+      font-family: 'Crimson Pro', serif;
+      font-style: italic;
+      font-size: 2.4rem;
+      color: var(--ink);
+      letter-spacing: 0.04em;
+    }
+    .login-sub {
+      font-size: 0.75rem;
+      color: var(--ink-light);
+      margin-bottom: 20px;
+    }
+    .login-desc {
+      font-size: 0.8rem;
+      color: var(--ink-light);
+      line-height: 1.7;
+      margin-bottom: 28px;
+    }
+    .btn-google-login {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      width: 100%;
+      padding: 12px;
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      background: white;
+      font-family: 'Zen Maru Gothic', sans-serif;
+      font-size: 0.88rem;
+      font-weight: 700;
+      cursor: pointer;
+      color: var(--ink);
+      transition: all .2s;
+      box-shadow: 0 2px 8px var(--shadow);
+    }
+    .btn-google-login:hover {
+      border-color: var(--amber);
+      box-shadow: 0 4px 16px var(--shadow);
+      transform: translateY(-1px);
+    }
+    .login-note {
+      font-size: 0.62rem;
+      color: var(--ink-light);
+      margin-top: 16px;
+      opacity: 0.7;
+      line-height: 1.5;
+    }
+
+    /* ===== ヘッダー内ユーザーエリア ===== */
+    .user-area {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .user-avatar {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      border: 2px solid var(--amber);
+      object-fit: cover;
+    }
+    .btn-logout {
+      background: transparent;
+      border: 1.5px solid rgba(240,208,144,0.4);
+      color: var(--amber-lt);
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-family: 'Zen Maru Gothic', sans-serif;
+      font-size: 0.7rem;
+      cursor: pointer;
+      transition: all .2s;
+    }
+    .btn-logout:hover { background: rgba(240,208,144,0.15); }
+
+    /* ===== 住所検索バー（地図上フローティング） ===== */
+    .search-wrapper {
+      position: absolute;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 500;
+      width: min(420px, calc(100vw - 320px - 40px)); /* サイドパネル分を除く */
+    }
+    .search-box {
+      display: flex;
+      align-items: center;
+      background: var(--paper);
+      border: 2px solid var(--border);
+      border-radius: 24px;
+      padding: 6px 14px;
+      box-shadow: 0 4px 16px var(--shadow);
+      gap: 8px;
+      transition: border-color .2s;
+    }
+    .search-box:focus-within { border-color: var(--amber); }
+    .search-box .search-icon { font-size: 1rem; flex-shrink: 0; opacity: 0.6; }
+    .search-box input {
+      flex: 1;
+      border: none;
+      background: transparent;
+      font-family: 'Zen Maru Gothic', sans-serif;
+      font-size: 0.82rem;
+      color: var(--ink);
+      outline: none;
+      padding: 2px 0;
+    }
+    .search-box input::placeholder { color: var(--ink-light); opacity: 0.7; }
+    .search-clear {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 0.9rem;
+      opacity: 0.5;
+      padding: 0 2px;
+      display: none;
+    }
+    .search-clear.visible { display: block; }
+
+    /* 検索候補ドロップダウン */
+    .search-dropdown {
+      background: var(--paper);
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      margin-top: 6px;
+      box-shadow: 0 4px 16px var(--shadow);
+      overflow: hidden;
+      display: none;
+    }
+    .search-dropdown.open { display: block; }
+    .search-result-item {
+      padding: 10px 14px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border);
+      transition: background .15s;
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+    }
+    .search-result-item:last-child { border-bottom: none; }
+    .search-result-item:hover { background: var(--bg); }
+    .sri-icon { font-size: 1rem; flex-shrink: 0; margin-top: 1px; }
+    .sri-name {
+      font-size: 0.8rem;
+      font-weight: 700;
+      line-height: 1.3;
+    }
+    .sri-addr {
+      font-size: 0.68rem;
+      color: var(--ink-light);
+      margin-top: 2px;
+    }
+    .search-loading, .search-empty {
+      padding: 12px 14px;
+      font-size: 0.78rem;
+      color: var(--ink-light);
+      text-align: center;
+    }
+
+    /* 検索エンジン切り替えバッジ */
+    .search-engine-badge {
+      position: absolute;
+      right: 12px;
+      bottom: -22px;
+      font-size: 0.6rem;
+      color: rgba(44,36,22,0.4);
+      white-space: nowrap;
+    }
+
+    /* ===== Leafletカスタムマーカー ===== */
     .custom-marker {
       display: flex;
       align-items: center;
@@ -437,12 +636,48 @@
     <button class="filter-btn" data-filter="country">🌍 国・地域</button>
   </div>
   <button class="btn-add" id="btnOpenAdd">＋ ピン追加</button>
+
+  <!-- ユーザーアバター（ログイン後に表示） -->
+  <div class="user-area" id="userArea" style="display:none;">
+    <img class="user-avatar" id="userAvatar" src="" alt="" />
+    <button class="btn-logout" id="btnLogout">ログアウト</button>
+  </div>
 </header>
 
+<!-- ===== ログイン画面オーバーレイ ===== -->
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-card">
+    <div class="login-logo">COCO-ITTA</div>
+    <div class="login-sub">ここいった — 家族の地図帳</div>
+    <p class="login-desc">家族みんなで「行った場所」「行きたい場所」を地図上で共有できるアプリです。</p>
+    <button class="btn-google-login" id="btnGoogleLogin">
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.874 2.684-6.615z" fill="#4285F4"/>
+        <path d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 009 18z" fill="#34A853"/>
+        <path d="M3.964 10.71A5.41 5.41 0 013.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 000 9c0 1.452.348 2.827.957 4.042l3.007-2.332z" fill="#FBBC05"/>
+        <path d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 00.957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z" fill="#EA4335"/>
+      </svg>
+      Googleでログイン
+    </button>
+    <p class="login-note">ログインすることで利用規約・プライバシーポリシーに同意したものとみなします。</p>
+  </div>
+</div>
+
 <!-- ===== メイン ===== -->
-<main>
+<main style="position:relative;">
   <!-- 地図 -->
   <div id="map"></div>
+
+  <!-- 住所検索バー（地図上フローティング） -->
+  <div class="search-wrapper" id="searchWrapper">
+    <div class="search-box">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="searchInput" placeholder="場所・住所を検索…" autocomplete="off" />
+      <button class="search-clear" id="searchClear">✕</button>
+    </div>
+    <div class="search-dropdown" id="searchDropdown"></div>
+    <span class="search-engine-badge" id="engineBadge">Nominatim (OSM) · キー不要</span>
+  </div>
 
   <!-- サイドパネル -->
   <aside class="side-panel">
@@ -547,6 +782,202 @@
 // - ピン追加・編集・削除
 // - フィルター（ステータス・レイヤー）
 // ============================================================
+
+// ============================================================
+// Firebase 設定・初期化
+// ============================================================
+const firebaseConfig = {
+  apiKey:            "AIzaSyDPlsAhtxbJBihy-EAHck9P7XbuMdzV0ds",
+  authDomain:        "cc-dev-ps7.firebaseapp.com",
+  projectId:         "cc-dev-ps7",
+  storageBucket:     "cc-dev-ps7.firebasestorage.app",
+  messagingSenderId: "1029579090333",
+  appId:             "1:1029579090333:web:799b0a2df9d37cd87f2774",
+};
+firebase.initializeApp(firebaseConfig);
+const auth     = firebase.auth();
+const provider = new firebase.auth.GoogleAuthProvider();
+
+// ログインしているユーザー情報（グローバル）
+let currentUser = null;
+
+// ===== ログイン状態の監視 =====
+auth.onAuthStateChanged((user) => {
+  if (user) {
+    // ログイン済み
+    currentUser = user;
+    document.getElementById('loginOverlay').style.display  = 'none';
+    document.getElementById('userArea').style.display      = 'flex';
+    document.getElementById('btnOpenAdd').style.display    = 'inline-block';
+    document.getElementById('userAvatar').src              = user.photoURL || '';
+    document.getElementById('userAvatar').alt              = user.displayName || '';
+    log('ログイン:', user.displayName, user.email);
+    // ピンを再描画（将来: Firestore からロード）
+    renderMarkers();
+    renderPinList();
+  } else {
+    // 未ログイン
+    currentUser = null;
+    document.getElementById('loginOverlay').style.display  = 'flex';
+    document.getElementById('userArea').style.display      = 'none';
+    document.getElementById('btnOpenAdd').style.display    = 'none';
+    log('未ログイン');
+  }
+});
+
+// ===== Googleログインボタン =====
+document.getElementById('btnGoogleLogin').addEventListener('click', async () => {
+  try {
+    await auth.signInWithPopup(provider);
+    // onAuthStateChanged が自動で発火するので追加処理不要
+  } catch (e) {
+    log('ログインエラー:', e.code, e.message);
+    if (e.code !== 'auth/popup-closed-by-user') {
+      alert('ログインに失敗しました: ' + e.message);
+    }
+  }
+});
+
+// ===== ログアウトボタン =====
+document.getElementById('btnLogout').addEventListener('click', async () => {
+  if (!confirm('ログアウトしますか？')) return;
+  await auth.signOut();
+  log('ログアウト完了');
+});
+
+// ============================================================
+// 住所検索モジュール（Nominatim / 将来: Google Geocoding API）
+// ============================================================
+
+const GEOCODE_ENGINE = 'nominatim'; // 'nominatim' | 'google'
+const GOOGLE_API_KEY = '';          // Google APIキーを設定したらここに入れる
+
+const searchInput    = document.getElementById('searchInput');
+const searchDropdown = document.getElementById('searchDropdown');
+const searchClear    = document.getElementById('searchClear');
+let searchTimer = null;
+
+/** 検索候補を取得（Nominatim） */
+async function geocodeNominatim(query) {
+  const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&accept-language=ja`;
+  const res  = await fetch(url, { headers: { 'Accept-Language': 'ja' } });
+  const data = await res.json();
+  return data.map(d => ({
+    name:    d.display_name.split(',')[0],
+    address: d.display_name,
+    lat:     parseFloat(d.lat),
+    lng:     parseFloat(d.lon),
+    type:    d.type,
+  }));
+}
+
+/** 検索候補を取得（Google Geocoding API） */
+async function geocodeGoogle(query) {
+  const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&language=ja&key=${GOOGLE_API_KEY}`;
+  const res  = await fetch(url);
+  const data = await res.json();
+  if (data.status !== 'OK') return [];
+  return data.results.map(r => ({
+    name:    r.address_components[0]?.long_name || r.formatted_address,
+    address: r.formatted_address,
+    lat:     r.geometry.location.lat,
+    lng:     r.geometry.location.lng,
+    type:    r.types[0] || '',
+  }));
+}
+
+/** エンジン振り分け */
+async function geocode(query) {
+  if (GEOCODE_ENGINE === 'google' && GOOGLE_API_KEY) {
+    return geocodeGoogle(query);
+  }
+  return geocodeNominatim(query);
+}
+
+/** タイプ → 絵文字変換 */
+function typeToEmoji(type) {
+  const map = {
+    restaurant: '🍽️', cafe: '☕', shop: '🛍️', hotel: '🏨',
+    park: '🌳', museum: '🏛️', station: '🚉', airport: '✈️',
+    temple: '⛩️', shrine: '⛩️', hospital: '🏥', school: '🏫',
+    city: '🏙️', town: '🏘️', village: '🏡', country: '🌍',
+  };
+  return map[type] || '📍';
+}
+
+/** ドロップダウン表示 */
+function showDropdown(html) {
+  searchDropdown.innerHTML = html;
+  searchDropdown.classList.add('open');
+}
+function hideDropdown() {
+  searchDropdown.classList.remove('open');
+  searchDropdown.innerHTML = '';
+}
+
+/** 検索実行 */
+async function doSearch(query) {
+  if (query.length < 2) { hideDropdown(); return; }
+  showDropdown('<div class="search-loading">🔍 検索中…</div>');
+  try {
+    const results = await geocode(query);
+    if (results.length === 0) {
+      showDropdown('<div class="search-empty">見つかりませんでした</div>');
+      return;
+    }
+    showDropdown(results.map((r, i) => `
+      <div class="search-result-item" data-idx="${i}">
+        <span class="sri-icon">${typeToEmoji(r.type)}</span>
+        <div>
+          <div class="sri-name">${r.name}</div>
+          <div class="sri-addr">${r.address}</div>
+        </div>
+      </div>
+    `).join(''));
+    // 候補クリックで地図移動 & ピン追加モーダル
+    searchDropdown.querySelectorAll('.search-result-item').forEach((el, i) => {
+      el.addEventListener('click', () => {
+        const r = results[i];
+        map.setView([r.lat, r.lng], 16);
+        searchInput.value = r.name;
+        searchClear.classList.add('visible');
+        hideDropdown();
+        // モーダルを開いて場所名を自動入力
+        openAdd({ lat: r.lat, lng: r.lng });
+        document.getElementById('fName').value = r.name;
+        log('検索で選択:', r.name, r.lat, r.lng);
+      });
+    });
+  } catch (e) {
+    showDropdown('<div class="search-empty">⚠️ 検索エラー: ' + e.message + '</div>');
+    log('検索エラー:', e);
+  }
+}
+
+// 入力イベント（300msデバウンス）
+searchInput.addEventListener('input', () => {
+  const q = searchInput.value.trim();
+  searchClear.classList.toggle('visible', q.length > 0);
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => doSearch(q), 300);
+});
+
+// Enterキーで即検索
+searchInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { clearTimeout(searchTimer); doSearch(searchInput.value.trim()); }
+  if (e.key === 'Escape') { hideDropdown(); searchInput.blur(); }
+});
+
+// クリアボタン
+searchClear.addEventListener('click', () => {
+  searchInput.value = '';
+  searchClear.classList.remove('visible');
+  hideDropdown();
+  searchInput.focus();
+});
+
+// 地図クリックでドロップダウンを閉じる
+document.getElementById('map').addEventListener('click', hideDropdown);
 
 // ===== デバッグログ =====
 const debugPanel = document.getElementById('debugPanel');
