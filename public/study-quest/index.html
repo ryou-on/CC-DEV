@@ -1,0 +1,1144 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StudyQuest - 学習RPG</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet" />
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root {
+      --bg-primary:   #0d1117;
+      --bg-panel:     #1a1f2e;
+      --bg-elevated:  #252b3b;
+      --accent-gold:  #c9a84c;
+      --accent-green: #4caf84;
+      --accent-red:   #c94c4c;
+      --text-primary: #e8dcc8;
+      --text-muted:   #8a7a6a;
+      --border:       #2d3448;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: 'Crimson Text', serif;
+      min-height: 100vh;
+    }
+    h1, h2, h3, .cinzel { font-family: 'Cinzel', serif; }
+
+    /* アニメーション */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes shake {
+      0%,100% { transform: translateX(0); }
+      20% { transform: translateX(-8px); }
+      40% { transform: translateX(8px); }
+      60% { transform: translateX(-6px); }
+      80% { transform: translateX(6px); }
+    }
+    @keyframes flashGreen {
+      0%   { box-shadow: 0 0 0 0 #4caf8480; }
+      50%  { box-shadow: 0 0 24px 8px #4caf8480; }
+      100% { box-shadow: 0 0 0 0 transparent; }
+    }
+    @keyframes xpPop {
+      0%   { opacity:1; transform: translateY(0) scale(1); }
+      80%  { opacity:1; transform: translateY(-40px) scale(1.3); }
+      100% { opacity:0; transform: translateY(-60px) scale(0.8); }
+    }
+    @keyframes levelUpGold {
+      0%,100% { box-shadow: 0 0 0 0 transparent; }
+      40%  { box-shadow: 0 0 40px 12px #c9a84c88; }
+    }
+    @keyframes particle {
+      0%   { opacity:1; transform: translate(0,0) scale(1); }
+      100% { opacity:0; transform: translate(var(--tx),var(--ty)) scale(0); }
+    }
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to   { transform: rotate(360deg); }
+    }
+
+    .screen-enter { animation: fadeIn 0.3s ease both; }
+    .shake { animation: shake 0.4s ease; }
+    .flash-green { animation: flashGreen 0.5s ease; }
+    .xp-pop { animation: xpPop 0.8s ease forwards; position:absolute; pointer-events:none; }
+    .level-up-glow { animation: levelUpGold 1s ease; }
+
+    /* XPバー */
+    .xp-bar-fill { transition: width 0.6s ease; }
+
+    /* スキルノード */
+    .skill-node {
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .skill-node:hover { transform: scale(1.05); }
+    .skill-node.unlocked {
+      box-shadow: 0 0 12px 2px rgba(201,168,76,0.4);
+    }
+
+    /* ボタン共通 */
+    .btn-gold {
+      background: linear-gradient(135deg, #c9a84c, #a0823a);
+      color: #0d1117;
+      font-family: 'Cinzel', serif;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.1s;
+    }
+    .btn-gold:hover { opacity: 0.9; transform: translateY(-1px); }
+    .btn-gold:active { transform: translateY(0); }
+
+    .btn-panel {
+      background: var(--bg-elevated);
+      color: var(--text-primary);
+      border: 1px solid var(--border);
+      font-family: 'Crimson Text', serif;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .btn-panel:hover { background: #2e3550; border-color: var(--accent-gold); }
+
+    /* カード */
+    .panel {
+      background: var(--bg-panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .panel-elevated {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+
+    /* 選択肢ボタン */
+    .choice-btn {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text-primary);
+      font-family: 'Crimson Text', serif;
+      font-size: 1.1rem;
+      padding: 12px 16px;
+      cursor: pointer;
+      transition: all 0.15s;
+      text-align: left;
+      width: 100%;
+    }
+    .choice-btn:hover:not(:disabled) {
+      border-color: var(--accent-gold);
+      background: #2a3048;
+    }
+    .choice-btn.correct {
+      border-color: var(--accent-green);
+      background: #1a2e24;
+      animation: flashGreen 0.5s ease;
+    }
+    .choice-btn.wrong {
+      border-color: var(--accent-red);
+      background: #2e1a1a;
+      animation: shake 0.4s ease;
+    }
+
+    /* モーダル */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.75);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 100;
+      animation: fadeIn 0.2s ease;
+    }
+    .modal-box {
+      background: var(--bg-panel);
+      border: 2px solid var(--accent-gold);
+      border-radius: 12px;
+      max-width: 480px;
+      width: 90%;
+      padding: 32px;
+      position: relative;
+      animation: levelUpGold 1s ease, fadeIn 0.3s ease;
+    }
+
+    /* パーティクル */
+    .particle {
+      position: absolute;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--accent-gold);
+      pointer-events: none;
+      animation: particle 0.8s ease forwards;
+    }
+
+    /* ナビゲーションバー */
+    .nav-bar {
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border);
+    }
+
+    /* デバッグコンソール */
+    #debug-console {
+      position: fixed; bottom: 8px; right: 8px;
+      background: rgba(13,17,23,0.92);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 11px;
+      color: #7a9a6a;
+      max-width: 340px;
+      max-height: 160px;
+      overflow-y: auto;
+      padding: 6px 8px;
+      z-index: 9999;
+    }
+    #debug-toggle {
+      position: fixed; bottom: 8px; right: 8px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-size: 11px;
+      cursor: pointer;
+      z-index: 10000;
+    }
+
+    /* スクロールバー */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg-primary); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- デバッグコンソール -->
+  <button id="debug-toggle" onclick="toggleDebug()">🐞 Log</button>
+  <div id="debug-console" style="display:none"></div>
+  <script>
+    const _origLog = console.log, _origErr = console.error, _origWarn = console.warn;
+    const dbg = document.getElementById('debug-console');
+    function appendDebug(type, args) {
+      const line = document.createElement('div');
+      line.style.color = type==='error'?'#c94c4c':type==='warn'?'#c9a84c':'#7a9a6a';
+      line.textContent = '['+type+'] ' + Array.from(args).map(a=>typeof a==='object'?JSON.stringify(a):a).join(' ');
+      dbg.appendChild(line);
+      dbg.scrollTop = dbg.scrollHeight;
+    }
+    console.log  = (...a) => { _origLog(...a);  appendDebug('log',  a); };
+    console.error= (...a) => { _origErr(...a);  appendDebug('error',a); };
+    console.warn = (...a) => { _origWarn(...a); appendDebug('warn', a); };
+    function toggleDebug() {
+      const show = dbg.style.display === 'none';
+      dbg.style.display = show ? 'block' : 'none';
+      document.getElementById('debug-toggle').style.display = show ? 'none' : 'block';
+      if (!show) document.getElementById('debug-toggle').style.display = 'block';
+    }
+    document.getElementById('debug-toggle').addEventListener('contextmenu', e => {
+      e.preventDefault();
+      const text = Array.from(dbg.children).map(c=>c.textContent).join('\n');
+      navigator.clipboard.writeText(text).then(()=>alert('ログをコピーしました'));
+    });
+  </script>
+
+  <script type="text/babel">
+    const { useState, useReducer, useEffect, useRef, useCallback } = React;
+
+    // ────────────────────────────────────────────────
+    // データ定義
+    // ────────────────────────────────────────────────
+    const SKILLS = [
+      { id: 'math',     name: '数学の剣士',     icon: '⚔️',  color: '#e74c3c' },
+      { id: 'language', name: '言語の魔法使い',  icon: '📖',  color: '#9b59b6' },
+      { id: 'science',  name: '理の探求者',     icon: '🔬',  color: '#3498db' },
+      { id: 'social',   name: '地の語り部',     icon: '🌍',  color: '#27ae60' },
+      { id: 'digital',  name: 'デジタルの賢者',  icon: '💻',  color: '#1abc9c' },
+      { id: 'arts',     name: '創造の芸術家',    icon: '🎨',  color: '#e67e22' },
+    ];
+
+    const PERKS = [
+      { id: 'fast_calc',    skill: 'math',     level: 3, name: '高速計算',    effect: '数学の制限時間+30秒' },
+      { id: 'vocab_master', skill: 'language', level: 3, name: '語彙の達人',  effect: '英語ヒント1回無料' },
+      { id: 'element',      skill: 'science',  level: 5, name: '元素の知識',  effect: '理科XP×1.5倍' },
+      { id: 'history_eye',  skill: 'social',   level: 3, name: '歴史眼',      effect: '年号問題にヒント表示' },
+      { id: 'debug_mode',   skill: 'digital',  level: 3, name: 'デバッグ眼',  effect: 'IT問題の選択肢が3択→2択' },
+      { id: 'inspiration',  skill: 'arts',     level: 3, name: '霊感',        effect: '創作問題でXP×2倍' },
+    ];
+
+    const QUESTIONS = [
+      { id:1,  subject:'math', difficulty:1, text:'3 × 7 = ?',                          options:['18','21','24','27'],        answer:1 },
+      { id:2,  subject:'math', difficulty:1, text:'√49 = ?',                            options:['6','7','8','9'],            answer:1 },
+      { id:3,  subject:'math', difficulty:2, text:'2² + 3² = ?',                        options:['10','12','13','15'],        answer:2 },
+      { id:4,  subject:'math', difficulty:2, text:'15% of 200 = ?',                     options:['25','30','35','40'],        answer:1 },
+      { id:5,  subject:'math', difficulty:2, text:'x² = 25 のとき x = ?（正の値）',     options:['4','5','6','7'],            answer:1 },
+      { id:6,  subject:'math', difficulty:3, text:'1+2+3+...+10 = ?',                   options:['50','55','60','65'],        answer:1 },
+      { id:7,  subject:'math', difficulty:3, text:'2³ × 2² = ?',                        options:['16','32','64','128'],       answer:1 },
+      { id:8,  subject:'math', difficulty:1, text:'100 ÷ 4 = ?',                        options:['20','25','30','35'],        answer:1 },
+      { id:9,  subject:'math', difficulty:2, text:'三角形の内角の和は何度？',             options:['90','120','180','360'],     answer:2 },
+      { id:10, subject:'math', difficulty:3, text:'円周率πを小数点2位まで表すと？',       options:['3.12','3.14','3.16','3.18'], answer:1 },
+    ];
+
+    const CLASS_INFO = {
+      warrior: { name: '戦士',    icon: '⚔️',  desc: '数学と理科が得意。序盤から高XPを稼ぎやすい。',  bonus: ['math','science'] },
+      mage:    { name: '魔法使い', icon: '🧙',  desc: '言語とデジタルに秀でる。多彩な呪文を操る。',  bonus: ['language','digital'] },
+      rogue:   { name: '盗賊',    icon: '🗡️',  desc: '社会と芸術で輝く。素早さで問題を切り抜ける。', bonus: ['social','arts'] },
+    };
+
+    // ────────────────────────────────────────────────
+    // XPスケーリング
+    // ────────────────────────────────────────────────
+    const xpRequired = (level) => Math.floor(100 * Math.pow(level, 1.5));
+    const xpGain = (difficulty, combo) => Math.floor(difficulty * 10 * (1 + combo * 0.1));
+
+    // ────────────────────────────────────────────────
+    // 初期ステート & Reducer
+    // ────────────────────────────────────────────────
+    const initialState = {
+      screen: 'characterCreate',
+      character: { name:'', class:'', level:1, xp:0, xpToNext:100, skillPoints:0 },
+      skills: { math:0, language:0, science:0, social:0, digital:0, arts:0 },
+      perks: [],
+      questProgress: {},
+      streak: 0,
+      combo: 0,
+      pendingLevelUps: 0,
+    };
+
+    function reducer(state, action) {
+      switch (action.type) {
+        case 'SET_CHAR': return { ...state, character: { ...state.character, ...action.payload } };
+        case 'START_GAME': return {
+          ...state,
+          screen: 'home',
+          character: { ...state.character, ...action.payload },
+        };
+        case 'GOTO': return { ...state, screen: action.screen };
+        case 'GAIN_XP': {
+          const { amount } = action;
+          let { level, xp, xpToNext, skillPoints } = state.character;
+          let newXp = xp + amount;
+          let levelUps = 0;
+          while (newXp >= xpToNext) {
+            newXp -= xpToNext;
+            level++;
+            xpToNext = xpRequired(level);
+            skillPoints++;
+            levelUps++;
+          }
+          return {
+            ...state,
+            character: { ...state.character, level, xp: newXp, xpToNext, skillPoints },
+            combo: state.combo + 1,
+            pendingLevelUps: state.pendingLevelUps + levelUps,
+          };
+        }
+        case 'WRONG_ANSWER': return { ...state, combo: 0 };
+        case 'SPEND_SKILL': {
+          const { skillId } = action;
+          if (state.character.skillPoints <= 0) return state;
+          const newLv = (state.skills[skillId] || 0) + 1;
+          if (newLv > 5) return state;
+          // パーク解放チェック
+          const newPerks = PERKS.filter(p =>
+            p.skill === skillId && p.level === newLv &&
+            !state.perks.includes(p.id)
+          ).map(p => p.id);
+          return {
+            ...state,
+            character: { ...state.character, skillPoints: state.character.skillPoints - 1 },
+            skills: { ...state.skills, [skillId]: newLv },
+            perks: [...state.perks, ...newPerks],
+          };
+        }
+        case 'CLOSE_LEVEL_UP': return { ...state, pendingLevelUps: Math.max(0, state.pendingLevelUps - 1) };
+        default: return state;
+      }
+    }
+
+    // ────────────────────────────────────────────────
+    // XPバー
+    // ────────────────────────────────────────────────
+    function XPBar({ xp, xpToNext, level }) {
+      const pct = Math.min(100, Math.floor((xp / xpToNext) * 100));
+      return (
+        <div className="w-full">
+          <div className="flex justify-between text-xs mb-1" style={{ color:'var(--text-muted)' }}>
+            <span style={{ fontFamily:'Cinzel' }}>Lv {level}</span>
+            <span>{xp} / {xpToNext} XP</span>
+          </div>
+          <div className="w-full h-3 rounded-full" style={{ background:'var(--bg-elevated)', border:'1px solid var(--border)' }}>
+            <div
+              className="xp-bar-fill h-full rounded-full"
+              style={{ width:`${pct}%`, background:'linear-gradient(90deg,#c9a84c,#e8c870)' }}
+            />
+          </div>
+        </div>
+      );
+    }
+
+    // ────────────────────────────────────────────────
+    // ナビゲーションバー
+    // ────────────────────────────────────────────────
+    function NavBar({ state, dispatch }) {
+      const { screen, character } = state;
+      const tabs = [
+        { id:'home',        label:'大陸',   icon:'🗺️' },
+        { id:'skillTree',   label:'スキル', icon:'🌳' },
+        { id:'quest',       label:'クエスト', icon:'⚔️' },
+        { id:'characterSheet', label:'シート', icon:'📜' },
+      ];
+      return (
+        <nav className="nav-bar flex items-center justify-between px-4 py-2 sticky top-0 z-50">
+          <div className="cinzel text-sm font-bold" style={{ color:'var(--accent-gold)' }}>
+            ✦ StudyQuest
+          </div>
+          <div className="flex gap-1">
+            {tabs.map(t => (
+              <button
+                key={t.id}
+                className="btn-panel text-xs px-3 py-1 rounded"
+                style={{ borderColor: screen===t.id ? 'var(--accent-gold)' : 'var(--border)',
+                         color: screen===t.id ? 'var(--accent-gold)' : 'var(--text-muted)' }}
+                onClick={() => dispatch({ type:'GOTO', screen:t.id })}
+              >
+                <span className="mr-1">{t.icon}</span>{t.label}
+              </button>
+            ))}
+          </div>
+          <div className="text-xs" style={{ color:'var(--text-muted)' }}>
+            SP: <span style={{ color:'var(--accent-gold)' }}>{character.skillPoints}</span>
+          </div>
+        </nav>
+      );
+    }
+
+    // ────────────────────────────────────────────────
+    // レベルアップモーダル
+    // ────────────────────────────────────────────────
+    function LevelUpModal({ state, dispatch }) {
+      const { character, pendingLevelUps, skills } = state;
+      if (pendingLevelUps === 0) return null;
+
+      // パーティクル
+      const particles = Array.from({length:16}, (_,i) => ({
+        angle: (i / 16) * 360,
+        dist: 80 + Math.random() * 60,
+      }));
+
+      return (
+        <div className="modal-overlay">
+          <div className="modal-box text-center" style={{ overflow:'hidden' }}>
+            {/* パーティクル */}
+            {particles.map((p,i) => {
+              const tx = Math.cos(p.angle * Math.PI/180) * p.dist;
+              const ty = Math.sin(p.angle * Math.PI/180) * p.dist;
+              return (
+                <div key={i} className="particle"
+                  style={{
+                    '--tx': `${tx}px`, '--ty': `${ty}px`,
+                    top:'50%', left:'50%',
+                    animationDelay: `${i*0.04}s`,
+                  }}
+                />
+              );
+            })}
+            <div className="cinzel text-3xl font-bold mb-2" style={{ color:'var(--accent-gold)' }}>
+              ✦ LEVEL UP! ✦
+            </div>
+            <div className="text-lg mb-1" style={{ color:'var(--text-muted)' }}>
+              Lv {character.level - pendingLevelUps} → <span style={{ color:'var(--accent-gold)' }}>Lv {character.level}</span>
+            </div>
+            <p className="mb-6 text-sm" style={{ color:'var(--text-muted)' }}>
+              スキルポイントを1つ獲得しました！<br/>
+              どのスキルに振りますか？
+            </p>
+            <div className="grid grid-cols-3 gap-2 mb-6">
+              {SKILLS.map(s => {
+                const lv = skills[s.id];
+                const canUp = lv < 5;
+                return (
+                  <button
+                    key={s.id}
+                    disabled={!canUp || character.skillPoints === 0}
+                    onClick={() => {
+                      dispatch({ type:'SPEND_SKILL', skillId:s.id });
+                      dispatch({ type:'CLOSE_LEVEL_UP' });
+                    }}
+                    className="panel-elevated rounded-lg p-3 text-center skill-node"
+                    style={{
+                      border: `1px solid ${canUp ? s.color + '88' : 'var(--border)'}`,
+                      opacity: canUp ? 1 : 0.4,
+                      cursor: canUp ? 'pointer' : 'not-allowed',
+                    }}
+                  >
+                    <div className="text-2xl">{s.icon}</div>
+                    <div className="text-xs cinzel mt-1 leading-tight" style={{ color:s.color }}>
+                      {s.name.split('の')[0]}
+                    </div>
+                    <div className="text-xs mt-1" style={{ color:'var(--text-muted)' }}>
+                      Lv {lv} → {lv+1}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              className="btn-panel rounded px-4 py-2 text-sm"
+              onClick={() => dispatch({ type:'CLOSE_LEVEL_UP' })}
+            >
+              あとで振り分ける
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // ────────────────────────────────────────────────
+    // キャラクター作成画面
+    // ────────────────────────────────────────────────
+    function CharacterCreate({ dispatch }) {
+      const [name, setName] = useState('');
+      const [cls, setCls] = useState('');
+      const [step, setStep] = useState(1);
+
+      const handleStart = () => {
+        if (!name.trim() || !cls) return;
+        dispatch({ type:'START_GAME', payload:{ name:name.trim(), class:cls } });
+      };
+
+      return (
+        <div className="screen-enter min-h-screen flex flex-col items-center justify-center px-4 py-12"
+          style={{ background:'radial-gradient(ellipse at center, #1a1f2e 0%, #0d1117 70%)' }}
+        >
+          {/* タイトル */}
+          <div className="text-center mb-10">
+            <h1 className="cinzel text-4xl font-bold mb-2" style={{ color:'var(--accent-gold)', textShadow:'0 0 20px #c9a84c44' }}>
+              ✦ StudyQuest ✦
+            </h1>
+            <p style={{ color:'var(--text-muted)' }}>Skyrim風オープンワールド学習RPG</p>
+          </div>
+
+          {step === 1 && (
+            <div className="panel p-8 w-full max-w-md screen-enter">
+              <h2 className="cinzel text-xl mb-6 text-center" style={{ color:'var(--accent-gold)' }}>
+                第一章：汝の名は
+              </h2>
+              <p className="text-center mb-6 text-sm" style={{ color:'var(--text-muted)' }}>
+                この広大な学の大陸を旅する冒険者よ、<br/>汝の名を告げよ。
+              </p>
+              <input
+                className="w-full px-4 py-3 rounded-lg text-center text-lg"
+                style={{
+                  background:'var(--bg-elevated)',
+                  border:'1px solid var(--border)',
+                  color:'var(--text-primary)',
+                  outline:'none',
+                  fontFamily:'Crimson Text, serif',
+                }}
+                placeholder="冒険者の名前を入力..."
+                value={name}
+                onChange={e => setName(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && name.trim() && setStep(2)}
+              />
+              <button
+                className="btn-gold w-full mt-6 py-3 rounded-lg text-lg"
+                disabled={!name.trim()}
+                style={{ opacity: name.trim() ? 1 : 0.5 }}
+                onClick={() => name.trim() && setStep(2)}
+              >
+                次へ →
+              </button>
+            </div>
+          )}
+
+          {step === 2 && (
+            <div className="w-full max-w-xl screen-enter">
+              <div className="panel p-8">
+                <h2 className="cinzel text-xl mb-2 text-center" style={{ color:'var(--accent-gold)' }}>
+                  クラスを選べ、{name}よ
+                </h2>
+                <p className="text-center text-sm mb-8" style={{ color:'var(--text-muted)' }}>
+                  クラスによって得意科目が変わる
+                </p>
+                <div className="grid grid-cols-1 gap-4 mb-8">
+                  {Object.entries(CLASS_INFO).map(([key, info]) => (
+                    <button
+                      key={key}
+                      className="panel-elevated rounded-xl p-5 text-left skill-node"
+                      style={{
+                        border: `2px solid ${cls===key ? 'var(--accent-gold)' : 'var(--border)'}`,
+                        background: cls===key ? '#252b3b' : 'var(--bg-elevated)',
+                        cursor: 'pointer',
+                      }}
+                      onClick={() => setCls(key)}
+                    >
+                      <div className="flex items-center gap-4">
+                        <span className="text-4xl">{info.icon}</span>
+                        <div>
+                          <div className="cinzel text-lg font-bold" style={{ color: cls===key ? 'var(--accent-gold)' : 'var(--text-primary)' }}>
+                            {info.name}
+                          </div>
+                          <div className="text-sm mt-1" style={{ color:'var(--text-muted)' }}>{info.desc}</div>
+                          <div className="flex gap-2 mt-2">
+                            {info.bonus.map(b => {
+                              const sk = SKILLS.find(s => s.id===b);
+                              return (
+                                <span key={b} className="text-xs px-2 py-0.5 rounded-full"
+                                  style={{ background:sk.color+'33', color:sk.color, border:`1px solid ${sk.color}66` }}>
+                                  {sk.icon} {sk.name.split('の')[0]}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-3">
+                  <button className="btn-panel flex-1 py-3 rounded-lg" onClick={() => setStep(1)}>← 戻る</button>
+                  <button
+                    className="btn-gold flex-1 py-3 rounded-lg text-lg"
+                    disabled={!cls}
+                    style={{ opacity: cls ? 1 : 0.5 }}
+                    onClick={handleStart}
+                  >
+                    冒険を始める ✦
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ────────────────────────────────────────────────
+    // ホーム画面
+    // ────────────────────────────────────────────────
+    function HomeMap({ state, dispatch }) {
+      const { character, skills, perks } = state;
+      const cls = CLASS_INFO[character.class];
+      const topSkill = Object.entries(skills).sort((a,b)=>b[1]-a[1])[0];
+      const topSkillInfo = SKILLS.find(s => s.id === topSkill[0]);
+
+      return (
+        <div className="screen-enter p-4 max-w-2xl mx-auto">
+          {/* キャラクターカード */}
+          <div className="panel p-6 mb-4">
+            <div className="flex items-start gap-4">
+              <div className="text-5xl">{cls?.icon}</div>
+              <div className="flex-1">
+                <div className="flex items-center gap-3 mb-1">
+                  <h2 className="cinzel text-xl font-bold" style={{ color:'var(--accent-gold)' }}>
+                    {character.name}
+                  </h2>
+                  <span className="text-sm panel-elevated px-2 py-0.5 rounded" style={{ color:'var(--text-muted)' }}>
+                    {cls?.name}
+                  </span>
+                </div>
+                <XPBar xp={character.xp} xpToNext={character.xpToNext} level={character.level} />
+                <div className="flex gap-4 mt-3 text-sm" style={{ color:'var(--text-muted)' }}>
+                  <span>🔥 連続コンボ: <b style={{ color:'var(--accent-gold)' }}>{state.combo}</b></span>
+                  <span>✨ SP残: <b style={{ color:'var(--accent-green)' }}>{character.skillPoints}</b></span>
+                  <span>🏅 パーク: <b style={{ color:'var(--accent-gold)' }}>{perks.length}</b></span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 大陸マップ（スキル一覧） */}
+          <div className="panel p-5 mb-4">
+            <h3 className="cinzel text-base font-bold mb-4" style={{ color:'var(--accent-gold)' }}>
+              ✦ 学の大陸マップ
+            </h3>
+            <div className="grid grid-cols-3 gap-3">
+              {SKILLS.map(s => {
+                const lv = skills[s.id];
+                return (
+                  <div key={s.id}
+                    className="panel-elevated rounded-xl p-3 text-center skill-node"
+                    style={{ border:`1px solid ${lv>0 ? s.color+'88' : 'var(--border)'}` }}
+                  >
+                    <div className="text-2xl mb-1">{s.icon}</div>
+                    <div className="text-xs cinzel leading-tight mb-1" style={{ color: lv>0 ? s.color : 'var(--text-muted)' }}>
+                      {s.name}
+                    </div>
+                    <div className="flex justify-center gap-0.5 mt-1">
+                      {[1,2,3,4,5].map(n => (
+                        <div key={n} className="rounded-full"
+                          style={{
+                            width:6, height:6,
+                            background: n<=lv ? s.color : 'var(--border)',
+                          }}
+                        />
+                      ))}
+                    </div>
+                    <div className="text-xs mt-1" style={{ color:'var(--text-muted)' }}>Lv {lv}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* クイックアクション */}
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              className="btn-gold rounded-xl py-4 text-base"
+              onClick={() => dispatch({ type:'GOTO', screen:'quest' })}
+            >
+              ⚔️ クエストへ
+            </button>
+            <button
+              className="btn-panel rounded-xl py-4 text-base"
+              onClick={() => dispatch({ type:'GOTO', screen:'skillTree' })}
+            >
+              🌳 スキルツリー
+            </button>
+          </div>
+
+          {/* 解放済みパーク */}
+          {perks.length > 0 && (
+            <div className="panel p-4 mt-4">
+              <h3 className="cinzel text-sm font-bold mb-3" style={{ color:'var(--accent-gold)' }}>
+                解放済みパーク
+              </h3>
+              <div className="grid grid-cols-1 gap-2">
+                {perks.map(pId => {
+                  const perk = PERKS.find(p => p.id === pId);
+                  const sk = SKILLS.find(s => s.id === perk.skill);
+                  return (
+                    <div key={pId} className="panel-elevated rounded-lg px-3 py-2 flex items-center gap-3">
+                      <span className="text-lg">{sk.icon}</span>
+                      <div>
+                        <div className="text-sm font-bold" style={{ color:'var(--accent-gold)' }}>{perk.name}</div>
+                        <div className="text-xs" style={{ color:'var(--text-muted)' }}>{perk.effect}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ────────────────────────────────────────────────
+    // スキルツリー画面
+    // ────────────────────────────────────────────────
+    function SkillTree({ state, dispatch }) {
+      const { character, skills, perks } = state;
+
+      return (
+        <div className="screen-enter p-4 max-w-2xl mx-auto">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="cinzel text-xl font-bold" style={{ color:'var(--accent-gold)' }}>
+              ✦ スキルツリー
+            </h2>
+            <div className="panel-elevated px-3 py-1 rounded text-sm">
+              SP: <span style={{ color:'var(--accent-gold)' }}>{character.skillPoints}</span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4">
+            {SKILLS.map(s => {
+              const lv = skills[s.id];
+              const skillPerks = PERKS.filter(p => p.skill === s.id);
+              const canUp = lv < 5 && character.skillPoints > 0;
+
+              return (
+                <div key={s.id} className="panel p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <span className="text-3xl">{s.icon}</span>
+                      <div>
+                        <div className="cinzel text-base font-bold" style={{ color:s.color }}>
+                          {s.name}
+                        </div>
+                        <div className="flex gap-1 mt-1">
+                          {[1,2,3,4,5].map(n => (
+                            <div key={n} className="rounded-full"
+                              style={{
+                                width:10, height:10,
+                                background: n<=lv ? s.color : 'var(--border)',
+                                border: `1px solid ${n<=lv ? s.color : 'var(--border)'}`,
+                              }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm" style={{ color:'var(--text-muted)' }}>Lv {lv} / 5</span>
+                      {canUp && (
+                        <button
+                          className="btn-gold px-3 py-1 rounded text-sm"
+                          onClick={() => dispatch({ type:'SPEND_SKILL', skillId:s.id })}
+                        >
+                          ＋ 振る
+                        </button>
+                      )}
+                      {lv >= 5 && (
+                        <span className="text-xs px-2 py-1 rounded" style={{ background:'#c9a84c22', color:'var(--accent-gold)', border:'1px solid #c9a84c44' }}>
+                          MAX
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* パーク一覧 */}
+                  <div className="flex gap-2 flex-wrap">
+                    {skillPerks.map(p => {
+                      const unlocked = perks.includes(p.id);
+                      return (
+                        <div key={p.id}
+                          className="rounded-lg px-3 py-2 text-xs"
+                          style={{
+                            background: unlocked ? s.color+'22' : 'var(--bg-elevated)',
+                            border: `1px solid ${unlocked ? s.color+'88' : 'var(--border)'}`,
+                            color: unlocked ? s.color : 'var(--text-muted)',
+                          }}
+                        >
+                          <span className="font-bold">{unlocked ? '✦' : '🔒'} {p.name}</span>
+                          <span className="ml-1 opacity-70">(Lv{p.level})</span>
+                          <div style={{ color:'var(--text-muted)', marginTop:2 }}>{p.effect}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    // ────────────────────────────────────────────────
+    // クエスト（問題チャレンジ）画面
+    // ────────────────────────────────────────────────
+    function Quest({ state, dispatch }) {
+      const [qIndex, setQIndex] = useState(0);
+      const [selected, setSelected] = useState(null);
+      const [answered, setAnswered] = useState(false);
+      const [xpPopups, setXpPopups] = useState([]);
+      const [finished, setFinished] = useState(false);
+      const [correctCount, setCorrectCount] = useState(0);
+      const containerRef = useRef(null);
+
+      const q = QUESTIONS[qIndex];
+
+      const handleAnswer = (idx) => {
+        if (answered) return;
+        setSelected(idx);
+        setAnswered(true);
+
+        if (idx === q.answer) {
+          const gain = xpGain(q.difficulty, state.combo);
+          dispatch({ type:'GAIN_XP', amount:gain });
+          setCorrectCount(c => c+1);
+          // XPポップアップ
+          const id = Date.now();
+          setXpPopups(prev => [...prev, { id, text:`+${gain} XP` }]);
+          setTimeout(() => setXpPopups(prev => prev.filter(p => p.id !== id)), 900);
+        } else {
+          dispatch({ type:'WRONG_ANSWER' });
+        }
+      };
+
+      const handleNext = () => {
+        if (qIndex + 1 >= QUESTIONS.length) {
+          setFinished(true);
+        } else {
+          setQIndex(i => i+1);
+          setSelected(null);
+          setAnswered(false);
+        }
+      };
+
+      if (finished) {
+        return (
+          <div className="screen-enter p-4 max-w-xl mx-auto">
+            <div className="panel p-8 text-center">
+              <div className="text-5xl mb-4">🏆</div>
+              <h2 className="cinzel text-2xl font-bold mb-2" style={{ color:'var(--accent-gold)' }}>
+                クエスト完了！
+              </h2>
+              <p className="text-xl mb-6" style={{ color:'var(--text-muted)' }}>
+                正解数: <span style={{ color:'var(--accent-gold)' }}>{correctCount}</span> / {QUESTIONS.length}
+              </p>
+              <div className="panel-elevated rounded-xl p-4 mb-6">
+                <XPBar xp={state.character.xp} xpToNext={state.character.xpToNext} level={state.character.level} />
+              </div>
+              <div className="flex gap-3">
+                <button className="btn-panel flex-1 py-3 rounded-xl" onClick={() => {
+                  setQIndex(0); setSelected(null); setAnswered(false);
+                  setFinished(false); setCorrectCount(0);
+                }}>
+                  🔄 もう一度
+                </button>
+                <button className="btn-gold flex-1 py-3 rounded-xl" onClick={() => dispatch({ type:'GOTO', screen:'home' })}>
+                  大陸へ戻る
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="screen-enter p-4 max-w-xl mx-auto" ref={containerRef}>
+          {/* 進捗 */}
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-sm" style={{ color:'var(--text-muted)' }}>
+              問題 {qIndex+1} / {QUESTIONS.length}
+            </span>
+            <div className="flex gap-1">
+              {QUESTIONS.map((_,i) => (
+                <div key={i} className="rounded-full"
+                  style={{ width:8, height:8,
+                    background: i<qIndex ? 'var(--accent-green)'
+                      : i===qIndex ? 'var(--accent-gold)' : 'var(--border)' }}
+                />
+              ))}
+            </div>
+            <span className="text-sm" style={{ color:'var(--accent-gold)' }}>
+              🔥 コンボ×{state.combo}
+            </span>
+          </div>
+
+          {/* 問題カード */}
+          <div className="panel p-6 mb-4 relative">
+            {/* XPポップアップ */}
+            {xpPopups.map(p => (
+              <div key={p.id} className="xp-pop cinzel text-xl font-bold"
+                style={{ color:'var(--accent-green)', top:'50%', left:'50%', transform:'translate(-50%,-50%)' }}>
+                {p.text}
+              </div>
+            ))}
+
+            {/* 難易度 */}
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-xs panel-elevated px-2 py-0.5 rounded" style={{ color:'var(--text-muted)' }}>
+                数学
+              </span>
+              <span className="text-xs" style={{ color: q.difficulty===1?'var(--accent-green)':q.difficulty===2?'var(--accent-gold)':'var(--accent-red)' }}>
+                {'★'.repeat(q.difficulty) + '☆'.repeat(3-q.difficulty)}
+              </span>
+            </div>
+
+            <p className="cinzel text-2xl font-bold text-center mb-6" style={{ color:'var(--text-primary)' }}>
+              {q.text}
+            </p>
+
+            <div className="grid grid-cols-1 gap-3">
+              {q.options.map((opt, idx) => (
+                <button
+                  key={idx}
+                  disabled={answered}
+                  className={`choice-btn ${
+                    answered
+                      ? idx === q.answer ? 'correct'
+                      : idx === selected ? 'wrong'
+                      : ''
+                      : ''
+                  }`}
+                  onClick={() => handleAnswer(idx)}
+                >
+                  <span className="mr-3 cinzel text-sm" style={{ color:'var(--text-muted)' }}>
+                    {['A','B','C','D'][idx]}.
+                  </span>
+                  {opt}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 正解/不正解フィードバック */}
+          {answered && (
+            <div className="panel p-4 mb-4 screen-enter text-center"
+              style={{ borderColor: selected===q.answer ? 'var(--accent-green)' : 'var(--accent-red)' }}>
+              {selected === q.answer ? (
+                <div>
+                  <span className="cinzel text-lg font-bold" style={{ color:'var(--accent-green)' }}>✦ 正解！</span>
+                  <span className="ml-2 text-sm" style={{ color:'var(--text-muted)' }}>
+                    +{xpGain(q.difficulty, state.combo - 1)} XP獲得
+                    {state.combo > 1 && <span style={{ color:'var(--accent-gold)' }}> 🔥×{state.combo}コンボ</span>}
+                  </span>
+                </div>
+              ) : (
+                <div>
+                  <span className="cinzel text-lg font-bold" style={{ color:'var(--accent-red)' }}>✗ 不正解</span>
+                  <span className="ml-2 text-sm" style={{ color:'var(--text-muted)' }}>
+                    正解は <b style={{ color:'var(--text-primary)' }}>{q.options[q.answer]}</b>
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {answered && (
+            <button className="btn-gold w-full py-3 rounded-xl text-lg screen-enter" onClick={handleNext}>
+              {qIndex + 1 >= QUESTIONS.length ? '結果を見る 🏆' : '次の問題へ →'}
+            </button>
+          )}
+        </div>
+      );
+    }
+
+    // ────────────────────────────────────────────────
+    // キャラクターシート画面
+    // ────────────────────────────────────────────────
+    function CharacterSheet({ state, dispatch }) {
+      const { character, skills, perks } = state;
+      const cls = CLASS_INFO[character.class];
+      const totalXP = character.xp + Array.from({length:character.level-1}, (_,i)=>xpRequired(i+1)).reduce((a,b)=>a+b, 0);
+
+      return (
+        <div className="screen-enter p-4 max-w-2xl mx-auto">
+          <h2 className="cinzel text-xl font-bold mb-4" style={{ color:'var(--accent-gold)' }}>
+            ✦ キャラクターシート
+          </h2>
+
+          {/* 基本情報 */}
+          <div className="panel p-6 mb-4">
+            <div className="flex items-center gap-4 mb-4">
+              <div className="text-5xl">{cls?.icon}</div>
+              <div>
+                <h3 className="cinzel text-2xl font-bold" style={{ color:'var(--text-primary)' }}>
+                  {character.name}
+                </h3>
+                <div className="text-sm" style={{ color:'var(--text-muted)' }}>{cls?.name} / Level {character.level}</div>
+              </div>
+            </div>
+            <XPBar xp={character.xp} xpToNext={character.xpToNext} level={character.level} />
+            <div className="grid grid-cols-3 gap-3 mt-4 text-center">
+              <div className="panel-elevated rounded-xl p-3">
+                <div className="cinzel text-lg font-bold" style={{ color:'var(--accent-gold)' }}>{character.level}</div>
+                <div className="text-xs" style={{ color:'var(--text-muted)' }}>レベル</div>
+              </div>
+              <div className="panel-elevated rounded-xl p-3">
+                <div className="cinzel text-lg font-bold" style={{ color:'var(--accent-green)' }}>{character.skillPoints}</div>
+                <div className="text-xs" style={{ color:'var(--text-muted)' }}>スキルポイント</div>
+              </div>
+              <div className="panel-elevated rounded-xl p-3">
+                <div className="cinzel text-lg font-bold" style={{ color:'var(--accent-gold)' }}>{perks.length}</div>
+                <div className="text-xs" style={{ color:'var(--text-muted)' }}>パーク解放数</div>
+              </div>
+            </div>
+          </div>
+
+          {/* スキル一覧 */}
+          <div className="panel p-5 mb-4">
+            <h3 className="cinzel text-base font-bold mb-4" style={{ color:'var(--accent-gold)' }}>スキル</h3>
+            <div className="space-y-3">
+              {SKILLS.map(s => {
+                const lv = skills[s.id];
+                return (
+                  <div key={s.id} className="flex items-center gap-3">
+                    <span className="text-xl w-8 text-center">{s.icon}</span>
+                    <div className="flex-1">
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-sm" style={{ color:lv>0?s.color:'var(--text-muted)' }}>{s.name}</span>
+                        <span className="text-xs" style={{ color:'var(--text-muted)' }}>Lv {lv}</span>
+                      </div>
+                      <div className="flex gap-1">
+                        {[1,2,3,4,5].map(n => (
+                          <div key={n} className="flex-1 h-2 rounded-full"
+                            style={{ background: n<=lv ? s.color : 'var(--border)' }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* クラス特性 */}
+          <div className="panel p-5 mb-4">
+            <h3 className="cinzel text-base font-bold mb-3" style={{ color:'var(--accent-gold)' }}>クラス特性</h3>
+            <div className="flex items-center gap-3 mb-3">
+              <span className="text-3xl">{cls?.icon}</span>
+              <div>
+                <div className="cinzel font-bold">{cls?.name}</div>
+                <div className="text-sm" style={{ color:'var(--text-muted)' }}>{cls?.desc}</div>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              {cls?.bonus.map(b => {
+                const sk = SKILLS.find(s => s.id===b);
+                return (
+                  <span key={b} className="text-xs px-2 py-1 rounded-full"
+                    style={{ background:sk.color+'33', color:sk.color, border:`1px solid ${sk.color}66` }}>
+                    {sk.icon} 得意: {sk.name.split('の')[0]}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* リセットボタン */}
+          <button
+            className="btn-panel w-full py-3 rounded-xl text-sm"
+            style={{ color:'var(--accent-red)', borderColor:'#c94c4c44' }}
+            onClick={() => {
+              if (confirm('本当にリセットしますか？すべての進捗が失われます。')) {
+                dispatch({ type:'START_GAME', payload:{ name:'', class:'' } });
+                dispatch({ type:'GOTO', screen:'characterCreate' });
+              }
+            }}
+          >
+            ⚠️ ゲームをリセット
+          </button>
+        </div>
+      );
+    }
+
+    // ────────────────────────────────────────────────
+    // メインアプリ
+    // ────────────────────────────────────────────────
+    function App() {
+      const [state, dispatch] = useReducer(reducer, initialState);
+
+      const renderScreen = () => {
+        switch (state.screen) {
+          case 'characterCreate': return <CharacterCreate dispatch={dispatch} />;
+          case 'home':            return <HomeMap state={state} dispatch={dispatch} />;
+          case 'skillTree':       return <SkillTree state={state} dispatch={dispatch} />;
+          case 'quest':           return <Quest state={state} dispatch={dispatch} />;
+          case 'characterSheet':  return <CharacterSheet state={state} dispatch={dispatch} />;
+          default:                return <HomeMap state={state} dispatch={dispatch} />;
+        }
+      };
+
+      return (
+        <div style={{ minHeight:'100vh', background:'var(--bg-primary)' }}>
+          {state.screen !== 'characterCreate' && (
+            <NavBar state={state} dispatch={dispatch} />
+          )}
+          <main>
+            {renderScreen()}
+          </main>
+          {state.pendingLevelUps > 0 && (
+            <LevelUpModal state={state} dispatch={dispatch} />
+          )}
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
