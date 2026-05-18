@@ -136,6 +136,14 @@ main{margin-left:var(--sw);margin-top:var(--hh);padding:24px;}
 /* 言語切替ボタン */
 .lang-btn { font-size:11px; font-weight:700; padding:3px 8px; border-radius:4px; border:1px solid #e5e7eb; background:#f9fafb; color:#6b7280; cursor:pointer; margin-right:6px; flex-shrink:0; }
 .lang-btn:hover { background:#0066ff; color:#fff; border-color:#0066ff; }
+/* ドラッグ&ドロップ並び替え */
+.order-list{list-style:none;margin:0;padding:0;}
+.order-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:var(--white);transition:background .15s,border-color .15s;}
+.order-item.drag-over{border-color:var(--accent);background:var(--accent-light);}
+.order-item.dragging{opacity:.35;}
+.drag-handle{cursor:grab;color:var(--text-muted);font-size:18px;flex-shrink:0;user-select:none;line-height:1;}
+.drag-handle:active{cursor:grabbing;}
+.order-num{font-family:var(--mono);font-size:11px;color:var(--text-muted);min-width:20px;text-align:right;}
 </style>
 <!-- v1.2.0 stable -->
 </head>
@@ -202,6 +210,10 @@ main{margin-left:var(--sw);margin-top:var(--hh);padding:24px;}
 <button class="btn bsm" style="background:rgba(255,255,255,.2);color:#fff;border:none;margin-left:auto" onclick="clearSel()">クリア</button>
 </div>
 <div id="videoList"></div>
+</div>
+<div class="card" id="orderCard" style="display:none">
+<div class="ct">④ 動画の並び順 <span style="font-size:11px;font-weight:400;color:var(--text-sub)">ドラッグで並び替え</span></div>
+<ul class="order-list" id="orderList"></ul>
 </div>
 <div style="display:flex;gap:10px;justify-content:flex-end">
 <button class="btn bs" onclick="resetCreate()">リセット</button>
@@ -320,6 +332,7 @@ const TEXT = 'jpg';
 let folders=[], videos=[], selF=new Set(), selV=new Set(), tabVideos=[];
 let mode=null, tabF=null, tabT=null, vmeta={}, clog=[];
 let editId=null; // 編集中プレイリストID
+let orderedVideoIds=[], dragSrcIdx=null;
 let thumbFolderSearch='',thumbVideos=[],thumbSortKey='new',thumbSearchQ='',thumbThumbFilter='all'; // フォルダ検索クエリ
 
 const ol=console.log.bind(console);
@@ -331,6 +344,7 @@ showPage,uploadLogoFile,updateLogoPreview,clearLogoUrl,openEdit,setMode,toggleF,
 clearSel,publishPlaylist,resetCreate,closeMo,copyPubUrl,openPubUrl,
 deletePlaylist,duplicatePlaylist,copyUrl,previewThumb,saveThumbs,clearThumb,
 switchThumbFolder, filterThumbFolders, uploadThumb, filterVideoSearch, addVideosToPlaylist,
+renderOrderCard, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, removeFromOrder,
 copyConsole:()=>navigator.clipboard.writeText(clog.join('\n')||'（ログなし）').then(()=>toast('コピーしました','suc'))
 });
 
@@ -485,7 +499,18 @@ return `<div class="vi ${chk?'chk':''}" onclick="toggleV(${v.id})">
 }).join('');
 }
 
-function toggleV(id){selV.has(id)?selV.delete(id):selV.add(id);renderVList();updateBtn();}
+function toggleV(id){
+  if(selV.has(id)){
+    selV.delete(id);
+    if(editId) orderedVideoIds=orderedVideoIds.filter(i=>i!=id);
+  }else{
+    selV.add(id);
+    if(editId&&!orderedVideoIds.includes(id)) orderedVideoIds.push(id);
+  }
+  renderVList();
+  if(editId) renderOrderCard();
+  updateBtn();
+}
 function clearSel(){selV.clear();renderVList();updateBtn();}
 
 function updateBtn(){
@@ -504,7 +529,12 @@ try{
 if(editId){
 // 編集モード
 const upd={name,type:mode,playerName:document.getElementById('playerNameInput')?.value.trim()||'',logoUrl:document.getElementById('logoUrlInput')?.value.trim()||''};
-if(mode==='folder'){upd.folderIds=[...selF];upd.videoIds=[];}else{upd.videoIds=[...selV];upd.folderIds=[];}
+if(mode==='folder'){upd.folderIds=[...selF];upd.videoIds=[];}else{
+  // orderedVideoIds の順序を維持しつつ、除外された分を除き、新規追加分を末尾に追加
+  const newOnes=[...selV].filter(id=>!orderedVideoIds.includes(id));
+  upd.videoIds=orderedVideoIds.filter(id=>selV.has(id)).concat(newOnes);
+  upd.folderIds=[];
+}
 await updateDoc(doc(db,'playlists',editId),upd);
 toast('更新しました！');
 resetCreate();
@@ -565,6 +595,8 @@ updateLogoPreview();
 }
 function resetCreate(){
 editId=null;
+orderedVideoIds=[];
+document.getElementById('orderCard').style.display='none';
 const pb=document.getElementById('publishBtn');if(pb)pb.textContent='🔗 発行データを発行';
 const ab=document.getElementById('addBtn');if(ab)ab.style.display='none';
 document.getElementById('playlistName').value='';
@@ -611,6 +643,66 @@ async function addVideosToPlaylist(){
     renderPlaylists();
   }catch(e){toast('追加エラー: '+e.message,'err');}
 }
+// =========================================================
+// 動画の並び順カード（ドラッグ&ドロップ）
+// =========================================================
+function renderOrderCard(){
+  const card=document.getElementById('orderCard');
+  const list=document.getElementById('orderList');
+  if(!card||!list) return;
+  if(!editId||mode!=='video'||!orderedVideoIds.length){card.style.display='none';return;}
+  card.style.display='block';
+  list.innerHTML=orderedVideoIds.map((id,i)=>{
+    const v=videos.find(v=>v.id==id);
+    const name=v?esc(v.display_name):`ID: ${id}`;
+    return `<li class="order-item" draggable="true" data-idx="${i}"
+      ondragstart="onDragStart(event,${i})"
+      ondragover="onDragOver(event)"
+      ondrop="onDrop(event,${i})"
+      ondragend="onDragEnd(event)"
+      ondragleave="onDragLeave(event)">
+      <span class="drag-handle">⠿</span>
+      <span class="order-num">${i+1}</span>
+      <span style="font-size:13px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${name}</span>
+      <button onclick="removeFromOrder(${i})" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:16px;flex-shrink:0;line-height:1" title="除外">×</button>
+    </li>`;
+  }).join('');
+}
+function onDragStart(e,idx){
+  dragSrcIdx=idx;
+  e.currentTarget.classList.add('dragging');
+  e.dataTransfer.effectAllowed='move';
+}
+function onDragOver(e){
+  e.preventDefault();
+  e.dataTransfer.dropEffect='move';
+  e.currentTarget.classList.add('drag-over');
+}
+function onDragLeave(e){e.currentTarget.classList.remove('drag-over');}
+function onDrop(e,targetIdx){
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+  if(dragSrcIdx===null||dragSrcIdx===targetIdx) return;
+  const arr=[...orderedVideoIds];
+  const [moved]=arr.splice(dragSrcIdx,1);
+  arr.splice(targetIdx,0,moved);
+  orderedVideoIds=arr;
+  renderOrderCard();
+}
+function onDragEnd(e){
+  e.currentTarget.classList.remove('dragging');
+  dragSrcIdx=null;
+  document.querySelectorAll('.order-item').forEach(el=>el.classList.remove('drag-over'));
+}
+function removeFromOrder(idx){
+  const id=orderedVideoIds[idx];
+  orderedVideoIds.splice(idx,1);
+  selV.delete(id);
+  renderOrderCard();
+  renderVList();
+  updateBtn();
+}
+
 async function duplicatePlaylist(id){
 try{
 const snap=await getDoc(doc(db,'playlists',id));
@@ -650,7 +742,9 @@ if(selF.has(fid))el.classList.add('sel');
 }else{
 setMode('video');
 selV=new Set(d.videoIds||[]);
+orderedVideoIds=[...(d.videoIds||[])];
 renderVTabs();
+renderOrderCard();
 }
 updateBtn();
 showPage('create',document.querySelector('.nav-i:nth-child(2)'));
