@@ -5139,6 +5139,7 @@ HAVE A NICE TRIP！
       const projectsRef = useMemo(() => db.collection(`users/${user.uid}/projects`), [user.uid]);
       // 複数選択
       const [multiSelected, setMultiSelected] = useState(new Set()); // Set<taskId>
+      const multiAnchorRef = useRef(null); // Shift+click 範囲選択の起点タスクID
       // コンテキストメニュー
       const [ctxMenu, setCtxMenu] = useState(null); // { x, y, taskId } or null
 
@@ -5416,17 +5417,38 @@ HAVE A NICE TRIP！
       }, [tasks.length, tasksRef]); // eslint-disable-line
 
       // 複数選択 + コンテキストメニューハンドラー
+      const orderedTasksRef = useRef([]);
       const handleStripClick = useCallback((e, taskId) => {
         if (e.shiftKey) {
           e.preventDefault();
+          const anchor = multiAnchorRef.current;
+          const list = orderedTasksRef.current;
+          if (anchor && anchor !== taskId && list.length > 0) {
+            // anchor ～ taskId の間にある全タスクを選択
+            const ai = list.findIndex(t => t.id === anchor);
+            const bi = list.findIndex(t => t.id === taskId);
+            if (ai !== -1 && bi !== -1) {
+              const [lo, hi] = ai < bi ? [ai, bi] : [bi, ai];
+              const rangeIds = list.slice(lo, hi + 1).map(t => t.id);
+              setMultiSelected(prev => {
+                const s = new Set(prev);
+                rangeIds.forEach(id => s.add(id));
+                return s;
+              });
+              return;
+            }
+          }
+          // anchor がない or 同一タスク → 単体トグル
           setMultiSelected(prev => {
             const s = new Set(prev);
             s.has(taskId) ? s.delete(taskId) : s.add(taskId);
             return s;
           });
+          multiAnchorRef.current = taskId;
         } else {
           setMultiSelected(new Set());
           setSelectedId(taskId);
+          multiAnchorRef.current = taskId; // 通常クリックで anchor をリセット
         }
       }, []);
 
@@ -5624,10 +5646,11 @@ HAVE A NICE TRIP！
         return sorted.map(k => ({ label: k, tasks: groups[k] }));
       };
 
-      // J/Kナビゲーション用フラットリスト
+      // J/Kナビゲーション用フラットリスト（Shift+click範囲選択にも使用）
       const orderedTasks = useMemo(() => {
         const all = [];
         for (const col of COLUMNS) all.push(...getColTasks(col.id));
+        orderedTasksRef.current = all; // 範囲選択用に最新を保持
         return all;
       }, [getColTasks]);
 
@@ -7023,7 +7046,7 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                       isSelected={selectedId === task.id}
                       isMultiSelected={multiSelected.has(task.id)}
                       hasAnyMultiSelected={multiSelected.size > 0}
-                      onToggleSelect={id => setMultiSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; })}
+                      onToggleSelect={id => { multiAnchorRef.current = id; setMultiSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; }); }}
                       dropState={dropState}
                       onDragStart={handleDragStart}
                       onDragOver={handleDragOverStrip}
