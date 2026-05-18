@@ -820,6 +820,28 @@ header {
 .cta-contact:hover { background: #dcfce7; }
 .cta-meeting { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
 .cta-meeting:hover { background: #dbeafe; }
+/* お問い合わせフォームモーダル（面談モーダルと共通スタイル） */
+.form-modal {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,.55); z-index: 500;
+  align-items: center; justify-content: center; padding: 16px;
+}
+.form-modal.open { display: flex; }
+.form-card {
+  background: #fff; border-radius: 14px; width: 100%; max-width: 760px;
+  height: min(88vh, 780px); display: flex; flex-direction: column;
+  overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.25);
+}
+.form-header {
+  padding: 14px 18px; border-bottom: 1px solid #e5e7eb;
+  display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+}
+.form-header h3 { font-size: 15px; font-weight: 700; flex: 1; margin: 0; }
+.form-header a { font-size: 12px; color: #6b7280; text-decoration: none; border: 1px solid #e5e7eb; border-radius: 6px; padding: 4px 9px; }
+.form-header a:hover { color: var(--accent); border-color: var(--accent); }
+.form-close { background: none; border: none; font-size: 22px; cursor: pointer; color: #6b7280; padding: 2px 6px; line-height: 1; }
+.form-close:hover { color: #111; }
+.form-iframe { flex: 1; border: none; width: 100%; }
 /* 面談申し込みモーダル */
 .meeting-modal {
   display: none; position: fixed; inset: 0;
@@ -2105,7 +2127,8 @@ function renderCtaBar(pd) {
     if (type === 'email' && pd.ctaContactEmail) {
       btns.push(`<button class="cta-btn cta-contact" onclick="openContactEmail('${pd.ctaContactEmail}')">📧 お問い合わせ</button>`);
     } else if (type === 'form' && pd.ctaContactForm) {
-      btns.push(`<button class="cta-btn cta-contact" onclick="window.open('${pd.ctaContactForm}','_blank','noopener,noreferrer')">📧 お問い合わせ</button>`);
+      const furl = pd.ctaContactForm.replace(/'/g,'');
+      btns.push(`<button class="cta-btn cta-contact" onclick="openContactForm('${furl}')">📧 お問い合わせ</button>`);
     }
   }
   if (pd.ctaMeeting) {
@@ -2138,6 +2161,23 @@ document.addEventListener('click', e => {
     pop.classList.remove('open');
   }
 });
+function openContactForm(url) {
+  const modal = document.getElementById('formModal');
+  const iframe = document.getElementById('formIframe');
+  const link = document.getElementById('formOpenLink');
+  if (!modal || !iframe) return;
+  iframe.src = url;
+  if (link) link.href = url;
+  modal.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function closeContactForm() {
+  const modal = document.getElementById('formModal');
+  const iframe = document.getElementById('formIframe');
+  if (modal) modal.classList.remove('open');
+  if (iframe) iframe.src = '';
+  document.body.style.overflow = '';
+}
 function openMeeting(url) {
   // Google CalendarはX-Frame-Optionsでiframe埋め込みを拒否するため新規タブで開く
   window.open(url, '_blank', 'noopener,noreferrer');
@@ -2149,7 +2189,19 @@ function closeMeeting() {
 }
 </script>
 
-<!-- お問い合わせモーダル廃止：ポップオーバーに移行済み -->
+<!-- お問い合わせフォームモーダル -->
+<div class="form-modal" id="formModal" onclick="if(event.target===this)closeContactForm()">
+  <div class="form-card">
+    <div class="form-header">
+      <span style="font-size:18px">📧</span>
+      <h3>お問い合わせ</h3>
+      <a id="formOpenLink" href="#" target="_blank" rel="noopener">別タブで開く ↗</a>
+      <button class="form-close" onclick="closeContactForm()">×</button>
+    </div>
+    <iframe class="form-iframe" id="formIframe" src="" loading="lazy"></iframe>
+  </div>
+</div>
+<!-- お問い合わせメールポップオーバー（email type用・廃止予定） -->
 
 <!-- 使い方モーダル (Player) -->
 <div id="howtoModal" class="rn-modal" style="display:none" onclick="if(event.target===this)hideHowTo()">
