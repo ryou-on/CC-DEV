@@ -6351,6 +6351,34 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
               onCancel={() => { nextOverflowDialog.resolve('pending'); setNextOverflowDialog(null); flashNext('HOLDINGに追加しました'); }}
             />, document.body
           )}
+          {/* 複数選択フローティングアクションバー */}
+          {multiSelected.size > 0 && ReactDOM.createPortal(
+            <div style={{ position:'fixed', bottom:'20px', left:'50%', transform:'translateX(-50%)', zIndex:500, display:'flex', alignItems:'center', gap:'6px', background:'rgba(10,16,32,0.97)', border:'1px solid rgba(255,200,0,0.5)', borderRadius:'8px', padding:'8px 12px', boxShadow:'0 4px 24px rgba(0,0,0,0.7)', fontFamily:"'JetBrains Mono',monospace", whiteSpace:'nowrap' }}>
+              <span style={{ fontSize:'11px', color:'#ffcc00', fontWeight:700, marginRight:'4px' }}>☑ {multiSelected.size}件選択中</span>
+              {[
+                { label:'ACTIVE',    status:'active',    color:'#00ff88' },
+                { label:'NEXT',      status:'next',      color:'#00ccff' },
+                { label:'DELEGATED', status:'delegated', color:'#ffaa00' },
+                { label:'HOLDING',   status:'pending',   color:'#888' },
+                { label:'CLEARED',   status:'completed', color:'#88bbff' },
+                { label:'LOST',      status:'lost',      color:'#ff6600' },
+              ].map(item => (
+                <button key={item.status} onClick={() => handleBulkStatusChange(item.status)}
+                  style={{ background:`${item.color}18`, border:`1px solid ${item.color}55`, color:item.color, padding:'4px 10px', borderRadius:'4px', cursor:'pointer', fontSize:'10px', fontWeight:700, letterSpacing:'0.05em' }}>
+                  {item.label}
+                </button>
+              ))}
+              <button onClick={handleBulkDelete}
+                style={{ background:'rgba(255,60,60,0.18)', border:'1px solid rgba(255,60,60,0.6)', color:'#ff6666', padding:'4px 10px', borderRadius:'4px', cursor:'pointer', fontSize:'10px', fontWeight:700, marginLeft:'4px' }}>
+                🗑 削除
+              </button>
+              <button onClick={() => setMultiSelected(new Set())}
+                style={{ background:'transparent', border:'1px solid rgba(255,255,255,0.15)', color:'rgba(255,255,255,0.4)', padding:'4px 8px', borderRadius:'4px', cursor:'pointer', fontSize:'10px', marginLeft:'2px' }}>
+                ✕
+              </button>
+            </div>,
+            document.body
+          )}
           {/* ER-0071: フルスクリーン */}
           {fullscreenTaskId && ReactDOM.createPortal(<TaskFullscreenModal task={tasks.find(t=>t.id===fullscreenTaskId)} onClose={()=>setFullscreenTaskId(null)} onStatusChange={handleStatusChange} onEdit={id=>{ setEditTaskId(id); setFullscreenTaskId(null); }} onUpdateCheckItems={async (taskId, newItems) => { await tasksRef.doc(taskId).update({ checkItems: newItems, updatedAt: ts() }); setTasks(prev => prev.map(t => t.id===taskId ? { ...t, checkItems: newItems } : t)); }} onTimerStart={handleTimerStart} onTimerStop={handleTimerStop} T={T} />, document.body)}
           {/* ER-0075: COMPLETED アニメーション（クリック位置に fixed 表示） */}
@@ -6970,6 +6998,7 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                   </div>
                 )}
                 {/* ER-0060: PROJ/ROUTINE ドロップダウン */}
+
                 <div ref={projMenuRef} style={{ position:'relative' }}>
                   <button onClick={() => setShowProjMenu(p=>!p)} style={{ background:`rgba(100,150,255,0.12)`, border:`1px solid rgba(100,150,255,0.4)`, color:"#8899ff", padding:"4px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"10px", fontWeight:700, letterSpacing:"0.08em", fontFamily:"'JetBrains Mono',monospace", display:"flex", alignItems:"center", gap:"4px" }}>
                     📁 {projects.filter(p=>!p.type||p.type==='project').length > 0 ? `PROJ (${projects.filter(p=>!p.type||p.type==='project').length})` : 'PROJ'} ▼
