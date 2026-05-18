@@ -50,7 +50,7 @@
   </style>
 </head>
 <body>
-  <div id="dev-banner">⚠ DEV BUILD — v0.10.28-dev — NOT FOR PRODUCTION ⚠</div>
+  <div id="dev-banner">⚠ DEV BUILD — v0.10.29-dev — NOT FOR PRODUCTION ⚠</div>
   <div id="root" style="padding-top:22px;"></div>
 
   <!-- Firebase 初期化 -->
@@ -462,9 +462,17 @@
     // ======================================================
     // リリースノート
     // ======================================================
-    const APP_VERSION = 'v0.10.28-dev';
+    const APP_VERSION = 'v0.10.29-dev';
 
     const RELEASE_NOTES = [
+      {
+        version: "v0.10.29-dev", date: "2026-05-18",
+        changes: [
+          "☑ タスクの複数選択に対応（チェックボックスをタップで選択・一括削除・一括ステータス移動）",
+          "🗑 一括削除ボタン追加（選択中タスクをまとめて削除）",
+          "📦 一括移動メニュー追加（ACTIVE / NEXT / DELEGATED / HOLDING / CLEARED / LOST に一括移動）",
+        ],
+      },
       {
         version: "v0.10.28-dev", date: "2026-04-23",
         changes: [
@@ -3308,7 +3316,7 @@ HAVE A NICE TRIP！
       return `${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`;
     };
 
-    const FlightStrip = ({ task, isSelected, isMultiSelected, dropState, onDragStart, onDragOver, onDragEnd, onDrop, onStatusChange, onDelete, onEdit, isTimerRunning, elapsedMs, totalLoggedMs, onTimerStart, onTimerStop, onTouchStart, onTouchMove, onTouchEnd, titleFontSize=13, projects=[], onSkipProject, projectTasks=[], onEditSeqTask, onAddNextTask, onCheckRoutineStep, onCheckItem, onFullscreen, onDone }) => {
+    const FlightStrip = ({ task, isSelected, isMultiSelected, hasAnyMultiSelected, onToggleSelect, dropState, onDragStart, onDragOver, onDragEnd, onDrop, onStatusChange, onDelete, onEdit, isTimerRunning, elapsedMs, totalLoggedMs, onTimerStart, onTimerStop, onTouchStart, onTouchMove, onTouchEnd, titleFontSize=13, projects=[], onSkipProject, projectTasks=[], onEditSeqTask, onAddNextTask, onCheckRoutineStep, onCheckItem, onFullscreen, onDone }) => {
       const T = useT();
       const pri = PRIORITIES[task.priority] || PRIORITIES.normal;
       const cat = CATEGORIES[task.category] || { label: task.category || "OTHER", color: "#888888" };
@@ -3389,6 +3397,15 @@ HAVE A NICE TRIP！
             ...dropStyle,
           }}>
           <div style={{ position:"absolute", inset:0, background:"repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,255,136,0.015) 2px,rgba(0,255,136,0.015) 4px)", pointerEvents:"none" }} />
+          {/* チェックボックス（複数選択用） */}
+          {(isMultiSelected || hasAnyMultiSelected) && (
+            <div onClick={e => { e.stopPropagation(); onToggleSelect && onToggleSelect(task.id); }}
+              style={{ flexShrink:0, width:'28px', display:'flex', alignItems:'center', justifyContent:'center', cursor:'pointer', alignSelf:'stretch', borderRight:`1px solid ${isMultiSelected ? 'rgba(100,160,255,0.4)' : T.border2 + '44'}`, background: isMultiSelected ? 'rgba(100,160,255,0.1)' : 'transparent' }}>
+              <div style={{ width:'14px', height:'14px', border:`1.5px solid ${isMultiSelected ? 'rgba(100,160,255,0.9)' : T.border2}`, borderRadius:'3px', background: isMultiSelected ? 'rgba(100,160,255,0.9)' : 'transparent', display:'flex', alignItems:'center', justifyContent:'center', transition:'all 0.1s', flexShrink:0 }}>
+                {isMultiSelected && <span style={{ color:'#fff', fontSize:'9px', fontWeight:800, lineHeight:1 }}>✓</span>}
+              </div>
+            </div>
+          )}
           {/* 左：コンテンツ */}
           <div style={{ flex:1, minWidth:0, padding:0 }}>
             <div style={{ display:"flex", alignItems:"center", padding:"6px 8px 2px", gap:"6px" }}>
@@ -5438,17 +5455,37 @@ HAVE A NICE TRIP！
         const ids = [...multiSelected];
         if (ids.length === 0) return;
         if (newStatus === 'active' && ids.length > 1) {
-          alert('ACTIVE には1件しか移動できません');
+          flashNext('ACTIVE には1件しか移動できません');
           return;
         }
         const batch = db.batch();
-        ids.forEach(id => {
-          batch.update(tasksRef.doc(id), { status: newStatus, updatedAt: ts() });
-        });
+        if (newStatus === 'next') {
+          // NEXT上限を守りながら順番に割り当て
+          let nextCount = tasks.filter(t => t.status === 'next' && !ids.includes(t.id)).length;
+          for (const id of ids) {
+            const isAlways = localStorage.getItem(ALWAYS_ALLOW_NEXT_KEY) === '1';
+            const st = (nextCount < NEXT_LIMIT || isAlways) ? 'next' : 'pending';
+            if (st === 'next') nextCount++;
+            batch.update(tasksRef.doc(id), { status: st, updatedAt: ts() });
+          }
+        } else {
+          ids.forEach(id => batch.update(tasksRef.doc(id), { status: newStatus, updatedAt: ts() }));
+        }
         await batch.commit();
         setMultiSelected(new Set());
         setShowBulkMenu(false);
-      }, [multiSelected, tasksRef]); // eslint-disable-line
+      }, [multiSelected, tasks, tasksRef]); // eslint-disable-line
+
+      const handleBulkDelete = useCallback(async () => {
+        const ids = [...multiSelected];
+        if (ids.length === 0) return;
+        if (!window.confirm(`選択した ${ids.length} 件のタスクを削除しますか？\nこの操作は取り消せません。`)) return;
+        const batch = db.batch();
+        ids.forEach(id => batch.delete(tasksRef.doc(id)));
+        await batch.commit();
+        setMultiSelected(new Set());
+        setShowBulkMenu(false);
+      }, [multiSelected, tasksRef]);
 
       // コンテキストメニューを外クリックで閉じる
       useEffect(() => {
@@ -6862,11 +6899,14 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                     </button>
                     {showBulkMenu && (
                       <div style={{ position:'absolute', top:'100%', right:0, zIndex:250, background:T.bgModal, border:`1px solid rgba(255,200,0,0.4)`, borderRadius:'4px', padding:'4px', minWidth:'180px', boxShadow:'0 4px 20px rgba(0,0,0,0.5)', fontFamily:"'JetBrains Mono',monospace", marginTop:'2px' }}>
-                        <div style={{ fontSize:'8px', color:T.textMuted, letterSpacing:'0.1em', padding:'3px 10px 5px', borderBottom:`1px solid ${T.border2}`, marginBottom:'3px' }}>一括操作 ({multiSelected.size}件)</div>
+                        <div style={{ fontSize:'8px', color:T.textMuted, letterSpacing:'0.1em', padding:'3px 10px 5px', borderBottom:`1px solid ${T.border2}`, marginBottom:'3px' }}>── ステータス移動 ({multiSelected.size}件)</div>
                         {[
-                          { label:'→ NEXT に移動', status:'next', color:'#00ccff' },
-                          { label:'⏸ PENDING に移動', status:'pending', color:T.textDim },
+                          { label:'▶ ACTIVE に移動',    status:'active',    color:'#00ff88' },
+                          { label:'→ NEXT に移動',       status:'next',      color:'#00ccff' },
                           { label:'✈ DELEGATED に移動', status:'delegated', color:'#ffaa00' },
+                          { label:'⏸ HOLDING に移動',   status:'pending',   color:T.textDim },
+                          { label:'✓ CLEARED に移動',   status:'completed', color:'#88bbff' },
+                          { label:'✗ LOST に移動',      status:'lost',      color:'#ff6600' },
                         ].map(item => (
                           <div key={item.status} onClick={() => handleBulkStatusChange(item.status)}
                             style={{ display:'flex', alignItems:'center', gap:'8px', padding:'6px 10px', borderRadius:'3px', cursor:'pointer', fontSize:'11px', color:item.color }}
@@ -6876,7 +6916,7 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                           </div>
                         ))}
                         <div style={{ borderTop:`1px solid ${T.border2}`, margin:'3px 0', padding:'3px 0' }}>
-                          <div style={{ fontSize:'8px', color:T.textMuted, letterSpacing:'0.08em', padding:'2px 10px 4px' }}>カテゴリ変更</div>
+                          <div style={{ fontSize:'8px', color:T.textMuted, letterSpacing:'0.08em', padding:'2px 10px 4px' }}>── カテゴリ変更</div>
                           {categories.map(cat => (
                             <div key={cat.id} onClick={() => { handleBulkCategoryChange(cat.id); setShowBulkMenu(false); }}
                               style={{ display:'flex', alignItems:'center', gap:'8px', padding:'5px 10px', borderRadius:'3px', cursor:'pointer', fontSize:'11px', color:T.text }}
@@ -6888,9 +6928,15 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                           ))}
                         </div>
                         <div style={{ borderTop:`1px solid ${T.border2}`, marginTop:'3px', paddingTop:'4px' }}>
+                          <div onClick={handleBulkDelete}
+                            style={{ display:'flex', alignItems:'center', gap:'6px', padding:'6px 10px', borderRadius:'3px', cursor:'pointer', fontSize:'11px', color:'#ff6666', fontWeight:700 }}
+                            onMouseEnter={e=>e.currentTarget.style.background='rgba(255,50,50,0.15)'}
+                            onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                            🗑 {multiSelected.size}件を削除
+                          </div>
                           <div onClick={() => { setMultiSelected(new Set()); setShowBulkMenu(false); }}
                             style={{ display:'flex', alignItems:'center', padding:'5px 10px', borderRadius:'3px', cursor:'pointer', fontSize:'10px', color:T.textMuted }}
-                            onMouseEnter={e=>e.currentTarget.style.background='rgba(255,50,50,0.1)'}
+                            onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.05)'}
                             onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
                             ✕ 選択解除
                           </div>
@@ -6975,6 +7021,8 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                       task={task}
                       isSelected={selectedId === task.id}
                       isMultiSelected={multiSelected.has(task.id)}
+                      hasAnyMultiSelected={multiSelected.size > 0}
+                      onToggleSelect={id => setMultiSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; })}
                       dropState={dropState}
                       onDragStart={handleDragStart}
                       onDragOver={handleDragOverStrip}
@@ -7171,6 +7219,8 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
                     task={task}
                     isSelected={selectedId === task.id}
                     isMultiSelected={multiSelected.has(task.id)}
+                    hasAnyMultiSelected={multiSelected.size > 0}
+                    onToggleSelect={id => setMultiSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; })}
                     dropState={dropState}
                     onDragStart={handleDragStart}
                     onDragOver={handleDragOverStrip}
