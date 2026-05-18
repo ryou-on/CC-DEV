@@ -780,6 +780,46 @@ header {
   margin-left: auto; font-size: 11px;
   color: var(--text-muted); font-family: var(--mono);
 }
+/* CTAボタンバー */
+.cta-bar {
+  display: flex; gap: 8px; padding: 8px 16px 10px;
+  background: var(--white); border-bottom: 1px solid var(--border);
+  flex-shrink: 0; flex-wrap: wrap;
+}
+.cta-bar:empty { display: none; }
+.cta-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 18px; border-radius: 20px; border: none;
+  cursor: pointer; font-family: var(--font); font-size: 13px;
+  font-weight: 600; transition: all .15s; text-decoration: none;
+}
+.cta-contact { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+.cta-contact:hover { background: #dcfce7; }
+.cta-meeting { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+.cta-meeting:hover { background: #dbeafe; }
+/* 面談申し込みモーダル */
+.meeting-modal {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,.55); z-index: 500;
+  align-items: center; justify-content: center; padding: 16px;
+}
+.meeting-modal.open { display: flex; }
+.meeting-card {
+  background: #fff; border-radius: 14px; width: 100%; max-width: 640px;
+  height: min(80vh, 700px); display: flex; flex-direction: column;
+  overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.25);
+}
+.meeting-header {
+  padding: 14px 18px; border-bottom: 1px solid #e5e7eb;
+  display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+}
+.meeting-header h3 { font-size: 15px; font-weight: 700; flex: 1; margin: 0; }
+.meeting-close {
+  background: none; border: none; font-size: 22px;
+  cursor: pointer; color: #6b7280; padding: 2px 6px; line-height: 1;
+}
+.meeting-close:hover { color: #111; }
+.meeting-iframe { flex: 1; border: none; width: 100%; }
 </style>
 </head>
 <body>
@@ -826,6 +866,7 @@ header {
       </div>
       <div class="info-meta" id="nowMeta"><span>—</span></div>
     </div>
+    <div class="cta-bar" id="ctaBar"></div>
     <div class="video-list">
       <div class="list-label" id="listLabel">読み込み中...</div>
       <!-- ソートバー -->
@@ -1230,6 +1271,7 @@ async function init() {
         // ロゴ・プレイヤーヤー名のカスタマイズ適用
         if (pd.playerName) { const el=document.getElementById('logoText'); if(el) el.textContent=pd.playerName; }
         if (pd.logoUrl) { const el=document.getElementById('logoImg'); if(el){ el.src=pd.logoUrl; el.style.cssText='height:28px;width:auto;object-fit:contain;margin-right:6px;'; } }
+        renderCtaBar(pd);
       log(`プレイリスト: ${pd.name} / フォルダ${SHOW_FOLDER_IDS.length}件`);
     } else {
       // ?id= なし → フォールバック
@@ -2005,6 +2047,56 @@ async function adminScanSave() {
 // 起動
 // =========================================================
 init();
+
+// =========================================================
+// CTA バー
+// =========================================================
+function renderCtaBar(pd) {
+  const bar = document.getElementById('ctaBar');
+  if (!bar || !pd) return;
+  const btns = [];
+  if (pd.ctaContact) {
+    const type = pd.ctaContactType || 'email';
+    const href = type === 'email'
+      ? 'mailto:' + (pd.ctaContactEmail || '')
+      : (pd.ctaContactForm || '');
+    if (href && href !== 'mailto:') {
+      btns.push(`<a href="${href}" target="_blank" rel="noopener" class="cta-btn cta-contact">📧 お問い合わせ</a>`);
+    }
+  }
+  if (pd.ctaMeeting) {
+    const url = (pd.ctaMeetingUrl || 'https://calendar.app.google/rMR3bWoBcjS1AyMz9').replace(/'/g, '');
+    btns.push(`<button class="cta-btn cta-meeting" onclick="openMeeting('${url}')">📅 面談を申し込む（30分）</button>`);
+  }
+  bar.innerHTML = btns.join('');
+}
+function openMeeting(url) {
+  const modal = document.getElementById('meetingModal');
+  const iframe = document.getElementById('meetingIframe');
+  if (!modal || !iframe) return;
+  iframe.src = url;
+  modal.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function closeMeeting() {
+  const modal = document.getElementById('meetingModal');
+  const iframe = document.getElementById('meetingIframe');
+  if (modal) modal.classList.remove('open');
+  if (iframe) iframe.src = '';
+  document.body.style.overflow = '';
+}
 </script>
+
+<!-- 面談申し込みモーダル -->
+<div class="meeting-modal" id="meetingModal" onclick="if(event.target===this)closeMeeting()">
+  <div class="meeting-card">
+    <div class="meeting-header">
+      <span style="font-size:18px">📅</span>
+      <h3>面談を申し込む（30分）</h3>
+      <button class="meeting-close" onclick="closeMeeting()">×</button>
+    </div>
+    <iframe class="meeting-iframe" id="meetingIframe" src="" loading="lazy" allow="camera; microphone"></iframe>
+  </div>
+</div>
 </body>
 </html>

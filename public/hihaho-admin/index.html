@@ -136,6 +136,16 @@ main{margin-left:var(--sw);margin-top:var(--hh);padding:24px;}
 /* 言語切替ボタン */
 .lang-btn { font-size:11px; font-weight:700; padding:3px 8px; border-radius:4px; border:1px solid #e5e7eb; background:#f9fafb; color:#6b7280; cursor:pointer; margin-right:6px; flex-shrink:0; }
 .lang-btn:hover { background:#0066ff; color:#fff; border-color:#0066ff; }
+/* CTAボタン設定 */
+.cta-toggle-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--border);}
+.cta-toggle-row:last-of-type{border-bottom:none;}
+.toggle-sw{position:relative;width:40px;height:22px;flex-shrink:0;}
+.toggle-sw input{opacity:0;width:0;height:0;position:absolute;}
+.toggle-track{position:absolute;inset:0;background:#d1d5db;border-radius:11px;cursor:pointer;transition:background .2s;}
+.toggle-sw input:checked+.toggle-track{background:var(--accent);}
+.toggle-track::after{content:'';position:absolute;left:3px;top:3px;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.2);}
+.toggle-sw input:checked+.toggle-track::after{transform:translateX(18px);}
+.cta-sub{padding:10px 0 4px;display:flex;flex-direction:column;gap:8px;}
 /* ドラッグ&ドロップ並び替え */
 .order-list{list-style:none;margin:0;padding:0;}
 .order-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;margin-bottom:6px;background:var(--white);transition:background .15s,border-color .15s;}
@@ -214,6 +224,39 @@ main{margin-left:var(--sw);margin-top:var(--hh);padding:24px;}
 <div class="card" id="orderCard" style="display:none">
 <div class="ct">④ 動画の並び順 <span style="font-size:11px;font-weight:400;color:var(--text-sub)">ドラッグで並び替え</span></div>
 <ul class="order-list" id="orderList"></ul>
+</div>
+<div class="card" id="ctaCard">
+<div class="ct">⑥ CTAボタン設定（任意）</div>
+<div style="font-size:11px;color:#6b7280;margin-bottom:12px">プレイヤーに表示するアクションボタンを設定します</div>
+<!-- 問い合わせボタン -->
+<div class="cta-toggle-row">
+<label class="toggle-sw"><input type="checkbox" id="ctaContactEnabled" onchange="toggleCtaContact()"><div class="toggle-track"></div></label>
+<div style="flex:1">
+<div style="font-size:13px;font-weight:600">📧 問い合わせボタン</div>
+<div style="font-size:11px;color:var(--text-sub)">メールアドレスまたはフォームURLへのリンク</div>
+</div>
+</div>
+<div id="ctaContactSub" class="cta-sub" style="display:none">
+<input type="hidden" id="ctaTypeVal" value="email">
+<div style="display:flex;gap:8px">
+<button class="btn bp bsm" id="ctaTypeEmailBtn" onclick="setCtaType('email')" style="flex:1;justify-content:center">📧 メール</button>
+<button class="btn bs bsm" id="ctaTypeFormBtn" onclick="setCtaType('form')" style="flex:1;justify-content:center">🔗 フォームURL</button>
+</div>
+<div id="ctaEmailRow"><input class="fi" id="ctaContactEmail" placeholder="info@example.com"></div>
+<div id="ctaFormRow" style="display:none"><input class="fi" id="ctaContactForm" placeholder="https://forms.example.com/..."></div>
+</div>
+<!-- 面談申し込みボタン -->
+<div class="cta-toggle-row">
+<label class="toggle-sw"><input type="checkbox" id="ctaMeetingEnabled" onchange="toggleCtaMeeting()"><div class="toggle-track"></div></label>
+<div style="flex:1">
+<div style="font-size:13px;font-weight:600">📅 面談申し込みボタン</div>
+<div style="font-size:11px;color:var(--text-sub)">30分の面談をカレンダーからポップアップ予約</div>
+</div>
+</div>
+<div id="ctaMeetingSub" class="cta-sub" style="display:none">
+<input class="fi" id="ctaMeetingUrl" placeholder="https://calendar.app.google/..." value="https://calendar.app.google/rMR3bWoBcjS1AyMz9">
+<div style="font-size:10px;color:var(--text-muted)">Googleカレンダーの予約ページURLを入力</div>
+</div>
 </div>
 <div style="display:flex;gap:10px;justify-content:flex-end">
 <button class="btn bs" onclick="resetCreate()">リセット</button>
@@ -345,6 +388,7 @@ clearSel,publishPlaylist,resetCreate,closeMo,copyPubUrl,openPubUrl,
 deletePlaylist,duplicatePlaylist,copyUrl,previewThumb,saveThumbs,clearThumb,
 switchThumbFolder, filterThumbFolders, uploadThumb, filterVideoSearch, addVideosToPlaylist,
 renderOrderCard, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, removeFromOrder,
+toggleCtaContact, toggleCtaMeeting, setCtaType,
 copyConsole:()=>navigator.clipboard.writeText(clog.join('\n')||'（ログなし）').then(()=>toast('コピーしました','suc'))
 });
 
@@ -528,7 +572,7 @@ btn.disabled=true;btn.textContent='発行中...';
 try{
 if(editId){
 // 編集モード
-const upd={name,type:mode,playerName:document.getElementById('playerNameInput')?.value.trim()||'',logoUrl:document.getElementById('logoUrlInput')?.value.trim()||''};
+const upd={name,type:mode,playerName:document.getElementById('playerNameInput')?.value.trim()||'',logoUrl:document.getElementById('logoUrlInput')?.value.trim()||'',...getCtaData()};
 if(mode==='folder'){upd.folderIds=[...selF];upd.videoIds=[];}else{
   // orderedVideoIds の順序を維持しつつ、除外された分を除き、新規追加分を末尾に追加
   const newOnes=[...selV].filter(id=>!orderedVideoIds.includes(id));
@@ -543,7 +587,7 @@ showPage('playlists',document.querySelector('.nav-i'));
 }else{
 // 新規作成
 const id=Math.random().toString(36).slice(2,10)+Date.now().toString(36);
-const data={name,createdAt:serverTimestamp(),type:mode,playerName:document.getElementById('playerNameInput')?.value.trim()||'',logoUrl:document.getElementById('logoUrlInput')?.value.trim()||''};
+const data={name,createdAt:serverTimestamp(),type:mode,playerName:document.getElementById('playerNameInput')?.value.trim()||'',logoUrl:document.getElementById('logoUrlInput')?.value.trim()||'',...getCtaData()};
 if(mode==='folder'){data.folderIds=[...selF];data.videoIds=[];}else{data.videoIds=[...selV];data.folderIds=[];}
 await setDoc(doc(db,'playlists',id),data);
 document.getElementById('pubUrlText').textContent=PLAYER+'?id='+id;
@@ -597,6 +641,7 @@ function resetCreate(){
 editId=null;
 orderedVideoIds=[];
 document.getElementById('orderCard').style.display='none';
+resetCtaData();
 const pb=document.getElementById('publishBtn');if(pb)pb.textContent='🔗 発行データを発行';
 const ab=document.getElementById('addBtn');if(ab)ab.style.display='none';
 document.getElementById('playlistName').value='';
@@ -643,6 +688,55 @@ async function addVideosToPlaylist(){
     renderPlaylists();
   }catch(e){toast('追加エラー: '+e.message,'err');}
 }
+// =========================================================
+// CTAボタン設定
+// =========================================================
+function toggleCtaContact(){
+  const on=document.getElementById('ctaContactEnabled').checked;
+  document.getElementById('ctaContactSub').style.display=on?'flex':'none';
+}
+function toggleCtaMeeting(){
+  const on=document.getElementById('ctaMeetingEnabled').checked;
+  document.getElementById('ctaMeetingSub').style.display=on?'flex':'none';
+}
+function setCtaType(type){
+  document.getElementById('ctaTypeVal').value=type;
+  document.getElementById('ctaEmailRow').style.display=type==='email'?'':'none';
+  document.getElementById('ctaFormRow').style.display=type==='form'?'':'none';
+  document.getElementById('ctaTypeEmailBtn').className='btn bsm '+(type==='email'?'bp':'bs');
+  document.getElementById('ctaTypeFormBtn').className='btn bsm '+(type==='form'?'bp':'bs');
+  ['ctaTypeEmailBtn','ctaTypeFormBtn'].forEach(id=>{const b=document.getElementById(id);b.style.flex='1';b.style.justifyContent='center';});
+}
+function getCtaData(){
+  return {
+    ctaContact:document.getElementById('ctaContactEnabled')?.checked||false,
+    ctaContactType:document.getElementById('ctaTypeVal')?.value||'email',
+    ctaContactEmail:document.getElementById('ctaContactEmail')?.value.trim()||'',
+    ctaContactForm:document.getElementById('ctaContactForm')?.value.trim()||'',
+    ctaMeeting:document.getElementById('ctaMeetingEnabled')?.checked||false,
+    ctaMeetingUrl:document.getElementById('ctaMeetingUrl')?.value.trim()||'https://calendar.app.google/rMR3bWoBcjS1AyMz9',
+  };
+}
+function loadCtaData(pd){
+  if(!pd) return;
+  const ce=document.getElementById('ctaContactEnabled');
+  if(ce){ce.checked=!!pd.ctaContact;toggleCtaContact();}
+  setCtaType(pd.ctaContactType||'email');
+  const em=document.getElementById('ctaContactEmail');if(em)em.value=pd.ctaContactEmail||'';
+  const fo=document.getElementById('ctaContactForm');if(fo)fo.value=pd.ctaContactForm||'';
+  const me=document.getElementById('ctaMeetingEnabled');
+  if(me){me.checked=!!pd.ctaMeeting;toggleCtaMeeting();}
+  const mu=document.getElementById('ctaMeetingUrl');if(mu)mu.value=pd.ctaMeetingUrl||'https://calendar.app.google/rMR3bWoBcjS1AyMz9';
+}
+function resetCtaData(){
+  ['ctaContactEnabled','ctaMeetingEnabled'].forEach(id=>{const el=document.getElementById(id);if(el)el.checked=false;});
+  document.getElementById('ctaContactSub').style.display='none';
+  document.getElementById('ctaMeetingSub').style.display='none';
+  setCtaType('email');
+  ['ctaContactEmail','ctaContactForm'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  const mu=document.getElementById('ctaMeetingUrl');if(mu)mu.value='https://calendar.app.google/rMR3bWoBcjS1AyMz9';
+}
+
 // =========================================================
 // 動画の並び順カード（ドラッグ&ドロップ）
 // =========================================================
@@ -726,6 +820,7 @@ document.getElementById('playlistName').value=d.name||'';
 const pni=document.getElementById('playerNameInput');if(pni)pni.value=d.playerName||'';
 const lui=document.getElementById('logoUrlInput');if(lui)lui.value=d.logoUrl||'';
 updateLogoPreview();
+loadCtaData(d);
 // 発行ボタンのテキスト変更
 const pb=document.getElementById('publishBtn');if(pb)pb.textContent='✅ 更新する';
 const ab=document.getElementById('addBtn');if(ab)ab.style.display='';
