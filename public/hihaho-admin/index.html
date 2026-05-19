@@ -419,7 +419,7 @@ const log=m=>console.log('[admin] '+m);
 Object.assign(window,{
 showPage,uploadLogoFile,updateLogoPreview,clearLogoUrl,openEdit,setMode,toggleF,toggleV,switchFTab,
 clearSel,publishPlaylist,resetCreate,closeMo,copyPubUrl,openPubUrl,
-deletePlaylist,duplicatePlaylist,copyUrl,previewThumb,saveThumbs,clearThumb,saveDesc,
+deletePlaylist,duplicatePlaylist,copyUrl,downloadPlayerHTML,previewThumb,saveThumbs,clearThumb,saveDesc,
 switchThumbFolder, filterThumbFolders, uploadThumb, filterVideoSearch, addVideosToPlaylist,
 switchThumbMode, onThumbGlobalSearch,
 renderOrderCard, renderDefaultVideoSelect, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, removeFromOrder,
@@ -493,6 +493,7 @@ return `<div class="pc">
 <button class="btn bs bsm" onclick="copyUrl('${url}')">📋 コピー</button>
 <button class="btn bs bsm" onclick="openEdit('${p.id}')">✏ 編集</button>
 <button class="btn bs bsm" onclick="duplicatePlaylist('${p.id}')">📋 複製</button>
+<button class="btn bs bsm" onclick="downloadPlayerHTML('${p.id}','${esc(p.name)}')">⬇ HTML DL</button>
 <button class="btn bd bsm" onclick="deletePlaylist('${p.id}')">🗑 削除</button>
 </div>
 </div>
@@ -940,6 +941,27 @@ showPage('create',document.querySelector('.nav-i:nth-child(2)'));
 }
 
 function copyUrl(url){navigator.clipboard.writeText(url).then(()=>toast('URLをコピーしました','suc'));}
+
+async function downloadPlayerHTML(playlistId, playlistName){
+toast('HTMLを生成中…','');
+try{
+const res=await fetch('/hihaho-view/index.html');
+if(!res.ok) throw new Error('fetch失敗: '+res.status);
+let html=await res.text();
+// URLパラメータ取得部分をプレイリストIDに置換
+html=html.replace(
+  "new URLSearchParams(location.search).get('id')",
+  `'${playlistId}' /* playlist: ${playlistName} */`
+);
+const blob=new Blob([html],{type:'text/html;charset=utf-8'});
+const a=document.createElement('a');
+a.href=URL.createObjectURL(blob);
+a.download='player-'+playlistName.replace(/[^a-zA-Z0-9　-鿿]+/g,'-')+'.html';
+a.click();
+URL.revokeObjectURL(a.href);
+toast('ダウンロードしました','suc');
+}catch(e){ toast('エラー: '+e.message,'err'); }
+}
 
 async function loadAllFolderVideos(){
   const badge=document.getElementById('orderLoadingBadge');
