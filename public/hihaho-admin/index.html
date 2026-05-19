@@ -225,7 +225,11 @@ main{margin-left:var(--sw);margin-top:var(--hh);padding:24px;}
 <div id="videoList"></div>
 </div>
 <div class="card" id="orderCard" style="display:none">
-<div class="ct">④ 動画の並び順 <span style="font-size:11px;font-weight:400;color:var(--text-sub)">ドラッグで並び替え</span></div>
+<div class="ct" style="display:flex;align-items:center;gap:8px">
+  <span>④ 動画の並び順 <span style="font-size:11px;font-weight:400;color:var(--text-sub)">ドラッグで並び替え</span></span>
+  <button id="orderReloadBtn" onclick="loadAllFolderVideos()" style="margin-left:auto;font-size:11px;background:none;border:1px solid var(--border);border-radius:6px;padding:3px 9px;cursor:pointer;color:var(--text-sub);display:none">🔄 動画情報を読み込む</button>
+  <span id="orderLoadingBadge" style="display:none;font-size:11px;color:var(--text-sub)">⏳ 読み込み中...</span>
+</div>
 <div id="orderCheckBar" class="order-check-bar" style="display:none">
   <span id="orderCheckCount">0件選択中</span>
   <button onclick="bulkRemoveFromOrder()" style="margin-left:auto;background:#ef4444;color:#fff;border:none;border-radius:6px;padding:4px 12px;font-size:12px;cursor:pointer;font-weight:600">まとめて削除</button>
@@ -397,7 +401,7 @@ clearSel,publishPlaylist,resetCreate,closeMo,copyPubUrl,openPubUrl,
 deletePlaylist,duplicatePlaylist,copyUrl,previewThumb,saveThumbs,clearThumb,
 switchThumbFolder, filterThumbFolders, uploadThumb, filterVideoSearch, addVideosToPlaylist,
 renderOrderCard, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, removeFromOrder,
-toggleOrderCheck, bulkRemoveFromOrder, clearOrderCheck,
+toggleOrderCheck, bulkRemoveFromOrder, clearOrderCheck, loadAllFolderVideos,
 toggleCtaContact, toggleCtaMeeting, setCtaType,
 copyConsole:()=>navigator.clipboard.writeText(clog.join('\n')||'（ログなし）').then(()=>toast('コピーしました','suc'))
 });
@@ -874,16 +878,9 @@ setMode('video');
 selV=new Set(d.videoIds||[]);
 orderedVideoIds=[...(d.videoIds||[])];
 renderVTabs();
-// videoMapに不足があれば全フォルダを並列ロードしてから再描画
-const missing=orderedVideoIds.filter(id=>!videoMap[id]);
-if(missing.length>0){
-  renderOrderCard(); // まずIDだけで描画
-  Promise.all(folders.map(async f=>{
-    try{const r=await api('/v2/video?video_container_id='+f.id);(r.data||[]).forEach(v=>videoMap[v.id]=v);}catch(e){}
-  })).then(()=>renderOrderCard()); // 全ロード後に再描画
-}else{
-  renderOrderCard();
-}
+renderOrderCard();
+// videoMapに不足があれば全フォルダ並列ロード
+if(orderedVideoIds.some(id=>!videoMap[id])) loadAllFolderVideos();
 }
 updateBtn();
 showPage('create',document.querySelector('.nav-i:nth-child(2)'));
@@ -891,6 +888,27 @@ showPage('create',document.querySelector('.nav-i:nth-child(2)'));
 }
 
 function copyUrl(url){navigator.clipboard.writeText(url).then(()=>toast('URLをコピーしました','suc'));}
+
+async function loadAllFolderVideos(){
+  const badge=document.getElementById('orderLoadingBadge');
+  const btn=document.getElementById('orderReloadBtn');
+  if(badge) badge.style.display='';
+  if(btn) btn.style.display='none';
+  let loaded=0;
+  await Promise.all(folders.map(async f=>{
+    try{
+      const r=await api('/v2/video?video_container_id='+f.id);
+      (r.data||[]).forEach(v=>videoMap[v.id]=v);
+      loaded++;
+    }catch(e){}
+  }));
+  if(badge) badge.style.display='none';
+  if(btn){
+    const stillMissing=orderedVideoIds.some(id=>!videoMap[id]);
+    if(stillMissing) btn.style.display='';
+  }
+  renderOrderCard();
+}
 
 // =========================================================
 // サムネイル設定：左フォルダリスト
