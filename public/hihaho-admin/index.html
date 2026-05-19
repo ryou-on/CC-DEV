@@ -874,7 +874,16 @@ setMode('video');
 selV=new Set(d.videoIds||[]);
 orderedVideoIds=[...(d.videoIds||[])];
 renderVTabs();
-renderOrderCard();
+// videoMapに不足があれば全フォルダを並列ロードしてから再描画
+const missing=orderedVideoIds.filter(id=>!videoMap[id]);
+if(missing.length>0){
+  renderOrderCard(); // まずIDだけで描画
+  Promise.all(folders.map(async f=>{
+    try{const r=await api('/v2/video?video_container_id='+f.id);(r.data||[]).forEach(v=>videoMap[v.id]=v);}catch(e){}
+  })).then(()=>renderOrderCard()); // 全ロード後に再描画
+}else{
+  renderOrderCard();
+}
 }
 updateBtn();
 showPage('create',document.querySelector('.nav-i:nth-child(2)'));
