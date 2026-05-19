@@ -237,6 +237,13 @@ main{margin-left:var(--sw);margin-top:var(--hh);padding:24px;}
 </div>
 <ul class="order-list" id="orderList"></ul>
 </div>
+<div class="card" id="defaultVideoCard" style="display:none">
+<div class="ct">⑤ 初期再生動画（任意）</div>
+<div style="font-size:11px;color:#6b7280;margin-bottom:10px">プレイヤーを開いたとき最初に自動再生する動画を指定します</div>
+<select class="fi" id="defaultVideoSelect">
+  <option value="">なし（最初の動画）</option>
+</select>
+</div>
 <div class="card" id="ctaCard">
 <div class="ct">⑥ CTAボタン設定（任意）</div>
 <div style="font-size:11px;color:#6b7280;margin-bottom:12px">プレイヤーに表示するアクションボタンを設定します</div>
@@ -391,6 +398,7 @@ let orderedVideoIds=[], dragSrcIdx=null, checkedOrderIds=new Set();
 let videoMap={};
 let allPlaylists=[];
 let thumbFolderSearch='',thumbVideos=[],thumbSortKey='new',thumbSearchQ='',thumbThumbFilter='all'; // フォルダ検索クエリ
+let _pendingDefaultVideoId=''; // openEdit時に一時保持するdefaultVideoId
 
 const ol=console.log.bind(console);
 console.log=(...a)=>{ol(...a);clog.push(a.join(' '));};
@@ -401,7 +409,7 @@ showPage,uploadLogoFile,updateLogoPreview,clearLogoUrl,openEdit,setMode,toggleF,
 clearSel,publishPlaylist,resetCreate,closeMo,copyPubUrl,openPubUrl,
 deletePlaylist,duplicatePlaylist,copyUrl,previewThumb,saveThumbs,clearThumb,saveDesc,
 switchThumbFolder, filterThumbFolders, uploadThumb, filterVideoSearch, addVideosToPlaylist,
-renderOrderCard, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, removeFromOrder,
+renderOrderCard, renderDefaultVideoSelect, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, removeFromOrder,
 toggleOrderCheck, bulkRemoveFromOrder, clearOrderCheck, loadAllFolderVideos,
 toggleCtaContact, toggleCtaMeeting, setCtaType,
 loadAllPlaylists, addVideoToPlaylist,
@@ -589,7 +597,8 @@ btn.disabled=true;btn.textContent='発行中...';
 try{
 if(editId){
 // 編集モード
-const upd={name,type:mode,playerName:document.getElementById('playerNameInput')?.value.trim()||'',logoUrl:document.getElementById('logoUrlInput')?.value.trim()||'',...getCtaData()};
+const dvid=document.getElementById('defaultVideoSelect')?.value||'';
+const upd={name,type:mode,playerName:document.getElementById('playerNameInput')?.value.trim()||'',logoUrl:document.getElementById('logoUrlInput')?.value.trim()||'',defaultVideoId:dvid,...getCtaData()};
 if(mode==='folder'){upd.folderIds=[...selF];upd.videoIds=[];}else{
   // orderedVideoIds の順序を維持しつつ、除外された分を除き、新規追加分を末尾に追加
   const newOnes=[...selV].filter(id=>!orderedVideoIds.includes(id));
@@ -604,7 +613,8 @@ showPage('playlists',document.querySelector('.nav-i'));
 }else{
 // 新規作成
 const id=Math.random().toString(36).slice(2,10)+Date.now().toString(36);
-const data={name,createdAt:serverTimestamp(),type:mode,playerName:document.getElementById('playerNameInput')?.value.trim()||'',logoUrl:document.getElementById('logoUrlInput')?.value.trim()||'',...getCtaData()};
+const dvid2=document.getElementById('defaultVideoSelect')?.value||'';
+const data={name,createdAt:serverTimestamp(),type:mode,playerName:document.getElementById('playerNameInput')?.value.trim()||'',logoUrl:document.getElementById('logoUrlInput')?.value.trim()||'',defaultVideoId:dvid2,...getCtaData()};
 if(mode==='folder'){data.folderIds=[...selF];data.videoIds=[];}else{data.videoIds=[...selV];data.folderIds=[];}
 await setDoc(doc(db,'playlists',id),data);
 document.getElementById('pubUrlText').textContent=PLAYER+'?id='+id;
@@ -658,7 +668,11 @@ function resetCreate(){
 editId=null;
 orderedVideoIds=[];
 checkedOrderIds.clear();
+_pendingDefaultVideoId='';
 document.getElementById('orderCard').style.display='none';
+document.getElementById('defaultVideoCard').style.display='none';
+const dvs=document.getElementById('defaultVideoSelect');
+if(dvs){dvs.innerHTML='<option value="">なし（最初の動画）</option>';}
 resetCtaData();
 const pb=document.getElementById('publishBtn');if(pb)pb.textContent='🔗 発行データを発行';
 const ab=document.getElementById('addBtn');if(ab)ab.style.display='none';
@@ -762,7 +776,7 @@ function renderOrderCard(){
   const card=document.getElementById('orderCard');
   const list=document.getElementById('orderList');
   if(!card||!list) return;
-  if(!editId||mode!=='video'||!orderedVideoIds.length){card.style.display='none';return;}
+  if(!editId||mode!=='video'||!orderedVideoIds.length){card.style.display='none';renderDefaultVideoSelect();return;}
   card.style.display='block';
   const bar=document.getElementById('orderCheckBar');
   const cnt=checkedOrderIds.size;
@@ -788,7 +802,28 @@ function renderOrderCard(){
       <button onclick="removeFromOrder(${i})" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:16px;flex-shrink:0;line-height:1" title="除外">×</button>
     </li>`;
   }).join('');
+  renderDefaultVideoSelect();
 }
+// 初期再生動画ドロップダウンを更新
+function renderDefaultVideoSelect(){
+  const card=document.getElementById('defaultVideoCard');
+  const sel=document.getElementById('defaultVideoSelect');
+  if(!card||!sel) return;
+  // video モードで orderedVideoIds がある場合のみ表示
+  if(mode!=='video'||!orderedVideoIds.length){card.style.display='none';return;}
+  card.style.display='block';
+  // 現在の選択値を保持
+  const cur=sel.value||_pendingDefaultVideoId;
+  sel.innerHTML='<option value="">なし（最初の動画）</option>'+
+    orderedVideoIds.map(id=>{
+      const v=videoMap[id];
+      const name=v?esc(v.display_name):`ID: ${id}`;
+      return `<option value="${id}"${String(id)===String(cur)?' selected':''}>${name}</option>`;
+    }).join('');
+  // _pendingDefaultVideoId を消費したらクリア
+  if(_pendingDefaultVideoId) _pendingDefaultVideoId='';
+}
+
 function toggleOrderCheck(id){
   if(checkedOrderIds.has(id)) checkedOrderIds.delete(id);
   else checkedOrderIds.add(id);
@@ -862,6 +897,8 @@ const pni=document.getElementById('playerNameInput');if(pni)pni.value=d.playerNa
 const lui=document.getElementById('logoUrlInput');if(lui)lui.value=d.logoUrl||'';
 updateLogoPreview();
 loadCtaData(d);
+// 初期動画 — videoIds確定後に renderDefaultVideoSelect() で反映
+_pendingDefaultVideoId=d.defaultVideoId||'';
 // 発行ボタンのテキスト変更
 const pb=document.getElementById('publishBtn');if(pb)pb.textContent='✅ 更新する';
 const ab=document.getElementById('addBtn');if(ab)ab.style.display='';

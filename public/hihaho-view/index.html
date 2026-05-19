@@ -359,6 +359,28 @@ header {
 .ch-info-name { font-size: 14px; font-weight: 600; }
 .ch-info-id { font-size: 11px; color: var(--text-muted); font-family: var(--mono); }
 .ch-info-count { font-size: 11px; color: var(--text-muted); margin-top: 8px; }
+.sidebar-sort-panel {
+  padding: 10px 12px 6px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.sidebar-sort-panel .sort-bar {
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.sidebar-sort-panel .sort-btn {
+  padding: 3px 8px;
+  font-size: 10px;
+  border-radius: 12px;
+}
+.sidebar-sort-panel .filter-bar {
+  margin-bottom: 0;
+}
+.sidebar-sort-panel .filter-btn {
+  padding: 2px 7px;
+  font-size: 10px;
+}
 .queue-panel { flex: 1; overflow-y: auto; padding: 12px; }
 .queue-panel::-webkit-scrollbar { width: 4px; }
 .queue-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
@@ -927,11 +949,6 @@ header {
       </div>
     </div>
     <div class="video-list">
-      <div class="list-label" id="listLabel">読み込み中...</div>
-      <!-- ソートバー -->
-      <div class="sort-bar" id="sortBar"></div>
-      <!-- サムネイルフィルタバー -->
-      <div class="filter-bar" id="filterBar"></div>
       <div id="videoGrid">
         <div class="vrow-skeleton"><div class="skel-thumb"></div><div class="skel-info"><div class="skel-line" style="width:80%"></div><div class="skel-line" style="width:55%"></div><div class="skel-line" style="width:35%"></div></div></div>
         <div class="vrow-skeleton"><div class="skel-thumb"></div><div class="skel-info"><div class="skel-line" style="width:70%"></div><div class="skel-line" style="width:45%"></div><div class="skel-line" style="width:30%"></div></div></div>
@@ -945,6 +962,11 @@ header {
         <div class="ch-avatar">…</div>
         <div><div class="ch-info-name">読み込み中</div><div class="ch-info-id">—</div></div>
       </div>
+    </div>
+    <!-- ソートバー・フィルタバー（サイドバー内） -->
+    <div class="sidebar-sort-panel" id="sidebarSortPanel">
+      <div class="sort-bar" id="sortBar"></div>
+      <div class="filter-bar" id="filterBar"></div>
     </div>
     <div class="queue-panel" id="queuePanel">
       <div class="queue-label">ラインナップ</div>
@@ -1165,6 +1187,7 @@ let activeVidId = null;
 let searchQ     = '';
 let clog        = [];
 let videoMeta   = {}; // uuid → { thumbnailUrl, display_name_en }
+let _defaultVideoId = ''; // Firestoreから取得した初期再生動画ID
 
 // 再生回数マップ: videoId → 数値（Hihaho API実データ、-1=取得失敗）
 let playCountMap = new Map();
@@ -1326,6 +1349,7 @@ async function init() {
       const pd = playlistDoc.data();
       SHOW_FOLDER_IDS = pd.folderIds || [];
       SHOW_VIDEO_IDS = pd.videoIds || [];
+      _defaultVideoId = pd.defaultVideoId || '';
       document.title = `hihaho Player – ${pd.name}`;
         // ロゴ・プレイヤーヤー名のカスタマイズ適用
         if (pd.playerName) { const el=document.getElementById('logoText'); if(el) el.textContent=pd.playerName; }
@@ -1364,6 +1388,11 @@ async function init() {
       renderSortBar();
       renderSidebar();
       renderGrid();
+      // 初期動画の自動再生
+      if (_defaultVideoId) {
+        const defVid = allVideos.find(v => String(v.id) === String(_defaultVideoId));
+        if (defVid) play(defVid.id);
+      }
       log('初期化完了（個別動画モード）');
       return;
     }
@@ -1400,6 +1429,19 @@ async function init() {
     renderSortBar();
     renderSidebar();
     renderGrid();
+    // 初期動画の自動再生
+    if (_defaultVideoId) {
+      const defVid = allVideos.find(v => String(v.id) === String(_defaultVideoId));
+      if (defVid) {
+        // 該当フォルダをアクティブにしてから再生
+        if (defVid.video_container_id !== activeChId) {
+          activeChId = defVid.video_container_id;
+          renderTabs();
+          renderSidebar();
+        }
+        play(defVid.id);
+      }
+    }
     log('初期化完了');
 
     // バックグラウンドで再生回数を取得
@@ -1416,7 +1458,6 @@ async function init() {
 // =========================================================
 function showError(msg) {
   document.getElementById('videoGrid').innerHTML = `<div class="error-msg">⚠️ ${msg}</div>`;
-  document.getElementById('listLabel').textContent = 'エラー';
   document.getElementById('chTabs').innerHTML = '';
 }
 
@@ -1474,47 +1515,30 @@ function renderSidebar() {
 }
 
 // =========================================================
-// グリッド描画
+// 解説テキスト描画（現在再生中の動画のdescriptionを表示）
 // =========================================================
 function renderGrid() {
-  const folder = curFolder();
-  if (!folder) return;
-  const videos = filteredVideos();
-  document.getElementById('listLabel').textContent =
-    searchQ
-      ? `「${searchQ}」 ${videos.length} ${_currentLang==='ja'?'件':'results'}`
-      : `${folder.name} ${_currentLang==='ja'?'の動画一覧':'— Videos'} (${videos.length})`;
-
   const g = document.getElementById('videoGrid');
-  if (!videos.length) {
-    g.innerHTML = `<div class="empty"><div class="empty-icon">🔍</div><p>${_currentLang==='ja'?'動画が見つかりませんでした':'No videos found'}</p></div>`;
+  if (!g) return;
+
+  // 再生中の動画がなければ空表示
+  if (!activeVidId) {
+    g.innerHTML = '';
     return;
   }
-  g.innerHTML = videos.map((v, i) => {
-    const st = STATUS[v.status] || STATUS[0];
-    return `
-      <div class="vrow ${v.id===activeVidId?'playing':''}" style="animation-delay:${i*25}ms" onclick="play(${v.id})">
-        <div class="vrow-thumb">
-          ${thumbHtml(v.uuid,'vrow')}
-          <div class="vrow-play-ov">
-            <div class="play-circle">
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="#333"><path d="M4 2.5l6 3.5-6 3.5z"/></svg>
-            </div>
-          </div>
-          ${playCountOverlay(v.id)}
-        </div>
-        <div class="vrow-info">
-          <div class="vrow-title">${v.id===activeVidId?'<span class="now-dot"></span>':''}${esc(getTitle(v))}</div>
-          <div class="vrow-meta">
-            <span>${fmt(v.created_at)}</span>
-            <div class="vrow-badges">
-              ${st.cls?`<span class="${st.cls}">${st.label}</span>`:''}
-            </div>
-          </div>
-          ${videoMeta[v.uuid]?.description?`<div class="vrow-desc">${esc(videoMeta[v.uuid].description)}</div>`:''}
-        </div>
-      </div>`;
-  }).join('');
+
+  const vid = allVideos.find(v => v.id === activeVidId);
+  if (!vid) { g.innerHTML = ''; return; }
+
+  const desc = videoMeta[vid.uuid]?.description;
+  if (!desc) {
+    g.innerHTML = '';
+    return;
+  }
+
+  g.innerHTML = `<div style="background:#fff;border-radius:10px;padding:14px 16px;border:1px solid var(--border-light)">
+    <div style="font-size:13px;line-height:1.75;color:var(--text);white-space:pre-wrap">${esc(desc)}</div>
+  </div>`;
 }
 
 // =========================================================
