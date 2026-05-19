@@ -308,10 +308,21 @@ main{margin-left:var(--sw);margin-top:var(--hh);padding:24px;}
 <div class="page" id="page-thumbnails">
 <div class="pt">🖼 サムネイル設定</div>
 <div class="pd">動画ごとにサムネイルを設定します。URLを入力するか、画像ファイルをアップロードしてください。</div>
+<!-- モード切り替えタブ -->
+<div style="display:flex;gap:6px;margin-bottom:12px">
+<button id="thumbModeFolder" onclick="switchThumbMode('folder')" style="padding:6px 16px;border-radius:6px;font-size:13px;font-weight:600;border:1px solid #1565c0;background:#1565c0;color:#fff;cursor:pointer">📁 フォルダで選ぶ</button>
+<button id="thumbModeGlobal" onclick="switchThumbMode('global')" style="padding:6px 16px;border-radius:6px;font-size:13px;font-weight:600;border:1px solid #d1d5db;background:#f3f4f6;color:#374151;cursor:pointer">🔍 全動画を検索</button>
+</div>
+<!-- 全動画検索パネル -->
+<div id="thumbGlobalPanel" style="display:none;margin-bottom:12px">
+<input type="text" id="thumbGlobalQ" placeholder="🔍 動画名で全フォルダを横断検索…" oninput="onThumbGlobalSearch(this.value)"
+style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;box-sizing:border-box">
+<div id="thumbGlobalInfo" style="margin-top:4px;font-size:11px;color:#6b7280"></div>
+</div>
 <!-- 左：フォルダ一覧 ／ 右：動画リスト -->
 <div class="thumb-folder-panel">
 <!-- 左サイドバー：フォルダ一覧 -->
-<div class="thumb-folder-sidebar">
+<div class="thumb-folder-sidebar" id="thumbFolderSidebar">
 <div class="thumb-folder-search">
 <input type="text" id="thumbFolderSearch" placeholder="🔍 フォルダを検索…" oninput="filterThumbFolders(this.value)">
 </div>
@@ -398,6 +409,7 @@ let orderedVideoIds=[], dragSrcIdx=null, checkedOrderIds=new Set();
 let videoMap={};
 let allPlaylists=[];
 let thumbFolderSearch='',thumbVideos=[],thumbSortKey='new',thumbSearchQ='',thumbThumbFilter='all'; // フォルダ検索クエリ
+let thumbGlobalMode=false,allThumbVideos=[],allThumbLoaded=false,thumbGlobalQ='';
 let _pendingDefaultVideoId=''; // openEdit時に一時保持するdefaultVideoId
 
 const ol=console.log.bind(console);
@@ -409,6 +421,7 @@ showPage,uploadLogoFile,updateLogoPreview,clearLogoUrl,openEdit,setMode,toggleF,
 clearSel,publishPlaylist,resetCreate,closeMo,copyPubUrl,openPubUrl,
 deletePlaylist,duplicatePlaylist,copyUrl,previewThumb,saveThumbs,clearThumb,saveDesc,
 switchThumbFolder, filterThumbFolders, uploadThumb, filterVideoSearch, addVideosToPlaylist,
+switchThumbMode, onThumbGlobalSearch,
 renderOrderCard, renderDefaultVideoSelect, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, removeFromOrder,
 toggleOrderCheck, bulkRemoveFromOrder, clearOrderCheck, loadAllFolderVideos,
 toggleCtaContact, toggleCtaMeeting, setCtaType,
@@ -1258,6 +1271,56 @@ return '<div class="rn-entry"><div class="rn-ver">' + n.ver +
 }).join('');
 const body = document.getElementById('rnBody');
 if (body) body.innerHTML = html || '<p style="color:#9ca3af;font-size:13px;">該当なし</p>';
+}
+
+// =========================================================
+// サムネイル設定：全動画横断検索
+// =========================================================
+function switchThumbMode(m){
+thumbGlobalMode=(m==='global');
+document.getElementById('thumbModeFolder').style.cssText='padding:6px 16px;border-radius:6px;font-size:13px;font-weight:600;border:1px solid '+(thumbGlobalMode?'#d1d5db;background:#f3f4f6;color:#374151':'#1565c0;background:#1565c0;color:#fff')+';cursor:pointer';
+document.getElementById('thumbModeGlobal').style.cssText='padding:6px 16px;border-radius:6px;font-size:13px;font-weight:600;border:1px solid '+(thumbGlobalMode?'#1565c0;background:#1565c0;color:#fff':'#d1d5db;background:#f3f4f6;color:#374151')+';cursor:pointer';
+document.getElementById('thumbGlobalPanel').style.display=thumbGlobalMode?'block':'none';
+document.getElementById('thumbFolderSidebar').style.display=thumbGlobalMode?'none':'';
+if(thumbGlobalMode){
+if(!allThumbLoaded) loadAllThumbVideosForSearch();
+else renderThumbGlobalList();
+}
+}
+
+async function loadAllThumbVideosForSearch(){
+const info=document.getElementById('thumbGlobalInfo');
+const ctrl=document.getElementById('thumbCtrl');
+if(info) info.textContent='読み込み中…';
+if(ctrl) ctrl.style.display='none';
+document.getElementById('thumbList').innerHTML='<div class="load"><div class="spin"></div>全フォルダ読み込み中...</div>';
+const results=await Promise.allSettled(folders.map(f=>api('/v2/video?video_container_id='+f.id)));
+allThumbVideos=[];
+results.forEach(r=>{ if(r.status==='fulfilled') allThumbVideos.push(...(r.value.data||[])); });
+allThumbLoaded=true;
+if(info) info.textContent='全'+allThumbVideos.length+'本読み込み済み';
+renderThumbGlobalList();
+}
+
+function onThumbGlobalSearch(q){
+thumbGlobalQ=q;
+renderThumbGlobalList();
+}
+
+function renderThumbGlobalList(){
+const ctrl=document.getElementById('thumbCtrl');
+if(ctrl) ctrl.style.display='';
+const q=thumbGlobalQ.toLowerCase().trim();
+let vs=q ? allThumbVideos.filter(v=>v.display_name.toLowerCase().includes(q)) : allThumbVideos;
+if(!q){
+document.getElementById('thumbList').innerHTML='<div class="emp"><div class="ei">🔍</div><p>動画名を入力してください</p></div>';
+if(ctrl) ctrl.style.display='none';
+return;
+}
+thumbVideos=vs;
+renderThumbList();
+const info=document.getElementById('thumbGlobalInfo');
+if(info) info.textContent=vs.length+'本が見つかりました（全'+allThumbVideos.length+'本中）';
 }
 
 // HTMLインラインハンドラー用グローバル公開
