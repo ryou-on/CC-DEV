@@ -1309,17 +1309,26 @@ thumbGlobalQ=q;
 if(allThumbLoaded) renderThumbGlobalList();
 }
 
-function renderThumbGlobalList(){
+async function renderThumbGlobalList(){
 const ctrl=document.getElementById('thumbCtrl');
 if(ctrl) ctrl.style.display='';
 let q=thumbGlobalQ.toLowerCase().trim();
-const uuidMatch=q.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/);
-if(uuidMatch) q=uuidMatch[1];
-let vs=q ? allThumbVideos.filter(v=>v.display_name.toLowerCase().includes(q)||String(v.id).includes(q)||(v.uuid||'').toLowerCase().includes(q)) : allThumbVideos;
 if(!q){
 document.getElementById('thumbList').innerHTML='<div class="emp"><div class="ei">🔍</div><p>動画名を入力してください</p></div>';
 if(ctrl) ctrl.style.display='none';
 return;
+}
+const uuidMatch=q.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/);
+if(uuidMatch) q=uuidMatch[1];
+let vs=allThumbVideos.filter(v=>v.display_name.toLowerCase().includes(q)||String(v.id).includes(q)||(v.uuid||'').toLowerCase().includes(q));
+if(vs.length===0 && uuidMatch){
+const info=document.getElementById('thumbGlobalInfo');
+if(info) info.textContent='APIから直接取得中…';
+try{
+const res=await api('/v2/video/'+uuidMatch[1]);
+const v=res.data||res;
+if(v&&v.uuid) vs=[v];
+}catch(e){}
 }
 thumbVideos=vs;
 renderThumbList();
