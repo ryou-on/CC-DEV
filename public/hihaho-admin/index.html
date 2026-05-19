@@ -1289,15 +1289,24 @@ else renderThumbGlobalList();
 }
 
 async function loadAllThumbVideosForSearch(){
-// 初期化時に取得済みの videos 配列を使用（再フェッチ不要）
-allThumbVideos=videos;
+const info=document.getElementById('thumbGlobalInfo');
+const list=document.getElementById('thumbList');
+const input=document.getElementById('thumbGlobalQ');
+if(input) input.disabled=true;
+if(info) info.textContent='全フォルダを読み込み中…（'+folders.length+'フォルダ）';
+if(list) list.innerHTML='<div class="load"><div class="spin"></div>全フォルダ読み込み中...</div>';
+const results=await Promise.allSettled(folders.map(f=>api('/v2/video?video_container_id='+f.id)));
+allThumbVideos=[];
+results.forEach(r=>{ if(r.status==='fulfilled') allThumbVideos.push(...(r.value.data||[])); });
 allThumbLoaded=true;
+if(input){ input.disabled=false; input.focus(); }
+if(info) info.textContent='全'+allThumbVideos.length+'本を読み込みました';
 renderThumbGlobalList();
 }
 
 function onThumbGlobalSearch(q){
 thumbGlobalQ=q;
-renderThumbGlobalList();
+if(allThumbLoaded) renderThumbGlobalList();
 }
 
 function renderThumbGlobalList(){
