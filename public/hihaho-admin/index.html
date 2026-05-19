@@ -389,6 +389,7 @@ let mode=null, tabF=null, tabT=null, vmeta={}, clog=[];
 let editId=null; // 編集中プレイリストID
 let orderedVideoIds=[], dragSrcIdx=null, checkedOrderIds=new Set();
 let videoMap={};
+let allPlaylists=[];
 let thumbFolderSearch='',thumbVideos=[],thumbSortKey='new',thumbSearchQ='',thumbThumbFilter='all'; // フォルダ検索クエリ
 
 const ol=console.log.bind(console);
@@ -403,6 +404,7 @@ switchThumbFolder, filterThumbFolders, uploadThumb, filterVideoSearch, addVideos
 renderOrderCard, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, removeFromOrder,
 toggleOrderCheck, bulkRemoveFromOrder, clearOrderCheck, loadAllFolderVideos,
 toggleCtaContact, toggleCtaMeeting, setCtaType,
+loadAllPlaylists, addVideoToPlaylist,
 copyConsole:()=>navigator.clipboard.writeText(clog.join('\n')||'（ログなし）').then(()=>toast('コピーしました','suc'))
 });
 
@@ -435,7 +437,7 @@ document.querySelectorAll('.nav-i').forEach(i=>i.classList.remove('active'));
 el?.classList.add('active');
 if(n==='playlists') renderPlaylists();
 if(n==='create') renderFGrid();
-if(n==='thumbnails') renderThumbFolderList();
+if(n==='thumbnails'){renderThumbFolderList();loadAllPlaylists();}
 }
 
 // =========================================================
@@ -1006,6 +1008,17 @@ value="${esc(cur)}" oninput="previewThumb('${v.uuid}')">
 </label>
 <span id="uprog-${v.uuid}" class="uprog">アップロード中...</span>
 </div>
+<!-- プレイリストに追加 -->
+<div style="margin-top:8px">
+<div style="font-size:11px;font-weight:600;color:var(--text-sub);margin-bottom:4px">📋 プレイリストに追加</div>
+<div style="display:flex;gap:6px;align-items:center">
+<select id="psel-${v.uuid}" style="flex:1;font-size:12px;border:1px solid var(--border);border-radius:6px;padding:5px 8px;background:var(--white)">
+<option value="">— プレイリストを選択 —</option>
+${allPlaylists.map(p=>`<option value="${p.id}">${esc(p.name)} (${(p.videoIds||[]).length}本)</option>`).join('')}
+</select>
+<button class="btn bp bsm" onclick="addVideoToPlaylist(${v.id},document.getElementById('psel-${v.uuid}').value)">＋追加</button>
+</div>
+</div>
 <!-- 解説テキスト -->
 <div style="margin-top:8px">
 <div style="font-size:11px;font-weight:600;color:var(--text-sub);margin-bottom:4px">📝 解説テキスト</div>
@@ -1038,6 +1051,23 @@ if(img&&url){img.src=url;img.style.display='';}
 }catch(e){toast('保存エラー: '+e.message,'err');}
 }
 
+async function loadAllPlaylists(){
+const sn=await getDocs(collection(db,'playlists'));
+allPlaylists=[];sn.forEach(d=>{const d2=d.data();if(d2.type!=='folder')allPlaylists.push({id:d.id,...d2});});
+allPlaylists.sort((a,b)=>a.name?.localeCompare(b.name,'ja')||0);
+}
+async function addVideoToPlaylist(videoId,playlistId){
+if(!playlistId){toast('プレイリストを選択してください','err');return;}
+try{
+const ref=doc(db,'playlists',playlistId);
+const snap=await getDoc(ref);
+if(!snap.exists()){toast('プレイリストが見つかりません','err');return;}
+const ids=snap.data().videoIds||[];
+if(ids.includes(videoId)){toast('すでに追加されています','err');return;}
+await updateDoc(ref,{videoIds:[...ids,videoId]});
+toast('プレイリストに追加しました ✓','suc');
+}catch(e){toast('追加エラー: '+e.message,'err');}
+}
 async function saveDesc(uuid){
 const desc=document.getElementById('tdesc-'+uuid)?.value.trim()||'';
 try{
