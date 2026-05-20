@@ -1,0 +1,934 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1920">
+<title>平家物語 補助教材</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --gold: #c9a84c;
+  --gold-light: #e8cc80;
+  --gold-dark: #8a6f2e;
+  --crimson: #8b2020;
+  --ink: #0f0c08;
+  --ink-medium: #1e1810;
+  --washi: #f5f0e8;
+  --washi-dark: #e2d9c4;
+  --blue-ink: #1e3a5f;
+  --text-dark: #1a1208;
+}
+
+html, body {
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+  font-family: 'Noto Serif JP', serif;
+  background: transparent;
+  color: #222;
+}
+
+
+/* ══════════════════════════════════════════
+   FRAME（タブ＋パネル全体のコンテナ）
+   ══════════════════════════════════════════ */
+.frame {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  --scale: 1;
+}
+
+/* ── タブ行 ── */
+.tab-row {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 12px;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.tab {
+  pointer-events: auto;
+  background: rgba(245,240,232,0.95);
+  color: var(--blue-ink);
+  font-family: 'Noto Serif JP', serif;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  padding: 12px 36px;
+  border: none;
+  border-radius: 0 0 20px 20px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.35), 0 1px 4px rgba(0,0,0,0.15);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  transition: background 0.18s, color 0.18s, box-shadow 0.18s, transform 0.1s;
+  white-space: nowrap;
+  border-top: 3px solid var(--gold-dark);
+}
+
+.tab:hover { background: #fff8ee; }
+.tab:active { transform: scale(0.95); }
+
+.tab-chevron {
+  width: 15px; height: 15px;
+  transition: transform 0.3s ease;
+  color: currentColor; flex-shrink: 0;
+}
+
+.frame[data-open="true"] .tab[aria-pressed="true"] {
+  background: var(--blue-ink);
+  color: #f0ece0;
+  border-top-color: var(--gold);
+}
+.frame[data-open="true"] .tab[aria-pressed="true"] .tab-chevron { transform: rotate(180deg); }
+
+/* ── パネル（上からスライドダウン） ── */
+.panel {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 1200px;
+  max-height: 880px;
+  background: var(--washi);
+  border-radius: 0 0 24px 24px;
+  box-shadow: 0 16px 60px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.2);
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+  transform: translate(-50%, -102%);
+  transition: transform 0.4s cubic-bezier(0.32,0.72,0,1), visibility 0s linear 0.4s;
+  overflow: hidden;
+  visibility: hidden;
+  border-left: 1px solid rgba(201,168,76,0.3);
+  border-right: 1px solid rgba(201,168,76,0.3);
+  border-bottom: 2px solid var(--gold-dark);
+}
+
+.frame[data-open="true"] .panel {
+  transform: translate(-50%, 0);
+  visibility: visible;
+  transition: transform 0.4s cubic-bezier(0.32,0.72,0,1), visibility 0s linear 0s;
+}
+
+.panel-inner {
+  flex: 1;
+  overflow-y: auto;
+  padding: 70px 52px 36px;
+  -webkit-overflow-scrolling: touch;
+}
+.panel-inner::-webkit-scrollbar { width: 6px; }
+.panel-inner::-webkit-scrollbar-track { background: rgba(0,0,0,0.05); }
+.panel-inner::-webkit-scrollbar-thumb { background: var(--gold-dark); border-radius: 3px; }
+
+/* ── セクションヘッダー ── */
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 2px solid var(--gold-dark);
+}
+
+.section-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--blue-ink);
+  letter-spacing: 0.2em;
+}
+
+.close-btn {
+  width: 42px; height: 42px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1.5px solid #c8bfa8;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  color: #666;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.1s;
+  pointer-events: auto;
+}
+.close-btn:hover { background: #fff0f0; border-color: var(--crimson); color: var(--crimson); }
+.close-btn:active { transform: scale(0.92); }
+.close-btn svg { width: 18px; height: 18px; }
+
+/* ── セクション表示切替 ── */
+.section { display: none; }
+.frame[data-active="nenpyo"]   .section[data-section="nenpyo"]   { display: block; }
+.frame[data-active="jinbutsu"] .section[data-section="jinbutsu"] { display: block; }
+
+/* ── サブタブ ── */
+.sub-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 24px;
+  border-bottom: 2px solid var(--gold-dark);
+}
+.sub-tab-btn {
+  padding: 11px 30px;
+  background: transparent;
+  border: none;
+  border-bottom: 3px solid transparent;
+  color: #806040;
+  font-family: 'Noto Serif JP', serif;
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  transition: all 0.18s;
+  margin-bottom: -2px;
+}
+.sub-tab-btn:hover { color: var(--blue-ink); }
+.sub-tab-btn.active { color: var(--blue-ink); border-bottom-color: var(--blue-ink); font-weight: 700; }
+
+.sub-panel { display: none; }
+.sub-panel.active { display: block; }
+
+/* ══════════════════════════════════════════
+   アコーディオン
+   ══════════════════════════════════════════ */
+.accordion {
+  background: #fff;
+  border: 1px solid #d8cdb0;
+  border-radius: 6px;
+  margin-bottom: 10px;
+  overflow: hidden;
+  transition: box-shadow 0.15s;
+}
+.accordion:hover { box-shadow: 0 2px 10px rgba(30,58,95,0.08); }
+
+.accordion-header {
+  padding: 16px 22px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  user-select: none;
+  transition: background 0.15s;
+}
+.accordion-header:hover { background: rgba(30,58,95,0.03); }
+.accordion.open .accordion-header { background: rgba(30,58,95,0.04); }
+
+.acc-year {
+  font-size: 13px;
+  color: #fff;
+  background: var(--blue-ink);
+  padding: 4px 12px;
+  border-radius: 4px;
+  min-width: 76px;
+  text-align: center;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+
+.acc-title {
+  font-size: 19px;
+  font-weight: 700;
+  color: #1a1208;
+  letter-spacing: 0.08em;
+  flex: 1;
+}
+
+.acc-sub {
+  font-size: 13px;
+  color: #907060;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+
+.acc-arrow {
+  color: #a09060;
+  font-size: 13px;
+  transition: transform 0.3s ease;
+  flex-shrink: 0;
+}
+.accordion.open .acc-arrow { transform: rotate(180deg); }
+
+.accordion-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.38s ease;
+}
+.accordion.open .accordion-body { max-height: 400px; }
+
+.accordion-content {
+  padding: 14px 22px 20px 120px;
+  font-size: 16px;
+  line-height: 1.95;
+  color: #3a2e1e;
+  border-top: 1px solid #e8dfc8;
+}
+.accordion-content p { margin-bottom: 10px; }
+.accordion-content p:last-child { margin-bottom: 0; }
+
+.acc-highlight {
+  display: inline-block;
+  background: rgba(139,32,32,0.1);
+  border-left: 3px solid var(--crimson);
+  padding: 1px 10px;
+  color: #6a1010;
+  font-weight: 700;
+}
+
+/* ── 図ラッパー ── */
+.diagram-wrap { width: 100%; overflow-x: auto; }
+.diagram-wrap svg { display: block; width: 100%; height: auto; font-family: 'Noto Serif JP', serif; }
+svg text { pointer-events: none; }
+svg rect.pnode { cursor: pointer; }
+svg rect.pnode:hover { filter: brightness(1.08); }
+
+/* ── ツールチップ ── */
+#svgTip {
+  position: fixed; z-index: 9999;
+  background: rgba(24,18,10,0.96);
+  color: #f0ece0;
+  padding: 13px 18px;
+  border: 1px solid #c9a84c;
+  border-radius: 8px;
+  font-family: 'Noto Serif JP', serif;
+  font-size: 14px; line-height: 1.8;
+  max-width: 310px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.5);
+}
+#svgTipName {
+  font-weight: 700; font-size: 16px;
+  color: #e8cc80; margin-bottom: 6px;
+  border-bottom: 1px solid rgba(201,168,76,0.3);
+  padding-bottom: 5px;
+}
+</style>
+</head>
+<body>
+
+<!-- ══ FRAME ══ -->
+<div class="frame" data-open="false" data-active="nenpyo" id="auxFrame">
+
+  <!-- パネル -->
+  <div class="panel">
+    <div class="panel-inner" id="panelInner">
+
+      <!-- 年表セクション -->
+      <div class="section" data-section="nenpyo">
+        <div class="section-header">
+          <div class="section-title">📜 平家物語の年表</div>
+          <button class="close-btn" onclick="closePanel()">
+            <svg viewBox="0 0 20 20" fill="none"><path d="M5 5L15 15M15 5L5 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+
+        <div class="accordion" id="a1">
+          <div class="accordion-header" onclick="toggle('a1')">
+            <span class="acc-year">1156年</span>
+            <span class="acc-title">保元の乱</span>
+            <span class="acc-sub">保元元年</span>
+            <span class="acc-arrow">▼</span>
+          </div>
+          <div class="accordion-body"><div class="accordion-content">
+            <p>後白河天皇方と崇徳上皇方が京都で武力衝突した政変。<span class="acc-highlight">平清盛・源義朝</span>が後白河天皇側として参戦し勝利を収めた。</p>
+            <p>この乱により武士が政治の中心へと台頭するきっかけとなり、のちの平氏・源氏の台頭を決定づけた。崇徳上皇は讃岐に流罪となる。</p>
+          </div></div>
+        </div>
+
+        <div class="accordion" id="a2">
+          <div class="accordion-header" onclick="toggle('a2')">
+            <span class="acc-year">1159年</span>
+            <span class="acc-title">平治の乱</span>
+            <span class="acc-sub">平治元年</span>
+            <span class="acc-arrow">▼</span>
+          </div>
+          <div class="accordion-body"><div class="accordion-content">
+            <p>後白河上皇の近臣・信西を巡る政争が武力衝突に発展。<span class="acc-highlight">源義朝</span>が藤原信頼と組んで挙兵したが、<span class="acc-highlight">平清盛</span>に鎮圧された。</p>
+            <p>義朝は敗走中に尾張で殺害され、嫡子・頼朝は伊豆へ流罪。平氏の政治的地位が確固たるものとなる。</p>
+          </div></div>
+        </div>
+
+        <div class="accordion" id="a3">
+          <div class="accordion-header" onclick="toggle('a3')">
+            <span class="acc-year">1167年</span>
+            <span class="acc-title">平清盛、太政大臣に就任</span>
+            <span class="acc-sub">仁安2年</span>
+            <span class="acc-arrow">▼</span>
+          </div>
+          <div class="accordion-body"><div class="accordion-content">
+            <p>平清盛が武士として初めて<span class="acc-highlight">太政大臣</span>に任じられ、平氏一門の全盛期を迎える。娘・徳子を高倉天皇に入内させ、外戚として朝廷を掌握した。</p>
+            <p>「平家にあらずんば人にあらず」と言われる繁栄の絶頂期。</p>
+          </div></div>
+        </div>
+
+        <div class="accordion" id="a4">
+          <div class="accordion-header" onclick="toggle('a4')">
+            <span class="acc-year">1180年</span>
+            <span class="acc-title">以仁王の令旨・治承・寿永の乱</span>
+            <span class="acc-sub">治承4年</span>
+            <span class="acc-arrow">▼</span>
+          </div>
+          <div class="accordion-body"><div class="accordion-content">
+            <p>後白河法皇の皇子・以仁王が平氏追討の<span class="acc-highlight">令旨</span>を発し、源頼朝・源義仲らが各地で挙兵。治承・寿永の乱（源平合戦）が本格的に始まる。</p>
+            <p>以仁王は挙兵直後に討たれるが、その令旨は全国の源氏武士に伝わり、平氏打倒の烽火となった。</p>
+          </div></div>
+        </div>
+
+        <div class="accordion" id="a5">
+          <div class="accordion-header" onclick="toggle('a5')">
+            <span class="acc-year">1183年</span>
+            <span class="acc-title">倶利伽羅峠の戦い・平家都落ち</span>
+            <span class="acc-sub">寿永2年</span>
+            <span class="acc-arrow">▼</span>
+          </div>
+          <div class="accordion-body"><div class="accordion-content">
+            <p>越中国倶利伽羅峠で<span class="acc-highlight">源義仲</span>が平家軍を大破（火牛の計）。義仲は京に入洛し、平家は安徳天皇と三種の神器を奉じて西国へ落ちる。</p>
+            <p>「都落ち」は平家物語の大きな転換点。かつて繁栄を誇った平家が没落の道を歩み始める。</p>
+          </div></div>
+        </div>
+
+        <div class="accordion" id="a6">
+          <div class="accordion-header" onclick="toggle('a6')">
+            <span class="acc-year">1184年</span>
+            <span class="acc-title">一ノ谷の戦い・屋島の戦い</span>
+            <span class="acc-sub">元暦元年</span>
+            <span class="acc-arrow">▼</span>
+          </div>
+          <div class="accordion-body"><div class="accordion-content">
+            <p>【一ノ谷】<span class="acc-highlight">源義経</span>が鵯越の逆落としで平家の背後を突き、大勝利。平忠度・平敦盛ら多くの平家武将が討たれた。</p>
+            <p>【屋島】源義経が嵐の中を奇襲。那須与一の扇の的（弓の妙技）がこの戦いの名場面として語り継がれる。</p>
+          </div></div>
+        </div>
+
+        <div class="accordion" id="a7">
+          <div class="accordion-header" onclick="toggle('a7')">
+            <span class="acc-year">1185年</span>
+            <span class="acc-title">壇ノ浦の戦い・平家滅亡</span>
+            <span class="acc-sub">元暦2年</span>
+            <span class="acc-arrow">▼</span>
+          </div>
+          <div class="accordion-body"><div class="accordion-content">
+            <p>長門国壇ノ浦（現：山口県下関市）で源平最後の海戦。<span class="acc-highlight">二位尼</span>（平時子）が幼い安徳天皇を抱いて入水し、三種の神器とともに平家は滅亡した。</p>
+            <p>平知盛は「見るべきほどのことは見つ」と言い残し自害。平家物語は「諸行無常」の哲学をこの場面に集約させる。</p>
+          </div></div>
+        </div>
+      </div><!-- /nenpyo -->
+
+      <!-- 人物セクション -->
+      <div class="section" data-section="jinbutsu">
+        <div class="section-header">
+          <div class="section-title">👥 人物</div>
+          <button class="close-btn" onclick="closePanel()">
+            <svg viewBox="0 0 20 20" fill="none"><path d="M5 5L15 15M15 5L5 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+
+        <div class="sub-tabs">
+          <button class="sub-tab-btn active" onclick="switchSub(0,this)">平家家系図</button>
+          <button class="sub-tab-btn" onclick="switchSub(1,this)">源氏家系図</button>
+          <button class="sub-tab-btn" onclick="switchSub(2,this)">人物相関図</button>
+        </div>
+
+        <!-- 平家家系図 -->
+        <div class="sub-panel active" id="sub-0">
+          <div class="diagram-wrap">
+<svg viewBox="0 0 1020 480" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="hk-a" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto"><polygon points="0 0 7 2.5 0 5" fill="#8a6f2e"/></marker>
+    <marker id="hk-r" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto"><polygon points="0 0 7 2.5 0 5" fill="#8b2020"/></marker>
+    <marker id="hk-b" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto"><polygon points="0 0 7 2.5 0 5" fill="#5a3010"/></marker>
+  </defs>
+  <!-- 背景エリア -->
+  <rect x="1" y="1" width="750" height="478" rx="6" fill="rgba(201,168,76,0.06)" stroke="#d8cdb0" stroke-width="1"/>
+  <rect x="754" y="1" width="264" height="478" rx="6" fill="rgba(90,48,16,0.08)" stroke="#d8cdb0" stroke-width="1"/>
+  <text x="12" y="20" font-size="13" fill="#8a6f2e" font-weight="700" letter-spacing="1" font-family="'Noto Serif JP',serif">平家（伊勢平氏）</text>
+  <text x="762" y="20" font-size="13" fill="#5a3010" font-weight="700" letter-spacing="1" font-family="'Noto Serif JP',serif">朝廷</text>
+
+  <!-- 忠盛→清盛 -->
+  <polyline points="115,86 115,128 385,128 385,162" fill="none" stroke="#8a6f2e" stroke-width="1.5" marker-end="url(#hk-a)"/>
+  <rect x="210" y="118" width="36" height="18" rx="3" fill="#f5f0e8" stroke="#d8cdb0" stroke-width="1"/>
+  <text x="228" y="131" text-anchor="middle" font-size="11" fill="#8a6f2e" font-family="'Noto Serif JP',serif">親子</text>
+
+  <!-- 清盛─時子 夫婦 -->
+  <line x1="450" y1="192" x2="475" y2="192" stroke="#8a6f2e" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="462" y="184" text-anchor="middle" font-size="10" fill="#8a6f2e" font-family="'Noto Serif JP',serif">夫婦</text>
+
+  <!-- 清盛→子供バー -->
+  <polyline points="385,224 385,272" fill="none" stroke="#8a6f2e" stroke-width="1.5"/>
+  <line x1="75" y1="272" x2="668" y2="272" stroke="#8a6f2e" stroke-width="1.5"/>
+  <line x1="75"  y1="272" x2="75"  y2="306" stroke="#8a6f2e" stroke-width="1.5"/>
+  <line x1="222" y1="272" x2="222" y2="306" stroke="#8a6f2e" stroke-width="1.5"/>
+  <line x1="368" y1="272" x2="368" y2="306" stroke="#8a6f2e" stroke-width="1.5"/>
+  <line x1="515" y1="272" x2="515" y2="306" stroke="#8a6f2e" stroke-width="1.5"/>
+  <line x1="668" y1="272" x2="668" y2="306" stroke="#8a6f2e" stroke-width="1.5"/>
+
+  <!-- 徳子→高倉 入内 -->
+  <polyline points="738,336 886,336 886,224" fill="none" stroke="#8b2020" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#hk-r)"/>
+  <rect x="856" y="272" width="36" height="18" rx="3" fill="#fff5f5" stroke="#f5c0c0" stroke-width="1"/>
+  <text x="874" y="285" text-anchor="middle" font-size="11" fill="#8b2020" font-family="'Noto Serif JP',serif">入内</text>
+
+  <!-- 高倉→安徳 親子 -->
+  <line x1="886" y1="224" x2="886" y2="390" stroke="#5a3010" stroke-width="1.5" marker-end="url(#hk-b)"/>
+  <rect x="856" y="300" width="36" height="18" rx="3" fill="#fdf5ee" stroke="#d8cdb0" stroke-width="1"/>
+  <text x="874" y="313" text-anchor="middle" font-size="11" fill="#5a3010" font-family="'Noto Serif JP',serif">親子</text>
+
+  <!-- 人物ボックス -->
+  <!-- 平忠盛 -->
+  <rect x="50" y="26" width="130" height="60" rx="4" fill="white" stroke="#1e3a5f" stroke-width="1.5"/>
+  <text x="115" y="52" text-anchor="middle" font-size="16" font-weight="700" fill="#1e3a5f" font-family="'Noto Serif JP',serif">平忠盛</text>
+  <text x="115" y="68" text-anchor="middle" font-size="11" fill="#666" font-family="'Noto Serif JP',serif">1096〜1153</text>
+  <text x="115" y="82" text-anchor="middle" font-size="10" fill="#888" font-family="'Noto Serif JP',serif">清盛の父・日宋貿易を推進</text>
+
+  <!-- 平清盛 -->
+  <rect x="320" y="162" width="130" height="62" rx="4" fill="#1e3a5f" stroke="#1e3a5f" stroke-width="1.5"/>
+  <text x="385" y="188" text-anchor="middle" font-size="16" font-weight="700" fill="white" font-family="'Noto Serif JP',serif">平清盛</text>
+  <text x="385" y="205" text-anchor="middle" font-size="11" fill="#c0d8f0" font-family="'Noto Serif JP',serif">1118〜1181</text>
+  <text x="385" y="220" text-anchor="middle" font-size="10" fill="#a0c0e0" font-family="'Noto Serif JP',serif">太政大臣・平家の棟梁</text>
+
+  <!-- 平時子（二位尼） -->
+  <rect x="475" y="162" width="145" height="62" rx="4" fill="white" stroke="#8b2020" stroke-width="1.5"/>
+  <text x="547" y="186" text-anchor="middle" font-size="15" font-weight="700" fill="#8b2020" font-family="'Noto Serif JP',serif">平時子</text>
+  <text x="547" y="201" text-anchor="middle" font-size="10" fill="#888" font-family="'Noto Serif JP',serif">（二位尼）</text>
+  <text x="547" y="216" text-anchor="middle" font-size="11" fill="#666" font-family="'Noto Serif JP',serif">1126〜1185</text>
+
+  <!-- 高倉天皇 -->
+  <rect x="761" y="162" width="150" height="62" rx="4" fill="#5a3010" stroke="#5a3010" stroke-width="1.5"/>
+  <text x="836" y="187" text-anchor="middle" font-size="15" font-weight="700" fill="white" font-family="'Noto Serif JP',serif">高倉天皇</text>
+  <text x="836" y="203" text-anchor="middle" font-size="11" fill="#d0b890" font-family="'Noto Serif JP',serif">1161〜1181</text>
+  <text x="836" y="218" text-anchor="middle" font-size="10" fill="#c0a878" font-family="'Noto Serif JP',serif">第80代天皇</text>
+
+  <!-- 子供5人 -->
+  <!-- 平重盛 -->
+  <rect x="10" y="306" width="130" height="60" rx="4" fill="white" stroke="#1e3a5f" stroke-width="1.5"/>
+  <text x="75" y="331" text-anchor="middle" font-size="15" font-weight="700" fill="#1e3a5f" font-family="'Noto Serif JP',serif">平重盛</text>
+  <text x="75" y="348" text-anchor="middle" font-size="11" fill="#666" font-family="'Noto Serif JP',serif">1138〜1179</text>
+  <text x="75" y="362" text-anchor="middle" font-size="10" fill="#888" font-family="'Noto Serif JP',serif">嫡男</text>
+  <!-- 平宗盛 -->
+  <rect x="157" y="306" width="130" height="60" rx="4" fill="white" stroke="#1e3a5f" stroke-width="1.5"/>
+  <text x="222" y="331" text-anchor="middle" font-size="15" font-weight="700" fill="#1e3a5f" font-family="'Noto Serif JP',serif">平宗盛</text>
+  <text x="222" y="348" text-anchor="middle" font-size="11" fill="#666" font-family="'Noto Serif JP',serif">1147〜1185</text>
+  <text x="222" y="362" text-anchor="middle" font-size="10" fill="#888" font-family="'Noto Serif JP',serif">三男・最後の総帥</text>
+  <!-- 平知盛 -->
+  <rect x="303" y="306" width="130" height="60" rx="4" fill="white" stroke="#1e3a5f" stroke-width="1.5"/>
+  <text x="368" y="331" text-anchor="middle" font-size="15" font-weight="700" fill="#1e3a5f" font-family="'Noto Serif JP',serif">平知盛</text>
+  <text x="368" y="348" text-anchor="middle" font-size="11" fill="#666" font-family="'Noto Serif JP',serif">1152〜1185</text>
+  <text x="368" y="362" text-anchor="middle" font-size="10" fill="#888" font-family="'Noto Serif JP',serif">四男</text>
+  <!-- 平重衡 -->
+  <rect x="450" y="306" width="130" height="60" rx="4" fill="white" stroke="#1e3a5f" stroke-width="1.5"/>
+  <text x="515" y="331" text-anchor="middle" font-size="15" font-weight="700" fill="#1e3a5f" font-family="'Noto Serif JP',serif">平重衡</text>
+  <text x="515" y="348" text-anchor="middle" font-size="11" fill="#666" font-family="'Noto Serif JP',serif">1157〜1185</text>
+  <text x="515" y="362" text-anchor="middle" font-size="10" fill="#888" font-family="'Noto Serif JP',serif">五男</text>
+  <!-- 平徳子 -->
+  <rect x="598" y="306" width="140" height="60" rx="4" fill="white" stroke="#8b2020" stroke-width="1.5"/>
+  <text x="668" y="328" text-anchor="middle" font-size="15" font-weight="700" fill="#8b2020" font-family="'Noto Serif JP',serif">平徳子</text>
+  <text x="668" y="344" text-anchor="middle" font-size="10" fill="#888" font-family="'Noto Serif JP',serif">（建礼門院）</text>
+  <text x="668" y="360" text-anchor="middle" font-size="11" fill="#666" font-family="'Noto Serif JP',serif">1155〜？</text>
+
+  <!-- 安徳天皇 -->
+  <rect x="761" y="390" width="150" height="60" rx="4" fill="#5a3010" stroke="#5a3010" stroke-width="1.5"/>
+  <text x="836" y="415" text-anchor="middle" font-size="15" font-weight="700" fill="white" font-family="'Noto Serif JP',serif">安徳天皇</text>
+  <text x="836" y="431" text-anchor="middle" font-size="11" fill="#d0b890" font-family="'Noto Serif JP',serif">1178〜1185</text>
+  <text x="836" y="446" text-anchor="middle" font-size="10" fill="#c0a878" font-family="'Noto Serif JP',serif">第81代天皇</text>
+</svg>
+          </div>
+        </div>
+
+        <!-- 源氏家系図 -->
+        <div class="sub-panel" id="sub-1">
+          <div class="diagram-wrap">
+<svg viewBox="0 0 1020 480" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="gj-a" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto"><polygon points="0 0 7 2.5 0 5" fill="#1a4a1a"/></marker>
+    <marker id="gj-d" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto"><polygon points="0 0 7 2.5 0 5" fill="#8b2020"/></marker>
+    <marker id="gj-g" markerWidth="7" markerHeight="5" refX="6" refY="2.5" orient="auto"><polygon points="0 0 7 2.5 0 5" fill="#666"/></marker>
+  </defs>
+
+  <!-- 背景 -->
+  <rect x="1" y="1" width="560" height="478" rx="6" fill="rgba(26,74,26,0.05)" stroke="#b8d0b8" stroke-width="1"/>
+  <rect x="564" y="1" width="454" height="478" rx="6" fill="rgba(90,48,16,0.05)" stroke="#d8cdb0" stroke-width="1"/>
+  <text x="12" y="20" font-size="13" fill="#1a4a1a" font-weight="700" letter-spacing="1" font-family="'Noto Serif JP',serif">河内源氏（主流）</text>
+  <text x="572" y="20" font-size="13" fill="#5a3010" font-weight="700" letter-spacing="1" font-family="'Noto Serif JP',serif">傍系・その他</text>
+
+  <!-- 為義→義朝 -->
+  <polyline points="185,86 185,162" fill="none" stroke="#1a4a1a" stroke-width="1.5" marker-end="url(#gj-a)"/>
+  <rect x="156" y="112" width="36" height="18" rx="3" fill="#f0faf0" stroke="#b8d0b8" stroke-width="1"/>
+  <text x="174" y="125" text-anchor="middle" font-size="11" fill="#1a4a1a" font-family="'Noto Serif JP',serif">親子</text>
+
+  <!-- 義朝→子供バー -->
+  <polyline points="185,224 185,272" fill="none" stroke="#1a4a1a" stroke-width="1.5"/>
+  <line x1="75" y1="272" x2="320" y2="272" stroke="#1a4a1a" stroke-width="1.5"/>
+  <line x1="75"  y1="272" x2="75"  y2="306" stroke="#1a4a1a" stroke-width="1.5"/>
+  <line x1="320" y1="272" x2="320" y2="306" stroke="#1a4a1a" stroke-width="1.5"/>
+
+  <!-- 頼朝←→義経 兄弟（対立） -->
+  <line x1="140" y1="352" x2="256" y2="352" stroke="#8b2020" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <rect x="164" y="344" width="56" height="16" rx="3" fill="#fff5f5" stroke="#f5c0c0" stroke-width="1"/>
+  <text x="192" y="356" text-anchor="middle" font-size="10" fill="#8b2020" font-family="'Noto Serif JP',serif">後に対立</text>
+
+  <!-- 義経←弁慶 従者 -->
+  <line x1="320" y1="366" x2="320" y2="400" stroke="#666" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#gj-g)"/>
+  <text x="326" y="388" font-size="10" fill="#666" font-family="'Noto Serif JP',serif">従者</text>
+
+  <!-- 傍系セパレーター -->
+  <line x1="562" y1="0" x2="562" y2="480" stroke="#d8cdb0" stroke-width="1" stroke-dasharray="4,3"/>
+
+  <!-- 義仲←頼朝 討伐 -->
+  <polyline points="480,336 480,390 660,390 660,366" fill="none" stroke="#8b2020" stroke-width="1.5" marker-end="url(#gj-d)"/>
+  <rect x="548" y="380" width="56" height="18" rx="3" fill="#fff5f5" stroke="#f5c0c0" stroke-width="1"/>
+  <text x="576" y="393" text-anchor="middle" font-size="11" fill="#8b2020" font-family="'Noto Serif JP',serif">頼朝が討伐</text>
+
+  <!-- 人物ボックス -->
+  <!-- 源為義 -->
+  <rect x="120" y="26" width="130" height="60" rx="4" fill="white" stroke="#1a4a1a" stroke-width="1.5"/>
+  <text x="185" y="51" text-anchor="middle" font-size="16" font-weight="700" fill="#1a4a1a" font-family="'Noto Serif JP',serif">源為義</text>
+  <text x="185" y="68" text-anchor="middle" font-size="11" fill="#666" font-family="'Noto Serif JP',serif">1096〜1156</text>
+  <text x="185" y="82" text-anchor="middle" font-size="10" fill="#888" font-family="'Noto Serif JP',serif">保元の乱で処刑</text>
+
+  <!-- 源義朝 -->
+  <rect x="120" y="162" width="130" height="62" rx="4" fill="white" stroke="#1a4a1a" stroke-width="1.5"/>
+  <text x="185" y="187" text-anchor="middle" font-size="16" font-weight="700" fill="#1a4a1a" font-family="'Noto Serif JP',serif">源義朝</text>
+  <text x="185" y="204" text-anchor="middle" font-size="11" fill="#666" font-family="'Noto Serif JP',serif">1123〜1160</text>
+  <text x="185" y="218" text-anchor="middle" font-size="10" fill="#888" font-family="'Noto Serif JP',serif">平治の乱で敗死</text>
+
+  <!-- 源頼朝 -->
+  <rect x="10" y="306" width="130" height="60" rx="4" fill="#1a4a1a" stroke="#1a4a1a" stroke-width="1.5"/>
+  <text x="75" y="331" text-anchor="middle" font-size="16" font-weight="700" fill="white" font-family="'Noto Serif JP',serif">源頼朝</text>
+  <text x="75" y="348" text-anchor="middle" font-size="11" fill="#c0e0c0" font-family="'Noto Serif JP',serif">1147〜1199</text>
+  <text x="75" y="362" text-anchor="middle" font-size="10" fill="#a0d0a0" font-family="'Noto Serif JP',serif">鎌倉幕府初代将軍</text>
+
+  <!-- 源義経 -->
+  <rect x="256" y="306" width="130" height="60" rx="4" fill="white" stroke="#1a4a1a" stroke-width="1.5"/>
+  <text x="321" y="331" text-anchor="middle" font-size="16" font-weight="700" fill="#1a4a1a" font-family="'Noto Serif JP',serif">源義経</text>
+  <text x="321" y="348" text-anchor="middle" font-size="11" fill="#666" font-family="'Noto Serif JP',serif">1159〜1189</text>
+  <text x="321" y="362" text-anchor="middle" font-size="10" fill="#888" font-family="'Noto Serif JP',serif">壇ノ浦を制した武将</text>
+
+  <!-- 武蔵坊弁慶 -->
+  <rect x="256" y="400" width="130" height="55" rx="4" fill="#f5f0e8" stroke="#a09060" stroke-width="1.5" stroke-dasharray="5,3"/>
+  <text x="321" y="424" text-anchor="middle" font-size="14" font-weight="700" fill="#5a4020" font-family="'Noto Serif JP',serif">武蔵坊弁慶</text>
+  <text x="321" y="440" text-anchor="middle" font-size="11" fill="#666" font-family="'Noto Serif JP',serif">?〜1189</text>
+  <text x="321" y="452" text-anchor="middle" font-size="10" fill="#888" font-family="'Noto Serif JP',serif">義経の従者</text>
+
+  <!-- 傍系 -->
+  <!-- 源義仲（木曽義仲） -->
+  <rect x="580" y="140" width="150" height="62" rx="4" fill="white" stroke="#5a7a1a" stroke-width="1.5"/>
+  <text x="655" y="163" text-anchor="middle" font-size="15" font-weight="700" fill="#5a7a1a" font-family="'Noto Serif JP',serif">源義仲</text>
+  <text x="655" y="179" text-anchor="middle" font-size="10" fill="#888" font-family="'Noto Serif JP',serif">（木曽義仲）</text>
+  <text x="655" y="194" text-anchor="middle" font-size="11" fill="#666" font-family="'Noto Serif JP',serif">1154〜1184</text>
+  <rect x="590" y="126" width="80" height="16" rx="3" fill="#f0faf0" stroke="#b8d0b8" stroke-width="1"/>
+  <text x="630" y="138" text-anchor="middle" font-size="10" fill="#5a7a1a" font-family="'Noto Serif JP',serif">義朝の従兄弟の子</text>
+
+  <!-- 源義仲の活躍 -->
+  <rect x="580" y="230" width="150" height="50" rx="4" fill="#f5f5e8" stroke="#c0c080" stroke-width="1"/>
+  <text x="655" y="252" text-anchor="middle" font-size="11" fill="#5a5a10" font-family="'Noto Serif JP',serif">倶利伽羅峠の戦い</text>
+  <text x="655" y="268" text-anchor="middle" font-size="11" fill="#5a5a10" font-family="'Noto Serif JP',serif">で平家を大破・入洛</text>
+  <line x1="655" y1="202" x2="655" y2="230" stroke="#5a7a1a" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#gj-a)"/>
+
+  <!-- 源義仲撃破box -->
+  <rect x="580" y="306" width="150" height="60" rx="4" fill="white" stroke="#5a7a1a" stroke-width="1.5"/>
+  <text x="655" y="331" text-anchor="middle" font-size="14" fill="#5a7a1a" font-family="'Noto Serif JP',serif">粟津の戦いで</text>
+  <text x="655" y="348" text-anchor="middle" font-size="14" fill="#5a7a1a" font-family="'Noto Serif JP',serif">義経に討たれる</text>
+  <line x1="655" y1="280" x2="655" y2="306" stroke="#5a7a1a" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#gj-a)"/>
+
+  <!-- 源頼政 -->
+  <rect x="760" y="140" width="145" height="62" rx="4" fill="white" stroke="#7a5a1a" stroke-width="1.5"/>
+  <text x="832" y="163" text-anchor="middle" font-size="15" font-weight="700" fill="#7a5a1a" font-family="'Noto Serif JP',serif">源頼政</text>
+  <text x="832" y="179" text-anchor="middle" font-size="11" fill="#666" font-family="'Noto Serif JP',serif">1104〜1180</text>
+  <text x="832" y="194" text-anchor="middle" font-size="10" fill="#888" font-family="'Noto Serif JP',serif">摂津源氏・以仁王と結託</text>
+  <rect x="766" y="126" width="58" height="16" rx="3" fill="#fdf5e8" stroke="#d8cdb0" stroke-width="1"/>
+  <text x="795" y="138" text-anchor="middle" font-size="10" fill="#7a5a1a" font-family="'Noto Serif JP',serif">摂津源氏</text>
+</svg>
+          </div>
+        </div>
+
+        <!-- 人物相関図 -->
+        <div class="sub-panel" id="sub-2">
+          <div class="diagram-wrap">
+<svg viewBox="0 0 1020 560" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="kr-a" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0 8 3 0 6" fill="#8b2020"/></marker>
+    <marker id="kr-b" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0 8 3 0 6" fill="#1a4a1a"/></marker>
+    <marker id="kr-c" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0 8 3 0 6" fill="#1e3a5f"/></marker>
+    <marker id="kr-g" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0 8 3 0 6" fill="#8a6f2e"/></marker>
+  </defs>
+
+  <!-- 背景グループ -->
+  <!-- 平氏エリア（左上・ピンク） -->
+  <rect x="1" y="1" width="360" height="310" rx="8" fill="rgba(180,60,60,0.07)" stroke="rgba(180,60,60,0.3)" stroke-width="1.5"/>
+  <text x="14" y="20" font-size="13" font-weight="700" fill="#8b2020" letter-spacing="1" font-family="'Noto Serif JP',serif">平氏</text>
+
+  <!-- 朝廷エリア（右・ベージュ） -->
+  <rect x="660" y="1" width="358" height="400" rx="8" fill="rgba(90,48,16,0.07)" stroke="rgba(90,48,16,0.25)" stroke-width="1.5"/>
+  <text x="673" y="20" font-size="13" font-weight="700" fill="#5a3010" letter-spacing="1" font-family="'Noto Serif JP',serif">朝廷</text>
+
+  <!-- 源氏エリア（下・緑） -->
+  <rect x="1" y="380" width="650" height="178" rx="8" fill="rgba(26,74,26,0.07)" stroke="rgba(26,74,26,0.25)" stroke-width="1.5"/>
+  <text x="14" y="400" font-size="13" font-weight="700" fill="#1a4a1a" letter-spacing="1" font-family="'Noto Serif JP',serif">源氏</text>
+
+  <!-- ── 矢印・関係線 ── -->
+
+  <!-- 忠盛→清盛 親子 -->
+  <line x1="120" y1="100" x2="120" y2="150" stroke="#8a6f2e" stroke-width="1.5" marker-end="url(#kr-g)"/>
+
+  <!-- 清盛→時子 夫婦 -->
+  <line x1="210" y1="192" x2="285" y2="192" stroke="#8a6f2e" stroke-width="1.5" stroke-dasharray="4,3"/>
+
+  <!-- 清盛→徳子 親子 -->
+  <line x1="175" y1="220" x2="290" y2="270" stroke="#8a6f2e" stroke-width="1.5" marker-end="url(#kr-g)"/>
+
+  <!-- 清盛←→後白河 対立（双方向） -->
+  <line x1="245" y1="192" x2="470" y2="228" stroke="#8b2020" stroke-width="2" marker-end="url(#kr-a)"/>
+  <line x1="472" y1="236" x2="248" y2="200" stroke="#8b2020" stroke-width="2" marker-end="url(#kr-a)"/>
+  <rect x="325" y="195" width="70" height="18" rx="3" fill="#fff5f5" stroke="#f5c0c0" stroke-width="1"/>
+  <text x="360" y="208" text-anchor="middle" font-size="11" fill="#8b2020" font-family="'Noto Serif JP',serif">協調のち対立</text>
+
+  <!-- 徳子→高倉天皇 入内 -->
+  <polyline points="360,284 680,170" fill="none" stroke="#8b2020" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#kr-a)"/>
+  <rect x="480" y="200" width="36" height="16" rx="3" fill="#fff5f5" stroke="#f5c0c0" stroke-width="1"/>
+  <text x="498" y="212" text-anchor="middle" font-size="10" fill="#8b2020" font-family="'Noto Serif JP',serif">入内</text>
+
+  <!-- 高倉→安徳 親子 -->
+  <line x1="790" y1="190" x2="790" y2="240" stroke="#5a3010" stroke-width="1.5" marker-end="url(#kr-c)"/>
+
+  <!-- 後白河→以仁王 親子 -->
+  <line x1="540" y1="258" x2="720" y2="300" stroke="#8a6f2e" stroke-width="1.5" marker-end="url(#kr-g)"/>
+  <rect x="595" y="263" width="36" height="16" rx="3" fill="#f5f0e8" stroke="#d8cdb0" stroke-width="1"/>
+  <text x="613" y="275" text-anchor="middle" font-size="10" fill="#8a6f2e" font-family="'Noto Serif JP',serif">親子</text>
+
+  <!-- 以仁王→頼朝 令旨 -->
+  <polyline points="730,340 730,420 250,450" fill="none" stroke="#8b2020" stroke-width="2" stroke-dasharray="5,3" marker-end="url(#kr-a)"/>
+  <rect x="620" y="404" width="80" height="18" rx="3" fill="#fff5f5" stroke="#f5c0c0" stroke-width="1"/>
+  <text x="660" y="417" text-anchor="middle" font-size="11" fill="#8b2020" font-family="'Noto Serif JP',serif">平氏追討の令旨</text>
+
+  <!-- 源義朝→頼朝・義経 親子 -->
+  <line x1="120" y1="450" x2="200" y2="450" stroke="#1a4a1a" stroke-width="1.5" marker-end="url(#kr-b)"/>
+  <line x1="120" y1="452" x2="320" y2="470" stroke="#1a4a1a" stroke-width="1.5" marker-end="url(#kr-b)"/>
+
+  <!-- 頼朝→平家 打倒 -->
+  <polyline points="250,432 250,340 180,230" fill="none" stroke="#8b2020" stroke-width="2" marker-end="url(#kr-a)"/>
+  <rect x="180" y="320" width="70" height="18" rx="3" fill="#fff5f5" stroke="#f5c0c0" stroke-width="1"/>
+  <text x="215" y="333" text-anchor="middle" font-size="11" fill="#8b2020" font-family="'Noto Serif JP',serif">打倒平氏</text>
+
+  <!-- 義経→平家 打倒 -->
+  <polyline points="355,455 355,300 210,230" fill="none" stroke="#8b2020" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#kr-a)"/>
+
+  <!-- 頼朝←→義仲 対立 -->
+  <line x1="300" y1="450" x2="450" y2="450" stroke="#8b2020" stroke-width="1.5" stroke-dasharray="3,3" marker-end="url(#kr-a)"/>
+  <rect x="347" y="440" width="56" height="16" rx="3" fill="#fff5f5" stroke="#f5c0c0" stroke-width="1"/>
+  <text x="375" y="452" text-anchor="middle" font-size="10" fill="#8b2020" font-family="'Noto Serif JP',serif">義仲を討つ</text>
+
+  <!-- 頼朝←→義経 対立 -->
+  <line x1="264" y1="470" x2="324" y2="470" stroke="#8b2020" stroke-width="1.5" stroke-dasharray="3,3" marker-end="url(#kr-a)"/>
+  <rect x="264" y="474" width="56" height="14" rx="3" fill="#fff5f5" stroke="#f5c0c0" stroke-width="1"/>
+  <text x="292" y="485" text-anchor="middle" font-size="9" fill="#8b2020" font-family="'Noto Serif JP',serif">後に対立</text>
+
+  <!-- ── 人物ボックス ── -->
+
+  <!-- 平忠盛 -->
+  <rect x="55" y="38" width="130" height="62" rx="4" fill="white" stroke="#8b2020" stroke-width="1.5"/>
+  <text x="120" y="64" text-anchor="middle" font-size="15" font-weight="700" fill="#8b2020" font-family="'Noto Serif JP',serif">平忠盛</text>
+  <text x="120" y="80" text-anchor="middle" font-size="11" fill="#666" font-family="'Noto Serif JP',serif">1096〜1153</text>
+  <text x="120" y="94" text-anchor="middle" font-size="10" fill="#888" font-family="'Noto Serif JP',serif">清盛の父</text>
+
+  <!-- 平清盛 -->
+  <rect x="80" y="150" width="130" height="70" rx="4" fill="#8b2020" stroke="#8b2020" stroke-width="1.5"/>
+  <text x="145" y="178" text-anchor="middle" font-size="16" font-weight="700" fill="white" font-family="'Noto Serif JP',serif">平清盛</text>
+  <text x="145" y="196" text-anchor="middle" font-size="11" fill="#ffcccc" font-family="'Noto Serif JP',serif">1118〜1181</text>
+  <text x="145" y="212" text-anchor="middle" font-size="10" fill="#ffaaaa" font-family="'Noto Serif JP',serif">太政大臣・平家の棟梁</text>
+
+  <!-- 平時子 -->
+  <rect x="285" y="162" width="130" height="60" rx="4" fill="white" stroke="#8b2020" stroke-width="1.5"/>
+  <text x="350" y="185" text-anchor="middle" font-size="14" font-weight="700" fill="#8b2020" font-family="'Noto Serif JP',serif">平時子</text>
+  <text x="350" y="200" text-anchor="middle" font-size="10" fill="#888" font-family="'Noto Serif JP',serif">（二位尼）</text>
+  <text x="350" y="215" text-anchor="middle" font-size="11" fill="#666" font-family="'Noto Serif JP',serif">1126〜1185</text>
+
+  <!-- 平徳子 -->
+  <rect x="285" y="258" width="130" height="60" rx="4" fill="white" stroke="#8b2020" stroke-width="1.5"/>
+  <text x="350" y="280" text-anchor="middle" font-size="14" font-weight="700" fill="#8b2020" font-family="'Noto Serif JP',serif">平徳子</text>
+  <text x="350" y="295" text-anchor="middle" font-size="10" fill="#888" font-family="'Noto Serif JP',serif">（建礼門院）</text>
+  <text x="350" y="310" text-anchor="middle" font-size="11" fill="#666" font-family="'Noto Serif JP',serif">1155〜？</text>
+
+  <!-- 後白河法皇 -->
+  <rect x="452" y="200" width="145" height="70" rx="4" fill="#2a2a6a" stroke="#2a2a6a" stroke-width="1.5"/>
+  <text x="524" y="228" text-anchor="middle" font-size="15" font-weight="700" fill="white" font-family="'Noto Serif JP',serif">後白河法皇</text>
+  <text x="524" y="246" text-anchor="middle" font-size="11" fill="#b0b0f0" font-family="'Noto Serif JP',serif">1127〜1192</text>
+  <text x="524" y="262" text-anchor="middle" font-size="10" fill="#9090d8" font-family="'Noto Serif JP',serif">30年以上院政を行う</text>
+
+  <!-- 高倉天皇 -->
+  <rect x="715" y="126" width="150" height="64" rx="4" fill="#5a3010" stroke="#5a3010" stroke-width="1.5"/>
+  <text x="790" y="152" text-anchor="middle" font-size="15" font-weight="700" fill="white" font-family="'Noto Serif JP',serif">高倉天皇</text>
+  <text x="790" y="169" text-anchor="middle" font-size="11" fill="#d0b890" font-family="'Noto Serif JP',serif">1161〜1181</text>
+  <text x="790" y="184" text-anchor="middle" font-size="10" fill="#c0a878" font-family="'Noto Serif JP',serif">第80代・清盛の義理の息子</text>
+
+  <!-- 安徳天皇 -->
+  <rect x="715" y="240" width="150" height="64" rx="4" fill="#5a3010" stroke="#5a3010" stroke-width="1.5"/>
+  <text x="790" y="266" text-anchor="middle" font-size="15" font-weight="700" fill="white" font-family="'Noto Serif JP',serif">安徳天皇</text>
+  <text x="790" y="283" text-anchor="middle" font-size="11" fill="#d0b890" font-family="'Noto Serif JP',serif">1178〜1185</text>
+  <text x="790" y="298" text-anchor="middle" font-size="10" fill="#c0a878" font-family="'Noto Serif JP',serif">壇ノ浦で入水</text>
+
+  <!-- 以仁王 -->
+  <rect x="675" y="290" width="145" height="64" rx="4" fill="white" stroke="#5a3010" stroke-width="1.5"/>
+  <text x="747" y="316" text-anchor="middle" font-size="15" font-weight="700" fill="#5a3010" font-family="'Noto Serif JP',serif">以仁王</text>
+  <text x="747" y="333" text-anchor="middle" font-size="11" fill="#666" font-family="'Noto Serif JP',serif">1151〜1180</text>
+  <text x="747" y="348" text-anchor="middle" font-size="10" fill="#888" font-family="'Noto Serif JP',serif">後白河の第三皇子</text>
+
+  <!-- 源義朝 -->
+  <rect x="55" y="415" width="130" height="60" rx="4" fill="white" stroke="#1a4a1a" stroke-width="1.5"/>
+  <text x="120" y="440" text-anchor="middle" font-size="15" font-weight="700" fill="#1a4a1a" font-family="'Noto Serif JP',serif">源義朝</text>
+  <text x="120" y="457" text-anchor="middle" font-size="11" fill="#666" font-family="'Noto Serif JP',serif">1123〜1160</text>
+  <text x="120" y="471" text-anchor="middle" font-size="10" fill="#888" font-family="'Noto Serif JP',serif">頼朝・義経の父</text>
+
+  <!-- 源頼朝 -->
+  <rect x="188" y="420" width="130" height="60" rx="4" fill="#1a4a1a" stroke="#1a4a1a" stroke-width="1.5"/>
+  <text x="253" y="446" text-anchor="middle" font-size="15" font-weight="700" fill="white" font-family="'Noto Serif JP',serif">源頼朝</text>
+  <text x="253" y="463" text-anchor="middle" font-size="11" fill="#c0e0c0" font-family="'Noto Serif JP',serif">1147〜1199</text>
+  <text x="253" y="477" text-anchor="middle" font-size="10" fill="#a0d0a0" font-family="'Noto Serif JP',serif">鎌倉幕府初代将軍</text>
+
+  <!-- 源義経 -->
+  <rect x="328" y="430" width="130" height="60" rx="4" fill="white" stroke="#1a4a1a" stroke-width="1.5"/>
+  <text x="393" y="456" text-anchor="middle" font-size="15" font-weight="700" fill="#1a4a1a" font-family="'Noto Serif JP',serif">源義経</text>
+  <text x="393" y="473" text-anchor="middle" font-size="11" fill="#666" font-family="'Noto Serif JP',serif">1159〜1189</text>
+  <text x="393" y="487" text-anchor="middle" font-size="10" fill="#888" font-family="'Noto Serif JP',serif">壇ノ浦を制した武将</text>
+
+  <!-- 源義仲 -->
+  <rect x="462" y="415" width="140" height="60" rx="4" fill="white" stroke="#5a7a1a" stroke-width="1.5"/>
+  <text x="532" y="440" text-anchor="middle" font-size="15" font-weight="700" fill="#5a7a1a" font-family="'Noto Serif JP',serif">源義仲</text>
+  <text x="532" y="457" text-anchor="middle" font-size="11" fill="#666" font-family="'Noto Serif JP',serif">1154〜1184</text>
+  <text x="532" y="471" text-anchor="middle" font-size="10" fill="#888" font-family="'Noto Serif JP',serif">倶利伽羅峠で平家を破る</text>
+</svg>
+          </div>
+        </div>
+      </div><!-- /jinbutsu -->
+
+    </div><!-- /panel-inner -->
+  </div><!-- /panel -->
+
+  <!-- タブ行 -->
+  <div class="tab-row">
+    <button class="tab" data-target="nenpyo" aria-pressed="true" onclick="onTab('nenpyo')">
+      <span>📜 平家物語の年表</span>
+      <svg class="tab-chevron" viewBox="0 0 16 16" fill="none"><path d="M3 6L8 11L13 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <button class="tab" data-target="jinbutsu" aria-pressed="false" onclick="onTab('jinbutsu')">
+      <span>👥 人物 ／ 家系図 ／ 人物相関図</span>
+      <svg class="tab-chevron" viewBox="0 0 16 16" fill="none"><path d="M3 6L8 11L13 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+  </div>
+
+</div><!-- /frame -->
+
+<!-- SVGツールチップ -->
+<div id="svgTip"><div id="svgTipName"></div><div id="svgTipDesc"></div></div>
+
+<script>
+var frame = document.getElementById('auxFrame');
+
+function onTab(target) {
+  var isOpen = frame.getAttribute('data-open') === 'true';
+  var current = frame.getAttribute('data-active');
+  if (!isOpen) {
+    frame.setAttribute('data-active', target);
+    frame.setAttribute('data-open', 'true');
+  } else if (current === target) {
+    frame.setAttribute('data-open', 'false');
+  } else {
+    frame.setAttribute('data-active', target);
+    document.getElementById('panelInner').scrollTop = 0;
+  }
+  updateTabState(target);
+}
+
+function updateTabState(target) {
+  document.querySelectorAll('.tab[data-target]').forEach(function(t) {
+    t.setAttribute('aria-pressed', t.getAttribute('data-target') === target ? 'true' : 'false');
+  });
+}
+
+function closePanel() {
+  frame.setAttribute('data-open', 'false');
+}
+
+document.addEventListener('keydown', function(e) {
+  if ((e.key === 'Escape') && frame.getAttribute('data-open') === 'true') closePanel();
+});
+
+function toggle(id) {
+  var el = document.getElementById(id);
+  el.classList.toggle('open');
+}
+
+// ── SVGツールチップ ──
+var PERSON_DATA = {
+  '平忠盛': '清盛の父。武士として初めて殿上への昇殿を許された。日宋貿易を積極的に推進し平氏の経済的基盤を築いた人物。',
+  '平清盛': '平家の棟梁。太政大臣に昇った武士初の政権者。日宋貿易・厳島神社整備で栄華を極めたが、1181年に熱病で死去。「平家にあらずんば人にあらず」と言われた全盛期を築いた。',
+  '平時子': '清盛の正室（二位尼）。壇ノ浦で幼い安徳天皇を抱き「波の下にも都がある」と諭して入水。三種の神器とともに海に沈んだ。',
+  '平徳子': '清盛の娘（建礼門院）。高倉天皇に入内し安徳天皇を産む。壇ノ浦で入水するも助けられ、後に出家して大原寂光院で余生を送った。',
+  '平重盛': '清盛の嫡男（小松殿）。仁義を重んじる人物として描かれ、父清盛の専横を諫め続けた。清盛より先に1179年に病死。',
+  '平宗盛': '清盛の三男。重盛の死後に平家の棟梁となるが、壇ノ浦で生け捕りにされ斬首。優柔不断な指導者として描かれることが多い。',
+  '平知盛': '清盛の四男。「見るべきほどのことは見つ」と言い残し、鎧二領を着て壇ノ浦に入水した。平家物語の中で最も武将らしい壮絶な最期を遂げた。',
+  '平重衡': '清盛の五男。「南都焼打ち」で東大寺・興福寺を焼いたとして知られる。壇ノ浦後に南都の僧兵に引き渡されて斬首された。',
+  '高倉天皇': '第80代天皇。清盛の娘・徳子を皇后に迎え安徳天皇を産む。平家全盛期に在位し、平家物語では悲劇的な人物として描かれる。',
+  '安徳天皇': '第81代天皇（在位1180〜1185）。清盛の外孫として幼くして即位。壇ノ浦で祖母・時子に抱かれ8歳で入水。三種の神器の一部は海に沈んだ。',
+  '源為義': '河内源氏の嫡流。保元の乱で崇徳上皇方につき敗北し、息子・義朝によって処刑された。',
+  '源義朝': '頼朝・義経の父。平治の乱で清盛に敗れ、尾張へ逃走中に家人に殺された。平氏打倒を目指した河内源氏の嫡流。',
+  '源頼朝': '鎌倉幕府初代将軍。伊豆に流されていたが以仁王の令旨を機に挙兵。義経らの活躍で平家を滅ぼし武家政権を樹立した。',
+  '源義経': '頼朝の異母弟。鵯越の逆落とし・屋島・壇ノ浦で平家を破った天才的軍略家。後に頼朝と対立し、奥州平泉で自害した。',
+  '武蔵坊弁慶': '義経の従者・郎党。「弁慶の立ち往生」が有名。衣川の戦いで義経を守り、全身に矢を受けて立ったまま絶命したと伝わる豪傑。',
+  '源義仲': '「木曽義仲」とも。倶利伽羅峠で平家を大破し入洛したが、後白河法皇と対立。頼朝の命を受けた義経に粟津の戦いで討たれた。',
+  '源頼政': '摂津源氏の長。平家全盛期でも朝廷で活動し和歌にも優れた。以仁王と結んで平氏追討を企てたが挙兵直後に宇治で敗れ、平等院で自害。',
+  '後白河法皇': '第77代天皇。30年以上院政を行い「日本一の大天狗」とも称される権謀家。清盛・頼朝と渡り合い、平家物語を通じて日本の政治を動かし続けた。',
+  '以仁王': '後白河法皇の第三皇子。1180年に平氏追討の令旨を発し全国の源氏に蜂起を促した。挙兵直後に討たれたが、その令旨が源平合戦の発端となった。',
+};
+(function() {
+  var tip = document.getElementById('svgTip');
+  var tipName = document.getElementById('svgTipName');
+  var tipDesc = document.getElementById('svgTipDesc');
+  function showTip(e) {
+    var name = this.dataset.tipName;
+    tipName.textContent = name;
+    tipDesc.textContent = PERSON_DATA[name] || '';
+    tip.style.opacity = '1';
+    moveTip.call(this, e);
+  }
+  function moveTip(e) {
+    var x = e.clientX + 18, y = e.clientY + 18;
+    if (x + 330 > window.innerWidth) x = e.clientX - 340;
+    if (y + tip.offsetHeight + 20 > window.innerHeight) y = e.clientY - tip.offsetHeight - 12;
+    tip.style.left = x + 'px';
+    tip.style.top = y + 'px';
+  }
+  function hideTip() { tip.style.opacity = '0'; }
+  document.querySelectorAll('svg text').forEach(function(t) {
+    var name = t.textContent.trim();
+    if (!PERSON_DATA[name]) return;
+    var el = t.previousElementSibling;
+    if (!el || el.tagName.toLowerCase() !== 'rect') return;
+    if (el._tipBound) return;
+    el._tipBound = true;
+    el.dataset.tipName = name;
+    el.classList.add('pnode');
+    el.addEventListener('mouseenter', showTip);
+    el.addEventListener('mousemove', moveTip);
+    el.addEventListener('mouseleave', hideTip);
+  });
+})();
+
+var subPanels = document.querySelectorAll('.sub-panel');
+function switchSub(idx, btn) {
+  subPanels.forEach(function(p, i) { p.classList.toggle('active', i === idx); });
+  btn.closest('.sub-tabs').querySelectorAll('.sub-tab-btn').forEach(function(b, i) {
+    b.classList.toggle('active', i === idx);
+  });
+  document.getElementById('panelInner').scrollTop = 0;
+}
+</script>
+</body>
+</html>
