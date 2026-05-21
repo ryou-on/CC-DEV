@@ -416,6 +416,89 @@ html, body {
   font-size: 13px;
   text-align: center;
 }
+
+/* ══════════════════════════════════════════
+   動画プレビューセクション
+   ══════════════════════════════════════════ */
+.pos-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.pos-btn {
+  padding: 6px 4px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: #f8f8f8;
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+  text-align: center;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  line-height: 1.4;
+}
+.pos-btn:hover { background: #e8f0ff; border-color: var(--navy); }
+.pos-btn.active {
+  background: var(--navy);
+  color: #fff;
+  border-color: var(--navy);
+}
+
+/* ══════════════════════════════════════════
+   hihaho iframe（背景）
+   ══════════════════════════════════════════ */
+#hihaho-iframe {
+  position: absolute;
+  top: 0; left: 0;
+  width: 1920px;
+  height: 1080px;
+  border: none;
+  transform-origin: top left;
+  transform: scale(0.45);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ══════════════════════════════════════════
+   ドラッグハンドル
+   ══════════════════════════════════════════ */
+#drag-handle {
+  position: absolute;
+  z-index: 10;
+  cursor: grab;
+  user-select: none;
+  background: rgba(30, 58, 95, 0.85);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid rgba(201,168,76,0.7);
+  white-space: nowrap;
+  pointer-events: auto;
+  transition: box-shadow 0.15s;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+#drag-handle:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
+#drag-handle.dragging { cursor: grabbing; opacity: 0.85; }
+
+/* オフセット表示 */
+#offset-display {
+  font-size: 11px;
+  color: #888;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+#offset-display .reset-link {
+  color: var(--navy);
+  cursor: pointer;
+  text-decoration: underline;
+  font-size: 11px;
+}
+#offset-display .reset-link:hover { color: var(--gold-dark); }
 </style>
 </head>
 <body>
@@ -461,7 +544,28 @@ html, body {
         <div class="no-tab-msg" id="section-no-tab-msg">タブを選択してください</div>
       </div>
 
-      <!-- ④ テーマ設定 -->
+      <!-- ④ 動画プレビュー設定 -->
+      <div class="section-block">
+        <div class="section-block-title">🎬 動画プレビュー</div>
+        <div class="field-row">
+          <label>hihaho URL</label>
+          <input type="text" id="input-hihaho-url" placeholder="https://player.hihaho.com/..."
+            oninput="onHihahoUrlChange(this.value)" style="font-size:12px;">
+        </div>
+        <div style="margin-top:4px;">
+          <div style="font-size:12px;font-weight:600;color:var(--text-muted);margin-bottom:6px;">タブ位置プリセット</div>
+          <div class="pos-grid">
+            <button class="pos-btn" data-preset="top-left"    onclick="onPosPreset('top-left')">↖ 上左</button>
+            <button class="pos-btn" data-preset="top-center"  onclick="onPosPreset('top-center')">↑ 上中</button>
+            <button class="pos-btn" data-preset="top-right"   onclick="onPosPreset('top-right')">↗ 上右</button>
+            <button class="pos-btn" data-preset="bottom-left" onclick="onPosPreset('bottom-left')">↙ 下左</button>
+            <button class="pos-btn" data-preset="bottom-center" onclick="onPosPreset('bottom-center')">↓ 下中</button>
+            <button class="pos-btn" data-preset="bottom-right" onclick="onPosPreset('bottom-right')">↘ 下右</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ⑤ テーマ設定 -->
       <div class="section-block">
         <div class="section-block-title">🎨 テーマ設定</div>
         <div class="color-row">
@@ -487,7 +591,13 @@ html, body {
     <div id="right-panel">
       <div id="preview-label">PREVIEW — 1920×1080 (scale 0.45)</div>
       <div id="preview-container">
-        <iframe id="preview-iframe" sandbox="allow-scripts allow-same-origin"></iframe>
+        <iframe id="hihaho-iframe" allow="autoplay; fullscreen"></iframe>
+        <iframe id="preview-iframe" sandbox="allow-scripts allow-same-origin" style="position:absolute;top:0;left:0;width:1920px;height:1080px;border:none;transform-origin:top left;transform:scale(0.45);pointer-events:none;z-index:2;"></iframe>
+        <div id="drag-handle">▼ タブ</div>
+      </div>
+      <div id="offset-display">
+        <span id="offset-text">オフセット: x=0px, y=0px</span>
+        <span class="reset-link" onclick="resetOffset()">[リセット]</span>
       </div>
       <div id="preview-note">プレビューはビルダーの変更に連動して自動更新されます</div>
     </div>
@@ -514,6 +624,10 @@ var logs = [];
 function defaultState() {
   return {
     selectedTabId: 't1',
+    previewUrl: '',
+    posPreset: 'top-center',
+    offsetX: 0,
+    offsetY: 0,
     theme: {
       blueInk: '#1e3a5f',
       gold: '#c9a84c',
@@ -552,6 +666,11 @@ function loadState() {
           });
         });
       }
+      // バージョン互換: 新フィールドを補完
+      if (parsed.previewUrl === undefined) parsed.previewUrl = '';
+      if (parsed.posPreset === undefined) parsed.posPreset = 'top-center';
+      if (parsed.offsetX === undefined) parsed.offsetX = 0;
+      if (parsed.offsetY === undefined) parsed.offsetY = 0;
       log('状態をlocalStorageから復元しました');
       return parsed;
     }
@@ -882,6 +1001,150 @@ function onColorChange() {
 }
 
 /* ══════════════════════════════════════════
+   動画プレビュー・位置プリセット・ドラッグ
+   ══════════════════════════════════════════ */
+
+// 動画URLセクションの表示を状態に同期
+function renderVideoSection() {
+  var el = document.getElementById('input-hihaho-url');
+  if (el) el.value = state.previewUrl || '';
+  // ポジションボタンのアクティブ状態
+  document.querySelectorAll('.pos-btn').forEach(function(btn) {
+    btn.classList.toggle('active', btn.getAttribute('data-preset') === state.posPreset);
+  });
+}
+
+// hihaho URL変更
+function onHihahoUrlChange(val) {
+  state.previewUrl = val.trim();
+  saveState();
+  updatePreview();
+}
+
+// ポジションプリセット変更
+function onPosPreset(preset) {
+  state.posPreset = preset;
+  saveState();
+  // ボタンUI更新
+  document.querySelectorAll('.pos-btn').forEach(function(btn) {
+    btn.classList.toggle('active', btn.getAttribute('data-preset') === preset);
+  });
+  updateDragHandle();
+  debouncedPreview();
+}
+
+// プレビュースケール定数
+var PREVIEW_SCALE = 0.45;
+var PREVIEW_W = 1920;
+var PREVIEW_H = 1080;
+
+// drag-handle の位置・ラベルを更新
+function updateDragHandle() {
+  var handle = document.getElementById('drag-handle');
+  if (!handle) return;
+
+  // ラベル（タブ名一覧）
+  var labels = state.tabs.map(function(t) { return t.emoji + ' ' + t.name; }).join(' / ');
+  handle.textContent = labels || '▼ タブ';
+
+  var preset = state.posPreset || 'top-center';
+  var ox = state.offsetX || 0;
+  var oy = state.offsetY || 0;
+  var isBottom = preset.indexOf('bottom') === 0;
+  var isLeft   = preset.indexOf('left', preset.indexOf('-') + 1) >= 0;
+  var isRight  = preset.indexOf('right', preset.indexOf('-') + 1) >= 0;
+  var isCenter = !isLeft && !isRight;
+
+  // 1920x1080空間での基準座標を求め、0.45倍してpx配置
+  // handle は preview-container 内の絶対配置
+  var containerW = 864; // 1920*0.45
+  var containerH = 486; // 1080*0.45
+
+  // X方向
+  var hx;
+  if (isCenter) {
+    hx = containerW / 2 + ox * PREVIEW_SCALE;
+    handle.style.left = hx + 'px';
+    handle.style.right = 'auto';
+    handle.style.transform = isBottom
+      ? 'translateX(-50%) translateY(-100%)'
+      : 'translateX(-50%)';
+  } else if (isLeft) {
+    hx = ox * PREVIEW_SCALE;
+    handle.style.left = hx + 'px';
+    handle.style.right = 'auto';
+    handle.style.transform = isBottom ? 'translateY(-100%)' : 'none';
+  } else {
+    // right
+    hx = (-ox) * PREVIEW_SCALE;
+    handle.style.right = hx + 'px';
+    handle.style.left = 'auto';
+    handle.style.transform = isBottom ? 'translateY(-100%)' : 'none';
+  }
+
+  // Y方向
+  if (isBottom) {
+    handle.style.bottom = (-oy * PREVIEW_SCALE) + 'px';
+    handle.style.top = 'auto';
+  } else {
+    handle.style.top = (oy * PREVIEW_SCALE) + 'px';
+    handle.style.bottom = 'auto';
+  }
+
+  // オフセット表示
+  var offsetText = document.getElementById('offset-text');
+  if (offsetText) offsetText.textContent = 'オフセット: x=' + ox + 'px, y=' + oy + 'px';
+}
+
+// オフセットリセット
+function resetOffset() {
+  state.offsetX = 0;
+  state.offsetY = 0;
+  saveState();
+  updateDragHandle();
+  updatePreview();
+  log('オフセットをリセットしました');
+}
+
+// ドラッグ処理
+(function() {
+  var dragging = false;
+  var dragStartX, dragStartY, dragStartOX, dragStartOY;
+
+  document.addEventListener('mousedown', function(e) {
+    var handle = document.getElementById('drag-handle');
+    if (!handle || !handle.contains(e.target)) return;
+    dragging = true;
+    dragStartX = e.clientX;
+    dragStartY = e.clientY;
+    dragStartOX = state.offsetX || 0;
+    dragStartOY = state.offsetY || 0;
+    handle.classList.add('dragging');
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', function(e) {
+    if (!dragging) return;
+    var dx = e.clientX - dragStartX;
+    var dy = e.clientY - dragStartY;
+    // スケール 0.45 で割って実座標に換算
+    state.offsetX = Math.round(dragStartOX + dx / PREVIEW_SCALE);
+    state.offsetY = Math.round(dragStartOY + dy / PREVIEW_SCALE);
+    updateDragHandle();
+  });
+
+  document.addEventListener('mouseup', function(e) {
+    if (!dragging) return;
+    dragging = false;
+    var handle = document.getElementById('drag-handle');
+    if (handle) handle.classList.remove('dragging');
+    saveState();
+    updatePreview();
+    log('ドラッグ完了: offsetX=' + state.offsetX + ', offsetY=' + state.offsetY);
+  });
+})();
+
+/* ══════════════════════════════════════════
    全レンダリング
    ══════════════════════════════════════════ */
 function renderAll() {
@@ -889,6 +1152,8 @@ function renderAll() {
   renderTabSettings();
   renderSectionList();
   renderTheme();
+  renderVideoSection();
+  updateDragHandle();
 }
 
 /* ══════════════════════════════════════════
@@ -955,6 +1220,55 @@ function generateHTML() {
 
   var firstTabId = state.tabs.length > 0 ? state.tabs[0].id : 'tab0';
 
+  // posPreset + offset に基づく CSS 生成
+  var preset = state.posPreset || 'top-center';
+  var ox = state.offsetX || 0;
+  var oy = state.offsetY || 0;
+  var isBottom = preset.indexOf('bottom') === 0;
+  var isLeft   = preset.indexOf('left', preset.indexOf('-') + 1) >= 0;
+  var isRight  = preset.indexOf('right', preset.indexOf('-') + 1) >= 0;
+  var isCenter = !isLeft && !isRight;
+
+  // タブ border-radius（上配置: 0 0 20px 20px、下配置: 20px 20px 0 0）
+  var tabBorderRadius = isBottom ? '20px 20px 0 0' : '0 0 20px 20px';
+  var tabBorderStyle  = isBottom ? 'border-bottom: 3px solid var(--gold-dark); border-top: none;'
+                                 : 'border-top: 3px solid var(--gold-dark); border-bottom: none;';
+
+  var tabRowCSS, panelCSS, panelOpenCSS;
+  if (isCenter) {
+    // 上中 / 下中
+    tabRowCSS = 'position:absolute; ' + (isBottom ? 'bottom:0; top:auto;' : 'top:0;') +
+      ' left:50%; transform:translate(-50%,' + oy + 'px);' +
+      ' display:flex; gap:12px; z-index:20; pointer-events:none;';
+    panelCSS = 'position:absolute; ' + (isBottom ? 'bottom:0; top:auto;' : 'top:0;') +
+      ' left:50%;' +
+      ' transform:translate(-50%,' + (isBottom ? '102%' : '-102%') + ');';
+    panelOpenCSS = 'transform:translate(-50%,' + oy + 'px);';
+  } else if (isLeft) {
+    tabRowCSS = 'position:absolute; ' + (isBottom ? 'bottom:0; top:auto;' : 'top:0;') +
+      ' left:' + ox + 'px; transform:translateY(' + oy + 'px);' +
+      ' display:flex; gap:12px; z-index:20; pointer-events:none;';
+    panelCSS = 'position:absolute; ' + (isBottom ? 'bottom:0; top:auto;' : 'top:0;') +
+      ' left:' + ox + 'px;' +
+      ' transform:translate(0,' + (isBottom ? '102%' : '-102%') + ');';
+    panelOpenCSS = 'transform:translate(0,' + oy + 'px);';
+  } else {
+    // right
+    tabRowCSS = 'position:absolute; ' + (isBottom ? 'bottom:0; top:auto;' : 'top:0;') +
+      ' right:' + (-ox) + 'px; left:auto; transform:translateY(' + oy + 'px);' +
+      ' display:flex; gap:12px; z-index:20; pointer-events:none;';
+    panelCSS = 'position:absolute; ' + (isBottom ? 'bottom:0; top:auto;' : 'top:0;') +
+      ' right:0; left:auto;' +
+      ' transform:translate(0,' + (isBottom ? '102%' : '-102%') + ');';
+    panelOpenCSS = 'transform:translate(0,' + oy + 'px);';
+  }
+
+  // パネルの border-radius（上配置: 0 0 24px 24px、下配置: 24px 24px 0 0）
+  var panelBorderRadius = isBottom ? '24px 24px 0 0' : '0 0 24px 24px';
+  var panelBorderStyle  = isBottom
+    ? 'border-top: 2px solid var(--gold-dark); border-bottom: none;'
+    : 'border-bottom: 2px solid var(--gold-dark); border-top: none;';
+
   return '<!DOCTYPE html>\n' +
 '<html lang="ja">\n' +
 '<head>\n' +
@@ -991,16 +1305,7 @@ function generateHTML() {
 '  pointer-events: none;\n' +
 '}\n' +
 '\n' +
-'.tab-row {\n' +
-'  position: absolute;\n' +
-'  top: 0;\n' +
-'  left: 50%;\n' +
-'  transform: translateX(-50%);\n' +
-'  display: flex;\n' +
-'  gap: 12px;\n' +
-'  z-index: 20;\n' +
-'  pointer-events: none;\n' +
-'}\n' +
+'.tab-row { ' + tabRowCSS + ' }\n' +
 '\n' +
 '.tab {\n' +
 '  pointer-events: auto;\n' +
@@ -1012,7 +1317,7 @@ function generateHTML() {
 '  letter-spacing: 0.12em;\n' +
 '  padding: 12px 36px;\n' +
 '  border: none;\n' +
-'  border-radius: 0 0 20px 20px;\n' +
+'  border-radius: ' + tabBorderRadius + ';\n' +
 '  box-shadow: 0 6px 20px rgba(0,0,0,0.35), 0 1px 4px rgba(0,0,0,0.15);\n' +
 '  cursor: pointer;\n' +
 '  display: flex;\n' +
@@ -1021,7 +1326,7 @@ function generateHTML() {
 '  min-height: 52px;\n' +
 '  transition: background 0.18s, color 0.18s, box-shadow 0.18s, transform 0.1s;\n' +
 '  white-space: nowrap;\n' +
-'  border-top: 3px solid var(--gold-dark);\n' +
+'  ' + tabBorderStyle + '\n' +
 '}\n' +
 '.tab:hover { background: #fff8ee; }\n' +
 '.tab:active { transform: scale(0.95); }\n' +
@@ -1040,29 +1345,26 @@ function generateHTML() {
 '.frame[data-open="true"] .tab[aria-pressed="true"] .tab-chevron { transform: rotate(180deg); }\n' +
 '\n' +
 '.panel {\n' +
-'  position: absolute;\n' +
-'  top: 0;\n' +
-'  left: 50%;\n' +
+'  ' + panelCSS + '\n' +
 '  width: 1060px;\n' +
 '  max-height: 830px;\n' +
 '  background: var(--washi);\n' +
-'  border-radius: 0 0 24px 24px;\n' +
+'  border-radius: ' + panelBorderRadius + ';\n' +
 '  box-shadow: 0 16px 60px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.2);\n' +
 '  pointer-events: auto;\n' +
 '  display: flex;\n' +
 '  flex-direction: column;\n' +
 '  z-index: 10;\n' +
-'  transform: translate(-50%, -102%);\n' +
 '  transition: transform 0.4s cubic-bezier(0.32,0.72,0,1), visibility 0s linear 0.4s;\n' +
 '  overflow: hidden;\n' +
 '  visibility: hidden;\n' +
 '  border-left: 1px solid rgba(201,168,76,0.3);\n' +
 '  border-right: 1px solid rgba(201,168,76,0.3);\n' +
-'  border-bottom: 2px solid var(--gold-dark);\n' +
+'  ' + panelBorderStyle + '\n' +
 '}\n' +
 '\n' +
 '.frame[data-open="true"] .panel {\n' +
-'  transform: translate(-50%, 0);\n' +
+'  ' + panelOpenCSS + '\n' +
 '  visibility: visible;\n' +
 '  transition: transform 0.4s cubic-bezier(0.32,0.72,0,1), visibility 0s linear 0s;\n' +
 '}\n' +
@@ -1302,6 +1604,19 @@ function updatePreview() {
   if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl);
   previewBlobUrl = URL.createObjectURL(blob);
   document.getElementById('preview-iframe').src = previewBlobUrl;
+
+  // hihaho iframe 更新
+  var hihahoEl = document.getElementById('hihaho-iframe');
+  var url = (state.previewUrl || '').trim();
+  if (url) {
+    if (hihahoEl.src !== url) hihahoEl.src = url;
+    hihahoEl.style.display = '';
+  } else {
+    hihahoEl.src = 'about:blank';
+    hihahoEl.style.display = 'none';
+  }
+
+  updateDragHandle();
   log('プレビューを更新しました');
 }
 
