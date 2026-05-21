@@ -8,67 +8,83 @@
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { background: transparent; font-family: sans-serif; font-size: 20px; }
 
-    /* ── ラッパー：矢印幅(1em)だけ見せて右端に固定 ── */
-    #float-apply {
+    /*
+      構造:
+        #wrap（fixed, translateX で開閉）
+          #handle（absolute, right:100% → 常にパネルの左に固定表示）
+            .strip（白い丸角ストリップ + ◀）
+            .label（オレンジ + 縦書きテキスト）
+          #panel（オレンジ枠の白いコンテンツボックス）
+    */
+
+    #wrap {
       position: fixed;
       right: 0;
       bottom: 10%;
-      display: flex;
-      align-items: stretch;
-      transform: translateX(calc(100% - 1em)); /* 矢印幅1emだけ露出 */
+      transform: translateX(98%); /* パネルをほぼ画面外へ、ハンドルだけ露出 */
       transition: transform .3s ease;
       z-index: 9999;
-      box-shadow: 0 0 .3em rgba(0,0,0,.3);
+      font-size: 20px;
     }
-    #float-apply.open { transform: translateX(0); }
+    #wrap.open { transform: translateX(0); }
 
-    /* ── 白い矢印ストリップ ── */
-    .fa-arrow {
+    /* ── ハンドル（常に可視、パネルの左に位置） ── */
+    #handle {
+      position: absolute;
+      right: 100%;
+      top: 50%;
+      translate: 0 -50%;
+      display: flex;
+      align-items: stretch;
+      background: #ff740d;
+      border-radius: .2em 0 0 .2em;
+      box-shadow: 0 0 .3em rgba(0,0,0,.3);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    /* 白いストリップ（左端、丸角） */
+    .strip {
       background: #fff;
       width: 1em;
       flex-shrink: 0;
+      border-radius: .2em 0 0 .2em;
       display: flex;
       align-items: center;
       justify-content: center;
-      border-radius: .2em 0 0 .2em;
-      cursor: pointer;
     }
-    .fa-arrow::before {
+    .strip::before {
       content: "";
       border-top: .4em solid transparent;
       border-bottom: .4em solid transparent;
-      border-right: .5em solid #ff740d; /* 閉じ時：右向き（パネル側を指す） */
-      transition: transform .3s;
+      border-right: .5em solid #ff740d; /* ◀ 左向き固定 */
     }
-    #float-apply.open .fa-arrow::before { transform: scaleX(-1); } /* 開き時：左向き */
 
-    /* ── オレンジのタブ ── */
-    .fa-tab {
-      background: #ff740d;
+    /* オレンジ縦書きラベル */
+    .label {
       color: #fff;
       font-weight: 700;
+      font-size: 1em;
       letter-spacing: .2em;
       line-height: 1.2;
       writing-mode: vertical-rl;
       width: 3.5em;
       padding: .5em;
-      cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      user-select: none;
-      flex-shrink: 0;
     }
 
-    /* ── パネル本体 ── */
-    .fa-panel {
+    /* ── パネル（コンテンツボックス） ── */
+    #panel {
       border: 2px solid #ff740d;
       background: #fff;
       width: 13em; /* 260px at 20px base */
+      box-shadow: 0 0 .3em rgba(0,0,0,.15);
     }
 
     /* ── 各行 ── */
-    .fa-item {
+    .item {
       display: flex;
       flex-direction: column;
       justify-content: center;
@@ -77,88 +93,97 @@
       min-height: 3.8em;
       text-decoration: none;
       color: inherit;
+      background: #fff;
       position: relative;
       text-align: center;
-      background: #fff;
       cursor: pointer;
     }
-    .fa-item + .fa-item { border-top: 2px solid #f0f0f0; }
-    .fa-item:hover { background: #f5f5f5; }
+    .item + .item { border-top: 1px solid #e0e0e0; }
+    .item:hover { background: #fafafa; }
 
-    /* 右向き三角（色はitem単位で上書き） */
-    .fa-item::before {
+    /* 右向き三角アイコン（色はitem側で指定） */
+    .item::after {
       content: "";
       position: absolute;
-      top: 50%; right: .3em;
+      top: 50%; right: .4em;
       transform: translateY(-50%);
       border-top: .4em solid transparent;
       border-bottom: .4em solid transparent;
       border-left: .5em solid currentColor;
     }
-    .fa-item.is-tel::before { display: none; }
+    .item.is-tel::after { display: none; }
 
-    .fa-item.is-shinki  { color: #ff740d; }
-    .fa-item.is-norikae { color: #0164af; }
-    .fa-item.is-tel     { color: #333; }
+    .item.is-shinki  { color: #ff740d; }
+    .item.is-norikae { color: #0164af; }
+    .item.is-tel     { color: #333; }
 
-    .fa-sub  { font-size: .6em;  font-weight: 400; color: #333; }
-    .fa-main { font-size: 1em;   font-weight: 700; margin-top: .2em; }
+    .sub  { font-size: .6em;  color: #333; }
+    .main { font-size: 1em;   font-weight: 700; margin-top: .15em; }
 
-    /* 電話番号エリア */
-    .fa-tel-wrap {
+    /* 電話番号 */
+    .tel-row {
       display: flex;
       align-items: center;
-      gap: .3em;
-      white-space: nowrap; /* 折り返し防止 */
+      gap: .25em;
+      white-space: nowrap;
     }
-    .fa-tel-icon { height: 1em; flex-shrink: 0; }
-    .fa-tel-num  { font-weight: 700; font-size: 1em; }
-    .fa-tel-time { font-size: .6em; color: #555; margin-top: .3em; }
+    .tel-row svg { height: 1em; flex-shrink: 0; }
+    .tel-num     { font-weight: 700; }
+    .tel-time    { font-size: .58em; color: #555; margin-top: .3em; }
 
-    /* ── SP：下から出る ── */
+    /* ── SP：下から出るパターン ── */
     @media (max-width: 768px) {
-      body { font-size: 18px; }
-      #float-apply {
-        bottom: 0; right: 0; width: 100%;
-        flex-direction: column-reverse;
+      #wrap {
+        font-size: 18px;
+        right: auto; left: 0;
+        bottom: 0;
+        width: 100%;
         transform: translateY(calc(100% - 2.4em));
       }
-      #float-apply.open { transform: translateY(0); }
-      .fa-tab {
+      #wrap.open { transform: translateY(0); }
+
+      #handle {
+        position: static;
+        translate: none;
+        border-radius: .2em .2em 0 0;
+        width: 100%;
+      }
+      .strip { display: none; }
+      .label {
         writing-mode: horizontal-tb;
         width: 100%;
-        padding: .4em;
-        border-radius: .2em .2em 0 0;
         justify-content: center;
+        padding: .4em;
       }
-      .fa-arrow { display: none; }
-      .fa-panel { width: 100%; }
+      #panel { width: 100%; }
     }
   </style>
 </head>
 <body>
 
-<div id="float-apply">
-  <!-- 白い矢印ストリップ（トグル兼用） -->
-  <div class="fa-arrow" id="fa-toggle"></div>
-  <!-- オレンジタブ（トグル兼用） -->
-  <div class="fa-tab" id="fa-tab">カンタン<br>お申し込み</div>
-  <!-- パネル -->
-  <div class="fa-panel">
+<div id="wrap">
+  <!-- ハンドル：常に画面端に見えるトグルボタン -->
+  <div id="handle">
+    <div class="strip"></div>
+    <div class="label">カンタン<br>お申し込み</div>
+  </div>
 
-    <a class="fa-item is-shinki" id="fa-shinki" href="#" target="_blank">
-      <span class="fa-sub">光回線を契約していない</span>
-      <span class="fa-main">光回線新規</span>
+  <!-- コンテンツパネル -->
+  <div id="panel">
+
+    <a class="item is-shinki" id="fa-shinki" href="#" target="_blank">
+      <span class="sub">光回線を契約していない</span>
+      <span class="main">光回線新規</span>
     </a>
 
-    <a class="fa-item is-norikae" id="fa-norikae" href="#" target="_blank">
-      <span class="fa-sub">すでに光回線をご利用中</span>
-      <span class="fa-main">乗り換え</span>
+    <a class="item is-norikae" id="fa-norikae" href="#" target="_blank">
+      <span class="sub">すでに光回線をご利用中</span>
+      <span class="main">乗り換え</span>
     </a>
 
-    <a class="fa-item is-tel" id="fa-tel" href="tel:0120-50-2210">
-      <div class="fa-tel-wrap">
-        <svg class="fa-tel-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#2a2">
+    <a class="item is-tel" id="fa-tel" href="tel:0120-50-2210">
+      <div class="tel-row">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#2a2">
           <path d="M6.6 10.8c1.4 2.8 3.8 5.1 6.6 6.6l2.2-2.2c.3-.3.7-.4 1-.2
                    1.1.4 2.3.6 3.6.6.6 0 1 .4 1 1V20c0 .6-.4 1-1 1
                    C10.6 21 3 13.4 3 4c0-.6.4-1 1-1h3.5c.6 0 1 .4 1 1
@@ -166,14 +191,13 @@
         </svg>
         <span id="fa-tel-num">0120-50-2210</span>
       </div>
-      <div class="fa-tel-time" id="fa-tel-time">毎日9:00〜21:00（携帯電話 着信可）</div>
+      <div class="tel-time" id="fa-tel-time">毎日9:00〜21:00（携帯電話 着信可）</div>
     </a>
 
   </div>
 </div>
 
 <script>
-  // ── URLパラメータで各リンク・テキストをカスタマイズ ──
   const p = k => new URLSearchParams(location.search).get(k);
 
   const shinki  = document.getElementById('fa-shinki');
@@ -189,19 +213,14 @@
     tel.href = 'tel:' + p('tel').replace(/-/g, '');
   }
   if (p('telTime'))      telTime.textContent = p('telTime');
-  if (p('labelShinki'))  shinki.querySelector('.fa-main').textContent  = p('labelShinki');
-  if (p('labelNorikae')) norikae.querySelector('.fa-main').textContent = p('labelNorikae');
-  if (p('subShinki'))    shinki.querySelector('.fa-sub').textContent   = p('subShinki');
-  if (p('subNorikae'))   norikae.querySelector('.fa-sub').textContent  = p('subNorikae');
+  if (p('labelShinki'))  shinki.querySelector('.main').textContent  = p('labelShinki');
+  if (p('labelNorikae')) norikae.querySelector('.main').textContent = p('labelNorikae');
+  if (p('subShinki'))    shinki.querySelector('.sub').textContent   = p('subShinki');
+  if (p('subNorikae'))   norikae.querySelector('.sub').textContent  = p('subNorikae');
 
-  // ── 開閉トグル ──
-  const root = document.getElementById('float-apply');
-  [document.getElementById('fa-toggle'), document.getElementById('fa-tab')]
-    .forEach(el => el.addEventListener('click', () => root.classList.toggle('open')));
-
-  // リンククリックで閉じる
-  [shinki, norikae, tel]
-    .forEach(el => el.addEventListener('click', () => root.classList.remove('open')));
+  const wrap = document.getElementById('wrap');
+  document.getElementById('handle').addEventListener('click', () => wrap.classList.toggle('open'));
+  [shinki, norikae, tel].forEach(el => el.addEventListener('click', () => wrap.classList.remove('open')));
 </script>
 </body>
 </html>
