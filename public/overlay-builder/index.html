@@ -621,7 +621,7 @@ html, body {
   <div id="header">
     <h1>
       <span onclick="openHowTo()" style="cursor:pointer;" title="使い方を見る">▶ hiTab</span>
-      <span onclick="openReleaseNotes()" style="cursor:pointer;font-size:12px;color:#c9a84c;font-weight:400;margin-left:8px;opacity:0.85;" title="リリースノート">v0.4.0</span>
+      <span onclick="openReleaseNotes()" style="cursor:pointer;font-size:12px;color:#c9a84c;font-weight:400;margin-left:8px;opacity:0.85;" title="リリースノート">v0.4.1</span>
       <span style="font-weight:400;font-size:13px;color:rgba(255,255,255,0.55);margin-left:10px;">動画タブオーバーレイビルダー</span>
     </h1>
     <div style="display:flex;gap:8px;align-items:center;">
@@ -781,8 +781,9 @@ var logs = [];
 /* ══════════════════════════════════════════
    バージョン情報
    ══════════════════════════════════════════ */
-var APP_VERSION = 'v0.4.0';
+var APP_VERSION = 'v0.4.1';
 var RELEASE_NOTES = [
+  { ver: 'v0.4.1', date: '2026-05-21', changes: ['hihaho埋め込み対応: 背景を完全透過に', 'タブが表示されない問題を修正（positionをfixed→absoluteに変更）', 'タブ位置をピクセルから%ベースに変更（任意の動画サイズで正しく表示）', 'パネル幅をmin(1060px,90%)でレスポンシブ化'] },
   { ver: 'v0.4.0', date: '2026-05-21', changes: ['GitHub自動アップロード機能（🚀 GitHubへボタン）', 'PAT入力欄・localStorage保存', 'cc-dev-ps7.web.app/overlay-exports/ に公開'] },
   { ver: 'v0.3.0', date: '2026-05-21', changes: ['アプリ名クリックで使い方モーダル表示', 'バージョン番号クリックでリリースノート表示'] },
   { ver: 'v0.2.2', date: '2026-05-20', changes: ['プレビューモード切替（🖱️ 操作 / ✋ 移動）'] },
@@ -1530,33 +1531,37 @@ function generateHTML() {
   var tabBorderStyle  = isBottom ? 'border-bottom: 3px solid var(--gold-dark); border-top: none;'
                                  : 'border-top: 3px solid var(--gold-dark); border-bottom: none;';
 
+  // px → % 変換（1920x1080基準 → 任意サイズで比率を維持）
+  var oyPct = (oy / 1080 * 100).toFixed(3) + '%';
+  var oxPct = (Math.abs(ox) / 1920 * 100).toFixed(3) + '%';
+
   var tabRowCSS, panelCSS, panelOpenCSS;
   if (isCenter) {
     // 上中 / 下中
     tabRowCSS = 'position:absolute; ' + (isBottom ? 'bottom:0; top:auto;' : 'top:0;') +
-      ' left:50%; transform:translate(-50%,' + oy + 'px);' +
+      ' left:50%; transform:translate(-50%,' + (isBottom ? '-' : '') + oyPct + ');' +
       ' display:flex; gap:12px; z-index:20; pointer-events:none;';
     panelCSS = 'position:absolute; ' + (isBottom ? 'bottom:0; top:auto;' : 'top:0;') +
       ' left:50%;' +
       ' transform:translate(-50%,' + (isBottom ? '102%' : '-102%') + ');';
-    panelOpenCSS = 'transform:translate(-50%,' + oy + 'px);';
+    panelOpenCSS = 'transform:translate(-50%,' + (isBottom ? '-' : '') + oyPct + ');';
   } else if (isLeft) {
     tabRowCSS = 'position:absolute; ' + (isBottom ? 'bottom:0; top:auto;' : 'top:0;') +
-      ' left:' + ox + 'px; transform:translateY(' + oy + 'px);' +
+      ' left:' + oxPct + '; transform:translateY(' + (isBottom ? '-' : '') + oyPct + ');' +
       ' display:flex; gap:12px; z-index:20; pointer-events:none;';
     panelCSS = 'position:absolute; ' + (isBottom ? 'bottom:0; top:auto;' : 'top:0;') +
-      ' left:' + ox + 'px;' +
+      ' left:' + oxPct + ';' +
       ' transform:translate(0,' + (isBottom ? '102%' : '-102%') + ');';
-    panelOpenCSS = 'transform:translate(0,' + oy + 'px);';
+    panelOpenCSS = 'transform:translate(0,' + (isBottom ? '-' : '') + oyPct + ');';
   } else {
     // right
     tabRowCSS = 'position:absolute; ' + (isBottom ? 'bottom:0; top:auto;' : 'top:0;') +
-      ' right:' + (-ox) + 'px; left:auto; transform:translateY(' + oy + 'px);' +
+      ' right:' + oxPct + '; left:auto; transform:translateY(' + (isBottom ? '-' : '') + oyPct + ');' +
       ' display:flex; gap:12px; z-index:20; pointer-events:none;';
     panelCSS = 'position:absolute; ' + (isBottom ? 'bottom:0; top:auto;' : 'top:0;') +
       ' right:0; left:auto;' +
       ' transform:translate(0,' + (isBottom ? '102%' : '-102%') + ');';
-    panelOpenCSS = 'transform:translate(0,' + oy + 'px);';
+    panelOpenCSS = 'transform:translate(0,' + (isBottom ? '-' : '') + oyPct + ');';
   }
 
   // パネルの border-radius（上配置: 0 0 24px 24px、下配置: 24px 24px 0 0）
@@ -1569,7 +1574,6 @@ function generateHTML() {
 '<html lang="ja">\n' +
 '<head>\n' +
 '<meta charset="UTF-8">\n' +
-'<meta name="viewport" content="width=1920">\n' +
 '<title>Overlay</title>\n' +
 '<link rel="preconnect" href="https://fonts.googleapis.com">\n' +
 '<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;500;700&display=swap" rel="stylesheet">\n' +
@@ -1587,37 +1591,20 @@ function generateHTML() {
 '}\n' +
 '\n' +
 'html, body {\n' +
-'  width: 1920px;\n' +
-'  height: 1080px;\n' +
+'  width: 100%;\n' +
+'  height: 100%;\n' +
 '  overflow: hidden;\n' +
 '  font-family: \'Noto Serif JP\', serif;\n' +
 '  background: transparent;\n' +
 '  color: #222;\n' +
-'}\n' +
-'\n' +
-'/* ローカル確認用プレビュー背景（hihahoでは透明になります） */\n' +
-'body::before {\n' +
-'  content: "";\n' +
-'  position: fixed;\n' +
-'  inset: 0;\n' +
-'  background: linear-gradient(135deg, #1a2a3e 0%, #0d1b2e 100%);\n' +
-'  z-index: -1;\n' +
-'}\n' +
-'body::after {\n' +
-'  content: "▶ hiTab オーバーレイ — ローカル確認用（hihaho埋め込み時は背景は透明）";\n' +
-'  position: fixed;\n' +
-'  bottom: 16px;\n' +
-'  right: 20px;\n' +
-'  font-size: 11px;\n' +
-'  color: rgba(255,255,255,0.25);\n' +
-'  font-family: sans-serif;\n' +
-'  pointer-events: none;\n' +
-'  z-index: 9999;\n' +
+'  position: relative;\n' +
 '}\n' +
 '\n' +
 '.frame {\n' +
-'  position: fixed;\n' +
+'  position: absolute;\n' +
 '  inset: 0;\n' +
+'  width: 100%;\n' +
+'  height: 100%;\n' +
 '  pointer-events: none;\n' +
 '}\n' +
 '\n' +
@@ -1662,8 +1649,8 @@ function generateHTML() {
 '\n' +
 '.panel {\n' +
 '  ' + panelCSS + '\n' +
-'  width: 1060px;\n' +
-'  max-height: 830px;\n' +
+'  width: min(1060px, 90%);\n' +
+'  max-height: min(830px, 80%);\n' +
 '  background: var(--washi);\n' +
 '  border-radius: ' + panelBorderRadius + ';\n' +
 '  box-shadow: 0 16px 60px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.2);\n' +
