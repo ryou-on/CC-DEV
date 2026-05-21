@@ -307,13 +307,40 @@ html, body {
 /* ══════════════════════════════════════════
    プレビューエリア
    ══════════════════════════════════════════ */
+#preview-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 864px;
+  margin-bottom: 0;
+}
 #preview-label {
   color: #888;
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  align-self: flex-start;
 }
+#mode-toggle {
+  display: flex;
+  gap: 2px;
+  background: rgba(255,255,255,0.07);
+  border-radius: 6px;
+  padding: 3px;
+}
+.mode-btn {
+  padding: 5px 12px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #aaa;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.mode-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
+.mode-btn.active { background: var(--navy); color: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.4); }
 
 #preview-container {
   position: relative;
@@ -593,17 +620,23 @@ html, body {
 
     <!-- 右プレビュー -->
     <div id="right-panel">
-      <div id="preview-label">PREVIEW — 1920×1080 (scale 0.45)</div>
+      <div id="preview-toolbar">
+        <span id="preview-label">PREVIEW — 1920×1080 (scale 0.45)</span>
+        <div id="mode-toggle">
+          <button id="btn-mode-interact" class="mode-btn active" onclick="setPreviewMode('interact')" title="タブをクリックして動作確認">🖱️ 操作</button>
+          <button id="btn-mode-drag"    class="mode-btn"        onclick="setPreviewMode('drag')"    title="ドラッグでタブ位置を微調整">✋ 移動</button>
+        </div>
+      </div>
       <div id="preview-container">
         <iframe id="hihaho-iframe" allow="autoplay; fullscreen"></iframe>
-        <iframe id="preview-iframe" sandbox="allow-scripts allow-same-origin" style="position:absolute;top:0;left:0;width:1920px;height:1080px;border:none;transform-origin:top left;transform:scale(0.45);pointer-events:none;z-index:2;"></iframe>
-        <div id="drag-handle">▼ タブ</div>
+        <iframe id="preview-iframe" sandbox="allow-scripts allow-same-origin" style="position:absolute;top:0;left:0;width:1920px;height:1080px;border:none;transform-origin:top left;transform:scale(0.45);z-index:2;"></iframe>
+        <div id="drag-handle" style="display:none;">▼ タブ</div>
       </div>
       <div id="offset-display">
         <span id="offset-text">オフセット: x=0px, y=0px</span>
         <span class="reset-link" onclick="resetOffset()">[リセット]</span>
       </div>
-      <div id="preview-note">プレビューはビルダーの変更に連動して自動更新されます</div>
+      <div id="preview-note">操作モードでタブをクリックして動作確認 / 移動モードでドラッグ位置調整</div>
     </div>
 
   </div><!-- /main -->
@@ -744,6 +777,33 @@ function updateUndoRedoBtns() {
   var r = document.getElementById('btn-redo');
   if (u) u.disabled = undoStack.length === 0;
   if (r) r.disabled = redoStack.length === 0;
+}
+
+/* ══════════════════════════════════════════
+   プレビューモード切替（操作 / 移動）
+   ══════════════════════════════════════════ */
+var previewMode = 'interact';  // 'interact' | 'drag'
+
+function setPreviewMode(mode) {
+  previewMode = mode;
+  var iframe = document.getElementById('preview-iframe');
+  var handle = document.getElementById('drag-handle');
+  var btnI = document.getElementById('btn-mode-interact');
+  var btnD = document.getElementById('btn-mode-drag');
+  if (mode === 'interact') {
+    // タブをクリックして動作確認できるようにする
+    iframe.style.pointerEvents = 'auto';
+    handle.style.display = 'none';
+    btnI.classList.add('active');
+    btnD.classList.remove('active');
+  } else {
+    // ドラッグでタブ位置を調整
+    iframe.style.pointerEvents = 'none';
+    updateDragHandle();  // ハンドルを表示・位置を更新
+    btnI.classList.remove('active');
+    btnD.classList.add('active');
+  }
+  log('プレビューモード: ' + mode);
 }
 
 function resetToDefault() {
@@ -1100,6 +1160,10 @@ var PREVIEW_H = 1080;
 function updateDragHandle() {
   var handle = document.getElementById('drag-handle');
   if (!handle) return;
+
+  // 移動モードのときだけ表示
+  handle.style.display = (previewMode === 'drag') ? 'flex' : 'none';
+  if (previewMode !== 'drag') return;
 
   // ラベル（タブ名一覧）
   var labels = state.tabs.map(function(t) { return t.emoji + ' ' + t.name; }).join(' / ');
