@@ -1262,6 +1262,9 @@ function onHihahoUrlChange(val) {
 // ポジションプリセット変更
 function onPosPreset(preset) {
   state.posPreset = preset;
+  // プリセット変更時はオフセットをリセット（新しい基準点から再調整）
+  state.offsetX = 0;
+  state.offsetY = 0;
   saveState();
   // ボタンUI更新
   document.querySelectorAll('.pos-btn').forEach(function(btn) {
@@ -1269,6 +1272,34 @@ function onPosPreset(preset) {
   });
   updateDragHandle();
   debouncedPreview();
+}
+
+// オフセットをクランプして画面外に出ないようにする
+function clampOffset() {
+  var preset = state.posPreset || 'top-center';
+  var isBottom = preset.indexOf('bottom') === 0;
+  var isLeft   = preset.indexOf('left',  preset.indexOf('-') + 1) >= 0;
+  var isRight  = preset.indexOf('right', preset.indexOf('-') + 1) >= 0;
+  var isCenter = !isLeft && !isRight;
+
+  // Y: タブ高さ約60px を確保（上配置は下方向のみ、下配置は上方向のみ）
+  var tabH = 60;
+  if (isBottom) {
+    state.offsetY = Math.max(-(PREVIEW_H - tabH), Math.min(0, state.offsetY));
+  } else {
+    state.offsetY = Math.max(0, Math.min(PREVIEW_H - tabH, state.offsetY));
+  }
+
+  // X: タブ最低幅150pxを確保
+  var tabHalfW = 150;
+  if (isCenter) {
+    var maxX = PREVIEW_W / 2 - tabHalfW;
+    state.offsetX = Math.max(-maxX, Math.min(maxX, state.offsetX));
+  } else if (isLeft) {
+    state.offsetX = Math.max(0, Math.min(PREVIEW_W - tabHalfW * 2, state.offsetX));
+  } else { // right
+    state.offsetX = Math.max(-(PREVIEW_W - tabHalfW * 2), Math.min(0, state.offsetX));
+  }
 }
 
 // プレビュースケール定数
@@ -1369,9 +1400,10 @@ function resetOffset() {
     if (!dragging) return;
     var dx = e.clientX - dragStartX;
     var dy = e.clientY - dragStartY;
-    // スケール 0.45 で割って実座標に換算
+    // スケール 0.45 で割って実座標に換算、画面外に出ないようクランプ
     state.offsetX = Math.round(dragStartOX + dx / PREVIEW_SCALE);
     state.offsetY = Math.round(dragStartOY + dy / PREVIEW_SCALE);
+    clampOffset();
     updateDragHandle();
   });
 
