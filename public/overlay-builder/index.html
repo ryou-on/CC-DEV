@@ -621,7 +621,7 @@ html, body {
   <div id="header">
     <h1>
       <span onclick="openHowTo()" style="cursor:pointer;" title="使い方を見る">▶ hiTab</span>
-      <span onclick="openReleaseNotes()" style="cursor:pointer;font-size:12px;color:#c9a84c;font-weight:400;margin-left:8px;opacity:0.85;" title="リリースノート">v0.4.1</span>
+      <span onclick="openReleaseNotes()" style="cursor:pointer;font-size:12px;color:#c9a84c;font-weight:400;margin-left:8px;opacity:0.85;" title="リリースノート">v0.4.2</span>
       <span style="font-weight:400;font-size:13px;color:rgba(255,255,255,0.55);margin-left:10px;">動画タブオーバーレイビルダー</span>
     </h1>
     <div style="display:flex;gap:8px;align-items:center;">
@@ -781,8 +781,9 @@ var logs = [];
 /* ══════════════════════════════════════════
    バージョン情報
    ══════════════════════════════════════════ */
-var APP_VERSION = 'v0.4.1';
+var APP_VERSION = 'v0.4.2';
 var RELEASE_NOTES = [
+  { ver: 'v0.4.2', date: '2026-05-21', changes: ['テキストセクションのHTML自動サニタイズ（フォーカスアウト時・エクスポート時）', '閉じタグ忘れ・script/style/iframe等の危険タグを自動除去', '修正が入った場合は「✔ 自動修正済」バッジを表示'] },
   { ver: 'v0.4.1', date: '2026-05-21', changes: ['hihaho埋め込み対応: 背景を完全透過に', 'タブが表示されない問題を修正（positionをfixed→absoluteに変更）', 'タブ位置をピクセルから%ベースに変更（任意の動画サイズで正しく表示）', 'パネル幅をmin(1060px,90%)でレスポンシブ化'] },
   { ver: 'v0.4.0', date: '2026-05-21', changes: ['GitHub自動アップロード機能（🚀 GitHubへボタン）', 'PAT入力欄・localStorage保存', 'cc-dev-ps7.web.app/overlay-exports/ に公開'] },
   { ver: 'v0.3.0', date: '2026-05-21', changes: ['アプリ名クリックで使い方モーダル表示', 'バージョン番号クリックでリリースノート表示'] },
@@ -1169,7 +1170,14 @@ function renderSectionList() {
       html += '<div class="field-row"><label>サブタイトル（任意）</label><input type="text" value="' + escHtml(sec.subtitle || '') + '" oninput="updateSection(\'' + sec.id + '\',\'subtitle\',this.value)"></div>';
       html += '<div class="field-row"><label>本文</label><textarea oninput="updateSection(\'' + sec.id + '\',\'body\',this.value)">' + escHtml(sec.body || '') + '</textarea></div>';
     } else {
-      html += '<div class="field-row"><label>本文（HTML可）</label><textarea oninput="updateSection(\'' + sec.id + '\',\'body\',this.value)" style="min-height:120px;">' + escHtml(sec.body || '') + '</textarea></div>';
+      html += '<div class="field-row">' +
+        '<label style="display:flex;align-items:center;gap:6px;">本文（HTML可）' +
+        '<span id="sanitize-badge-' + sec.id + '" style="display:none;font-size:10px;color:#5ba85a;font-weight:400;">✔ 自動修正済</span>' +
+        '</label>' +
+        '<textarea oninput="updateSection(\'' + sec.id + '\',\'body\',this.value)"' +
+        ' onblur="sanitizeAndSaveBody(\'' + sec.id + '\',this)"' +
+        ' style="min-height:120px;">' + escHtml(sec.body || '') + '</textarea>' +
+        '</div>';
     }
 
     html += '</div>';
@@ -1221,6 +1229,62 @@ function deleteSection(secId) {
   renderSectionList();
   updatePreview();
   log('セクションを削除: ' + secId);
+}
+
+/* ══════════════════════════════════════════
+   HTMLサニタイザー
+   ══════════════════════════════════════════ */
+// ブラウザの HTML パーサーを使って以下を自動修正する:
+//   - 閉じタグ忘れ / タグのネスト間違い（innerHTML が自動補完）
+//   - 危険な要素（script / style / iframe 等）を除去
+//   - on* イベントハンドラ属性を除去
+//   - javascript: スキームの href/src を除去
+function sanitizeHTML(html) {
+  if (!html) return html;
+  var div = document.createElement('div');
+  div.innerHTML = html; // ブラウザが閉じタグ・ネストを自動修正
+
+  // 危険な要素を削除
+  var dangerous = 'script,style,iframe,object,embed,link,meta,base,form,input,button,select,textarea';
+  div.querySelectorAll(dangerous).forEach(function(el) { el.remove(); });
+
+  // on* イベント属性 / javascript: URL を全要素から除去
+  div.querySelectorAll('*').forEach(function(el) {
+    var attrs = Array.from(el.attributes);
+    attrs.forEach(function(attr) {
+      if (/^on/i.test(attr.name)) {
+        el.removeAttribute(attr.name);
+      } else if (/^(href|src|action)$/i.test(attr.name) && /^\s*javascript:/i.test(attr.value)) {
+        el.removeAttribute(attr.name);
+      }
+    });
+  });
+
+  return div.innerHTML;
+}
+
+// テキストセクションの body をサニタイズして保存（フォーカスアウト時）
+function sanitizeAndSaveBody(secId, textarea) {
+  var tab = selectedTab();
+  if (!tab) return;
+  var sec = tab.sections.find(function(s) { return s.id === secId; });
+  if (!sec || sec.type !== 'text') return;
+
+  var original = sec.body;
+  var fixed = sanitizeHTML(sec.body);
+  if (fixed !== original) {
+    sec.body = fixed;
+    textarea.value = fixed; // textarea の表示も更新
+    // 修正済バッジを表示（2秒後に消す）
+    var badge = document.getElementById('sanitize-badge-' + secId);
+    if (badge) {
+      badge.style.display = 'inline';
+      setTimeout(function() { badge.style.display = 'none'; }, 2000);
+    }
+    log('HTMLを自動修正しました (secId: ' + secId + ')');
+    saveState();
+    debouncedPreview();
+  }
 }
 
 function updateSection(secId, key, val) {
@@ -1502,7 +1566,8 @@ function generateHTML() {
         sectionsHTML += '    <div class="accordion-body"><div class="accordion-content"><p>' + escHtml(sec.body || '') + '</p></div></div>\n';
         sectionsHTML += '  </div>\n';
       } else {
-        sectionsHTML += '  <div class="text-section">' + (sec.body || '') + '</div>\n';
+        // エクスポート時もサニタイズを通す（念のため）
+        sectionsHTML += '  <div class="text-section">' + sanitizeHTML(sec.body || '') + '</div>\n';
       }
     });
 
