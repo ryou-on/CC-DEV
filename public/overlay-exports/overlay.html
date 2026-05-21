@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1920">
+<title>Overlay</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --gold: #c9a84c;
+  --gold-light: #e7c66a;
+  --gold-dark: #b59438;
+  --blue-ink: #1e3a5f;
+  --washi: #f5f0e8;
+  --washi-dark: #e2d9c4;
+  --text-dark: #1a1208;
+}
+
+html, body {
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+  font-family: 'Noto Serif JP', serif;
+  background: transparent;
+  color: #222;
+}
+
+/* ローカル確認用プレビュー背景（hihahoでは透明になります） */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(135deg, #1a2a3e 0%, #0d1b2e 100%);
+  z-index: -1;
+}
+body::after {
+  content: "▶ hiTab オーバーレイ — ローカル確認用（hihaho埋め込み時は背景は透明）";
+  position: fixed;
+  bottom: 16px;
+  right: 20px;
+  font-size: 11px;
+  color: rgba(255,255,255,0.25);
+  font-family: sans-serif;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+.frame {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.tab-row { position:absolute; top:0; left:50%; transform:translate(-50%,0px); display:flex; gap:12px; z-index:20; pointer-events:none; }
+
+.tab {
+  pointer-events: auto;
+  background: rgba(245,240,232,0.95);
+  color: var(--blue-ink);
+  font-family: 'Noto Serif JP', serif;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  padding: 12px 36px;
+  border: none;
+  border-radius: 0 0 20px 20px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.35), 0 1px 4px rgba(0,0,0,0.15);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  transition: background 0.18s, color 0.18s, box-shadow 0.18s, transform 0.1s;
+  white-space: nowrap;
+  border-top: 3px solid var(--gold-dark); border-bottom: none;
+}
+.tab:hover { background: #fff8ee; }
+.tab:active { transform: scale(0.95); }
+
+.tab-chevron {
+  width: 15px; height: 15px;
+  transition: transform 0.3s ease;
+  color: currentColor; flex-shrink: 0;
+}
+
+.frame[data-open="true"] .tab[aria-pressed="true"] {
+  background: var(--blue-ink);
+  color: #f0ece0;
+  border-top-color: var(--gold);
+}
+.frame[data-open="true"] .tab[aria-pressed="true"] .tab-chevron { transform: rotate(180deg); }
+
+.panel {
+  position:absolute; top:0; left:50%; transform:translate(-50%,-102%);
+  width: 1060px;
+  max-height: 830px;
+  background: var(--washi);
+  border-radius: 0 0 24px 24px;
+  box-shadow: 0 16px 60px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.2);
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+  transition: transform 0.4s cubic-bezier(0.32,0.72,0,1), visibility 0s linear 0.4s;
+  overflow: hidden;
+  visibility: hidden;
+  border-left: 1px solid rgba(201,168,76,0.3);
+  border-right: 1px solid rgba(201,168,76,0.3);
+  border-bottom: 2px solid var(--gold-dark); border-top: none;
+}
+
+.frame[data-open="true"] .panel {
+  transform:translate(-50%,0px);
+  visibility: visible;
+  transition: transform 0.4s cubic-bezier(0.32,0.72,0,1), visibility 0s linear 0s;
+}
+
+.panel-inner {
+  flex: 1;
+  overflow-y: auto;
+  padding: 58px 36px 20px;
+  -webkit-overflow-scrolling: touch;
+}
+.panel-inner::-webkit-scrollbar { width: 6px; }
+.panel-inner::-webkit-scrollbar-track { background: rgba(0,0,0,0.05); }
+.panel-inner::-webkit-scrollbar-thumb { background: var(--gold-dark); border-radius: 3px; }
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--gold-dark);
+}
+
+.section-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--blue-ink);
+  letter-spacing: 0.2em;
+}
+
+.close-btn {
+  width: 42px; height: 42px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1.5px solid #c8bfa8;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  color: #666;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.1s;
+  pointer-events: auto;
+}
+.close-btn:hover { background: #fff0f0; border-color: #c0392b; color: #c0392b; }
+.close-btn:active { transform: scale(0.92); }
+.close-btn svg { width: 18px; height: 18px; }
+
+.section { display: none; }
+.frame[data-active="t1"] .section[data-section="t1"] { display: block; }
+.frame[data-active="t2"] .section[data-section="t2"] { display: block; }
+
+.accordion {
+  background: #fff;
+  border: 1px solid #d8cdb0;
+  border-radius: 6px;
+  margin-bottom: 10px;
+  overflow: hidden;
+  transition: box-shadow 0.15s;
+}
+.accordion:hover { box-shadow: 0 2px 10px rgba(30,58,95,0.08); }
+
+.accordion-header {
+  padding: 16px 22px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  user-select: none;
+  transition: background 0.15s;
+}
+.accordion-header:hover { background: rgba(30,58,95,0.03); }
+.accordion.open .accordion-header { background: rgba(30,58,95,0.04); }
+
+.acc-year {
+  font-size: 13px;
+  color: #fff;
+  background: var(--blue-ink);
+  padding: 4px 12px;
+  border-radius: 4px;
+  min-width: 76px;
+  text-align: center;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+
+.acc-title {
+  font-size: 19px;
+  font-weight: 700;
+  color: #1a1208;
+  letter-spacing: 0.08em;
+  flex: 1;
+}
+
+.acc-sub {
+  font-size: 13px;
+  color: #907060;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+
+.acc-arrow {
+  color: #a09060;
+  font-size: 13px;
+  transition: transform 0.3s ease;
+  flex-shrink: 0;
+}
+.accordion.open .acc-arrow { transform: rotate(180deg); }
+
+.accordion-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.38s ease;
+}
+.accordion.open .accordion-body { max-height: 400px; }
+
+.accordion-content {
+  padding: 14px 22px 20px 120px;
+  font-size: 16px;
+  line-height: 1.95;
+  color: #3a2e1e;
+  border-top: 1px solid #e8dfc8;
+}
+.accordion-content p { margin-bottom: 10px; }
+.accordion-content p:last-child { margin-bottom: 0; }
+
+.text-section {
+  font-size: 16px;
+  line-height: 1.95;
+  color: #3a2e1e;
+  margin-bottom: 12px;
+  padding: 14px 22px;
+  background: #fff;
+  border: 1px solid #e8dfc8;
+  border-radius: 6px;
+}
+.text-section p { margin-bottom: 10px; }
+.text-section p:last-child { margin-bottom: 0; }
+</style>
+</head>
+<body>
+
+<div class="frame" data-open="false" data-active="t1" id="auxFrame">
+
+  <div class="panel">
+    <div class="panel-inner" id="panelInner">
+<div class="section" data-section="t1">
+  <div class="section-header">
+    <div class="section-title">🏢 会社概要</div>
+    <button class="close-btn" onclick="closePanel()">
+      <svg viewBox="0 0 20 20" fill="none"><path d="M5 5L15 15M15 5L5 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <div class="text-section">  <div class="forcms_block"><h2 class="hdg2_ba">会社概要</h2></div><div class="forcms_block"><div class="co_img"><img alt="髙松建設本社ビル" src="/cms/tmc/img/profile/profile/build.png" style="width: 248px; height: 328px;"></div>
+
+<dl id="codata">
+<dt>商号</dt>
+<dd>髙松建設株式会社</dd>
+<dt>本社所在地</dt>
+<dd>大阪府大阪市淀川区新北野１丁目２番３号</dd>
+<dt>本店</dt>
+<dd>大阪本店・東京本店</dd>
+<dt>代表者</dt>
+<dd>代表取締役社長　髙松 孝年</dd>
+<dt>創業</dt>
+<dd>１９１７年１０月</dd>
+<dt>会社設立</dt>
+<dd>１９８０年１１月</dd>
+<dt>資本金</dt>
+<dd>５０億円</dd>
+<dt>売上高</dt>
+<dd>９９０億円（単体・２０２５年３月期）</dd>
+<dt>社員数</dt>
+<dd>１９３０名（単体・２０２５年４月現在）</dd>
+<dt>営業種目</dt>
+<dd>総合建設業</dd>
+<!--役員一覧　ここから-->
+<dt>役員一覧</dt>
+<dd>
+<dl>
+<dt>取締役</dt>
+<dd>
+<ul id="co1">
+<li><span>取締役名誉会長</span>髙 松 孝 之</li>
+<li><span>代表取締役社長</span>髙 松 孝 年</li>
+<li><span>取締役</span>工 藤 孝 宏</li>
+<li><span>取締役</span>岡 田 尚 之</li>
+<li><span>取締役</span>井 川 孝 次</li>
+<li><span>取締役</span>井 本 清 司</li>
+<li><span>取締役</span>髙 松 浩 孝</li>
+<li><span>取締役</span>浅 井 　 哲</li>
+<li><span>取締役</span>望 月 尚 幸</li>
+<li><span>取締役</span>髙 松 英 之</li>
+<li><span>取締役</span>松 井 公 平</li>
+<li><span>取締役</span>小 松 晋 治</li>
+<li><span>監査役</span>角 田 　 稔</li>
+<li><span>監査役</span>茶 谷 　 健</li>
+<li class="lastdate">（2026年4月1日付）</li>
+</ul>
+</dd>
+<dt>執行役員</dt>
+<dd>
+<ul id="co2">
+<li><span>社長執行役員</span>髙 松 孝 年</li>
+<li><span>副社長執行役員</span>工 藤 孝 宏</li>
+<li><span>専務執行役員</span>岡 田 尚 之</li>
+<li><span>常務執行役員</span>井 川 孝 次</li>
+<li><span>常務執行役員</span>井 本 清 司</li>
+<li><span>常務執行役員</span>大 下 仁 志</li>
+<li><span>執行役員</span>河 野 浩 一</li>
+<li><span>執行役員</span>望 月 　 豊</li>
+<li><span>執行役員</span>中 野 健 太 郎</li>
+<li><span>執行役員</span>三 原 　 学</li>
+<li><span>執行役員</span>荒 井 伸 二</li>
+<li><span>執行役員</span>中 村 一 光</li>
+<li><span>執行役員</span>太 田 栄 治</li>
+<li><span>執行役員</span>髙 鶴 仁 志</li>
+<li><span>執行役員</span>森 澤 一 隆</li>
+<li class="lastdate">（2026年4月1日付）</li>
+</ul>
+</dd>
+</dl>
+</dd>
+<!--役員一覧　ここまで--><!--本店・支店・営業所　ここから-->
+<dt>本店</dt>
+<dd>
+<dl>
+<dt>大阪本店</dt>
+<dd>〒532-0025 大阪府大阪市淀川区新北野1丁目2番3号<br>
+TEL.06-6307-8101</dd>
+<dt>東京本店</dt>
+<dd>〒108-0014 東京都港区芝4丁目8番2号<br>
+TEL.03-3455-8101</dd>
+</dl>
+</dd>
+<dt>支店</dt>
+<dd>
+<dl><!--
+<dt>城東支店</dt>
+<dd>〒130-0022 東京都墨田区江東橋4丁目26番5号<br>
+TEL.03-5638-9021</dd>
+<dt>城北支店</dt>
+<dd>〒170-0013 東京都豊島区東池袋3丁目4番3号<br>
+TEL.03-5985-7425</dd>
+-->
+<dt>千葉支店</dt>
+<dd>〒273-0005 千葉県船橋市本町4丁目40番23号<br>
+TEL.047-411-3101</dd>
+<dt>埼玉支店</dt>
+<dd>〒330-0802 埼玉県さいたま市大宮区宮町2丁目35号<br>
+TEL.048-650-8103</dd>
+<dt>横浜支店</dt>
+<dd>〒220-6211 神奈川県横浜市西区みなとみらい2丁目3番5号<br>
+TEL.045-264-9103</dd>
+<dt>名古屋支店</dt>
+<dd>〒450-0002 愛知県名古屋市中村区名駅3丁目9番13号<br>
+TEL.052-526-8202</dd>
+<dt>京都支店</dt>
+<dd>〒600-8413 京都府京都市下京区烏丸通高辻上ル大政所町685<br>
+TEL.075-361-8101</dd>
+<dt>神戸支店</dt>
+<dd>〒650-0021 兵庫県神戸市中央区三宮町1丁目4番8号<br>
+TEL.078-275-1018</dd>
+<dt>福岡支店</dt>
+<dd>〒810-0001 福岡県福岡市中央区天神3丁目4番9号<br>
+TEL.092-752-5823</dd>
+</dl>
+</dd>
+<dt>営業所</dt>
+<dd>
+<dl>
+<dt>札幌営業所</dt>
+<dd>〒060-0062 北海道札幌市中央区南２条西６丁目17番地4<br>
+TEL.011-596-9230</dd>
+<dt>仙台営業所</dt>
+<dd>〒980-0014　宮城県仙台市青葉区本町1丁目5番28号<br>
+TEL.022-281-9513</dd>
+<dt>高松営業所</dt>
+<dd>〒760-0023　香川県高松市寿町2丁目2番10号<br>
+TEL.087-802-8000</dd>
+<dt>広島営業所</dt>
+<dd>〒730-0022 広島県広島市中区銀山町1丁目1番11号<br>
+TEL.082-236-8918</dd>
+</dl>
+</dd>
+</dl>
+<!--本店・支店・営業所　ここまで--></div></div>
+</div>
+<div class="section" data-section="t2">
+  <div class="section-header">
+    <div class="section-title">📜 沿革</div>
+    <button class="close-btn" onclick="closePanel()">
+      <svg viewBox="0 0 20 20" fill="none"><path d="M5 5L15 15M15 5L5 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <div class="text-section"><p>テキストを入力してください<div class="forcms_block"><h2 class="hdg2_ba">沿革</h2></div><div class="forcms_block"><div class="clearfix clear">
+<dl id="history">
+<dt>１９１７年</dt>
+<dd>創業（大阪市淀川区十三本町）</dd>
+<dt class="clearfix clear">１９４０年</dt>
+<dd>前本社所在地（淀川区田川２-１-５）に移転</dd>
+<dt class="clearfix clear">１９６５年</dt>
+<dd>株式会社髙松組に法人改組（資本金３００万円）</dd>
+<dt class="clearfix clear">１９８０年</dt>
+<dd>株式会社日本内装設立（現 髙松建設株式会社）</dd>
+<dt class="clearfix clear">１９８３年</dt>
+<dd>東京支店開設（現　東京本店）</dd>
+<dt class="clearfix clear">１９９０年</dt>
+<dd>髙松建設株式会社に社名変更</dd>
+<dt class="clearfix clear">１９９１年</dt>
+<dd>企業理念制定</dd>
+<dt class="clearfix clear">１９９３年<br>
+<br>
+&nbsp;</dt>
+<dd>東京本店・千葉支店・埼玉支店昇格<br>
+新社章・ロゴマーク制定<br>
+やまと建設株式会社（大阪）設立</dd>
+<dt class="clearfix clear">１９９４年</dt>
+<dd>株式会社日本建商（大阪）設立</dd>
+<dt class="clearfix clear">１９９６年<br>
+&nbsp;</dt>
+<dd>本社・大阪本店を現住所<br>
+（淀川区新北野１-２-３）に移転</dd>
+<dt class="clearfix clear">１９９７年<br>
+<br>
+<br>
+<br>
+&nbsp;</dt>
+<dd>大阪証券取引所市場第二部　上場<br>
+鉄筋コンクリート造の家「ウインブル」発表<br>
+大阪本店専用住宅部・東京本店専用住宅部 開設<br>
+（現ＪＰホームブランド）<br>
+やまと建設株式会社（東京）設立</dd>
+<dt class="clearfix clear">１９９９年<br>
+&nbsp;</dt>
+<dd>大阪本店ISO９００１認証取得<br>
+東京本店を前所在地（中央区銀座７-１２-７）に移転</dd>
+<dt class="clearfix clear">２０００年<br>
+<br>
+<br>
+<br>
+<br>
+&nbsp;</dt>
+<dd>東京証券取引所市場第二部　上場<br>
+本社・大阪本店ISO１４００１認証取得<br>
+日本オーナーズクレジット株式会社　設立<br>
+小松建設工業株式会社（小松舗道株式会社＜現あすなろ道路株式会社＞）がグループに参画<br>
+株式会社日本建商（東京）設立</dd>
+<dt class="clearfix clear">２００２年<br>
+<br>
+&nbsp;</dt>
+<dd>株式会社青木建設（青木マリーン株式会社）がグループに参画<br>
+小松建設工業株式会社があすなろ建設株式会社に社名変更<br>
+グリーンウッドアライアンス（GWA）発足</dd>
+<dt class="clearfix clear">２００４年<br>
+<br>
+&nbsp;</dt>
+<dd>株式会社住之江工芸がグループに参画<br>
+あすなろ建設株式会社と株式会社青木建設が合併<br>
+青木あすなろ建設株式会社に社名変更</dd>
+<dt class="clearfix clear">２００５年<br>
+<br>
+&nbsp;</dt>
+<dd>東京・大阪証券取引所市場第一部　上場<br>
+ＪＰホーム株式会社　設立<br>
+資本金５０億円に増資</dd>
+<dt class="clearfix clear">２００６年<br>
+<br>
+&nbsp;</dt>
+<dd>株式会社金剛組がグループに参画<br>
+大和ロック株式会社設立<br>
+東興建設株式会社がグループに参画</dd>
+<dt class="clearfix clear">２００７年<br>
+&nbsp;</dt>
+<dd>株式会社ＧＷＡ総合サービス設立<br>
+株式会社中村社寺がグループに参画</dd>
+<dt class="clearfix clear">２００８年<br>
+<br>
+<br>
+<br>
+&nbsp;</dt>
+<dd>持株会社制移行に伴い、髙松建設株式会社は<br>
+（持株会社）株式会社髙松コンストラクショングループと<br>
+（事業会社）髙松建設株式会社に会社分割<br>
+みらい建設工業株式会社、みらいジオテック株式会社、<br>
+テクノマリックス株式会社、株式会社エムズがグループに参画</dd>
+<dt class="clearfix clear">２０１２年<br>
+&nbsp;</dt>
+<dd>髙松コンストラクショングループビル開所<br>
+東京本店（港区芝４－８－２）移転</dd>
+<dt class="clearfix clear">２０１７年<br>
+&nbsp;</dt>
+<dd>やまと建設株式会社が髙松テクノサービス株式会社に、<br>
+株式会社日本建商が髙松エステート株式会社に社名変更</dd>
+<dt class="clearfix clear">２０１８年<br>
+&nbsp;</dt>
+<dd>株式会社ミブコーポレーションがグループに参画</dd>
+<dt class="clearfix clear">２０１９年<br>
+&nbsp;</dt>
+<dd>タカマツハウス株式会社設立<br>
+株式会社タツミプランニングがグループに参画</dd>
+<dt class="clearfix clear">２０２１年<br>
+&nbsp;</dt>
+<dd>大昭工業株式会社がグループに参画</dd>
+<dt class="clearfix clear">２０２２年<br>
+&nbsp;</dt>
+<dd>髙松エステート株式会社（大阪）と<br>
+髙松エステート株式会社（東京）が合併</dd>
+<dt class="clearfix clear">２０２３年<br>
+&nbsp;</dt>
+<dd>髙松テクノサービス株式会社（大阪）と<br>
+髙松テクノサービス株式会社（東京）が合併<br>
+タカマツハウス関西株式会社設立<br>
+城東支店・城北支店開設<br>
+札幌営業所・広島営業所開設</dd>
+<dt class="clearfix clear">２０２４年<br>
+&nbsp;</dt>
+<dd>株式会社ミブコーポレーションが<br>
+タカマツハウス不動産株式会社に社名変更</dd>
+<dt class="clearfix clear">２０２５年<br>
+&nbsp;</dt>
+<dd>高松営業所開設<br>
+仙台営業所開設<br>
+TSKハウジング株式会社が株式会社髙松都市開発に社名変更</dd>
+</dl>。</p></div>
+</div>
+    </div>
+  </div>
+
+  <div class="tab-row">
+<button class="tab" data-target="t1" aria-pressed="false" onclick="onTab('t1')">
+  <span>🏢 会社概要</span>
+  <svg class="tab-chevron" viewBox="0 0 16 16" fill="none"><path d="M3 6L8 11L13 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+</button>
+<button class="tab" data-target="t2" aria-pressed="false" onclick="onTab('t2')">
+  <span>📜 沿革</span>
+  <svg class="tab-chevron" viewBox="0 0 16 16" fill="none"><path d="M3 6L8 11L13 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+</button>
+  </div>
+
+</div>
+
+<script>
+var frame = document.getElementById('auxFrame');
+
+function onTab(target) {
+  var isOpen = frame.getAttribute('data-open') === 'true';
+  var current = frame.getAttribute('data-active');
+  if (!isOpen) {
+    frame.setAttribute('data-active', target);
+    frame.setAttribute('data-open', 'true');
+  } else if (current === target) {
+    frame.setAttribute('data-open', 'false');
+  } else {
+    frame.setAttribute('data-active', target);
+    document.getElementById('panelInner').scrollTop = 0;
+  }
+  updateTabState(target);
+}
+
+function updateTabState(target) {
+  document.querySelectorAll('.tab[data-target]').forEach(function(t) {
+    t.setAttribute('aria-pressed', t.getAttribute('data-target') === target ? 'true' : 'false');
+  });
+}
+
+function closePanel() {
+  frame.setAttribute('data-open', 'false');
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' && frame.getAttribute('data-open') === 'true') closePanel();
+});
+
+function toggle(id) {
+  var el = document.getElementById(id);
+  el.classList.toggle('open');
+}
+</script>
+</body>
+</html>
