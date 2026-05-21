@@ -1,0 +1,1336 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Overlay Builder — 動画用タブオーバーレイ作成ツール</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --navy: #1e3a5f;
+  --gold: #c9a84c;
+  --gold-dark: #8a6f2e;
+  --bg: #f5f4f0;
+  --panel-bg: #ffffff;
+  --preview-bg: #1a1a2e;
+  --border: #ddd;
+  --text: #222;
+  --text-muted: #666;
+  --accent: #e8cc80;
+  --danger: #c0392b;
+  --radius: 8px;
+}
+
+html, body {
+  height: 100%;
+  font-family: system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+}
+
+/* ══════════════════════════════════════════
+   ヘッダー
+   ══════════════════════════════════════════ */
+#header {
+  background: var(--navy);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 24px;
+  height: 54px;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+  z-index: 100;
+}
+
+#header h1 {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+#header h1 span { color: #fff; font-weight: 400; font-size: 13px; }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition: filter 0.15s, transform 0.1s;
+}
+.btn:hover { filter: brightness(1.1); }
+.btn:active { transform: scale(0.97); }
+
+.btn-gold { background: var(--gold); color: #1a1208; }
+.btn-navy { background: var(--navy); color: #fff; border: 1px solid rgba(255,255,255,0.2); }
+.btn-sm { padding: 5px 10px; font-size: 12px; }
+.btn-danger { background: #fee; color: var(--danger); border: 1px solid #fcc; }
+.btn-ghost { background: transparent; color: var(--navy); border: 1px solid var(--border); }
+
+/* ══════════════════════════════════════════
+   レイアウト
+   ══════════════════════════════════════════ */
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+#main {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* 左パネル */
+#left-panel {
+  width: 380px;
+  flex-shrink: 0;
+  background: var(--panel-bg);
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+#left-panel::-webkit-scrollbar { width: 6px; }
+#left-panel::-webkit-scrollbar-track { background: #f0f0f0; }
+#left-panel::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+
+/* 右プレビュー */
+#right-panel {
+  flex: 1;
+  background: var(--preview-bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  overflow: hidden;
+  padding: 20px;
+  gap: 12px;
+}
+
+/* ══════════════════════════════════════════
+   セクション共通
+   ══════════════════════════════════════════ */
+.section-block {
+  border-bottom: 1px solid var(--border);
+  padding: 16px;
+}
+.section-block:last-child { border-bottom: none; }
+
+.section-block-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ══════════════════════════════════════════
+   ① タブ管理
+   ══════════════════════════════════════════ */
+#tab-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.tab-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: background 0.15s, border-color 0.15s;
+  background: #f8f8f8;
+}
+.tab-item:hover { background: #f0f4ff; }
+.tab-item.selected {
+  background: #eef2ff;
+  border-color: var(--navy);
+}
+
+.tab-item-emoji { font-size: 18px; flex-shrink: 0; }
+.tab-item-name { flex: 1; font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tab-item-del {
+  width: 22px; height: 22px;
+  border: none; border-radius: 4px;
+  background: transparent; color: #bbb;
+  cursor: pointer; font-size: 14px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.tab-item-del:hover { background: #fee; color: var(--danger); }
+
+/* ══════════════════════════════════════════
+   ② 選択タブ設定
+   ══════════════════════════════════════════ */
+.field-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.field-row label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.field-row input[type="text"],
+.field-row textarea {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-size: 13px;
+  font-family: inherit;
+  background: #fafafa;
+  transition: border-color 0.15s, background 0.15s;
+  resize: vertical;
+}
+.field-row input[type="text"]:focus,
+.field-row textarea:focus {
+  outline: none;
+  border-color: var(--navy);
+  background: #fff;
+}
+.field-row textarea { min-height: 80px; }
+
+/* ══════════════════════════════════════════
+   ③ セクション（コンテンツ）
+   ══════════════════════════════════════════ */
+#section-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.content-section {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fafafa;
+  overflow: hidden;
+}
+
+.content-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: #f0f0f0;
+  cursor: pointer;
+  user-select: none;
+}
+.content-section-header:hover { background: #e8e8e8; }
+
+.cs-type-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+.cs-type-accordion { background: #e8f0fb; color: #1e3a8a; }
+.cs-type-text { background: #f0fdf4; color: #166534; }
+
+.cs-label { flex: 1; font-size: 12px; font-weight: 600; color: #444; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cs-toggle { font-size: 10px; color: #999; transition: transform 0.2s; }
+.cs-toggle.open { transform: rotate(180deg); }
+
+.content-section-del {
+  width: 22px; height: 22px;
+  border: none; border-radius: 4px;
+  background: transparent; color: #bbb;
+  cursor: pointer; font-size: 14px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+.content-section-del:hover { background: #fee; color: var(--danger); }
+
+.content-section-body {
+  padding: 10px;
+  display: none;
+}
+.content-section-body.open { display: block; }
+
+.section-add-btns {
+  display: flex;
+  gap: 8px;
+}
+
+/* ══════════════════════════════════════════
+   ④ テーマ設定
+   ══════════════════════════════════════════ */
+.color-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.color-row label { font-size: 12px; font-weight: 600; color: var(--text-muted); width: 110px; flex-shrink: 0; }
+.color-row input[type="color"] {
+  width: 40px; height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 2px;
+  background: #fff;
+}
+.color-row .color-hex {
+  font-size: 12px;
+  color: #666;
+  font-family: monospace;
+}
+
+/* ══════════════════════════════════════════
+   プレビューエリア
+   ══════════════════════════════════════════ */
+#preview-label {
+  color: #888;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  align-self: flex-start;
+}
+
+#preview-container {
+  position: relative;
+  width: 864px; /* 1920 * 0.45 */
+  height: 486px; /* 1080 * 0.45 */
+  flex-shrink: 0;
+  border-radius: 4px;
+  overflow: hidden;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+  background: #000;
+  /* チェッカーボード（透明背景の表現） */
+  background-image:
+    linear-gradient(45deg, #2a2a3e 25%, transparent 25%),
+    linear-gradient(-45deg, #2a2a3e 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #2a2a3e 75%),
+    linear-gradient(-45deg, transparent 75%, #2a2a3e 75%);
+  background-size: 20px 20px;
+  background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+}
+
+#preview-iframe {
+  position: absolute;
+  top: 0; left: 0;
+  width: 1920px;
+  height: 1080px;
+  border: none;
+  transform-origin: top left;
+  transform: scale(0.45);
+  pointer-events: none;
+}
+
+#preview-note {
+  color: #666;
+  font-size: 11px;
+  text-align: center;
+}
+
+/* ══════════════════════════════════════════
+   空の状態
+   ══════════════════════════════════════════ */
+.empty-state {
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+  padding: 20px 0;
+}
+
+/* ══════════════════════════════════════════
+   デバッグコンソール
+   ══════════════════════════════════════════ */
+#debug-console {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 9999;
+}
+#debug-btn {
+  background: rgba(0,0,0,0.7);
+  color: #0f0;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 11px;
+  font-family: monospace;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+#debug-btn:hover { background: rgba(0,0,0,0.9); }
+#debug-log {
+  display: none;
+  background: rgba(0,0,0,0.92);
+  color: #0f0;
+  font-family: monospace;
+  font-size: 11px;
+  padding: 10px;
+  border-radius: 6px;
+  max-width: 400px;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-bottom: 4px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+#debug-copy {
+  display: none;
+  background: rgba(0,128,0,0.8);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 10px;
+  font-size: 11px;
+  cursor: pointer;
+  width: 100%;
+  margin-bottom: 4px;
+}
+
+/* ノーTab時のプレースホルダー */
+.no-tab-msg {
+  padding: 12px;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- ヘッダー -->
+  <div id="header">
+    <h1>🎬 Overlay Builder <span>動画用タブオーバーレイ作成ツール</span></h1>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-ghost btn-sm" onclick="resetToDefault()" style="color:#ccc;border-color:#555;">リセット</button>
+      <button class="btn btn-gold" onclick="exportHTML()">⬇ HTMLをエクスポート</button>
+    </div>
+  </div>
+
+  <!-- メインエリア -->
+  <div id="main">
+    <!-- 左パネル -->
+    <div id="left-panel">
+
+      <!-- ① タブ管理 -->
+      <div class="section-block">
+        <div class="section-block-title">📑 タブ管理</div>
+        <div id="tab-list"></div>
+        <button class="btn btn-ghost btn-sm" onclick="addTab()" style="width:100%;">+ タブを追加</button>
+      </div>
+
+      <!-- ② 選択中タブ設定 -->
+      <div class="section-block" id="tab-settings">
+        <div class="section-block-title">⚙️ 選択中タブの設定</div>
+        <div id="tab-settings-inner">
+          <div class="no-tab-msg">タブを選択してください</div>
+        </div>
+      </div>
+
+      <!-- ③ セクション（コンテンツ） -->
+      <div class="section-block" id="sections-block">
+        <div class="section-block-title">📝 コンテンツセクション</div>
+        <div id="section-list"></div>
+        <div class="section-add-btns" id="section-add-btns" style="display:none;">
+          <button class="btn btn-ghost btn-sm" onclick="addSection('accordion')" style="flex:1;">+ アコーディオン追加</button>
+          <button class="btn btn-ghost btn-sm" onclick="addSection('text')" style="flex:1;">+ テキスト追加</button>
+        </div>
+        <div class="no-tab-msg" id="section-no-tab-msg">タブを選択してください</div>
+      </div>
+
+      <!-- ④ テーマ設定 -->
+      <div class="section-block">
+        <div class="section-block-title">🎨 テーマ設定</div>
+        <div class="color-row">
+          <label>主色 (--blue-ink)</label>
+          <input type="color" id="color-blue-ink" value="#1e3a5f" oninput="onColorChange()">
+          <span class="color-hex" id="hex-blue-ink">#1e3a5f</span>
+        </div>
+        <div class="color-row">
+          <label>アクセント (--gold)</label>
+          <input type="color" id="color-gold" value="#c9a84c" oninput="onColorChange()">
+          <span class="color-hex" id="hex-gold">#c9a84c</span>
+        </div>
+        <div class="color-row">
+          <label>背景 (--washi)</label>
+          <input type="color" id="color-washi" value="#f5f0e8" oninput="onColorChange()">
+          <span class="color-hex" id="hex-washi">#f5f0e8</span>
+        </div>
+      </div>
+
+    </div><!-- /left-panel -->
+
+    <!-- 右プレビュー -->
+    <div id="right-panel">
+      <div id="preview-label">PREVIEW — 1920×1080 (scale 0.45)</div>
+      <div id="preview-container">
+        <iframe id="preview-iframe" sandbox="allow-scripts allow-same-origin"></iframe>
+      </div>
+      <div id="preview-note">プレビューはビルダーの変更に連動して自動更新されます</div>
+    </div>
+
+  </div><!-- /main -->
+</div><!-- /app -->
+
+<!-- デバッグコンソール -->
+<div id="debug-console">
+  <div id="debug-log"></div>
+  <button id="debug-copy" onclick="copyLog()">📋 コピー</button>
+  <button id="debug-btn" onclick="toggleDebug()">🐞 Debug</button>
+</div>
+
+<script>
+/* ══════════════════════════════════════════
+   状態管理
+   ══════════════════════════════════════════ */
+var STORAGE_KEY = 'overlay-builder-v1';
+var debugOpen = false;
+var logs = [];
+
+// デフォルト状態
+function defaultState() {
+  return {
+    selectedTabId: 't1',
+    theme: {
+      blueInk: '#1e3a5f',
+      gold: '#c9a84c',
+      washi: '#f5f0e8'
+    },
+    tabs: [
+      {
+        id: 't1', name: 'タブ1', emoji: '📋',
+        sections: [
+          { id: 's1', type: 'accordion', year: '2024年', title: 'サンプル見出し', subtitle: 'サブタイトル', body: 'ここに本文を入力します。説明や詳細をここに書いてください。', open: false },
+          { id: 's2', type: 'accordion', year: '2023年', title: '別の見出し', subtitle: '', body: '別のアコーディオンの内容です。', open: false }
+        ]
+      },
+      {
+        id: 't2', name: 'タブ2', emoji: '📌',
+        sections: [
+          { id: 's3', type: 'text', body: '<p>自由にHTMLを入力できます。<strong>太字</strong>や<em>斜体</em>も使えます。</p>', open: false }
+        ]
+      }
+    ]
+  };
+}
+
+var state = loadState();
+
+function loadState() {
+  try {
+    var saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      var parsed = JSON.parse(saved);
+      // バージョン互換: openプロパティを補完
+      if (parsed.tabs) {
+        parsed.tabs.forEach(function(t) {
+          if (t.sections) t.sections.forEach(function(s) {
+            if (s.open === undefined) s.open = false;
+          });
+        });
+      }
+      log('状態をlocalStorageから復元しました');
+      return parsed;
+    }
+  } catch(e) {
+    log('localStorageの読み込みに失敗: ' + e.message);
+  }
+  return defaultState();
+}
+
+function saveState() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch(e) {
+    log('保存エラー: ' + e.message);
+  }
+}
+
+function resetToDefault() {
+  if (!confirm('すべての設定をデフォルトに戻しますか？')) return;
+  state = defaultState();
+  saveState();
+  renderAll();
+  updatePreview();
+  log('デフォルト状態にリセットしました');
+}
+
+/* ══════════════════════════════════════════
+   ユーティリティ
+   ══════════════════════════════════════════ */
+function uid() {
+  return 'id_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function getTab(id) {
+  return state.tabs.find(function(t) { return t.id === id; });
+}
+
+function getSection(tabId, secId) {
+  var tab = getTab(tabId);
+  return tab ? tab.sections.find(function(s) { return s.id === secId; }) : null;
+}
+
+function selectedTab() {
+  return getTab(state.selectedTabId);
+}
+
+/* ══════════════════════════════════════════
+   デバッグ
+   ══════════════════════════════════════════ */
+function log(msg) {
+  var ts = new Date().toLocaleTimeString('ja-JP');
+  var entry = '[' + ts + '] ' + msg;
+  logs.push(entry);
+  if (logs.length > 100) logs.shift();
+  if (debugOpen) {
+    var el = document.getElementById('debug-log');
+    el.textContent = logs.join('\n');
+    el.scrollTop = el.scrollHeight;
+  }
+}
+
+function toggleDebug() {
+  debugOpen = !debugOpen;
+  var logEl = document.getElementById('debug-log');
+  var copyEl = document.getElementById('debug-copy');
+  logEl.style.display = debugOpen ? 'block' : 'none';
+  copyEl.style.display = debugOpen ? 'block' : 'none';
+  if (debugOpen) {
+    logEl.textContent = logs.join('\n');
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+}
+
+function copyLog() {
+  var text = logs.join('\n');
+  navigator.clipboard.writeText(text).then(function() {
+    var btn = document.getElementById('debug-copy');
+    btn.textContent = '✓ コピーしました';
+    setTimeout(function() { btn.textContent = '📋 コピー'; }, 1500);
+  });
+}
+
+/* ══════════════════════════════════════════
+   ① タブ管理
+   ══════════════════════════════════════════ */
+function renderTabList() {
+  var list = document.getElementById('tab-list');
+  if (state.tabs.length === 0) {
+    list.innerHTML = '<div class="empty-state">タブがありません</div>';
+    return;
+  }
+  var html = '';
+  state.tabs.forEach(function(tab) {
+    var sel = tab.id === state.selectedTabId;
+    html += '<div class="tab-item' + (sel ? ' selected' : '') + '" data-tab-id="' + tab.id + '" onclick="selectTab(\'' + tab.id + '\')">';
+    html += '<span class="tab-item-emoji">' + escHtml(tab.emoji) + '</span>';
+    html += '<span class="tab-item-name">' + escHtml(tab.name) + '</span>';
+    html += '<button class="tab-item-del" onclick="event.stopPropagation();deleteTab(\'' + tab.id + '\')" title="削除">✕</button>';
+    html += '</div>';
+  });
+  list.innerHTML = html;
+}
+
+function selectTab(id) {
+  state.selectedTabId = id;
+  saveState();
+  renderAll();
+  updatePreview();
+  log('タブを選択: ' + id);
+}
+
+function addTab() {
+  var tab = {
+    id: uid(),
+    name: 'タブ' + (state.tabs.length + 1),
+    emoji: '📄',
+    sections: []
+  };
+  state.tabs.push(tab);
+  state.selectedTabId = tab.id;
+  saveState();
+  renderAll();
+  updatePreview();
+  log('タブを追加: ' + tab.id);
+}
+
+function deleteTab(id) {
+  if (state.tabs.length <= 1) {
+    alert('最低1つのタブが必要です');
+    return;
+  }
+  if (!confirm('このタブを削除しますか？')) return;
+  state.tabs = state.tabs.filter(function(t) { return t.id !== id; });
+  if (state.selectedTabId === id) {
+    state.selectedTabId = state.tabs[0] ? state.tabs[0].id : null;
+  }
+  saveState();
+  renderAll();
+  updatePreview();
+  log('タブを削除: ' + id);
+}
+
+/* ══════════════════════════════════════════
+   ② 選択タブ設定
+   ══════════════════════════════════════════ */
+function renderTabSettings() {
+  var container = document.getElementById('tab-settings-inner');
+  var tab = selectedTab();
+  if (!tab) {
+    container.innerHTML = '<div class="no-tab-msg">タブを選択してください</div>';
+    return;
+  }
+  container.innerHTML =
+    '<div class="field-row">' +
+      '<label>タブ名</label>' +
+      '<input type="text" id="input-tab-name" value="' + escHtml(tab.name) + '" oninput="onTabNameChange(this.value)">' +
+    '</div>' +
+    '<div class="field-row">' +
+      '<label>絵文字</label>' +
+      '<input type="text" id="input-tab-emoji" value="' + escHtml(tab.emoji) + '" oninput="onTabEmojiChange(this.value)" style="width:80px;">' +
+    '</div>';
+}
+
+function onTabNameChange(val) {
+  var tab = selectedTab();
+  if (!tab) return;
+  tab.name = val;
+  // タブ一覧の名前だけ更新（軽量）
+  var el = document.querySelector('.tab-item[data-tab-id="' + tab.id + '"] .tab-item-name');
+  if (el) el.textContent = val;
+  saveState();
+  debouncedPreview();
+}
+
+function onTabEmojiChange(val) {
+  var tab = selectedTab();
+  if (!tab) return;
+  tab.emoji = val;
+  var el = document.querySelector('.tab-item[data-tab-id="' + tab.id + '"] .tab-item-emoji');
+  if (el) el.textContent = val;
+  saveState();
+  debouncedPreview();
+}
+
+/* ══════════════════════════════════════════
+   ③ セクション管理
+   ══════════════════════════════════════════ */
+function renderSectionList() {
+  var list = document.getElementById('section-list');
+  var addBtns = document.getElementById('section-add-btns');
+  var noMsg = document.getElementById('section-no-tab-msg');
+  var tab = selectedTab();
+
+  if (!tab) {
+    list.innerHTML = '';
+    addBtns.style.display = 'none';
+    noMsg.style.display = 'block';
+    return;
+  }
+  noMsg.style.display = 'none';
+  addBtns.style.display = 'flex';
+
+  if (tab.sections.length === 0) {
+    list.innerHTML = '<div class="empty-state">セクションがありません<br>下のボタンから追加してください</div>';
+    return;
+  }
+
+  var html = '';
+  tab.sections.forEach(function(sec, idx) {
+    var typeLabel = sec.type === 'accordion' ? 'アコーディオン' : 'テキスト';
+    var typeCls = sec.type === 'accordion' ? 'cs-type-accordion' : 'cs-type-text';
+    var previewLabel = sec.type === 'accordion' ? (sec.title || '（タイトルなし）') : '段落テキスト';
+    var openCls = sec.open ? ' open' : '';
+
+    html += '<div class="content-section" id="cs_' + sec.id + '">';
+    html += '<div class="content-section-header" onclick="toggleSection(\'' + sec.id + '\')">';
+    html += '<span class="cs-type-badge ' + typeCls + '">' + typeLabel + '</span>';
+    html += '<span class="cs-label">' + escHtml(previewLabel) + '</span>';
+    html += '<span class="cs-toggle' + openCls + '">▼</span>';
+    html += '<button class="content-section-del" onclick="event.stopPropagation();deleteSection(\'' + sec.id + '\')" title="削除">✕</button>';
+    html += '</div>';
+    html += '<div class="content-section-body' + openCls + '">';
+
+    if (sec.type === 'accordion') {
+      html += '<div class="field-row"><label>年号（任意）</label><input type="text" value="' + escHtml(sec.year || '') + '" oninput="updateSection(\'' + sec.id + '\',\'year\',this.value)" placeholder="例: 2024年"></div>';
+      html += '<div class="field-row"><label>タイトル</label><input type="text" value="' + escHtml(sec.title || '') + '" oninput="updateSection(\'' + sec.id + '\',\'title\',this.value)"></div>';
+      html += '<div class="field-row"><label>サブタイトル（任意）</label><input type="text" value="' + escHtml(sec.subtitle || '') + '" oninput="updateSection(\'' + sec.id + '\',\'subtitle\',this.value)"></div>';
+      html += '<div class="field-row"><label>本文</label><textarea oninput="updateSection(\'' + sec.id + '\',\'body\',this.value)">' + escHtml(sec.body || '') + '</textarea></div>';
+    } else {
+      html += '<div class="field-row"><label>本文（HTML可）</label><textarea oninput="updateSection(\'' + sec.id + '\',\'body\',this.value)" style="min-height:120px;">' + escHtml(sec.body || '') + '</textarea></div>';
+    }
+
+    html += '</div>';
+    html += '</div>';
+  });
+  list.innerHTML = html;
+}
+
+function toggleSection(secId) {
+  var tab = selectedTab();
+  if (!tab) return;
+  var sec = tab.sections.find(function(s) { return s.id === secId; });
+  if (!sec) return;
+  sec.open = !sec.open;
+  // DOM操作のみ（再レンダリング不要）
+  var csEl = document.getElementById('cs_' + secId);
+  if (csEl) {
+    csEl.querySelector('.cs-toggle').classList.toggle('open', sec.open);
+    csEl.querySelector('.content-section-body').classList.toggle('open', sec.open);
+  }
+  saveState();
+}
+
+function addSection(type) {
+  var tab = selectedTab();
+  if (!tab) return;
+  var sec = { id: uid(), type: type, open: true };
+  if (type === 'accordion') {
+    sec.year = '';
+    sec.title = '新しい見出し';
+    sec.subtitle = '';
+    sec.body = '';
+  } else {
+    sec.body = '<p>テキストを入力してください。</p>';
+  }
+  tab.sections.push(sec);
+  saveState();
+  renderSectionList();
+  updatePreview();
+  log('セクションを追加: ' + type);
+}
+
+function deleteSection(secId) {
+  var tab = selectedTab();
+  if (!tab) return;
+  if (!confirm('このセクションを削除しますか？')) return;
+  tab.sections = tab.sections.filter(function(s) { return s.id !== secId; });
+  saveState();
+  renderSectionList();
+  updatePreview();
+  log('セクションを削除: ' + secId);
+}
+
+function updateSection(secId, key, val) {
+  var tab = selectedTab();
+  if (!tab) return;
+  var sec = tab.sections.find(function(s) { return s.id === secId; });
+  if (!sec) return;
+  sec[key] = val;
+  // ラベルも更新
+  if (key === 'title' && sec.type === 'accordion') {
+    var csEl = document.getElementById('cs_' + secId);
+    if (csEl) csEl.querySelector('.cs-label').textContent = val || '（タイトルなし）';
+  }
+  saveState();
+  debouncedPreview();
+}
+
+/* ══════════════════════════════════════════
+   ④ テーマ設定
+   ══════════════════════════════════════════ */
+function renderTheme() {
+  document.getElementById('color-blue-ink').value = state.theme.blueInk;
+  document.getElementById('color-gold').value = state.theme.gold;
+  document.getElementById('color-washi').value = state.theme.washi;
+  document.getElementById('hex-blue-ink').textContent = state.theme.blueInk;
+  document.getElementById('hex-gold').textContent = state.theme.gold;
+  document.getElementById('hex-washi').textContent = state.theme.washi;
+}
+
+function onColorChange() {
+  state.theme.blueInk = document.getElementById('color-blue-ink').value;
+  state.theme.gold = document.getElementById('color-gold').value;
+  state.theme.washi = document.getElementById('color-washi').value;
+  document.getElementById('hex-blue-ink').textContent = state.theme.blueInk;
+  document.getElementById('hex-gold').textContent = state.theme.gold;
+  document.getElementById('hex-washi').textContent = state.theme.washi;
+  saveState();
+  debouncedPreview();
+}
+
+/* ══════════════════════════════════════════
+   全レンダリング
+   ══════════════════════════════════════════ */
+function renderAll() {
+  renderTabList();
+  renderTabSettings();
+  renderSectionList();
+  renderTheme();
+}
+
+/* ══════════════════════════════════════════
+   HTMLジェネレーター（オーバーレイ本体）
+   ══════════════════════════════════════════ */
+function generateHTML() {
+  var t = state.theme;
+  var goldLight = lightenHex(t.gold, 30);
+  var goldDark = darkenHex(t.gold, 20);
+
+  // タブのHTML
+  var tabsHTML = '';
+  state.tabs.forEach(function(tab) {
+    tabsHTML +=
+      '<button class="tab" data-target="' + tab.id + '" aria-pressed="false" onclick="onTab(\'' + tab.id + '\')">\n' +
+      '  <span>' + escHtml(tab.emoji) + ' ' + escHtml(tab.name) + '</span>\n' +
+      '  <svg class="tab-chevron" viewBox="0 0 16 16" fill="none"><path d="M3 6L8 11L13 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>\n' +
+      '</button>\n';
+  });
+
+  // セクションのHTML
+  var sectionsHTML = '';
+  var accCounter = 0;
+  state.tabs.forEach(function(tab) {
+    sectionsHTML += '<div class="section" data-section="' + tab.id + '">\n';
+    sectionsHTML +=
+      '  <div class="section-header">\n' +
+      '    <div class="section-title">' + escHtml(tab.emoji) + ' ' + escHtml(tab.name) + '</div>\n' +
+      '    <button class="close-btn" onclick="closePanel()">\n' +
+      '      <svg viewBox="0 0 20 20" fill="none"><path d="M5 5L15 15M15 5L5 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>\n' +
+      '    </button>\n' +
+      '  </div>\n';
+
+    tab.sections.forEach(function(sec) {
+      if (sec.type === 'accordion') {
+        accCounter++;
+        var aid = 'a' + accCounter;
+        sectionsHTML += '  <div class="accordion" id="' + aid + '">\n';
+        sectionsHTML += '    <div class="accordion-header" onclick="toggle(\'' + aid + '\')">\n';
+        if (sec.year) {
+          sectionsHTML += '      <span class="acc-year">' + escHtml(sec.year) + '</span>\n';
+        }
+        sectionsHTML += '      <span class="acc-title">' + escHtml(sec.title || '') + '</span>\n';
+        if (sec.subtitle) {
+          sectionsHTML += '      <span class="acc-sub">' + escHtml(sec.subtitle) + '</span>\n';
+        }
+        sectionsHTML += '      <span class="acc-arrow">▼</span>\n';
+        sectionsHTML += '    </div>\n';
+        sectionsHTML += '    <div class="accordion-body"><div class="accordion-content"><p>' + escHtml(sec.body || '') + '</p></div></div>\n';
+        sectionsHTML += '  </div>\n';
+      } else {
+        sectionsHTML += '  <div class="text-section">' + (sec.body || '') + '</div>\n';
+      }
+    });
+
+    sectionsHTML += '</div>\n';
+  });
+
+  // データアクティブCSSルール
+  var activeCSSRules = '';
+  state.tabs.forEach(function(tab) {
+    activeCSSRules += '.frame[data-active="' + tab.id + '"] .section[data-section="' + tab.id + '"] { display: block; }\n';
+  });
+
+  var firstTabId = state.tabs.length > 0 ? state.tabs[0].id : 'tab0';
+
+  return '<!DOCTYPE html>\n' +
+'<html lang="ja">\n' +
+'<head>\n' +
+'<meta charset="UTF-8">\n' +
+'<meta name="viewport" content="width=1920">\n' +
+'<title>Overlay</title>\n' +
+'<link rel="preconnect" href="https://fonts.googleapis.com">\n' +
+'<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;500;700&display=swap" rel="stylesheet">\n' +
+'<style>\n' +
+'* { box-sizing: border-box; margin: 0; padding: 0; }\n' +
+'\n' +
+':root {\n' +
+'  --gold: ' + t.gold + ';\n' +
+'  --gold-light: ' + goldLight + ';\n' +
+'  --gold-dark: ' + goldDark + ';\n' +
+'  --blue-ink: ' + t.blueInk + ';\n' +
+'  --washi: ' + t.washi + ';\n' +
+'  --washi-dark: #e2d9c4;\n' +
+'  --text-dark: #1a1208;\n' +
+'}\n' +
+'\n' +
+'html, body {\n' +
+'  width: 1920px;\n' +
+'  height: 1080px;\n' +
+'  overflow: hidden;\n' +
+'  font-family: \'Noto Serif JP\', serif;\n' +
+'  background: transparent;\n' +
+'  color: #222;\n' +
+'}\n' +
+'\n' +
+'.frame {\n' +
+'  position: fixed;\n' +
+'  inset: 0;\n' +
+'  pointer-events: none;\n' +
+'}\n' +
+'\n' +
+'.tab-row {\n' +
+'  position: absolute;\n' +
+'  top: 0;\n' +
+'  left: 50%;\n' +
+'  transform: translateX(-50%);\n' +
+'  display: flex;\n' +
+'  gap: 12px;\n' +
+'  z-index: 20;\n' +
+'  pointer-events: none;\n' +
+'}\n' +
+'\n' +
+'.tab {\n' +
+'  pointer-events: auto;\n' +
+'  background: rgba(245,240,232,0.95);\n' +
+'  color: var(--blue-ink);\n' +
+'  font-family: \'Noto Serif JP\', serif;\n' +
+'  font-size: 19px;\n' +
+'  font-weight: 700;\n' +
+'  letter-spacing: 0.12em;\n' +
+'  padding: 12px 36px;\n' +
+'  border: none;\n' +
+'  border-radius: 0 0 20px 20px;\n' +
+'  box-shadow: 0 6px 20px rgba(0,0,0,0.35), 0 1px 4px rgba(0,0,0,0.15);\n' +
+'  cursor: pointer;\n' +
+'  display: flex;\n' +
+'  align-items: center;\n' +
+'  gap: 10px;\n' +
+'  min-height: 52px;\n' +
+'  transition: background 0.18s, color 0.18s, box-shadow 0.18s, transform 0.1s;\n' +
+'  white-space: nowrap;\n' +
+'  border-top: 3px solid var(--gold-dark);\n' +
+'}\n' +
+'.tab:hover { background: #fff8ee; }\n' +
+'.tab:active { transform: scale(0.95); }\n' +
+'\n' +
+'.tab-chevron {\n' +
+'  width: 15px; height: 15px;\n' +
+'  transition: transform 0.3s ease;\n' +
+'  color: currentColor; flex-shrink: 0;\n' +
+'}\n' +
+'\n' +
+'.frame[data-open="true"] .tab[aria-pressed="true"] {\n' +
+'  background: var(--blue-ink);\n' +
+'  color: #f0ece0;\n' +
+'  border-top-color: var(--gold);\n' +
+'}\n' +
+'.frame[data-open="true"] .tab[aria-pressed="true"] .tab-chevron { transform: rotate(180deg); }\n' +
+'\n' +
+'.panel {\n' +
+'  position: absolute;\n' +
+'  top: 0;\n' +
+'  left: 50%;\n' +
+'  width: 1060px;\n' +
+'  max-height: 830px;\n' +
+'  background: var(--washi);\n' +
+'  border-radius: 0 0 24px 24px;\n' +
+'  box-shadow: 0 16px 60px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.2);\n' +
+'  pointer-events: auto;\n' +
+'  display: flex;\n' +
+'  flex-direction: column;\n' +
+'  z-index: 10;\n' +
+'  transform: translate(-50%, -102%);\n' +
+'  transition: transform 0.4s cubic-bezier(0.32,0.72,0,1), visibility 0s linear 0.4s;\n' +
+'  overflow: hidden;\n' +
+'  visibility: hidden;\n' +
+'  border-left: 1px solid rgba(201,168,76,0.3);\n' +
+'  border-right: 1px solid rgba(201,168,76,0.3);\n' +
+'  border-bottom: 2px solid var(--gold-dark);\n' +
+'}\n' +
+'\n' +
+'.frame[data-open="true"] .panel {\n' +
+'  transform: translate(-50%, 0);\n' +
+'  visibility: visible;\n' +
+'  transition: transform 0.4s cubic-bezier(0.32,0.72,0,1), visibility 0s linear 0s;\n' +
+'}\n' +
+'\n' +
+'.panel-inner {\n' +
+'  flex: 1;\n' +
+'  overflow-y: auto;\n' +
+'  padding: 58px 36px 20px;\n' +
+'  -webkit-overflow-scrolling: touch;\n' +
+'}\n' +
+'.panel-inner::-webkit-scrollbar { width: 6px; }\n' +
+'.panel-inner::-webkit-scrollbar-track { background: rgba(0,0,0,0.05); }\n' +
+'.panel-inner::-webkit-scrollbar-thumb { background: var(--gold-dark); border-radius: 3px; }\n' +
+'\n' +
+'.section-header {\n' +
+'  display: flex;\n' +
+'  justify-content: space-between;\n' +
+'  align-items: center;\n' +
+'  margin-bottom: 16px;\n' +
+'  padding-bottom: 12px;\n' +
+'  border-bottom: 2px solid var(--gold-dark);\n' +
+'}\n' +
+'\n' +
+'.section-title {\n' +
+'  font-size: 22px;\n' +
+'  font-weight: 700;\n' +
+'  color: var(--blue-ink);\n' +
+'  letter-spacing: 0.2em;\n' +
+'}\n' +
+'\n' +
+'.close-btn {\n' +
+'  width: 42px; height: 42px;\n' +
+'  border-radius: 50%;\n' +
+'  background: #fff;\n' +
+'  border: 1.5px solid #c8bfa8;\n' +
+'  cursor: pointer;\n' +
+'  display: flex; align-items: center; justify-content: center;\n' +
+'  color: #666;\n' +
+'  transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.1s;\n' +
+'  pointer-events: auto;\n' +
+'}\n' +
+'.close-btn:hover { background: #fff0f0; border-color: #c0392b; color: #c0392b; }\n' +
+'.close-btn:active { transform: scale(0.92); }\n' +
+'.close-btn svg { width: 18px; height: 18px; }\n' +
+'\n' +
+'.section { display: none; }\n' +
+activeCSSRules +
+'\n' +
+'.accordion {\n' +
+'  background: #fff;\n' +
+'  border: 1px solid #d8cdb0;\n' +
+'  border-radius: 6px;\n' +
+'  margin-bottom: 10px;\n' +
+'  overflow: hidden;\n' +
+'  transition: box-shadow 0.15s;\n' +
+'}\n' +
+'.accordion:hover { box-shadow: 0 2px 10px rgba(30,58,95,0.08); }\n' +
+'\n' +
+'.accordion-header {\n' +
+'  padding: 16px 22px;\n' +
+'  cursor: pointer;\n' +
+'  display: flex;\n' +
+'  align-items: center;\n' +
+'  gap: 18px;\n' +
+'  user-select: none;\n' +
+'  transition: background 0.15s;\n' +
+'}\n' +
+'.accordion-header:hover { background: rgba(30,58,95,0.03); }\n' +
+'.accordion.open .accordion-header { background: rgba(30,58,95,0.04); }\n' +
+'\n' +
+'.acc-year {\n' +
+'  font-size: 13px;\n' +
+'  color: #fff;\n' +
+'  background: var(--blue-ink);\n' +
+'  padding: 4px 12px;\n' +
+'  border-radius: 4px;\n' +
+'  min-width: 76px;\n' +
+'  text-align: center;\n' +
+'  font-weight: 700;\n' +
+'  letter-spacing: 0.05em;\n' +
+'  flex-shrink: 0;\n' +
+'}\n' +
+'\n' +
+'.acc-title {\n' +
+'  font-size: 19px;\n' +
+'  font-weight: 700;\n' +
+'  color: #1a1208;\n' +
+'  letter-spacing: 0.08em;\n' +
+'  flex: 1;\n' +
+'}\n' +
+'\n' +
+'.acc-sub {\n' +
+'  font-size: 13px;\n' +
+'  color: #907060;\n' +
+'  letter-spacing: 0.05em;\n' +
+'  flex-shrink: 0;\n' +
+'}\n' +
+'\n' +
+'.acc-arrow {\n' +
+'  color: #a09060;\n' +
+'  font-size: 13px;\n' +
+'  transition: transform 0.3s ease;\n' +
+'  flex-shrink: 0;\n' +
+'}\n' +
+'.accordion.open .acc-arrow { transform: rotate(180deg); }\n' +
+'\n' +
+'.accordion-body {\n' +
+'  max-height: 0;\n' +
+'  overflow: hidden;\n' +
+'  transition: max-height 0.38s ease;\n' +
+'}\n' +
+'.accordion.open .accordion-body { max-height: 400px; }\n' +
+'\n' +
+'.accordion-content {\n' +
+'  padding: 14px 22px 20px 120px;\n' +
+'  font-size: 16px;\n' +
+'  line-height: 1.95;\n' +
+'  color: #3a2e1e;\n' +
+'  border-top: 1px solid #e8dfc8;\n' +
+'}\n' +
+'.accordion-content p { margin-bottom: 10px; }\n' +
+'.accordion-content p:last-child { margin-bottom: 0; }\n' +
+'\n' +
+'.text-section {\n' +
+'  font-size: 16px;\n' +
+'  line-height: 1.95;\n' +
+'  color: #3a2e1e;\n' +
+'  margin-bottom: 12px;\n' +
+'  padding: 14px 22px;\n' +
+'  background: #fff;\n' +
+'  border: 1px solid #e8dfc8;\n' +
+'  border-radius: 6px;\n' +
+'}\n' +
+'.text-section p { margin-bottom: 10px; }\n' +
+'.text-section p:last-child { margin-bottom: 0; }\n' +
+'</style>\n' +
+'</head>\n' +
+'<body>\n' +
+'\n' +
+'<div class="frame" data-open="false" data-active="' + firstTabId + '" id="auxFrame">\n' +
+'\n' +
+'  <div class="panel">\n' +
+'    <div class="panel-inner" id="panelInner">\n' +
+sectionsHTML +
+'    </div>\n' +
+'  </div>\n' +
+'\n' +
+'  <div class="tab-row">\n' +
+tabsHTML +
+'  </div>\n' +
+'\n' +
+'</div>\n' +
+'\n' +
+'<script>\n' +
+'var frame = document.getElementById(\'auxFrame\');\n' +
+'\n' +
+'function onTab(target) {\n' +
+'  var isOpen = frame.getAttribute(\'data-open\') === \'true\';\n' +
+'  var current = frame.getAttribute(\'data-active\');\n' +
+'  if (!isOpen) {\n' +
+'    frame.setAttribute(\'data-active\', target);\n' +
+'    frame.setAttribute(\'data-open\', \'true\');\n' +
+'  } else if (current === target) {\n' +
+'    frame.setAttribute(\'data-open\', \'false\');\n' +
+'  } else {\n' +
+'    frame.setAttribute(\'data-active\', target);\n' +
+'    document.getElementById(\'panelInner\').scrollTop = 0;\n' +
+'  }\n' +
+'  updateTabState(target);\n' +
+'}\n' +
+'\n' +
+'function updateTabState(target) {\n' +
+'  document.querySelectorAll(\'.tab[data-target]\').forEach(function(t) {\n' +
+'    t.setAttribute(\'aria-pressed\', t.getAttribute(\'data-target\') === target ? \'true\' : \'false\');\n' +
+'  });\n' +
+'}\n' +
+'\n' +
+'function closePanel() {\n' +
+'  frame.setAttribute(\'data-open\', \'false\');\n' +
+'}\n' +
+'\n' +
+'document.addEventListener(\'keydown\', function(e) {\n' +
+'  if (e.key === \'Escape\' && frame.getAttribute(\'data-open\') === \'true\') closePanel();\n' +
+'});\n' +
+'\n' +
+'function toggle(id) {\n' +
+'  var el = document.getElementById(id);\n' +
+'  el.classList.toggle(\'open\');\n' +
+'}\n' +
+'<\/script>\n' +
+'</body>\n' +
+'</html>';
+}
+
+/* ══════════════════════════════════════════
+   色操作ユーティリティ
+   ══════════════════════════════════════════ */
+function hexToRgb(hex) {
+  var result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  return result ? {
+    r: parseInt(result[1], 16),
+    g: parseInt(result[2], 16),
+    b: parseInt(result[3], 16)
+  } : { r: 0, g: 0, b: 0 };
+}
+
+function rgbToHex(r, g, b) {
+  return '#' + [r, g, b].map(function(v) {
+    return Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0');
+  }).join('');
+}
+
+function lightenHex(hex, amount) {
+  var rgb = hexToRgb(hex);
+  return rgbToHex(rgb.r + amount, rgb.g + amount, rgb.b + amount);
+}
+
+function darkenHex(hex, amount) {
+  var rgb = hexToRgb(hex);
+  return rgbToHex(rgb.r - amount, rgb.g - amount, rgb.b - amount);
+}
+
+/* ══════════════════════════════════════════
+   プレビュー更新
+   ══════════════════════════════════════════ */
+var previewBlobUrl = null;
+var debounceTimer = null;
+
+function debouncedPreview() {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(updatePreview, 300);
+}
+
+function updatePreview() {
+  var html = generateHTML();
+  var blob = new Blob([html], { type: 'text/html; charset=utf-8' });
+  if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl);
+  previewBlobUrl = URL.createObjectURL(blob);
+  document.getElementById('preview-iframe').src = previewBlobUrl;
+  log('プレビューを更新しました');
+}
+
+/* ══════════════════════════════════════════
+   エクスポート
+   ══════════════════════════════════════════ */
+function exportHTML() {
+  var html = generateHTML();
+  var tab = selectedTab();
+  var tabName = tab ? tab.name : 'overlay';
+  var filename = 'overlay-' + tabName.replace(/[^\w　-鿿゠-ヿ぀-ゟ]/g, '') + '.html';
+
+  var blob = new Blob([html], { type: 'text/html; charset=utf-8' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+  log('エクスポート: ' + filename);
+}
+
+/* ══════════════════════════════════════════
+   初期化
+   ══════════════════════════════════════════ */
+renderAll();
+updatePreview();
+log('Overlay Builder 初期化完了');
+</script>
+</body>
+</html>
