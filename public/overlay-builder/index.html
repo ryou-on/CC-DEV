@@ -71,6 +71,7 @@ html, body {
 }
 .btn:hover { filter: brightness(1.1); }
 .btn:active { transform: scale(0.97); }
+.btn:disabled { opacity: 0.35; cursor: not-allowed; filter: none; transform: none; pointer-events: none; }
 
 .btn-gold { background: var(--gold); color: #1a1208; }
 .btn-navy { background: var(--navy); color: #fff; border: 1px solid rgba(255,255,255,0.2); }
@@ -507,7 +508,10 @@ html, body {
   <!-- ヘッダー -->
   <div id="header">
     <h1>▶ hiTab <span>動画タブオーバーレイビルダー</span></h1>
-    <div style="display:flex;gap:8px;">
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button id="btn-undo" class="btn btn-ghost btn-sm" onclick="undo()" disabled title="元に戻す (⌘Z)" style="color:#ccc;border-color:#555;">↩ Undo</button>
+      <button id="btn-redo" class="btn btn-ghost btn-sm" onclick="redo()" disabled title="やり直す (⌘⇧Z)" style="color:#ccc;border-color:#555;">↪ Redo</button>
+      <div style="width:1px;height:20px;background:rgba(255,255,255,0.15);margin:0 4px;"></div>
       <button class="btn btn-ghost btn-sm" onclick="resetToDefault()" style="color:#ccc;border-color:#555;">リセット</button>
       <button class="btn btn-gold" onclick="exportHTML()">⬇ HTMLをエクスポート</button>
     </div>
@@ -680,12 +684,66 @@ function loadState() {
   return defaultState();
 }
 
+/* ══════════════════════════════════════════
+   Undo / Redo
+   ══════════════════════════════════════════ */
+var undoStack = [];
+var redoStack = [];
+var MAX_UNDO = 50;
+var _undoRestoring = false;
+var _lastSavedSnapshot = '';  // loadState()後に初期化
+
 function saveState() {
+  if (!_undoRestoring) {
+    var current = JSON.stringify(state);
+    if (current !== _lastSavedSnapshot) {
+      undoStack.push(_lastSavedSnapshot);
+      if (undoStack.length > MAX_UNDO) undoStack.shift();
+      redoStack = [];
+      _lastSavedSnapshot = current;
+      updateUndoRedoBtns();
+    }
+  }
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch(e) {
     log('保存エラー: ' + e.message);
   }
+}
+
+function undo() {
+  if (undoStack.length === 0) return;
+  _undoRestoring = true;
+  redoStack.push(_lastSavedSnapshot);
+  _lastSavedSnapshot = undoStack.pop();
+  state = JSON.parse(_lastSavedSnapshot);
+  localStorage.setItem(STORAGE_KEY, _lastSavedSnapshot);
+  renderAll();
+  updatePreview();
+  updateUndoRedoBtns();
+  _undoRestoring = false;
+  log('Undo (残り' + undoStack.length + '件)');
+}
+
+function redo() {
+  if (redoStack.length === 0) return;
+  _undoRestoring = true;
+  undoStack.push(_lastSavedSnapshot);
+  _lastSavedSnapshot = redoStack.pop();
+  state = JSON.parse(_lastSavedSnapshot);
+  localStorage.setItem(STORAGE_KEY, _lastSavedSnapshot);
+  renderAll();
+  updatePreview();
+  updateUndoRedoBtns();
+  _undoRestoring = false;
+  log('Redo (残り' + redoStack.length + '件)');
+}
+
+function updateUndoRedoBtns() {
+  var u = document.getElementById('btn-undo');
+  var r = document.getElementById('btn-redo');
+  if (u) u.disabled = undoStack.length === 0;
+  if (r) r.disabled = redoStack.length === 0;
 }
 
 function resetToDefault() {
@@ -1643,6 +1701,16 @@ function exportHTML() {
 /* ══════════════════════════════════════════
    初期化
    ══════════════════════════════════════════ */
+_lastSavedSnapshot = JSON.stringify(state);  // Undo初期スナップショット
+
+// キーボードショートカット: ⌘Z / Ctrl+Z = Undo、⌘⇧Z / Ctrl+Y = Redo
+document.addEventListener('keydown', function(e) {
+  var mod = e.metaKey || e.ctrlKey;
+  if (mod && !e.shiftKey && e.key === 'z') { e.preventDefault(); undo(); }
+  if (mod && e.shiftKey  && e.key === 'z') { e.preventDefault(); redo(); }
+  if (mod && e.key === 'y')                { e.preventDefault(); redo(); }
+});
+
 renderAll();
 updatePreview();
 log('hiTab 初期化完了');
