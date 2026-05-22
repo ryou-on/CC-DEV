@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>インタラクティブ動画セミナー</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --gold: #c9a84c;
+  --gold-light: #e3c276;
+  --gold-dark: #a98830;
+  --blue-ink: #1e3a5f;
+  --washi: #f5f0e8;
+  --washi-dark: #e2d9c4;
+  --text-dark: #1a1208;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: 'Noto Serif JP', serif;
+  background: transparent;
+  color: #222;
+  position: relative;
+}
+
+.frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.tab-row {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, 0%);
+  display: flex;
+  gap: 12px;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.tab {
+  pointer-events: auto;
+  background: rgba(245,240,232,0.95);
+  color: var(--blue-ink);
+  font-family: 'Noto Serif JP', serif;
+  font-size: 15px;
+  font-weight: 700;
+  padding: 12px 36px;
+  border: none;
+  border-radius: 0 0 20px 20px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.35), 0 1px 4px rgba(0,0,0,0.15);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  transition: background 0.18s, color 0.18s, box-shadow 0.18s, transform 0.1s;
+  white-space: nowrap;
+  border-top: 3px solid var(--gold-dark);
+  border-bottom: none;
+}
+.tab:hover { background: #fff8ee; }
+.tab:active { transform: scale(0.95); }
+
+.tab-chevron {
+  width: 15px; height: 15px;
+  transition: transform 0.3s ease;
+  color: currentColor; flex-shrink: 0;
+}
+
+.frame[data-open="true"] .tab[aria-pressed="true"] {
+  background: var(--blue-ink);
+  color: #f0ece0;
+  border-top-color: var(--gold);
+}
+.frame[data-open="true"] .tab[aria-pressed="true"] .tab-chevron { transform: rotate(180deg); }
+
+.panel {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, -102%);
+  width: min(1060px, 90%);
+  max-height: min(830px, 80%);
+  background: var(--washi);
+  border-radius: 0 0 24px 24px;
+  box-shadow: 0 16px 60px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.2);
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+  transition: transform 0.4s cubic-bezier(0.32,0.72,0,1), visibility 0s linear 0.4s;
+  overflow: hidden;
+  visibility: hidden;
+  border-left: 1px solid rgba(201,168,76,0.3);
+  border-right: 1px solid rgba(201,168,76,0.3);
+  border-bottom: 2px solid var(--gold-dark);
+  border-top: none;
+}
+
+.frame[data-open="true"] .panel {
+  transform: translate(-50%, 0%);
+  visibility: visible;
+  transition: transform 0.4s cubic-bezier(0.32,0.72,0,1), visibility 0s linear 0s;
+}
+
+.panel-inner {
+  flex: 1;
+  overflow-y: auto;
+  padding: 58px 36px 20px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.section { display: none; }
+.frame[data-active="yoyaku"] .section[data-section="yoyaku"] { display: block; }
+.frame[data-active="yogoshu"] .section[data-section="yogoshu"] { display: block; }
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 14px;
+  margin-bottom: 16px;
+  border-bottom: 2px solid var(--gold);
+}
+.section-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--blue-ink);
+  letter-spacing: 0.05em;
+}
+.close-btn {
+  width: 32px; height: 32px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: #888;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  transition: background 0.15s, color 0.15s;
+}
+.close-btn svg { width: 18px; height: 18px; }
+.close-btn:hover { background: rgba(0,0,0,0.07); color: #333; }
+
+/* アコーディオン */
+.accordion {
+  border-bottom: 1px solid var(--washi-dark);
+  overflow: hidden;
+}
+.accordion-header {
+  display: flex;
+  align-items: center;
+  padding: 14px 22px;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s;
+  gap: 0;
+}
+.accordion-header:hover { background: rgba(201,168,76,0.07); }
+.acc-year {
+  font-size: 11px;
+  color: var(--gold-dark);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  min-width: 90px;
+  flex-shrink: 0;
+}
+.acc-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--blue-ink);
+  flex: 1;
+}
+.acc-sub {
+  font-size: 12px;
+  color: #888;
+  margin-left: 12px;
+  flex-shrink: 0;
+}
+.acc-arrow {
+  font-size: 11px;
+  color: var(--gold);
+  transition: transform 0.3s ease;
+  margin-left: 12px;
+  flex-shrink: 0;
+}
+.accordion.open .acc-arrow { transform: rotate(180deg); }
+.accordion-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.35s ease;
+}
+.accordion.open .accordion-body { max-height: 400px; }
+.accordion-content {
+  padding: 14px 22px 20px 120px;
+  font-size: 15px;
+  line-height: 1.95;
+  color: #3a2e1e;
+  border-top: 1px solid #e8dfc8;
+}
+.accordion-content p { margin-bottom: 8px; }
+.accordion-content p:last-child { margin-bottom: 0; }
+
+/* テキストセクション */
+.text-section {
+  font-size: 15px;
+  line-height: 1.9;
+  color: #3a2e1e;
+  padding: 4px 0;
+}
+.text-section dl {
+  display: grid;
+  grid-template-columns: minmax(180px, auto) 1fr;
+  gap: 0;
+}
+.text-section dt {
+  font-weight: 700;
+  color: var(--blue-ink);
+  padding: 10px 16px 10px 0;
+  border-bottom: 1px solid #e8dfc8;
+  font-size: 14px;
+}
+.text-section dd {
+  padding: 10px 0;
+  border-bottom: 1px solid #e8dfc8;
+  font-size: 14px;
+  color: #3a2e1e;
+  line-height: 1.7;
+}
+.text-section dt:last-of-type,
+.text-section dd:last-of-type { border-bottom: none; }
+</style>
+</head>
+<body>
+
+<div class="frame" data-open="false" data-active="yoyaku" id="auxFrame">
+
+  <div class="panel">
+    <div class="panel-inner" id="panelInner">
+
+      <!-- 要約タブ -->
+      <div class="section" data-section="yoyaku">
+        <div class="section-header">
+          <div class="section-title">📋 要約</div>
+          <button class="close-btn" onclick="closePanel()">
+            <svg viewBox="0 0 20 20" fill="none"><path d="M5 5L15 15M15 5L5 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+
+        <div class="accordion" id="acc1">
+          <div class="accordion-header" onclick="toggle('acc1')">
+            <span class="acc-year">課題</span>
+            <span class="acc-title">従来の動画学習の限界</span>
+            <span class="acc-arrow">▼</span>
+          </div>
+          <div class="accordion-body">
+            <div class="accordion-content">
+              <p>動画は「見るだけ」の一方向的な学習になりやすく、対面授業にあった双方向性（質問・応答）が失われた。</p>
+              <p>再生データ上は「最後まで視聴済み」でも、実際の理解度は確認できず、<strong>「分かったつもり」が放置される</strong>問題があった。</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="accordion" id="acc2">
+          <div class="accordion-header" onclick="toggle('acc2')">
+            <span class="acc-year">解決策</span>
+            <span class="acc-title">インタラクティブ動画で双方向性を回復</span>
+            <span class="acc-arrow">▼</span>
+          </div>
+          <div class="accordion-body">
+            <div class="accordion-content">
+              <p>動画の途中に問題・解説を挿入。不正解なら解説動画→再挑戦のループで、<strong>視聴終了時に理解が完了</strong>した状態を保証できる。</p>
+              <p>事前（インタラクティブ動画）→対面授業→事後復習という「リアル×デジタルの融合」も実現。1万人が同時視聴しても品質が均一に保たれる。</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="accordion" id="acc3">
+          <div class="accordion-header" onclick="toggle('acc3')">
+            <span class="acc-year">データ活用</span>
+            <span class="acc-title">4種類の学習データで教材を継続改善</span>
+            <span class="acc-arrow">▼</span>
+          </div>
+          <div class="accordion-body">
+            <div class="accordion-content">
+              <p>① <strong>視聴データ</strong>：いつ・どこまで見たか、どこで離脱したか</p>
+              <p>② <strong>問題正誤データ</strong>：どの問題で躓いたか</p>
+              <p>③ <strong>記述回答・AIコメントデータ</strong>：自由記述への自動採点と講評</p>
+              <p>④ データはすべて<strong>匿名化</strong>して収集・分析可能。改善→再公開→データ収集のループを短期間で回せる。</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="accordion" id="acc4">
+          <div class="accordion-header" onclick="toggle('acc4')">
+            <span class="acc-year">AI機能</span>
+            <span class="acc-title">制作を効率化する6つのAI機能</span>
+            <span class="acc-arrow">▼</span>
+          </div>
+          <div class="accordion-body">
+            <div class="accordion-content">
+              <p>① <strong>字幕自動生成・多言語翻訳</strong>（英語・中国語など）</p>
+              <p>② <strong>目次自動生成</strong>：字幕をもとに重要箇所を抽出、時短学習を支援</p>
+              <p>③ <strong>問題自動作成</strong>：選択式・記述式をAIが生成</p>
+              <p>④ <strong>AI自動採点・即時フィードバック</strong>：回答後すぐに結果とコメントを返却</p>
+              <p>⑤ <strong>学習データの安全な保管・分析</strong></p>
+              <p>⑥ <strong>制作改善サジェスト</strong>：分かりにくい箇所をAIが指摘</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="accordion" id="acc5">
+          <div class="accordion-header" onclick="toggle('acc5')">
+            <span class="acc-year">標準化</span>
+            <span class="acc-title">xAPI対応で学習記録を横断分析</span>
+            <span class="acc-arrow">▼</span>
+          </div>
+          <div class="accordion-body">
+            <div class="accordion-content">
+              <p>世界標準の学習記録フォーマット「<strong>xAPI</strong>」に対応。誰が・何を・どうしたか、を統一フォーマットでLRS（学習レコードストア）に蓄積。</p>
+              <p>メーカーをまたいだデータ分析が可能になり、<strong>成績だけでなく行動ベースのセグメント分析</strong>や個別サポートの最適化が実現できる。</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="accordion" id="acc6">
+          <div class="accordion-header" onclick="toggle('acc6')">
+            <span class="acc-year">コンテンツ設計</span>
+            <span class="acc-title">短い動画＋タブで情報密度を維持</span>
+            <span class="acc-arrow">▼</span>
+          </div>
+          <div class="accordion-body">
+            <div class="accordion-content">
+              <p>長い動画は離脱率が高いというデータから、<strong>動画は短く・要点に絞り</strong>、詳細情報はHTMLタブ（用語集・要点まとめ）として動画の上に重ねる方式を採用。</p>
+              <p>「短くて情報は濃い」コンテンツを実現し、学習者の負担を下げながら理解度を高める。</p>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /yoyaku -->
+
+      <!-- 用語集タブ -->
+      <div class="section" data-section="yogoshu">
+        <div class="section-header">
+          <div class="section-title">📖 用語集</div>
+          <button class="close-btn" onclick="closePanel()">
+            <svg viewBox="0 0 20 20" fill="none"><path d="M5 5L15 15M15 5L5 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+        <div class="text-section">
+          <dl>
+            <dt>インタラクティブ動画</dt>
+            <dd>視聴中にクリック・回答・分岐ができる双方向型動画。問題・解説・ナビゲーションを埋め込み、受動視聴を能動学習に変える。</dd>
+            <dt>hihaho（ひはほ）</dt>
+            <dd>スプライングローバルが提供するインタラクティブ動画プラットフォーム。問題作成・AI採点・データ分析・xAPI連携に対応。</dd>
+            <dt>xAPI（Experience API）</dt>
+            <dd>「誰が・何を・どうしたか」を記録する学習データの国際標準フォーマット（旧称 Tin Can API）。異なるシステム間でデータを共有できる。</dd>
+            <dt>LRS（Learning Record Store）</dt>
+            <dd>xAPIフォーマットの学習データを蓄積・管理するデータベース。複数のツールから送られたデータを一元管理できる。</dd>
+            <dt>ルーブリック</dt>
+            <dd>記述問題の採点基準を段階的に定義した評価表。AIがルーブリックを自動生成し、教師が調整・確定することで採点の標準化と省力化を実現。</dd>
+            <dt>離脱データ</dt>
+            <dd>動画のどのタイミングで視聴をやめたかを示す分析データ。離脱率が高い箇所は「難しい」「興味が落ちた」などの改善シグナルとして活用できる。</dd>
+            <dt>フリップドラーニング</dt>
+            <dd>事前に動画で知識習得→対面授業でより深い議論や演習→事後に復習・定着、という反転型の学習モデル。インタラクティブ動画が各フェーズを支援する。</dd>
+            <dt>AI自動採点</dt>
+            <dd>記述回答をAIが評価し、スコアとコメントを即時返却する機能。回答直後にフィードバックを得ることで、理解の定着が早まる。</dd>
+            <dt>行動ベースのセグメント分析</dt>
+            <dd>成績点数だけでなく「どこで止めたか」「何度繰り返したか」などの行動データで学習者を分類・分析する手法。同点数でも異なる学習傾向を把握できる。</dd>
+            <dt>DX（デジタルトランスフォーメーション）</dt>
+            <dd>デジタル技術を活用して、業務プロセスや価値提供の仕組みを根本から変革すること。教育・研修領域では紙・対面中心の学習をデジタル化する文脈で使われる。</dd>
+          </dl>
+        </div>
+      </div><!-- /yogoshu -->
+
+    </div><!-- /panel-inner -->
+  </div><!-- /panel -->
+
+  <div class="tab-row">
+    <button class="tab" data-target="yoyaku" aria-pressed="false" onclick="onTab('yoyaku')">
+      <span>📋 要約</span>
+      <svg class="tab-chevron" viewBox="0 0 16 16" fill="none"><path d="M3 6L8 11L13 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <button class="tab" data-target="yogoshu" aria-pressed="false" onclick="onTab('yogoshu')">
+      <span>📖 用語集</span>
+      <svg class="tab-chevron" viewBox="0 0 16 16" fill="none"><path d="M3 6L8 11L13 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+  </div>
+
+</div>
+
+<script>
+var frame = document.getElementById('auxFrame');
+
+function onTab(target) {
+  var isOpen = frame.getAttribute('data-open') === 'true';
+  var current = frame.getAttribute('data-active');
+  if (!isOpen) {
+    frame.setAttribute('data-active', target);
+    frame.setAttribute('data-open', 'true');
+  } else if (current === target) {
+    frame.setAttribute('data-open', 'false');
+  } else {
+    frame.setAttribute('data-active', target);
+    document.getElementById('panelInner').scrollTop = 0;
+  }
+  updateTabState(target);
+}
+
+function updateTabState(target) {
+  document.querySelectorAll('.tab[data-target]').forEach(function(t) {
+    t.setAttribute('aria-pressed', t.getAttribute('data-target') === target ? 'true' : 'false');
+  });
+}
+
+function closePanel() {
+  frame.setAttribute('data-open', 'false');
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' && frame.getAttribute('data-open') === 'true') closePanel();
+});
+
+function toggle(id) {
+  var el = document.getElementById(id);
+  el.classList.toggle('open');
+}
+</script>
+</body>
+</html>
