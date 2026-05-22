@@ -985,9 +985,9 @@ html, body {
         </div>
       </div>
 
-      <!-- ⑥ GitHub設定 -->
+      <!-- ⑥ GitHubアップロード -->
       <div class="section-block">
-        <div class="section-block-title">🔑 GitHub設定</div>
+        <div class="section-block-title">🔑 GitHubアップロード</div>
         <div class="field-row">
           <label>Personal Access Token</label>
           <div style="display:flex;gap:6px;">
@@ -995,9 +995,25 @@ html, body {
             <button class="btn btn-ghost btn-sm" onclick="togglePatVisibility()" id="btn-pat-toggle" style="color:#aaa;border-color:#555;padding:0 8px;" title="表示/非表示">👁</button>
           </div>
         </div>
-        <div style="font-size:10px;color:#666;line-height:1.5;margin-top:4px;">
-          保存先: <code style="color:#c9a84c;">public/overlay-exports/</code><br>
-          <a href="https://github.com/settings/tokens/new?scopes=repo&description=hiTab" target="_blank" style="color:#5b8fc9;">PATを発行する（repo権限）</a>
+        <div class="field-row">
+          <label>フォルダ名 <span style="font-weight:400;color:#999;">（public/ 配下）</span></label>
+          <input type="text" id="input-gh-folder" placeholder="overlay-exports" style="font-size:12px;" oninput="onGhFolderChange(this.value)">
+        </div>
+        <div class="field-row">
+          <label>ファイル名</label>
+          <div style="display:flex;gap:6px;">
+            <input type="text" id="input-gh-filename" placeholder="my-overlay.html" style="flex:1;font-size:12px;" oninput="onGhFilenameChange(this.value)">
+            <button class="btn btn-ghost btn-sm" onclick="autoFillFilename()" title="タブ名から自動入力" style="white-space:nowrap;padding:5px 8px;">自動</button>
+          </div>
+        </div>
+        <div id="gh-url-preview" style="font-size:10px;color:#666;line-height:1.7;margin-top:4px;background:#f5f4f0;border-radius:4px;padding:6px 8px;">
+          <span style="color:#999;">アップロード先:</span><br>
+          <code id="gh-path-preview" style="color:#c9a84c;word-break:break-all;font-size:10px;"></code><br>
+          <span style="color:#999;">デプロイ後URL:</span><br>
+          <code id="gh-deploy-url-preview" style="color:#5b8fc9;word-break:break-all;font-size:10px;"></code>
+        </div>
+        <div style="font-size:10px;color:#666;margin-top:6px;">
+          <a href="https://github.com/settings/tokens/new?scopes=repo&description=OverlayBuilder" target="_blank" style="color:#5b8fc9;">PATを発行する（repo権限）</a>
         </div>
       </div>
 
@@ -1050,10 +1066,11 @@ html, body {
    状態管理
    ══════════════════════════════════════════ */
 var STORAGE_KEY    = 'overlay-builder-v1';
-var GITHUB_PAT_KEY = 'hitab-github-pat';
-var GITHUB_REPO    = 'ryou-on/CC-DEV';
-var GITHUB_BRANCH  = 'main';
-var GITHUB_PATH    = 'public/overlay-exports';
+var GITHUB_PAT_KEY      = 'hitab-github-pat';
+var GITHUB_FOLDER_KEY   = 'hitab-github-folder';
+var GITHUB_FILENAME_KEY = 'hitab-github-filename';
+var GITHUB_REPO         = 'ryou-on/CC-DEV';
+var GITHUB_BRANCH       = 'main';
 var debugOpen = false;
 var logs = [];
 
@@ -2335,25 +2352,72 @@ function loadGithubPat() {
   try { return localStorage.getItem(GITHUB_PAT_KEY) || ''; } catch(e) { return ''; }
 }
 
-function getExportFilename() {
+/* ── フォルダ／ファイル名 ── */
+function getGhFolder() {
+  var inp = document.getElementById('input-gh-folder');
+  return (inp && inp.value.trim()) || 'overlay-exports';
+}
+
+function getGhFilename() {
+  var inp = document.getElementById('input-gh-filename');
+  var val = (inp && inp.value.trim()) || '';
+  if (!val) val = tabNameToFilename();
+  if (!val.endsWith('.html')) val += '.html';
+  return val;
+}
+
+function tabNameToFilename() {
   var tab = selectedTab();
-  var tabName = (tab ? tab.name : 'overlay')
-    .replace(/[　-鿿＀-￯]/g, function(c) { return ''; }) // 全角除去
-    .replace(/[^a-zA-Z0-9_-]/g, '-')
+  return ((tab ? tab.name : 'overlay') || 'overlay')
+    .replace(/[　-鿿豈-￯]/g, '') // 全角・CJK除去
+    .replace(/[^a-zA-Z0-9_\-]/g, '-')
     .replace(/-+/g, '-').replace(/^-|-$/g, '') || 'overlay';
-  return tabName + '.html';
+}
+
+function onGhFolderChange(val) {
+  try { localStorage.setItem(GITHUB_FOLDER_KEY, val.trim()); } catch(e) {}
+  updateGhUrlPreview();
+}
+
+function onGhFilenameChange(val) {
+  try { localStorage.setItem(GITHUB_FILENAME_KEY, val.trim()); } catch(e) {}
+  updateGhUrlPreview();
+}
+
+function autoFillFilename() {
+  var name = tabNameToFilename() + '.html';
+  var inp = document.getElementById('input-gh-filename');
+  if (inp) { inp.value = name; }
+  try { localStorage.setItem(GITHUB_FILENAME_KEY, name); } catch(e) {}
+  updateGhUrlPreview();
+}
+
+function updateGhUrlPreview() {
+  var folder   = getGhFolder().replace(/^\/|\/$/g, '');
+  var filename = getGhFilename();
+  var ghPath   = 'public/' + folder + '/' + filename;
+  var deployUrl = 'https://cc-dev-ps7.web.app/' + folder + '/' + filename;
+  var pathEl = document.getElementById('gh-path-preview');
+  var urlEl  = document.getElementById('gh-deploy-url-preview');
+  if (pathEl) pathEl.textContent = ghPath;
+  if (urlEl)  urlEl.textContent  = deployUrl;
+}
+
+function getExportFilename() {
+  return getGhFilename();
 }
 
 async function uploadToGitHub() {
   var pat = loadGithubPat();
   if (!pat) {
-    alert('GitHub PAT が未設定です。\n左パネル「GitHub設定」にトークンを入力してください。');
+    alert('GitHub PAT が未設定です。\n左パネル「GitHubアップロード」にトークンを入力してください。');
     return;
   }
 
-  var html = generateHTML();
-  var filename = getExportFilename();
-  var filePath = GITHUB_PATH + '/' + filename;
+  var html     = generateHTML();
+  var folder   = getGhFolder().replace(/^\/|\/$/g, '');
+  var filename = getGhFilename();
+  var filePath = 'public/' + folder + '/' + filename;
   var apiUrl = 'https://api.github.com/repos/' + GITHUB_REPO + '/contents/' + filePath;
   var headers = {
     'Authorization': 'Bearer ' + pat,
@@ -2399,7 +2463,7 @@ async function uploadToGitHub() {
       throw new Error('アップロード失敗: HTTP ' + putRes.status + ' — ' + (errData.message || ''));
     }
 
-    var deployUrl = 'https://cc-dev-ps7.web.app/overlay-exports/' + filename;
+    var deployUrl = 'https://cc-dev-ps7.web.app/' + folder + '/' + filename;
     log('✅ アップロード成功: ' + deployUrl);
     alert('✅ アップロード完了！\n\nGitHub Actionsのデプロイ後（約1分）に公開されます。\n\n🔗 ' + deployUrl + '\n\n（クリップボードにコピーしました）');
     try { navigator.clipboard.writeText(deployUrl); } catch(e) {}
@@ -2739,11 +2803,22 @@ document.addEventListener('keydown', function(e) {
 renderAll();
 updatePreview();
 
-// GitHub PAT を input に復元
+// GitHub PAT・フォルダ・ファイル名を input に復元
 (function() {
   var pat = loadGithubPat();
-  var inp = document.getElementById('input-github-pat');
-  if (inp && pat) inp.value = pat;
+  var patInp = document.getElementById('input-github-pat');
+  if (patInp && pat) patInp.value = pat;
+
+  try {
+    var folder   = localStorage.getItem(GITHUB_FOLDER_KEY) || '';
+    var filename = localStorage.getItem(GITHUB_FILENAME_KEY) || '';
+    var folderInp   = document.getElementById('input-gh-folder');
+    var filenameInp = document.getElementById('input-gh-filename');
+    if (folderInp   && folder)   folderInp.value   = folder;
+    if (filenameInp && filename) filenameInp.value = filename;
+  } catch(e) {}
+
+  updateGhUrlPreview();
 })();
 
 // AIのAPIキーを input に復元
