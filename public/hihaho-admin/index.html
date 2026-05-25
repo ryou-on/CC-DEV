@@ -217,6 +217,10 @@ main{margin-left:var(--sw);margin-top:var(--hh);padding:24px;}
 <label style="display:flex;align-items:center;gap:3px;cursor:pointer"><input type="checkbox" id="vfWith" checked onchange="renderVList()"> サムネあり</label>
 <label style="display:flex;align-items:center;gap:3px;cursor:pointer"><input type="checkbox" id="vfNone" checked onchange="renderVList()"> サムネなし</label>
 <label style="display:flex;align-items:center;gap:3px;cursor:pointer;margin-left:4px"><input type="checkbox" id="vfSortFirst" onchange="renderVList()"> サムネありを先頭に</label>
+<span style="color:#6b7280;font-weight:600;margin-left:4px">並び順:</span>
+<button id="vsortNew" onclick="setVSort('new')" style="padding:2px 8px;border-radius:4px;font-size:11px;border:1px solid #1565c0;background:#1565c0;color:#fff;cursor:pointer">新しい順</button>
+<button id="vsortOld" onclick="setVSort('old')" style="padding:2px 8px;border-radius:4px;font-size:11px;border:1px solid #d1d5db;background:#f3f4f6;color:#374151;cursor:pointer">古い順</button>
+<button id="vsortAz" onclick="setVSort('az')" style="padding:2px 8px;border-radius:4px;font-size:11px;border:1px solid #d1d5db;background:#f3f4f6;color:#374151;cursor:pointer">あ→ん</button>
 </div>
 <div id="selectBar" class="sb" style="display:none">
 <span id="selectCount" style="font-weight:700">0件選択中</span>
@@ -404,6 +408,7 @@ const TEXT = 'jpg';
 
 let folders=[], videos=[], selF=new Set(), selV=new Set(), tabVideos=[];
 let mode=null, tabF=null, tabT=null, vmeta={}, clog=[];
+let vSortKey='new', vPage=1, vHasMore=false, vLoadingMore=false;
 let editId=null; // 編集中プレイリストID
 let orderedVideoIds=[], dragSrcIdx=null, checkedOrderIds=new Set();
 let videoMap={};
@@ -418,7 +423,7 @@ const log=m=>console.log('[admin] '+m);
 
 Object.assign(window,{
 showPage,uploadLogoFile,updateLogoPreview,clearLogoUrl,openEdit,setMode,toggleF,toggleV,switchFTab,
-clearSel,publishPlaylist,resetCreate,closeMo,copyPubUrl,openPubUrl,
+clearSel,publishPlaylist,resetCreate,closeMo,copyPubUrl,openPubUrl,setVSort,loadMoreVideos,
 deletePlaylist,duplicatePlaylist,copyUrl,downloadPlayerHTML,previewThumb,saveThumbs,clearThumb,saveDesc,
 switchThumbFolder, filterThumbFolders, uploadThumb, filterVideoSearch, addVideosToPlaylist,
 switchThumbMode, onThumbGlobalSearch,
@@ -545,11 +550,56 @@ if(!tabF&&folders.length){tabF=folders[0].id;document.querySelector('#folderTabs
 if(tabF) loadTabVideos(tabF); else renderVList();
 }
 
-async function loadTabVideos(fid){ const el=document.getElementById('videoList'); el.innerHTML='<div class="load"><div class="spin"></div>読み込み中...</div>'; try{ const res=await api('/v2/video?video_container_id='+fid); tabVideos=res.data||[]; tabVideos.forEach(v=>videoMap[v.id]=v); document.getElementById('vThumbBar').style.display='flex'; renderVList(); if(editId) renderOrderCard(); }catch(e){ el.innerHTML='<div class="emp"><div class="ei">⚠️</div><p>'+e.message+'</p></div>'; } } function switchFTab(id){
+async function loadTabVideos(fid){
+const el=document.getElementById('videoList');
+el.innerHTML='<div class="load"><div class="spin"></div>読み込み中...</div>';
+tabVideos=[];vPage=1;vHasMore=false;
+try{
+const res=await api('/v2/video?video_container_id='+fid+'&page=1&per_page=50');
+tabVideos=res.data||[];
+tabVideos.forEach(v=>videoMap[v.id]=v);
+const meta=res.meta||{};
+vHasMore=(meta.current_page||1)<(meta.last_page||1);
+document.getElementById('vThumbBar').style.display='flex';
+renderVList();
+if(editId) renderOrderCard();
+}catch(e){ el.innerHTML='<div class="emp"><div class="ei">⚠️</div><p>'+e.message+'</p></div>'; }
+}
+
+async function loadMoreVideos(){
+if(vLoadingMore||!vHasMore||!tabF) return;
+vLoadingMore=true;vPage++;
+const btn=document.getElementById('vLoadMoreBtn');
+if(btn){btn.disabled=true;btn.textContent='読み込み中…';}
+try{
+const res=await api('/v2/video?video_container_id='+tabF+'&page='+vPage+'&per_page=50');
+const more=res.data||[];
+more.forEach(v=>videoMap[v.id]=v);
+tabVideos=[...tabVideos,...more];
+const meta=res.meta||{};
+vHasMore=(meta.current_page||vPage)<(meta.last_page||vPage);
+}catch(e){vPage--;}
+vLoadingMore=false;
+renderVList();
+if(editId) renderOrderCard();
+} function switchFTab(id){
 tabF=id;
 document.querySelectorAll('#folderTabs .tab').forEach(t=>t.classList.remove('active'));
 event.currentTarget.classList.add('active');
 loadTabVideos(tabF);
+}
+
+function setVSort(k){
+vSortKey=k;
+['New','Old','Az'].forEach(s=>{
+const b=document.getElementById('vsort'+s);
+if(!b) return;
+const active=k===s.toLowerCase();
+b.style.background=active?'#1565c0':'#f3f4f6';
+b.style.color=active?'#fff':'#374151';
+b.style.borderColor=active?'#1565c0':'#d1d5db';
+});
+renderVList();
 }
 
 function renderVList(){
@@ -561,11 +611,15 @@ const vfSort=document.getElementById('vfSortFirst');
 const showWith=!vfWith||vfWith.checked;
 const showNone=!vfNone||vfNone.checked;
 if(!showWith||!showNone)vs=vs.filter(v=>{const hn=!!(vmeta[v.uuid]&&vmeta[v.uuid].thumbnailUrl);return showWith?hn:!hn;});
+// ソート
+if(vSortKey==='new') vs.sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0));
+else if(vSortKey==='old') vs.sort((a,b)=>new Date(a.created_at||0)-new Date(b.created_at||0));
+else if(vSortKey==='az') vs.sort((a,b)=>a.display_name.localeCompare(b.display_name,'ja'));
 if(vfSort&&vfSort.checked)vs.sort((a,b)=>{const at=!!(vmeta[a.uuid]&&vmeta[a.uuid].thumbnailUrl);const bt=!!(vmeta[b.uuid]&&vmeta[b.uuid].thumbnailUrl);return (bt?1:0)-(at?1:0);});
 const sb=document.getElementById('selectBar');
 sb.style.display=selV.size>0?'flex':'none';
 document.getElementById('selectCount').textContent=selV.size+'件選択中';
-document.getElementById('videoList').innerHTML=vs.map(v=>{
+const items=vs.map(v=>{
 const chk=selV.has(v.id);
 const bdg=v.status===2?'<span class="bdg bi">INTERACTIVE</span>':v.status===1?'<span class="bdg bp2">公開</span>':'<span class="bdg bdr">非公開</span>';
 return `<div class="vi ${chk?'chk':''}" onclick="toggleV(${v.id})">
@@ -580,6 +634,10 @@ return `<div class="vi ${chk?'chk':''}" onclick="toggleV(${v.id})">
 </div>
 </div>`;
 }).join('');
+const loadMoreBtn=vHasMore
+?`<div style="padding:8px 0;text-align:center"><button id="vLoadMoreBtn" onclick="loadMoreVideos()" style="padding:6px 20px;border-radius:6px;border:1px solid #1565c0;background:#fff;color:#1565c0;font-size:13px;cursor:pointer">▼ さらに読み込む（${tabVideos.length}件表示中）</button></div>`
+:`<div style="padding:4px 0;text-align:center;font-size:11px;color:#9ca3af">全${tabVideos.length}件表示</div>`;
+document.getElementById('videoList').innerHTML=items+loadMoreBtn;
 }
 
 function toggleV(id){
