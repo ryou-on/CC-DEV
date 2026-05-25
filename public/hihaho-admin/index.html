@@ -554,8 +554,17 @@ async function loadTabVideos(fid){
 const el=document.getElementById('videoList');
 el.innerHTML='<div class="load"><div class="spin"></div>読み込み中...</div>';
 tabVideos=[];vPage=1;vHasMore=false;
+let res=null;
 try{
-const res=await api('/v2/video?video_container_id='+fid+'&page=1&per_page=50');
+res=await api('/v2/video?video_container_id='+fid+'&page=1&per_page=50');
+}catch(e){
+// 504等の場合はpaginationパラメータなしでリトライ
+try{ res=await api('/v2/video?video_container_id='+fid); }
+catch(e2){
+el.innerHTML='<div class="emp"><div class="ei">⚠️</div><p>'+e2.message+'</p><button class="btn bs bsm" style="margin-top:8px" onclick="loadTabVideos('+fid+')">🔄 再試行</button></div>';
+return;
+}
+}
 tabVideos=res.data||[];
 tabVideos.forEach(v=>videoMap[v.id]=v);
 const meta=res.meta||{};
@@ -563,7 +572,6 @@ vHasMore=(meta.current_page||1)<(meta.last_page||1);
 document.getElementById('vThumbBar').style.display='flex';
 renderVList();
 if(editId) renderOrderCard();
-}catch(e){ el.innerHTML='<div class="emp"><div class="ei">⚠️</div><p>'+e.message+'</p></div>'; }
 }
 
 async function loadMoreVideos(){
@@ -848,8 +856,13 @@ function renderOrderCard(){
   const card=document.getElementById('orderCard');
   const list=document.getElementById('orderList');
   if(!card||!list) return;
-  if(!editId||mode!=='video'||!orderedVideoIds.length){card.style.display='none';renderDefaultVideoSelect();return;}
+  if(mode!=='video'||!orderedVideoIds.length){card.style.display='none';renderDefaultVideoSelect();return;}
   card.style.display='block';
+  // videoMapにない動画を個別フェッチ
+  const missing=orderedVideoIds.filter(id=>!videoMap[id]);
+  if(missing.length){
+    Promise.all(missing.map(id=>api('/v2/video/'+id).then(r=>{if(r.data)videoMap[r.data.id]=r.data;}).catch(()=>{}))).then(()=>renderOrderCard());
+  }
   const bar=document.getElementById('orderCheckBar');
   const cnt=checkedOrderIds.size;
   if(bar){bar.style.display=cnt>0?'flex':'none';const sp=document.getElementById('orderCheckCount');if(sp)sp.textContent=cnt+'件選択中';}
