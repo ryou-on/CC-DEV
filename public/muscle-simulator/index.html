@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+ <meta charset="UTF-8">
+ <meta name="viewport" content="width=device-width, initial-scale=1.0">
+ <title>3D Arm Anatomy Simulator</title>
+ <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+ <script src="https://cdn.tailwindcss.com"></script>
+ <style>
+  * { box-sizing: border-box; }
+  html, body {
+   margin: 0; padding: 0;
+   width: 100%; height: 100%;
+   overflow: hidden;
+   background: transparent;
+   font-family: sans-serif;
+  }
+
+  /* 全画面透明キャンバス */
+  #container {
+   position: fixed;
+   inset: 0;
+   width: 100%;
+   height: 100%;
+  }
+  #container canvas { display: block; }
+
+  /* フローティングパネル（左上） */
+  #panel {
+   position: fixed;
+   top: 16px;
+   left: 16px;
+   width: 240px;
+   background: rgba(255, 255, 255, 0.93);
+   border-radius: 12px;
+   box-shadow: 0 6px 20px rgba(0,0,0,0.15);
+   padding: 16px;
+   z-index: 20;
+  }
+
+  input[type=range] { width: 100%; cursor: pointer; accent-color: #2563eb; }
+  .checkbox-group { display: flex; align-items: center; margin-bottom: 6px; cursor: pointer; gap: 8px; font-size: 13px; }
+  .checkbox-group input { width: 14px; height: 14px; flex-shrink: 0; }
+  .swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+ </style>
+</head>
+<body>
+
+<div id="container"></div>
+
+<div id="panel">
+ <h1 class="text-base font-bold text-blue-800 mb-1">腕の動きの仕組み</h1>
+ <p class="text-xs text-gray-500 mb-3">スライダーを動かして筋肉の変化を観察しよう。</p>
+
+ <div class="mb-3">
+  <label class="block text-xs font-semibold mb-1 text-gray-700">腕を曲げる / 伸ばす</label>
+  <input type="range" id="flexSlider" min="0" max="100" value="0">
+ </div>
+
+ <div id="info" class="text-xs bg-blue-50 p-2 rounded border border-blue-200 leading-relaxed mb-3">
+  <p id="muscleStatus"><strong>状態:</strong> 腕を伸ばしている</p>
+  <p id="bicepsInfo" class="mt-1">上腕二頭筋: 弛緩（ゆるむ）</p>
+  <p id="tricepsInfo">上腕三頭筋: 収縮（ちぢむ）</p>
+ </div>
+
+ <div class="border-t border-gray-200 pt-2">
+  <p class="text-xs font-bold mb-2 text-gray-700">パーツの表示・非表示</p>
+  <label class="checkbox-group">
+   <input type="checkbox" id="showBones" checked>
+   <span class="swatch" style="background:#f1c40f; border:1px solid #ccc;"></span> 骨格
+  </label>
+  <label class="checkbox-group">
+   <input type="checkbox" id="showBiceps" checked>
+   <span class="swatch" style="background:#e74c3c;"></span> 上腕二頭筋
+  </label>
+  <label class="checkbox-group">
+   <input type="checkbox" id="showTriceps" checked>
+   <span class="swatch" style="background:#3498db;"></span> 上腕三頭筋
+  </label>
+  <label class="checkbox-group">
+   <input type="checkbox" id="showTendons" checked>
+   <span class="swatch" style="background:#ecf0f1; border:1px solid #aaa;"></span> けん（腱）
+  </label>
+ </div>
+</div>
+
+<script>
+ let scene, camera, renderer, armGroup;
+ let upperArm, lowerArm, lowerBoneMesh;
+ let biceps, triceps, bicepsTendon;
+
+ const colors = {
+  bone: 0xf1c40f,
+  muscleBiceps: 0xe74c3c,
+  muscleTriceps: 0x3498db,
+  tendon: 0xecf0f1
+ };
+
+ function init() {
+  scene = new THREE.Scene();
+  scene.background = null;
+
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+
+  camera = new THREE.PerspectiveCamera(40, W / H, 0.1, 1000);
+  camera.position.set(6, 3, 30);
+  camera.lookAt(1, 0, 0);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setSize(W, H);
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.shadowMap.enabled = true;
+  document.getElementById('container').appendChild(renderer.domElement);
+
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+  scene.add(ambientLight);
+  const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+  directionalLight.position.set(5, 10, 7);
+  scene.add(directionalLight);
+
+  armGroup = new THREE.Group();
+  armGroup.position.set(-2, 2, 0);
+  scene.add(armGroup);
+
+  createAnatomy();
+
+  window.addEventListener('resize', onWindowResize, false);
+  document.getElementById('flexSlider').addEventListener('input', updateArm);
+
+  document.getElementById('showBones').addEventListener('change', (e) => {
+   upperArm.visible = e.target.checked;
+   lowerBoneMesh.visible = e.target.checked;
+  });
+  document.getElementById('showBiceps').addEventListener('change', (e) => { biceps.visible = e.target.checked; });
+  document.getElementById('showTriceps').addEventListener('change', (e) => { triceps.visible = e.target.checked; });
+  document.getElementById('showTendons').addEventListener('change', (e) => { bicepsTendon.visible = e.target.checked; });
+ }
+
+ function createAnatomy() {
+  const boneMat = new THREE.MeshStandardMaterial({ color: colors.bone });
+
+  const upperBoneGeo = new THREE.CylinderGeometry(0.5, 0.6, 6, 16);
+  upperArm = new THREE.Mesh(upperBoneGeo, boneMat);
+  upperArm.position.y = 3;
+  armGroup.add(upperArm);
+
+  lowerArm = new THREE.Group();
+  lowerArm.position.y = 0;
+  armGroup.add(lowerArm);
+
+  const lowerBoneGeo = new THREE.CylinderGeometry(0.4, 0.3, 6, 16);
+  lowerBoneMesh = new THREE.Mesh(lowerBoneGeo, boneMat);
+  lowerBoneMesh.position.y = -3;
+  lowerArm.add(lowerBoneMesh);
+
+  const bicepsGeo = new THREE.SphereGeometry(1, 32, 32);
+  const bicepsMat = new THREE.MeshStandardMaterial({ color: colors.muscleBiceps });
+  biceps = new THREE.Mesh(bicepsGeo, bicepsMat);
+  biceps.position.set(0.8, 3, 0);
+  biceps.scale.set(0.5, 2.5, 0.5);
+  armGroup.add(biceps);
+
+  const tricepsGeo = new THREE.SphereGeometry(1, 32, 32);
+  const tricepsMat = new THREE.MeshStandardMaterial({ color: colors.muscleTriceps });
+  triceps = new THREE.Mesh(tricepsGeo, tricepsMat);
+  triceps.position.set(-0.8, 3, 0);
+  triceps.scale.set(0.4, 2.8, 0.4);
+  armGroup.add(triceps);
+
+  const tendonMat = new THREE.MeshStandardMaterial({ color: colors.tendon });
+  const tendonGeo = new THREE.CylinderGeometry(0.15, 0.15, 1, 8);
+  bicepsTendon = new THREE.Mesh(tendonGeo, tendonMat);
+  bicepsTendon.position.set(0.6, 0.5, 0);
+  bicepsTendon.rotation.z = -0.2;
+  armGroup.add(bicepsTendon);
+ }
+
+ function updateArm(e) {
+  const val = e.target.value / 100;
+  lowerArm.rotation.z = val * (Math.PI * 0.7);
+
+  biceps.scale.set(0.5 + val * 0.5, 2.5 - val * 0.5, 0.5 + val * 0.5);
+  biceps.position.y = 3 + val * 0.2;
+  triceps.scale.set(0.4 - val * 0.1, 2.8 + val * 0.2, 0.4 - val * 0.1);
+
+  const status = document.getElementById('muscleStatus');
+  const bInfo = document.getElementById('bicepsInfo');
+  const tInfo = document.getElementById('tricepsInfo');
+
+  if (val > 0.6) {
+   status.innerHTML = "<strong>状態:</strong> 腕を曲げている";
+   bInfo.innerHTML = "上腕二頭筋: <span class='text-red-600 font-bold'>収縮（ちぢむ）</span>";
+   tInfo.innerHTML = "上腕三頭筋: <span class='text-blue-600'>弛緩（ゆるむ）</span>";
+  } else if (val < 0.2) {
+   status.innerHTML = "<strong>状態:</strong> 腕を伸ばしている";
+   bInfo.innerHTML = "上腕二頭筋: <span class='text-red-600'>弛緩（ゆるむ）</span>";
+   tInfo.innerHTML = "上腕三頭筋: <span class='text-blue-600 font-bold'>収縮（ちぢむ）</span>";
+  } else {
+   status.innerHTML = "<strong>状態:</strong> 動かしている途中";
+   bInfo.textContent = "";
+   tInfo.textContent = "";
+  }
+ }
+
+ function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+ }
+
+ function animate() {
+  requestAnimationFrame(animate);
+  armGroup.rotation.y += 0.005;
+  renderer.render(scene, camera);
+ }
+
+ window.onload = init;
+ animate();
+</script>
+</body>
+</html>
