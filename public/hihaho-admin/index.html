@@ -1317,12 +1317,21 @@ const input=document.getElementById('thumbGlobalQ');
 if(input) input.disabled=true;
 if(info) info.textContent='全フォルダを読み込み中…（'+folders.length+'フォルダ）';
 if(list) list.innerHTML='<div class="load"><div class="spin"></div>全フォルダ読み込み中...</div>';
-const results=await Promise.allSettled(folders.map(f=>api('/v2/video?video_container_id='+f.id)));
+// 10秒タイムアウト付きフォルダフェッチ
+const fetchWithTimeout=fid=>Promise.race([
+  api('/v2/video?video_container_id='+fid),
+  new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),10000))
+]);
+const results=await Promise.allSettled(folders.map(f=>fetchWithTimeout(f.id)));
 allThumbVideos=[];
-results.forEach(r=>{ if(r.status==='fulfilled') allThumbVideos.push(...(r.value.data||[])); });
+let errCount=0;
+results.forEach(r=>{
+  if(r.status==='fulfilled') allThumbVideos.push(...(r.value.data||[]));
+  else errCount++;
+});
 allThumbLoaded=true;
 if(input){ input.disabled=false; input.focus(); }
-if(info) info.textContent='全'+allThumbVideos.length+'本を読み込みました';
+if(info) info.textContent='全'+allThumbVideos.length+'本を読み込みました'+(errCount?'（'+errCount+'フォルダ取得失敗・スキップ）':'');
 renderThumbGlobalList();
 }
 
