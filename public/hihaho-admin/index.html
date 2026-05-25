@@ -210,8 +210,22 @@ main{margin-left:var(--sw);margin-top:var(--hh);padding:24px;}
 </div>
 <div class="card" id="videoSel" style="display:none">
 <div class="ct">③ 動画を選択</div>
+<!-- モード切り替え -->
+<div style="display:flex;gap:6px;margin-bottom:8px">
+<button id="vSelModeFolder" onclick="switchVSelMode('folder')" style="padding:5px 14px;border-radius:6px;font-size:12px;font-weight:600;border:1px solid #1565c0;background:#1565c0;color:#fff;cursor:pointer">📁 フォルダで選ぶ</button>
+<button id="vSelModeGlobal" onclick="switchVSelMode('global')" style="padding:5px 14px;border-radius:6px;font-size:12px;font-weight:600;border:1px solid #d1d5db;background:#f3f4f6;color:#374151;cursor:pointer">🔍 全動画を検索</button>
+</div>
+<!-- 全動画検索パネル -->
+<div id="vGlobalPanel" style="display:none;margin-bottom:6px">
+<input type="text" id="vGlobalQ" placeholder="🔍 動画名・ID・URL で全フォルダを横断検索…" oninput="onVGlobalSearch(this.value)"
+style="width:100%;padding:7px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;box-sizing:border-box">
+<div id="vGlobalInfo" style="margin-top:3px;font-size:11px;color:#6b7280"></div>
+</div>
+<!-- フォルダモード -->
+<div id="vFolderPanel">
 <div id="folderTabs" class="tabs"></div>
 <div style="padding:4px 0 2px"><input id="videoSearch" type="text" class="fi" placeholder="🔍 動画名を検索…" oninput="filterVideoSearch()" style="width:100%"></div>
+</div>
 <div id="vThumbBar" style="display:none;gap:8px;align-items:center;padding:5px 0;flex-wrap:wrap;font-size:12px">
 <span style="color:#6b7280;font-weight:600">サムネ絞込:</span>
 <label style="display:flex;align-items:center;gap:3px;cursor:pointer"><input type="checkbox" id="vfWith" checked onchange="renderVList()"> サムネあり</label>
@@ -409,6 +423,7 @@ const TEXT = 'jpg';
 let folders=[], videos=[], selF=new Set(), selV=new Set(), tabVideos=[];
 let mode=null, tabF=null, tabT=null, vmeta={}, clog=[];
 let vSortKey='new', vPage=1, vHasMore=false, vLoadingMore=false;
+let vSelMode='folder', vGlobalQ='', vGlobalLoaded=false, allSelVideos=[];
 let editId=null; // 編集中プレイリストID
 let orderedVideoIds=[], dragSrcIdx=null, checkedOrderIds=new Set();
 let videoMap={};
@@ -424,6 +439,7 @@ const log=m=>console.log('[admin] '+m);
 Object.assign(window,{
 showPage,uploadLogoFile,updateLogoPreview,clearLogoUrl,openEdit,setMode,toggleF,toggleV,switchFTab,
 clearSel,publishPlaylist,resetCreate,closeMo,copyPubUrl,openPubUrl,setVSort,loadMoreVideos,
+switchVSelMode,onVGlobalSearch,
 deletePlaylist,duplicatePlaylist,copyUrl,downloadPlayerHTML,previewThumb,saveThumbs,clearThumb,saveDesc,
 switchThumbFolder, filterThumbFolders, uploadThumb, filterVideoSearch, addVideosToPlaylist,
 switchThumbMode, onThumbGlobalSearch,
@@ -597,6 +613,80 @@ event.currentTarget.classList.add('active');
 loadTabVideos(tabF);
 }
 
+// =========================================================
+// ③ 全動画横断検索
+// =========================================================
+function switchVSelMode(m){
+vSelMode=m;
+const isGlobal=(m==='global');
+document.getElementById('vSelModeFolder').style.cssText='padding:5px 14px;border-radius:6px;font-size:12px;font-weight:600;border:1px solid '+(isGlobal?'#d1d5db;background:#f3f4f6;color:#374151':'#1565c0;background:#1565c0;color:#fff')+';cursor:pointer';
+document.getElementById('vSelModeGlobal').style.cssText='padding:5px 14px;border-radius:6px;font-size:12px;font-weight:600;border:1px solid '+(isGlobal?'#1565c0;background:#1565c0;color:#fff':'#d1d5db;background:#f3f4f6;color:#374151')+';cursor:pointer';
+document.getElementById('vGlobalPanel').style.display=isGlobal?'block':'none';
+document.getElementById('vFolderPanel').style.display=isGlobal?'none':'block';
+document.getElementById('vThumbBar').style.display=isGlobal?'none':'flex';
+if(isGlobal){
+if(!vGlobalLoaded) loadAllSelVideos();
+else renderVGlobalList();
+} else {
+renderVList();
+}
+}
+
+async function loadAllSelVideos(){
+const info=document.getElementById('vGlobalInfo');
+const list=document.getElementById('videoList');
+const input=document.getElementById('vGlobalQ');
+if(input) input.disabled=true;
+if(info) info.textContent='全フォルダを読み込み中…（'+folders.length+'フォルダ）';
+if(list) list.innerHTML='<div class="load"><div class="spin"></div>全フォルダ読み込み中...</div>';
+const fetchWithTimeout=fid=>Promise.race([
+  api('/v2/video?video_container_id='+fid),
+  new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),10000))
+]);
+const results=await Promise.allSettled(folders.map(f=>fetchWithTimeout(f.id)));
+allSelVideos=[];let errCount=0;
+results.forEach(r=>{
+  if(r.status==='fulfilled'){const vs=r.value.data||[];vs.forEach(v=>videoMap[v.id]=v);allSelVideos.push(...vs);}
+  else errCount++;
+});
+vGlobalLoaded=true;
+if(input){input.disabled=false;input.focus();}
+if(info) info.textContent='全'+allSelVideos.length+'本読み込み済み'+(errCount?'（'+errCount+'フォルダ失敗）':'');
+renderVGlobalList();
+}
+
+function onVGlobalSearch(q){vGlobalQ=q;if(vGlobalLoaded)renderVGlobalList();}
+
+async function renderVGlobalList(){
+const list=document.getElementById('videoList');
+const info=document.getElementById('vGlobalInfo');
+const sb=document.getElementById('selectBar');
+sb.style.display=selV.size>0?'flex':'none';
+document.getElementById('selectCount').textContent=selV.size+'件選択中';
+let q=vGlobalQ.toLowerCase().trim();
+if(!q){
+list.innerHTML='<div class="emp"><div class="ei">🔍</div><p>動画名・ID・URLを入力してください</p></div>';
+return;
+}
+const uuidMatch=q.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/);
+if(uuidMatch) q=uuidMatch[1];
+let vs=allSelVideos.filter(v=>v.display_name.toLowerCase().includes(q)||String(v.id).includes(q)||(v.uuid||'').toLowerCase().includes(q));
+if(vs.length===0&&uuidMatch){
+if(info) info.textContent='APIから直接取得中…';
+try{const r=await api('/v2/video/'+uuidMatch[1]);const v=r.data||r;if(v&&v.uuid){videoMap[v.id]=v;vs=[v];}}catch(e){}
+}
+if(info) info.textContent=vs.length+'本が見つかりました（全'+allSelVideos.length+'本中）';
+list.innerHTML=vs.map(v=>{
+const chk=selV.has(v.id);
+const bdg=v.status===2?'<span class="bdg bi">INTERACTIVE</span>':v.status===1?'<span class="bdg bp2">公開</span>':'<span class="bdg bdr">非公開</span>';
+return `<div class="vi ${chk?'chk':''}" onclick="toggleV(${v.id})">
+<input type="checkbox" ${chk?'checked':''} onclick="event.stopPropagation();toggleV(${v.id})">
+<div class="vt"><img src="${turl(v.uuid)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" loading="lazy"><div class="vtf" style="display:none">🎬</div></div>
+<div><div class="vn">${esc(v.display_name)}</div><div class="vm">${fmt(v.created_at)} ${bdg}</div></div>
+</div>`;
+}).join('');
+}
+
 function setVSort(k){
 vSortKey=k;
 ['New','Old','Az'].forEach(s=>{
@@ -656,11 +746,11 @@ function toggleV(id){
     selV.add(id);
     if(editId&&!orderedVideoIds.includes(id)) orderedVideoIds.push(id);
   }
-  renderVList();
+  if(vSelMode==='global') renderVGlobalList(); else renderVList();
   if(editId) renderOrderCard();
   updateBtn();
 }
-function clearSel(){selV.clear();renderVList();updateBtn();}
+function clearSel(){selV.clear();if(vSelMode==='global')renderVGlobalList();else renderVList();updateBtn();}
 
 function updateBtn(){
 const n=document.getElementById('playlistName').value.trim();
