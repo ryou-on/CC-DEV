@@ -1,0 +1,2320 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-V9Q0Z24N39"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-V9Q0Z24N39');
+  </script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>hihaho Player</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<!-- Firebase SDK（プレイリスト・サムネイル取得用） -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+:root {
+  --bg: #f4f5f7;
+  --white: #ffffff
+  --border: #e5e7eb;
+  --border-light: #f0f1f4;
+  --accent: #0066ff;
+  --accent-light: #e8f0ff;
+  --text: #111827;
+  --text-sub: #6b7280;
+  --text-muted: #9ca3af;
+  --header-h: 56px;
+  --sidebar-w: 296px;
+  --font: 'Noto Sans JP', sans-serif;
+  --mono: 'DM Mono', monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  height: 100vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+header {
+  height: var(--header-h);
+  background: var(--white);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.logo {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+}
+.logo-bar { width: 4px; height: 18px; border-radius: 2px; background: var(--accent); }
+.hihaho-logo-img { height:20px; margin-right:5px; vertical-align:middle; border-radius:2px; }
+.search-wrap { flex: 1; max-width: 380px; position: relative; }
+.search-wrap input {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 12px 7px 32px;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.search-wrap input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(0,102,255,0.08);
+  background: var(--white);
+}
+.search-wrap input::placeholder { color: var(--text-muted); }
+.search-icon {
+  position: absolute; left: 10px; top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-muted); font-size: 13px; pointer-events: none;
+}
+.ch-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  overflow-x: auto;
+  scrollbar-width: none;
+  max-width: 600px;
+}
+.ch-tabs::-webkit-scrollbar { display: none; }
+.ch-tab {
+  display: flex; align-items: center; gap: 5px;
+  padding: 6px 11px;
+  border-radius: 20px;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--font);
+  font-size: 12px;
+  color: var(--text-sub);
+  transition: all 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.ch-tab:hover { background: var(--bg); color: var(--text); }
+.ch-tab.active {
+  background: var(--accent-light);
+  color: var(--accent);
+  border-color: rgba(0,102,255,0.18);
+  font-weight: 600;
+}
+.ch-tab-skeleton {
+  width: 80px; height: 32px;
+  border-radius: 20px;
+  background: linear-gradient(90deg, #f0f1f4 25%, #e5e7eb 50%, #f0f1f4 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s infinite;
+  flex-shrink: 0;
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+.debug-btn {
+  background: none; border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text-muted); font-size: 11px; padding: 5px 9px;
+  cursor: pointer; font-family: var(--mono); transition: all 0.2s; flex-shrink: 0;
+}
+.debug-btn:hover { color: var(--accent); border-color: var(--accent); }
+.layout { flex: 1; display: flex; overflow: hidden; }
+.main-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+.player-wrap {
+  position: relative;
+  width: 100%;
+  background: #111;
+  aspect-ratio: 16 / 9;
+  max-height: 52vh;
+  flex-shrink: 0;
+}
+.player-wrap iframe {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%; border: none;
+}
+.player-placeholder {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 12px; color: #555;
+}
+.player-placeholder-icon { font-size: 40px; opacity: 0.4; }
+.player-placeholder p { font-size: 13px; }
+.player-spinner {
+  position: absolute; inset: 0;
+  display: none; align-items: center; justify-content: center;
+  background: #111;
+}
+.player-spinner.show { display: flex; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner-ring {
+  width: 32px; height: 32px;
+  border: 3px solid rgba(255,255,255,0.1);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+.info-bar {
+  background: var(--white);
+  border-bottom: 1px solid var(--border);
+  padding: 11px 16px 10px;
+  flex-shrink: 0;
+}
+.info-title { font-size: 14px; font-weight: 600; line-height: 1.4; color: var(--text); }
+.info-meta {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 4px; font-size: 12px; color: var(--text-sub);
+}
+.info-meta .dot { color: var(--border); }
+.badge {
+  display: inline-flex; align-items: center;
+  background: var(--accent-light); color: var(--accent);
+  border-radius: 4px; font-size: 10px; font-weight: 700;
+  letter-spacing: 0.4px; padding: 2px 6px;
+  font-family: var(--mono);
+}
+.badge-draft { background: #fef3c7; color: #92400e; }
+.badge-published { background: #d1fae5; color: #065f46; }
+/* 再生回数バッジ（サムネイル左下オーバーレイ・YouTube風） */
+.vrow-count-ov {
+  position: absolute;
+  bottom: 4px;
+  left: 4px;
+  background: rgba(185, 28, 28, 0.88); /* 赤 */
+  color: #fff;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 3px;
+  z-index: 3;
+  pointer-events: none;
+  white-space: nowrap;
+  display: block; /* 常に表示（取得前はローディング） */
+  min-width: 24px;
+  text-align: center;
+}
+/* 取得完了済みバッジ */
+.vrow-count-ov.loaded { background: rgba(185, 28, 28, 0.88); }
+/* 取得中バッジ（薄いグレー） */
+.vrow-count-ov:not(.loaded) {
+  background: rgba(0,0,0,0.35);
+  letter-spacing: 0.1em;
+  animation: pulse 1.2s infinite;
+}
+.video-list {
+  flex: 1; overflow-y: auto;
+  padding: 14px 16px 20px;
+  background: var(--bg);
+}
+.video-list::-webkit-scrollbar { width: 5px; }
+.video-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+.list-label {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.8px;
+  color: var(--text-muted); text-transform: uppercase;
+  margin-bottom: 10px;
+}
+/* ソートバー */
+.sort-bar {
+  display: flex; align-items: center;
+  gap: 6px; flex-wrap: wrap; margin-bottom: 12px;
+}
+.sort-btn {
+  display: inline-flex; align-items: center;
+  padding: 4px 10px; border-radius: 16px;
+  border: 1px solid var(--border); background: var(--white);
+  color: var(--text-sub); font-family: var(--font); font-size: 11px;
+  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+}
+.sort-btn:hover { border-color: var(--accent); color: var(--accent); }
+.sort-btn.active {
+  background: var(--accent-light); color: var(--accent);
+  border-color: rgba(0,102,255,0.3); font-weight: 600;
+}
+/* サムネイルフィルタバー */
+.filter-bar {
+  display: flex; align-items: center;
+  gap: 5px; margin-bottom: 10px;
+}
+.filter-label {
+  font-size: 10px; font-weight: 600; color: var(--text-muted);
+  letter-spacing: 0.05em; white-space: nowrap; margin-right: 2px;
+}
+.filter-btn {
+  display: inline-flex; align-items: center;
+  padding: 3px 9px; border-radius: 12px;
+  border: 1px solid var(--border); background: var(--white);
+  color: var(--text-sub); font-family: var(--font); font-size: 11px;
+  cursor: pointer; transition: all 0.15s; white-space: nowrap;
+}
+.filter-btn:hover { border-color: var(--accent); color: var(--accent); }
+.filter-btn.active {
+  background: #f0fdf4; color: #166534;
+  border-color: #86efac; font-weight: 600;
+}
+.filter-btn.active-none {
+  background: #fef2f2; color: #991b1b;
+  border-color: #fca5a5; font-weight: 600;
+}
+.vrow {
+  display: flex; gap: 12px;
+  background: var(--white);
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  padding: 10px;
+  cursor: pointer;
+  margin-bottom: 8px;
+  transition: box-shadow 0.15s, border-color 0.15s;
+  align-items: flex-start;
+}
+.vrow:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.07); border-color: var(--border); }
+.vrow.playing { border-color: var(--accent); background: var(--accent-light); }
+.vrow-skeleton {
+  display: flex; gap: 12px;
+  background: var(--white);
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  padding: 10px;
+  margin-bottom: 8px;
+}
+.skel-thumb {
+  width: 128px; min-width: 128px;
+  aspect-ratio: 16/9;
+  border-radius: 6px;
+  background: linear-gradient(90deg, #f0f1f4 25%, #e5e7eb 50%, #f0f1f4 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s infinite;
+}
+.skel-info { flex: 1; display: flex; flex-direction: column; gap: 8px; padding-top: 4px; }
+.skel-line {
+  height: 13px; border-radius: 4px;
+  background: linear-gradient(90deg, #f0f1f4 25%, #e5e7eb 50%, #f0f1f4 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s infinite;
+}
+.vrow-thumb {
+  position: relative; flex-shrink: 0;
+  width: 128px; aspect-ratio: 16/9;
+  border-radius: 6px; background: #dde0e6; overflow: hidden;
+}
+.vrow-thumb img {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%; object-fit: cover;
+}
+.vrow-thumb-fb {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 22px; color: #b0b4bc;
+}
+.vrow-play-ov {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.28); opacity: 0;
+  transition: opacity 0.15s; border-radius: 6px; z-index: 2;
+}
+.vrow:hover .vrow-play-ov { opacity: 1; }
+.play-circle {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: rgba(255,255,255,0.92);
+  display: flex; align-items: center; justify-content: center;
+}
+.play-circle svg { margin-left: 2px; }
+.vrow-info { flex: 1; min-width: 0; }
+.vrow-title {
+  font-size: 13px; font-weight: 500; line-height: 1.45; color: var(--text);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; margin-bottom: 5px;
+}
+.vrow.playing .vrow-title { color: var(--accent); }
+.vrow-meta { font-size: 11px; color: var(--text-muted); display: flex; flex-direction: column; gap: 3px; }
+.vrow-desc { font-size: 11px; color: var(--text-muted); line-height: 1.5; margin-top: 5px; white-space: pre-wrap; }
+.vrow-badges { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-top: 2px; }
+.sidebar {
+  width: var(--sidebar-w); flex-shrink: 0;
+  background: var(--white); border-left: 1px solid var(--border);
+  display: flex; flex-direction: column; overflow: hidden;
+}
+.ch-info-panel { padding: 16px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.ch-info-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.ch-avatar {
+  width: 40px; height: 40px; border-radius: 10px;
+  background: var(--accent-light);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; font-family: var(--mono); font-weight: 700;
+  color: var(--accent); flex-shrink: 0;
+}
+.ch-info-name { font-size: 14px; font-weight: 600; }
+.ch-info-id { font-size: 11px; color: var(--text-muted); font-family: var(--mono); }
+.ch-info-count { font-size: 11px; color: var(--text-muted); margin-top: 8px; }
+.sidebar-sort-panel {
+  padding: 10px 12px 6px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.sidebar-sort-panel .sort-bar {
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.sidebar-sort-panel .sort-btn {
+  padding: 3px 8px;
+  font-size: 10px;
+  border-radius: 12px;
+}
+.sidebar-sort-panel .filter-bar {
+  margin-bottom: 0;
+}
+.sidebar-sort-panel .filter-btn {
+  padding: 2px 7px;
+  font-size: 10px;
+}
+.queue-panel { flex: 1; overflow-y: auto; padding: 12px; }
+.queue-panel::-webkit-scrollbar { width: 4px; }
+.queue-panel::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+.queue-label {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.8px;
+  color: var(--text-muted); text-transform: uppercase; margin-bottom: 10px;
+}
+.qcard {
+  display: flex; gap: 8px; padding: 8px; border-radius: 8px;
+  cursor: pointer; transition: background 0.15s;
+  align-items: flex-start; margin-bottom: 2px;
+}
+.qcard:hover { background: var(--bg); }
+.qcard.playing { background: var(--accent-light); }
+.qcard-thumb {
+  position: relative; flex-shrink: 0;
+  width: 96px; aspect-ratio: 16/9;
+  border-radius: 5px; background: #dde0e6; overflow: hidden;
+}
+.qcard-thumb img {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%; object-fit: cover;
+}
+.qcard-thumb-fb {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; color: #b0b4bc;
+}
+.qcard-info { flex: 1; min-width: 0; }
+.qcard-title {
+  font-size: 12px; font-weight: 500; line-height: 1.45; color: var(--text);
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+  overflow: hidden; margin-bottom: 4px;
+}
+.qcard.playing .qcard-title { color: var(--accent); }
+.qcard-meta { font-size: 11px; color: var(--text-muted); }
+.now-dot {
+  display: inline-block; width: 6px; height: 6px;
+  border-radius: 50%; background: var(--accent);
+  margin-right: 4px; vertical-align: middle;
+  animation: pulse 1.2s infinite;
+}
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.25} }
+.empty { text-align: center; padding: 40px 12px; color: var(--text-muted); }
+.empty-icon { font-size: 30px; opacity: 0.35; margin-bottom: 10px; }
+.error-msg {
+  background: #fef2f2; border: 1px solid #fecaca;
+  border-radius: 8px; padding: 12px 16px;
+  color: #dc2626; font-size: 13px; margin-bottom: 12px;
+}
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.vrow  { animation: fadeUp 0.22s ease both; }
+.qcard { animation: fadeUp 0.22s ease both; }
+
+/* 言語切替 */
+[lang="en"] .ja { display: none !important; }
+[lang="ja"] .en { display: none !important; }
+
+/* バージョンバッジ */
+.ver-badge {
+  font-size: 10px; font-weight: 600; color: var(--text-muted);
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 4px; padding: 1px 5px; margin-left: 6px;
+  vertical-align: middle; letter-spacing: 0.03em;
+  cursor: pointer; text-decoration: underline dotted;
+  text-underline-offset: 2px; transition: color 0.15s;
+}
+.ver-badge:hover { color: var(--accent) !important; }
+
+/* JP/ENトグル */
+.lang-toggle {
+  display: flex; align-items: center; margin-right: 6px;
+  border: 1px solid var(--border); border-radius: 4px; overflow: hidden;
+}
+.lang-btn {
+  font-size: 11px; font-weight: 700; padding: 3px 8px;
+  border: none; background: var(--bg); color: var(--text-muted);
+  cursor: pointer; letter-spacing: 0.05em; transition: background 0.15s, color 0.15s;
+}
+.lang-btn + .lang-btn { border-left: 1px solid var(--border); }
+.lang-btn.active-jp { background: #e53935; color: #fff; }
+.lang-btn.active-en { background: #1565c0; color: #fff; }
+.lang-btn:not(.active-jp):not(.active-en):hover { background: var(--accent); color: #fff; }
+
+/* リリースノートモーダル */
+.rn-modal { position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:1000;display:flex;align-items:center;justify-content:center; }
+.rn-card { background:#fff;border-radius:12px;width:90%;max-width:480px;max-height:80vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.2); }
+.rn-header { display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--border); }
+.rn-title  { font-size:13px;font-weight:700;color:var(--text); }
+.rn-close  { background:none;border:none;cursor:pointer;font-size:15px;color:var(--text-muted);padding:3px 7px;border-radius:4px; }
+.rn-close:hover { background:var(--bg); }
+.rn-filter-bar { display:flex;gap:4px;padding:10px 18px 0; }
+.rn-filter-btn { font-size:11px;padding:3px 9px;border-radius:10px;border:1px solid var(--border);background:var(--white);color:var(--text-sub);cursor:pointer;transition:all 0.12s; }
+.rn-filter-btn.active { background:var(--accent-light);color:var(--accent);border-color:rgba(0,102,255,0.3);font-weight:600; }
+.rn-body   { overflow-y:auto;padding:14px 18px; }
+.rn-entry  { margin-bottom:14px; }
+.rn-entry:last-child { margin-bottom:0; }
+.rn-ver    { display:flex;align-items:center;gap:7px;margin-bottom:5px; }
+.rn-ver-num { font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text); }
+.rn-ver-date { font-size:11px;color:var(--text-muted); }
+.rn-type-badge { font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;letter-spacing:0.4px; }
+.rn-type-player { background:#e0f2fe;color:#0369a1; }
+.rn-type-admin  { background:#f0fdf4;color:#166534; }
+.rn-type-both   { background:#fef3c7;color:#92400e; }
+.rn-changes { list-style:none;padding:0;margin:0; }
+.rn-changes li { font-size:12px;color:var(--text-sub);padding:2px 0 2px 12px;position:relative; }
+.rn-changes li::before { content:"·";position:absolute;left:0;color:var(--accent); }
+
+/* =========================================================
+   管理モーダル（Admin Panel）
+   ========================================================= */
+.admin-modal {
+  position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:2000;
+  display:flex;align-items:center;justify-content:center;
+}
+.admin-card {
+  background:#fff;border-radius:14px;width:96%;max-width:960px;
+  height:88vh;display:flex;flex-direction:column;
+  box-shadow:0 24px 80px rgba(0,0,0,0.3);overflow:hidden;
+}
+.admin-header {
+  display:flex;align-items:center;gap:10px;padding:14px 18px;
+  border-bottom:1px solid #e5e7eb;background:#f9fafb;flex-shrink:0;
+}
+.admin-title { font-size:15px;font-weight:700;color:#111;flex:1; }
+.admin-tabs { display:flex;gap:4px; }
+.admin-tab {
+  padding:5px 14px;border-radius:7px;border:1px solid #e5e7eb;
+  background:#fff;font-size:12px;cursor:pointer;color:#555;font-weight:500;
+  transition:all 0.15s;
+}
+.admin-tab.active { background:#0066ff;color:#fff;border-color:#0066ff; }
+.admin-close {
+  width:32px;height:32px;border-radius:50%;border:none;background:#f3f4f6;
+  cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;
+}
+.admin-close:hover { background:#e5e7eb; }
+.admin-body { display:flex;flex:1;overflow:hidden; }
+
+/* 左ペイン：動画一覧 */
+.admin-list-pane {
+  width:320px;flex-shrink:0;border-right:1px solid #e5e7eb;
+  display:flex;flex-direction:column;overflow:hidden;
+}
+.admin-list-search {
+  padding:10px 12px;border-bottom:1px solid #f0f0f0;
+}
+.admin-list-search input {
+  width:100%;padding:6px 10px;border:1px solid #e5e7eb;border-radius:7px;
+  font-size:13px;outline:none;
+}
+.admin-list-scroll { overflow-y:auto;flex:1; }
+.admin-vrow {
+  display:flex;align-items:center;gap:10px;padding:8px 12px;
+  cursor:pointer;border-bottom:1px solid #f5f5f5;transition:background 0.1s;
+}
+.admin-vrow:hover { background:#f0f7ff; }
+.admin-vrow.selected { background:#eff6ff;border-left:3px solid #0066ff; }
+.admin-vrow-thumb {
+  width:60px;height:34px;border-radius:5px;object-fit:cover;
+  background:#e5e7eb;flex-shrink:0;position:relative;overflow:hidden;
+}
+.admin-vrow-thumb img { width:100%;height:100%;object-fit:cover; }
+.admin-vrow-thumb .no-thumb {
+  width:100%;height:100%;display:flex;align-items:center;justify-content:center;
+  font-size:16px;background:#f3f4f6;
+}
+.admin-vrow-info { flex:1;min-width:0; }
+.admin-vrow-name {
+  font-size:12px;font-weight:500;color:#111;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;
+}
+.admin-vrow-badge {
+  display:inline-block;font-size:9px;padding:1px 5px;border-radius:3px;
+  margin-top:2px;font-weight:600;
+}
+.badge-has-thumb  { background:#d1fae5;color:#065f46; }
+.badge-no-thumb   { background:#fee2e2;color:#991b1b; }
+
+/* 右ペイン：プレイヤー＋設定 */
+.admin-detail-pane {
+  flex:1;display:flex;flex-direction:column;overflow:hidden;
+}
+.admin-player-area {
+  flex:1;background:#000;position:relative;min-height:0;
+}
+.admin-player-area iframe {
+  width:100%;height:100%;border:none;
+}
+.admin-player-placeholder {
+  width:100%;height:100%;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;color:#888;gap:8px;
+}
+.admin-player-placeholder .icon { font-size:48px; }
+
+/* サムネイル設定フォーム */
+.admin-thumb-form {
+  padding:14px 16px;border-top:1px solid #e5e7eb;background:#fafafa;flex-shrink:0;
+}
+.admin-thumb-form-title {
+  font-size:12px;font-weight:700;color:#444;margin-bottom:8px;
+}
+.admin-thumb-row { display:flex;gap:8px;align-items:center;margin-bottom:8px; }
+.admin-thumb-input {
+  flex:1;padding:7px 10px;border:1px solid #d1d5db;border-radius:7px;
+  font-size:12px;outline:none;
+}
+.admin-thumb-input:focus { border-color:#0066ff;box-shadow:0 0 0 2px rgba(0,102,255,0.1); }
+.admin-btn {
+  padding:7px 14px;border-radius:7px;border:none;cursor:pointer;
+  font-size:12px;font-weight:600;transition:all 0.15s;white-space:nowrap;
+}
+.admin-btn-primary { background:#0066ff;color:#fff; }
+.admin-btn-primary:hover { background:#0052cc; }
+.admin-btn-primary:disabled { background:#93c5fd;cursor:not-allowed; }
+.admin-btn-danger  { background:#fee2e2;color:#991b1b; }
+.admin-btn-danger:hover { background:#fecaca; }
+.admin-btn-ghost   { background:#f3f4f6;color:#444; }
+.admin-btn-ghost:hover { background:#e5e7eb; }
+.admin-thumb-preview {
+  width:80px;height:45px;border-radius:5px;object-fit:cover;
+  border:1px solid #e5e7eb;flex-shrink:0;display:none;
+}
+.admin-status {
+  font-size:11px;margin-top:4px;min-height:16px;color:#0066ff;
+}
+.admin-hint {
+  font-size:10px;color:#9ca3af;margin-top:4px;line-height:1.5;
+}
+
+/* スキャンタブ */
+.admin-scan-pane {
+  flex:1;display:flex;flex-direction:column;padding:18px;gap:14px;overflow-y:auto;
+}
+.admin-scan-label { font-size:13px;font-weight:700;color:#111;margin-bottom:4px; }
+.admin-scan-input-row { display:flex;gap:8px; }
+.admin-scan-input {
+  flex:1;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;
+  font-size:13px;outline:none;font-family:var(--mono);
+}
+.admin-scan-input:focus { border-color:#0066ff;box-shadow:0 0 0 2px rgba(0,102,255,0.1); }
+.admin-scan-player {
+  width:100%;aspect-ratio:16/9;background:#111;border-radius:10px;overflow:hidden;
+}
+.admin-scan-player iframe { width:100%;height:100%;border:none; }
+.admin-scan-player .placeholder {
+  width:100%;height:100%;display:flex;align-items:center;justify-content:center;
+  color:#888;font-size:40px;
+}
+
+/* =========================================================
+   モバイルレイアウト（768px以下）
+   ========================================================= */
+@media (max-width: 768px) {
+  /* ヘッダー: コンパクトに */
+  :root { --header-h: 48px; }
+  header { padding: 0 10px; gap: 6px; flex-wrap: nowrap; }
+  .logo { font-size: 12px; gap: 5px; }
+  .hihaho-logo-img { height: 16px; }
+  .logo-bar { height: 14px; }
+
+  /* 検索欄: 伸縮 */
+  .search-wrap { max-width: 100%; min-width: 0; }
+  .search-wrap input { font-size: 13px; padding: 6px 10px 6px 28px; }
+
+  /* チャンネルタブ: ヘッダーでは非表示 → ボトムシートで表示 */
+  .ch-tabs { display: none; }
+
+  /* デバッグボタン: 非表示（コンソールがモバイルでは使えない） */
+  .debug-btn { display: none; }
+
+  /* 言語トグル: 小型化 */
+  .lang-toggle { margin-right: 0; }
+  .lang-btn { padding: 3px 7px; font-size: 10px; }
+
+  /* レイアウト: 縦積み */
+  .layout { flex-direction: column; overflow: visible; }
+
+  /* サイドバー: ボトムシートに移行 */
+  .sidebar { display: none; }
+
+  /* プレイヤー: フル幅 */
+  .player-wrap { max-height: none; border-radius: 0; }
+
+  /* info-bar */
+  .info-bar { padding: 8px 12px; }
+  .info-title { font-size: 13px; }
+  .info-meta { font-size: 11px; }
+
+  /* 動画リスト */
+  .video-list {
+    flex: 1;
+    padding: 10px 10px 72px; /* ボトムナビ分の余白 */
+    overflow-y: auto;
+  }
+
+  /* ソートバー: 横スクロール */
+  .sort-bar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .sort-bar::-webkit-scrollbar { display: none; }
+  .sort-btn { flex-shrink: 0; padding: 5px 11px; font-size: 11px; }
+
+  /* フィルタバー: 横スクロール */
+  .filter-bar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .filter-bar::-webkit-scrollbar { display: none; }
+  .filter-btn { flex-shrink: 0; }
+
+  /* リストカード: タッチターゲット拡大 */
+  .vrow { padding: 8px 8px; margin-bottom: 6px; }
+  .vrow-thumb { width: 112px; }
+
+  /* body: ボトムナビ分を確保 */
+  body { overflow: auto; height: auto; min-height: 100vh; }
+}
+
+/* =========================================================
+   モバイル専用UI部品
+   ========================================================= */
+
+/* ボトムナビゲーションバー */
+.mobile-nav {
+  display: none; /* デスクトップでは非表示 */
+}
+@media (max-width: 768px) {
+  .mobile-nav {
+    display: flex;
+    position: fixed; bottom: 0; left: 0; right: 0;
+    height: 56px;
+    background: var(--white);
+    border-top: 1px solid var(--border);
+    z-index: 200;
+    justify-content: space-around;
+    align-items: stretch;
+  }
+}
+.mobile-nav-btn {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  gap: 3px; flex: 1;
+  background: none; border: none;
+  cursor: pointer; font-family: var(--font);
+  color: var(--text-muted); transition: color 0.15s;
+  padding: 4px 0; font-size: 10px; font-weight: 500;
+  -webkit-tap-highlight-color: transparent;
+}
+.mobile-nav-btn:hover, .mobile-nav-btn.active { color: var(--accent); }
+.mobile-nav-btn .nav-icon { font-size: 20px; line-height: 1; }
+
+/* ボトムシート共通 */
+.bottom-sheet-overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 300;
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+.bottom-sheet-overlay.show { opacity: 1; }
+.bottom-sheet {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  background: var(--white);
+  border-radius: 16px 16px 0 0;
+  max-height: 80vh;
+  transform: translateY(100%);
+  transition: transform 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+  display: flex; flex-direction: column;
+  box-shadow: 0 -4px 24px rgba(0,0,0,0.15);
+}
+.bottom-sheet-overlay.show .bottom-sheet { transform: translateY(0); }
+.bottom-sheet-handle {
+  width: 36px; height: 4px;
+  background: var(--border); border-radius: 2px;
+  margin: 10px auto 4px;
+  flex-shrink: 0;
+}
+.bottom-sheet-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 16px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.bottom-sheet-title { font-size: 13px; font-weight: 700; color: var(--text); }
+.bottom-sheet-close {
+  background: none; border: none; cursor: pointer;
+  font-size: 16px; color: var(--text-muted);
+  padding: 4px 8px; border-radius: 4px;
+  -webkit-tap-highlight-color: transparent;
+}
+.bottom-sheet-body { overflow-y: auto; flex: 1; -webkit-overflow-scrolling: touch; }
+
+/* チャンネルシート内のタブ */
+.ch-sheet-tabs {
+  display: flex; flex-direction: column;
+  padding: 8px 0;
+}
+.ch-sheet-tab {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px;
+  cursor: pointer; transition: background 0.12s;
+  font-size: 14px; color: var(--text);
+  border: none; background: none; text-align: left;
+  font-family: var(--font);
+  -webkit-tap-highlight-color: transparent;
+}
+.ch-sheet-tab:hover, .ch-sheet-tab:active { background: var(--bg); }
+.ch-sheet-tab.active { color: var(--accent); background: var(--accent-light); font-weight: 600; }
+.ch-sheet-tab .ch-sheet-icon { font-size: 18px; width: 24px; text-align: center; }
+.ch-sheet-tab .ch-sheet-cnt {
+  margin-left: auto; font-size: 11px;
+  color: var(--text-muted); font-family: var(--mono);
+}
+/* CTAボタンバー */
+.cta-bar {
+  display: flex; gap: 6px; align-items: center;
+  flex-shrink: 0; flex-wrap: wrap; position: relative;
+}
+.cta-bar:empty { display: none; }
+/* お問い合わせポップオーバー */
+.contact-popover {
+  display: none; position: absolute;
+  top: calc(100% + 6px); left: 0;
+  background: #fff; border: 1px solid #e5e7eb;
+  border-radius: 12px; padding: 14px 16px;
+  width: 300px; box-shadow: 0 8px 24px rgba(0,0,0,.15);
+  z-index: 200;
+}
+.contact-popover.open { display: block; }
+.contact-popover::after {
+  content: ''; position: absolute;
+  bottom: 100%; left: 20px;
+  border: 7px solid transparent;
+  border-bottom-color: #e5e7eb;
+}
+.contact-popover::before {
+  content: ''; position: absolute;
+  bottom: 100%; left: 21px;
+  border: 6px solid transparent;
+  border-bottom-color: #fff;
+  z-index: 1;
+}
+.cta-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 18px; border-radius: 20px; border: none;
+  cursor: pointer; font-family: var(--font); font-size: 13px;
+  font-weight: 600; transition: all .15s; text-decoration: none;
+}
+.cta-contact { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+.cta-contact:hover { background: #dcfce7; }
+.cta-meeting { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+.cta-meeting:hover { background: #dbeafe; }
+/* お問い合わせフォームモーダル（面談モーダルと共通スタイル） */
+.form-modal {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,.55); z-index: 500;
+  align-items: center; justify-content: center; padding: 16px;
+}
+.form-modal.open { display: flex; }
+.form-card {
+  background: #fff; border-radius: 14px; width: 100%; max-width: 760px;
+  height: min(88vh, 800px); display: flex; flex-direction: column;
+  overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.25);
+}
+.form-header {
+  padding: 14px 18px; border-bottom: 1px solid #e5e7eb;
+  display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+}
+.form-header h3 { font-size: 22px; font-weight: 700; flex: 1; margin: 0; color: #5a9e4a; }
+.form-header a { font-size: 12px; color: #6b7280; text-decoration: none; border: 1px solid #e5e7eb; border-radius: 6px; padding: 4px 9px; }
+.form-header a:hover { color: var(--accent); border-color: var(--accent); }
+.form-close { background: none; border: none; font-size: 22px; cursor: pointer; color: #6b7280; padding: 2px 6px; line-height: 1; }
+.form-close:hover { color: #111; }
+.form-iframe-wrap { flex: 1; overflow: hidden; position: relative; }
+/* ナビ+地図+見出し+本文+電話をカットしてフォーム欄（会社名〜）から表示 */
+.form-iframe { position: absolute; top: -2400px; left: 0; width: 100%; height: calc(100% + 2400px); border: none; }
+/* 面談申し込みモーダル */
+.meeting-modal {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,.55); z-index: 500;
+  align-items: center; justify-content: center; padding: 16px;
+}
+.meeting-modal.open { display: flex; }
+.meeting-card {
+  background: #fff; border-radius: 14px; width: 100%; max-width: 640px;
+  height: min(80vh, 700px); display: flex; flex-direction: column;
+  overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.25);
+}
+.meeting-header {
+  padding: 14px 18px; border-bottom: 1px solid #e5e7eb;
+  display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+}
+.meeting-header h3 { font-size: 15px; font-weight: 700; flex: 1; margin: 0; }
+.meeting-close {
+  background: none; border: none; font-size: 22px;
+  cursor: pointer; color: #6b7280; padding: 2px 6px; line-height: 1;
+}
+.meeting-close:hover { color: #111; }
+.meeting-iframe { flex: 1; border: none; width: 100%; }
+</style>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-V9Q0Z24N39"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', 'G-V9Q0Z24N39');
+</script>
+</head>
+<body>
+<!-- ── HUB NAVIGATION ── -->
+<style>
+  .hub-nav { position: fixed; top: 0; left: 0; right: 0; z-index: 9999; background: rgba(10,20,60,0.88); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid rgba(255,255,255,0.1); }
+  .hub-nav-inner { max-width: 960px; margin: 0 auto; padding: 0 16px; display: flex; align-items: center; gap: 8px; height: 44px; }
+  .hub-nav-back { color: rgba(255,255,255,0.55); font-size: 12px; font-weight: 600; text-decoration: none; white-space: nowrap; display: flex; align-items: center; gap: 4px; padding: 4px 8px; border-radius: 6px; transition: color 0.2s; }
+  .hub-nav-back:hover { color: #fff; }
+  .hub-nav-divider { width: 1px; height: 20px; background: rgba(255,255,255,0.15); flex-shrink: 0; }
+  .hub-nav-tabs { display: flex; gap: 2px; }
+  .hub-nav-tab { color: rgba(255,255,255,0.5); font-size: 12px; font-weight: 600; text-decoration: none; padding: 4px 12px; border-radius: 6px; transition: color 0.2s, background 0.2s; white-space: nowrap; }
+  .hub-nav-tab:hover { color: #fff; background: rgba(255,255,255,0.08); }
+  .hub-nav-tab.active { color: #fff; background: rgba(255,255,255,0.14); }
+  body { padding-top: 44px !important; }
+</style>
+<nav class="hub-nav">
+  <div class="hub-nav-inner">
+    <a class="hub-nav-back" href="../">← トップページ</a>
+    <div class="hub-nav-divider"></div>
+    <div class="hub-nav-tabs">
+      <a class="hub-nav-tab" href="../event/">📅 セミナー</a>
+      <a class="hub-nav-tab active" href="../demo/">✨ デモ</a>
+      <a class="hub-nav-tab" href="../offer/">🎁 特典</a>
+    </div>
+  </div>
+</nav>
+
+<header>
+  <div class="logo">
+    <div class="logo-bar"></div>
+    <img id="logoImg" src="https://hihaho.com/favicon.ico" class="hihaho-logo-img" onerror="this.style.display='none'" alt="hihaho">
+    <span id="logoText" onclick="showHowTo()" title="使い方" style="cursor:pointer;border-bottom:1px dotted #9ca3af">hihaho Player</span>
+    <span class="ver-badge" onclick="showReleaseNotes()" title="リリースノート">v1.4.0</span>
+  </div>
+  <div class="search-wrap">
+    <span class="search-icon">🔍</span>
+    <input type="text" id="searchInput"
+      placeholder="動画を検索…" data-ph-ja="動画を検索…" data-ph-en="Search videos…"
+      oninput="onSearch(this.value)">
+  </div>
+  <div class="ch-tabs" id="chTabs">
+    <div class="ch-tab-skeleton"></div>
+    <div class="ch-tab-skeleton"></div>
+    <div class="ch-tab-skeleton"></div>
+  </div>
+  <!-- CTAボタン -->
+  <div style="position:relative;flex-shrink:0">
+    <div class="cta-bar" id="ctaBar"></div>
+    <div class="contact-popover" id="contactPopover">
+      <div style="font-size:11px;font-weight:700;color:#6b7280;margin-bottom:8px">📧 メールアドレス</div>
+      <div id="contactEmailAddr" style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:8px 10px;font-family:monospace;font-size:13px;color:#111;word-break:break-all;margin-bottom:10px"></div>
+      <div style="display:flex;gap:6px">
+        <button id="contactCopyBtn" onclick="copyContactEmail()" style="flex:1;padding:7px 6px;border-radius:7px;border:1px solid #d1d5db;background:#f9fafb;cursor:pointer;font-size:12px;font-weight:600">📋 コピー</button>
+        <a id="contactMailtoBtn" href="#" style="flex:1;padding:7px 6px;border-radius:7px;background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;font-size:12px;font-weight:600;text-align:center;text-decoration:none">📧 メールアプリ</a>
+        <a id="contactGmailBtn" href="#" target="_blank" rel="noopener" style="flex:1;padding:7px 6px;border-radius:7px;background:#eff6ff;color:#1d4ed8;border:1px solid #bfdbfe;font-size:12px;font-weight:600;text-align:center;text-decoration:none">✉ Gmail</a>
+      </div>
+    </div>
+  </div>
+  <!-- JP/EN 2ボタントグル -->
+  <div class="lang-toggle">
+    <button class="lang-btn active-jp" id="langBtnJp" onclick="setLang('ja')">JP</button>
+    <button class="lang-btn" id="langBtnEn" onclick="setLang('en')">EN</button>
+  </div>
+  <button class="debug-btn" id="adminBtn" onclick="openAdmin()" style="display:none" title="管理画面">🔧 admin</button>
+  <button class="debug-btn" onclick="copyConsole()">📋 console</button>
+</header>
+
+<div class="layout">
+  <div class="main-area">
+    <div class="player-wrap" id="playerWrap">
+      <div class="player-placeholder" id="placeholder">
+        <div class="player-placeholder-icon">▶</div>
+        <p><span class="ja">動画を選択して再生</span><span class="en">Select a video to play</span></p>
+      </div>
+      <div class="player-spinner" id="spinner"><div class="spinner-ring"></div></div>
+    </div>
+    <div class="info-bar">
+      <div class="info-title" id="nowTitle">
+        <span class="ja">動画を選択してください</span><span class="en">Select a video</span>
+      </div>
+      <div class="info-meta" id="nowMeta"><span>—</span></div>
+    </div>
+    <div class="video-list">
+      <div id="videoGrid">
+        <div class="vrow-skeleton"><div class="skel-thumb"></div><div class="skel-info"><div class="skel-line" style="width:80%"></div><div class="skel-line" style="width:55%"></div><div class="skel-line" style="width:35%"></div></div></div>
+        <div class="vrow-skeleton"><div class="skel-thumb"></div><div class="skel-info"><div class="skel-line" style="width:70%"></div><div class="skel-line" style="width:45%"></div><div class="skel-line" style="width:30%"></div></div></div>
+        <div class="vrow-skeleton"><div class="skel-thumb"></div><div class="skel-info"><div class="skel-line" style="width:85%"></div><div class="skel-line" style="width:60%"></div><div class="skel-line" style="width:40%"></div></div></div>
+      </div>
+    </div>
+  </div>
+  <aside class="sidebar">
+    <div class="ch-info-panel" id="chInfoPanel">
+      <div class="ch-info-head">
+        <div class="ch-avatar">…</div>
+        <div><div class="ch-info-name">読み込み中</div><div class="ch-info-id">—</div></div>
+      </div>
+    </div>
+    <!-- ソートバー・フィルタバー（サイドバー内） -->
+    <div class="sidebar-sort-panel" id="sidebarSortPanel">
+      <div class="sort-bar" id="sortBar"></div>
+      <div class="filter-bar" id="filterBar"></div>
+    </div>
+    <div class="queue-panel" id="queuePanel">
+      <div class="queue-label">ラインナップ</div>
+    </div>
+  </aside>
+</div>
+
+<!-- ========== モバイル: ボトムナビゲーションバー ========== -->
+<nav class="mobile-nav" id="mobileNav">
+  <button class="mobile-nav-btn" id="mnavChannel" onclick="openChannelSheet()">
+    <span class="nav-icon">📺</span>
+    <span class="ja">チャンネル</span><span class="en">Channel</span>
+  </button>
+  <button class="mobile-nav-btn" id="mnavQueue" onclick="openQueueSheet()">
+    <span class="nav-icon">☰</span>
+    <span class="ja">ラインナップ</span><span class="en">Lineup</span>
+  </button>
+  <button class="mobile-nav-btn" onclick="toggleLang()">
+    <span class="nav-icon" id="mnavLangIcon">🇯🇵</span>
+    <span id="mnavLangLabel">JP/EN</span>
+  </button>
+</nav>
+
+<!-- ========== モバイル: チャンネル選択ボトムシート ========== -->
+<div class="bottom-sheet-overlay" id="channelSheetOverlay" onclick="if(event.target===this)closeChannelSheet()">
+  <div class="bottom-sheet">
+    <div class="bottom-sheet-handle"></div>
+    <div class="bottom-sheet-header">
+      <span class="bottom-sheet-title">
+        <span class="ja">📺 チャンネル</span><span class="en">📺 Channels</span>
+      </span>
+      <button class="bottom-sheet-close" onclick="closeChannelSheet()">✕</button>
+    </div>
+    <div class="bottom-sheet-body">
+      <div class="ch-sheet-tabs" id="chSheetTabs">
+        <!-- JSで動的生成 -->
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== モバイル: ラインナップ ボトムシート ========== -->
+<div class="bottom-sheet-overlay" id="queueSheetOverlay" onclick="if(event.target===this)closeQueueSheet()">
+  <div class="bottom-sheet">
+    <div class="bottom-sheet-handle"></div>
+    <div class="bottom-sheet-header">
+      <span class="bottom-sheet-title" id="queueSheetTitle">
+        <span class="ja">☰ ラインナップ</span><span class="en">☰ Lineup</span>
+      </span>
+      <button class="bottom-sheet-close" onclick="closeQueueSheet()">✕</button>
+    </div>
+    <div class="bottom-sheet-body" id="queueSheetBody">
+      <!-- JSでサイドバーのqueuePanelをミラー -->
+    </div>
+  </div>
+</div>
+
+<!-- リリースノートモーダル -->
+<div id="rnModal" class="rn-modal" style="display:none" onclick="if(event.target===this)hideReleaseNotes()">
+  <div class="rn-card">
+    <div class="rn-header">
+      <span class="rn-title">📋 リリースノート</span>
+      <button class="rn-close" onclick="hideReleaseNotes()">✕</button>
+    </div>
+    <div class="rn-filter-bar">
+      <button class="rn-filter-btn active" id="rnf-all"    onclick="rnFilter('all')">すべて</button>
+      <button class="rn-filter-btn"        id="rnf-player" onclick="rnFilter('player')">PLAYER</button>
+      <button class="rn-filter-btn"        id="rnf-admin"  onclick="rnFilter('admin')">ADMIN</button>
+    </div>
+    <div class="rn-body" id="rnBody"></div>
+  </div>
+</div>
+
+<!-- ========== 管理モーダル（Admin Panel） ========== -->
+<div id="adminModal" class="admin-modal" style="display:none" onclick="if(event.target===this)closeAdmin()">
+  <div class="admin-card">
+    <!-- ヘッダー -->
+    <div class="admin-header">
+      <span class="admin-title">🔧 管理画面 — hihaho Player</span>
+      <div class="admin-tabs">
+        <button class="admin-tab active" id="adminTabList" onclick="adminSwitchTab('list')">📋 動画一覧</button>
+        <button class="admin-tab"        id="adminTabScan" onclick="adminSwitchTab('scan')">🎬 スキャン設定</button>
+      </div>
+      <button class="admin-close" onclick="closeAdmin()">✕</button>
+    </div>
+
+    <!-- 動画一覧タブ -->
+    <div class="admin-body" id="adminPaneList">
+      <!-- 左：動画一覧 -->
+      <div class="admin-list-pane">
+        <div class="admin-list-search">
+          <input id="adminSearch" type="text" placeholder="🔍 動画を検索…" oninput="adminFilterList(this.value)">
+        </div>
+        <div class="admin-list-scroll" id="adminVideoList">
+          <!-- JSで動的生成 -->
+        </div>
+      </div>
+      <!-- 右：プレイヤー＋サムネイル設定 -->
+      <div class="admin-detail-pane">
+        <div class="admin-player-area" id="adminPlayerArea">
+          <div class="admin-player-placeholder" id="adminPlayerPlaceholder">
+            <span class="icon">🎬</span>
+            <span style="font-size:13px">左の一覧から動画を選択</span>
+          </div>
+        </div>
+        <div class="admin-thumb-form">
+          <div class="admin-thumb-form-title">📷 サムネイル設定 — <span id="adminCurrentName" style="font-weight:400;color:#666">動画未選択</span></div>
+          <div class="admin-thumb-row">
+            <img id="adminThumbPreview" class="admin-thumb-preview" alt="preview"
+              onload="this.style.display='block'" onerror="this.style.display='none'">
+            <input id="adminThumbUrl" class="admin-thumb-input" type="url"
+              placeholder="サムネイル画像のURL（https://…）"
+              oninput="document.getElementById('adminThumbPreview').src=this.value">
+            <button class="admin-btn admin-btn-primary" onclick="adminSaveThumb()" id="adminSaveBtn" disabled>💾 保存</button>
+            <button class="admin-btn admin-btn-danger" onclick="adminDeleteThumb()" id="adminDelBtn" style="display:none">🗑 削除</button>
+          </div>
+          <div class="admin-status" id="adminStatus"></div>
+          <div class="admin-hint">
+            💡 手順: ①動画を選択して再生 → ②好きなフレームでスクリーンショット撮影 → ③Imgur等にアップロードしてURLをコピー → ④上に貼り付けて保存
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- スキャン設定タブ -->
+    <div class="admin-body" id="adminPaneScan" style="display:none">
+      <div class="admin-scan-pane">
+        <div>
+          <div class="admin-scan-label">🔗 hihaho URL / UUID を入力して再生</div>
+          <div class="admin-scan-input-row">
+            <input id="adminScanInput" class="admin-scan-input"
+              placeholder="https://player.hihaho.com/… または UUID（例: abc123-…）"
+              onkeydown="if(event.key==='Enter')adminScanPlay()">
+            <button class="admin-btn admin-btn-primary" onclick="adminScanPlay()">▶ 再生</button>
+            <button class="admin-btn admin-btn-ghost"   onclick="adminScanClear()">✕</button>
+          </div>
+        </div>
+        <div class="admin-scan-player" id="adminScanPlayer">
+          <div class="placeholder">🎬</div>
+        </div>
+        <div>
+          <div class="admin-scan-label">📷 サムネイルURL登録</div>
+          <div class="admin-thumb-row">
+            <img id="adminScanThumbPreview" class="admin-thumb-preview" alt="preview"
+              onload="this.style.display='block'" onerror="this.style.display='none'">
+            <input id="adminScanThumbUrl" class="admin-thumb-input" type="url"
+              placeholder="スクリーンショットのURL（https://…）"
+              oninput="document.getElementById('adminScanThumbPreview').src=this.value">
+            <button class="admin-btn admin-btn-primary" onclick="adminScanSave()" id="adminScanSaveBtn" disabled>💾 保存</button>
+          </div>
+          <div class="admin-status" id="adminScanStatus"></div>
+          <div class="admin-hint">
+            💡 スクリーンショット → <a href="https://imgur.com/upload" target="_blank" style="color:#0066ff">Imgur</a> にアップロード → "Direct Link" をコゔー → 上に貼り付けて保存
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// =========================================================
+// ★設定
+// =========================================================
+const WORKER_URL = 'https://hihaho-proxy.jumpei-omote.workers.dev';
+
+// Firebase設定
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyDPlsAhtxbJBihy-EAHck9P7XbuMdzV0ds",
+  authDomain: "cc-dev-ps7.firebaseapp.com",
+  projectId: "cc-dev-ps7",
+  storageBucket: "cc-dev-ps7.firebasestorage.app",
+  messagingSenderId: "1029579090333",
+  appId: "1:1029579090333:web:5a2ea499fec97c497f2774"
+};
+
+// フォルダID（?id= URLパラメータからFirestore経由で取得。なければフォールバック）
+const FALLBACK_FOLDER_IDS = [21078, 12452, 21334];
+let SHOW_FOLDER_IDS = [];
+let SHOW_VIDEO_IDS = [];
+
+// ★ サムネイル設定
+const THUMB_BASE = 'https://cc-dev-ps7.web.app/hihaho-player/thumbs';
+const THUMB_EXT = 'jpg';
+
+// statusラベル
+const STATUS = {
+  0: { label: 'DRAFT',       cls: 'badge badge-draft' },
+  1: { label: 'PUBLISHED',   cls: 'badge badge-published' },
+  2: { label: 'INTERACTIVE', cls: 'badge' },
+  4: { label: 'ARCHIVED',    cls: 'badge badge-draft' },
+};
+
+// =========================================================
+// ソート設定
+// =========================================================
+const SORT_OPTS = [
+  { key: 'new',        labelJa: '📅 新しい順',      labelEn: '📅 Newest' },
+  { key: 'old',        labelJa: '📅 古い順',        labelEn: '📅 Oldest' },
+  { key: 'upd_desc',   labelJa: '🔄 更新↓',        labelEn: '🔄 Updated↓' },
+  { key: 'upd_asc',    labelJa: '🔄 更新↑',        labelEn: '🔄 Updated↑' },
+  { key: 'alpha_asc',  labelJa: 'あ→ん',            labelEn: 'A→Z' },
+  { key: 'alpha_desc', labelJa: 'ん→あ',            labelEn: 'Z→A' },
+  { key: 'random',     labelJa: '🔀 ランダム',       labelEn: '🔀 Random' },
+  { key: 'thumb_first',labelJa: '🖼 サムネあり先',   labelEn: '🖼 Thumb First' },
+  { key: 'plays',      labelJa: '👁 再生多い順',     labelEn: '👁 Most Played' },
+];
+let currentSort = 'new';
+let thumbFilter  = 'all'; // 'all' | 'thumb' | 'no-thumb'
+
+// =========================================================
+// 状態管理
+// =========================================================
+let allFolders  = [];
+let allVideos   = [];
+let activeChId  = null;
+let activeVidId = null;
+let searchQ     = '';
+let clog        = [];
+let videoMeta   = {}; // uuid → { thumbnailUrl, display_name_en }
+let _defaultVideoId = ''; // Firestoreから取得した初期再生動画ID
+
+// 再生回数マップ: videoId → 数値（Hihaho API実データ、-1=取得失敗）
+let playCountMap = new Map();
+
+// =========================================================
+// 翻訳キャッシュ（MyMemory API）
+// =========================================================
+const _translCache = {};
+
+function getTitle(vid) {
+  if (_currentLang === 'ja') return vid.display_name;
+  if (videoMeta[vid.uuid]?.display_name_en) return videoMeta[vid.uuid].display_name_en;
+  if (_translCache[vid.id]) return _translCache[vid.id];
+  if (!_translCache['_pending_' + vid.id]) {
+    _translCache['_pending_' + vid.id] = true;
+    translateTitle(vid);
+  }
+  return vid.display_name;
+}
+
+async function translateTitle(vid) {
+  try {
+    const res = await fetch(
+      `https://api.mymemory.translated.net/get?q=${encodeURIComponent(vid.display_name)}&langpair=ja|en`
+    );
+    const data = await res.json();
+    if (data.responseStatus === 200 && data.responseData?.translatedText) {
+      _translCache[vid.id] = data.responseData.translatedText;
+      if (_currentLang === 'en') { renderGrid(); renderSidebar(); }
+    }
+  } catch(e) { console.error('翻訳エラー:', e.message); }
+}
+
+// =========================================================
+// ログ
+// =========================================================
+const origLog = console.log.bind(console);
+console.log = (...a) => { origLog(...a); clog.push(a.join(' ')); };
+const origErr = console.error.bind(console);
+console.error = (...a) => { origErr(...a); clog.push('[ERR] ' + a.join(' ')); };
+const log = m => console.log(`[hihaho] ${m}`);
+
+// =========================================================
+// サムネイルHTML生成
+// 優先: ①Firestore video_meta → ②Firebase Hosting → ③🎬フォールバック
+// =========================================================
+function thumbHtml(uuid, cls) {
+  const metaUrl = videoMeta[uuid]?.thumbnailUrl;
+  const src = metaUrl || `${THUMB_BASE}/${uuid}.${THUMB_EXT}`;
+  if (cls === 'vrow') {
+    return `
+      <img src="${src}"
+           style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"
+           onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
+           loading="lazy">
+      <div class="vrow-thumb-fb" style="display:none">🎬</div>`;
+  } else {
+    return `
+      <img src="${src}"
+           style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover"
+           onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"
+           loading="lazy">
+      <div class="qcard-thumb-fb" style="display:none">🎬</div>`;
+  }
+}
+
+// =========================================================
+// API呼び出し（Cloudflare Worker経由）
+// =========================================================
+async function apiFetch(path, retries = 3) {
+  for (let i = 0; i <= retries; i++) {
+    const res = await fetch(`${WORKER_URL}${path}`, {
+      headers: { 'Accept': 'application/json' }
+    });
+    // 429（レート制限）は指数バックオフでリトライ
+    if (res.status === 429 && i < retries) {
+      const wait = 1000 * Math.pow(2, i); // 1s, 2s, 4s
+      log(`429 rate limit: ${path} → ${wait}ms後にリトライ (${i+1}/${retries})`);
+      await new Promise(r => setTimeout(r, wait));
+      continue;
+    }
+    if (!res.ok) throw new Error(`API error: ${res.status} ${path}`);
+    return res.json();
+  }
+}
+
+// =========================================================
+// 再生回数取得（Hihaho aggregated-statistics API）
+// 5並列バッチ処理・バッチ間200ms待機てレート制限対策
+// 取得完了ごとにDOM直接更新（グリッド全再描画なし）
+// =========================================================
+
+// 1件の再生回数を取得してバッジDOMを即時更新
+async function _fetchOnePlayCount(v) {
+  try {
+    const data = await apiFetch(`/v2/video/${v.id}/aggregated-statistics`);
+    const stats = data?.data?.aggregated_statistics;
+    const num = Number(stats?.views ?? stats?.play_count ?? stats?.plays ?? 0) || 0;
+    playCountMap.set(v.id, num);
+    log(`再生回数 [${v.id}] views=${num}`);
+    document.querySelectorAll(`.vrow-count-ov[data-vid="${v.id}"]`).forEach(el => {
+      el.textContent = num.toLocaleString();
+      el.classList.add('loaded');
+    });
+  } catch (e) {
+    console.error(`再生回数取得失敗 [${v.id}]: ${e.message}`);
+    playCountMap.set(v.id, 0);
+    document.querySelectorAll(`.vrow-count-ov[data-vid="${v.id}"]`).forEach(el => {
+      el.textContent = '0';
+      el.classList.add('loaded');
+    });
+  }
+}
+
+async function loadPlayCounts() {
+  if (allVideos.length === 0) return;
+  const BATCH = 5; // 1バッチあたりの同時リクエスト数
+  const delay = ms => new Promise(r => setTimeout(r, ms));
+  log(`再生回数取得開始: ${allVideos.length}本（${BATCH}並列バッチ）`);
+
+  for (let i = 0; i < allVideos.length; i += BATCH) {
+    const batch = allVideos.slice(i, i + BATCH);
+    await Promise.all(batch.map(v => _fetchOnePlayCount(v)));
+    // バッチ間に200ms待機（レート制限対策）
+    if (i + BATCH < allVideos.length) await delay(200);
+  }
+  log('再生回数取得完了');
+}
+
+// 再生回数オーバーレイHTML（サムネイル内に埋め込む）
+// 取得前: グレー「…」、取得後: 赤バッジに数値
+function playCountOverlay(videoId) {
+  const count = playCountMap.get(videoId);
+  const loaded = playCountMap.has(videoId);
+  const text   = loaded ? (Number(count) || 0).toLocaleString() : '…';
+  return `<div class="vrow-count-ov${loaded?' loaded':''}" data-vid="${videoId}">${text}</div>`;
+}
+
+// =========================================================
+// 初期化
+// =========================================================
+async function init() {
+  log('初期化開始');
+  try {
+    // Firebase初期化
+    firebase.initializeApp(FIREBASE_CONFIG);
+    const db = firebase.firestore();
+
+    // URLパラメータ ?id= からFirestoreのプレイリストを取得
+    const playlistId = 'jdfmmvxwmpc24ii7' /* playlist: EDIX2026 hihaho（ひはほ） */;
+    if (playlistId) {
+      const playlistDoc = await db.collection('playlists').doc(playlistId).get();
+      if (!playlistDoc.exists) {
+        showError(_currentLang==='ja'
+          ? `プレイリストが見つかりません (id: ${playlistId})`
+          : `Playlist not found (id: ${playlistId})`);
+        return;
+      }
+      const pd = playlistDoc.data();
+      SHOW_FOLDER_IDS = pd.folderIds || [];
+      SHOW_VIDEO_IDS = pd.videoIds || [];
+      _defaultVideoId = pd.defaultVideoId || '';
+      document.title = `hihaho Player – ${pd.name}`;
+        // ロゴ・プレイヤーヤー名のカスタマイズ適用
+        if (pd.playerName) { const el=document.getElementById('logoText'); if(el) el.textContent=pd.playerName; }
+        if (pd.logoUrl) { const el=document.getElementById('logoImg'); if(el){ el.src=pd.logoUrl; el.style.cssText='height:28px;width:auto;object-fit:contain;margin-right:6px;'; } }
+        renderCtaBar(pd);
+      log(`プレイリスト: ${pd.name} / フォルダ${SHOW_FOLDER_IDS.length}件`);
+    } else {
+      // ?id= なし → フォールバック
+      SHOW_FOLDER_IDS = FALLBACK_FOLDER_IDS;
+      log(`フォールバックフォルダ: ${SHOW_FOLDER_IDS.join(',')}`);
+    }
+
+    if (SHOW_FOLDER_IDS.length === 0 && SHOW_VIDEO_IDS.length === 0) {
+      showError(_currentLang==='ja' ? 'フォルダが設定されていません' : 'No folders configured');
+      return;
+    }
+
+    // 個別動画モード（管理画面「動画を個別に選ぶ」で作成したプレイリスト）
+    if (SHOW_FOLDER_IDS.length === 0 && SHOW_VIDEO_IDS.length > 0) {
+      try {
+        const metaSnap2 = await db.collection('video_meta').get();
+        metaSnap2.forEach(doc => { videoMeta[doc.id] = doc.data(); });
+        log('video_meta: ' + metaSnap2.size + '件取得');
+      } catch (e) { /* 無視 */ }
+      const vRes = await Promise.all(
+        SHOW_VIDEO_IDS.map(id => apiFetch('/v2/video/' + id).catch(() => null))
+      );
+      allVideos = vRes
+        .filter(r => r && r.data)
+        .map(r => ({ ...r.data, video_container_id: 0 }));
+      allVideos.sort((a, b) => SHOW_VIDEO_IDS.indexOf(a.id) - SHOW_VIDEO_IDS.indexOf(b.id));
+      allFolders = [{ id: 0, name: document.title.replace(/^hihaho Player – /, '') }];
+      activeChId = 0;
+      log('個別動画: ' + allVideos.length + '件');
+      renderTabs();
+      renderSortBar();
+      renderSidebar();
+      renderGrid();
+      // 初期動画の自動再生
+      if (_defaultVideoId) {
+        const defVid = allVideos.find(v => String(v.id) === String(_defaultVideoId));
+        if (defVid) play(defVid.id);
+      }
+      log('初期化完了（個別動画モード）');
+      return;
+    }
+
+    // Firestore video_meta（カスタムサムネイル・英語名）
+    try {
+      const metaSnap = await db.collection('video_meta').get();
+      metaSnap.forEach(doc => { videoMeta[doc.id] = doc.data(); });
+      log(`video_meta: ${metaSnap.size}件`);
+    } catch(e) { console.error('video_meta取得失敗:', e.message); }
+
+    // フォルダ一覧取得
+    const foldersRes = await apiFetch('/v2/video-container');
+    allFolders = (foldersRes.data || []).filter(f => SHOW_FOLDER_IDS.includes(f.id));
+    allFolders.sort((a, b) => SHOW_FOLDER_IDS.indexOf(a.id) - SHOW_FOLDER_IDS.indexOf(b.id));
+
+    if (allFolders.length === 0) {
+      showError(_currentLang==='ja' ? '表示できるフォルダがありません' : 'No folders available');
+      return;
+    }
+
+    // 各フォルダの動画を順次取得（並列だと429になるため100ms間隔）
+    const videoResults = [];
+    for (const f of allFolders) {
+      const r = await apiFetch(`/v2/video?video_container_id=${f.id}`);
+      videoResults.push(r);
+      if (allFolders.length > 1) await new Promise(r => setTimeout(r, 100));
+    }
+    allVideos = videoResults.flatMap(r => r.data || []);
+    log(`フォルダ: ${allFolders.length}件 / 動画: ${allVideos.length}件`);
+
+    activeChId = allFolders[0].id;
+    renderTabs();
+    renderSortBar();
+    renderSidebar();
+    renderGrid();
+    // 初期動画の自動再生
+    if (_defaultVideoId) {
+      const defVid = allVideos.find(v => String(v.id) === String(_defaultVideoId));
+      if (defVid) {
+        // 該当フォルダをアクティブにしてから再生
+        if (defVid.video_container_id !== activeChId) {
+          activeChId = defVid.video_container_id;
+          renderTabs();
+          renderSidebar();
+        }
+        play(defVid.id);
+      }
+    }
+    log('初期化完了');
+
+    // バックグラウンドで再生回数を取得
+    loadPlayCounts();
+
+  } catch(e) {
+    console.error(e.message);
+    showError(`データ取得エラー: ${e.message}`);
+  }
+}
+
+// =========================================================
+// エラー表示
+// =========================================================
+function showError(msg) {
+  document.getElementById('videoGrid').innerHTML = `<div class="error-msg">⚠️ ${msg}</div>`;
+  document.getElementById('chTabs').innerHTML = '';
+}
+
+// =========================================================
+// タブ描画
+// =========================================================
+function renderTabs() {
+  document.getElementById('chTabs').innerHTML = allFolders.map(f => {
+    const count = curChVideos(f.id).length;
+    return `<button class="ch-tab ${f.id === activeChId ? 'active' : ''}" onclick="selectCh(${f.id})">
+      ${esc(f.name)} <span style="opacity:0.6;font-size:10px">${count}</span>
+    </button>`;
+  }).join('');
+}
+
+function selectCh(id) {
+  activeChId = id;
+  searchQ = '';
+  document.getElementById('searchInput').value = '';
+  renderTabs();
+  renderSidebar();
+  renderGrid();
+}
+
+// =========================================================
+// サイドバー描画
+// =========================================================
+function renderSidebar() {
+  const folder = curFolder();
+  if (!folder) return;
+  const videos = filteredVideos();
+  const initial = (folder.name || '?').charAt(0).toUpperCase();
+  document.getElementById('chInfoPanel').innerHTML = `
+    <div class="ch-info-head">
+      <div class="ch-avatar">${initial}</div>
+      <div>
+        <div class="ch-info-name">${esc(folder.name)}</div>
+        <div class="ch-info-id">ID: ${folder.id}</div>
+      </div>
+    </div>
+    <div class="ch-info-count">${curChVideos().length} ${_currentLang==='ja'?'本の動画':'videos'}</div>`;
+
+  const qp = document.getElementById('queuePanel');
+  qp.innerHTML = `<div class="queue-label">${_currentLang==='ja'?'ラインナップ':'Lineup'}</div>` +
+    (videos.length === 0
+      ? `<div class="empty"><div class="empty-icon">🔍</div><p>${_currentLang==='ja'?'動画が見つかりません':'No videos found'}</p></div>`
+      : videos.map((v, i) => `
+        <div class="qcard ${v.id===activeVidId?'playing':''}" style="animation-delay:${i*25}ms" onclick="play(${v.id})">
+          <div class="qcard-thumb">${thumbHtml(v.uuid,'qcard')}</div>
+          <div class="qcard-info">
+            <div class="qcard-title">${v.id===activeVidId?'<span class="now-dot"></span>':''}${esc(getTitle(v))}</div>
+            <div class="qcard-meta">${fmt(v.created_at)}</div>
+          </div>
+        </div>`).join(''));
+}
+
+// =========================================================
+// 解説テキスト描画（現在再生中の動画のdescriptionを表示）
+// =========================================================
+function renderGrid() {
+  const g = document.getElementById('videoGrid');
+  if (!g) return;
+
+  // 再生中の動画がなければ空表示
+  if (!activeVidId) {
+    g.innerHTML = '';
+    return;
+  }
+
+  const vid = allVideos.find(v => v.id === activeVidId);
+  if (!vid) { g.innerHTML = ''; return; }
+
+  const desc = videoMeta[vid.uuid]?.description;
+  if (!desc) {
+    g.innerHTML = '';
+    return;
+  }
+
+  g.innerHTML = `<div style="background:#fff;border-radius:10px;padding:14px 16px;border:1px solid var(--border-light)">
+    <div style="font-size:13px;line-height:1.75;color:var(--text);white-space:pre-wrap">${esc(desc)}</div>
+  </div>`;
+}
+
+// =========================================================
+// 再生
+// =========================================================
+function play(id) {
+  const vid = allVideos.find(v => v.id === id);
+  if (!vid) return;
+  activeVidId = id;
+  log(`再生: ${vid.display_name} (uuid: ${vid.uuid})`);
+
+  const wrap = document.getElementById('playerWrap');
+  document.getElementById('placeholder').style.display = 'none';
+  document.getElementById('spinner').classList.add('show');
+  wrap.querySelector('iframe')?.remove();
+
+  const iframe = document.createElement('iframe');
+  iframe.src = `https://player.hihaho.com/embed/${vid.uuid}`;
+  iframe.allow = 'autoplay; fullscreen';
+  iframe.allowFullscreen = true;
+  iframe.onload = () => {
+    document.getElementById('spinner').classList.remove('show');
+    log(`iframe完了: ${vid.uuid}`);
+  };
+  wrap.appendChild(iframe);
+
+  const st = STATUS[vid.status] || STATUS[0];
+  document.getElementById('nowTitle').innerHTML =
+    `${esc(getTitle(vid))}${st.cls?` <span class="${st.cls}">${st.label}</span>`:''}`;
+  document.getElementById('nowMeta').innerHTML =
+    `<span>${curFolder()?.name||''}</span>
+     <span class="dot">·</span>
+     <span>${fmt(vid.created_at)}</span>
+     <span class="dot">·</span>
+     <span style="font-family:var(--mono);font-size:11px;color:var(--text-muted)">${vid.uuid.slice(0,8)}…</span>`;
+
+  renderSidebar();
+  renderGrid();
+}
+
+// =========================================================
+// 検索
+// =========================================================
+function onSearch(q) {
+  searchQ = q.trim();
+  renderGrid();
+  renderSidebar();
+}
+
+// =========================================================
+// ユーティリティ
+// =========================================================
+const curFolder   = () => allFolders.find(f => f.id === activeChId);
+
+// status=1(PUBLISHED) または status=2(INTERACTIVE) のみ表示
+const curChVideos = (fid) => {
+  const id = fid ?? activeChId;
+  return allVideos.filter(v => v.video_container_id === id && (v.status === 1 || v.status === 2));
+};
+
+const hasThumbnail = v => !!(videoMeta[v.uuid]?.thumbnailUrl);
+
+const filteredVideos = () => {
+  let vs = curChVideos();
+  if (searchQ) {
+    const q = searchQ.toLowerCase();
+    vs = vs.filter(v =>
+      v.display_name.toLowerCase().includes(q) ||
+      (v.description || '').toLowerCase().includes(q)
+    );
+  }
+  if (thumbFilter === 'thumb')    vs = vs.filter(v =>  hasThumbnail(v));
+  if (thumbFilter === 'no-thumb') vs = vs.filter(v => !hasThumbnail(v));
+  return sortVideos(vs);
+};
+
+function sortVideos(videos) {
+  const arr = [...videos];
+  switch (currentSort) {
+    case 'new':       return arr.sort((a,b) => new Date(b.created_at)-new Date(a.created_at));
+    case 'old':       return arr.sort((a,b) => new Date(a.created_at)-new Date(b.created_at));
+    case 'upd_desc':  return arr.sort((a,b) => new Date(b.updated_at||b.created_at)-new Date(a.updated_at||a.created_at));
+    case 'upd_asc':   return arr.sort((a,b) => new Date(a.updated_at||a.created_at)-new Date(b.updated_at||b.created_at));
+    case 'alpha_asc': return arr.sort((a,b) => a.display_name.localeCompare(b.display_name,'ja'));
+    case 'alpha_desc':return arr.sort((a,b) => b.display_name.localeCompare(a.display_name,'ja'));
+    case 'random':
+      for (let i=arr.length-1;i>0;i--) {
+        const j=Math.floor(Math.random()*(i+1));
+        [arr[i],arr[j]]=[arr[j],arr[i]];
+      }
+      return arr;
+    case 'thumb_first':
+      return arr.sort((a,b) => {
+        const aH=hasThumbnail(a), bH=hasThumbnail(b);
+        if (aH!==bH) return aH?-1:1;
+        return new Date(b.created_at)-new Date(a.created_at);
+      });
+    case 'plays':
+      return arr.sort((a,b) => (playCountMap.get(b.id)||0)-(playCountMap.get(a.id)||0));
+    default: return arr;
+  }
+}
+
+// =========================================================
+// ソートバー・フィルタバー描画
+// =========================================================
+function renderSortBar() {
+  document.getElementById('sortBar').innerHTML = SORT_OPTS.map(o =>
+    `<button class="sort-btn ${o.key===currentSort?'active':''}" onclick="setSort('${o.key}')">
+      ${_currentLang==='ja'?o.labelJa:o.labelEn}
+    </button>`
+  ).join('');
+  renderFilterBar();
+}
+
+const FILTER_OPTS = [
+  { key:'all',      labelJa:'両方',    labelEn:'All',         cls:'' },
+  { key:'thumb',    labelJa:'🖼 あり',  labelEn:'🖼 With',    cls:'active' },
+  { key:'no-thumb', labelJa:'🚫 なし',  labelEn:'🚫 Without', cls:'active-none' },
+];
+function renderFilterBar() {
+  const el = document.getElementById('filterBar');
+  if (!el) return;
+  el.innerHTML = `<span class="filter-label">${_currentLang==='ja'?'サムネ:':'Thumb:'}</span>` +
+    FILTER_OPTS.map(o => {
+      const isActive = o.key === thumbFilter;
+      const cls = isActive ? `filter-btn ${o.cls||'active'}` : 'filter-btn';
+      return `<button class="${cls}" onclick="setThumbFilter('${o.key}')">
+        ${_currentLang==='ja'?o.labelJa:o.labelEn}
+      </button>`;
+    }).join('');
+}
+
+function setSort(key) {
+  currentSort = key;
+  renderSortBar();
+  renderGrid();
+  renderSidebar();
+}
+function setThumbFilter(key) {
+  thumbFilter = key;
+  renderFilterBar();
+  renderGrid();
+  renderSidebar();
+}
+
+// =========================================================
+// 言語切替
+// =========================================================
+let _currentLang = 'ja';
+function setLang(lang) {
+  if (_currentLang === lang) return;
+  _currentLang = lang;
+  document.documentElement.lang = lang;
+  document.getElementById('langBtnJp')?.classList.toggle('active-jp', lang==='ja');
+  document.getElementById('langBtnEn')?.classList.toggle('active-en', lang==='en');
+  const inp = document.getElementById('searchInput');
+  if (inp) inp.placeholder = lang==='ja' ? inp.dataset.phJa : inp.dataset.phEn;
+  // EN切替時に全タイトルを先読み翻訳
+  if (lang === 'en') {
+    allVideos.forEach(v => {
+      if (!_translCache[v.id] && !videoMeta[v.uuid]?.display_name_en && !_translCache['_pending_'+v.id]) {
+        _translCache['_pending_'+v.id] = true;
+        translateTitle(v);
+      }
+    });
+  }
+  if (typeof renderSortBar === 'function') renderSortBar();
+  if (typeof renderGrid === 'function') renderGrid();
+  if (typeof renderSidebar === 'function') renderSidebar();
+}
+function toggleLang() { setLang(_currentLang==='ja'?'en':'ja'); }
+
+// =========================================================
+// リリースノート
+// =========================================================
+const RELEASE_NOTES = [
+  { ver:'v1.4.0', date:'2026-05-18', type:'both',
+    ja:['CTAバー追加：動画タイトル下にお問い合わせ・面談申し込みボタンを表示',
+        'お問い合わせ：メールアドレスをコピー / メールアプリ / Gmailで送信',
+        '面談申し込み：Googleカレンダーで30分の面談を予約（新規タブ）',
+        'アプリ名クリックで使い方ガイドを表示'],
+    en:['CTA bar added: contact & meeting booking buttons below video title',
+        'Contact: copy email address / open mail app / open Gmail',
+        'Meeting: book a 30-min slot via Google Calendar (new tab)',
+        'Click app name to show usage guide'] },
+  { ver:'v1.3.3', date:'2026-04-06', type:'admin',
+    ja:['管理画面追加（?admin=1 or Ctrl+Shift+A）',
+        '動画一覧タブ：サムネあり/なし一覧・iframeプレビュー・Firestore保存',
+        'スキャン設定タブ：UUID/URL入力で任意動画を再生・サムネ登録',
+        '429レート制限リトライ（指数バックオフ）・順次取得'],
+    en:['Admin panel added (?admin=1 or Ctrl+Shift+A)',
+        'Video list tab: thumbnail status, iframe preview, Firestore save',
+        'Scan tab: play any video by UUID/URL, register thumbnail',
+        '429 rate limit retry with exponential backoff'] },
+  { ver:'v1.3.0', date:'2026-04-06', type:'player',
+    ja:['モバイルUI対応（スマホ・タブレット最適化）',
+        'ボトムナビゲーションバー追加（チャンネル / ラインナップ / JP⇔EN）',
+        'チャンネル選択をボトムシートで操作可能に',
+        'ラインナップをボトムシートで表示',
+        'ソートバー・フィルタバーを横スクロール対応'],
+    en:['Mobile UI support (smartphone/tablet optimized)',
+        'Bottom navigation bar added (Channel / Lineup / JP⇔EN)',
+        'Channel picker redesigned as a bottom sheet on mobile',
+        'Lineup accessible via bottom sheet on mobile',
+        'Sort bar & filter bar now horizontally scrollable on mobile'] },
+  { ver:'v1.2.5', date:'2026-04-05', type:'player',
+    ja:['Hihaho APIから実再生数を取得・表示（aggregated-statistics）',
+        '再生回数バッジ（👁 紫）を動画一覧に追加',
+        'Cloudflare Workerに aggregated-statistics パスを追加'],
+    en:['Real play count from Hihaho API (aggregated-statistics)',
+        'Play count badge (👁 purple) added to video list',
+        'Added aggregated-statistics path to Cloudflare Worker'] },
+  { ver:'v1.2.4', date:'2026-04-05', type:'player',
+    ja:['各動画の再生回数を表示（👁 N形式）','再生回数ソート追加'],
+    en:['Play count display per video (👁 N format)','Play count sort added'] },
+  { ver:'v1.2.3', date:'2026-04-05', type:'player',
+    ja:['ヘッダにhihahoブランドロゴを追加'],
+    en:['hihaho brand logo added to header'] },
+  { ver:'v1.2.2', date:'2026-04-05', type:'player',
+    ja:['サムネイルフィルタ[🖼あり/🚫なし/両方]ボタン追加','ソートに「🖼 サムネあり先」追加'],
+    en:['Thumbnail filter [With/Without/Both] buttons','Sort option "🖼 Thumb First" added'] },
+  { ver:'v1.2.1', date:'2026-04-05', type:'player',
+    ja:['JP/EN言語切替を[JP|EN]2ボタン形式に変更（JP=赤・EN=青）'],
+    en:['Language toggle redesigned as [JP|EN] dual buttons'] },
+  { ver:'v1.2.0', date:'2026-04-04', type:'both',
+    ja:['バイリンガルUI（JP/EN切替）追加','MyMemory APIによる英語自動翻訳'],
+    en:['Bilingual UI (JP/EN toggle)','Auto English translation via MyMemory API'] },
+  { ver:'v1.1.0', date:'2026-04-03', type:'player',
+    ja:['フォルダ別チャンネルタブ','キューサイドバー追加','ソートバー追加'],
+    en:['Folder-based channel tabs','Queue sidebar','Sort bar added'] },
+  { ver:'v1.0.0', date:'2026-04-01', type:'both',
+    ja:['初回リリース: YouTubeライクL字UIプレイヤー','hihaho動画一覧・サムネイル対応'],
+    en:['Initial release: YouTube-like L-shaped UI','Video list & thumbnail support'] },
+];
+const RN_TYPE_LABEL = { player:'PLAYER', admin:'ADMIN', both:'BOTH' };
+const RN_TYPE_CLS   = { player:'rn-type-player', admin:'rn-type-admin', both:'rn-type-both' };
+let _rnFilter = 'all';
+
+function showHowTo() { document.getElementById('howtoModal').style.display='flex'; }
+function hideHowTo() { document.getElementById('howtoModal').style.display='none'; }
+function showReleaseNotes() {
+  _rnFilter = 'all';
+  _updateRnFilterBtns();
+  _renderRnBody();
+  document.getElementById('rnModal').style.display = 'flex';
+}
+function hideReleaseNotes() {
+  document.getElementById('rnModal').style.display = 'none';
+}
+function rnFilter(f) {
+  _rnFilter = f;
+  _updateRnFilterBtns();
+  _renderRnBody();
+}
+function _updateRnFilterBtns() {
+  ['all','player','admin'].forEach(k => {
+    document.getElementById('rnf-'+k)?.classList.toggle('active', _rnFilter===k);
+  });
+}
+function _renderRnBody() {
+  const notes = RELEASE_NOTES.filter(r =>
+    _rnFilter==='all' ? true :
+    _rnFilter==='player' ? (r.type==='player'||r.type==='both') :
+    _rnFilter==='admin'  ? (r.type==='admin' ||r.type==='both') : true
+  );
+  document.getElementById('rnBody').innerHTML = notes.map(r => {
+    const items = _currentLang==='en' ? r.en : r.ja;
+    return `<div class="rn-entry">
+      <div class="rn-ver">
+        <span class="rn-ver-num">${r.ver}</span>
+        <span class="rn-type-badge ${RN_TYPE_CLS[r.type]}">${RN_TYPE_LABEL[r.type]}</span>
+        <span class="rn-ver-date">${r.date}</span>
+      </div>
+      <ul class="rn-changes">${items.map(c=>`<li>${c}</li>`).join('')}</ul>
+    </div>`;
+  }).join('');
+}
+
+// =========================================================
+// ユーティリティ
+// =========================================================
+const esc = s => String(s)
+  .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  .replace(/"/g,'&quot;').replace(/'/g,'&#x27;');
+const fmt = d => {
+  if (!d) return '—';
+  const dt = new Date(d);
+  return `${dt.getFullYear()}/${String(dt.getMonth()+1).padStart(2,'0')}/${String(dt.getDate()).padStart(2,'0')}`;
+};
+function copyConsole() {
+  navigator.clipboard.writeText(clog.join('\n')||'（ログなし）')
+    .then(()=>alert('コピーしました'))
+    .catch(()=>alert('コピー失敗'));
+}
+
+// =========================================================
+// モバイル: ボトムシート開閉
+// =========================================================
+
+/** チャンネルシート: 開く */
+function openChannelSheet() {
+  _renderChannelSheet();
+  const overlay = document.getElementById('channelSheetOverlay');
+  overlay.style.display = 'block';
+  requestAnimationFrame(() => overlay.classList.add('show'));
+  document.getElementById('mnavChannel')?.classList.add('active');
+}
+/** チャンネルシート: 閉じる */
+function closeChannelSheet() {
+  const overlay = document.getElementById('channelSheetOverlay');
+  overlay.classList.remove('show');
+  overlay.addEventListener('transitionend', () => { overlay.style.display = 'none'; }, { once: true });
+  document.getElementById('mnavChannel')?.classList.remove('active');
+}
+/** チャンネルシート: 内容描画 */
+function _renderChannelSheet() {
+  const el = document.getElementById('chSheetTabs');
+  if (!el || allFolders.length === 0) return;
+  el.innerHTML = allFolders.map(f => {
+    const cnt = curChVideos(f.id).length;
+    const isActive = f.id === activeChId;
+    return `<button class="ch-sheet-tab ${isActive?'active':''}" onclick="selectChMobile(${f.id})">
+      <span class="ch-sheet-icon">📺</span>
+      ${esc(f.name)}
+      <span class="ch-sheet-cnt">${cnt}本</span>
+    </button>`;
+  }).join('');
+}
+/** チャンネルシートからチャンネル選択 */
+function selectChMobile(id) {
+  selectCh(id);
+  closeChannelSheet();
+}
+
+/** ラインナップシート: 開く */
+function openQueueSheet() {
+  _renderQueueSheet();
+  const overlay = document.getElementById('queueSheetOverlay');
+  overlay.style.display = 'block';
+  requestAnimationFrame(() => overlay.classList.add('show'));
+  document.getElementById('mnavQueue')?.classList.add('active');
+}
+/** ラインナップシート: 閉じる */
+function closeQueueSheet() {
+  const overlay = document.getElementById('queueSheetOverlay');
+  overlay.classList.remove('show');
+  overlay.addEventListener('transitionend', () => { overlay.style.display = 'none'; }, { once: true });
+  document.getElementById('mnavQueue')?.classList.remove('active');
+}
+/** ラインナップシート: queuePanel の内容をミラー */
+function _renderQueueSheet() {
+  const src  = document.getElementById('queuePanel');
+  const dest = document.getElementById('queueSheetBody');
+  if (!src || !dest) return;
+  // queuePanelのHTMLをそのままコピー（onclick等も動作する）
+  dest.innerHTML = src.innerHTML;
+}
+
+/** モバイルのラインナップシート内でqcardをタップした際にシートを閉じてplay */
+function playFromSheet(id) {
+  closeQueueSheet();
+  play(id);
+}
+
+/** 言語切替時のモバイルナビアイコン更新 */
+function _updateMobileNavLang() {
+  const icon  = document.getElementById('mnavLangIcon');
+  const label = document.getElementById('mnavLangLabel');
+  if (!icon || !label) return;
+  icon.textContent  = _currentLang === 'ja' ? '🇯🇵' : '🇺🇸';
+  label.textContent = _currentLang === 'ja' ? 'JP→EN' : 'EN→JP';
+}
+
+// =========================================================
+// モバイル対応: renderSidebar後にシートも更新
+// =========================================================
+const _origRenderSidebar = renderSidebar;
+renderSidebar = function() {
+  _origRenderSidebar();
+  // ラインナップシートが開いていれば内容も更新
+  const qo = document.getElementById('queueSheetOverlay');
+  if (qo && qo.classList.contains('show')) _renderQueueSheet();
+};
+
+// setLang後にモバイルナビも更新
+const _origSetLang = setLang;
+setLang = function(lang) {
+  _origSetLang(lang);
+  _updateMobileNavLang();
+  // チャンネルシートが開いていれば再描画
+  const co = document.getElementById('channelSheetOverlay');
+  if (co && co.classList.contains('show')) _renderChannelSheet();
+};
+
+// =========================================================
+// 管理画面（Admin Panel）
+// =========================================================
+
+let _adminCurrentUuid = null; // 現在選択中のUUID
+let _adminListFilter  = '';   // 検索フィルタ
+
+/** 管理画面を開く */
+function openAdmin() {
+  document.getElementById('adminModal').style.display = 'flex';
+  adminSwitchTab('list');
+  adminRenderList();
+}
+
+/** 管理画面を閉じる */
+function closeAdmin() {
+  document.getElementById('adminModal').style.display = 'none';
+  // iframe を停止（src をクリア）
+  const area = document.getElementById('adminPlayerArea');
+  const iframe = area?.querySelector('iframe');
+  if (iframe) iframe.src = 'about:blank';
+  document.getElementById('adminScanPlayer').innerHTML = '<div class="placeholder">🎬</div>';
+}
+
+/** タブ切り替え */
+function adminSwitchTab(tab) {
+  document.getElementById('adminPaneList').style.display = tab === 'list' ? 'flex' : 'none';
+  document.getElementById('adminPaneScan').style.display = tab === 'scan' ? 'flex' : 'none';
+  document.getElementById('adminTabList').classList.toggle('active', tab === 'list');
+  document.getElementById('adminTabScan').classList.toggle('active', tab === 'scan');
+}
+
+/** 動画一覧を描画 */
+function adminRenderList() {
+  const el = document.getElementById('adminVideoList');
+  const q  = _adminListFilter.toLowerCase();
+  const list = allVideos.filter(v => !q || v.display_name?.toLowerCase().includes(q));
+  if (list.length === 0) {
+    el.innerHTML = '<div style="padding:20px;text-align:center;color:#9ca3af;font-size:13px">該当なし</div>';
+    return;
+  }
+  el.innerHTML = list.map(v => {
+    const hasMeta = !!(videoMeta[v.uuid]?.thumbnailUrl);
+    const thumbSrc = hasMeta ? videoMeta[v.uuid].thumbnailUrl
+                             : `${THUMB_BASE}/${v.uuid}.${THUMB_EXT}`;
+    const selected = v.uuid === _adminCurrentUuid ? ' selected' : '';
+    return `<div class="admin-vrow${selected}" onclick="adminSelectVideo('${v.uuid}','${esc(v.display_name)}')">
+      <div class="admin-vrow-thumb">
+        <img src="${thumbSrc}" alt="" onerror="this.style.display='none';this.nextSibling.style.display='flex'">
+        <div class="no-thumb" style="display:none">🎬</div>
+      </div>
+      <div class="admin-vrow-info">
+        <div class="admin-vrow-name">${esc(v.display_name)}</div>
+        <span class="admin-vrow-badge ${hasMeta?'badge-has-thumb':'badge-no-thumb'}">
+          ${hasMeta ? '🖼 サムネあり' : '🚫 サムネなし'}
+        </span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/** 検索フィルタ */
+function adminFilterList(q) {
+  _adminListFilter = q;
+  adminRenderList();
+}
+
+/** 動画を選択してiframe再生 */
+function adminSelectVideo(uuid, name) {
+  _adminCurrentUuid = uuid;
+
+  // 選択ハイライト更新
+  document.querySelectorAll('.admin-vrow').forEach(r => r.classList.remove('selected'));
+  event.currentTarget.classList.add('selected');
+
+  // iframeをプレイヤーエリアに埋め込む
+  const area = document.getElementById('adminPlayerArea');
+  area.innerHTML = `<iframe src="https://player.hihaho.com/embed/${uuid}"
+    allow="autoplay; fullscreen" allowfullscreen></iframe>`;
+
+  // フォーム更新
+  document.getElementById('adminCurrentName').textContent = name;
+  const existingUrl = videoMeta[uuid]?.thumbnailUrl || '';
+  const urlInput = document.getElementById('adminThumbUrl');
+  urlInput.value = existingUrl;
+  const preview = document.getElementById('adminThumbPreview');
+  if (existingUrl) { preview.src = existingUrl; preview.style.display = 'block'; }
+  else              { preview.src = ''; preview.style.display = 'none'; }
+  document.getElementById('adminSaveBtn').disabled = false;
+  document.getElementById('adminDelBtn').style.display = existingUrl ? 'inline-flex' : 'none';
+  document.getElementById('adminStatus').textContent = '';
+}
+
+/** Firestoreにサムネイルを保存 */
+async function adminSaveThumb() {
+  if (!_adminCurrentUuid) return;
+  const url   = document.getElementById('adminThumbUrl').value.trim();
+  const btn   = document.getElementById('adminSaveBtn');
+  const status = document.getElementById('adminStatus');
+  if (!url) { status.textContent = '⚠️ URLを入力してください'; return; }
+
+  btn.disabled = true;
+  status.textContent = '💾 保存中…';
+  try {
+    await db.collection('video_meta').doc(_adminCurrentUuid).set(
+      { thumbnailUrl: url }, { merge: true }
+    );
+    videoMeta[_adminCurrentUuid] = { ...(videoMeta[_adminCurrentUuid] || {}), thumbnailUrl: url };
+    status.textContent = '✅ 保存しました！';
+    document.getElementById('adminDelBtn').style.display = 'inline-flex';
+    adminRenderList(); // 一覧を更新
+    renderGrid();      // プレイヤー側グリッドも更新
+  } catch(e) {
+    status.textContent = `❌ 保存失敗: ${e.message}`;
+    console.error(e);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/** Firestoreからサムネイルを削除 */
+async function adminDeleteThumb() {
+  if (!_adminCurrentUuid) return;
+  if (!confirm('サムネイルを削除しますか？')) return;
+  const status = document.getElementById('adminStatus');
+  try {
+    await db.collection('video_meta').doc(_adminCurrentUuid).update({
+      thumbnailUrl: firebase.firestore.FieldValue.delete()
+    });
+    if (videoMeta[_adminCurrentUuid]) delete videoMeta[_adminCurrentUuid].thumbnailUrl;
+    document.getElementById('adminThumbUrl').value = '';
+    document.getElementById('adminThumbPreview').style.display = 'none';
+    document.getElementById('adminDelBtn').style.display = 'none';
+    status.textContent = '🗑 削除しました';
+    adminRenderList();
+    renderGrid();
+  } catch(e) {
+    status.textContent = `❌ 削除失敗: ${e.message}`;
+  }
+}
+
+/** スキャンタブ: URLから再生 */
+function adminScanPlay() {
+  const raw = document.getElementById('adminScanInput').value.trim();
+  if (!raw) return;
+
+  // UUID抽出（URL形式 or 直接UUID）
+  let uuid = raw;
+  const m = raw.match(/\/embed\/([^/?#]+)/) || raw.match(/[?&]id=([^&]+)/)
+          || raw.match(/hihaho\.com\/[^/]+\/([a-zA-Z0-9_-]{20,})/);
+  if (m) uuid = m[1];
+
+  const player = document.getElementById('adminScanPlayer');
+  player.innerHTML = `<iframe src="https://player.hihaho.com/embed/${uuid}"
+    allow="autoplay; fullscreen" allowfullscreen></iframe>`;
+
+  // UUIDをスキャン保存フォームに紐づけ
+  document.getElementById('adminScanSaveBtn').disabled = false;
+  document.getElementById('adminScanSaveBtn').dataset.uuid = uuid;
+  document.getElementById('adminScanStatus').textContent = `▶ 再生中: ${uuid}`;
+}
+
+/** スキャンタブ: クリア */
+function adminScanClear() {
+  document.getElementById('adminScanInput').value = '';
+  document.getElementById('adminScanPlayer').innerHTML = '<div class="placeholder">🎬</div>';
+  document.getElementById('adminScanSaveBtn').disabled = true;
+  document.getElementById('adminScanStatus').textContent = '';
+}
+
+/** スキャンタブ: サムネ保存 */
+async function adminScanSave() {
+  const btn    = document.getElementById('adminScanSaveBtn');
+  const uuid   = btn.dataset.uuid;
+  const url    = document.getElementById('adminScanThumbUrl').value.trim();
+  const status = document.getElementById('adminScanStatus');
+  if (!uuid || !url) { status.textContent = '⚠️ URLを入力してください'; return; }
+
+  btn.disabled = true;
+  status.textContent = '💾 保存中…';
+  try {
+    await db.collection('video_meta').doc(uuid).set(
+      { thumbnailUrl: url }, { merge: true }
+    );
+    videoMeta[uuid] = { ...(videoMeta[uuid] || {}), thumbnailUrl: url };
+    status.textContent = `✅ 保存: ${uuid}`;
+    renderGrid();
+    adminRenderList();
+  } catch(e) {
+    status.textContent = `❌ 失敗: ${e.message}`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ?admin=1 or Ctrl+Shift+A で管理ボタン表示
+(function() {
+  const showAdmin = () => document.getElementById('adminBtn').style.display = '';
+  if (new URLSearchParams(location.search).get('admin') === '1') showAdmin();
+  document.addEventListener('keydown', e => {
+    if (e.ctrlKey && e.shiftKey && e.key === 'A') { e.preventDefault(); showAdmin(); }
+  });
+})();
+
+// =========================================================
+// 起動
+// =========================================================
+init();
+
+// =========================================================
+// CTA バー
+// =========================================================
+function renderCtaBar(pd) {
+  const bar = document.getElementById('ctaBar');
+  if (!bar || !pd) return;
+  const btns = [];
+  if (pd.ctaContact) {
+    const type = pd.ctaContactType || 'email';
+    if (type === 'email' && pd.ctaContactEmail) {
+      btns.push(`<button class="cta-btn cta-contact" onclick="openContactEmail('${pd.ctaContactEmail}')">📧 お問い合わせ</button>`);
+    } else if (type === 'form' && pd.ctaContactForm) {
+      const furl = pd.ctaContactForm.replace(/'/g,'');
+      btns.push(`<button class="cta-btn cta-contact" onclick="openContactForm('${furl}')">📧 お問い合わせ</button>`);
+    }
+  }
+  if (pd.ctaMeeting) {
+    const url = (pd.ctaMeetingUrl || 'https://calendar.app.google/rMR3bWoBcjS1AyMz9').replace(/'/g, '');
+    btns.push(`<button class="cta-btn cta-meeting" onclick="openMeeting('${url}')">📅 面談を申し込む（30分）</button>`);
+  }
+  bar.innerHTML = btns.join('');
+}
+function openContactEmail(email) {
+  document.getElementById('contactEmailAddr').textContent = email;
+  document.getElementById('contactMailtoBtn').href = 'mailto:' + email;
+  document.getElementById('contactGmailBtn').href = 'https://mail.google.com/mail/?view=cm&to=' + encodeURIComponent(email);
+  document.getElementById('contactPopover').classList.toggle('open');
+}
+function closeContactModal() {
+  document.getElementById('contactPopover').classList.remove('open');
+}
+function copyContactEmail() {
+  const email = document.getElementById('contactEmailAddr').textContent;
+  navigator.clipboard.writeText(email).then(() => {
+    const btn = document.getElementById('contactCopyBtn');
+    btn.textContent = '✅ コピー済み';
+    setTimeout(() => { btn.textContent = '📋 コピー'; }, 1800);
+  });
+}
+// ポップオーバー外クリックで閉じる
+document.addEventListener('click', e => {
+  const pop = document.getElementById('contactPopover');
+  if (pop && !pop.contains(e.target) && !e.target.closest('.cta-contact')) {
+    pop.classList.remove('open');
+  }
+});
+function openContactForm(url) {
+  const modal = document.getElementById('formModal');
+  const iframe = document.getElementById('formIframe');
+  const link = document.getElementById('formOpenLink');
+  if (!modal || !iframe) return;
+  iframe.src = url;
+  if (link) link.href = url;
+  modal.classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+function closeContactForm() {
+  const modal = document.getElementById('formModal');
+  const iframe = document.getElementById('formIframe');
+  if (modal) modal.classList.remove('open');
+  if (iframe) iframe.src = '';
+  document.body.style.overflow = '';
+}
+function openMeeting(url) {
+  // Google CalendarはX-Frame-Optionsでiframe埋め込みを拒否するため新規タブで開く
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+function closeMeeting() {
+  const modal = document.getElementById('meetingModal');
+  if (modal) modal.classList.remove('open');
+  document.body.style.overflow = '';
+}
+</script>
+
+<!-- お問い合わせフォームモーダル -->
+<div class="form-modal" id="formModal" onclick="if(event.target===this)closeContactForm()">
+  <div class="form-card">
+    <div class="form-header">
+      <h3>ご相談・お問い合わせ</h3>
+      <a id="formOpenLink" href="#" target="_blank" rel="noopener">別タブで開く ↗</a>
+      <button class="form-close" onclick="closeContactForm()">×</button>
+    </div>
+    <div class="form-iframe-wrap">
+      <iframe class="form-iframe" id="formIframe" src="" loading="lazy"></iframe>
+    </div>
+  </div>
+</div>
+<!-- お問い合わせメールポップオーバー（email type用・廃止予定） -->
+
+<!-- 使い方モーダル (Player) -->
+<div id="howtoModal" class="rn-modal" style="display:none" onclick="if(event.target===this)hideHowTo()">
+  <div class="rn-card" style="max-width:520px">
+    <div class="rn-header">
+      <h2>📖 hihaho Player 使い方</h2>
+      <button class="rn-close" onclick="hideHowTo()">✕</button>
+    </div>
+    <div class="rn-body" style="padding:16px 20px">
+      <table style="width:100%;border-collapse:collapse;font-size:13px">
+        <tbody>
+          <tr><td style="padding:9px 8px;border-bottom:1px solid #f0f1f4;font-weight:700;width:155px;white-space:nowrap">📺 チャンネル切替</td><td style="padding:9px 8px;border-bottom:1px solid #f0f1f4;color:#374151">上部タブでフォルダ（チャンネル）を切り替え</td></tr>
+          <tr><td style="padding:9px 8px;border-bottom:1px solid #f0f1f4;font-weight:700;white-space:nowrap">🔍 検索</td><td style="padding:9px 8px;border-bottom:1px solid #f0f1f4;color:#374151">動画名のキーワードで一覧を絞り込み</td></tr>
+          <tr><td style="padding:9px 8px;border-bottom:1px solid #f0f1f4;font-weight:700;white-space:nowrap">🔀 ソート</td><td style="padding:9px 8px;border-bottom:1px solid #f0f1f4;color:#374151">新しい順・再生回数・ランダムなどで並び替え</td></tr>
+          <tr><td style="padding:9px 8px;border-bottom:1px solid #f0f1f4;font-weight:700;white-space:nowrap">JP / EN</td><td style="padding:9px 8px;border-bottom:1px solid #f0f1f4;color:#374151">動画タイトルなどの表示言語を切り替え</td></tr>
+          <tr><td style="padding:9px 8px;border-bottom:1px solid #f0f1f4;font-weight:700;white-space:nowrap">📧 お問い合わせ</td><td style="padding:9px 8px;border-bottom:1px solid #f0f1f4;color:#374151">管理者へメール・フォームで連絡</td></tr>
+          <tr><td style="padding:9px 8px;font-weight:700;white-space:nowrap">📅 面談申し込み</td><td style="padding:9px 8px;color:#374151">Googleカレンダーで30分の面談を予約</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- 面談申し込みモーダル -->
+<div class="meeting-modal" id="meetingModal" onclick="if(event.target===this)closeMeeting()">
+  <div class="meeting-card">
+    <div class="meeting-header">
+      <span style="font-size:18px">📅</span>
+      <h3>面談を申し込む（30分）</h3>
+      <button class="meeting-close" onclick="closeMeeting()">×</button>
+    </div>
+    <iframe class="meeting-iframe" id="meetingIframe" src="" loading="lazy" allow="camera; microphone"></iframe>
+  </div>
+</div>
+<script>
+(function(){
+  const PAGE = 'hub_demo';
+  const k = 'hihaho_pv_' + PAGE;
+  localStorage.setItem(k, (parseInt(localStorage.getItem(k)||'0') + 1).toString());
+  const log = JSON.parse(localStorage.getItem('hihaho_log')||'[]');
+  log.push({page: PAGE, ts: Date.now()});
+  if(log.length > 200) log.splice(0, log.length - 200);
+  localStorage.setItem('hihaho_log', JSON.stringify(log));
+})();
+</script>
+</body>
+</html>
