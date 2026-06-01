@@ -36,7 +36,7 @@ const FOR_WHO = [
 
 const ACTIVITIES: { n: string; title: [string, string]; img: string; icon: LucideIcon }[] = [
   { n: '01', title: ['オンラインイベント・', '勉強会（月1〜2回）'], img: 'https://images.unsplash.com/photo-1588196749597-9ff075ee6b5b?auto=format&fit=crop&w=800&q=80', icon: Video },
-  { n: '02', title: ['テーマ別', 'ディスカッション'], img: 'https://images.unsplash.com/photo-1573164713988-8665fc963095?auto=format&fit=crop&w=800&q=80', icon: MessageSquare },
+  { n: '02', title: ['テーマ別', 'ディスカッション'], img: 'https://images.unsplash.com/photo-1577415124269-fc1140a69e91?auto=format&fit=crop&w=800&q=80', icon: MessageSquare },
   { n: '03', title: ['実践事例・', '実験の共有'], img: 'https://images.unsplash.com/photo-1460925895917-afdab827c52f?auto=format&fit=crop&w=800&q=80', icon: BarChart3 },
   { n: '04', title: ['共同プロジェクトや', '実証実験'], img: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?auto=format&fit=crop&w=800&q=80', icon: Users },
 ]
@@ -48,9 +48,9 @@ const POINTS: { icon: LucideIcon; lines: [string, string] }[] = [
 ]
 
 const IMG = {
-  hero: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=1200&q=80',
-  data: 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=900&q=80',
-  mic: 'https://images.unsplash.com/photo-1475721027785-f74eccf877e2?auto=format&fit=crop&w=900&q=80',
+  hero: 'https://images.unsplash.com/photo-1698986668651-295fda8e61bc?auto=format&fit=crop&w=1200&q=80',
+  data: 'https://images.unsplash.com/photo-1754307943655-a76a567661e3?auto=format&fit=crop&w=900&q=80',
+  mic: 'https://images.unsplash.com/photo-1666858852072-d9198dab504b?auto=format&fit=crop&w=900&q=80',
 }
 
 /* ───────────────────────── 汎用コンポーネント ───────────────────────── */
@@ -75,8 +75,8 @@ function FadeIn({ children, className, delay = 0, y = 28 }: {
 }
 
 // 写真（読み込み失敗時はフォレストグリーンのグラデ＋アイコンに優雅にフォールバック）
-function Photo({ src, alt, icon: Icon, className = '', imgClassName = '' }: {
-  src: string; alt: string; icon: LucideIcon; className?: string; imgClassName?: string
+function Photo({ src, alt, icon: Icon, className = '', imgClassName = '', tint = false }: {
+  src: string; alt: string; icon: LucideIcon; className?: string; imgClassName?: string; tint?: boolean
 }) {
   const [failed, setFailed] = useState(false)
   return (
@@ -95,6 +95,8 @@ function Photo({ src, alt, icon: Icon, className = '', imgClassName = '' }: {
           <Icon className="text-cream/25" size={64} strokeWidth={1} />
         </div>
       )}
+      {/* 元画像の緑テック調に寄せるグリーンティント */}
+      {tint && <div className="pointer-events-none absolute inset-0 bg-forest/45 mix-blend-multiply" />}
     </div>
   )
 }
@@ -304,6 +306,7 @@ export default function App() {
             src={IMG.data}
             alt="学習データとテクノロジー"
             icon={BarChart3}
+            tint
             className="min-h-[260px] lg:min-h-[600px] lg:basis-[22%]"
           />
 
