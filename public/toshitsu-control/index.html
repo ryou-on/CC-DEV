@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1920">
+<title>糖質＆カロリーコントロール 補助教材</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --green:       #3a7d44;
+  --green-light: #5aaa64;
+  --green-dark:  #2a5c32;
+  --orange:      #d9740a;
+  --orange-lt:   #f0a030;
+  --washi:       #f5fbf5;
+  --text:        #1a2a1a;
+}
+
+html, body {
+  width: 1920px; height: 1080px;
+  overflow: hidden;
+  font-family: 'Noto Sans JP', sans-serif;
+  background: transparent;
+  color: var(--text);
+}
+
+/* ━━ FRAME ━━ */
+.frame { position: fixed; inset: 0; pointer-events: none; }
+
+/* ━━ タブ行 ━━ */
+.tab-row {
+  position: absolute; top: 0; left: 50%;
+  transform: translateX(-50%);
+  display: flex; gap: 10px; z-index: 20;
+  pointer-events: none;
+}
+
+.tab {
+  pointer-events: auto;
+  background: rgba(245,251,245,0.96);
+  color: var(--green-dark);
+  font-family: 'Noto Sans JP', sans-serif;
+  font-size: 17px; font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 11px 28px;
+  border: none; border-radius: 0 0 18px 18px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+  cursor: pointer;
+  display: flex; align-items: center; gap: 8px;
+  min-height: 48px;
+  transition: background 0.18s, color 0.18s, transform 0.1s;
+  white-space: nowrap;
+  border-top: 3px solid var(--green-dark);
+}
+.tab:hover { background: #e8f5e8; }
+.tab:active { transform: scale(0.95); }
+
+.tab-chevron { width: 14px; height: 14px; transition: transform 0.3s; }
+
+.frame[data-open="true"] .tab[aria-pressed="true"] {
+  background: var(--green); color: #fff;
+  border-top-color: var(--orange-lt);
+}
+.frame[data-open="true"] .tab[aria-pressed="true"] .tab-chevron { transform: rotate(180deg); }
+
+/* ━━ パネル ━━ */
+.panel {
+  position: absolute; top: 0; left: 50%;
+  width: 1100px; max-height: 840px;
+  background: var(--washi);
+  border-radius: 0 0 20px 20px;
+  box-shadow: 0 16px 60px rgba(0,0,0,0.45);
+  pointer-events: auto;
+  display: flex; flex-direction: column;
+  z-index: 10;
+  transform: translate(-50%, -102%);
+  transition: transform 0.4s cubic-bezier(0.32,0.72,0,1), visibility 0s linear 0.4s;
+  overflow: hidden; visibility: hidden;
+  border-left: 1px solid rgba(58,125,68,0.2);
+  border-right: 1px solid rgba(58,125,68,0.2);
+  border-bottom: 2px solid var(--green-dark);
+}
+.frame[data-open="true"] .panel {
+  transform: translate(-50%, 0); visibility: visible;
+  transition: transform 0.4s cubic-bezier(0.32,0.72,0,1), visibility 0s linear 0s;
+}
+
+.panel-inner {
+  flex: 1; overflow-y: auto;
+  padding: 56px 36px 20px;
+  -webkit-overflow-scrolling: touch;
+}
+.panel-inner::-webkit-scrollbar { width: 6px; }
+.panel-inner::-webkit-scrollbar-track { background: rgba(0,0,0,0.05); }
+.panel-inner::-webkit-scrollbar-thumb { background: var(--green-dark); border-radius: 3px; }
+
+/* ━━ セクション切替 ━━ */
+.section { display: none; }
+.frame[data-active="yougo"]    .section[data-section="yougo"]    { display: block; }
+.frame[data-active="shokuhin"] .section[data-section="shokuhin"] { display: block; }
+.frame[data-active="checker"]  .section[data-section="checker"]  { display: block; }
+
+/* ━━ セクションヘッダー ━━ */
+.section-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 14px; padding-bottom: 12px;
+  border-bottom: 2px solid var(--green-dark);
+}
+.section-title { font-size: 20px; font-weight: 700; color: var(--green-dark); letter-spacing: 0.1em; }
+
+.close-btn {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: #fff; border: 1.5px solid #ccc;
+  cursor: pointer; display: flex; align-items: center; justify-content: center; color: #666;
+  transition: all 0.15s;
+}
+.close-btn:hover { background: #fee; border-color: #c03; color: #c03; }
+.close-btn svg { width: 15px; height: 15px; }
+
+/* ━━ アコーディオン ━━ */
+.accordion {
+  background: #fff; border: 1px solid #c8e0c8;
+  border-radius: 6px; margin-bottom: 7px; overflow: hidden;
+  transition: box-shadow 0.15s;
+}
+.accordion:hover { box-shadow: 0 2px 8px rgba(58,125,68,0.12); }
+
+.accordion-header {
+  padding: 12px 16px; cursor: pointer;
+  display: flex; align-items: center; gap: 12px;
+  user-select: none; transition: background 0.15s;
+}
+.accordion-header:hover { background: rgba(58,125,68,0.04); }
+.accordion.open .accordion-header { background: rgba(58,125,68,0.06); }
+
+.acc-badge {
+  font-size: 11px; color: #fff; background: var(--green);
+  padding: 3px 10px; border-radius: 4px;
+  min-width: 68px; text-align: center; font-weight: 700; flex-shrink: 0;
+}
+.acc-title { font-size: 16px; font-weight: 700; color: var(--green-dark); flex: 1; }
+.acc-reading { font-size: 12px; color: #888; font-weight: 400; margin-left: 6px; }
+.acc-level { font-size: 12px; font-weight: 700; flex-shrink: 0; }
+.acc-arrow { color: var(--green-dark); font-size: 11px; transition: transform 0.3s; flex-shrink: 0; }
+.accordion.open .acc-arrow { transform: rotate(180deg); }
+
+.accordion-body { max-height: 0; overflow: hidden; transition: max-height 0.35s ease; }
+.accordion.open .accordion-body { max-height: 420px; }
+
+.accordion-content {
+  padding: 11px 16px 14px 96px;
+  font-size: 14px; line-height: 1.9; color: #333;
+  border-top: 1px solid #ddeedd;
+}
+.accordion-content strong { color: var(--green-dark); }
+
+/* ━━ カテゴリーバー ━━ */
+.cat-bar {
+  font-size: 13px; font-weight: 700; color: var(--green-dark);
+  background: rgba(58,125,68,0.08);
+  padding: 7px 14px;
+  border-left: 4px solid var(--green);
+  border-radius: 0 4px 4px 0;
+  margin: 12px 0 7px;
+}
+
+/* ━━ カロリーチェッカー ━━ */
+.checker-summary {
+  display: flex; gap: 0;
+  background: var(--green-dark);
+  border-radius: 10px; margin-bottom: 12px;
+  overflow: hidden;
+}
+.checker-sum-main {
+  display: flex; flex: 1; padding: 12px 20px; gap: 24px; align-items: center;
+}
+.checker-sum-item { text-align: center; flex: 1; }
+.checker-sum-label { font-size: 10px; color: rgba(255,255,255,0.65); margin-bottom: 1px; }
+.checker-sum-value { font-size: 30px; font-weight: 700; color: #fff; line-height: 1; }
+.checker-sum-unit { font-size: 10px; color: rgba(255,255,255,0.65); }
+.checker-sum-divider { width: 1px; background: rgba(255,255,255,0.2); align-self: stretch; }
+.checker-sum-guide {
+  flex: 1.4; background: rgba(0,0,0,0.15);
+  padding: 12px 18px; font-size: 12px; color: rgba(255,255,255,0.85); line-height: 1.8;
+}
+.checker-sum-guide strong { color: #fff; }
+
+/* プログレスバー */
+.progress-wrap { margin-bottom: 10px; }
+.progress-labels {
+  display: flex; justify-content: space-between;
+  font-size: 11px; color: #666; margin-bottom: 3px;
+}
+.progress-bar { height: 9px; background: #d4ead4; border-radius: 5px; overflow: hidden; }
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--green-light), var(--green));
+  border-radius: 5px; transition: width 0.3s;
+  width: 0%;
+}
+.progress-fill.over { background: linear-gradient(90deg, #f08030, #c05010); }
+
+.reset-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 12px; background: transparent;
+  border: 1px solid #ccc; border-radius: 4px;
+  color: #888; font-size: 11px; cursor: pointer;
+  transition: all 0.15s; margin-bottom: 8px;
+}
+.reset-btn:hover { border-color: #c03; color: #c03; background: #fff5f5; }
+
+/* 食品グリッド */
+.food-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px;
+}
+.food-item {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 8px; background: #fff;
+  border: 1px solid #d4ead4; border-radius: 5px;
+  cursor: pointer; transition: background 0.12s, border-color 0.12s;
+  user-select: none;
+}
+.food-item:hover { background: #f0f9f0; }
+.food-item.checked { background: #e4f5e4; border-color: var(--green); }
+
+.food-item input[type="checkbox"] {
+  width: 14px; height: 14px; accent-color: var(--green);
+  flex-shrink: 0; cursor: pointer;
+}
+.food-name { font-size: 11px; color: #333; flex: 1; line-height: 1.3; }
+.food-nums { text-align: right; flex-shrink: 0; }
+.food-kcal { font-size: 11px; font-weight: 700; color: var(--orange); display: block; }
+.food-sugar-g { font-size: 9px; color: var(--green-dark); }
+</style>
+</head>
+<body>
+
+<div class="frame" data-open="false" data-active="yougo" id="auxFrame">
+
+  <div class="panel">
+    <div class="panel-inner" id="panelInner">
+
+      <!-- ① 用語集 ━━━━━━━━━━━━━━━━━━━━━━ -->
+      <div class="section" data-section="yougo">
+        <div class="section-header">
+          <div class="section-title">📖 用語集</div>
+          <button class="close-btn" onclick="closePanel()">
+            <svg viewBox="0 0 20 20" fill="none"><path d="M5 5L15 15M15 5L5 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+
+        <div class="accordion" id="y1">
+          <div class="accordion-header" onclick="toggle('y1')">
+            <span class="acc-badge">炭水化物</span>
+            <span class="acc-title">たんすいかぶつ <span class="acc-reading">Carbohydrate</span></span>
+            <span class="acc-arrow">▼</span>
+          </div>
+          <div class="accordion-body"><div class="accordion-content">
+            たんぱく質・脂質とならぶ<strong>三大栄養素</strong>のひとつ。「食物繊維」と、エネルギー源となる「糖質」に大きく分けられます。ご飯・パン・麺類・いも類・砂糖などに多く含まれています。
+          </div></div>
+        </div>
+
+        <div class="accordion" id="y2">
+          <div class="accordion-header" onclick="toggle('y2')">
+            <span class="acc-badge">糖質</span>
+            <span class="acc-title">とうしつ <span class="acc-reading">Sugar / Carbohydrate（除食物繊維）</span></span>
+            <span class="acc-arrow">▼</span>
+          </div>
+          <div class="accordion-body"><div class="accordion-content">
+            炭水化物から食物繊維を除いたもの。最終的に<strong>ブドウ糖</strong>に分解・吸収され、脳や筋肉のエネルギー源になります。摂り過ぎると体脂肪として蓄積されるため、1日の目安量（約200〜300g）を意識することが大切です。
+          </div></div>
+        </div>
+
+        <div class="accordion" id="y3">
+          <div class="accordion-header" onclick="toggle('y3')">
+            <span class="acc-badge">糖類</span>
+            <span class="acc-title">とうるい <span class="acc-reading">Sugars</span></span>
+            <span class="acc-arrow">▼</span>
+          </div>
+          <div class="accordion-body"><div class="accordion-content">
+            糖質の中でも単純な形をしたもの。<strong>単糖類</strong>（ブドウ糖・果糖）と<strong>二糖類</strong>（ショ糖〈砂糖〉・乳糖）があります。血糖値を上げやすく、清涼飲料水や菓子類に多く含まれます。「糖質」と「糖類」は別物なので注意が必要です。
+          </div></div>
+        </div>
+
+        <div class="accordion" id="y4">
+          <div class="accordion-header" onclick="toggle('y4')">
+            <span class="acc-badge">多糖類</span>
+            <span class="acc-title">たとうるい <span class="acc-reading">Polysaccharides</span></span>
+            <span class="acc-arrow">▼</span>
+          </div>
+          <div class="accordion-body"><div class="accordion-content">
+            ブドウ糖などが多数結合した糖質。<strong>でんぷん</strong>（ご飯・パン・いも類に多い）や<strong>オリゴ糖</strong>（腸内の善玉菌のエサになる）が代表例です。糖類よりも消化・吸収が緩やかで、血糖値の急激な上昇が起きにくい特徴があります。
+          </div></div>
+        </div>
+
+        <div class="accordion" id="y5">
+          <div class="accordion-header" onclick="toggle('y5')">
+            <span class="acc-badge">糖アルコール</span>
+            <span class="acc-title">とうアルコール <span class="acc-reading">Sugar Alcohols</span></span>
+            <span class="acc-arrow">▼</span>
+          </div>
+          <div class="accordion-body"><div class="accordion-content">
+            糖質の一種で、<strong>エリスリトール・キシリトール</strong>などが含まれます。甘みがありながらカロリーが低く（エリスリトールはほぼ0kcal）、血糖値への影響が少ないため、低糖質食品や歯磨き粉の甘味料として使われます。
+          </div></div>
+        </div>
+
+        <div class="accordion" id="y6">
+          <div class="accordion-header" onclick="toggle('y6')">
+            <span class="acc-badge">食物繊維</span>
+            <span class="acc-title">しょくもつせんい <span class="acc-reading">Dietary Fiber</span></span>
+            <span class="acc-arrow">▼</span>
+          </div>
+          <div class="accordion-body"><div class="accordion-content">
+            炭水化物のうち、人体で消化・吸収されない成分。<strong>腸内環境の改善</strong>や血糖値の急上昇を抑える働きがあります。野菜・海藻・きのこ・豆類・全粒穀物などに豊富。食事の最初に野菜を食べる「<strong>ベジファースト</strong>」は血糖値コントロールに有効です。
+          </div></div>
+        </div>
+
+        <div class="accordion" id="y7">
+          <div class="accordion-header" onclick="toggle('y7')">
+            <span class="acc-badge">カロリー</span>
+            <span class="acc-title">エネルギー量 <span class="acc-reading">Calorie / kcal</span></span>
+            <span class="acc-arrow">▼</span>
+          </div>
+          <div class="accordion-body"><div class="accordion-content">
+            食品が持つエネルギーの量（kcal＝キロカロリー）。たんぱく質・糖質は<strong>1gあたり4kcal</strong>、脂質は<strong>1gあたり9kcal</strong>のエネルギーを持ちます。65歳以上のシニアの1日の目安は約<strong>1,800〜2,000kcal</strong>（性別・活動量により異なります）。
+          </div></div>
+        </div>
+
+        <div class="accordion" id="y8">
+          <div class="accordion-header" onclick="toggle('y8')">
+            <span class="acc-badge">血糖値</span>
+            <span class="acc-title">けっとうち <span class="acc-reading">Blood Glucose Level</span></span>
+            <span class="acc-arrow">▼</span>
+          </div>
+          <div class="accordion-body"><div class="accordion-content">
+            血液中のブドウ糖の濃度。食事で糖質を摂取すると上昇します。急激な上昇（血糖スパイク）が繰り返されると<strong>糖尿病</strong>などのリスクが高まります。食物繊維を先に食べる・ゆっくり噛む・食後に軽く動くなどで穏やかな上昇を保てます。
+          </div></div>
+        </div>
+      </div><!-- /用語集 -->
+
+      <!-- ② 食品の糖質量 ━━━━━━━━━━━━━━━━━━━━━━ -->
+      <div class="section" data-section="shokuhin">
+        <div class="section-header">
+          <div class="section-title">🥗 食品の糖質量</div>
+          <button class="close-btn" onclick="closePanel()">
+            <svg viewBox="0 0 20 20" fill="none"><path d="M5 5L15 15M15 5L5 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+
+        <div style="font-size:13px;color:#666;margin-bottom:10px;">カテゴリー別の糖質量の傾向を知って食材選びに活かしましょう。&nbsp;（◎少ない&nbsp;△多め&nbsp;×多い）</div>
+
+        <div class="accordion" id="s1">
+          <div class="accordion-header" onclick="toggle('s1')">
+            <span class="acc-badge" style="background:#c87000;">🌾 穀類</span>
+            <span class="acc-title">ご飯・パン・麺類</span>
+            <span class="acc-level" style="color:#c87000;">× 多い</span>
+            <span class="acc-arrow">▼</span>
+          </div>
+          <div class="accordion-body"><div class="accordion-content">
+            <strong>全体的に糖質量が多いため、摂り過ぎに注意。</strong><br>
+            ご飯1杯（150g）約55g・食パン1枚（60g）約28g・うどん1玉約48g。主食の「量」をコントロールすることが糖質管理の基本になります。雑穀ご飯や全粒パンは食物繊維が多く血糖値の上昇が緩やかです。
+          </div></div>
+        </div>
+
+        <div class="accordion" id="s2">
+          <div class="accordion-header" onclick="toggle('s2')">
+            <span class="acc-badge" style="background:#b06000;">🥔 いも・でんぷん類</span>
+            <span class="acc-title">さつまいも・じゃがいも・片栗粉</span>
+            <span class="acc-level" style="color:#b06000;">△ 多め</span>
+            <span class="acc-arrow">▼</span>
+          </div>
+          <div class="accordion-body"><div class="accordion-content">
+            <strong>さつまいも・じゃがいもに糖質が多い。でんぷんを原料とした片栗粉も糖質量が多め。</strong><br>
+            さつまいも100gで約29g、じゃがいも100gで約17g。主食の代わりにする場合は量に注意。こんにゃくは糖質がほぼゼロで、代替食材として活用できます。
+          </div></div>
+        </div>
+
+        <div class="accordion" id="s3">
+          <div class="accordion-header" onclick="toggle('s3')">
+            <span class="acc-badge" style="background:#c87000;">🧃 砂糖・飲料</span>
+            <span class="acc-title">砂糖・清涼飲料水・ジュース類</span>
+            <span class="acc-level" style="color:#c87000;">× 多い</span>
+            <span class="acc-arrow">▼</span>
+          </div>
+          <div class="accordion-body"><div class="accordion-content">
+            <strong>砂糖はもちろん、清涼飲料水などの甘味のある飲料にはかなりの量の糖質が含まれていることが多い。</strong><br>
+            コーラ500mlで約58g・サイダー500mlで約52g。気づかないうちに糖質を過剰摂取しやすい要注意カテゴリーです。水・お茶・ブラックコーヒーへの切り替えが有効です。
+          </div></div>
+        </div>
+
+        <div class="accordion" id="s4">
+          <div class="accordion-header" onclick="toggle('s4')">
+            <span class="acc-badge">🫘 豆類</span>
+            <span class="acc-title">大豆・豆腐・納豆・きな粉・豆乳</span>
+            <span class="acc-level" style="color:var(--green);">◎ 少なめ</span>
+            <span class="acc-arrow">▼</span>
+          </div>
+          <div class="accordion-body"><div class="accordion-content">
+            <strong>大豆製品は糖質量が少なめ。ただし、きな粉と豆乳はやや糖質量が多め。</strong><br>
+            豆腐・納豆・枝豆は糖質が少なく、たんぱく質・食物繊維も豊富で優れた食材です。積極的に取り入れましょう。
+          </div></div>
+        </div>
+
+        <div class="accordion" id="s5">
+          <div class="accordion-header" onclick="toggle('s5')">
+            <span class="acc-badge">🥦 野菜類</span>
+            <span class="acc-title">葉物野菜・根野菜・かぼちゃなど</span>
+            <span class="acc-level" style="color:#888;">◎〜△ 種類による</span>
+            <span class="acc-arrow">▼</span>
+          </div>
+          <div class="accordion-body"><div class="accordion-content">
+            <strong>葉野菜は糖質量が少なめ。根野菜は多め。かぼちゃは野菜の中でも糖質量が多い。</strong><br>
+            レタス・ほうれん草・キャベツなどの葉野菜は積極的に。にんじん・かぼちゃは食べ過ぎに注意。野菜には食物繊維が多く含まれているため、食事の最初に食べる「ベジファースト」が効果的です。
+          </div></div>
+        </div>
+
+        <div class="accordion" id="s6">
+          <div class="accordion-header" onclick="toggle('s6')">
+            <span class="acc-badge" style="background:#b06000;">🍎 果実類</span>
+            <span class="acc-title">バナナ・りんご・みかん・ぶどう</span>
+            <span class="acc-level" style="color:#b06000;">△ 多め</span>
+            <span class="acc-arrow">▼</span>
+          </div>
+          <div class="accordion-body"><div class="accordion-content">
+            <strong>全般的に糖質量が多いため、食べ過ぎに注意。</strong><br>
+            ビタミンや食物繊維も豊富ですが、果糖を多く含み血糖値を上げやすいものも。1日の目安は200g程度（りんご1/2個・みかん2個程度）。食後よりも食事中に食べると血糖値の上昇が穏やかになります。
+          </div></div>
+        </div>
+
+        <div class="accordion" id="s7">
+          <div class="accordion-header" onclick="toggle('s7')">
+            <span class="acc-badge">🐟 魚介類</span>
+            <span class="acc-title">魚・貝・えびなど</span>
+            <span class="acc-level" style="color:var(--green);">◎ 少ない（生は）</span>
+            <span class="acc-arrow">▼</span>
+          </div>
+          <div class="accordion-body"><div class="accordion-content">
+            <strong>生の魚介類は糖質量が少ないが、加工品は糖質量が多め。</strong><br>
+            焼き魚・刺身・蒸し魚などは優れたたんぱく源で糖質も少ない優秀な食材。一方、練り物（かまぼこ・ちくわ）や甘い味付けの缶詰には糖質が含まれています。
+          </div></div>
+        </div>
+
+        <div class="accordion" id="s8">
+          <div class="accordion-header" onclick="toggle('s8')">
+            <span class="acc-badge">🥩 肉類</span>
+            <span class="acc-title">鶏肉・豚肉・牛肉・レバー</span>
+            <span class="acc-level" style="color:var(--green);">◎ 少ない（素材は）</span>
+            <span class="acc-arrow">▼</span>
+          </div>
+          <div class="accordion-body"><div class="accordion-content">
+            <strong>レバーは鉄分などの栄養素が豊富だが、糖質は多め。</strong><br>
+            鶏むね・ささみなど脂質が少ない肉は糖質も少なく理想的。ただし、唐揚げ・カツレツなどの揚げ物はパン粉・小麦粉が加わるため糖質が増えます。ソース・たれの糖質にも注意。
+          </div></div>
+        </div>
+
+        <div class="accordion" id="s9">
+          <div class="accordion-header" onclick="toggle('s9')">
+            <span class="acc-badge">🥚 卵・乳類</span>
+            <span class="acc-title">卵・チーズ・牛乳・ヨーグルト</span>
+            <span class="acc-level" style="color:var(--green);">◎ 少ない〜普通</span>
+            <span class="acc-arrow">▼</span>
+          </div>
+          <div class="accordion-body"><div class="accordion-content">
+            <strong>卵は全般に糖質が少ない。乳類で糖質量が少ない食材はチーズ。</strong><br>
+            牛乳は100mlで約5g（乳糖）、ヨーグルトは種類により異なり、加糖タイプには注意が必要です。卵はほぼ糖質ゼロで、たんぱく質・ビタミンなどが豊富な優れた食材です。
+          </div></div>
+        </div>
+
+        <div class="accordion" id="s10">
+          <div class="accordion-header" onclick="toggle('s10')">
+            <span class="acc-badge" style="background:#c87000;">🍰 菓子類</span>
+            <span class="acc-title">ケーキ・和菓子・スナック菓子</span>
+            <span class="acc-level" style="color:#c87000;">× 多い</span>
+            <span class="acc-arrow">▼</span>
+          </div>
+          <div class="accordion-body"><div class="accordion-content">
+            <strong>糖質の多い食品が多い。</strong><br>
+            どら焼き1個で糖質約55g・ショートケーキ1個で約30g・あんぱん1個で約52g。おやつは1日あたり200kcal程度を目安に。糖質オフの菓子や、ナッツ・チーズなど糖質の少いものに置き換える方法もあります。
+          </div></div>
+        </div>
+
+        <div class="accordion" id="s11">
+          <div class="accordion-header" onclick="toggle('s11')">
+            <span class="acc-badge" style="background:#888;">🫙 調味料</span>
+            <span class="acc-title">みりん・めんつゆ・ソース・ケチャップ</span>
+            <span class="acc-level" style="color:#888;">△ 注意</span>
+            <span class="acc-arrow">▼</span>
+          </div>
+          <div class="accordion-body"><div class="accordion-content">
+            <strong>調味料自体に甘みがあるもの（みりん・めんつゆなど）に注意。</strong><br>
+            みりん大さじ1で約7.8g・ウスターソース大さじ1で約5g・ケチャップ大さじ1で約4gの糖質を含みます。塩・こしょう・酢・レモン汁・しょうゆ（少量）は糖質が少なく代替として活用できます。
+          </div></div>
+        </div>
+      </div><!-- /食品の糖質 -->
+
+      <!-- ③ カロリーチェッカー ━━━━━━━━━━━━━━━━━━━━━━ -->
+      <div class="section" data-section="checker">
+        <div class="section-header">
+          <div class="section-title">🍽️ カロリーチェッカー</div>
+          <button class="close-btn" onclick="closePanel()">
+            <svg viewBox="0 0 20 20" fill="none"><path d="M5 5L15 15M15 5L5 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+
+        <!-- サマリー -->
+        <div class="checker-summary">
+          <div class="checker-sum-main">
+            <div class="checker-sum-item">
+              <div class="checker-sum-label">合計カロリー</div>
+              <div class="checker-sum-value" id="total-kcal">0</div>
+              <div class="checker-sum-unit">kcal</div>
+            </div>
+            <div class="checker-sum-divider"></div>
+            <div class="checker-sum-item">
+              <div class="checker-sum-label">合計糖質</div>
+              <div class="checker-sum-value" id="total-sugar">0</div>
+              <div class="checker-sum-unit">g</div>
+            </div>
+          </div>
+          <div class="checker-sum-guide">
+            <strong>シニア（65歳以上）の1日の目安</strong><br>
+            カロリー：約 1,800〜2,000 kcal<br>
+            糖質：約 200〜300 g<br>
+            1食あたり：約 600〜700 kcal
+          </div>
+        </div>
+
+        <!-- プログレスバー -->
+        <div class="progress-wrap">
+          <div class="progress-labels">
+            <span>1日のカロリー目安 1,900kcal に対して</span>
+            <span id="progress-pct">0%</span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" id="progress-fill"></div>
+          </div>
+        </div>
+
+        <button class="reset-btn" onclick="resetChecker()">🔄 リセット</button>
+
+        <!-- 食品リスト -->
+        <div class="cat-bar">🍚 主食</div>
+        <div class="food-grid" id="grid-main"></div>
+
+        <div class="cat-bar">🍳 おかず</div>
+        <div class="food-grid" id="grid-side"></div>
+
+        <div class="cat-bar">🐟 魚・豆・卵</div>
+        <div class="food-grid" id="grid-protein"></div>
+
+        <div class="cat-bar">🍰 菓子・おやつ</div>
+        <div class="food-grid" id="grid-sweets"></div>
+
+        <div class="cat-bar">🧃 飲み物</div>
+        <div class="food-grid" id="grid-drinks"></div>
+
+        <div class="cat-bar">🍎 果物</div>
+        <div class="food-grid" id="grid-fruits"></div>
+
+      </div><!-- /チェッカー -->
+
+    </div><!-- /panel-inner -->
+  </div><!-- /panel -->
+
+  <!-- タブ行 -->
+  <div class="tab-row">
+    <button class="tab" data-target="yougo" aria-pressed="true" onclick="onTab('yougo')">
+      <span>📖 用語集</span>
+      <svg class="tab-chevron" viewBox="0 0 16 16" fill="none"><path d="M3 6L8 11L13 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <button class="tab" data-target="shokuhin" aria-pressed="false" onclick="onTab('shokuhin')">
+      <span>🥗 食品の糖質量</span>
+      <svg class="tab-chevron" viewBox="0 0 16 16" fill="none"><path d="M3 6L8 11L13 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <button class="tab" data-target="checker" aria-pressed="false" onclick="onTab('checker')">
+      <span>🍽️ カロリーチェッカー</span>
+      <svg class="tab-chevron" viewBox="0 0 16 16" fill="none"><path d="M3 6L8 11L13 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+  </div>
+
+</div><!-- /frame -->
+
+<script>
+var frame = document.getElementById('auxFrame');
+
+/* タブ操作 */
+function onTab(target) {
+  var isOpen = frame.getAttribute('data-open') === 'true';
+  var current = frame.getAttribute('data-active');
+  if (!isOpen) {
+    frame.setAttribute('data-active', target);
+    frame.setAttribute('data-open', 'true');
+  } else if (current === target) {
+    frame.setAttribute('data-open', 'false');
+  } else {
+    frame.setAttribute('data-active', target);
+    document.getElementById('panelInner').scrollTop = 0;
+  }
+  document.querySelectorAll('.tab[data-target]').forEach(function(t) {
+    t.setAttribute('aria-pressed', t.getAttribute('data-target') === target ? 'true' : 'false');
+  });
+}
+
+function closePanel() { frame.setAttribute('data-open', 'false'); }
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' && frame.getAttribute('data-open') === 'true') closePanel();
+});
+
+function toggle(id) { document.getElementById(id).classList.toggle('open'); }
+
+/* ━━ カロリーチェッカー ━━ */
+var FOODS = {
+  'grid-main': [
+    { name: 'ご飯1杯（150g）',      kcal: 240, sugar: 55 },
+    { name: '食パン1枚（60g）',      kcal: 158, sugar: 28 },
+    { name: 'ロールパン1個（30g）',   kcal:  95, sugar: 16 },
+    { name: 'うどん1玉（230g）',     kcal: 230, sugar: 48 },
+    { name: 'そば1玉（200g）',       kcal: 216, sugar: 41 },
+    { name: 'ラーメン1杯',           kcal: 450, sugar: 65 },
+    { name: 'おにぎり1個（100g）',   kcal: 170, sugar: 37 },
+    { name: 'チャーハン1皿（250g）', kcal: 430, sugar: 60 },
+  ],
+  'grid-side': [
+    { name: '豚カツ ロース1枚（140g）', kcal: 480, sugar:  8 },
+    { name: '鶏の唐揚げ 3個（100g）',  kcal: 300, sugar:  4 },
+    { name: 'えびフライ2尾（60g）',    kcal: 145, sugar:  9 },
+    { name: 'コロッケ1個（80g）',      kcal: 190, sugar: 20 },
+    { name: 'ハンバーグ1個（150g）',   kcal: 290, sugar: 12 },
+    { name: '焼きそば1皿（200g）',     kcal: 290, sugar: 44 },
+    { name: '餃子5個（100g）',         kcal: 200, sugar: 18 },
+    { name: 'ウィンナー2本（60g）',    kcal: 180, sugar:  2 },
+  ],
+  'grid-protein': [
+    { name: '目玉焼き1個',              kcal: 100, sugar:  0 },
+    { name: '卵焼き2切れ（100g）',      kcal: 151, sugar:  4 },
+    { name: '焼き鮭1切れ（100g）',      kcal: 133, sugar:  0 },
+    { name: '刺身盛り合わせ（100g）',   kcal: 120, sugar:  0 },
+    { name: '豆腐冷奴1/2丁（150g）',   kcal:  84, sugar:  2 },
+    { name: '納豆1パック（40g）',       kcal:  76, sugar:  2 },
+    { name: '枝豆1袋（100g）',          kcal: 135, sugar:  4 },
+    { name: 'みそ汁1杯',               kcal:  35, sugar:  3 },
+  ],
+  'grid-sweets': [
+    { name: 'ショートケーキ1個（70g）', kcal: 400, sugar: 30 },
+    { name: 'どら焼き1個（75g）',       kcal: 280, sugar: 55 },
+    { name: 'あんぱん1個（100g）',      kcal: 280, sugar: 52 },
+    { name: 'せんべい5枚（25g）',       kcal: 100, sugar: 21 },
+    { name: '板チョコ1/2枚（25g）',     kcal: 135, sugar: 13 },
+    { name: 'プリン1個（90g）',         kcal: 120, sugar: 16 },
+    { name: 'アイスクリーム1個（90g）', kcal: 180, sugar: 21 },
+    { name: 'ポテトチップス1袋（60g）', kcal: 330, sugar: 33 },
+  ],
+  'grid-drinks': [
+    { name: 'コーラ 500ml',            kcal: 230, sugar: 58 },
+    { name: 'サイダー 500ml',          kcal: 210, sugar: 52 },
+    { name: 'オレンジJuice 200ml',     kcal:  84, sugar: 20 },
+    { name: '牛乳 200ml',              kcal: 134, sugar: 10 },
+    { name: '緑茶 200ml',              kcal:   4, sugar:  0 },
+    { name: 'ブラックコーヒー 200ml',  kcal:   8, sugar:  1 },
+    { name: '缶コーヒー（甘い）250ml', kcal:  90, sugar: 22 },
+    { name: 'スポーツドリンク 500ml',  kcal: 120, sugar: 30 },
+  ],
+  'grid-fruits': [
+    { name: 'バナナ1本（100g）',     kcal: 86, sugar: 21 },
+    { name: 'りんご1/2個（150g）',   kcal: 81, sugar: 20 },
+    { name: 'みかん1個（80g）',      kcal: 34, sugar:  9 },
+    { name: 'ぶどう1房（150g）',     kcal: 90, sugar: 23 },
+    { name: 'キウイ1個（100g）',     kcal: 53, sugar: 11 },
+    { name: 'いちご5粒（100g）',     kcal: 34, sugar:  7 },
+  ],
+};
+
+/* グリッドを描画 */
+Object.keys(FOODS).forEach(function(gridId) {
+  var grid = document.getElementById(gridId);
+  if (!grid) return;
+  FOODS[gridId].forEach(function(food, idx) {
+    var cbId = gridId + '_' + idx;
+    var item = document.createElement('label');
+    item.className = 'food-item';
+    item.setAttribute('for', cbId);
+    item.innerHTML =
+      '<input type="checkbox" id="' + cbId + '" data-kcal="' + food.kcal + '" data-sugar="' + food.sugar + '" onchange="onCheck(this)">' +
+      '<span class="food-name">' + food.name + '</span>' +
+      '<div class="food-nums">' +
+        '<span class="food-kcal">' + food.kcal + 'kcal</span>' +
+        '<span class="food-sugar-g">糖質' + food.sugar + 'g</span>' +
+      '</div>';
+    grid.appendChild(item);
+  });
+});
+
+function onCheck(cb) {
+  /* チェック状態をラベルに反映 */
+  var label = cb.closest('.food-item');
+  if (label) label.classList.toggle('checked', cb.checked);
+  updateTotal();
+}
+
+function updateTotal() {
+  var totalKcal = 0, totalSugar = 0;
+  document.querySelectorAll('.food-item input:checked').forEach(function(el) {
+    totalKcal  += parseInt(el.getAttribute('data-kcal'))  || 0;
+    totalSugar += parseInt(el.getAttribute('data-sugar')) || 0;
+  });
+  document.getElementById('total-kcal').textContent  = totalKcal;
+  document.getElementById('total-sugar').textContent = totalSugar;
+
+  var TARGET = 1900;
+  var pct = Math.min(Math.round(totalKcal / TARGET * 100), 999);
+  document.getElementById('progress-pct').textContent = pct + '%';
+  var fill = document.getElementById('progress-fill');
+  fill.style.width = Math.min(pct, 100) + '%';
+  fill.classList.toggle('over', pct > 100);
+}
+
+function resetChecker() {
+  document.querySelectorAll('.food-item input').forEach(function(cb) {
+    cb.checked = false;
+    var label = cb.closest('.food-item');
+    if (label) label.classList.remove('checked');
+  });
+  updateTotal();
+}
+</script>
+</body>
+</html>
