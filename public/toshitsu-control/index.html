@@ -101,7 +101,35 @@ html, body {
 .section { display: none; }
 .frame[data-active="yougo"]    .section[data-section="yougo"]    { display: block; }
 .frame[data-active="shokuhin"] .section[data-section="shokuhin"] { display: block; }
-.frame[data-active="checker"]  .section[data-section="checker"]  { display: block; }
+
+/* チェッカーはflex columnで固定ヘッダー＋スクロールリストを実現 */
+.frame[data-active="checker"] .panel-inner {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 0;
+}
+.frame[data-active="checker"] .section[data-section="checker"] {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* 固定エリア（サマリー・プログレス・リセット） */
+.checker-fixed { flex-shrink: 0; }
+
+/* スクロールエリア（食品リスト） */
+.checker-scroll {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+  padding-bottom: 16px;
+}
+.checker-scroll::-webkit-scrollbar { width: 6px; }
+.checker-scroll::-webkit-scrollbar-track { background: rgba(0,0,0,0.05); }
+.checker-scroll::-webkit-scrollbar-thumb { background: var(--green-dark); border-radius: 3px; }
 
 /* ━━ セクションヘッダー ━━ */
 .section-header {
@@ -573,67 +601,73 @@ html, body {
 
       <!-- ③ カロリーチェッカー ━━━━━━━━━━━━━━━━━━━━━━ -->
       <div class="section" data-section="checker">
-        <div class="section-header">
-          <div class="section-title">🍽️ カロリーチェッカー</div>
-          <button class="close-btn" onclick="closePanel()">
-            <svg viewBox="0 0 20 20" fill="none"><path d="M5 5L15 15M15 5L5 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
-          </button>
-        </div>
 
-        <!-- サマリー -->
-        <div class="checker-summary">
-          <div class="checker-sum-main">
-            <div class="checker-sum-item">
-              <div class="checker-sum-label">合計カロリー</div>
-              <div class="checker-sum-value" id="total-kcal">0</div>
-              <div class="checker-sum-unit">kcal</div>
+        <!-- ▼ 固定エリア（スクロールしない） -->
+        <div class="checker-fixed">
+          <div class="section-header">
+            <div class="section-title">🍽️ カロリーチェッカー</div>
+            <button class="close-btn" onclick="closePanel()">
+              <svg viewBox="0 0 20 20" fill="none"><path d="M5 5L15 15M15 5L5 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+            </button>
+          </div>
+
+          <!-- サマリー -->
+          <div class="checker-summary">
+            <div class="checker-sum-main">
+              <div class="checker-sum-item">
+                <div class="checker-sum-label">合計カロリー</div>
+                <div class="checker-sum-value" id="total-kcal">0</div>
+                <div class="checker-sum-unit">kcal</div>
+              </div>
+              <div class="checker-sum-divider"></div>
+              <div class="checker-sum-item">
+                <div class="checker-sum-label">合計糖質</div>
+                <div class="checker-sum-value" id="total-sugar">0</div>
+                <div class="checker-sum-unit">g</div>
+              </div>
             </div>
-            <div class="checker-sum-divider"></div>
-            <div class="checker-sum-item">
-              <div class="checker-sum-label">合計糖質</div>
-              <div class="checker-sum-value" id="total-sugar">0</div>
-              <div class="checker-sum-unit">g</div>
+            <div class="checker-sum-guide">
+              <strong>シニア（65歳以上）の1日の目安</strong><br>
+              カロリー：約 1,800〜2,000 kcal<br>
+              糖質：約 200〜300 g<br>
+              1食あたり：約 600〜700 kcal
             </div>
           </div>
-          <div class="checker-sum-guide">
-            <strong>シニア（65歳以上）の1日の目安</strong><br>
-            カロリー：約 1,800〜2,000 kcal<br>
-            糖質：約 200〜300 g<br>
-            1食あたり：約 600〜700 kcal
+
+          <!-- プログレスバー -->
+          <div class="progress-wrap">
+            <div class="progress-labels">
+              <span>1日のカロリー目安 1,900kcal に対して</span>
+              <span id="progress-pct">0%</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" id="progress-fill"></div>
+            </div>
           </div>
-        </div>
 
-        <!-- プログレスバー -->
-        <div class="progress-wrap">
-          <div class="progress-labels">
-            <span>1日のカロリー目安 1,900kcal に対して</span>
-            <span id="progress-pct">0%</span>
-          </div>
-          <div class="progress-bar">
-            <div class="progress-fill" id="progress-fill"></div>
-          </div>
-        </div>
+          <button class="reset-btn" onclick="resetChecker()">🔄 リセット</button>
+        </div><!-- /checker-fixed -->
 
-        <button class="reset-btn" onclick="resetChecker()">🔄 リセット</button>
+        <!-- ▼ スクロールエリア（食品リスト） -->
+        <div class="checker-scroll">
+          <div class="cat-bar">🍚 主食</div>
+          <div class="food-grid" id="grid-main"></div>
 
-        <!-- 食品リスト -->
-        <div class="cat-bar">🍚 主食</div>
-        <div class="food-grid" id="grid-main"></div>
+          <div class="cat-bar">🍳 おかず</div>
+          <div class="food-grid" id="grid-side"></div>
 
-        <div class="cat-bar">🍳 おかず</div>
-        <div class="food-grid" id="grid-side"></div>
+          <div class="cat-bar">🐟 魚・豆・卵</div>
+          <div class="food-grid" id="grid-protein"></div>
 
-        <div class="cat-bar">🐟 魚・豆・卵</div>
-        <div class="food-grid" id="grid-protein"></div>
+          <div class="cat-bar">🍰 菓子・おやつ</div>
+          <div class="food-grid" id="grid-sweets"></div>
 
-        <div class="cat-bar">🍰 菓子・おやつ</div>
-        <div class="food-grid" id="grid-sweets"></div>
+          <div class="cat-bar">🧃 飲み物</div>
+          <div class="food-grid" id="grid-drinks"></div>
 
-        <div class="cat-bar">🧃 飲み物</div>
-        <div class="food-grid" id="grid-drinks"></div>
-
-        <div class="cat-bar">🍎 果物</div>
-        <div class="food-grid" id="grid-fruits"></div>
+          <div class="cat-bar">🍎 果物</div>
+          <div class="food-grid" id="grid-fruits"></div>
+        </div><!-- /checker-scroll -->
 
       </div><!-- /チェッカー -->
 
