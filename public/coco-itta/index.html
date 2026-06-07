@@ -8,6 +8,7 @@
   <!-- Firebase SDK (compat版: シングルHTMLで使いやすい) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -883,6 +884,7 @@
     <button class="filter-btn" data-filter="country">🌍 国・地域</button>
   </div>
   <button class="btn-add" id="btnOpenAdd">＋ ピン追加</button>
+  <button class="btn-settings" id="btnCloud" title="クラウド未接続">🔌</button>
   <button class="btn-settings" id="btnRouteSettings" title="ルート設定">🚶</button>
   <button class="btn-settings" id="btnSettings" title="メンバー設定">⚙️</button>
 
@@ -1110,6 +1112,70 @@
   </div>
 </div>
 
+<!-- グループ管理モーダル（クラウド同期） -->
+<div class="modal-overlay" id="groupModalOverlay">
+  <div class="modal">
+    <h2>☁️ 家族で共有（クラウド同期）</h2>
+
+    <!-- 接続中の表示 -->
+    <div id="groupConnected" style="display:none;">
+      <div class="form-group">
+        <label>現在のグループID</label>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <input type="text" id="groupIdDisplay" readonly style="font-size:1.1rem;font-weight:700;letter-spacing:0.15em;text-align:center;" />
+          <button class="date-unknown-btn" id="btnCopyGroupId">📋 コピー</button>
+        </div>
+        <p style="font-size:0.7rem;color:var(--ink-light);margin-top:6px;line-height:1.5;">
+          このIDを家族に共有すると、同じ地図をリアルタイムで共有できます。
+        </p>
+      </div>
+
+      <div class="form-group">
+        <label>メンバーを招待（メールアドレス）</label>
+        <div style="display:flex;gap:8px;">
+          <input type="text" id="inviteEmail" placeholder="family@example.com" />
+          <button class="date-unknown-btn" id="btnInvite">追加</button>
+        </div>
+        <div id="memberEmailList" style="margin-top:8px;font-size:0.72rem;color:var(--ink-light);"></div>
+      </div>
+
+      <div class="modal-actions" style="margin-top:16px;">
+        <button class="btn-cancel" id="btnGroupClose" style="flex:1;">閉じる</button>
+        <button class="btn-delete" id="btnLeaveGroup">グループから抜ける</button>
+      </div>
+    </div>
+
+    <!-- 未接続の表示 -->
+    <div id="groupDisconnected">
+      <p style="font-size:0.78rem;color:var(--ink-light);margin-bottom:16px;line-height:1.6;">
+        家族みんなで同じ地図を共有できます。新しくグループを作るか、家族から教わったグループIDで参加してください。
+      </p>
+
+      <div class="form-group">
+        <label>新しいグループを作成</label>
+        <input type="text" id="newGroupName" placeholder="グループ名（例: 我が家）" />
+        <button class="btn-save" id="btnCreateGroup" style="width:100%;margin-top:8px;">＋ グループを作成</button>
+        <p style="font-size:0.68rem;color:var(--ink-light);margin-top:6px;">※ いま端末にあるピン・ルートがそのまま引き継がれます</p>
+      </div>
+
+      <div style="text-align:center;color:var(--ink-light);font-size:0.75rem;margin:12px 0;">― または ―</div>
+
+      <div class="form-group">
+        <label>既存グループに参加</label>
+        <div style="display:flex;gap:8px;">
+          <input type="text" id="joinGroupId" placeholder="グループID（例: ABC123）" style="text-transform:uppercase;" />
+          <button class="btn-save" id="btnJoinGroup" style="white-space:nowrap;">参加</button>
+        </div>
+        <p style="font-size:0.68rem;color:var(--red);margin-top:6px;">※ 参加すると、いま端末にあるデータはグループの内容で置き換わります</p>
+      </div>
+
+      <div class="modal-actions" style="margin-top:8px;">
+        <button class="btn-cancel" id="btnGroupCloseDisc" style="flex:1;">あとで</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Leaflet JS -->
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
@@ -1136,6 +1202,7 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const auth     = firebase.auth();
 const provider = new firebase.auth.GoogleAuthProvider();
+const db       = firebase.firestore();
 
 // ログインしているユーザー情報（グローバル）
 let currentUser = null;
@@ -1151,15 +1218,22 @@ auth.onAuthStateChanged((user) => {
     document.getElementById('userAvatar').src              = user.photoURL || '';
     document.getElementById('userAvatar').alt              = user.displayName || '';
     log('ログイン:', user.displayName, user.email);
-    // ピンを再描画（将来: Firestore からロード）
     renderMarkers();
     renderPinList();
+    // クラウド同期: グループ参加済みなら同期開始、未参加ならグループ設定を促す
+    if (currentGroupId) {
+      startSync();
+    } else {
+      setTimeout(() => { if (!currentGroupId) openGroupModal(); }, 600);
+    }
+    updateCloudStatus();
   } else {
     // 未ログイン
     currentUser = null;
     document.getElementById('loginOverlay').style.display  = 'flex';
     document.getElementById('userArea').style.display      = 'none';
     document.getElementById('btnOpenAdd').style.display    = 'none';
+    if (groupUnsub) { groupUnsub(); groupUnsub = null; }
     log('未ログイン');
   }
 });
@@ -1182,6 +1256,240 @@ document.getElementById('btnLogout').addEventListener('click', async () => {
   if (!confirm('ログアウトしますか？')) return;
   await auth.signOut();
   log('ログアウト完了');
+});
+
+// ============================================================
+// クラウド同期モジュール（Firestore リアルタイム同期）
+//  - groups/{groupId} 単一ドキュメントに pins/routes/メンバー/設定を保存
+//  - onSnapshot でリアルタイム受信、hasPendingWrites で自分のエコーを無視
+//  - save*() 末尾の pushToCloud() でデバウンス書き込み
+// ============================================================
+const GROUP_ID_KEY = 'coco-itta-group-id';
+let currentGroupId = localStorage.getItem(GROUP_ID_KEY) || null;
+let groupUnsub     = null;   // onSnapshot 解除関数
+let isApplyingRemote = false; // リモート反映中フラグ（push抑止）
+let pushTimer      = null;   // デバウンス用タイマー
+
+/** 読みやすい6文字のグループID生成（紛らわしい文字を除外） */
+function genGroupId() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let s = '';
+  for (let i = 0; i < 6; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  return s;
+}
+
+/** グループIDをローカルに記録 */
+function setGroupId(id) {
+  currentGroupId = id;
+  if (id) localStorage.setItem(GROUP_ID_KEY, id);
+  else    localStorage.removeItem(GROUP_ID_KEY);
+}
+
+/** 新規グループ作成（現在のローカルデータをそのままアップロード＝マイグレーション） */
+async function createGroup(name) {
+  const id = genGroupId();
+  const data = {
+    name:        name || '我が家',
+    createdBy:   currentUser?.email || '',
+    createdAt:   firebase.firestore.FieldValue.serverTimestamp(),
+    members:     [{ email: currentUser?.email || '', role: 'owner' }],
+    memberNames: members,
+    pins, routes, routeSettings,
+  };
+  await db.collection('groups').doc(id).set(data);
+  setGroupId(id);
+  startSync();
+  log('グループ作成:', id);
+  return id;
+}
+
+/** 既存グループに参加（ローカルデータはクラウドの内容で置き換わる） */
+async function joinGroup(id) {
+  id = (id || '').trim().toUpperCase();
+  if (!id) return false;
+  const ref  = db.collection('groups').doc(id);
+  const snap = await ref.get();
+  if (!snap.exists) { alert('そのグループIDは見つかりませんでした'); return false; }
+  // 自分をメンバーに追加（未登録なら）
+  const d = snap.data();
+  const emails = (d.members || []).map(m => m.email);
+  if (currentUser?.email && !emails.includes(currentUser.email)) {
+    await ref.update({
+      members: firebase.firestore.FieldValue.arrayUnion({ email: currentUser.email, role: 'member' }),
+    });
+  }
+  setGroupId(id);
+  startSync();
+  log('グループ参加:', id);
+  return true;
+}
+
+/** グループから抜ける（ローカルデータは残す） */
+function leaveGroup() {
+  if (groupUnsub) { groupUnsub(); groupUnsub = null; }
+  setGroupId(null);
+  log('グループから退出');
+}
+
+/** メールアドレスでメンバーを招待（membersに登録） */
+async function inviteMember(email) {
+  email = (email || '').trim().toLowerCase();
+  if (!currentGroupId || !email) return false;
+  await db.collection('groups').doc(currentGroupId).update({
+    members: firebase.firestore.FieldValue.arrayUnion({ email, role: 'member' }),
+  });
+  log('メンバー招待:', email);
+  return true;
+}
+
+/** リアルタイム同期を開始 */
+function startSync() {
+  if (!currentGroupId) return;
+  if (groupUnsub) groupUnsub();
+  groupUnsub = db.collection('groups').doc(currentGroupId).onSnapshot(snap => {
+    if (!snap.exists) return;
+    if (snap.metadata.hasPendingWrites) return; // 自分の書き込みエコーは無視
+    const d = snap.data();
+    isApplyingRemote = true;
+    pins   = Array.isArray(d.pins)   ? d.pins   : [];
+    routes = Array.isArray(d.routes) ? d.routes : [];
+    if (Array.isArray(d.memberNames)) members = d.memberNames;
+    if (d.routeSettings) { routeSettings = d.routeSettings; selectedRouteColor = routeSettings.color; }
+    // ローカルキャッシュも更新
+    localStorage.setItem(STORAGE_KEY,        JSON.stringify(pins));
+    localStorage.setItem(ROUTES_KEY,         JSON.stringify(routes));
+    localStorage.setItem(MEMBERS_KEY,        JSON.stringify(members));
+    localStorage.setItem(ROUTE_SETTINGS_KEY, JSON.stringify(routeSettings));
+    // 再描画
+    renderMarkers(); renderPinList(); redrawAllRoutes();
+    isApplyingRemote = false;
+    log('クラウド受信:', pins.length, 'ピン /', routes.length, 'ルート');
+    updateCloudStatus();
+  }, err => log('同期エラー:', err.message));
+}
+
+/** クラウドへデバウンス書き込み */
+function pushToCloud() {
+  if (!currentGroupId || isApplyingRemote) return;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(() => {
+    db.collection('groups').doc(currentGroupId).update({
+      pins, routes, memberNames: members, routeSettings,
+    }).then(() => log('クラウド送信完了')).catch(e => log('送信エラー:', e.message));
+  }, 400);
+}
+
+/** ヘッダーのクラウド状態表示を更新 */
+function updateCloudStatus() {
+  const btn = document.getElementById('btnCloud');
+  if (!btn) return;
+  btn.textContent = currentGroupId ? '☁️' : '🔌';
+  btn.title = currentGroupId ? `クラウド同期中: ${currentGroupId}` : 'クラウド未接続';
+}
+
+/** グループ管理モーダルを開く（接続状態に応じて表示切り替え） */
+function openGroupModal() {
+  const overlay = document.getElementById('groupModalOverlay');
+  const connected    = document.getElementById('groupConnected');
+  const disconnected = document.getElementById('groupDisconnected');
+  if (currentGroupId) {
+    connected.style.display = 'block';
+    disconnected.style.display = 'none';
+    document.getElementById('groupIdDisplay').value = currentGroupId;
+    renderMemberEmailList();
+  } else {
+    connected.style.display = 'none';
+    disconnected.style.display = 'block';
+    document.getElementById('newGroupName').value = '';
+    document.getElementById('joinGroupId').value = '';
+  }
+  overlay.classList.add('open');
+}
+
+/** 招待済みメンバー（メール）一覧を表示 */
+async function renderMemberEmailList() {
+  const el = document.getElementById('memberEmailList');
+  if (!currentGroupId) { el.innerHTML = ''; return; }
+  try {
+    const snap = await db.collection('groups').doc(currentGroupId).get();
+    const ms = snap.data()?.members || [];
+    el.innerHTML = ms.length
+      ? '登録メンバー: ' + ms.map(m => `${m.email}${m.role === 'owner' ? '（管理者）' : ''}`).join('、')
+      : '';
+  } catch (e) { el.innerHTML = ''; }
+}
+
+// グループモーダルのイベント配線
+document.getElementById('btnCloud').addEventListener('click', openGroupModal);
+document.getElementById('groupModalOverlay').addEventListener('click', e => {
+  if (e.target.id === 'groupModalOverlay') e.currentTarget.classList.remove('open');
+});
+document.getElementById('btnGroupClose').addEventListener('click', () => {
+  document.getElementById('groupModalOverlay').classList.remove('open');
+});
+document.getElementById('btnGroupCloseDisc').addEventListener('click', () => {
+  document.getElementById('groupModalOverlay').classList.remove('open');
+});
+
+document.getElementById('btnCreateGroup').addEventListener('click', async (e) => {
+  e.target.disabled = true;
+  try {
+    const id = await createGroup(document.getElementById('newGroupName').value.trim());
+    updateCloudStatus();
+    openGroupModal(); // 接続済み表示に切り替え
+    alert('グループを作成しました！\nグループID: ' + id + '\n\nこのIDを家族に共有してください。');
+  } catch (err) {
+    alert('作成に失敗しました: ' + err.message);
+  } finally {
+    e.target.disabled = false;
+  }
+});
+
+document.getElementById('btnJoinGroup').addEventListener('click', async (e) => {
+  const id = document.getElementById('joinGroupId').value.trim();
+  if (!id) { alert('グループIDを入力してください'); return; }
+  if (!confirm('参加すると、いま端末にあるデータはグループの内容で置き換わります。よろしいですか？')) return;
+  e.target.disabled = true;
+  try {
+    const ok = await joinGroup(id);
+    if (ok) {
+      updateCloudStatus();
+      openGroupModal();
+      alert('グループに参加しました！');
+    }
+  } catch (err) {
+    alert('参加に失敗しました: ' + err.message);
+  } finally {
+    e.target.disabled = false;
+  }
+});
+
+document.getElementById('btnCopyGroupId').addEventListener('click', () => {
+  navigator.clipboard.writeText(currentGroupId).then(() => {
+    const b = document.getElementById('btnCopyGroupId');
+    b.textContent = '✓ コピー済';
+    setTimeout(() => { b.textContent = '📋 コピー'; }, 2000);
+  });
+});
+
+document.getElementById('btnInvite').addEventListener('click', async () => {
+  const email = document.getElementById('inviteEmail').value.trim();
+  if (!email) { alert('メールアドレスを入力してください'); return; }
+  try {
+    await inviteMember(email);
+    document.getElementById('inviteEmail').value = '';
+    renderMemberEmailList();
+    alert('メンバーを招待しました。\n相手にグループID「' + currentGroupId + '」を伝えてください。');
+  } catch (err) {
+    alert('招待に失敗しました: ' + err.message);
+  }
+});
+
+document.getElementById('btnLeaveGroup').addEventListener('click', () => {
+  if (!confirm('グループから抜けますか？（端末内のデータは残ります）')) return;
+  leaveGroup();
+  updateCloudStatus();
+  document.getElementById('groupModalOverlay').classList.remove('open');
 });
 
 // ============================================================
@@ -1352,10 +1660,11 @@ function loadPins() {
   }
 }
 
-/** localStorageにピン保存 */
+/** localStorageにピン保存（+クラウド同期） */
 function savePins(pins) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(pins));
   log('保存:', pins.length, '件');
+  pushToCloud();
 }
 
 let pins = loadPins(); // メモリ上のピン配列
@@ -1371,6 +1680,7 @@ function loadRouteSettings() {
 }
 function saveRouteSettings(settings) {
   localStorage.setItem(ROUTE_SETTINGS_KEY, JSON.stringify(settings));
+  pushToCloud();
 }
 let routeSettings = loadRouteSettings();
 let selectedRouteColor = routeSettings.color;
@@ -1734,9 +2044,10 @@ function loadMembers() {
   } catch { return DEFAULT_MEMBERS; }
 }
 
-/** メンバー一覧を保存 */
+/** メンバー一覧を保存（+クラウド同期） */
 function saveMembers(list) {
   localStorage.setItem(MEMBERS_KEY, JSON.stringify(list));
+  pushToCloud();
 }
 
 let members = loadMembers();
@@ -1871,9 +2182,17 @@ function loadRoutes() {
   catch { return []; }
 }
 
-/** ルート保存 */
+/** ルート保存（+クラウド同期） */
 function saveRoutes(routes) {
   localStorage.setItem(ROUTES_KEY, JSON.stringify(routes));
+  pushToCloud();
+}
+
+/** 全ルートを再描画（クラウド同期受信時に使用） */
+function redrawAllRoutes() {
+  Object.values(routeLayerMap).forEach(l => l.remove());
+  for (const k in routeLayerMap) delete routeLayerMap[k];
+  routes.forEach(addRouteToMap);
 }
 
 let routes = loadRoutes();
