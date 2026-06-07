@@ -195,6 +195,7 @@
       align-self: center;
     }
     .tag-visited  { background: var(--green-lt);  color: var(--green); }
+    .tag-revisit  { background: #d0e4f8;  color: var(--blue); }
     .tag-wishlist { background: var(--amber-lt);  color: #8a5c00; }
 
     /* ===== モーダル（ピン追加・編集） ===== */
@@ -267,6 +268,7 @@
     }
     .status-opt.selected.visited  { border-color: var(--green); background: var(--green-lt); }
     .status-opt.selected.wishlist { border-color: var(--amber); background: var(--amber-lt); }
+    .status-opt.selected.revisit  { border-color: var(--blue); background: #d0e4f8; }
     .status-opt .s-icon { font-size: 1.4rem; display: block; margin-bottom: 2px; }
 
     /* レイヤー選択 */
@@ -791,6 +793,7 @@
     }
     .custom-marker span { transform: rotate(45deg); display: block; }
     .marker-visited  { background: var(--green); }
+    .marker-revisit  { background: var(--blue); }
     .marker-wishlist { background: var(--amber); }
 
     /* レスポンシブ: 小画面でサイドパネルを下に */
@@ -820,6 +823,7 @@
     <button class="filter-btn" data-filter="country">🌍 国・地域</button>
   </div>
   <button class="btn-add" id="btnOpenAdd">＋ ピン追加</button>
+  <button class="btn-settings" id="btnRouteSettings" title="ルート設定">🚶</button>
   <button class="btn-settings" id="btnSettings" title="メンバー設定">⚙️</button>
 
   <!-- ユーザーアバター（ログイン後に表示） -->
@@ -891,6 +895,7 @@
     </div>
     <div class="stats-bar" id="statsBar">
       <div class="stat-item">行った <strong id="stVisited">0</strong></div>
+      <div class="stat-item">また行きたい <strong id="stRevisit">0</strong></div>
       <div class="stat-item">行きたい <strong id="stWishlist">0</strong></div>
     </div>
     <!-- デバッグ用コンソール -->
@@ -916,6 +921,9 @@
       <div class="status-selector">
         <div class="status-opt selected visited" data-status="visited" id="sVisited">
           <span class="s-icon">✅</span>行った
+        </div>
+        <div class="status-opt revisit" data-status="revisit" id="sRevisit">
+          <span class="s-icon">🔄</span>また行きたい
         </div>
         <div class="status-opt wishlist" data-status="wishlist" id="sWishlist">
           <span class="s-icon">⭐</span>行きたい
@@ -972,6 +980,7 @@
     <div class="modal-actions">
       <button class="btn-save" id="btnSave">保存する</button>
       <button class="btn-cancel" id="btnCancel">キャンセル</button>
+      <button class="btn-revisit" id="btnRevisit" style="display:none;background:var(--blue);color:white;border:none;padding:10px;border-radius:8px;cursor:pointer;font-family:'Zen Maru Gothic',sans-serif;font-size:0.82rem;flex:1;">🔄 再訪を記録</button>
       <button class="btn-delete" id="btnDelete" style="display:none;">削除</button>
     </div>
   </div>
@@ -1018,6 +1027,25 @@
     <div class="modal-actions" style="margin-top:16px;">
       <button class="btn-save" id="btnMemberSave">保存する</button>
       <button class="btn-cancel" id="btnMemberCancel">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- ルート設定モーダル -->
+<div class="modal-overlay" id="routeSettingsModalOverlay">
+  <div class="modal">
+    <h2>🚶 ルート設定</h2>
+    <div class="form-group">
+      <label>デフォルト色</label>
+      <div class="color-palette" id="routeColorPalette"></div>
+    </div>
+    <div class="form-group">
+      <label>デフォルト太さ: <strong id="routeWeightLabel">4</strong>px</label>
+      <input type="range" id="routeWeight" min="2" max="12" step="1" value="4" style="width:100%;accent-color:var(--amber);" />
+    </div>
+    <div class="modal-actions" style="margin-top:16px;">
+      <button class="btn-save" id="btnRouteSettingsSave">保存する</button>
+      <button class="btn-cancel" id="btnRouteSettingsCancel">閉じる</button>
     </div>
   </div>
 </div>
@@ -1288,9 +1316,10 @@ function createIcon(status, layer) {
   // ステータス・レイヤーに応じたアイコン絵文字
   const emoji = {
     visited:  { spot: '✅', area: '✅', country: '✅' },
+    revisit:  { spot: '🔄', area: '🔄', country: '🔄' },
     wishlist: { spot: '⭐', area: '⭐', country: '⭐' },
   };
-  const bgClass = status === 'visited' ? 'marker-visited' : 'marker-wishlist';
+  const bgClass = status === 'visited' ? 'marker-visited' : status === 'revisit' ? 'marker-revisit' : 'marker-wishlist';
   const e = emoji[status]?.[layer] || '📍';
 
   return L.divIcon({
@@ -1369,6 +1398,7 @@ function renderPinList() {
   // 統計更新
   document.getElementById('pinCount').textContent   = filtered.length;
   document.getElementById('stVisited').textContent  = pins.filter(p => p.status === 'visited').length;
+  document.getElementById('stRevisit').textContent  = pins.filter(p => p.status === 'revisit').length;
   document.getElementById('stWishlist').textContent = pins.filter(p => p.status === 'wishlist').length;
 
   if (filtered.length === 0) {
@@ -1386,8 +1416,8 @@ function renderPinList() {
           <div class="pin-name">${pin.name}</div>
           <div class="pin-meta">${dateStr}${pin.memo ? ' · ' + pin.memo.slice(0,20) : ''}</div>
         </div>
-        <span class="pin-status-tag ${pin.status === 'visited' ? 'tag-visited' : 'tag-wishlist'}">
-          ${pin.status === 'visited' ? '行った' : '行きたい'}
+        <span class="pin-status-tag ${pin.status === 'visited' ? 'tag-visited' : pin.status === 'revisit' ? 'tag-revisit' : 'tag-wishlist'}">
+          ${pin.status === 'visited' ? '行った' : pin.status === 'revisit' ? 'また行きたい' : '行きたい'}
         </span>
       </div>
     `;
@@ -1483,6 +1513,7 @@ window.openEdit = (id) => {
   fDate.disabled = isDateUnknown;
   resetSelectors();
   document.getElementById('btnDelete').style.display = 'inline-block';
+  document.getElementById('btnRevisit').style.display = pin.status === 'visited' ? 'inline-block' : 'none';
   overlay.classList.add('open');
   // ポップアップを閉じる
   markerMap[id]?.closePopup();
@@ -1561,6 +1592,33 @@ document.getElementById('btnDelete').addEventListener('click', () => {
   renderPinList();
   overlay.classList.remove('open');
   log('削除:', editingId);
+});
+
+/** 再訪を記録 */
+document.getElementById('btnRevisit').addEventListener('click', () => {
+  if (!editingId) return;
+  const originalPin = pins.find(p => p.id === editingId);
+  if (!originalPin) return;
+  const today = new Date().toLocaleDateString('ja-JP');
+  const newPin = {
+    id: `pin_${Date.now()}`,
+    lat: originalPin.lat,
+    lng: originalPin.lng,
+    name: originalPin.name,
+    status: 'visited',
+    layer: originalPin.layer,
+    date: today,
+    dateUnknown: false,
+    memo: '再訪',
+    members: originalPin.members || [],
+    createdAt: new Date().toISOString(),
+  };
+  pins.push(newPin);
+  addMarkerToMap(newPin);
+  savePins(pins);
+  renderPinList();
+  overlay.classList.remove('open');
+  log('再訪を記録:', newPin);
 });
 
 /** キャンセル */
@@ -1642,6 +1700,49 @@ memberOverlay.addEventListener('click', e => {
   if (e.target === memberOverlay) memberOverlay.classList.remove('open');
 });
 
+// ===== ルート設定 =====
+const routeSettingsOverlay = document.getElementById('routeSettingsModalOverlay');
+let selectedRouteColor = routeSettings.color;
+
+document.getElementById('btnRouteSettings').addEventListener('click', () => {
+  selectedRouteColor = routeSettings.color;
+  document.getElementById('routeWeight').value = routeSettings.weight;
+  document.getElementById('routeWeightLabel').textContent = routeSettings.weight;
+
+  const palette = document.getElementById('routeColorPalette');
+  palette.innerHTML = ROUTE_COLORS_ALL.map(c =>
+    `<div class="color-swatch ${c === selectedRouteColor ? 'selected' : ''}" style="background:${c}" data-color="${c}"></div>`
+  ).join('');
+
+  palette.querySelectorAll('.color-swatch').forEach(sw => {
+    sw.addEventListener('click', () => {
+      palette.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
+      sw.classList.add('selected');
+      selectedRouteColor = sw.dataset.color;
+    });
+  });
+
+  document.getElementById('routeWeight').addEventListener('input', e => {
+    document.getElementById('routeWeightLabel').textContent = e.target.value;
+  });
+
+  routeSettingsOverlay.classList.add('open');
+});
+
+document.getElementById('btnRouteSettingsSave').addEventListener('click', () => {
+  routeSettings = { color: selectedRouteColor, weight: parseInt(document.getElementById('routeWeight').value) };
+  saveRouteSettings(routeSettings);
+  routeSettingsOverlay.classList.remove('open');
+});
+
+document.getElementById('btnRouteSettingsCancel').addEventListener('click', () => {
+  routeSettingsOverlay.classList.remove('open');
+});
+
+routeSettingsOverlay.addEventListener('click', e => {
+  if (e.target === routeSettingsOverlay) routeSettingsOverlay.classList.remove('open');
+});
+
 /** メンバー設定の編集リストを描画 */
 function renderMemberEditList() {
   const list = document.getElementById('memberEditList');
@@ -1699,6 +1800,20 @@ function saveRoutes(routes) {
 
 let routes = loadRoutes();
 const routeLayerMap = {}; // id → Leaflet polyline
+
+// ルート設定の保存・読み込み
+const ROUTE_SETTINGS_KEY = 'coco-itta-route-settings';
+function loadRouteSettings() {
+  try {
+    return JSON.parse(localStorage.getItem(ROUTE_SETTINGS_KEY)) || { color: '#c8821a', weight: 4 };
+  } catch {
+    return { color: '#c8821a', weight: 4 };
+  }
+}
+function saveRouteSettings(settings) {
+  localStorage.setItem(ROUTE_SETTINGS_KEY, JSON.stringify(settings));
+}
+let routeSettings = loadRouteSettings();
 
 // ルートカラーパレット
 const ROUTE_COLORS = ['#e05c5c','#c8821a','#4a7c59','#3a6fa8','#7c4a7c','#5c8ec8'];
@@ -1858,6 +1973,8 @@ function finishDrawing() {
     name:   routeNameInput.value.trim() || 'ルート',
     points: [...drawingPoints],
     date:   new Date().toLocaleDateString('ja-JP'),
+    color:  routeSettings.color,
+    weight: routeSettings.weight,
     createdAt: new Date().toISOString(),
   };
   routes.push(route);
