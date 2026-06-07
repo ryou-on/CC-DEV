@@ -1285,6 +1285,21 @@ function setGroupId(id) {
   else    localStorage.removeItem(GROUP_ID_KEY);
 }
 
+/** Firestoreはネスト配列不可のため [lat,lng] → {lat,lng} に変換 */
+function routesToFirestore(rs) {
+  return rs.map(r => ({
+    ...r,
+    points: (r.points || []).map(p => Array.isArray(p) ? { lat: p[0], lng: p[1] } : p),
+  }));
+}
+/** Firestoreから受信時に {lat,lng} → [lat,lng] へ戻す */
+function routesFromFirestore(rs) {
+  return (rs || []).map(r => ({
+    ...r,
+    points: (r.points || []).map(p => Array.isArray(p) ? p : [p.lat, p.lng]),
+  }));
+}
+
 /** 新規グループ作成（現在のローカルデータをそのままアップロード＝マイグレーション） */
 async function createGroup(name) {
   const id = genGroupId();
@@ -1294,7 +1309,7 @@ async function createGroup(name) {
     createdAt:   firebase.firestore.FieldValue.serverTimestamp(),
     members:     [{ email: currentUser?.email || '', role: 'owner' }],
     memberNames: members,
-    pins, routes, routeSettings,
+    pins, routes: routesToFirestore(routes), routeSettings,
   };
   await db.collection('groups').doc(id).set(data);
   setGroupId(id);
@@ -1352,7 +1367,7 @@ function startSync() {
     const d = snap.data();
     isApplyingRemote = true;
     pins   = Array.isArray(d.pins)   ? d.pins   : [];
-    routes = Array.isArray(d.routes) ? d.routes : [];
+    routes = routesFromFirestore(d.routes);
     if (Array.isArray(d.memberNames)) members = d.memberNames;
     if (d.routeSettings) { routeSettings = d.routeSettings; selectedRouteColor = routeSettings.color; }
     // ローカルキャッシュも更新
@@ -1374,7 +1389,7 @@ function pushToCloud() {
   clearTimeout(pushTimer);
   pushTimer = setTimeout(() => {
     db.collection('groups').doc(currentGroupId).update({
-      pins, routes, memberNames: members, routeSettings,
+      pins, routes: routesToFirestore(routes), memberNames: members, routeSettings,
     }).then(() => log('クラウド送信完了')).catch(e => log('送信エラー:', e.message));
   }, 400);
 }
