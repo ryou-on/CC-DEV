@@ -936,8 +936,10 @@
     <div class="route-drawing-bar" id="routeDrawingBar" style="display:none;">
       <span class="drawing-hint">地図をクリックして点を追加 · ダブルクリックで完了</span>
       <input type="text" id="routeName" placeholder="ルート名（例: 散歩コース）" />
+      <input type="date" id="routeDate" style="width:100%;margin-top:4px;padding:6px;border:1px solid #c8a87a;border-radius:8px;font-family:'Zen Maru Gothic',sans-serif;font-size:0.8rem;" />
       <div style="display:flex;gap:6px;margin-top:6px;">
         <button class="btn-route-done" id="btnRouteDone">✅ 完了</button>
+        <button class="btn-route-cancel" id="btnRouteUndo" style="background:#f5f0e8;border:1px solid #c8a87a;color:var(--ink);padding:8px 12px;border-radius:8px;font-family:'Zen Maru Gothic',sans-serif;cursor:pointer;">↩ UNDO</button>
         <button class="btn-route-cancel" id="btnRouteCancel">✕ キャンセル</button>
       </div>
     </div>
@@ -948,6 +950,14 @@
     <div class="panel-header">
       📌 ピン一覧
       <span class="count-badge" id="pinCount">0</span>
+    </div>
+    <div style="padding:4px 10px;border-bottom:1px solid var(--tan);background:#faf6f0;">
+      <select id="pinSort" style="width:100%;font-size:0.72rem;border:1px solid var(--tan);border-radius:6px;padding:3px 6px;background:#fff;color:var(--ink);font-family:'Zen Maru Gothic',sans-serif;">
+        <option value="new">🕐 新しい順</option>
+        <option value="old">🕰 古い順</option>
+        <option value="name">🔤 名前順</option>
+        <option value="status">🏷 ステータス順</option>
+      </select>
     </div>
     <div class="pin-list" id="pinList">
       <div class="empty-state">
@@ -1056,6 +1066,11 @@
     <div class="form-group">
       <label>ルート名</label>
       <input type="text" id="reName" placeholder="例: 散歩コース" />
+    </div>
+
+    <div class="form-group">
+      <label>日付</label>
+      <input type="date" id="reDate" style="width:100%;padding:8px;border:1px solid var(--tan);border-radius:8px;font-family:'Zen Maru Gothic',sans-serif;font-size:0.85rem;box-sizing:border-box;" />
     </div>
 
     <div class="form-group">
@@ -1817,9 +1832,22 @@ function getFilteredPins() {
 }
 
 // ===== サイドパネル: ピン一覧 =====
+function getSortedPins(arr) {
+  const sort = document.getElementById('pinSort')?.value || 'new';
+  const copy = [...arr];
+  if (sort === 'new')    return copy.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+  if (sort === 'old')    return copy.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+  if (sort === 'name')   return copy.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ja'));
+  if (sort === 'status') {
+    const order = { visited: 0, revisit: 1, wishlist: 2 };
+    return copy.sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9));
+  }
+  return copy;
+}
+
 function renderPinList() {
   const list = document.getElementById('pinList');
-  const filtered = getFilteredPins();
+  const filtered = getSortedPins(getFilteredPins());
 
   // 統計更新
   document.getElementById('pinCount').textContent   = filtered.length;
@@ -1849,6 +1877,9 @@ function renderPinList() {
     `;
   }).join('');
 }
+
+// ソート変更で即再描画
+document.getElementById('pinSort')?.addEventListener('change', renderPinList);
 
 /** ピン一覧クリックでマップフォーカス */
 window.focusPin = (id) => {
@@ -2025,7 +2056,10 @@ document.getElementById('btnRevisit').addEventListener('click', () => {
   if (!editingId) return;
   const originalPin = pins.find(p => p.id === editingId);
   if (!originalPin) return;
-  const today = new Date().toLocaleDateString('ja-JP');
+  // 同名スポットの訪問回数を数えて「○回目」を自動付与
+  const sameNameCount = pins.filter(p => p.name === originalPin.name).length;
+  const visitLabel = `${sameNameCount + 1}回目`;
+  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD形式
   const newPin = {
     id: `pin_${Date.now()}`,
     lat: originalPin.lat,
@@ -2035,7 +2069,7 @@ document.getElementById('btnRevisit').addEventListener('click', () => {
     layer: originalPin.layer,
     date: today,
     dateUnknown: false,
-    memo: '再訪',
+    memo: visitLabel,
     members: originalPin.members || [],
     createdAt: new Date().toISOString(),
   };
@@ -2044,7 +2078,7 @@ document.getElementById('btnRevisit').addEventListener('click', () => {
   savePins(pins);
   renderPinList();
   overlay.classList.remove('open');
-  log('再訪を記録:', newPin);
+  log('再訪を記録:', newPin.name, visitLabel);
 });
 
 /** キャンセル */
@@ -2284,6 +2318,7 @@ window.openRouteEdit = (id) => {
   editingRouteColor = route.color || '#c8821a';
 
   document.getElementById('reName').value   = route.name || '';
+  document.getElementById('reDate').value   = route.date || new Date().toISOString().slice(0, 10);
   document.getElementById('reWeight').value = route.weight || 4;
   document.getElementById('weightLabel').textContent = route.weight || 4;
 
@@ -2318,6 +2353,7 @@ document.getElementById('btnRouteSave').addEventListener('click', () => {
   routes[idx] = {
     ...routes[idx],
     name:   document.getElementById('reName').value.trim() || 'ルート',
+    date:   document.getElementById('reDate').value || routes[idx].date,
     color:  editingRouteColor,
     weight: parseInt(document.getElementById('reWeight').value),
   };
@@ -2363,6 +2399,9 @@ function startDrawing() {
   btnRouteStart.style.display  = 'none';
   routeDrawingBar.style.display = 'block';
   routeNameInput.value = '';
+  // 日付は今日をデフォルトで設定
+  const today = new Date().toISOString().slice(0, 10);
+  document.getElementById('routeDate').value = today;
   log('描画モード開始');
 }
 
@@ -2384,11 +2423,12 @@ function finishDrawing() {
     alert('2点以上クリックしてルートを描いてください');
     return;
   }
+  const routeDateVal = document.getElementById('routeDate').value; // YYYY-MM-DD
   const route = {
     id:     `route_${Date.now()}`,
     name:   routeNameInput.value.trim() || 'ルート',
     points: [...drawingPoints],
-    date:   new Date().toLocaleDateString('ja-JP'),
+    date:   routeDateVal || new Date().toISOString().slice(0, 10),
     color:  routeSettings.color,
     weight: routeSettings.weight,
     createdAt: new Date().toISOString(),
@@ -2400,9 +2440,25 @@ function finishDrawing() {
   log('ルート保存:', route.name, route.points.length, '点');
 }
 
+/** 描画UNDO（最後の点を取り消し） */
+function undoDrawing() {
+  if (drawingPoints.length === 0) return;
+  drawingPoints.pop();
+  const last = tempMarkers.pop();
+  last?.remove();
+  previewLine?.remove(); previewLine = null;
+  if (drawingPoints.length >= 2) {
+    previewLine = L.polyline(drawingPoints, {
+      color: routeSettings.color || '#c8821a', weight: 3, opacity: 0.7, dashArray: '6 4',
+    }).addTo(map);
+  }
+  log('UNDO: 残り', drawingPoints.length, '点');
+}
+
 btnRouteStart.addEventListener('click', startDrawing);
 btnRouteDone.addEventListener('click', finishDrawing);
 btnRouteCancel.addEventListener('click', cancelDrawing);
+document.getElementById('btnRouteUndo').addEventListener('click', undoDrawing);
 
 /** 地図クリックで点を追加（描画モード中） */
 map.on('click', (e) => {
