@@ -800,6 +800,66 @@
       .pin-list { display: flex; overflow-x: auto; overflow-y: hidden; flex-direction: row; }
       .pin-item { min-width: 180px; border-bottom: none; border-right: 1px solid var(--border); }
     }
+
+    /* ===== UI共通コンポーネント ===== */
+    .version-badge {
+      position: fixed;
+      bottom: 14px;
+      right: 14px;
+      background: rgba(44,36,22,0.8);
+      color: var(--amber-lt);
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 0.7rem;
+      cursor: pointer;
+      z-index: 400;
+      transition: all .2s;
+      border: 1px solid var(--amber);
+    }
+    .version-badge:hover { background: rgba(44,36,22,0.95); transform: scale(1.05); }
+
+    .debug-btn {
+      position: fixed;
+      bottom: 14px;
+      right: 70px;
+      background: rgba(150,150,150,0.6);
+      color: white;
+      padding: 5px 8px;
+      border-radius: 6px;
+      font-size: 0.65rem;
+      cursor: pointer;
+      z-index: 400;
+      border: 1px solid rgba(200,200,200,0.4);
+      transition: all .2s;
+    }
+    .debug-btn:hover { background: rgba(150,150,150,0.8); }
+
+    .logo { cursor: pointer; position: relative; }
+    .logo:hover { opacity: 0.8; }
+
+    .release-notes {
+      max-height: 400px;
+      overflow-y: auto;
+      font-size: 0.8rem;
+      line-height: 1.6;
+      color: var(--ink);
+      padding: 12px 0;
+    }
+    .release-notes h3 { font-size: 0.9rem; margin-top: 12px; margin-bottom: 6px; color: var(--amber); }
+    .release-notes ul { margin-left: 16px; margin-bottom: 8px; }
+    .release-notes li { margin-bottom: 3px; }
+
+    .help-content {
+      max-height: 500px;
+      overflow-y: auto;
+      font-size: 0.8rem;
+      line-height: 1.8;
+      color: var(--ink);
+    }
+    .help-content h3 { font-size: 0.95rem; margin-top: 14px; margin-bottom: 8px; color: var(--amber); font-weight: 700; }
+    .help-content h4 { font-size: 0.82rem; margin-top: 10px; margin-bottom: 4px; color: var(--ink-light); }
+    .help-content ul, .help-content ol { margin-left: 16px; margin-bottom: 8px; }
+    .help-content li { margin-bottom: 4px; }
   </style>
 </head>
 <body>
@@ -1919,6 +1979,134 @@ window.openEdit = (id) => {
 renderMarkers();
 renderPinList();
 log('起動完了。ピン数:', pins.length, 'ルート数:', routes.length);
+
+// ===== UI共通コンポーネント =====
+const releaseNotes = `## v0.2.0 (2026-06-08)
+- Firestore 実装準備（バージョン管理・UI共通コンポーネント追加）
+- ログがクリップボードコピー可能に
+
+## v0.1.0 (2026-06-08)
+- 初回リリース
+- Leaflet + OpenStreetMap 地図表示
+- ピン追加・編集・削除機能
+- ステータス・レイヤー・日付・メモ管理
+- 住所検索（Nominatim）
+- Firebase Auth（Google ログイン）
+- ルート描画機能
+- メンバー管理`;
+
+const helpContent = `## 使い方
+
+### ピンを追加する
+1. 地図をクリック、または「＋ ピン追加」ボタンで新規追加
+2. 場所名を入力
+3. ステータス（行った/行きたい）を選択
+4. レイヤー（スポット/エリア/国・地域）を選択
+5. 訪問日、メモ、同行メンバーを設定
+6. 保存ボタンをクリック
+
+### フィルター機能
+- ヘッダーのボタンで表示内容を絞り込み
+- ステータス別：「行った」「行きたい」
+- レイヤー別：「スポット」「エリア」「国・地域」
+
+### ルートを描く
+1. 「🚶 ルートを描く」をクリック
+2. 地図をクリックして点を追加
+3. ダブルクリックで完了
+4. ルート名・色・太さを編集
+
+### メンバー管理
+- ⚙️ 設定ボタンでメンバーを追加/削除
+- ピン追加時に「一緒に行った人」として選択可能
+
+### データについて
+- **現在：** localStorage（ブラウザ内保存）
+- **近日中：** Firestore で家族間共有対応予定`;
+
+document.addEventListener('DOMContentLoaded', () => {
+  const versionBadge = document.createElement('div');
+  versionBadge.className = 'version-badge';
+  versionBadge.textContent = 'v0.2.0';
+  versionBadge.addEventListener('click', () => {
+    const modal = document.getElementById('releaseNotesModal');
+    modal.classList.add('open');
+  });
+  document.body.appendChild(versionBadge);
+
+  const debugBtn = document.createElement('button');
+  debugBtn.className = 'debug-btn';
+  debugBtn.textContent = '🐛 ログ';
+  debugBtn.addEventListener('click', () => {
+    const logs = Array.from(debugPanel.querySelectorAll('div')).map(d => d.textContent).join('\n');
+    navigator.clipboard.writeText(logs).then(() => {
+      debugBtn.textContent = '✓ コピー済';
+      setTimeout(() => { debugBtn.textContent = '🐛 ログ'; }, 2000);
+    });
+  });
+  document.body.appendChild(debugBtn);
+
+  document.querySelector('.logo').addEventListener('click', () => {
+    document.getElementById('helpModal').classList.add('open');
+  });
+
+  const releaseModal = document.getElementById('releaseNotesModal');
+  releaseModal.addEventListener('click', e => {
+    if (e.target === releaseModal) releaseModal.classList.remove('open');
+  });
+  document.getElementById('closeReleaseNotes').addEventListener('click', () => {
+    releaseModal.classList.remove('open');
+  });
+
+  const helpModal = document.getElementById('helpModal');
+  helpModal.addEventListener('click', e => {
+    if (e.target === helpModal) helpModal.classList.remove('open');
+  });
+  document.getElementById('closeHelp').addEventListener('click', () => {
+    helpModal.classList.remove('open');
+  });
+
+  const releaseContent = document.getElementById('releaseContent');
+  releaseContent.innerHTML = releaseNotes.split('\n').map(line => {
+    if (line.startsWith('## ')) return `<h3>${line.replace('## ', '')}</h3>`;
+    if (line.startsWith('- ')) return `<li>${line.replace('- ', '')}</li>`;
+    if (line.trim() === '') return '</ul><ul>';
+    return line;
+  }).join('').replace(/<\/ul><ul>/g, '</ul><ul>').replace(/^<ul>/, '').replace(/<\/ul>$/, '');
+
+  const helpContentEl = document.getElementById('helpContent');
+  helpContentEl.innerHTML = helpContent.split('\n').map(line => {
+    if (line.startsWith('## ')) return `<h3>${line.replace('## ', '')}</h3>`;
+    if (line.startsWith('### ')) return `<h4>${line.replace('### ', '')}</h4>`;
+    if (line.startsWith('- ')) return `<li>${line.replace('- ', '')}</li>`;
+    if (line.startsWith('**')) return `<strong>${line.replace(/\*\*/g, '')}</strong>`;
+    if (line.trim() === '') return '</ul><ul>';
+    return line;
+  }).join('').replace(/<\/ul><ul>/g, '</ul><ul>').replace(/^<ul>/, '').replace(/<\/ul>$/, '');
+});
 </script>
+
+<!-- リリースノートモーダル -->
+<div class="modal-overlay" id="releaseNotesModal">
+  <div class="modal">
+    <h2>📋 リリースノート</h2>
+    <div class="release-notes" id="releaseContent"></div>
+    <div class="modal-actions" style="margin-top:16px;">
+      <button class="btn-cancel" id="closeReleaseNotes" style="flex:1;">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<!-- ヘルプモーダル -->
+<div class="modal-overlay" id="helpModal">
+  <div class="modal">
+    <h2>❓ ヘルプ</h2>
+    <div class="help-content" id="helpContent"></div>
+    <div class="modal-actions" style="margin-top:16px;">
+      <button class="btn-cancel" id="closeHelp" style="flex:1;">閉じる</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
