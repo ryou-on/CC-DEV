@@ -200,6 +200,33 @@
     .tag-visited  { background: var(--green-lt);  color: var(--green); }
     .tag-revisit  { background: #d0e4f8;  color: var(--blue); }
     .tag-wishlist { background: var(--amber-lt);  color: #8a5c00; }
+    /* マーカーのスタックカウント（地図上アイコン右上） */
+    .marker-stack-count {
+      position: absolute; top: -6px; right: -6px;
+      background: #e8388a; color: #fff;
+      font-size: 0.58rem; font-weight: 700;
+      width: 16px; height: 16px;
+      border-radius: 50%; display: flex; align-items: center; justify-content: center;
+      border: 1.5px solid #fff; pointer-events: none;
+    }
+    .custom-marker { position: relative; }
+    /* 検索バー */
+    .pin-search-bar {
+      padding: 5px 10px; border-bottom: 1px solid var(--tan); background: #faf6f0;
+    }
+    .pin-search-bar input {
+      width: 100%; padding: 5px 10px; border: 1px solid var(--tan);
+      border-radius: 20px; font-family: 'Zen Maru Gothic', sans-serif;
+      font-size: 0.75rem; box-sizing: border-box; background: #fff;
+    }
+    /* タイムライン（スタックポップアップ） */
+    .visit-timeline { max-height: 220px; overflow-y: auto; }
+    .visit-row { padding: 5px 0; border-bottom: 1px solid #eee; font-size: 0.72rem; }
+    .visit-row:last-child { border-bottom: none; }
+    /* ルート設定 色ラベル */
+    .color-memo-row { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+    .color-memo-dot { width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0; border: 2px solid rgba(0,0,0,0.15); }
+    .color-memo-input { flex: 1; border: 1px solid var(--tan); border-radius: 6px; padding: 3px 8px; font-family: 'Zen Maru Gothic', sans-serif; font-size: 0.72rem; }
     /* 訪問回数バッジ */
     .visit-badge {
       display: inline-flex; align-items: center; justify-content: center;
@@ -973,6 +1000,9 @@
       📌 ピン一覧
       <span class="count-badge" id="pinCount">0</span>
     </div>
+    <div class="pin-search-bar">
+      <input type="text" id="pinSearch" placeholder="🔍 スポット名で検索…" autocomplete="off" />
+    </div>
     <div style="padding:4px 10px;border-bottom:1px solid var(--tan);background:#faf6f0;">
       <select id="pinSort" style="width:100%;font-size:0.72rem;border:1px solid var(--tan);border-radius:6px;padding:3px 6px;background:#fff;color:var(--ink);font-family:'Zen Maru Gothic',sans-serif;">
         <option value="date-new">🕐 訪問日（新しい順）</option>
@@ -1158,6 +1188,10 @@
       <label>デフォルト太さ: <strong id="routeWeightLabel">4</strong>px</label>
       <input type="range" id="routeWeight" min="2" max="12" step="1" value="4" style="width:100%;accent-color:var(--amber);" />
     </div>
+    <div class="form-group">
+      <label>色ごとのメモ（例: 黄色→全員、緑→ともちゃんとお父さん）</label>
+      <div id="colorMemoList"></div>
+    </div>
     <div class="modal-actions" style="margin-top:16px;">
       <button class="btn-save" id="btnRouteSettingsSave">保存する</button>
       <button class="btn-cancel" id="btnRouteSettingsCancel">閉じる</button>
@@ -1299,10 +1333,17 @@ auth.onAuthStateChanged((user) => {
 });
 
 // ===== Googleログインボタン =====
+// モバイル判定（iOS Safari / Android Chrome などポップアップが塞がれる環境）
+const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
 document.getElementById('btnGoogleLogin').addEventListener('click', async () => {
   try {
-    await auth.signInWithPopup(provider);
-    // onAuthStateChanged が自動で発火するので追加処理不要
+    if (isMobile) {
+      // モバイルはリダイレクト方式（ポップアップが塞がれるため）
+      await auth.signInWithRedirect(provider);
+    } else {
+      await auth.signInWithPopup(provider);
+    }
   } catch (e) {
     log('ログインエラー:', e.code, e.message);
     if (e.code !== 'auth/popup-closed-by-user') {
@@ -1310,6 +1351,11 @@ document.getElementById('btnGoogleLogin').addEventListener('click', async () => 
     }
   }
 });
+
+// リダイレクト後の結果を受け取る
+auth.getRedirectResult().then(result => {
+  if (result?.user) log('リダイレクトログイン成功:', result.user.email);
+}).catch(e => log('リダイレクト結果エラー:', e.message));
 
 // ===== ログアウトボタン =====
 document.getElementById('btnLogout').addEventListener('click', async () => {
@@ -1791,7 +1837,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 log('地図初期化完了');
 
 // ===== カスタムマーカーアイコン生成 =====
-function createIcon(status, layer) {
+function createIcon(status, layer, stackCount = 1) {
   // ステータス・レイヤーに応じたアイコン絵文字
   const emoji = {
     visited:  { spot: '✅', area: '✅', country: '✅' },
@@ -1800,10 +1846,13 @@ function createIcon(status, layer) {
   };
   const bgClass = status === 'visited' ? 'marker-visited' : status === 'revisit' ? 'marker-revisit' : 'marker-wishlist';
   const e = emoji[status]?.[layer] || '📍';
+  const badge = stackCount > 1
+    ? `<span class="marker-stack-count">${stackCount}</span>`
+    : '';
 
   return L.divIcon({
     className: '',
-    html: `<div class="custom-marker ${bgClass}"><span>${e}</span></div>`,
+    html: `<div class="custom-marker ${bgClass}" style="position:relative;">${badge}<span>${e}</span></div>`,
     iconSize: [32, 32],
     iconAnchor: [16, 32],
     popupAnchor: [0, -32],
@@ -1861,16 +1910,71 @@ function addMarkerToMap(pin) {
   markerMap[pin.id] = marker;
 }
 
-/** 全マーカーを描画（フィルター適用） */
+/** 同名ピンをスタックしてマップに1つのマーカーとして表示 */
+function addStackedMarkerToMap(groupPins) {
+  // 最新訪問を代表として使用（日付降順）
+  const sorted = [...groupPins].sort((a, b) =>
+    (b.date || b.createdAt || '').localeCompare(a.date || a.createdAt || '')
+  );
+  const rep = sorted[0]; // 代表ピン（最新）
+  const count = sorted.length;
+  const icon = createIcon(rep.status, rep.layer, count);
+  const marker = L.marker([rep.lat, rep.lng], { icon });
+
+  // タイムラインポップアップ
+  const timelineRows = sorted.map((p, i) => {
+    const rank = count - i;
+    const statusLabel = p.status === 'visited' ? '✅ 行った' : p.status === 'revisit' ? '🔄 また行きたい' : '⭐ 行きたい';
+    const photos = getPinPhotos(p.id);
+    const thumb = photos.length
+      ? `<img src="${photos[0]}" style="width:48px;height:48px;object-fit:cover;border-radius:4px;float:right;margin-left:6px;" />`
+      : '';
+    return `
+      <div class="visit-row">
+        ${thumb}
+        <span style="background:#e8388a;color:#fff;font-size:0.62rem;font-weight:700;padding:1px 5px;border-radius:10px;">${rank}回</span>
+        <span style="font-size:0.7rem;color:#6b5c45;margin-left:4px;">${statusLabel} ${p.date ? '· ' + p.date : ''}</span>
+        ${p.memo ? `<div style="font-size:0.68rem;color:#888;margin-top:2px;">${p.memo}</div>` : ''}
+        ${p.members?.length ? `<div style="font-size:0.65rem;color:#aaa;">${p.members.join('・')}</div>` : ''}
+        <br style="clear:both;"/>
+        <button onclick="openEdit('${p.id}')" style="font-size:0.68rem;padding:2px 8px;border-radius:5px;background:#c8821a;border:none;color:#fff;cursor:pointer;margin-top:3px;font-family:'Zen Maru Gothic',sans-serif;">編集</button>
+      </div>`;
+  }).join('');
+
+  marker.bindPopup(`
+    <b style="font-family:'Zen Maru Gothic',sans-serif;">${rep.name}</b>
+    <span style="font-size:0.68rem;color:#aaa;margin-left:6px;">${count}回訪問</span>
+    <div class="visit-timeline">${timelineRows}</div>
+  `, { maxWidth: 260 });
+
+  marker.addTo(map);
+  // 全ピンIDを同じマーカーに紐付ける
+  groupPins.forEach(p => { markerMap[p.id] = marker; });
+}
+
+/** 全マーカーを描画（フィルター適用・同名ピンはスタック） */
 function renderMarkers() {
   // 既存マーカーをすべて削除
   Object.values(markerMap).forEach(m => m.remove());
   Object.keys(markerMap).forEach(k => delete markerMap[k]);
 
-  // フィルター条件で絞り込み
   const filtered = getFilteredPins();
-  filtered.forEach(addMarkerToMap);
-  log('マーカー描画:', filtered.length, '件');
+
+  // 同名でグループ化
+  const groups = {};
+  filtered.forEach(p => {
+    if (!groups[p.name]) groups[p.name] = [];
+    groups[p.name].push(p);
+  });
+
+  Object.values(groups).forEach(group => {
+    if (group.length === 1) {
+      addMarkerToMap(group[0]);
+    } else {
+      addStackedMarkerToMap(group);
+    }
+  });
+  log('マーカー描画:', filtered.length, '件 /', Object.keys(groups).length, 'スポット');
 }
 
 // ===== フィルター =====
@@ -1889,12 +1993,15 @@ document.getElementById('filters').querySelectorAll('.filter-btn').forEach(btn =
 
 /** フィルター条件に合うピンを返す */
 function getFilteredPins() {
-  if (currentFilter === 'all') return pins;
-  if (currentFilter === 'visited')  return pins.filter(p => p.status === 'visited');
-  if (currentFilter === 'wishlist') return pins.filter(p => p.status === 'wishlist');
-  if (currentFilter === 'spot')     return pins.filter(p => p.layer === 'spot');
-  if (currentFilter === 'area')     return pins.filter(p => p.layer === 'area');
-  if (currentFilter === 'country')  return pins.filter(p => p.layer === 'country');
+  const q = (document.getElementById('pinSearch')?.value || '').trim().toLowerCase();
+  let base = pins;
+  if (currentFilter === 'visited')  base = pins.filter(p => p.status === 'visited');
+  else if (currentFilter === 'wishlist') base = pins.filter(p => p.status === 'wishlist');
+  else if (currentFilter === 'spot')    base = pins.filter(p => p.layer === 'spot');
+  else if (currentFilter === 'area')    base = pins.filter(p => p.layer === 'area');
+  else if (currentFilter === 'country') base = pins.filter(p => p.layer === 'country');
+  if (q) base = base.filter(p => p.name.toLowerCase().includes(q) || (p.memo || '').toLowerCase().includes(q));
+  return base;
   return pins;
 }
 
@@ -1956,8 +2063,9 @@ function renderPinList() {
   }).join('');
 }
 
-// ソート変更で即再描画
+// ソート変更・検索入力で即再描画
 document.getElementById('pinSort')?.addEventListener('change', renderPinList);
+document.getElementById('pinSearch')?.addEventListener('input', () => { renderPinList(); renderMarkers(); });
 
 /** ピン一覧クリックでマップフォーカス */
 window.focusPin = (id) => {
@@ -2391,11 +2499,35 @@ document.getElementById('btnRouteSettings').addEventListener('click', () => {
     document.getElementById('routeWeightLabel').textContent = e.target.value;
   });
 
+  // 色別メモ一覧を生成
+  const memos = routeSettings.colorMemos || {};
+  const colorNames = {
+    '#e05c5c':'赤','#c8821a':'オレンジ','#e8c030':'黄色',
+    '#4a7c59':'緑','#3a6fa8':'青','#7c4a7c':'紫',
+    '#5c8ec8':'水色','#2c2416':'黒','#888888':'グレー','#e88050':'サーモン',
+  };
+  document.getElementById('colorMemoList').innerHTML = ROUTE_COLORS_ALL.map(c => `
+    <div class="color-memo-row">
+      <div class="color-memo-dot" style="background:${c};"></div>
+      <span style="font-size:0.68rem;width:36px;flex-shrink:0;">${colorNames[c]||''}</span>
+      <input class="color-memo-input" data-color="${c}" value="${memos[c]||''}" placeholder="このルートの用途…" />
+    </div>`
+  ).join('');
+
   routeSettingsOverlay.classList.add('open');
 });
 
 document.getElementById('btnRouteSettingsSave').addEventListener('click', () => {
-  routeSettings = { color: selectedRouteColor, weight: parseInt(document.getElementById('routeWeight').value) };
+  // 色別メモを収集
+  const colorMemos = {};
+  document.querySelectorAll('#colorMemoList .color-memo-input').forEach(inp => {
+    if (inp.value.trim()) colorMemos[inp.dataset.color] = inp.value.trim();
+  });
+  routeSettings = {
+    color: selectedRouteColor,
+    weight: parseInt(document.getElementById('routeWeight').value),
+    colorMemos,
+  };
   saveRouteSettings(routeSettings);
   routeSettingsOverlay.classList.remove('open');
 });
@@ -2484,9 +2616,12 @@ function addRouteToMap(route) {
   const color  = route.color  || ROUTE_COLORS[routes.findIndex(r => r.id === route.id) % ROUTE_COLORS.length] || '#c8821a';
   const weight = route.weight || 4;
   const line = L.polyline(route.points, { color, weight, opacity: 0.8 });
+  // 色メモ取得
+  const colorMemoText = (routeSettings.colorMemos || {})[color] || '';
   line.bindPopup(`
     <b style="font-family:'Zen Maru Gothic',sans-serif">🚶 ${route.name || 'ルート'}</b><br>
     <span style="font-size:0.72rem;color:#6b5c45">${route.points.length}点 · ${route.date || '日付不明'}</span><br>
+    ${colorMemoText ? `<span style="font-size:0.68rem;color:#fff;background:${color};padding:1px 6px;border-radius:10px;">${colorMemoText}</span><br>` : ''}
     ${route.memo ? `<span style="font-size:0.7rem;color:#8a7060">${route.memo}</span><br>` : ''}
     <div style="display:flex;gap:6px;margin-top:6px;">
       <button onclick="openRouteEdit('${route.id}')" style="font-size:0.7rem;padding:3px 8px;border-radius:6px;background:#f0d090;border:1px solid #c8821a;color:#2c2416;cursor:pointer;">編集</button>
