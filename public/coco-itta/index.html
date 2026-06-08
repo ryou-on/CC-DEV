@@ -9,6 +9,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-storage-compat.js"></script>
 
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -1317,6 +1318,7 @@ firebase.initializeApp(firebaseConfig);
 const auth     = firebase.auth();
 const provider = new firebase.auth.GoogleAuthProvider();
 const db       = firebase.firestore();
+const storage  = firebase.storage();
 
 // ログインしているユーザー情報（グローバル）
 let currentUser = null;
@@ -1892,14 +1894,66 @@ function getVisitRank(pin) {
   return { rank: idx + 1, total: same.length };
 }
 
-/** ピンの写真をlocalStorageから取得 */
+/** ピンの写真を取得（pin.photosのURL優先 → localStorage fallback） */
 function getPinPhotos(pinId) {
+  // Firestoreから同期されたURLがあればそちらを使用（グループ共有）
+  const pin = pins.find(p => p.id === pinId);
+  if (pin?.photos?.length) return pin.photos;
+  // ローカル専用ユーザーのフォールバック
   try { return JSON.parse(localStorage.getItem(`pinPhotos_${pinId}`)) || []; }
   catch { return []; }
 }
-/** ピンの写真をlocalStorageへ保存 */
+/** ピンの写真をlocalStorageへ保存（グループ未参加時のバックアップ） */
 function savePinPhotos(pinId, photos) {
   localStorage.setItem(`pinPhotos_${pinId}`, JSON.stringify(photos));
+}
+
+/** base64 → Firebase Storage にアップロードしてURLを返す */
+async function uploadPhotoToStorage(pinId, base64) {
+  const blob = await (await fetch(base64)).blob();
+  const ext  = blob.type === 'image/png' ? 'png' : 'jpg';
+  const ref  = storage.ref(`groups/${currentGroupId}/pins/${pinId}/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`);
+  await ref.put(blob, { contentType: blob.type });
+  return await ref.getDownloadURL();
+}
+
+/** _editingPhotos を処理（グループ参加中: base64をStorageにアップ、URL化） */
+async function finalizePhotos(pinId) {
+  if (!currentGroupId) {
+    // グループ未参加 → localStorage にbase64で保存
+    savePinPhotos(pinId, _editingPhotos);
+    return _editingPhotos;
+  }
+  // グループ参加中 → base64のみアップロード、URL済みはそのまま
+  const btnSave = document.getElementById('btnSave');
+  const origText = btnSave.textContent;
+  btnSave.textContent = '📤 アップロード中…';
+  btnSave.disabled = true;
+  try {
+    const urls = [];
+    let uploadCount = 0;
+    const newOnes = _editingPhotos.filter(p => p.startsWith('data:'));
+    for (let i = 0; i < _editingPhotos.length; i++) {
+      const photo = _editingPhotos[i];
+      if (photo.startsWith('data:')) {
+        uploadCount++;
+        btnSave.textContent = `📤 ${uploadCount}/${newOnes.length}枚アップロード中…`;
+        const url = await uploadPhotoToStorage(pinId, photo);
+        urls.push(url);
+        // localStorageキャッシュも更新
+        const cached = JSON.parse(localStorage.getItem(`pinPhotos_${pinId}`) || '[]');
+        cached.push(url);
+        localStorage.setItem(`pinPhotos_${pinId}`, JSON.stringify(cached));
+      } else {
+        urls.push(photo); // すでにURL
+      }
+    }
+    log('写真アップロード完了:', urls.length, '枚');
+    return urls;
+  } finally {
+    btnSave.textContent = origText;
+    btnSave.disabled = false;
+  }
 }
 
 function addMarkerToMap(pin) {
@@ -2367,12 +2421,14 @@ function resetSelectors() {
 }
 
 /** 保存 */
-document.getElementById('btnSave').addEventListener('click', () => {
+document.getElementById('btnSave').addEventListener('click', async () => {
   const name = fName.value.trim();
   if (!name) { alert('場所名を入力してください'); fName.focus(); return; }
 
+  let targetId;
+
   if (editingId) {
-    // 既存ピンの更新
+    targetId = editingId;
     const idx = pins.findIndex(p => p.id === editingId);
     if (idx >= 0) {
       pins[idx] = {
@@ -2385,14 +2441,13 @@ document.getElementById('btnSave').addEventListener('click', () => {
         memo: fMemo.value.trim(),
         members: getCheckedMembers(),
       };
-      // マーカーアイコンを更新
       markerMap[editingId]?.setIcon(createIcon(selectedStatus, selectedLayer));
       log('更新:', pins[idx]);
     }
   } else {
-    // 新規ピン追加
+    targetId = `pin_${Date.now()}`;
     const pin = {
-      id: `pin_${Date.now()}`,
+      id: targetId,
       name,
       status: selectedStatus,
       layer: selectedLayer,
@@ -2409,9 +2464,16 @@ document.getElementById('btnSave').addEventListener('click', () => {
     log('追加:', pin);
   }
 
-  // 写真を保存（_editingPhotos を確定）
-  const targetId = editingId || pins[pins.length - 1]?.id;
-  if (targetId) savePinPhotos(targetId, _editingPhotos);
+  // 写真をStorage/localStorageに保存 → URLs を pin.photos に格納
+  try {
+    const photoUrls = await finalizePhotos(targetId);
+    const idx = pins.findIndex(p => p.id === targetId);
+    if (idx >= 0) pins[idx].photos = photoUrls.length ? photoUrls : undefined;
+  } catch (e) {
+    log('写真保存エラー（続行）:', e.message);
+    const idx = pins.findIndex(p => p.id === targetId);
+    if (idx >= 0) savePinPhotos(targetId, _editingPhotos); // フォールバック
+  }
 
   savePins(pins);
   renderMarkers();
