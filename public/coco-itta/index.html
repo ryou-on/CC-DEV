@@ -12,6 +12,8 @@
 
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- EXIF 読み取り（写真の GPS・撮影日時を自動取得） -->
+  <script src="https://cdn.jsdelivr.net/npm/exifr/dist/lite.umd.js"></script>
   <!-- Google Fonts: Zen Maru Gothic + Crimson Pro -->
   <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&family=Crimson+Pro:ital,wght@0,400;1,400&display=swap" rel="stylesheet" />
 
@@ -198,6 +200,26 @@
     .tag-visited  { background: var(--green-lt);  color: var(--green); }
     .tag-revisit  { background: #d0e4f8;  color: var(--blue); }
     .tag-wishlist { background: var(--amber-lt);  color: #8a5c00; }
+    /* 訪問回数バッジ */
+    .visit-badge {
+      display: inline-flex; align-items: center; justify-content: center;
+      background: #e8388a; color: #fff;
+      font-weight: 700; font-size: 0.65rem;
+      padding: 2px 7px; border-radius: 20px;
+      flex-shrink: 0; align-self: center; margin-right: 2px;
+      white-space: nowrap;
+    }
+    /* 写真サムネイル（ピン一覧・モーダル） */
+    .photo-strip { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+    .photo-thumb { width: 60px; height: 60px; object-fit: cover; border-radius: 6px; cursor: pointer; border: 2px solid var(--tan); }
+    .photo-thumb-lg { width: 100%; max-height: 180px; object-fit: cover; border-radius: 8px; margin-bottom: 6px; }
+    /* 場所名サジェスト */
+    .suggest-pill {
+      display: inline-block; font-size: 0.7rem; background: var(--amber-lt);
+      border: 1px solid var(--amber); border-radius: 8px; padding: 2px 10px;
+      cursor: pointer; margin-top: 4px; color: var(--ink);
+    }
+    .suggest-pill:hover { background: var(--amber); color: #fff; }
 
     /* ===== モーダル（ピン追加・編集） ===== */
     .modal-overlay {
@@ -953,8 +975,8 @@
     </div>
     <div style="padding:4px 10px;border-bottom:1px solid var(--tan);background:#faf6f0;">
       <select id="pinSort" style="width:100%;font-size:0.72rem;border:1px solid var(--tan);border-radius:6px;padding:3px 6px;background:#fff;color:var(--ink);font-family:'Zen Maru Gothic',sans-serif;">
-        <option value="new">🕐 新しい順</option>
-        <option value="old">🕰 古い順</option>
+        <option value="date-new">🕐 訪問日（新しい順）</option>
+        <option value="date-old">🕰 訪問日（古い順）</option>
         <option value="name">🔤 名前順</option>
         <option value="status">🏷 ステータス順</option>
       </select>
@@ -985,6 +1007,7 @@
     <div class="form-group">
       <label>場所名 *</label>
       <input type="text" id="fName" placeholder="例: 渋谷スクランブル交差点" />
+      <div id="nameSuggest" style="margin-top:4px;min-height:22px;"></div>
     </div>
 
     <!-- ステータス -->
@@ -1042,6 +1065,16 @@
       </div>
     </div>
 
+    <!-- 写真 -->
+    <div class="form-group">
+      <label>写真</label>
+      <div class="photo-strip" id="photoStrip"></div>
+      <label style="display:inline-block;margin-top:6px;cursor:pointer;background:var(--amber-lt);border:1px solid var(--tan);border-radius:8px;padding:6px 12px;font-size:0.78rem;">
+        📷 写真を追加（GPSと日付を自動取得）
+        <input type="file" id="fPhoto" accept="image/*" multiple style="display:none;" />
+      </label>
+    </div>
+
     <!-- 座標（読み取り専用） -->
     <div class="form-group">
       <label>座標</label>
@@ -1084,6 +1117,11 @@
       <label>ラインの太さ: <strong id="weightLabel">4</strong>px</label>
       <input type="range" id="reWeight" min="2" max="12" step="1" value="4"
         style="width:100%;accent-color:var(--amber);" />
+    </div>
+
+    <div class="form-group">
+      <label>メモ（このルートのカテゴリ・説明など）</label>
+      <input type="text" id="reMemo" placeholder="例: お散歩コース、旅行中の移動ルートなど" />
     </div>
 
     <div class="modal-actions">
@@ -1776,18 +1814,47 @@ function createIcon(status, layer) {
 const markerMap = {}; // id → Leaflet marker
 
 /** ピンからLeafletマーカーを生成してマップに追加 */
+/** 同名スポットの中でこのピンが何回目か（日付昇順で順位付け） */
+function getVisitRank(pin) {
+  const same = pins
+    .filter(p => p.name === pin.name)
+    .sort((a, b) => (a.date || a.createdAt || '').localeCompare(b.date || b.createdAt || ''));
+  const idx = same.findIndex(p => p.id === pin.id);
+  return { rank: idx + 1, total: same.length };
+}
+
+/** ピンの写真をlocalStorageから取得 */
+function getPinPhotos(pinId) {
+  try { return JSON.parse(localStorage.getItem(`pinPhotos_${pinId}`)) || []; }
+  catch { return []; }
+}
+/** ピンの写真をlocalStorageへ保存 */
+function savePinPhotos(pinId, photos) {
+  localStorage.setItem(`pinPhotos_${pinId}`, JSON.stringify(photos));
+}
+
 function addMarkerToMap(pin) {
   const marker = L.marker([pin.lat, pin.lng], { icon: createIcon(pin.status, pin.layer) });
+  const { rank, total } = getVisitRank(pin);
+  const badgeHtml = total > 1
+    ? `<span style="display:inline-block;background:#e8388a;color:#fff;font-weight:700;font-size:0.7rem;padding:1px 7px;border-radius:20px;margin-right:4px;">${rank}回</span>`
+    : '';
+  const photos = getPinPhotos(pin.id);
+  const photoHtml = photos.length
+    ? `<img src="${photos[0]}" style="width:100%;max-height:120px;object-fit:cover;border-radius:6px;margin:4px 0;" />`
+    : '';
 
   // ポップアップ内容
   marker.bindPopup(`
     <b style="font-family:'Zen Maru Gothic',sans-serif">${pin.name}</b><br>
     <span style="font-size:0.75rem;color:#6b5c45">
-      ${pin.status === 'visited' ? '✅ 行った' : '⭐ 行きたい'}
+      ${pin.status === 'visited' ? '✅ 行った' : pin.status === 'revisit' ? '🔄 また行きたい' : '⭐ 行きたい'}
       ${pin.date ? ' · ' + pin.date : pin.dateUnknown ? ' · 日時不明' : ''}
     </span>
+    ${badgeHtml ? `<br>${badgeHtml}` : ''}
     ${pin.memo ? `<br><span style="font-size:0.72rem">${pin.memo}</span>` : ''}
-    <br><button onclick="openEdit('${pin.id}')" style="margin-top:6px;font-family:'Zen Maru Gothic',sans-serif;font-size:0.72rem;padding:3px 8px;border-radius:6px;background:#c8821a;border:none;cursor:pointer;">編集</button>
+    ${photoHtml}
+    <br><button onclick="openEdit('${pin.id}')" style="margin-top:6px;font-family:'Zen Maru Gothic',sans-serif;font-size:0.72rem;padding:3px 8px;border-radius:6px;background:#c8821a;border:none;color:#fff;cursor:pointer;">編集</button>
   `);
 
   marker.addTo(map);
@@ -1833,11 +1900,11 @@ function getFilteredPins() {
 
 // ===== サイドパネル: ピン一覧 =====
 function getSortedPins(arr) {
-  const sort = document.getElementById('pinSort')?.value || 'new';
+  const sort = document.getElementById('pinSort')?.value || 'date-new';
   const copy = [...arr];
-  if (sort === 'new')    return copy.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-  if (sort === 'old')    return copy.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
-  if (sort === 'name')   return copy.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ja'));
+  if (sort === 'date-new') return copy.sort((a, b) => (b.date || b.createdAt || '').localeCompare(a.date || a.createdAt || ''));
+  if (sort === 'date-old') return copy.sort((a, b) => (a.date || a.createdAt || '').localeCompare(b.date || b.createdAt || ''));
+  if (sort === 'name')     return copy.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ja'));
   if (sort === 'status') {
     const order = { visited: 0, revisit: 1, wishlist: 2 };
     return copy.sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9));
@@ -1863,16 +1930,27 @@ function renderPinList() {
   list.innerHTML = filtered.map(pin => {
     const layerEmoji = { spot: '🏪', area: '🏙', country: '🌍' }[pin.layer] || '📍';
     const dateStr = pin.dateUnknown ? '日時不明' : pin.date ? pin.date : '';
+    const { rank, total } = getVisitRank(pin);
+    const badgeHtml = total > 1
+      ? `<span class="visit-badge">${rank}回</span>`
+      : '';
+    const photos = getPinPhotos(pin.id);
+    const thumbHtml = photos.length
+      ? `<img src="${photos[0]}" style="width:36px;height:36px;object-fit:cover;border-radius:4px;flex-shrink:0;margin-right:6px;" />`
+      : '';
     return `
       <div class="pin-item" onclick="focusPin('${pin.id}')">
-        <div class="pin-icon">${layerEmoji}</div>
-        <div class="pin-info">
+        ${thumbHtml}<div class="pin-icon" ${thumbHtml ? 'style="display:none"' : ''}>${layerEmoji}</div>
+        <div class="pin-info" style="flex:1;min-width:0;">
           <div class="pin-name">${pin.name}</div>
-          <div class="pin-meta">${dateStr}${pin.memo ? ' · ' + pin.memo.slice(0,20) : ''}</div>
+          <div class="pin-meta">${dateStr}${pin.memo ? ' · ' + pin.memo.slice(0,18) : ''}</div>
         </div>
-        <span class="pin-status-tag ${pin.status === 'visited' ? 'tag-visited' : pin.status === 'revisit' ? 'tag-revisit' : 'tag-wishlist'}">
-          ${pin.status === 'visited' ? '行った' : pin.status === 'revisit' ? 'また行きたい' : '行きたい'}
-        </span>
+        <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex-shrink:0;">
+          ${badgeHtml}
+          <span class="pin-status-tag ${pin.status === 'visited' ? 'tag-visited' : pin.status === 'revisit' ? 'tag-revisit' : 'tag-wishlist'}">
+            ${pin.status === 'visited' ? '行った' : pin.status === 'revisit' ? 'また行きたい' : '行きたい'}
+          </span>
+        </div>
       </div>
     `;
   }).join('');
@@ -1931,6 +2009,37 @@ btnUnknown.addEventListener('click', () => {
   if (isDateUnknown) fDate.value = '';
 });
 
+/** Nominatim 逆ジオコーディングで場所名サジェスト */
+async function suggestNameFromCoords(lat, lng) {
+  const el = document.getElementById('nameSuggest');
+  if (!el) return;
+  el.innerHTML = '<span style="font-size:0.68rem;color:#aaa;">📡 場所名を取得中…</span>';
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=ja`,
+      { headers: { 'Accept-Language': 'ja' } }
+    );
+    const data = await res.json();
+    const addr = data.address || {};
+    // 施設名・店舗名・観光地名などを優先
+    const candidates = [
+      data.name,
+      addr.amenity, addr.shop, addr.tourism, addr.historic,
+      addr.building, addr.leisure, addr.natural,
+      addr.road ? (addr.road + (addr.house_number ? addr.house_number : '')) : null,
+      addr.suburb || addr.neighbourhood || addr.quarter,
+      addr.city || addr.town || addr.village,
+    ].filter(Boolean);
+    if (candidates.length) {
+      el.innerHTML = candidates.slice(0, 3).map(c =>
+        `<span class="suggest-pill" onclick="document.getElementById('fName').value='${c.replace(/'/g,"\\'")}';document.getElementById('nameSuggest').innerHTML='';">📍 ${c}</span>`
+      ).join(' ');
+    } else {
+      el.innerHTML = '';
+    }
+  } catch { el.innerHTML = ''; }
+}
+
 /** モーダルを開く（新規追加） */
 function openAdd(latlng) {
   editingId = null;
@@ -1947,8 +2056,12 @@ function openAdd(latlng) {
   fDate.disabled = false;
   resetSelectors();
   document.getElementById('btnDelete').style.display = 'none';
+  document.getElementById('btnRevisit').style.display = 'none';
+  document.getElementById('photoStrip').innerHTML = '';
   overlay.classList.add('open');
   fName.focus();
+  // 逆ジオコーディングでサジェスト
+  suggestNameFromCoords(latlng.lat, latlng.lng);
   log('モーダル開く（新規）', latlng);
 }
 
@@ -1971,11 +2084,96 @@ window.openEdit = (id) => {
   resetSelectors();
   document.getElementById('btnDelete').style.display = 'inline-block';
   document.getElementById('btnRevisit').style.display = pin.status === 'visited' ? 'inline-block' : 'none';
+  document.getElementById('nameSuggest').innerHTML = '';
+  // 写真ストリップ表示
+  const existingPhotos = getPinPhotos(pin.id);
+  document.getElementById('photoStrip').innerHTML = existingPhotos.map((src, i) =>
+    `<img src="${src}" class="photo-thumb" onclick="viewPhoto('${id}',${i})" />`
+  ).join('');
   overlay.classList.add('open');
   // ポップアップを閉じる
   markerMap[id]?.closePopup();
   log('モーダル開く（編集）', id);
 };
+
+/** 写真ビューア（フルスクリーン） */
+window.viewPhoto = (pinId, idx) => {
+  const photos = getPinPhotos(pinId);
+  if (!photos[idx]) return;
+  const viewer = document.createElement('div');
+  viewer.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  viewer.innerHTML = `<img src="${photos[idx]}" style="max-width:90vw;max-height:90vh;object-fit:contain;border-radius:8px;" /><button onclick="this.parentNode.remove()" style="position:absolute;top:16px;right:16px;background:#fff;border:none;border-radius:50%;width:36px;height:36px;font-size:1.2rem;cursor:pointer;">✕</button>`;
+  document.body.appendChild(viewer);
+};
+
+/** 写真アップロード → EXIF取得 → 自動入力 */
+document.getElementById('fPhoto').addEventListener('change', async (e) => {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+  const strip = document.getElementById('photoStrip');
+
+  // 既存写真（editingIdがあれば）を引き継ぐ
+  let currentPhotos = editingId ? getPinPhotos(editingId) : [];
+
+  for (const file of files) {
+    // EXIFから GPS・日付を取得
+    try {
+      if (typeof exifr !== 'undefined') {
+        const exif = await exifr.parse(file, { gps: true, tiff: true });
+        if (exif) {
+          // 撮影日時 → 訪問日に自動入力
+          const dt = exif.DateTimeOriginal || exif.DateTime;
+          if (dt && !fDate.value) {
+            const d = new Date(dt);
+            if (!isNaN(d)) {
+              fDate.value = d.toISOString().slice(0, 10);
+              isDateUnknown = false;
+              btnUnknown.classList.remove('active');
+              fDate.disabled = false;
+            }
+          }
+          // GPS → 座標に自動入力（まだ地図クリックしていなければ）
+          if (exif.latitude && exif.longitude && !pendingLatLng) {
+            pendingLatLng = { lat: exif.latitude, lng: exif.longitude };
+            fCoords.value = `${exif.latitude.toFixed(6)}, ${exif.longitude.toFixed(6)}`;
+            map.setView([exif.latitude, exif.longitude], 16);
+          }
+        }
+      }
+    } catch (ex) { log('EXIF読み取りエラー:', ex.message); }
+
+    // 写真をbase64で読み込み（リサイズ）
+    await new Promise(resolve => {
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+        // Canvas でリサイズ（最大800px・JPEG 80%）
+        const img = new Image();
+        img.onload = () => {
+          const MAX = 800;
+          const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width * scale;
+          canvas.height = img.height * scale;
+          canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+          const b64 = canvas.toDataURL('image/jpeg', 0.8);
+          currentPhotos.push(b64);
+          // プレビュー追加
+          const thumb = document.createElement('img');
+          thumb.src = b64;
+          thumb.className = 'photo-thumb';
+          strip.appendChild(thumb);
+          resolve();
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // 保存先を一時保持（保存ボタン押下時に確定）
+  window._pendingPhotos = currentPhotos;
+  e.target.value = ''; // 同じファイル再選択可能に
+});
 
 /** セレクターの見た目をリセット */
 function resetSelectors() {
@@ -2030,6 +2228,13 @@ document.getElementById('btnSave').addEventListener('click', () => {
     pins.push(pin);
     addMarkerToMap(pin);
     log('追加:', pin);
+  }
+
+  // 写真を保存（保留中の写真があれば）
+  const targetId = editingId || (pins[pins.length - 1]?.id);
+  if (window._pendingPhotos && targetId) {
+    savePinPhotos(targetId, window._pendingPhotos);
+    window._pendingPhotos = null;
   }
 
   savePins(pins);
@@ -2282,6 +2487,7 @@ function addRouteToMap(route) {
   line.bindPopup(`
     <b style="font-family:'Zen Maru Gothic',sans-serif">🚶 ${route.name || 'ルート'}</b><br>
     <span style="font-size:0.72rem;color:#6b5c45">${route.points.length}点 · ${route.date || '日付不明'}</span><br>
+    ${route.memo ? `<span style="font-size:0.7rem;color:#8a7060">${route.memo}</span><br>` : ''}
     <div style="display:flex;gap:6px;margin-top:6px;">
       <button onclick="openRouteEdit('${route.id}')" style="font-size:0.7rem;padding:3px 8px;border-radius:6px;background:#f0d090;border:1px solid #c8821a;color:#2c2416;cursor:pointer;">編集</button>
       <button onclick="deleteRoute('${route.id}')" style="font-size:0.7rem;padding:3px 8px;border-radius:6px;background:#ffd5d5;border:1px solid #b94040;color:#b94040;cursor:pointer;">削除</button>
@@ -2319,6 +2525,7 @@ window.openRouteEdit = (id) => {
 
   document.getElementById('reName').value   = route.name || '';
   document.getElementById('reDate').value   = route.date || new Date().toISOString().slice(0, 10);
+  document.getElementById('reMemo').value   = route.memo || '';
   document.getElementById('reWeight').value = route.weight || 4;
   document.getElementById('weightLabel').textContent = route.weight || 4;
 
@@ -2354,6 +2561,7 @@ document.getElementById('btnRouteSave').addEventListener('click', () => {
     ...routes[idx],
     name:   document.getElementById('reName').value.trim() || 'ルート',
     date:   document.getElementById('reDate').value || routes[idx].date,
+    memo:   document.getElementById('reMemo').value.trim(),
     color:  editingRouteColor,
     weight: parseInt(document.getElementById('reWeight').value),
   };
