@@ -1427,6 +1427,17 @@ function routesFromFirestore(rs) {
     points: (r.points || []).map(p => Array.isArray(p) ? p : [p.lat, p.lng]),
   }));
 }
+/** Firestoreに送る前にbase64を除去（1MB制限超過・書き込みエラー防止） */
+function sanitizePinsForFirestore(pinsArray) {
+  return pinsArray.map(p => {
+    if (!p.photos || !p.photos.length) return p;
+    const urlPhotos = p.photos.filter(ph => typeof ph === 'string' && ph.startsWith('http'));
+    if (urlPhotos.length === p.photos.length) return p; // すべてURL済み
+    if (urlPhotos.length) return { ...p, photos: urlPhotos };
+    const { photos, ...rest } = p; // photosフィールドごと除去
+    return rest;
+  });
+}
 
 /** 新規グループ作成（現在のローカルデータをそのままアップロード＝マイグレーション） */
 async function createGroup(name) {
@@ -1437,7 +1448,7 @@ async function createGroup(name) {
     createdAt:   firebase.firestore.FieldValue.serverTimestamp(),
     members:     [{ email: currentUser?.email || '', role: 'owner' }],
     memberNames: members,
-    pins, routes: routesToFirestore(routes), routeSettings,
+    pins: sanitizePinsForFirestore(pins), routes: routesToFirestore(routes), routeSettings,
   };
   await db.collection('groups').doc(id).set(data);
   setGroupId(id);
@@ -1527,9 +1538,13 @@ async function migrateLocalPhotosToStorage() {
   if (!currentGroupId || _migrationDone) return;
   _migrationDone = true;
 
-  // pin.photosがURL済みでないピンのうち、localStorageに写真があるものを抽出
+  // URL未変換の写真があるピンを抽出（pin.photosのbase64 or localStorageのbase64）
   const targets = pins.filter(p => {
-    if (p.photos?.some(ph => typeof ph === 'string' && ph.startsWith('http'))) return false;
+    // URLのみ → スキップ
+    if (p.photos?.length && p.photos.every(ph => typeof ph === 'string' && ph.startsWith('http'))) return false;
+    // pin.photosにbase64がある
+    if (p.photos?.some(ph => typeof ph === 'string' && ph.startsWith('data:'))) return true;
+    // localStorageにbase64がある
     const local = (() => { try { return JSON.parse(localStorage.getItem(`pinPhotos_${p.id}`) || '[]'); } catch { return []; } })();
     return local.some(ph => ph.startsWith('data:'));
   });
@@ -1544,18 +1559,27 @@ async function migrateLocalPhotosToStorage() {
 
   for (const pin of targets) {
     const localPhotos = (() => { try { return JSON.parse(localStorage.getItem(`pinPhotos_${pin.id}`) || '[]'); } catch { return []; } })();
-    const urls = [];
-    for (const photo of localPhotos) {
-      if (photo.startsWith('http')) {
-        urls.push(photo);
-      } else if (photo.startsWith('data:')) {
-        try {
-          const url = await uploadPhotoToStorage(pin.id, photo);
-          urls.push(url);
-        } catch (e) {
-          log('マイグレーションエラー:', pin.name, e.message);
-          // 失敗してもスキップして続行
-        }
+    // pin.photosとlocalStorageのbase64をマージ（重複はsliceキーで近似除去）
+    const existingUrls = [
+      ...(pin.photos || []).filter(ph => ph.startsWith('http')),
+      ...localPhotos.filter(ph => ph.startsWith('http')),
+    ];
+    const uniqueUrls = [...new Set(existingUrls)];
+    const base64Map = new Map(); // key: content signature → value: base64
+    for (const ph of [...(pin.photos || []), ...localPhotos]) {
+      if (ph.startsWith('data:')) {
+        const sig = ph.slice(0, 80) + ph.length; // 近似重複キー
+        if (!base64Map.has(sig)) base64Map.set(sig, ph);
+      }
+    }
+    const urls = [...uniqueUrls];
+    for (const photo of base64Map.values()) {
+      try {
+        const url = await uploadPhotoToStorage(pin.id, photo);
+        urls.push(url);
+      } catch (e) {
+        log('マイグレーションエラー:', pin.name, e.message);
+        // 失敗してもスキップして続行
       }
     }
     if (urls.length) {
@@ -1600,7 +1624,7 @@ function pushToCloud() {
   clearTimeout(pushTimer);
   pushTimer = setTimeout(() => {
     db.collection('groups').doc(currentGroupId).update({
-      pins, routes: routesToFirestore(routes), memberNames: members, routeSettings,
+      pins: sanitizePinsForFirestore(pins), routes: routesToFirestore(routes), memberNames: members, routeSettings,
     }).then(() => log('クラウド送信完了')).catch(e => log('送信エラー:', e.message));
   }, 400);
 }
@@ -2003,9 +2027,9 @@ async function uploadPhotoToStorage(pinId, base64) {
 /** _editingPhotos を処理（グループ参加中: base64をStorageにアップ、URL化） */
 async function finalizePhotos(pinId) {
   if (!currentGroupId) {
-    // グループ未参加 → localStorage にbase64で保存
+    // グループ未参加 → localStorage にbase64で保存（pin.photosには入れない）
     savePinPhotos(pinId, _editingPhotos);
-    return _editingPhotos;
+    return []; // base64をFirestoreに送らないよう空配列を返す
   }
   // グループ参加中 → base64のみアップロード、URL済みはそのまま
   const btnSave = document.getElementById('btnSave');
@@ -2551,11 +2575,13 @@ document.getElementById('btnSave').addEventListener('click', async () => {
   try {
     const photoUrls = await finalizePhotos(targetId);
     const idx = pins.findIndex(p => p.id === targetId);
-    if (idx >= 0) pins[idx].photos = photoUrls.length ? photoUrls : undefined;
+    if (idx >= 0) {
+      if (photoUrls.length) pins[idx].photos = photoUrls;
+      else delete pins[idx].photos; // undefinedをFirestoreに送らない
+    }
   } catch (e) {
     log('写真保存エラー（続行）:', e.message);
-    const idx = pins.findIndex(p => p.id === targetId);
-    if (idx >= 0) savePinPhotos(targetId, _editingPhotos); // フォールバック
+    savePinPhotos(targetId, _editingPhotos); // フォールバック: localStorageのみ
   }
 
   savePins(pins);
