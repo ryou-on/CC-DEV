@@ -237,9 +237,28 @@
       white-space: nowrap;
     }
     /* 写真サムネイル（ピン一覧・モーダル） */
-    .photo-strip { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
-    .photo-thumb { width: 60px; height: 60px; object-fit: cover; border-radius: 6px; cursor: pointer; border: 2px solid var(--tan); }
+    .photo-strip { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; align-items: flex-start; }
+    .photo-thumb-wrap { position: relative; display: inline-block; flex-shrink: 0; }
+    .photo-thumb { width: 70px; height: 70px; object-fit: cover; border-radius: 8px; cursor: pointer; border: 2px solid var(--tan); display: block; }
+    .photo-thumb:hover { border-color: var(--amber); }
+    .photo-thumb-del {
+      position: absolute; top: -5px; right: -5px;
+      background: #e05c5c; color: #fff; border: 2px solid #fff;
+      border-radius: 50%; width: 20px; height: 20px;
+      font-size: 0.65rem; line-height: 1; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      padding: 0; font-weight: 700;
+    }
     .photo-thumb-lg { width: 100%; max-height: 180px; object-fit: cover; border-radius: 8px; margin-bottom: 6px; }
+    /* スライドショービューア */
+    .photo-viewer { position: fixed; inset: 0; background: rgba(0,0,0,0.92); z-index: 9999; display: flex; align-items: center; justify-content: center; }
+    .photo-viewer img { max-width: 90vw; max-height: 80vh; object-fit: contain; border-radius: 8px; }
+    .photo-viewer-nav { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,0.2); border: none; color: #fff; font-size: 1.8rem; width: 44px; height: 44px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+    .photo-viewer-nav:hover { background: rgba(255,255,255,0.4); }
+    .photo-viewer-nav.prev { left: 12px; }
+    .photo-viewer-nav.next { right: 12px; }
+    .photo-viewer-close { position: absolute; top: 14px; right: 14px; background: rgba(255,255,255,0.2); border: none; color: #fff; font-size: 1.3rem; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; }
+    .photo-viewer-counter { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); color: #fff; font-size: 0.8rem; background: rgba(0,0,0,0.4); padding: 3px 12px; border-radius: 20px; }
     /* 場所名サジェスト */
     .suggest-pill {
       display: inline-block; font-size: 0.7rem; background: var(--amber-lt);
@@ -1097,10 +1116,11 @@
 
     <!-- 写真 -->
     <div class="form-group">
-      <label>写真</label>
+      <label>写真 <span id="photoCount" style="font-size:0.68rem;color:var(--ink-light);"></span></label>
       <div class="photo-strip" id="photoStrip"></div>
-      <label style="display:inline-block;margin-top:6px;cursor:pointer;background:var(--amber-lt);border:1px solid var(--tan);border-radius:8px;padding:6px 12px;font-size:0.78rem;">
-        📷 写真を追加（GPSと日付を自動取得）
+      <label style="display:inline-flex;align-items:center;gap:6px;margin-top:6px;cursor:pointer;background:var(--amber-lt);border:1px dashed var(--amber);border-radius:8px;padding:8px 14px;font-size:0.78rem;color:var(--ink);">
+        📷 写真を追加する
+        <span style="font-size:0.65rem;color:var(--ink-light);">撮影日・GPS自動取得</span>
         <input type="file" id="fPhoto" accept="image/*" multiple style="display:none;" />
       </label>
     </div>
@@ -1890,7 +1910,9 @@ function addMarkerToMap(pin) {
     : '';
   const photos = getPinPhotos(pin.id);
   const photoHtml = photos.length
-    ? `<img src="${photos[0]}" style="width:100%;max-height:120px;object-fit:cover;border-radius:6px;margin:4px 0;" />`
+    ? `<div style="display:flex;gap:4px;overflow-x:auto;margin:4px 0;">${photos.map((src, i) =>
+        `<img src="${src}" onclick="viewPhoto('${pin.id}',${i})" style="width:64px;height:64px;object-fit:cover;border-radius:5px;flex-shrink:0;cursor:pointer;" />`
+      ).join('')}</div>`
     : '';
 
   // ポップアップ内容
@@ -1927,7 +1949,9 @@ function addStackedMarkerToMap(groupPins) {
     const statusLabel = p.status === 'visited' ? '✅ 行った' : p.status === 'revisit' ? '🔄 また行きたい' : '⭐ 行きたい';
     const photos = getPinPhotos(p.id);
     const thumb = photos.length
-      ? `<img src="${photos[0]}" style="width:48px;height:48px;object-fit:cover;border-radius:4px;float:right;margin-left:6px;" />`
+      ? `<div style="display:flex;gap:3px;flex-wrap:wrap;margin:3px 0;">${photos.map((src, pi) =>
+          `<img src="${src}" onclick="viewPhoto('${p.id}',${pi})" style="width:44px;height:44px;object-fit:cover;border-radius:4px;cursor:pointer;" />`
+        ).join('')}</div>`
       : '';
     return `
       <div class="visit-row">
@@ -2165,7 +2189,8 @@ function openAdd(latlng) {
   resetSelectors();
   document.getElementById('btnDelete').style.display = 'none';
   document.getElementById('btnRevisit').style.display = 'none';
-  document.getElementById('photoStrip').innerHTML = '';
+  _editingPhotos = []; // 新規追加時は空
+  renderPhotoStrip();
   overlay.classList.add('open');
   fName.focus();
   // 逆ジオコーディングでサジェスト
@@ -2193,35 +2218,91 @@ window.openEdit = (id) => {
   document.getElementById('btnDelete').style.display = 'inline-block';
   document.getElementById('btnRevisit').style.display = pin.status === 'visited' ? 'inline-block' : 'none';
   document.getElementById('nameSuggest').innerHTML = '';
-  // 写真ストリップ表示
-  const existingPhotos = getPinPhotos(pin.id);
-  document.getElementById('photoStrip').innerHTML = existingPhotos.map((src, i) =>
-    `<img src="${src}" class="photo-thumb" onclick="viewPhoto('${id}',${i})" />`
-  ).join('');
+  // 既存写真を _editingPhotos に読み込む
+  _editingPhotos = getPinPhotos(pin.id);
+  renderPhotoStrip();
   overlay.classList.add('open');
   // ポップアップを閉じる
   markerMap[id]?.closePopup();
   log('モーダル開く（編集）', id);
 };
 
-/** 写真ビューア（フルスクリーン） */
-window.viewPhoto = (pinId, idx) => {
-  const photos = getPinPhotos(pinId);
-  if (!photos[idx]) return;
-  const viewer = document.createElement('div');
-  viewer.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:9999;display:flex;align-items:center;justify-content:center;';
-  viewer.innerHTML = `<img src="${photos[idx]}" style="max-width:90vw;max-height:90vh;object-fit:contain;border-radius:8px;" /><button onclick="this.parentNode.remove()" style="position:absolute;top:16px;right:16px;background:#fff;border:none;border-radius:50%;width:36px;height:36px;font-size:1.2rem;cursor:pointer;">✕</button>`;
-  document.body.appendChild(viewer);
+// ===== 写真管理（モーダル編集中の状態） =====
+let _editingPhotos = []; // モーダル開いている間の作業コピー
+
+/** photoStrip を _editingPhotos から再描画 */
+function renderPhotoStrip() {
+  const strip = document.getElementById('photoStrip');
+  const count = document.getElementById('photoCount');
+  if (count) count.textContent = _editingPhotos.length ? `${_editingPhotos.length}枚` : '';
+  strip.innerHTML = _editingPhotos.map((src, i) => `
+    <div class="photo-thumb-wrap">
+      <img src="${src}" class="photo-thumb" onclick="openPhotoViewer(${i})" />
+      <button class="photo-thumb-del" onclick="deleteEditingPhoto(${i})" title="削除">✕</button>
+    </div>
+  `).join('');
+}
+
+/** 編集中の写真を1枚削除 */
+window.deleteEditingPhoto = (idx) => {
+  _editingPhotos.splice(idx, 1);
+  renderPhotoStrip();
 };
 
-/** 写真アップロード → EXIF取得 → 自動入力 */
+/** スライドショービューアを開く（editingPhotos または pinId 指定） */
+let _viewerPhotos = [];
+let _viewerIdx = 0;
+
+window.openPhotoViewer = (startIdx) => {
+  _viewerPhotos = [..._editingPhotos];
+  _viewerIdx = startIdx;
+  showViewer();
+};
+
+window.viewPhoto = (pinId, startIdx) => {
+  _viewerPhotos = getPinPhotos(pinId);
+  _viewerIdx = startIdx;
+  showViewer();
+};
+
+function showViewer() {
+  const existing = document.getElementById('photoViewerOverlay');
+  if (existing) existing.remove();
+
+  const total = _viewerPhotos.length;
+  if (!total) return;
+
+  const el = document.createElement('div');
+  el.id = 'photoViewerOverlay';
+  el.className = 'photo-viewer';
+  el.innerHTML = `
+    <button class="photo-viewer-close" id="pvClose">✕</button>
+    <button class="photo-viewer-nav prev" id="pvPrev">‹</button>
+    <img id="pvImg" src="${_viewerPhotos[_viewerIdx]}" />
+    <button class="photo-viewer-nav next" id="pvNext">›</button>
+    <div class="photo-viewer-counter" id="pvCounter">${_viewerIdx + 1} / ${total}</div>
+  `;
+  document.body.appendChild(el);
+
+  function update() {
+    document.getElementById('pvImg').src = _viewerPhotos[_viewerIdx];
+    document.getElementById('pvCounter').textContent = `${_viewerIdx + 1} / ${_viewerPhotos.length}`;
+    document.getElementById('pvPrev').style.display = _viewerIdx > 0 ? '' : 'none';
+    document.getElementById('pvNext').style.display = _viewerIdx < _viewerPhotos.length - 1 ? '' : 'none';
+  }
+  update();
+
+  document.getElementById('pvClose').onclick = () => el.remove();
+  document.getElementById('pvPrev').onclick = () => { _viewerIdx = Math.max(0, _viewerIdx - 1); update(); };
+  document.getElementById('pvNext').onclick = () => { _viewerIdx = Math.min(_viewerPhotos.length - 1, _viewerIdx + 1); update(); };
+  // 背景クリックで閉じる
+  el.addEventListener('click', e => { if (e.target === el) el.remove(); });
+}
+
+/** 写真アップロード → EXIF取得 → _editingPhotos に追加 */
 document.getElementById('fPhoto').addEventListener('change', async (e) => {
   const files = Array.from(e.target.files);
   if (!files.length) return;
-  const strip = document.getElementById('photoStrip');
-
-  // 既存写真（editingIdがあれば）を引き継ぐ
-  let currentPhotos = editingId ? getPinPhotos(editingId) : [];
 
   for (const file of files) {
     // EXIFから GPS・日付を取得
@@ -2229,7 +2310,6 @@ document.getElementById('fPhoto').addEventListener('change', async (e) => {
       if (typeof exifr !== 'undefined') {
         const exif = await exifr.parse(file, { gps: true, tiff: true });
         if (exif) {
-          // 撮影日時 → 訪問日に自動入力
           const dt = exif.DateTimeOriginal || exif.DateTime;
           if (dt && !fDate.value) {
             const d = new Date(dt);
@@ -2240,7 +2320,6 @@ document.getElementById('fPhoto').addEventListener('change', async (e) => {
               fDate.disabled = false;
             }
           }
-          // GPS → 座標に自動入力（まだ地図クリックしていなければ）
           if (exif.latitude && exif.longitude && !pendingLatLng) {
             pendingLatLng = { lat: exif.latitude, lng: exif.longitude };
             fCoords.value = `${exif.latitude.toFixed(6)}, ${exif.longitude.toFixed(6)}`;
@@ -2250,26 +2329,20 @@ document.getElementById('fPhoto').addEventListener('change', async (e) => {
       }
     } catch (ex) { log('EXIF読み取りエラー:', ex.message); }
 
-    // 写真をbase64で読み込み（リサイズ）
+    // Canvas でリサイズ（最大800px・JPEG 80%）
     await new Promise(resolve => {
       const reader = new FileReader();
-      reader.onload = async (ev) => {
-        // Canvas でリサイズ（最大800px・JPEG 80%）
+      reader.onload = ev => {
         const img = new Image();
         img.onload = () => {
           const MAX = 800;
           const scale = Math.min(1, MAX / Math.max(img.width, img.height));
           const canvas = document.createElement('canvas');
-          canvas.width = img.width * scale;
+          canvas.width  = img.width  * scale;
           canvas.height = img.height * scale;
           canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-          const b64 = canvas.toDataURL('image/jpeg', 0.8);
-          currentPhotos.push(b64);
-          // プレビュー追加
-          const thumb = document.createElement('img');
-          thumb.src = b64;
-          thumb.className = 'photo-thumb';
-          strip.appendChild(thumb);
+          _editingPhotos.push(canvas.toDataURL('image/jpeg', 0.8));
+          renderPhotoStrip();
           resolve();
         };
         img.src = ev.target.result;
@@ -2278,9 +2351,7 @@ document.getElementById('fPhoto').addEventListener('change', async (e) => {
     });
   }
 
-  // 保存先を一時保持（保存ボタン押下時に確定）
-  window._pendingPhotos = currentPhotos;
-  e.target.value = ''; // 同じファイル再選択可能に
+  e.target.value = ''; // 同じファイルを再選択可能に
 });
 
 /** セレクターの見た目をリセット */
@@ -2338,12 +2409,9 @@ document.getElementById('btnSave').addEventListener('click', () => {
     log('追加:', pin);
   }
 
-  // 写真を保存（保留中の写真があれば）
-  const targetId = editingId || (pins[pins.length - 1]?.id);
-  if (window._pendingPhotos && targetId) {
-    savePinPhotos(targetId, window._pendingPhotos);
-    window._pendingPhotos = null;
-  }
+  // 写真を保存（_editingPhotos を確定）
+  const targetId = editingId || pins[pins.length - 1]?.id;
+  if (targetId) savePinPhotos(targetId, _editingPhotos);
 
   savePins(pins);
   renderMarkers();
