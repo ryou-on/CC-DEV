@@ -1489,6 +1489,9 @@ async function inviteMember(email) {
 function startSync() {
   if (!currentGroupId) return;
   if (groupUnsub) groupUnsub();
+  _migrationDone = false; // グループ切り替え時はマイグレーションをリセット
+  let isFirstSnapshot = true;
+
   groupUnsub = db.collection('groups').doc(currentGroupId).onSnapshot(snap => {
     if (!snap.exists) return;
     if (snap.metadata.hasPendingWrites) return; // 自分の書き込みエコーは無視
@@ -1508,7 +1511,87 @@ function startSync() {
     isApplyingRemote = false;
     log('クラウド受信:', pins.length, 'ピン /', routes.length, 'ルート');
     updateCloudStatus();
+
+    // 最初の同期完了後にlocalStorage写真をStorageへ移行
+    if (isFirstSnapshot) {
+      isFirstSnapshot = false;
+      setTimeout(() => migrateLocalPhotosToStorage(), 1000); // 描画完了後に非同期で実行
+    }
   }, err => log('同期エラー:', err.message));
+}
+
+/** 既存のlocalStorage写真をStorageへ移行（グループ参加・作成時に1回実行） */
+let _migrationDone = false;
+
+async function migrateLocalPhotosToStorage() {
+  if (!currentGroupId || _migrationDone) return;
+  _migrationDone = true;
+
+  // pin.photosがURL済みでないピンのうち、localStorageに写真があるものを抽出
+  const targets = pins.filter(p => {
+    if (p.photos?.some(ph => typeof ph === 'string' && ph.startsWith('http'))) return false;
+    const local = (() => { try { return JSON.parse(localStorage.getItem(`pinPhotos_${p.id}`) || '[]'); } catch { return []; } })();
+    return local.some(ph => ph.startsWith('data:'));
+  });
+
+  if (targets.length === 0) { log('写真マイグレーション: 対象なし'); return; }
+
+  log(`写真マイグレーション開始: ${targets.length}件のピン`);
+  updateMigrateStatus(`📤 既存写真を共有準備中… (0/${targets.length})`);
+
+  let done = 0;
+  let anyUpdated = false;
+
+  for (const pin of targets) {
+    const localPhotos = (() => { try { return JSON.parse(localStorage.getItem(`pinPhotos_${pin.id}`) || '[]'); } catch { return []; } })();
+    const urls = [];
+    for (const photo of localPhotos) {
+      if (photo.startsWith('http')) {
+        urls.push(photo);
+      } else if (photo.startsWith('data:')) {
+        try {
+          const url = await uploadPhotoToStorage(pin.id, photo);
+          urls.push(url);
+        } catch (e) {
+          log('マイグレーションエラー:', pin.name, e.message);
+          // 失敗してもスキップして続行
+        }
+      }
+    }
+    if (urls.length) {
+      const idx = pins.findIndex(p => p.id === pin.id);
+      if (idx >= 0) {
+        pins[idx] = { ...pins[idx], photos: urls };
+        localStorage.setItem(`pinPhotos_${pin.id}`, JSON.stringify(urls)); // キャッシュ更新
+        anyUpdated = true;
+      }
+    }
+    done++;
+    updateMigrateStatus(`📤 既存写真を共有準備中… (${done}/${targets.length})`);
+  }
+
+  if (anyUpdated) {
+    savePins(pins);  // Firestoreへpush（pushToCloud経由）
+    renderMarkers(); renderPinList();
+    log('写真マイグレーション完了');
+    updateMigrateStatus('✅ 写真の共有準備が完了しました');
+    setTimeout(() => updateMigrateStatus(''), 4000);
+  } else {
+    updateMigrateStatus('');
+  }
+}
+
+/** マイグレーション状態をUIに表示 */
+function updateMigrateStatus(msg) {
+  let el = document.getElementById('migrateStatus');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'migrateStatus';
+    el.style.cssText = 'position:fixed;bottom:70px;left:50%;transform:translateX(-50%);background:rgba(44,36,22,0.85);color:#fff;font-size:0.75rem;padding:6px 16px;border-radius:20px;z-index:3000;pointer-events:none;font-family:"Zen Maru Gothic",sans-serif;white-space:nowrap;';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.style.display = msg ? 'block' : 'none';
 }
 
 /** クラウドへデバウンス書き込み */
