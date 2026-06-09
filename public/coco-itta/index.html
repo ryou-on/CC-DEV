@@ -1030,6 +1030,7 @@
         <option value="name">🔤 名前順</option>
         <option value="status">🏷 ステータス順</option>
         <option value="photo">📷 写真あり優先</option>
+        <option value="photo-none">📸 写真なし（未追加）</option>
       </select>
     </div>
     <div class="pin-list" id="pinList">
@@ -1255,7 +1256,14 @@
         <div id="memberEmailList" style="margin-top:8px;font-size:0.72rem;color:var(--ink-light);"></div>
       </div>
 
-      <div class="modal-actions" style="margin-top:16px;">
+      <div class="form-group" style="margin-top:8px;">
+        <button class="btn-save" id="btnReMigrate" style="width:100%;background:#3a6fa8;">📤 写真を再アップロード（共有）</button>
+        <p style="font-size:0.65rem;color:var(--ink-light);margin-top:4px;line-height:1.5;">
+          写真がほかのメンバーに共有されていない場合にタップ。<br>この端末の写真を Storage へアップロードします。
+        </p>
+      </div>
+
+      <div class="modal-actions" style="margin-top:8px;">
         <button class="btn-cancel" id="btnGroupClose" style="flex:1;">閉じる</button>
         <button class="btn-delete" id="btnLeaveGroup">グループから抜ける</button>
       </div>
@@ -1580,7 +1588,12 @@ async function migrateLocalPhotosToStorage() {
         urls.push(url);
       } catch (e) {
         log('マイグレーションエラー:', pin.name, e.message);
-        // 失敗してもスキップして続行
+        if (e.code === 'storage/unauthorized' || (e.message || '').includes('permission')) {
+          updateMigrateStatus('❌ Storageの権限エラー（ルール未設定）');
+          showToast('❌ Storage 権限エラー\n写真のアップロードが拒否されました。\nFirebase Storage ルールのデプロイが必要です。', 'error', 10000);
+          _migrationDone = false; // 次回リトライ可能にする
+          return;
+        }
       }
     }
     if (urls.length) {
@@ -1758,6 +1771,23 @@ document.getElementById('btnLeaveGroup').addEventListener('click', () => {
   document.getElementById('groupModalOverlay').classList.remove('open');
 });
 
+/** 写真を手動で再アップロード（マイグレーション再実行） */
+document.getElementById('btnReMigrate').addEventListener('click', async () => {
+  const btn = document.getElementById('btnReMigrate');
+  btn.disabled = true;
+  btn.textContent = '⏳ アップロード中…';
+  _migrationDone = false; // リセットして再実行可能にする
+  try {
+    await migrateLocalPhotosToStorage();
+    showToast('✅ 写真のアップロードが完了しました', 'success', 4000);
+  } catch (e) {
+    showToast(`⚠️ アップロードエラー: ${e.message}`, 'error', 6000);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '📤 写真を再アップロード（共有）';
+  }
+});
+
 // ============================================================
 // 住所検索モジュール（Nominatim / 将来: Google Geocoding API）
 // ============================================================
@@ -1905,6 +1935,16 @@ function log(...args) {
   line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
   debugPanel.prepend(line);
   console.log('[COCO-ITTA]', ...args);
+}
+
+/** 画面上部にトースト通知を表示 */
+function showToast(msg, type = 'info', duration = 5000) {
+  const bg = type === 'error' ? '#b94040' : type === 'success' ? '#4a7c59' : 'rgba(44,36,22,0.92)';
+  const el = document.createElement('div');
+  el.style.cssText = `position:fixed;top:20px;left:50%;transform:translateX(-50%);background:${bg};color:#fff;padding:10px 20px;border-radius:12px;font-size:0.78rem;z-index:9998;box-shadow:0 4px 20px rgba(0,0,0,0.35);max-width:88vw;text-align:center;font-family:'Zen Maru Gothic',sans-serif;line-height:1.6;white-space:pre-line;`;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), duration);
 }
 
 // コンソールログコピーボタン
@@ -2203,13 +2243,19 @@ function getSortedPins(arr) {
     return copy.sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9));
   }
   if (sort === 'photo') {
-    // 写真あり → なし順、同じグループ内は訪問日降順
+    // 写真あり → なし順、同グループ内は訪問日降順
     return copy.sort((a, b) => {
       const aHas = getPinPhotos(a.id).length > 0 ? 0 : 1;
       const bHas = getPinPhotos(b.id).length > 0 ? 0 : 1;
       if (aHas !== bHas) return aHas - bHas;
       return (b.date || b.createdAt || '').localeCompare(a.date || a.createdAt || '');
     });
+  }
+  if (sort === 'photo-none') {
+    // 写真なしのピンのみ表示（訪問日降順）
+    return copy
+      .filter(p => getPinPhotos(p.id).length === 0)
+      .sort((a, b) => (b.date || b.createdAt || '').localeCompare(a.date || a.createdAt || ''));
   }
   return copy;
 }
@@ -2592,6 +2638,15 @@ document.getElementById('btnSave').addEventListener('click', async () => {
   } catch (e) {
     log('写真保存エラー（続行）:', e.message);
     savePinPhotos(targetId, _editingPhotos); // フォールバック: localStorageのみ
+    if (currentGroupId) {
+      const isAuth = e.code === 'storage/unauthorized' || (e.message || '').includes('permission');
+      showToast(
+        isAuth
+          ? '⚠️ 写真のアップロード権限がありません\nFirebase Storage のルール設定が必要です'
+          : `⚠️ 写真アップロード失敗: ${e.message}\nこの端末のみに保存されました`,
+        'error', 7000
+      );
+    }
   }
 
   savePins(pins);
