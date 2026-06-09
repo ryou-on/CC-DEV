@@ -282,6 +282,14 @@
 
           ${docLinks ? `<div class="card-docs">${docLinks}</div>` : ""}
 
+          <!-- スター評価 -->
+          <div class="card-rating">
+            ${[1,2,3,4,5].map(n =>
+              `<button class="star-btn ${(app.rating||0) >= n ? 'filled' : ''}"
+                onclick="window._rate('${app.id}',${n})" title="${n}★">★</button>`
+            ).join("")}
+          </div>
+
           <div class="card-footer">
             ${app.url
               ? `<a href="${app.url}" target="_blank" class="btn-launch">▶ 開く</a>`
@@ -366,6 +374,17 @@
     /* ============================================================
        グローバル関数（HTMLのonclickから呼ぶため）
        ============================================================ */
+    /* レーティングをFirestoreに保存 */
+    window._rate = async (id, value) => {
+      const current = allApps.find(a => a.id === id);
+      // 同じ値をクリックしたらリセット（0に戻す）
+      const newVal = (current?.rating || 0) === value ? 0 : value;
+      await updateDoc(doc(db, "apps", id), { rating: newVal });
+      current.rating = newVal;
+      renderCards();
+      log(`⭐ レーティング更新: ${current.name} → ${newVal || "未設定"}`);
+    };
+
     window._setTab = (key) => {
       currentTab = key;
       renderAll();
@@ -738,6 +757,25 @@
     }
     .btn-launch:hover { background: var(--accent); color: #000; }
     .btn-launch.disabled { color: var(--muted); border-color: var(--border); cursor: default; }
+
+    /* スター評価 */
+    .card-rating {
+      display: flex;
+      gap: 0.1rem;
+      margin: 0.5rem 0 0.2rem;
+    }
+    .star-btn {
+      background: none;
+      border: none;
+      font-size: 1rem;
+      color: var(--border);
+      cursor: pointer;
+      padding: 0 0.05rem;
+      line-height: 1;
+      transition: color 0.15s, transform 0.1s;
+    }
+    .star-btn.filled { color: #f5c518; }
+    .star-btn:hover { color: #f5c518; transform: scale(1.2); }
 
     .card-actions { display: flex; gap: 0.4rem; }
     .btn-icon {
