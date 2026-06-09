@@ -942,7 +942,7 @@
   <div class="logo">
     COCO-ITTA
     <span>ここいった — 家族の地図帳</span>
-    <span style="font-size:0.6rem;opacity:0.5;">v0.3.0</span>
+    <span style="font-size:0.6rem;opacity:0.5;">v0.4.0</span>
   </div>
   <div class="filters" id="filters">
     <button class="filter-btn active" data-filter="all">すべて</button>
@@ -2106,7 +2106,7 @@ async function finalizePhotos(pinId) {
 }
 
 function addMarkerToMap(pin) {
-  const marker = L.marker([pin.lat, pin.lng], { icon: createIcon(pin.status, pin.layer) });
+  const marker = L.marker([pin.lat, pin.lng], { icon: createIcon(pin.status, pin.layer), draggable: true });
   const { rank, total } = getVisitRank(pin);
   const badgeHtml = total > 1
     ? `<span style="display:inline-block;background:#e8388a;color:#fff;font-weight:700;font-size:0.7rem;padding:1px 7px;border-radius:20px;margin-right:4px;">${rank}回</span>`
@@ -2131,6 +2131,16 @@ function addMarkerToMap(pin) {
     <br><button onclick="openEdit('${pin.id}')" style="margin-top:6px;font-family:'Zen Maru Gothic',sans-serif;font-size:0.72rem;padding:3px 8px;border-radius:6px;background:#c8821a;border:none;color:#fff;cursor:pointer;">編集</button>
   `);
 
+  // ドラッグで座標変更（ドラッグ完了時に保存＋クラウド同期）
+  marker.on('dragend', () => {
+    const { lat, lng } = marker.getLatLng();
+    const idx = pins.findIndex(p => p.id === pin.id);
+    if (idx < 0) return;
+    pins[idx] = { ...pins[idx], lat, lng };
+    savePins(pins);
+    log('ピン移動:', pin.name, lat.toFixed(5), lng.toFixed(5));
+    showToast('📍 ピンの位置を更新しました', 'success', 2000);
+  });
   marker.addTo(map);
   markerMap[pin.id] = marker;
 }
@@ -2144,7 +2154,7 @@ function addStackedMarkerToMap(groupPins) {
   const rep = sorted[0]; // 代表ピン（最新）
   const count = sorted.length;
   const icon = createIcon(rep.status, rep.layer, count);
-  const marker = L.marker([rep.lat, rep.lng], { icon });
+  const marker = L.marker([rep.lat, rep.lng], { icon, draggable: true });
 
   // タイムラインポップアップ
   const timelineRows = sorted.map((p, i) => {
@@ -2174,6 +2184,16 @@ function addStackedMarkerToMap(groupPins) {
     <div class="visit-timeline">${timelineRows}</div>
   `, { maxWidth: 260 });
 
+  // ドラッグで座標変更（同名スタックはまとめて移動）
+  marker.on('dragend', () => {
+    const { lat, lng } = marker.getLatLng();
+    const ids = new Set(groupPins.map(p => p.id));
+    let moved = 0;
+    pins = pins.map(p => { if (ids.has(p.id)) { moved++; return { ...p, lat, lng }; } return p; });
+    savePins(pins);
+    log('スタックピン移動:', rep.name, '×', moved, lat.toFixed(5), lng.toFixed(5));
+    showToast(`📍 「${rep.name}」${moved}件の位置を更新しました`, 'success', 2500);
+  });
   marker.addTo(map);
   // 全ピンIDを同じマーカーに紐付ける
   groupPins.forEach(p => { markerMap[p.id] = marker; });
@@ -3158,7 +3178,10 @@ renderPinList();
 
 // ===== UI共通コンポーネント（ページロード完了後に初期化）=====
 window.addEventListener('load', () => {
-const releaseNotes = `## v0.3.0 (2026-06-09)
+const releaseNotes = `## v0.4.0 (2026-06-09)
+- 🗺️ 地図上のピンをドラッグして位置を修正できるように（同じ場所のピンはまとめて移動）
+
+## v0.3.0 (2026-06-09)
 - 📷 ピンに写真を追加できるように（複数枚・スライドショー表示・削除対応）
 - 📷 写真から撮影場所・日時を自動取得してフォームに反映（EXIF対応）
 - 👨‍👩‍👧 家族グループで地図・ピン・写真をリアルタイム共有（招待文ワンタップコピー）
@@ -3193,7 +3216,7 @@ const helpContent = `## 使い方
 
 ### フィルター機能
 - ヘッダーのボタンで表示内容を絞り込み
-- ステータス別：「行った」「行きたい」
+- ステータス別：「行った」「また行きたい」「行きたい」
 - レイヤー別：「スポット」「エリア」「国・地域」
 
 ### ルートを描く
@@ -3206,14 +3229,18 @@ const helpContent = `## 使い方
 - ⚙️ 設定ボタンでメンバーを追加/削除
 - ピン追加時に「一緒に行った人」として選択可能
 
+### ピンを移動する
+- 地図上のピンを長押し／ドラッグして位置を修正できます
+- 複数回訪問でまとまったピンは、同じ場所としてまとめて移動します
+
 ### データについて
-- **現在：** localStorage（ブラウザ内保存）
-- **近日中：** Firestore で家族間共有対応予定`;
+- **家族で共有：** グループに参加すると地図・ピン・写真をリアルタイム同期
+- **ローカル保存：** グループ未参加時はこの端末内（localStorage）に保存`;
 
 // UI共通コンポーネント初期化
 const versionBadge = document.createElement('div');
   versionBadge.className = 'version-badge';
-  versionBadge.textContent = 'v0.3.0';
+  versionBadge.textContent = 'v0.4.0';
   versionBadge.addEventListener('click', () => {
     const modal = document.getElementById('releaseNotesModal');
     modal.classList.add('open');
