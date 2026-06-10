@@ -286,6 +286,24 @@
     .photo-viewer-nav.next { right: 12px; }
     .photo-viewer-close { position: absolute; top: 14px; right: 14px; background: rgba(255,255,255,0.2); border: none; color: #fff; font-size: 1.3rem; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; }
     .photo-viewer-counter { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); color: #fff; font-size: 0.8rem; background: rgba(0,0,0,0.4); padding: 3px 12px; border-radius: 20px; }
+    /* スライドショー: 画像差替時のトランジション */
+    .photo-viewer img { transition-property: opacity, transform; transition-duration: 0.4s; }
+    .photo-viewer img.tx-fade-out   { opacity: 0; }
+    .photo-viewer img.tx-slide-out  { opacity: 0; transform: translateX(-30px); }
+    .photo-viewer img.tx-slide-in   { opacity: 0; transform: translateX(30px); }
+    .photo-viewer img.tx-zoom-out   { opacity: 0; transform: scale(0.9); }
+    .photo-viewer img.tx-zoom-in    { opacity: 0; transform: scale(1.1); }
+    /* スライドショーコントロール */
+    .photo-viewer-controls {
+      position: absolute; top: 14px; left: 14px; display: flex; gap: 8px; align-items: center;
+      background: rgba(0,0,0,0.55); padding: 6px 10px; border-radius: 24px;
+      font-family: 'Zen Maru Gothic', sans-serif;
+    }
+    .photo-viewer-controls button { background: transparent; border: 1px solid rgba(255,255,255,0.3); color: #fff; font-size: 0.78rem; padding: 4px 10px; border-radius: 14px; cursor: pointer; }
+    .photo-viewer-controls button:hover { background: rgba(255,255,255,0.15); }
+    .photo-viewer-controls button.active { background: var(--amber); border-color: var(--amber); color: var(--ink); }
+    .photo-viewer-controls select { background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.3); border-radius: 12px; padding: 3px 6px; font-size: 0.72rem; font-family: inherit; }
+    .photo-viewer-controls select option { color: var(--ink); }
     /* 場所名サジェスト */
     .suggest-pill {
       display: inline-block; font-size: 0.7rem; background: var(--amber-lt);
@@ -906,12 +924,54 @@
     .marker-revisit  { background: var(--blue); }
     .marker-wishlist { background: var(--amber); }
 
-    /* レスポンシブ: 小画面でサイドパネルを下に */
+    /* スマホ用ピン一覧 開閉トグルボタン（地図上、開閉どちらでも見える位置） */
+    .panel-toggle-btn {
+      display: none;
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--ink);
+      color: var(--amber-lt);
+      border: 1.5px solid var(--amber);
+      border-radius: 22px;
+      padding: 8px 18px;
+      font-family: 'Zen Maru Gothic', sans-serif;
+      font-size: 0.78rem;
+      cursor: pointer;
+      z-index: 1100;
+      box-shadow: 0 -2px 10px rgba(0,0,0,0.25);
+      transition: bottom 0.3s, background 0.15s;
+    }
+    .panel-toggle-btn:active { background: var(--amber); color: var(--ink); }
+
+    /* レスポンシブ: 小画面で下部スライドシート化（v0.6.4〜） */
     @media (max-width: 600px) {
       main { flex-direction: column; }
-      .side-panel { width: 100%; height: 200px; border-left: none; border-top: 1.5px solid var(--border); }
-      .pin-list { display: flex; overflow-x: auto; overflow-y: hidden; flex-direction: row; }
-      .pin-item { min-width: 180px; border-bottom: none; border-right: 1px solid var(--border); }
+      .side-panel {
+        position: fixed;
+        left: 0; right: 0; bottom: 0;
+        width: 100%;
+        height: 55vh;
+        max-height: 60vh;
+        border-left: none;
+        border-top: 1.5px solid var(--border);
+        border-radius: 16px 16px 0 0;
+        box-shadow: 0 -6px 24px rgba(0,0,0,0.25);
+        z-index: 1000;
+        transition: transform 0.3s ease-out;
+        transform: translateY(100%);
+      }
+      .side-panel.open { transform: translateY(0); }
+      .pin-list { display: block; overflow-x: hidden; overflow-y: auto; flex-direction: column; }
+      .pin-item { min-width: 0; border-bottom: 1px solid var(--border); border-right: none; }
+      #map { height: 100%; }
+      /* トグルボタン: 閉時=底部に。開時=シート上部に乗る */
+      .panel-toggle-btn { display: inline-block; bottom: 16px; }
+      .side-panel.open ~ .panel-toggle-btn { bottom: calc(55vh + 8px); }
+      /* ピン追加・ルート描くボタンの位置を底部から少し上げる */
+      .route-controls { bottom: 70px; }
+      .btn-add { /* 地図に重ねるボタンとして既存ヘッダ内表示は維持 */ }
+    }
 
       /* スマホヘッダーをコンパクトに（2段構成: ロゴ＋ボタン群 ／ フィルター横スクロール） */
       header {
@@ -1015,7 +1075,7 @@
   <div class="logo">
     COCO-ITTA
     <span>ここいった — 家族の地図帳</span>
-    <span style="font-size:0.6rem;opacity:0.5;">v0.6.3</span>
+    <span style="font-size:0.6rem;opacity:0.5;">v0.7.0</span>
   </div>
   <div class="filters" id="filters">
     <button class="filter-btn active" data-filter="all">すべて</button>
@@ -1127,6 +1187,9 @@
     <div class="debug-panel" id="debugPanel"></div>
   </aside>
 </main>
+
+<!-- スマホ用: ピン一覧シート開閉ボタン（@media 600px以下でのみ表示） -->
+<button class="panel-toggle-btn" id="btnPanelToggle">📌 ピン一覧を開く</button>
 
 <!-- ===== ピン追加・編集モーダル ===== -->
 <div class="modal-overlay" id="modalOverlay">
@@ -2452,11 +2515,30 @@ document.getElementById('pinSort')?.addEventListener('change', renderPinList);
 document.getElementById('pinSearch')?.addEventListener('input', () => { renderPinList(); renderMarkers(); });
 
 /** ピン一覧クリックでマップフォーカス */
+/** スマホ用ピン一覧シートの開閉（v0.6.4〜） */
+const _sidePanel = document.querySelector('.side-panel');
+const _btnPanelToggle = document.getElementById('btnPanelToggle');
+const isMobileLayout = () => window.matchMedia('(max-width: 600px)').matches;
+function setPanelOpen(open) {
+  _sidePanel.classList.toggle('open', open);
+  _btnPanelToggle.textContent = open ? '🗺️ 地図を見る' : '📌 ピン一覧を開く';
+  if (open) setTimeout(() => map.invalidateSize(), 320);
+}
+_btnPanelToggle.addEventListener('click', () => setPanelOpen(!_sidePanel.classList.contains('open')));
+// 起動時はスマホでもパネルは閉じた状態（地図優先）
+if (isMobileLayout()) setPanelOpen(false);
+
 window.focusPin = (id) => {
   const pin = pins.find(p => p.id === id);
   if (!pin) return;
-  map.setView([pin.lat, pin.lng], 16);
-  markerMap[id]?.openPopup();
+  // スマホ: 一覧シートを閉じてから地図表示＋ポップアップ
+  if (isMobileLayout() && _sidePanel.classList.contains('open')) {
+    setPanelOpen(false);
+    setTimeout(() => { map.setView([pin.lat, pin.lng], 16); markerMap[id]?.openPopup(); }, 350);
+  } else {
+    map.setView([pin.lat, pin.lng], 16);
+    markerMap[id]?.openPopup();
+  }
 };
 
 // ===== モーダル管理 =====
@@ -2720,6 +2802,15 @@ window.viewPhoto = (pinId, startIdx) => {
   showViewer();
 };
 
+// スライドショー設定（localStorageに永続化）
+const SLIDESHOW_SETTINGS_KEY = 'coco-itta-slideshow';
+let _slideshowSettings = (() => {
+  try { return Object.assign({ transition: 'fade', intervalSec: 3 }, JSON.parse(localStorage.getItem(SLIDESHOW_SETTINGS_KEY) || '{}')); }
+  catch { return { transition: 'fade', intervalSec: 3 }; }
+})();
+function saveSlideshowSettings() { localStorage.setItem(SLIDESHOW_SETTINGS_KEY, JSON.stringify(_slideshowSettings)); }
+let _slideshowTimer = null;
+
 function showViewer() {
   const existing = document.getElementById('photoViewerOverlay');
   if (existing) existing.remove();
@@ -2732,6 +2823,22 @@ function showViewer() {
   el.className = 'photo-viewer';
   el.innerHTML = `
     <button class="photo-viewer-close" id="pvClose">✕</button>
+    <div class="photo-viewer-controls">
+      <button id="pvPlay" title="スライドショー再生/停止">▶ 再生</button>
+      <select id="pvTransition" title="トランジション">
+        <option value="fade">フェード</option>
+        <option value="slide">スライド</option>
+        <option value="zoom">ズーム</option>
+        <option value="cut">カット</option>
+      </select>
+      <select id="pvInterval" title="表示時間">
+        <option value="2">2秒</option>
+        <option value="3">3秒</option>
+        <option value="5">5秒</option>
+        <option value="8">8秒</option>
+        <option value="15">15秒</option>
+      </select>
+    </div>
     <button class="photo-viewer-nav prev" id="pvPrev">‹</button>
     <img id="pvImg" src="${_viewerPhotos[_viewerIdx]}" />
     <button class="photo-viewer-nav next" id="pvNext">›</button>
@@ -2739,19 +2846,86 @@ function showViewer() {
   `;
   document.body.appendChild(el);
 
-  function update() {
-    document.getElementById('pvImg').src = _viewerPhotos[_viewerIdx];
-    document.getElementById('pvCounter').textContent = `${_viewerIdx + 1} / ${_viewerPhotos.length}`;
-    document.getElementById('pvPrev').style.display = _viewerIdx > 0 ? '' : 'none';
-    document.getElementById('pvNext').style.display = _viewerIdx < _viewerPhotos.length - 1 ? '' : 'none';
-  }
-  update();
+  const img      = document.getElementById('pvImg');
+  const counter  = document.getElementById('pvCounter');
+  const prevBtn  = document.getElementById('pvPrev');
+  const nextBtn  = document.getElementById('pvNext');
+  const playBtn  = document.getElementById('pvPlay');
+  const txSel    = document.getElementById('pvTransition');
+  const ivSel    = document.getElementById('pvInterval');
+  txSel.value = _slideshowSettings.transition;
+  ivSel.value = String(_slideshowSettings.intervalSec);
 
-  document.getElementById('pvClose').onclick = () => el.remove();
-  document.getElementById('pvPrev').onclick = () => { _viewerIdx = Math.max(0, _viewerIdx - 1); update(); };
-  document.getElementById('pvNext').onclick = () => { _viewerIdx = Math.min(_viewerPhotos.length - 1, _viewerIdx + 1); update(); };
+  function refreshNav() {
+    counter.textContent = `${_viewerIdx + 1} / ${_viewerPhotos.length}`;
+    // スライドショー再生中はループするので両端でも矢印を隠さない
+    if (_slideshowTimer) { prevBtn.style.visibility = nextBtn.style.visibility = 'visible'; return; }
+    prevBtn.style.visibility = _viewerIdx > 0 ? 'visible' : 'hidden';
+    nextBtn.style.visibility = _viewerIdx < _viewerPhotos.length - 1 ? 'visible' : 'hidden';
+  }
+
+  /** 指定方向（dir: 1=次, -1=前）へトランジションつきで切替 */
+  function transitionTo(newIdx, dir) {
+    const tx = _slideshowSettings.transition;
+    if (tx === 'cut') {
+      _viewerIdx = newIdx; img.src = _viewerPhotos[_viewerIdx]; refreshNav(); return;
+    }
+    const outClass =
+      tx === 'slide' ? (dir > 0 ? 'tx-slide-out' : 'tx-slide-in') :
+      tx === 'zoom'  ? 'tx-zoom-out' :
+                       'tx-fade-out';
+    const inClass =
+      tx === 'slide' ? (dir > 0 ? 'tx-slide-in' : 'tx-slide-out') :
+      tx === 'zoom'  ? 'tx-zoom-in' :
+                       'tx-fade-out';
+    img.classList.add(outClass);
+    setTimeout(() => {
+      _viewerIdx = newIdx;
+      img.src = _viewerPhotos[_viewerIdx];
+      img.classList.remove(outClass);
+      img.classList.add(inClass);
+      requestAnimationFrame(() => requestAnimationFrame(() => img.classList.remove(inClass)));
+      refreshNav();
+    }, 400);
+  }
+
+  function goPrev() { if (_viewerPhotos.length < 2) return; const next = (_viewerIdx - 1 + _viewerPhotos.length) % _viewerPhotos.length; transitionTo(next, -1); }
+  function goNext() { if (_viewerPhotos.length < 2) return; const next = (_viewerIdx + 1) % _viewerPhotos.length; transitionTo(next, 1); }
+
+  function stopSlideshow() {
+    if (_slideshowTimer) { clearInterval(_slideshowTimer); _slideshowTimer = null; }
+    playBtn.textContent = '▶ 再生'; playBtn.classList.remove('active');
+    refreshNav();
+  }
+  function startSlideshow() {
+    if (_viewerPhotos.length < 2) return;
+    stopSlideshow();
+    _slideshowTimer = setInterval(goNext, _slideshowSettings.intervalSec * 1000);
+    playBtn.textContent = '⏸ 停止'; playBtn.classList.add('active');
+    refreshNav();
+  }
+  function closeViewer() { stopSlideshow(); el.remove(); }
+
+  refreshNav();
+  document.getElementById('pvClose').onclick = closeViewer;
+  prevBtn.onclick = (e) => { e.stopPropagation(); stopSlideshow(); goPrev(); };
+  nextBtn.onclick = (e) => { e.stopPropagation(); stopSlideshow(); goNext(); };
+  playBtn.onclick = (e) => { e.stopPropagation(); _slideshowTimer ? stopSlideshow() : startSlideshow(); };
+  txSel.onchange = (e) => { _slideshowSettings.transition = e.target.value; saveSlideshowSettings(); };
+  ivSel.onchange = (e) => { _slideshowSettings.intervalSec = parseInt(e.target.value, 10); saveSlideshowSettings(); if (_slideshowTimer) startSlideshow(); };
+  // 画像タップで次へ（タップ式スライドショー）
+  img.onclick = (e) => { e.stopPropagation(); stopSlideshow(); goNext(); };
   // 背景クリックで閉じる
-  el.addEventListener('click', e => { if (e.target === el) el.remove(); });
+  el.addEventListener('click', e => { if (e.target === el) closeViewer(); });
+  // キーボード操作
+  const keyHandler = (e) => {
+    if (!document.body.contains(el)) { document.removeEventListener('keydown', keyHandler); return; }
+    if (e.key === 'ArrowRight') { stopSlideshow(); goNext(); }
+    else if (e.key === 'ArrowLeft') { stopSlideshow(); goPrev(); }
+    else if (e.key === 'Escape') closeViewer();
+    else if (e.key === ' ') { e.preventDefault(); _slideshowTimer ? stopSlideshow() : startSlideshow(); }
+  };
+  document.addEventListener('keydown', keyHandler);
 }
 
 /** 写真アップロード → EXIF取得 → _editingPhotos に追加 */
@@ -3466,7 +3640,12 @@ if ('serviceWorker' in navigator) {
 
 // ===== UI共通コンポーネント（ページロード完了後に初期化）=====
 window.addEventListener('load', () => {
-const releaseNotes = `## v0.6.3 (2026-06-11)
+const releaseNotes = `## v0.7.0 (2026-06-11)
+- 🎬 写真ビューアにスライドショーを追加（再生/停止・タップで次へ・トランジション4種・表示時間5段階）
+- 📱 スマホで地図がもっと広く：ピン一覧を下からせり上がるシート式に変更（タップで開閉）
+- 📱 ピン一覧でピンを選ぶとシートが自動で閉じて、地図上のピンが開きます
+
+## v0.6.3 (2026-06-11)
 - 📱 iPhone Safari でログイン後にエラー画面が出る問題を修正（ポップアップ方式に変更）
 
 ## v0.6.2 (2026-06-11)
@@ -3557,6 +3736,8 @@ const helpContent = `## 使い方
 ### 写真アルバム
 - ピン一覧の 📷 ボタンでスポット別の写真一覧を表示
 - 写真をタップすると拡大表示できます
+- 拡大画面で「▶ 再生」を押すとスライドショーが始まります（トランジション・表示時間を変更可能）
+- 画像をタップでも次の写真に進めます
 
 ### ホーム画面に追加（アプリ化）
 - スマホのブラウザメニューから「ホーム画面に追加」を選ぶと、アプリのように起動できます
@@ -3568,7 +3749,7 @@ const helpContent = `## 使い方
 // UI共通コンポーネント初期化
 const versionBadge = document.createElement('div');
   versionBadge.className = 'version-badge';
-  versionBadge.textContent = 'v0.6.3';
+  versionBadge.textContent = 'v0.7.0';
   versionBadge.addEventListener('click', () => {
     const modal = document.getElementById('releaseNotesModal');
     modal.classList.add('open');
