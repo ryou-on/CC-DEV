@@ -475,6 +475,7 @@
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
+      align-items: flex-start;
     }
     .color-swatch {
       width: 32px;
@@ -486,6 +487,13 @@
     }
     .color-swatch:hover { transform: scale(1.15); }
     .color-swatch.selected { border-color: var(--ink); transform: scale(1.15); }
+    /* カラーチップ＋色メモ（ルート編集モーダル） */
+    .color-swatch-wrap { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 46px; }
+    .color-swatch-memo {
+      width: 46px; font-size: 0.56rem; line-height: 1.15; color: var(--ink);
+      text-align: center; word-break: break-word; opacity: 0.85;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    }
 
     /* ===== 設定ボタン ===== */
     .btn-settings {
@@ -942,7 +950,7 @@
   <div class="logo">
     COCO-ITTA
     <span>ここいった — 家族の地図帳</span>
-    <span style="font-size:0.6rem;opacity:0.5;">v0.4.0</span>
+    <span style="font-size:0.6rem;opacity:0.5;">v0.4.1</span>
   </div>
   <div class="filters" id="filters">
     <button class="filter-btn active" data-filter="all">すべて</button>
@@ -2972,6 +2980,10 @@ const ROUTE_COLORS_ALL = [
   '#e05c5c','#c8821a','#e8c030','#4a7c59','#3a6fa8',
   '#7c4a7c','#5c8ec8','#2c2416','#888888','#e88050',
 ];
+/** HTMLエスケープ（色メモなどユーザー入力をinnerHTMLに埋める前に使用） */
+function escHtml(s) {
+  return String(s).replace(/[&<>"']/g, m => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m]));
+}
 const routeEditOverlay = document.getElementById('routeEditOverlay');
 let editingRouteId = null;
 let editingRouteColor = '#c8821a';
@@ -2989,11 +3001,15 @@ window.openRouteEdit = (id) => {
   document.getElementById('reWeight').value = route.weight || 4;
   document.getElementById('weightLabel').textContent = route.weight || 4;
 
-  // カラーパレット生成
+  // カラーパレット生成（ルート設定の色メモをチップ下に表示）
   const palette = document.getElementById('colorPalette');
+  const colorMemos = routeSettings.colorMemos || {};
   palette.innerHTML = ROUTE_COLORS_ALL.map(c => `
-    <div class="color-swatch ${c === editingRouteColor ? 'selected' : ''}"
-      style="background:${c}" data-color="${c}"></div>
+    <div class="color-swatch-wrap">
+      <div class="color-swatch ${c === editingRouteColor ? 'selected' : ''}"
+        style="background:${c}" data-color="${c}"></div>
+      ${colorMemos[c] ? `<span class="color-swatch-memo" title="${escHtml(colorMemos[c])}">${escHtml(colorMemos[c])}</span>` : ''}
+    </div>
   `).join('');
   palette.querySelectorAll('.color-swatch').forEach(sw => {
     sw.addEventListener('click', () => {
@@ -3178,7 +3194,10 @@ renderPinList();
 
 // ===== UI共通コンポーネント（ページロード完了後に初期化）=====
 window.addEventListener('load', () => {
-const releaseNotes = `## v0.4.0 (2026-06-09)
+const releaseNotes = `## v0.4.1 (2026-06-09)
+- 🎨 ルート編集画面で、各カラーチップの下にルート設定の色メモを表示
+
+## v0.4.0 (2026-06-09)
 - 🗺️ 地図上のピンをドラッグして位置を修正できるように（同じ場所のピンはまとめて移動）
 
 ## v0.3.0 (2026-06-09)
@@ -3240,7 +3259,7 @@ const helpContent = `## 使い方
 // UI共通コンポーネント初期化
 const versionBadge = document.createElement('div');
   versionBadge.className = 'version-badge';
-  versionBadge.textContent = 'v0.4.0';
+  versionBadge.textContent = 'v0.4.1';
   versionBadge.addEventListener('click', () => {
     const modal = document.getElementById('releaseNotesModal');
     modal.classList.add('open');
