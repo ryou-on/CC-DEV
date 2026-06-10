@@ -965,7 +965,7 @@
   <div class="logo">
     COCO-ITTA
     <span>ここいった — 家族の地図帳</span>
-    <span style="font-size:0.6rem;opacity:0.5;">v0.5.0</span>
+    <span style="font-size:0.6rem;opacity:0.5;">v0.5.1</span>
   </div>
   <div class="filters" id="filters">
     <button class="filter-btn active" data-filter="all">すべて</button>
@@ -1344,7 +1344,9 @@
 // ============================================================
 const firebaseConfig = {
   apiKey:            "AIzaSyDPlsAhtxbJBihy-EAHck9P7XbuMdzV0ds",
-  authDomain:        "cc-dev-ps7.firebaseapp.com",
+  // authDomainは配信ドメインと同一にすること（iOS SafariのITPがクロスドメインの
+  // signInWithRedirectを遮断し、ログイン後に初期画面へ戻る不具合の原因になる）
+  authDomain:        "cc-dev-ps7.web.app",
   projectId:         "cc-dev-ps7",
   storageBucket:     "cc-dev-ps7.firebasestorage.app",
   messagingSenderId: "1029579090333",
@@ -1413,7 +1415,11 @@ document.getElementById('btnGoogleLogin').addEventListener('click', async () => 
 // リダイレクト後の結果を受け取る
 auth.getRedirectResult().then(result => {
   if (result?.user) log('リダイレクトログイン成功:', result.user.email);
-}).catch(e => log('リダイレクト結果エラー:', e.message));
+}).catch(e => {
+  log('リダイレクト結果エラー:', e.code, e.message);
+  // スマホではコンソールが見えないため画面上にも表示
+  showToast(`⚠️ ログインに失敗しました\n${e.code || ''} ${e.message || ''}`, 'error', 9000);
+});
 
 // ===== ログアウトボタン =====
 document.getElementById('btnLogout').addEventListener('click', async () => {
@@ -3258,7 +3264,11 @@ if ('serviceWorker' in navigator) {
 
 // ===== UI共通コンポーネント（ページロード完了後に初期化）=====
 window.addEventListener('load', () => {
-const releaseNotes = `## v0.5.0 (2026-06-10)
+const releaseNotes = `## v0.5.1 (2026-06-10)
+- 📱 iPhone（Safari）でGoogleログイン後に最初の画面へ戻ってしまう問題を修正
+- ⚠️ ログイン失敗時に理由を画面に表示するように
+
+## v0.5.0 (2026-06-10)
 - 📷 スポット別の写真アルバムを追加（ピン一覧の📷ボタンから一覧表示）
 - ✏️ ルート描画中はピンや既存ルートに反応しないように（誤タップで編集が開くのを防止）
 - 📱 ホーム画面に追加してアプリのように使えるように（PWA対応・オフライン表示）
@@ -3335,7 +3345,7 @@ const helpContent = `## 使い方
 // UI共通コンポーネント初期化
 const versionBadge = document.createElement('div');
   versionBadge.className = 'version-badge';
-  versionBadge.textContent = 'v0.5.0';
+  versionBadge.textContent = 'v0.5.1';
   versionBadge.addEventListener('click', () => {
     const modal = document.getElementById('releaseNotesModal');
     modal.classList.add('open');
