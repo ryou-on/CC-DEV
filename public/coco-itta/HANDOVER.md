@@ -1,7 +1,7 @@
 # HANDOVER: COCO-ITTA（ここいった）
 
 > 生成日時: 2026-06-09  
-> 最終更新: 2026-06-11（v0.7.0 / Claude Code）  
+> 最終更新: 2026-06-11（v0.7.1 / Claude Code）  
 > 引き継ぎ元: Claude.ai チャット（セッションID: be965cb1）  
 > 引き継ぎ先: Claude Code / Cowork
 
@@ -10,7 +10,7 @@
 ## 📋 プロジェクト概要
 
 - **名前**: COCO-ITTA（ここいった）
-- **バージョン**: v0.7.0
+- **バージョン**: v0.7.1
 - **フェーズ**: Phase 3（本番運用中・写真共有E2E検証済み。スマホ実機確認のみ残）
 - **一言説明**: 家族みんなで「行った場所」「行きたい場所」を地図上で共有できるWebアプリ
 
@@ -113,9 +113,11 @@ function sanitizePinsForFirestore(pinsArray) {
 - `isApplyingRemote` フラグで `pushToCloud()` のループを防ぐ
 - `pushToCloud()` は 400ms デバウンス
 
-### Google Auth ⚠️ 重要（v0.6.3 で popup主に変更）
+### Google Auth ⚠️ 重要（v0.6.3 で popup主に変更、v0.7.1 で SW 干渉解消）
 
-**現在の実装**: `signInWithPopup` を主、blocked時のみ `signInWithRedirect` にフォールバック。
+**SW の `/__/auth/*` バイパス必須**：Service Worker が同一オリジン全リクエストをキャッシュすると、Firebase Auth ヘルパー（`/__/auth/handler`, `/__/auth/iframe.js`）が巻き込まれ、認証 state の伝達が壊れて iPhone Safari でログインループになる。v0.7.1 で `url.pathname.startsWith('/__/')` で即returnする実装に変更済み（`public/coco-itta/sw.js`）。SW を改修する際は **必ずこのガードを残すこと**。
+
+**現在の実装**: `signInWithPopup` を主、blocked時のみ `signInWithRedirect` にフォールバック。popup即閉じ（<1.5s）は popup-blocker による無音失敗として扱う。
 - ボタン押下＝ユーザージェスチャ由来のpopupは iOS Safari でも通る
 - iOS Safari の ITP は `signInWithRedirect` の sessionStorage を分割してしまい `Unable to process request due to missing initial state ... storage-partitioned browser environment` エラーが出るため、redirect は使わない
 
@@ -250,6 +252,7 @@ npx firebase deploy --only firestore:rules
 ## 💬 引き継ぎメモ
 
 ### Claude Code 更新履歴
+- **v0.7.1**（commit `0052e88`, 2026-06-11）: iPhone Safari ログインループ修正。SWが `/__/auth/*` をキャッシュ／インターセプトしていたのが根本原因。`sw.js` で `/__/` 開始のリクエストは即returnしブラウザ標準処理へ。CACHE名 v1→v2 で旧auth関連キャッシュ全削除。popup即閉じ(<1.5s)時は popup-blocker による無音失敗の可能性が高いと判断し「ポップアップを許可してください」案内→redirectへ自動フォールバック。SWバイパスは preview で /__/auth/iframe.js が cacheに保存されないことを検証済
 - **v0.7.0**（commit `f5c0517`, 2026-06-11）: 写真ビューアにスライドショー機能（▶再生/⏸停止・タップで次へ・トランジション4種=fade/slide/zoom/cut・表示時間5段階・localStorage永続化・キーボード操作）／スマホでサイドパネルを下部スライドシート化（`.side-panel` を position:fixed + transform translateY、固定トグルボタン `.panel-toggle-btn` で開閉、focusPin でシート自動クローズ→ピン表示、開時に map.invalidateSize() で地図再計算）
 - **v0.6.3**（commit `cf7359f`, 2026-06-11）: iOS Safari の `signInWithRedirect` が sessionStorage 分割で `missing initial state` エラーになる問題を修正。`signInWithPopup` を主、popup-blocked時のみ redirect にフォールバック。getRedirectResult の missing-state 系エラーも無害化（残骸の掃除として無視）。デスクトップ既存セッション維持・40ピン受信を確認
 - **v0.6.2**（commit `8e7072d`, 2026-06-11）: スマホヘッダーをコンパクト化。`@media (max-width:600px)` でロゴをinline+ellipsis化、フィルターを `overflow-x:auto` の横スクロールに（flex-wrap:nowrap）。ヘッダー約300px→約72pxに圧縮し地図表示エリア拡大
