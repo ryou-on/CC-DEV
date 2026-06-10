@@ -108,6 +108,24 @@
     }
     .wipe-edge.run { animation: wipeEdge .6s cubic-bezier(.25,.9,.2,1) both; }
     @keyframes wipeEdge { 0% { left: 0; opacity: 1; } 88% { opacity: 1; } 100% { left: calc(100% - 3px); opacity: 0; } }
+
+    /* STINGER：ロゴパネルが画面全体を横切り、覆った瞬間に切替 */
+    .stinger {
+      position: fixed; top: -8%; height: 116%; left: -12%; width: 124%; z-index: 300;
+      display: grid; place-items: center; pointer-events: none; visibility: hidden;
+      background: linear-gradient(120deg, #08090b 0%, #14161b 44%, #190c0c 56%, #08090b 100%);
+      border-left: 5px solid var(--red); border-right: 5px solid var(--red);
+      box-shadow: 0 0 70px rgba(0,0,0,.85);
+      transform: translateX(-118%) skewX(-8deg);
+    }
+    .stinger img { width: min(46vw, 520px); transform: skewX(8deg); filter: drop-shadow(0 6px 24px rgba(0,0,0,.7)); }
+    .stinger.run { visibility: visible; animation: stingerSweep .95s cubic-bezier(.33, 0, .18, 1) both; }
+    @keyframes stingerSweep {
+      0%   { transform: translateX(-118%) skewX(-8deg); }
+      40%  { transform: translateX(0) skewX(-8deg); }
+      56%  { transform: translateX(0) skewX(-8deg); }
+      100% { transform: translateX(118%) skewX(-8deg); }
+    }
     .media-scrim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,.45) 0%, transparent 26%, transparent 60%, rgba(0,0,0,.62) 100%); }
     .bracket { position: absolute; width: 26px; height: 26px; border: 2px solid rgba(255,255,255,.7); }
     .bracket.tl { top: 12px; left: 12px; border-right: 0; border-bottom: 0; }
@@ -205,7 +223,7 @@
     /* TRANSITION 選択ブロック */
     .trans-block { display: grid; gap: 6px; align-content: center; }
     .trans-label { color: var(--gold); font-size: 10px; font-weight: 800; letter-spacing: .16em; }
-    .trans-grid { display: grid; grid-template-columns: repeat(2, 66px); gap: 6px; }
+    .trans-grid { display: grid; grid-template-columns: repeat(2, 78px); gap: 6px; }
     .tbtn {
       display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 7px;
       border: 1px solid var(--line); background: linear-gradient(180deg, #272a2f, #101214);
@@ -319,7 +337,7 @@
     }
     /* スマホ縦 */
     @media (max-width: 680px) {
-      :root { --topbar-h: 56px; --dock-h: 150px; }
+      :root { --topbar-h: 56px; --dock-h: 156px; }
       body { overflow: auto; }
       .app { height: auto; min-height: 100svh; }
       .stage { grid-template-rows: none; grid-template-columns: 1fr; padding-bottom: 104px; }
@@ -333,6 +351,7 @@
       .tbar-area { display: none; }            /* スマホは本文の「詳細を見る」トグルで代替 */
       .dock-inner { grid-template-columns: 1fr; }
       .trans-block { justify-content: center; }
+      .trans-grid { flex-wrap: wrap; justify-content: center; }
       .tbtn { padding: 5px 7px; letter-spacing: .04em; }
       /* デバッグボタンは小型アイコン化（CTAとの重なり回避） */
       .debug-btn { font-size: 0; width: 38px; height: 38px; padding: 0; border-radius: 50%; opacity: .4; display: grid; place-items: center; }
@@ -455,6 +474,8 @@
     </nav>
   </div>
 
+  <div class="stinger" id="stinger" aria-hidden="true"><img src="images/logo.png" alt="" /></div>
+
   <button class="debug-btn" id="debugBtn" type="button">デバッグ情報をコピー</button>
   <div class="toast" id="toast">コピーしました</div>
 
@@ -468,8 +489,11 @@
   <script>
     'use strict';
 
-    var APP_VERSION = 'v0.3.1';
+    var APP_VERSION = 'v0.4.0';
     var RELEASE_NOTES = [
+      { ver: 'v0.4.0', date: '2026-06-10', changes: [
+        'STINGER（ロゴワイプ）トランジション追加：企画7課ロゴが画面全体を横切り、覆った瞬間に切り替わる'
+      ] },
       { ver: 'v0.3.1', date: '2026-06-10', changes: [
         'トランジションの GLITCH を FADE（暗転⇒フェードイン）に変更',
         'PUSH で旧画面が押し出されない不具合を修正'
@@ -492,7 +516,7 @@
     ];
     var HOW_TO_USE = [
       { heading: '① 下のボタン（1〜8）を押す', text: 'スイッチャーのボタンを押すと、左のイメージと右のテキストがその事業内容に切り替わります。' },
-      { heading: '② TRANSITION で演出を選ぶ', text: '切り替わり方を MIX（溶け込み）/ WIPE（拭き取り）/ PUSH（押し出し）/ FADE（暗転⇒フェードイン）/ CUT（瞬時）から選べます。選択は次回も保持されます。' },
+      { heading: '② TRANSITION で演出を選ぶ', text: '切り替わり方を MIX（溶け込み）/ WIPE（拭き取り）/ PUSH（押し出し）/ FADE（暗転⇒フェードイン）/ STINGER（企画7課ロゴが横切る）/ CUT（瞬時）から選べます。選択は次回も保持されます。' },
       { heading: '③ Tバーで詳しく見る', text: '右下のTバーを上げる（または「詳細を見る」を押す）と、事例や会社概要などの詳細情報が表示されます。下げると基本情報に戻ります。' },
       { heading: '④ 相談してみる', text: '黄色い「相談してみる」ボタンから、お問い合わせいただけます。企画が固まっていなくても大丈夫です。' },
       { heading: 'キーボード', text: '数字 1〜8 = 切替 / T = トランジション切替 / ↑↓ または D = 基本⇔詳細 / Esc = 閉じる' }
@@ -592,6 +616,7 @@
       { key: 'wipe', label: 'WIPE' },
       { key: 'push', label: 'PUSH' },
       { key: 'fade', label: 'FADE' },
+      { key: 'stinger', label: 'STINGER' },
       { key: 'cut', label: 'CUT' }
     ];
     var transType = (function () {
@@ -645,6 +670,7 @@
     }
 
     function runWipeEdge() { var e = $('wipeEdge'); e.classList.remove('run'); void e.offsetWidth; e.classList.add('run'); }
+    function runStinger() { var s = $('stinger'); s.classList.remove('run'); void s.offsetWidth; s.classList.add('run'); }
     function flashFx() { var c = $('fxCap'); c.classList.remove('ping'); void c.offsetWidth; c.classList.add('ping'); }
 
     function renderTrans() {
@@ -652,7 +678,7 @@
       TRANS.forEach(function (t) {
         var b = document.createElement('button');
         b.type = 'button';
-        b.className = 'tbtn' + (t.key === transType ? ' on' : '') + (t.key === 'cut' ? ' cut-wide' : '');
+        b.className = 'tbtn' + (t.key === transType ? ' on' : '');
         b.innerHTML = '<span class="led"></span>' + t.label;
         b.addEventListener('click', function () { setTrans(t.key); });
         box.appendChild(b);
@@ -706,8 +732,24 @@
       });
     }
 
+    var stingerTimer = null;
     function selectChannel(id) {
       if (id === currentId) { snapDetail(detail < 0.5 ? 1 : 0); return; }
+      if (stingerTimer) { clearTimeout(stingerTimer); stingerTimer = null; }
+      if (transType === 'stinger') {
+        // ロゴパネルが画面を覆った瞬間（約0.43s）に裏でカット
+        runStinger();
+        flashFx();
+        stingerTimer = setTimeout(function () {
+          stingerTimer = null;
+          currentId = id;
+          render(false);          // カバー中に即時差し替え
+          animateText('mix');     // パネルが抜ける間に本文がふわっと入る
+          snapDetail(0);
+          logState('SELECT');
+        }, 430);
+        return;
+      }
       currentId = id;
       render(true);
       snapDetail(0);           // 切替時は基本情報に戻す
