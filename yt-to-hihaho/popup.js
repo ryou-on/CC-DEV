@@ -165,10 +165,20 @@ async function extractYTData(tabId) {
       }
 
       // Whisperフォールバック用: 最小ビットレートの音声ストリームURL
+      // signatureCipher形式も考慮（url直接 or signatureCipherのurlパラメータ）
       const formats = window.ytInitialPlayerResponse?.streamingData?.adaptiveFormats || [];
       const audioFormats = formats.filter(f => f.mimeType?.startsWith('audio/'));
       audioFormats.sort((a, b) => (a.bitrate || 0) - (b.bitrate || 0));
-      const audioStreamUrl = audioFormats[0]?.url || null;
+      const bestAudio = audioFormats[0];
+      let audioStreamUrl = null;
+      if (bestAudio) {
+        if (bestAudio.url) {
+          audioStreamUrl = bestAudio.url;
+        } else if (bestAudio.signatureCipher || bestAudio.cipher) {
+          const raw = bestAudio.signatureCipher || bestAudio.cipher;
+          audioStreamUrl = new URLSearchParams(raw).get('url') || null;
+        }
+      }
 
       return { title, captionUrl, videoId, duration, audioStreamUrl };
     },
@@ -199,6 +209,31 @@ async function fetchTranscript(captionUrl) {
     .map(t => t.textContent.replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/\n/g, ' ').trim())
     .filter(Boolean)
     .join(' ');
+}
+
+/* ── YouTube timedtext API（自動字幕フォールバック） ── */
+async function fetchAutoCaptions(videoId) {
+  const attempts = [
+    `https://www.youtube.com/api/timedtext?v=${videoId}&lang=ja&kind=asr&fmt=json3`,
+    `https://www.youtube.com/api/timedtext?v=${videoId}&lang=en&kind=asr&fmt=json3`,
+    `https://www.youtube.com/api/timedtext?v=${videoId}&lang=ja&fmt=json3`,
+    `https://www.youtube.com/api/timedtext?v=${videoId}&lang=en&fmt=json3`,
+  ];
+  for (const url of attempts) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const data = await res.json().catch(() => null);
+      if (!data) continue;
+      const text = (data.events || [])
+        .filter(e => e.segs)
+        .map(e => e.segs.map(s => s.utf8 || '').join('').replace(/\n/g, ' '))
+        .filter(t => t.trim())
+        .join(' ');
+      if (text.trim()) return text;
+    } catch (_) { /* 次を試す */ }
+  }
+  return null;
 }
 
 /* ── Whisper API（字幕なし動画フォールバック） ── */
@@ -606,19 +641,29 @@ el('generateBtn').addEventListener('click', async () => {
   showState('processing');
 
   try {
-    // Step 0: Transcript（字幕 → Whisper フォールバック）
+    // Step 0: Transcript（字幕 → timedtext自動字幕 → Whisper の3段フォールバック）
     setStep(0);
+    const stepLabel = () => document.querySelector('.step[data-step="0"] span:last-child');
     let transcript;
+
     if (videoData.captionUrl) {
+      // 1. captionTracks から字幕取得
       transcript = await fetchTranscript(videoData.captionUrl);
-    } else if (videoData.audioStreamUrl && settings.openaiKey) {
-      const stepLabel = document.querySelector('.step[data-step="0"] span:last-child');
-      if (stepLabel) stepLabel.textContent = 'Whisper 音声文字起こし中...';
-      transcript = await fetchTranscriptViaWhisper(videoData.audioStreamUrl);
-    } else if (videoData.audioStreamUrl) {
-      throw new Error('この動画には字幕がありません。\n設定からOpenAI API Keyを入力するとWhisper APIで自動文字起こしできます。');
     } else {
-      throw new Error('字幕も音声ストリームも取得できませんでした。ページを再読み込みしてください。');
+      // 2. YouTube timedtext API（自動字幕）
+      const lbl = stepLabel();
+      if (lbl) lbl.textContent = '自動字幕を取得中...';
+      transcript = await fetchAutoCaptions(videoData.videoId);
+
+      if (!transcript && videoData.audioStreamUrl && settings.openaiKey) {
+        // 3. Whisper API
+        if (lbl) lbl.textContent = 'Whisper 音声文字起こし中...';
+        transcript = await fetchTranscriptViaWhisper(videoData.audioStreamUrl);
+      } else if (!transcript && !settings.openaiKey) {
+        throw new Error('この動画には字幕・自動字幕がありません。\n設定からOpenAI API Keyを入力するとWhisper APIで文字起こしできます。');
+      } else if (!transcript) {
+        throw new Error('字幕・自動字幕・音声ストリームのいずれも取得できませんでした。\nページを再読み込みして再試行してください。');
+      }
     }
     if (!transcript.trim()) throw new Error('文字起こしが空です。');
 
