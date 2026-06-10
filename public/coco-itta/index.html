@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>COCO-ITTA 🗺️</title>
 
+  <!-- ファビコン（インラインSVG：地図帳の方眼紙＋赤いピン） -->
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23f5f0e8'/%3E%3Cg stroke='%23d4c4a0' stroke-width='1.2'%3E%3Cpath d='M16 0v64M32 0v64M48 0v64M0 16h64M0 32h64M0 48h64'/%3E%3C/g%3E%3Cpath d='M32 14c-7 0-12.5 5.4-12.5 12.2 0 9.6 12.5 23.5 12.5 23.5s12.5-13.9 12.5-23.5C44.5 19.4 39 14 32 14z' fill='%23e05c5c' stroke='%23b94040' stroke-width='1.5'/%3E%3Ccircle cx='32' cy='26' r='4.5' fill='%23fdf8f0'/%3E%3C/svg%3E" />
+  <link rel="mask-icon" href="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath d='M32 8c-9 0-16 7-16 15.7 0 12.3 16 32.3 16 32.3s16-20 16-32.3C48 15 41 8 32 8z'/%3E%3C/svg%3E" color="%23e05c5c" />
+
   <!-- PWA: ホーム画面追加対応 -->
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#2c2416" />
@@ -251,6 +255,19 @@
     .photo-thumb-wrap { position: relative; display: inline-block; flex-shrink: 0; }
     .photo-thumb { width: 70px; height: 70px; object-fit: cover; border-radius: 8px; cursor: pointer; border: 2px solid var(--tan); display: block; }
     .photo-thumb:hover { border-color: var(--amber); }
+    /* 写真の並び替え（ドラッグ＆ドロップ） */
+    .photo-thumb-wrap { cursor: grab; touch-action: none; }
+    .photo-thumb-wrap.dragging { opacity: 0.4; cursor: grabbing; transform: scale(0.95); }
+    .photo-thumb-wrap.drag-over { transform: scale(1.1); transition: transform 0.15s; }
+    /* 評価（★1〜5） */
+    .rating-stars { display: flex; align-items: center; gap: 4px; font-size: 1.6rem; line-height: 1; user-select: none; }
+    .rating-stars span { cursor: pointer; color: #d4c4a0; transition: color 0.1s, transform 0.1s; }
+    .rating-stars span:hover { transform: scale(1.15); }
+    .rating-stars span.on { color: #e8c030; }
+    .rating-clear { margin-left: auto; background: transparent; border: 1px solid var(--border); color: var(--ink-light); font-size: 0.65rem; padding: 3px 9px; border-radius: 8px; cursor: pointer; font-family: 'Zen Maru Gothic', sans-serif; }
+    .rating-clear:hover { background: var(--bg); }
+    /* ピン一覧の評価インライン表示 */
+    .pin-rating-inline { font-size: 0.72rem; color: #e8c030; letter-spacing: 1px; }
     .photo-thumb-del {
       position: absolute; top: -5px; right: -5px;
       background: #e05c5c; color: #fff; border: 2px solid #fff;
@@ -965,7 +982,7 @@
   <div class="logo">
     COCO-ITTA
     <span>ここいった — 家族の地図帳</span>
-    <span style="font-size:0.6rem;opacity:0.5;">v0.5.1</span>
+    <span style="font-size:0.6rem;opacity:0.5;">v0.6.0</span>
   </div>
   <div class="filters" id="filters">
     <button class="filter-btn active" data-filter="all">すべて</button>
@@ -1058,6 +1075,7 @@
         <option value="status">🏷 ステータス順</option>
         <option value="photo">📷 写真あり優先</option>
         <option value="photo-none">📸 写真なし（未追加）</option>
+        <option value="rating">⭐ 評価が高い順</option>
       </select>
     </div>
     <div class="pin-list" id="pinList">
@@ -1102,6 +1120,19 @@
         <div class="status-opt wishlist" data-status="wishlist" id="sWishlist">
           <span class="s-icon">⭐</span>行きたい
         </div>
+      </div>
+    </div>
+
+    <!-- 評価（★1〜5） -->
+    <div class="form-group">
+      <label>評価 <span style="font-size:0.68rem;color:var(--ink-light);" id="ratingLabel"></span></label>
+      <div class="rating-stars" id="ratingStars">
+        <span data-rate="1">☆</span>
+        <span data-rate="2">☆</span>
+        <span data-rate="3">☆</span>
+        <span data-rate="4">☆</span>
+        <span data-rate="5">☆</span>
+        <button type="button" class="rating-clear" id="ratingClear" title="評価をクリア">クリア</button>
       </div>
     </div>
 
@@ -2149,6 +2180,8 @@ function addMarkerToMap(pin) {
       ).join('')}</div>`
     : '';
 
+  const ratingPopupHtml = pin.rating ? `<br><span style="font-size:0.78rem;color:#c8821a;letter-spacing:1px;">${'★'.repeat(pin.rating)}<span style="color:#d4c4a0;">${'☆'.repeat(5-pin.rating)}</span></span>` : '';
+
   // ポップアップ内容
   marker.bindPopup(`
     <b style="font-family:'Zen Maru Gothic',sans-serif">${pin.name}</b><br>
@@ -2156,6 +2189,7 @@ function addMarkerToMap(pin) {
       ${pin.status === 'visited' ? '✅ 行った' : pin.status === 'revisit' ? '🔄 また行きたい' : '⭐ 行きたい'}
       ${pin.date ? ' · ' + pin.date : pin.dateUnknown ? ' · 日時不明' : ''}
     </span>
+    ${ratingPopupHtml}
     ${badgeHtml ? `<br>${badgeHtml}` : ''}
     ${pin.memo ? `<br><span style="font-size:0.72rem">${pin.memo}</span>` : ''}
     ${photoHtml}
@@ -2197,11 +2231,12 @@ function addStackedMarkerToMap(groupPins) {
           `<img src="${src}" onclick="viewPhoto('${p.id}',${pi})" style="width:44px;height:44px;object-fit:cover;border-radius:4px;cursor:pointer;" />`
         ).join('')}</div>`
       : '';
+    const rateInline = p.rating ? ` <span style="color:#c8821a;font-size:0.7rem;letter-spacing:1px;">${'★'.repeat(p.rating)}</span>` : '';
     return `
       <div class="visit-row">
         ${thumb}
         <span style="background:#e8388a;color:#fff;font-size:0.62rem;font-weight:700;padding:1px 5px;border-radius:10px;">${rank}回</span>
-        <span style="font-size:0.7rem;color:#6b5c45;margin-left:4px;">${statusLabel} ${p.date ? '· ' + p.date : ''}</span>
+        <span style="font-size:0.7rem;color:#6b5c45;margin-left:4px;">${statusLabel} ${p.date ? '· ' + p.date : ''}${rateInline}</span>
         ${p.memo ? `<div style="font-size:0.68rem;color:#888;margin-top:2px;">${p.memo}</div>` : ''}
         ${p.members?.length ? `<div style="font-size:0.65rem;color:#aaa;">${p.members.join('・')}</div>` : ''}
         <br style="clear:both;"/>
@@ -2309,6 +2344,14 @@ function getSortedPins(arr) {
       .filter(p => getPinPhotos(p.id).length === 0)
       .sort((a, b) => (b.date || b.createdAt || '').localeCompare(a.date || a.createdAt || ''));
   }
+  if (sort === 'rating') {
+    // 評価高い順（未評価は末尾、同点は新しい順）
+    return copy.sort((a, b) => {
+      const ra = a.rating || 0, rb = b.rating || 0;
+      if (ra !== rb) return rb - ra;
+      return (b.date || b.createdAt || '').localeCompare(a.date || a.createdAt || '');
+    });
+  }
   return copy;
 }
 
@@ -2338,12 +2381,13 @@ function renderPinList() {
     const thumbHtml = photos.length
       ? `<img src="${photos[0]}" style="width:36px;height:36px;object-fit:cover;border-radius:4px;flex-shrink:0;margin-right:6px;" />`
       : '';
+    const ratingHtml = pin.rating ? `<span class="pin-rating-inline">${'★'.repeat(pin.rating)}</span>` : '';
     return `
       <div class="pin-item" onclick="focusPin('${pin.id}')">
         ${thumbHtml}<div class="pin-icon" ${thumbHtml ? 'style="display:none"' : ''}>${layerEmoji}</div>
         <div class="pin-info" style="flex:1;min-width:0;">
           <div class="pin-name">${pin.name}</div>
-          <div class="pin-meta">${dateStr}${pin.memo ? ' · ' + pin.memo.slice(0,18) : ''}</div>
+          <div class="pin-meta">${ratingHtml}${ratingHtml && (dateStr || pin.memo) ? ' · ' : ''}${dateStr}${pin.memo ? ' · ' + pin.memo.slice(0,18) : ''}</div>
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex-shrink:0;">
           ${badgeHtml}
@@ -2383,6 +2427,27 @@ const btnUnknown = document.getElementById('btnUnknown');
 let selectedStatus = 'visited';
 let selectedLayer  = 'spot';
 let isDateUnknown  = false;
+let selectedRating = 0; // 0=未評価、1〜5
+
+/** 評価UIを描画＋クリックハンドラ配線 */
+function renderRatingStars() {
+  const stars = document.querySelectorAll('#ratingStars span[data-rate]');
+  stars.forEach(s => {
+    const v = +s.dataset.rate;
+    s.classList.toggle('on', v <= selectedRating);
+    s.textContent = v <= selectedRating ? '★' : '☆';
+  });
+  const labels = ['', '気に入った', 'まあまあ', 'ふつう', 'いい', '最高！'];
+  document.getElementById('ratingLabel').textContent = selectedRating ? `★${selectedRating}・${labels[selectedRating]}` : '（未評価）';
+}
+document.querySelectorAll('#ratingStars span[data-rate]').forEach(s => {
+  s.addEventListener('click', () => {
+    const v = +s.dataset.rate;
+    selectedRating = (selectedRating === v) ? v - 1 : v; // 同じ星をタップで-1
+    renderRatingStars();
+  });
+});
+document.getElementById('ratingClear').addEventListener('click', () => { selectedRating = 0; renderRatingStars(); });
 
 /** ステータス選択切り替え */
 document.querySelectorAll('.status-opt').forEach(opt => {
@@ -2453,9 +2518,11 @@ function openAdd(latlng) {
   isDateUnknown  = false;
   selectedStatus = 'visited';
   selectedLayer  = 'spot';
+  selectedRating = 0;
   btnUnknown.classList.remove('active');
   fDate.disabled = false;
   resetSelectors();
+  renderRatingStars();
   document.getElementById('btnDelete').style.display = 'none';
   document.getElementById('btnRevisit').style.display = 'none';
   _editingPhotos = []; // 新規追加時は空
@@ -2481,9 +2548,11 @@ window.openEdit = (id) => {
   isDateUnknown  = pin.dateUnknown || false;
   selectedStatus = pin.status;
   selectedLayer  = pin.layer;
+  selectedRating = pin.rating || 0;
   btnUnknown.classList.toggle('active', isDateUnknown);
   fDate.disabled = isDateUnknown;
   resetSelectors();
+  renderRatingStars();
   document.getElementById('btnDelete').style.display = 'inline-block';
   document.getElementById('btnRevisit').style.display = pin.status === 'visited' ? 'inline-block' : 'none';
   document.getElementById('nameSuggest').innerHTML = '';
@@ -2499,17 +2568,87 @@ window.openEdit = (id) => {
 // ===== 写真管理（モーダル編集中の状態） =====
 let _editingPhotos = []; // モーダル開いている間の作業コピー
 
-/** photoStrip を _editingPhotos から再描画 */
+/** photoStrip を _editingPhotos から再描画（ドラッグ＆ドロップ並び替え対応） */
 function renderPhotoStrip() {
   const strip = document.getElementById('photoStrip');
   const count = document.getElementById('photoCount');
   if (count) count.textContent = _editingPhotos.length ? `${_editingPhotos.length}枚` : '';
   strip.innerHTML = _editingPhotos.map((src, i) => `
-    <div class="photo-thumb-wrap">
+    <div class="photo-thumb-wrap" draggable="true" data-idx="${i}">
       <img src="${src}" class="photo-thumb" onclick="openPhotoViewer(${i})" />
       <button class="photo-thumb-del" onclick="deleteEditingPhoto(${i})" title="削除">✕</button>
     </div>
   `).join('');
+  attachPhotoDragHandlers(strip);
+}
+
+/** ドラッグ＆ドロップで写真の順序を入れ替え（デスクトップ+モバイル両対応） */
+function attachPhotoDragHandlers(strip) {
+  let dragFrom = null;
+  const wraps = strip.querySelectorAll('.photo-thumb-wrap');
+
+  // HTML5 D&D（デスクトップ）
+  wraps.forEach(w => {
+    w.addEventListener('dragstart', e => {
+      dragFrom = +w.dataset.idx;
+      w.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      try { e.dataTransfer.setData('text/plain', String(dragFrom)); } catch {}
+    });
+    w.addEventListener('dragend', () => { w.classList.remove('dragging'); strip.querySelectorAll('.drag-over').forEach(x => x.classList.remove('drag-over')); });
+    w.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; });
+    w.addEventListener('dragenter', () => { if (dragFrom !== null && +w.dataset.idx !== dragFrom) w.classList.add('drag-over'); });
+    w.addEventListener('dragleave', () => w.classList.remove('drag-over'));
+    w.addEventListener('drop', e => {
+      e.preventDefault();
+      const to = +w.dataset.idx;
+      if (dragFrom !== null && to !== dragFrom) reorderEditingPhoto(dragFrom, to);
+      dragFrom = null;
+    });
+  });
+
+  // タッチ（モバイル）: 長押し→ドラッグ
+  wraps.forEach(w => {
+    let touchStart = null, fromIdx = null, holdTimer = null, isDragging = false;
+    w.addEventListener('touchstart', e => {
+      touchStart = e.touches[0];
+      fromIdx = +w.dataset.idx;
+      holdTimer = setTimeout(() => { isDragging = true; w.classList.add('dragging'); }, 350);
+    }, { passive: true });
+    w.addEventListener('touchmove', e => {
+      if (!touchStart) return;
+      const t = e.touches[0];
+      if (!isDragging && (Math.abs(t.clientX - touchStart.clientX) > 8 || Math.abs(t.clientY - touchStart.clientY) > 8)) {
+        clearTimeout(holdTimer); // 短距離スクロールはキャンセル
+      }
+      if (!isDragging) return;
+      e.preventDefault();
+      const el = document.elementFromPoint(t.clientX, t.clientY)?.closest('.photo-thumb-wrap');
+      strip.querySelectorAll('.drag-over').forEach(x => x.classList.remove('drag-over'));
+      if (el && +el.dataset.idx !== fromIdx) el.classList.add('drag-over');
+    }, { passive: false });
+    w.addEventListener('touchend', e => {
+      clearTimeout(holdTimer);
+      w.classList.remove('dragging');
+      if (isDragging) {
+        const t = e.changedTouches[0];
+        const el = document.elementFromPoint(t.clientX, t.clientY)?.closest('.photo-thumb-wrap');
+        strip.querySelectorAll('.drag-over').forEach(x => x.classList.remove('drag-over'));
+        if (el && +el.dataset.idx !== fromIdx) reorderEditingPhoto(fromIdx, +el.dataset.idx);
+      }
+      touchStart = null; fromIdx = null; isDragging = false;
+    });
+    w.addEventListener('touchcancel', () => { clearTimeout(holdTimer); w.classList.remove('dragging'); touchStart = null; fromIdx = null; isDragging = false; });
+  });
+}
+
+/** 編集中写真の位置 from → to を入れ替え */
+function reorderEditingPhoto(from, to) {
+  if (from < 0 || to < 0 || from === to || from >= _editingPhotos.length || to >= _editingPhotos.length) return;
+  const [m] = _editingPhotos.splice(from, 1);
+  _editingPhotos.splice(to, 0, m);
+  renderPhotoStrip();
+  log('写真並び替え:', from, '→', to);
 }
 
 /** 編集中の写真を1枚削除 */
@@ -2589,10 +2728,22 @@ document.getElementById('fPhoto').addEventListener('change', async (e) => {
               fDate.disabled = false;
             }
           }
-          if (exif.latitude && exif.longitude && !pendingLatLng) {
-            pendingLatLng = { lat: exif.latitude, lng: exif.longitude };
+          // 写真にGPSがあれば常に「写真の座標」を優先（クリック地点 / マップ中心より優先）
+          if (exif.latitude && exif.longitude) {
+            const newLL = { lat: exif.latitude, lng: exif.longitude };
+            const overrode = pendingLatLng && (
+              Math.abs(pendingLatLng.lat - newLL.lat) > 1e-6 ||
+              Math.abs(pendingLatLng.lng - newLL.lng) > 1e-6
+            );
+            pendingLatLng = newLL;
             fCoords.value = `${exif.latitude.toFixed(6)}, ${exif.longitude.toFixed(6)}`;
             map.setView([exif.latitude, exif.longitude], 16);
+            if (overrode) {
+              showToast('📍 写真の撮影場所に座標を更新しました', 'success', 2500);
+              // 場所名サジェストもやり直し
+              document.getElementById('nameSuggest').innerHTML = '';
+              suggestNameFromCoords(newLL.lat, newLL.lng);
+            }
           }
         }
       }
@@ -2655,7 +2806,9 @@ document.getElementById('btnSave').addEventListener('click', async () => {
         dateUnknown: isDateUnknown,
         memo: fMemo.value.trim(),
         members: getCheckedMembers(),
+        rating: selectedRating || 0,
       };
+      if (!selectedRating) delete pins[idx].rating;
       markerMap[editingId]?.setIcon(createIcon(selectedStatus, selectedLayer));
       log('更新:', pins[idx]);
     }
@@ -2674,6 +2827,7 @@ document.getElementById('btnSave').addEventListener('click', async () => {
       members: getCheckedMembers(),
       createdAt: new Date().toISOString(),
     };
+    if (selectedRating) pin.rating = selectedRating;
     pins.push(pin);
     addMarkerToMap(pin);
     log('追加:', pin);
@@ -3265,8 +3419,11 @@ if ('serviceWorker' in navigator) {
 
 // ===== UI共通コンポーネント（ページロード完了後に初期化）=====
 window.addEventListener('load', () => {
-const releaseNotes = `## v0.5.1 (2026-06-10)
-- 📱 iPhone（Safari）でGoogleログイン後に最初の画面へ戻ってしまう問題を修正
+const releaseNotes = `## v0.6.0 (2026-06-10)
+- 📍 写真にGPS情報があれば、地図クリック時の座標より撮影場所を優先するように
+- ⭐ 評価（★1〜5）を追加できるように。一覧で「評価が高い順」並べ替えも対応
+- 🔀 写真の並び替えに対応（編集モーダル内でドラッグ＆ドロップ／モバイルは長押し）
+- 🗺️ ファビコンを追加（地図帳×赤ピンのオリジナルアイコン）
 - ⚠️ ログイン失敗時に理由を画面に表示するように
 
 ## v0.5.0 (2026-06-10)
@@ -3332,6 +3489,15 @@ const helpContent = `## 使い方
 - 地図上のピンを長押し／ドラッグして位置を修正できます
 - 複数回訪問でまとまったピンは、同じ場所としてまとめて移動します
 
+### 写真の追加・並び替え
+- 写真を追加すると、撮影日時とGPS情報（撮影場所）が自動で反映されます
+- 編集モーダル内でサムネイルをドラッグすると順序を入れ替えできます（モバイルは長押し）
+
+### 評価（★1〜5）
+- ピン編集モーダルで星をタップして評価を記録
+- 同じ星をもう一度タップで1つ下がります（クリアボタンで未評価に戻せます）
+- ピン一覧の並べ替えで「⭐ 評価が高い順」も使えます
+
 ### 写真アルバム
 - ピン一覧の 📷 ボタンでスポット別の写真一覧を表示
 - 写真をタップすると拡大表示できます
@@ -3346,7 +3512,7 @@ const helpContent = `## 使い方
 // UI共通コンポーネント初期化
 const versionBadge = document.createElement('div');
   versionBadge.className = 'version-badge';
-  versionBadge.textContent = 'v0.5.1';
+  versionBadge.textContent = 'v0.6.0';
   versionBadge.addEventListener('click', () => {
     const modal = document.getElementById('releaseNotesModal');
     modal.classList.add('open');
