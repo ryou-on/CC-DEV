@@ -1,7 +1,7 @@
 # HANDOVER: COCO-ITTA（ここいった）
 
 > 生成日時: 2026-06-09  
-> 最終更新: 2026-06-11（v0.6.2 / Claude Code）  
+> 最終更新: 2026-06-11（v0.6.3 / Claude Code）  
 > 引き継ぎ元: Claude.ai チャット（セッションID: be965cb1）  
 > 引き継ぎ先: Claude Code / Cowork
 
@@ -10,7 +10,7 @@
 ## 📋 プロジェクト概要
 
 - **名前**: COCO-ITTA（ここいった）
-- **バージョン**: v0.6.2
+- **バージョン**: v0.6.3
 - **フェーズ**: Phase 3（本番運用中・写真共有E2E検証済み。スマホ実機確認のみ残）
 - **一言説明**: 家族みんなで「行った場所」「行きたい場所」を地図上で共有できるWebアプリ
 
@@ -113,15 +113,21 @@ function sanitizePinsForFirestore(pinsArray) {
 - `isApplyingRemote` フラグで `pushToCloud()` のループを防ぐ
 - `pushToCloud()` は 400ms デバウンス
 
-### モバイル Google Auth ⚠️ 重要
-iOSは `signInWithPopup` がブロックされるため、`navigator.userAgent` で判定して `signInWithRedirect` を使用。
+### Google Auth ⚠️ 重要（v0.6.3 で popup主に変更）
 
-**iOS Safari の ITP 対策（v0.6.1 で完了）✅**
-- `authDomain: "cc-dev-ps7.web.app"`（配信元と same-origin）に設定済み
-- GCP の OAuth クライアントに `https://cc-dev-ps7.web.app/__/auth/handler` を承認済みリダイレクトURIとして登録済み（2026-06-11 完了）
-- 過去の経緯: v0.5.1 で同じ変更を試みた際は GCP 未登録で `redirect_uri_mismatch` になり全環境ログイン不可、hotfix(`3cb6a59`) で revert していた。手順書は `IPHONE_LOGIN_FIX.md` に残してある（再構築時の参照用）
+**現在の実装**: `signInWithPopup` を主、blocked時のみ `signInWithRedirect` にフォールバック。
+- ボタン押下＝ユーザージェスチャ由来のpopupは iOS Safari でも通る
+- iOS Safari の ITP は `signInWithRedirect` の sessionStorage を分割してしまい `Unable to process request due to missing initial state ... storage-partitioned browser environment` エラーが出るため、redirect は使わない
 
-**authDomain を変更する場合の鉄則**: コード変更前に必ず GCP の承認済みURIに新ドメインのhandlerを追加すること。未追加で commit すると本番ログインが死ぬ。
+**v0.6.1〜v0.6.3 の経緯（要約）**:
+- v0.6.1: authDomain を `cc-dev-ps7.web.app`（same-origin）に切替。デスクトップは復旧、iPhoneも一見動くが…
+- v0.6.3: iPhone で `signInWithRedirect` 完了後に「missing initial state」エラー画面（v0.6.1ですり抜けてた）→ popup主にrefactor
+
+**設定状態（変更時に注意）**:
+- `authDomain: "cc-dev-ps7.web.app"`（配信元と同一）
+- GCP の OAuth クライアントの承認済みリダイレクトURIに `https://cc-dev-ps7.web.app/__/auth/handler` を登録済み（2026-06-11 完了）
+
+**authDomain を変更する場合の鉄則**: コード変更前に必ず GCP の承認済みURIに新ドメインのhandlerを追加すること。未追加で commit すると本番ログインが死ぬ（v0.5.1 で実証済み、`3cb6a59` で revert）。手順書は `IPHONE_LOGIN_FIX.md` に残してある。
 
 ---
 
@@ -241,6 +247,7 @@ npx firebase deploy --only firestore:rules
 ## 💬 引き継ぎメモ
 
 ### Claude Code 更新履歴
+- **v0.6.3**（commit `cf7359f`, 2026-06-11）: iOS Safari の `signInWithRedirect` が sessionStorage 分割で `missing initial state` エラーになる問題を修正。`signInWithPopup` を主、popup-blocked時のみ redirect にフォールバック。getRedirectResult の missing-state 系エラーも無害化（残骸の掃除として無視）。デスクトップ既存セッション維持・40ピン受信を確認
 - **v0.6.2**（commit `8e7072d`, 2026-06-11）: スマホヘッダーをコンパクト化。`@media (max-width:600px)` でロゴをinline+ellipsis化、フィルターを `overflow-x:auto` の横スクロールに（flex-wrap:nowrap）。ヘッダー約300px→約72pxに圧縮し地図表示エリア拡大
 - **v0.6.1**（commit `87adfea`, 2026-06-11）: iPhone Safari ITP対策完了。GCP の OAuth クライアントにユーザーが事前にリダイレクトURIを追加した上で authDomain を `cc-dev-ps7.web.app` に切替。デスクトップ既存セッション維持・本番動作（39ピン受信・評価1件含む）を確認。`IPHONE_LOGIN_FIX.md` 手順書も同梱
 - **v0.6.0**（commit `23e5c16`, 2026-06-10）: 評価機能（rating: 1-5、未評価時はフィールド削除）／写真ドラッグ並び替え（HTML5 D&D + タッチ長押し）／写真EXIF座標を常に優先（以前は `!pendingLatLng` ガードで無視されていた）／インラインSVGファビコン。ピン一覧・マーカーポップアップ・スタックタイムラインに★表示
