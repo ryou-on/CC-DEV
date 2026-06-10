@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0b0e16">
+<title>ヨルマチ β — 今夜、近くで何かやってる。</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  :root{
+    --bg:#0b0e16; --panel:#141927; --panel2:#1b2236; --line:#2a3145;
+    --txt:#e8ecf6; --sub:#8b94ab; --accent:#ff3d81; --accent2:#18e0c8;
+    --green:#3ddc84; --amber:#ffb547;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{height:100%;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;
+    background:var(--bg); color:var(--txt); overflow:hidden;
+  }
+  #map{position:fixed; inset:0; z-index:0; background:#0b0e16;}
+  .leaflet-container{font:inherit;}
+
+  /* ===== ヘッダー ===== */
+  header{
+    position:fixed; top:0; left:0; right:0; z-index:1000;
+    padding:calc(env(safe-area-inset-top) + 10px) 14px 10px;
+    display:flex; align-items:center; gap:10px;
+    background:linear-gradient(180deg, rgba(11,14,22,.95) 0%, rgba(11,14,22,.75) 70%, transparent 100%);
+    pointer-events:none;
+  }
+  header > *{pointer-events:auto;}
+  .brand{display:flex; align-items:baseline; gap:7px; cursor:pointer;}
+  .brand h1{font-size:20px; font-weight:800; letter-spacing:.04em;
+    background:linear-gradient(90deg,var(--accent),var(--accent2));
+    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;}
+  .brand .ver{font-size:10px; color:var(--sub); border:1px solid var(--line); border-radius:8px; padding:1px 6px;}
+  .spacer{flex:1;}
+  .clock{font-size:12px; color:var(--sub); font-variant-numeric:tabular-nums; white-space:nowrap;}
+  .langBtn{
+    font-size:11px; font-weight:700; color:var(--txt); background:var(--panel);
+    border:1px solid var(--line); border-radius:14px; padding:5px 10px; cursor:pointer;
+  }
+
+  /* ===== デモ注意バナー ===== */
+  #demoBanner{
+    position:fixed; top:calc(env(safe-area-inset-top) + 48px); left:50%; transform:translateX(-50%);
+    z-index:999; background:rgba(255,181,71,.14); border:1px solid rgba(255,181,71,.5);
+    color:var(--amber); font-size:11px; padding:5px 10px; border-radius:14px;
+    display:flex; align-items:center; gap:8px; white-space:nowrap; backdrop-filter:blur(6px);
+  }
+  #demoBanner button{background:none;border:none;color:var(--amber);font-size:13px;cursor:pointer;line-height:1;}
+
+  /* ===== フィルタチップ ===== */
+  #chips{
+    position:fixed; top:calc(env(safe-area-inset-top) + 84px); left:0; right:0; z-index:998;
+    display:flex; gap:8px; overflow-x:auto; padding:4px 14px 10px; scrollbar-width:none;
+  }
+  #chips::-webkit-scrollbar{display:none;}
+  .chip{
+    flex:0 0 auto; font-size:12px; font-weight:600; color:var(--txt);
+    background:rgba(20,25,39,.9); border:1px solid var(--line); border-radius:16px;
+    padding:7px 13px; cursor:pointer; backdrop-filter:blur(6px); transition:all .15s;
+  }
+  .chip.on{background:var(--accent); border-color:var(--accent); color:#fff; box-shadow:0 0 14px rgba(255,61,129,.45);}
+  .chip.on.teal{background:rgba(24,224,200,.18); border-color:var(--accent2); color:var(--accent2); box-shadow:0 0 14px rgba(24,224,200,.25);}
+
+  /* ===== ピン ===== */
+  .pin{
+    display:flex; align-items:center; justify-content:center;
+    width:36px; height:36px; border-radius:50%;
+    background:var(--panel); border:2px solid #4a5470; font-size:17px;
+    box-shadow:0 2px 8px rgba(0,0,0,.6);
+  }
+  .pin.hasEvent{border-color:var(--accent); box-shadow:0 0 14px rgba(255,61,129,.85); animation:pulse 2s infinite;}
+  .pin.closedNow{opacity:.45; filter:grayscale(.7);}
+  @keyframes pulse{0%,100%{box-shadow:0 0 8px rgba(255,61,129,.5);}50%{box-shadow:0 0 20px rgba(255,61,129,1);}}
+  .userDot{width:18px;height:18px;border-radius:50%;background:#4aa3ff;border:3px solid #fff;box-shadow:0 0 12px rgba(74,163,255,.9);}
+  .ringLabel{font-size:10px;color:var(--accent2);text-shadow:0 0 6px #000;white-space:nowrap;font-weight:700;}
+  .leaflet-tooltip.venueTip{
+    background:var(--panel2); border:1px solid var(--line); color:var(--txt);
+    font-size:11px; border-radius:8px; padding:3px 8px;
+  }
+
+  /* ===== カードカルーセル ===== */
+  #cards{
+    position:fixed; bottom:0; left:0; right:0; z-index:1000;
+    display:flex; gap:10px; overflow-x:auto; scroll-snap-type:x mandatory;
+    padding:10px 14px calc(env(safe-area-inset-bottom) + 12px); scrollbar-width:none;
+  }
+  #cards::-webkit-scrollbar{display:none;}
+  .card{
+    flex:0 0 auto; width:min(78vw,330px); scroll-snap-align:center;
+    background:rgba(20,25,39,.96); border:1px solid var(--line); border-radius:16px;
+    padding:12px 14px; backdrop-filter:blur(8px); cursor:pointer; transition:border-color .2s;
+  }
+  .card.active{border-color:var(--accent);}
+  .cardTop{display:flex; align-items:center; gap:8px; margin-bottom:6px;}
+  .cardEmoji{font-size:20px;}
+  .cardName{font-size:14px; font-weight:700; line-height:1.25; flex:1;}
+  .cardName small{display:block; font-size:10px; color:var(--sub); font-weight:500;}
+  .badge{font-size:10px; font-weight:700; border-radius:9px; padding:2px 7px; white-space:nowrap;}
+  .badge.live{background:var(--accent); color:#fff; animation:blink 1.4s infinite;}
+  .badge.soon{background:rgba(255,61,129,.16); color:var(--accent); border:1px solid var(--accent);}
+  .badge.open{background:rgba(61,220,132,.14); color:var(--green); border:1px solid rgba(61,220,132,.5);}
+  .badge.closed{background:rgba(139,148,171,.14); color:var(--sub); border:1px solid var(--line);}
+  @keyframes blink{50%{opacity:.55;}}
+  .eventLine{font-size:12px; color:var(--txt); margin:4px 0; line-height:1.45;}
+  .eventLine .etitle{color:var(--accent2); font-weight:700;}
+  .metaLine{font-size:11px; color:var(--sub); display:flex; gap:10px; flex-wrap:wrap; margin-top:2px;}
+  .cardBtns{display:flex; gap:8px; margin-top:9px;}
+  .cardBtns button{
+    flex:1; font-size:12px; font-weight:700; padding:8px 4px; border-radius:10px; cursor:pointer;
+    border:1px solid var(--line); background:var(--panel2); color:var(--txt);
+  }
+  .cardBtns button.primary{background:linear-gradient(90deg,var(--accent),#ff6a3d); border:none; color:#fff;}
+
+  /* ===== FAB ===== */
+  .fab{
+    position:fixed; right:14px; z-index:1001; width:44px; height:44px; border-radius:50%;
+    background:var(--panel); border:1px solid var(--line); color:var(--txt);
+    font-size:19px; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.5);
+    display:flex; align-items:center; justify-content:center;
+  }
+  #locBtn{bottom:calc(env(safe-area-inset-bottom) + 190px);}
+  #dbgBtn{left:14px; right:auto; bottom:calc(env(safe-area-inset-bottom) + 190px); font-size:15px; width:38px; height:38px; opacity:.65;}
+
+  /* ===== モーダル ===== */
+  .modalWrap{
+    position:fixed; inset:0; z-index:2000; background:rgba(5,7,12,.7);
+    display:none; align-items:flex-end; justify-content:center; backdrop-filter:blur(4px);
+  }
+  .modalWrap.show{display:flex;}
+  .modal{
+    width:100%; max-width:520px; max-height:78dvh; overflow-y:auto;
+    background:var(--panel); border:1px solid var(--line); border-radius:20px 20px 0 0;
+    padding:18px 18px calc(env(safe-area-inset-bottom) + 18px);
+  }
+  .modal h2{font-size:16px; margin-bottom:10px;}
+  .modal h3{font-size:13px; color:var(--accent2); margin:14px 0 6px;}
+  .modal p, .modal li{font-size:12.5px; color:var(--sub); line-height:1.7;}
+  .modal ul{padding-left:18px;}
+  .modal .closeX{float:right; background:none; border:none; color:var(--sub); font-size:20px; cursor:pointer;}
+  .statBox{
+    background:var(--panel2); border:1px solid var(--line); border-radius:12px;
+    padding:10px 12px; margin:8px 0; font-size:12.5px; line-height:1.7; color:var(--txt);
+  }
+  .statBox b{color:var(--accent2);}
+  .modal .bigBtn{
+    display:block; width:100%; margin-top:10px; padding:12px; border-radius:12px; border:none;
+    font-size:14px; font-weight:700; cursor:pointer; color:#fff;
+    background:linear-gradient(90deg,var(--accent),#ff6a3d);
+  }
+  .modal .subBtn{
+    display:block; width:100%; margin-top:8px; padding:11px; border-radius:12px;
+    border:1px solid var(--line); background:var(--panel2); color:var(--txt);
+    font-size:13px; font-weight:600; cursor:pointer;
+  }
+
+  /* ===== トースト ===== */
+  #toast{
+    position:fixed; bottom:calc(env(safe-area-inset-bottom) + 250px); left:50%; transform:translateX(-50%);
+    z-index:3000; background:var(--panel2); border:1px solid var(--accent2); color:var(--txt);
+    font-size:12px; padding:9px 16px; border-radius:20px; opacity:0; transition:opacity .25s;
+    pointer-events:none; white-space:nowrap; max-width:90vw; overflow:hidden; text-overflow:ellipsis;
+  }
+  #toast.show{opacity:1;}
+  .leaflet-control-attribution{background:rgba(11,14,22,.7)!important; color:#5a6378!important; font-size:9px!important;}
+  .leaflet-control-attribution a{color:#7a86a5!important;}
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<header>
+  <div class="brand" id="brandBtn">
+    <h1>ヨルマチ</h1>
+    <span class="ver" id="verTag">β v0.1.0</span>
+  </div>
+  <div class="spacer"></div>
+  <div class="clock" id="clock"></div>
+  <button class="langBtn" id="langBtn">EN</button>
+</header>
+
+<div id="demoBanner">
+  <span id="demoBannerTxt">⚠️ デモ版：掲載店舗・イベントはすべて架空です</span>
+  <button onclick="document.getElementById('demoBanner').style.display='none'">×</button>
+</div>
+
+<div id="chips"></div>
+
+<button class="fab" id="locBtn" title="現在地">📍</button>
+<button class="fab" id="dbgBtn" title="デバッグログをコピー">🐞</button>
+
+<div id="cards"></div>
+
+<!-- 店舗アクションモーダル -->
+<div class="modalWrap" id="venueModalWrap">
+  <div class="modal" id="venueModal"></div>
+</div>
+
+<!-- 情報モーダル -->
+<div class="modalWrap" id="infoModalWrap">
+  <div class="modal" id="infoModal"></div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* =========================================================
+   ヨルマチ β v0.1.0 — ナイトタイムエコノミー向けエンタメマップ MVP
+   Phase 1: フロントエンドモック（データはすべて架空のデモデータ）
+   ========================================================= */
+const APP_VERSION = '0.1.0';
+
+/* ---------- デバッグログ捕捉（コンソールコピー用） ---------- */
+const logBuf = [];
+['log','warn','error'].forEach(k => {
+  const orig = console[k].bind(console);
+  console[k] = (...args) => {
+    try {
+      logBuf.push(`[${k}] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')}`);
+    } catch(e) {}
+    orig(...args);
+  };
+});
+window.addEventListener('error', e => logBuf.push(`[uncaught] ${e.message} @${e.filename}:${e.lineno}`));
+
+/* ---------- 多言語辞書 ---------- */
+const STR = {
+  ja: {
+    demoBanner: '⚠️ デモ版：掲載店舗・イベントはすべて架空です',
+    chipEvent: '🔥 今夜イベント', chipOpen: '🟢 営業中',
+    walkFromYou: '現在地から徒歩', walkFromSta: '大塚駅から徒歩',
+    minutes: '分', liveNow: '開催中', startsAt: '開演', endedToday: '本日終了',
+    openBadge: '営業中', closedBadge: '時間外', opensAt: '開店',
+    dirBtn: '🚶 行き方', bookBtn: '予約・問合せ',
+    hours: '営業時間', charge: '料金',
+    next: '翌',
+    venueModalNote: 'デモ版のため、実際の予約は行われません。「予約する」を押すと送客1件としてカウントされ、ビジネスモデル（送客手数料）の動作イメージを確認できます。',
+    bookConfirm: '✅ 予約リクエストを送信（デモ）',
+    openGmap: '🗺 Googleマップで経路を見る',
+    closeBtn: '閉じる',
+    bookedToast: '送客を1件記録しました（デモ）',
+    copiedToast: 'コンソールログをコピーしました',
+    locating: '現在地を取得中…',
+    locOk: '現在地を取得しました',
+    locErr: '位置情報が取得できないため大塚駅を中心に表示します',
+    infoTitle: 'ヨルマチ β とは',
+    infoBody: '「今から夜遊びたい」に応える、現在地連動ナイトエンタメマップのMVPです。小規模ライブハウス・バー・小劇場など、まとめサイトに載らない夜の選択肢を地図上で発見できます。',
+    howTitle: '使い方',
+    how1: '地図のピン or 下のカードで今夜の店をチェック',
+    how2: 'チップで「今夜イベント」「営業中」「ジャンル」を絞り込み',
+    how3: '📍ボタンで現在地へ。点線の円は徒歩5/10/15分圏',
+    how4: '「予約・問合せ」で送客デモ（手数料モデルの体験）',
+    bizTitle: 'ビジネスモデル（送客手数料・デモ集計）',
+    relTitle: 'リリースノート',
+    rel010: 'v0.1.0 (2026-06-10) — 初回MVP：ダークマップ／GPS連動／徒歩圏リング／今夜イベント・営業中・ジャンルフィルタ／送客デモカウンタ／日英切替',
+    referrals: '累計送客（デモ）', estRevenue: '想定売上（@¥300）',
+    statNote: 'アプリ経由の予約・来店ごとに店舗から手数料を受け取るモデルの体験用カウンターです。',
+  },
+  en: {
+    demoBanner: '⚠️ Demo: all venues & events are fictional',
+    chipEvent: '🔥 Events tonight', chipOpen: '🟢 Open now',
+    walkFromYou: 'walk from you', walkFromSta: 'walk from Otsuka Sta.',
+    minutes: ' min', liveNow: 'LIVE NOW', startsAt: 'Starts', endedToday: 'Ended today',
+    openBadge: 'OPEN', closedBadge: 'Closed', opensAt: 'Opens',
+    dirBtn: '🚶 Directions', bookBtn: 'Book / Contact',
+    hours: 'Hours', charge: 'Charge',
+    next: '+1d ',
+    venueModalNote: 'This is a demo — no real booking is made. Tapping "Book" counts one referral so you can see how the referral-fee business model works.',
+    bookConfirm: '✅ Send booking request (demo)',
+    openGmap: '🗺 Route on Google Maps',
+    closeBtn: 'Close',
+    bookedToast: 'Referral recorded (demo)',
+    copiedToast: 'Console log copied',
+    locating: 'Locating…',
+    locOk: 'Location found',
+    locErr: 'Location unavailable — centering on Otsuka Sta.',
+    infoTitle: 'About YoruMachi β',
+    infoBody: 'An MVP night-entertainment map for "I want to go out tonight". Discover small live houses, bars and theaters near you — places that never make it onto listing sites.',
+    howTitle: 'How to use',
+    how1: 'Check tonight\'s venues via map pins or bottom cards',
+    how2: 'Filter by "Events tonight", "Open now" or genre chips',
+    how3: '📍 centers on you. Dashed rings = 5/10/15 min walk',
+    how4: '"Book / Contact" simulates the referral-fee model',
+    bizTitle: 'Business model (referral fees, demo)',
+    relTitle: 'Release notes',
+    rel010: 'v0.1.0 (2026-06-10) — First MVP: dark map / GPS / walk-radius rings / tonight-event, open-now & genre filters / referral demo counter / JA-EN toggle',
+    referrals: 'Total referrals (demo)', estRevenue: 'Est. revenue (@¥300)',
+    statNote: 'Demo counter for the model where venues pay a fee per booking/visit via the app.',
+  }
+};
+
+/* ---------- ジャンル定義 ---------- */
+const GENRES = {
+  live:  { emoji:'🎸', ja:'ライブ',       en:'Live' },
+  club:  { emoji:'🎧', ja:'クラブ/DJ',    en:'Club/DJ' },
+  bar:   { emoji:'🍶', ja:'バー・スナック', en:'Bar' },
+  stage: { emoji:'🎤', ja:'お笑い・舞台',  en:'Stage' },
+  food:  { emoji:'🍜', ja:'深夜メシ',     en:'Eats' },
+};
+
+/* ---------- デモ店舗データ（すべて架空 / 大塚・池袋エリア） ----------
+   open/close は時間の小数表現。close >= 24 は翌日（例: 29 = 翌5時） */
+const VENUES = [
+  { id:'v01', genre:'live', lat:35.7325, lng:139.7270, area:{ja:'大塚',en:'Otsuka'},
+    name:{ja:'ライブハウス サウンドピット大塚', en:'Sound Pit Otsuka'},
+    desc:{ja:'キャパ150の小箱。インディーズの登竜門として30年。', en:'150-cap indie venue, a launchpad for new bands for 30 years.'},
+    open:18, close:23.5,
+    event:{ title:{ja:'平日対バンナイト Vol.88', en:'Weekday Band Battle Vol.88'}, startH:19, charge:'¥2,400 +1D' } },
+  { id:'v02', genre:'live', lat:35.7305, lng:139.7295, area:{ja:'大塚',en:'Otsuka'},
+    name:{ja:'ジャズ酒場 ヨルガオ', en:'Jazz Bar Yorugao'},
+    desc:{ja:'生演奏が聴ける昭和レトロなジャズ酒場。一人飲み歓迎。', en:'Retro jazz bar with live sets. Solo drinkers welcome.'},
+    open:19, close:26,
+    event:{ title:{ja:'ピアノトリオ夜会', en:'Piano Trio Night'}, startH:20, charge:'MC ¥1,000' } },
+  { id:'v03', genre:'club', lat:35.7288, lng:139.7125, area:{ja:'池袋',en:'Ikebukuro'},
+    name:{ja:'BASS CAVE IKEBUKURO', en:'BASS CAVE IKEBUKURO'},
+    desc:{ja:'地下の重低音箱。平日でも踊れる池袋の夜の核。', en:'Underground bass den. Dance even on weekdays.'},
+    open:21, close:29,
+    event:{ title:{ja:'TECHNO NIGHT「深波」', en:'TECHNO NIGHT "Shinpa"'}, startH:22, charge:'¥1,500' } },
+  { id:'v04', genre:'club', lat:35.7270, lng:139.7150, area:{ja:'東池袋',en:'Higashi-Ikebukuro'},
+    name:{ja:'クラブ 月光団地', en:'Club Gekko Danchi'},
+    desc:{ja:'団地の一室みたいな小箱クラブ。90sヒップホップ強め。', en:'Tiny apartment-like club. Strong 90s hip-hop nights.'},
+    open:21, close:28,
+    event:{ title:{ja:'90s HIPHOP CLASSICS', en:'90s HIPHOP CLASSICS'}, startH:21, charge:'¥2,000 +1D' } },
+  { id:'v05', genre:'bar', lat:35.7318, lng:139.7301, area:{ja:'大塚',en:'Otsuka'},
+    name:{ja:'スナック紫苑', en:'Snack Shion'},
+    desc:{ja:'ママの十八番は昭和歌謡。初見でも常連扱いの距離感。', en:'Classic snack bar — first-timers treated like regulars.'},
+    open:20, close:26, event:null },
+  { id:'v06', genre:'bar', lat:35.7332, lng:139.7265, area:{ja:'大塚',en:'Otsuka'},
+    name:{ja:'レコード酒場 33回転', en:'Record Bar 33rpm'},
+    desc:{ja:'立ち飲み×アナログレコード。リクエスト1曲100円。', en:'Standing bar with vinyl. Requests ¥100 a song.'},
+    open:17, close:24,
+    event:{ title:{ja:'歌謡曲レコードナイト', en:'Showa Kayō Vinyl Night'}, startH:19, charge:{ja:'無料（投げ銭制）',en:'Free (tips welcome)'} } },
+  { id:'v07', genre:'stage', lat:35.7308, lng:139.7330, area:{ja:'大塚',en:'Otsuka'},
+    name:{ja:'大塚ナイト寄席', en:'Otsuka Night Yose'},
+    desc:{ja:'毎晩やってる若手中心の演芸場。仕事帰りに1時間だけ笑える。', en:'Nightly comedy hall. Laugh for an hour after work.'},
+    open:18.5, close:22,
+    event:{ title:{ja:'若手お笑いバトル20組', en:'Rising Comedians Battle (20 acts)'}, startH:19.5, charge:'¥1,200' } },
+  { id:'v08', genre:'stage', lat:35.7298, lng:139.7200, area:{ja:'東池袋',en:'Higashi-Ikebukuro'},
+    name:{ja:'小劇場 シアター夜光', en:'Theater Yakō'},
+    desc:{ja:'50席の小劇場。即興演劇やひとり芝居の実験場。', en:'50-seat black box for improv and solo plays.'},
+    open:19, close:22.5,
+    event:{ title:{ja:'即興演劇インプロナイト', en:'Improv Night'}, startH:20, charge:'¥1,800' } },
+  { id:'v09', genre:'live', lat:35.7342, lng:139.7355, area:{ja:'巣鴨方面',en:'Sugamo side'},
+    name:{ja:'ライブカフェ 音の葉', en:'Live Cafe Otonoha'},
+    desc:{ja:'アコースティック専門の小さなカフェ。終電前にしっとり。', en:'Acoustic-only cafe. A mellow stop before the last train.'},
+    open:17, close:23,
+    event:{ title:{ja:'弾き語り3組の夜', en:'3 Singer-Songwriters Night'}, startH:18.5, charge:'¥1,500 (1D付)' } },
+  { id:'v10', genre:'food', lat:35.7315, lng:139.7255, area:{ja:'大塚',en:'Otsuka'},
+    name:{ja:'深夜ラーメン 月見軒', en:'Late-night Ramen Tsukimiken'},
+    desc:{ja:'朝5時までやってる醤油ラーメン。ライブ帰りの聖地。', en:'Shoyu ramen till 5am. The after-gig sanctuary.'},
+    open:18, close:29, event:null },
+  { id:'v11', genre:'food', lat:35.7290, lng:139.7140, area:{ja:'池袋',en:'Ikebukuro'},
+    name:{ja:'餃子とハイボール 夜市', en:'Gyoza & Highball Yoichi'},
+    desc:{ja:'深夜3時まで。餃子1皿290円、ハシゴ酒の中継地点。', en:'Open till 3am. ¥290 gyoza — perfect bar-hop pitstop.'},
+    open:17, close:27, event:null },
+  { id:'v12', genre:'live', lat:35.7282, lng:139.7095, area:{ja:'池袋',en:'Ikebukuro'},
+    name:{ja:'ライブバー BLUE GARAGE', en:'Live Bar BLUE GARAGE'},
+    desc:{ja:'ブルース＆ソウルの箱。楽器持参で飛び入りOK。', en:'Blues & soul joint. Bring your axe and jump in.'},
+    open:19, close:25,
+    event:{ title:{ja:'ブルースセッション（飛び入り歓迎）', en:'Open Blues Session'}, startH:20.5, charge:'¥1,000' } },
+  { id:'v13', genre:'bar', lat:35.7300, lng:139.7170, area:{ja:'東池袋',en:'Higashi-Ikebukuro'},
+    name:{ja:'屋上バー SORANIWA', en:'Rooftop Bar SORANIWA'},
+    desc:{ja:'雑居ビル屋上の隠れバー。夜風と街の灯りがつまみ。', en:'Hidden rooftop bar. City lights are the best snack.'},
+    open:18, close:25,
+    event:{ title:{ja:'満月DJナイト', en:'Full Moon DJ Night'}, startH:21, charge:{ja:'無料',en:'Free'} } },
+  { id:'v14', genre:'bar', lat:35.7327, lng:139.7245, area:{ja:'大塚',en:'Otsuka'},
+    name:{ja:'ゲームバー コンティニュー', en:'Game Bar CONTINUE'},
+    desc:{ja:'レトロゲーム遊び放題。初対面同士が対戦で仲良くなる店。', en:'All-you-can-play retro games. Strangers become rivals.'},
+    open:19, close:27, event:null },
+];
+
+/* ---------- 状態 ---------- */
+const OTSUKA_STA = { lat:35.7312, lng:139.7282 };
+let lang = localStorage.getItem('yorumachi_lang') || 'ja';
+let userPos = null;                       // {lat,lng} 取得できたら設定
+let filters = { eventOnly:false, openNow:false, genre:null };
+let markers = {};                         // id -> L.marker
+let ringLayers = [];
+let userMarker = null;
+
+const $ = id => document.getElementById(id);
+const t = key => STR[lang][key];
+const lv = obj => (typeof obj === 'string') ? obj : obj[lang];  // 多言語フィールド解決
+
+/* ---------- 時刻ユーティリティ ---------- */
+// 深夜0〜6時は 24〜30時として扱う（ナイトタイム連続性のため）
+function nowH() {
+  const d = new Date();
+  const h = d.getHours() + d.getMinutes() / 60;
+  return h < 6 ? h + 24 : h;
+}
+function fmtH(h) {
+  const hh = Math.floor(h), mm = Math.round((h - hh) * 60);
+  const m = String(mm).padStart(2, '0');
+  if (hh >= 24) return lang === 'ja' ? `翌${hh-24}:${m}` : `${hh-24}:${m} (+1d)`;
+  return `${hh}:${m}`;
+}
+function isOpen(v) { const h = nowH(); return h >= v.open && h < v.close; }
+function eventStatus(v) {
+  if (!v.event) return null;
+  const h = nowH(), s = v.event.startH, end = Math.min(s + 3, v.close);
+  if (h >= s && h < end) return 'live';
+  if (h < s) return 'soon';
+  return 'ended';
+}
+
+/* ---------- 距離計算 ---------- */
+function distMeters(a, b) {
+  const R = 6371e3, p1 = a.lat*Math.PI/180, p2 = b.lat*Math.PI/180;
+  const dp = (b.lat-a.lat)*Math.PI/180, dl = (b.lng-a.lng)*Math.PI/180;
+  const x = Math.sin(dp/2)**2 + Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
+  return 2 * R * Math.asin(Math.sqrt(x));
+}
+const walkMin = m => Math.max(1, Math.round(m / 80));   // 徒歩80m/分
+const refPoint = () => userPos || OTSUKA_STA;
+
+/* ---------- 地図 ---------- */
+const map = L.map('map', { zoomControl:false }).setView([OTSUKA_STA.lat, OTSUKA_STA.lng], 15);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution:'&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>',
+  maxZoom:19,
+}).addTo(map);
+
+/* 徒歩圏リング（5/10/15分 = 400/800/1200m） */
+function drawRings() {
+  ringLayers.forEach(l => map.removeLayer(l));
+  ringLayers = [];
+  const c = refPoint();
+  [[400,'5'],[800,'10'],[1200,'15']].forEach(([r, min]) => {
+    const circle = L.circle([c.lat, c.lng], {
+      radius:r, color:'#18e0c8', weight:1, opacity:.45, dashArray:'4 6', fill:false, interactive:false,
+    }).addTo(map);
+    const label = L.marker([c.lat + r/111320, c.lng], {
+      icon: L.divIcon({ className:'', html:`<div class="ringLabel">${min}${lang==='ja'?'分':'min'}</div>`, iconSize:[40,14], iconAnchor:[20,7] }),
+      interactive:false,
+    }).addTo(map);
+    ringLayers.push(circle, label);
+  });
+}
+
+/* ---------- フィルタ ---------- */
+function passFilter(v) {
+  if (filters.eventOnly && !(v.event && eventStatus(v) !== 'ended')) return false;
+  if (filters.openNow && !isOpen(v)) return false;
+  if (filters.genre && v.genre !== filters.genre) return false;
+  return true;
+}
+
+/* ---------- 描画 ---------- */
+function renderChips() {
+  const c = $('chips');
+  c.innerHTML = '';
+  const mk = (label, on, cls, fn) => {
+    const b = document.createElement('button');
+    b.className = 'chip' + (on ? ' on ' + cls : '');
+    b.textContent = label;
+    b.onclick = fn;
+    c.appendChild(b);
+  };
+  mk(t('chipEvent'), filters.eventOnly, '', () => { filters.eventOnly = !filters.eventOnly; renderAll(); });
+  mk(t('chipOpen'), filters.openNow, 'teal', () => { filters.openNow = !filters.openNow; renderAll(); });
+  Object.entries(GENRES).forEach(([key, g]) => {
+    mk(`${g.emoji} ${g[lang]}`, filters.genre === key, '', () => {
+      filters.genre = (filters.genre === key) ? null : key;
+      renderAll();
+    });
+  });
+}
+
+function venueBadge(v) {
+  const es = eventStatus(v);
+  if (es === 'live') return `<span class="badge live">● ${t('liveNow')}</span>`;
+  if (es === 'soon') return `<span class="badge soon">${t('startsAt')} ${fmtH(v.event.startH)}</span>`;
+  if (isOpen(v)) return `<span class="badge open">${t('openBadge')}</span>`;
+  const h = nowH();
+  if (h < v.open) return `<span class="badge closed">${fmtH(v.open)} ${t('opensAt')}</span>`;
+  return `<span class="badge closed">${t('closedBadge')}</span>`;
+}
+
+function renderPins() {
+  Object.values(markers).forEach(m => map.removeLayer(m));
+  markers = {};
+  VENUES.filter(passFilter).forEach(v => {
+    const hasEv = v.event && eventStatus(v) !== 'ended';
+    const cls = 'pin' + (hasEv ? ' hasEvent' : '') + (!isOpen(v) ? ' closedNow' : '');
+    const mk = L.marker([v.lat, v.lng], {
+      icon: L.divIcon({ className:'', html:`<div class="${cls}">${GENRES[v.genre].emoji}</div>`, iconSize:[36,36], iconAnchor:[18,18] }),
+    }).addTo(map);
+    mk.bindTooltip(lv(v.name), { className:'venueTip', direction:'top', offset:[0,-16] });
+    mk.on('click', () => focusCard(v.id, false));
+    markers[v.id] = mk;
+  });
+}
+
+function renderCards() {
+  const wrap = $('cards');
+  wrap.innerHTML = '';
+  const ref = refPoint();
+  const list = VENUES.filter(passFilter)
+    .map(v => ({ v, d: distMeters(ref, v) }))
+    .sort((a, b) => a.d - b.d);
+  list.forEach(({ v, d }) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.id = 'card_' + v.id;
+    const ev = v.event ? `
+      <div class="eventLine">${GENRES[v.genre].emoji} <span class="etitle">${lv(v.event.title)}</span><br>
+      ${t('startsAt')} ${fmtH(v.event.startH)} ／ ${t('charge')}: ${lv(v.event.charge)}</div>` :
+      `<div class="eventLine" style="color:var(--sub)">${lv(v.desc)}</div>`;
+    card.innerHTML = `
+      <div class="cardTop">
+        <span class="cardEmoji">${GENRES[v.genre].emoji}</span>
+        <div class="cardName">${lv(v.name)}<small>${lv(v.area)} ・ ${t('hours')} ${fmtH(v.open)}–${fmtH(v.close)}</small></div>
+        ${venueBadge(v)}
+      </div>
+      ${ev}
+      <div class="metaLine">
+        <span>🚶 ${userPos ? t('walkFromYou') : t('walkFromSta')} ${walkMin(d)}${t('minutes')}（${d < 1000 ? Math.round(d) + 'm' : (d/1000).toFixed(1) + 'km'}）</span>
+      </div>
+      <div class="cardBtns">
+        <button onclick="event.stopPropagation();openDirections('${v.id}')">${t('dirBtn')}</button>
+        <button class="primary" onclick="event.stopPropagation();openVenueModal('${v.id}')">${t('bookBtn')}</button>
+      </div>`;
+    card.onclick = () => focusCard(v.id, true);
+    wrap.appendChild(card);
+  });
+}
+
+function focusCard(id, fromCard) {
+  document.querySelectorAll('.card').forEach(c => c.classList.remove('active'));
+  const card = $('card_' + id);
+  if (card) {
+    card.classList.add('active');
+    if (!fromCard) card.scrollIntoView({ behavior:'smooth', inline:'center', block:'nearest' });
+  }
+  const v = VENUES.find(x => x.id === id);
+  if (v) map.flyTo([v.lat, v.lng], Math.max(map.getZoom(), 16), { duration:.5 });
+}
+
+function renderHeader() {
+  $('langBtn').textContent = lang === 'ja' ? 'EN' : '日本語';
+  $('demoBannerTxt').textContent = t('demoBanner');
+  const d = new Date();
+  const days = lang === 'ja' ? ['日','月','火','水','木','金','土'] : ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  $('clock').textContent =
+    `${d.getMonth()+1}/${d.getDate()} (${days[d.getDay()]}) ${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
+function renderAll() {
+  renderHeader();
+  renderChips();
+  renderPins();
+  renderCards();
+  drawRings();
+}
+
+/* ---------- 送客（マネタイズ・デモ） ---------- */
+function getReferrals() {
+  try { return JSON.parse(localStorage.getItem('yorumachi_referrals') || '[]'); }
+  catch(e) { return []; }
+}
+function openDirections(id) {
+  const v = VENUES.find(x => x.id === id);
+  window.open(`https://www.google.com/maps/dir/?api=1&destination=${v.lat},${v.lng}&travelmode=walking`, '_blank');
+}
+function openVenueModal(id) {
+  const v = VENUES.find(x => x.id === id);
+  const m = $('venueModal');
+  m.innerHTML = `
+    <button class="closeX" onclick="closeModals()">×</button>
+    <h2>${GENRES[v.genre].emoji} ${lv(v.name)}</h2>
+    <p>${lv(v.desc)}</p>
+    ${v.event ? `<div class="statBox">🔥 <b>${lv(v.event.title)}</b><br>${t('startsAt')} ${fmtH(v.event.startH)} ／ ${t('charge')}: ${lv(v.event.charge)}</div>` : ''}
+    <p style="margin-top:8px">${t('venueModalNote')}</p>
+    <button class="bigBtn" onclick="recordReferral('${v.id}')">${t('bookConfirm')}</button>
+    <button class="subBtn" onclick="openDirections('${v.id}')">${t('openGmap')}</button>
+    <button class="subBtn" onclick="closeModals()">${t('closeBtn')}</button>`;
+  $('venueModalWrap').classList.add('show');
+}
+function recordReferral(id) {
+  const arr = getReferrals();
+  arr.push({ venueId:id, ts:Date.now() });
+  localStorage.setItem('yorumachi_referrals', JSON.stringify(arr));
+  console.log('referral recorded:', id, 'total:', arr.length);
+  closeModals();
+  toast(t('bookedToast'));
+}
+
+/* ---------- 情報モーダル ---------- */
+function openInfoModal() {
+  const refs = getReferrals();
+  const m = $('infoModal');
+  m.innerHTML = `
+    <button class="closeX" onclick="closeModals()">×</button>
+    <h2>🌙 ${t('infoTitle')} <span style="font-size:11px;color:var(--sub)">v${APP_VERSION}</span></h2>
+    <p>${t('infoBody')}</p>
+    <h3>${t('howTitle')}</h3>
+    <ul><li>${t('how1')}</li><li>${t('how2')}</li><li>${t('how3')}</li><li>${t('how4')}</li></ul>
+    <h3>${t('bizTitle')}</h3>
+    <div class="statBox">
+      ${t('referrals')}: <b>${refs.length}</b>${lang==='ja'?'件':''}<br>
+      ${t('estRevenue')}: <b>¥${(refs.length*300).toLocaleString()}</b>
+    </div>
+    <p>${t('statNote')}</p>
+    <h3>${t('relTitle')}</h3>
+    <ul><li>${t('rel010')}</li></ul>
+    <button class="subBtn" onclick="closeModals()">${t('closeBtn')}</button>`;
+  $('infoModalWrap').classList.add('show');
+}
+function closeModals() {
+  document.querySelectorAll('.modalWrap').forEach(w => w.classList.remove('show'));
+}
+document.querySelectorAll('.modalWrap').forEach(w => {
+  w.addEventListener('click', e => { if (e.target === w) closeModals(); });
+});
+
+/* ---------- トースト ---------- */
+let toastTimer = null;
+function toast(msg) {
+  const el = $('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2400);
+}
+
+/* ---------- 現在地 ---------- */
+function locate(showToast) {
+  if (!navigator.geolocation) { if (showToast) toast(t('locErr')); return; }
+  if (showToast) toast(t('locating'));
+  navigator.geolocation.getCurrentPosition(pos => {
+    userPos = { lat:pos.coords.latitude, lng:pos.coords.longitude };
+    console.log('geolocation ok:', userPos.lat.toFixed(4), userPos.lng.toFixed(4));
+    if (userMarker) map.removeLayer(userMarker);
+    userMarker = L.marker([userPos.lat, userPos.lng], {
+      icon: L.divIcon({ className:'', html:'<div class="userDot"></div>', iconSize:[18,18], iconAnchor:[9,9] }),
+      interactive:false, zIndexOffset:1000,
+    }).addTo(map);
+    map.flyTo([userPos.lat, userPos.lng], 15, { duration:.6 });
+    renderAll();
+    if (showToast) toast(t('locOk'));
+  }, err => {
+    console.warn('geolocation error:', err.code, err.message);
+    if (showToast) toast(t('locErr'));
+  }, { enableHighAccuracy:true, timeout:8000, maximumAge:60000 });
+}
+
+/* ---------- イベント登録 ---------- */
+$('langBtn').onclick = () => {
+  lang = lang === 'ja' ? 'en' : 'ja';
+  localStorage.setItem('yorumachi_lang', lang);
+  renderAll();
+};
+$('brandBtn').onclick = openInfoModal;
+$('locBtn').onclick = () => locate(true);
+$('dbgBtn').onclick = async () => {
+  const text = `=== ヨルマチ v${APP_VERSION} debug log (${new Date().toISOString()}) ===\nUA: ${navigator.userAgent}\n` + logBuf.join('\n');
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch(e) {
+    const ta = document.createElement('textarea');
+    ta.value = text; document.body.appendChild(ta);
+    ta.select(); document.execCommand('copy'); ta.remove();
+  }
+  toast(t('copiedToast'));
+};
+
+/* ---------- 起動 ---------- */
+console.log(`yorumachi v${APP_VERSION} boot, lang=${lang}`);
+renderAll();
+locate(false);                       // 起動時に位置取得を試みる（失敗時は大塚駅中心）
+setInterval(renderHeader, 30000);    // 時計更新
+setInterval(() => { renderPins(); renderCards(); }, 60000); // 営業状態の自動更新
+</script>
+</body>
+</html>
