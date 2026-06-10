@@ -10,6 +10,7 @@
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://ps7.co.jp/" />
   <link rel="canonical" href="https://ps7.co.jp/" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='13' fill='%230a0b0d'/%3E%3Ccircle cx='15' cy='15' r='5' fill='%23ff3b3b'/%3E%3Cg transform='skewX(-6)'%3E%3Cpath d='M26 20 H56 L38 54 H28 L44 28 H26 Z' fill='%23ffffff'/%3E%3C/g%3E%3C/svg%3E" />
   <style>
     :root {
       --bg: #060608;
@@ -78,13 +79,42 @@
       position: relative; margin: 0; flex: 1; border-radius: 18px; overflow: hidden;
       border: 1px solid var(--line); background: #111; box-shadow: 0 30px 80px rgba(0,0,0,.5);
     }
+    .media-stack { position: absolute; inset: 0; z-index: 0; }
     .media-img {
       position: absolute; inset: 0; background-size: cover; background-position: center;
-      animation: kenburns 12s ease-out both;
+      will-change: opacity, transform, clip-path;
     }
-    .media-img.swap { animation: imgIn .6s cubic-bezier(.2,.8,.2,1) both; }
-    @keyframes kenburns { from { transform: scale(1.06); } to { transform: scale(1.12); } }
-    @keyframes imgIn { from { opacity: 0; transform: scale(1.1); filter: blur(8px); } to { opacity: 1; transform: scale(1.06); filter: blur(0); } }
+    .media-img.base { animation: kenburns 14s ease-out both; }
+    @keyframes kenburns { from { transform: scale(1.06); } to { transform: scale(1.13); } }
+
+    /* ===== トランジション（切替演出） ===== */
+    .t-mix-in { animation: tMixIn .65s ease both; }
+    @keyframes tMixIn { from { opacity: 0; transform: scale(1.1); } to { opacity: 1; transform: scale(1.06); } }
+    .t-wipe-in { animation: tWipeIn .6s cubic-bezier(.25,.9,.2,1) both; }
+    @keyframes tWipeIn { from { clip-path: inset(0 100% 0 0); transform: scale(1.06); } to { clip-path: inset(0 0 0 0); transform: scale(1.06); } }
+    .t-push-in { animation: tPushIn .55s cubic-bezier(.22,.9,.25,1) both; }
+    @keyframes tPushIn { from { transform: translateX(101%) scale(1.08); } to { transform: translateX(0) scale(1.08); } }
+    .t-push-out { animation: tPushOut .55s cubic-bezier(.22,.9,.25,1) both; }
+    @keyframes tPushOut { from { transform: translateX(0) scale(1.08); filter: brightness(1); } to { transform: translateX(-26%) scale(1.08); filter: brightness(.55); } }
+    .t-glitch-in { animation: tGlitchIn .55s both; }
+    @keyframes tGlitchIn {
+      0%   { opacity: 0; clip-path: inset(0 0 86% 0);  transform: translateX(-10px) scale(1.06); filter: hue-rotate(45deg) saturate(2.2); }
+      18%  { opacity: 1; clip-path: inset(14% 0 42% 0); transform: translateX(8px) scale(1.06); }
+      36%  { clip-path: inset(56% 0 8% 0);  transform: translateX(-6px) scale(1.06); filter: hue-rotate(-35deg) saturate(1.6); }
+      54%  { clip-path: inset(6% 0 50% 0);  transform: translateX(5px) scale(1.06); }
+      72%  { clip-path: inset(30% 0 22% 0); transform: translateX(-3px) scale(1.06); filter: none; }
+      86%  { clip-path: inset(0 0 0 0);     transform: translateX(2px) scale(1.06); }
+      100% { opacity: 1; clip-path: inset(0 0 0 0); transform: translateX(0) scale(1.06); filter: none; }
+    }
+    .media.jolt { animation: jolt .32s steps(3) both; }
+    @keyframes jolt { 0% { transform: translateX(0); } 34% { transform: translateX(-5px); } 67% { transform: translateX(4px); } 100% { transform: translateX(0); } }
+    .wipe-edge {
+      position: absolute; top: 0; bottom: 0; left: 0; width: 3px; z-index: 5; opacity: 0; pointer-events: none;
+      background: linear-gradient(180deg, transparent, #fff 30%, #fff 70%, transparent);
+      box-shadow: 0 0 16px rgba(255,255,255,.9), 0 0 34px var(--red);
+    }
+    .wipe-edge.run { animation: wipeEdge .6s cubic-bezier(.25,.9,.2,1) both; }
+    @keyframes wipeEdge { 0% { left: 0; opacity: 1; } 88% { opacity: 1; } 100% { left: calc(100% - 3px); opacity: 0; } }
     .media-scrim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,.45) 0%, transparent 26%, transparent 60%, rgba(0,0,0,.62) 100%); }
     .bracket { position: absolute; width: 26px; height: 26px; border: 2px solid rgba(255,255,255,.7); }
     .bracket.tl { top: 12px; left: 12px; border-right: 0; border-bottom: 0; }
@@ -95,16 +125,38 @@
     .rec { display: inline-flex; align-items: center; gap: 6px; color: #fff; font-weight: 800; }
     .rec::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--red); box-shadow: var(--shadow-red); animation: pulse 1.2s ease-in-out infinite; }
     .media-hud-bottom { position: absolute; left: 18px; bottom: 16px; }
+    .media-hud-br { position: absolute; right: 18px; bottom: 16px; }
+    .cap.fx { color: var(--green); border-color: rgba(47,224,106,.4); letter-spacing: .18em; }
+    .cap.fx.ping { animation: fxPing .6s ease; }
+    @keyframes fxPing { 0% { box-shadow: 0 0 0 rgba(47,224,106,0); } 30% { box-shadow: 0 0 18px rgba(47,224,106,.85); color: #fff; } 100% { box-shadow: 0 0 0 rgba(47,224,106,0); } }
     .cap { display: inline-block; padding: 6px 12px; border-radius: 8px; background: rgba(0,0,0,.5); border: 1px solid var(--line); font-size: 12px; letter-spacing: .14em; font-weight: 700; color: #fff; }
 
     /* 右：テキスト */
     .text-col { min-width: 0; display: flex; align-items: center; overflow-y: auto; scrollbar-width: none; }
     .text-col::-webkit-scrollbar { display: none; }
-    .text-inner { width: 100%; animation: textIn .5s cubic-bezier(.2,.8,.2,1) both; }
-    @keyframes textIn { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: none; } }
+    .text-inner { width: 100%; }
+    .tx-mix { animation: txMix .5s ease both; }
+    @keyframes txMix { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+    .tx-wipe { animation: txWipe .55s cubic-bezier(.2,.8,.2,1) both; }
+    @keyframes txWipe { from { opacity: 0; clip-path: inset(0 100% 0 0); } to { opacity: 1; clip-path: inset(0 -2% 0 0); } }
+    .tx-push { animation: txPush .5s cubic-bezier(.2,.8,.2,1) both; }
+    @keyframes txPush { from { opacity: 0; transform: translateX(52px); } to { opacity: 1; transform: none; } }
+    .tx-glitch { animation: txGlitch .45s both; }
+    @keyframes txGlitch {
+      0% { opacity: 0; transform: translate(-7px, 2px); filter: hue-rotate(60deg); }
+      30% { opacity: 1; transform: translate(5px, -2px); }
+      60% { transform: translate(-3px, 1px); filter: none; }
+      100% { opacity: 1; transform: none; filter: none; }
+    }
     .ch-code { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; letter-spacing: .18em; font-weight: 700; margin-bottom: 12px; }
     .ch-code::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--red); box-shadow: var(--shadow-red); }
-    .heading { margin: 0; font-size: clamp(34px, 5vw, 68px); line-height: 1.04; letter-spacing: .02em; color: var(--purple); text-shadow: 0 0 30px rgba(179,98,255,.35); }
+    .heading {
+      margin: 0; font-size: clamp(34px, 5vw, 68px); line-height: 1.04; letter-spacing: .02em;
+      color: var(--purple);
+      background: linear-gradient(178deg, #d4abff 8%, #a85cff 56%, #7c39d8 100%);
+      -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+      filter: drop-shadow(0 0 22px rgba(179,98,255,.4));
+    }
     .lead { margin: 16px 0 0; color: #d8dbe0; font-size: clamp(14px, 1.5vw, 18px); line-height: 1.95; max-width: 640px; }
     .cta-row { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px; align-items: center; }
     .btn-y {
@@ -160,7 +212,23 @@
       border-top: 1px solid rgba(255,255,255,.16);
       box-shadow: 0 -22px 60px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.12);
     }
-    .dock-inner { height: 100%; max-width: 1480px; margin: 0 auto; display: grid; grid-template-columns: 1fr auto; gap: clamp(14px, 2vw, 30px); align-items: center; }
+    .dock-inner { height: 100%; max-width: 1480px; margin: 0 auto; display: grid; grid-template-columns: 1fr auto auto; gap: clamp(14px, 2vw, 30px); align-items: center; }
+
+    /* TRANSITION 選択ブロック */
+    .trans-block { display: grid; gap: 6px; align-content: center; }
+    .trans-label { color: var(--gold); font-size: 10px; font-weight: 800; letter-spacing: .16em; }
+    .trans-grid { display: grid; grid-template-columns: repeat(2, 66px); gap: 6px; }
+    .tbtn {
+      display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-radius: 7px;
+      border: 1px solid var(--line); background: linear-gradient(180deg, #272a2f, #101214);
+      color: var(--muted); font-size: 10px; font-weight: 800; letter-spacing: .08em; cursor: pointer;
+      transition: color .15s, border-color .15s, box-shadow .15s;
+    }
+    .tbtn .led { width: 6px; height: 6px; border-radius: 2px; background: rgba(255,255,255,.14); flex: 0 0 auto; }
+    .tbtn:hover { color: var(--text); border-color: rgba(255,255,255,.32); }
+    .tbtn.on { color: var(--text); border-color: rgba(47,224,106,.5); }
+    .tbtn.on .led { background: var(--green); box-shadow: var(--shadow-green); }
+    .tbtn.cut-wide { grid-column: 1 / -1; justify-content: center; }
 
     .switch-scroller { overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; padding: 2px 2px 4px; }
     .switch-row { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: clamp(7px, 1vw, 13px); min-width: 0; }
@@ -175,6 +243,7 @@
       transition: transform .1s, box-shadow .1s, filter .1s; overflow: hidden; text-overflow: ellipsis;
       display: grid; place-items: center; text-align: center;
     }
+    .swkey:hover { filter: brightness(1.07); }
     .swkey:active { transform: translateY(5px); box-shadow: inset 0 3px 6px rgba(255,255,255,.5), 0 2px 0 rgba(0,0,0,.4), 0 5px 10px rgba(0,0,0,.35); }
     .swkey.on {
       color: #fff; border-color: rgba(255,59,59,.8);
@@ -248,16 +317,24 @@
     /* ===== レスポンシブ ===== */
     /* タブレット */
     @media (max-width: 980px) {
-      :root { --dock-h: 132px; }
+      :root { --dock-h: 138px; }
       .stage { grid-template-columns: 1fr; grid-template-rows: minmax(0, 42%) minmax(0, 58%); }
       .media { min-height: 0; }
+      /* ドック：TRANSITIONを横並び1行に、スイッチを下段に */
+      .dock-inner { grid-template-columns: 1fr auto; grid-template-rows: auto auto; row-gap: 8px; }
+      .trans-block { grid-column: 1; grid-row: 1; display: flex; align-items: center; min-width: 0; }
+      .trans-label { display: none; }
+      .trans-grid { display: flex; gap: 6px; }
+      .tbtn.cut-wide { grid-column: auto; }
+      .switch-scroller { grid-column: 1; grid-row: 2; }
+      .tbar-area { grid-column: 2; grid-row: 1 / span 2; }
     }
     /* スマホ縦 */
     @media (max-width: 680px) {
-      :root { --topbar-h: 56px; --dock-h: 120px; }
+      :root { --topbar-h: 56px; --dock-h: 150px; }
       body { overflow: auto; }
       .app { height: auto; min-height: 100svh; }
-      .stage { grid-template-rows: none; grid-template-columns: 1fr; padding-bottom: 64px; }
+      .stage { grid-template-rows: none; grid-template-columns: 1fr; padding-bottom: 104px; }
       .media { height: 40svh; }
       .text-col { overflow: visible; }
       .heading { font-size: clamp(30px, 9vw, 46px); }
@@ -267,6 +344,11 @@
       .switch-row { grid-template-columns: repeat(8, 64px); }
       .tbar-area { display: none; }            /* スマホは本文の「詳細を見る」トグルで代替 */
       .dock-inner { grid-template-columns: 1fr; }
+      .trans-block { justify-content: center; }
+      .tbtn { padding: 5px 7px; letter-spacing: .04em; }
+      /* デバッグボタンは小型アイコン化（CTAとの重なり回避） */
+      .debug-btn { font-size: 0; width: 38px; height: 38px; padding: 0; border-radius: 50%; opacity: .4; display: grid; place-items: center; }
+      .debug-btn::after { content: '🐞'; font-size: 16px; }
     }
     /* スマホ横 */
     @media (orientation: landscape) and (max-height: 540px) {
@@ -276,6 +358,7 @@
       .lead { font-size: 13px; line-height: 1.6; margin-top: 8px; }
       .detail-wrap { max-height: calc(var(--detail) * 30vh); }
       .swkey { height: 40px; }
+      .trans-block { display: none; }          /* 横画面はTキー/縦画面で切替 */
       .media-hud-top, .bracket { display: none; }
     }
     @media (prefers-reduced-motion: reduce) { * { animation-duration: .01ms !important; } }
@@ -333,11 +416,16 @@
       <!-- 左：イメージ -->
       <section class="media-col">
         <figure class="media">
-          <div class="media-img" id="mediaImg"></div>
+          <div class="media-stack">
+            <div class="media-img" id="imgA"></div>
+            <div class="media-img" id="imgB"></div>
+          </div>
           <div class="media-scrim"></div>
+          <div class="wipe-edge" id="wipeEdge"></div>
           <span class="bracket tl"></span><span class="bracket tr"></span><span class="bracket bl"></span><span class="bracket br"></span>
           <div class="media-hud-top"><span class="rec">REC</span><span class="tc" id="mediaTc">00:00:00</span></div>
           <div class="media-hud-bottom"><span class="cap" id="mediaCap">CH1 / ABOUT</span></div>
+          <div class="media-hud-br"><span class="cap fx" id="fxCap">MIX</span></div>
         </figure>
       </section>
 
@@ -360,6 +448,10 @@
     <nav class="dock" aria-label="スイッチャー">
       <div class="dock-inner">
         <div class="switch-scroller"><div class="switch-row" id="switchRow"></div></div>
+        <div class="trans-block" aria-label="トランジション選択">
+          <div class="trans-label">TRANSITION</div>
+          <div class="trans-grid" id="transGrid"></div>
+        </div>
         <div class="tbar-area">
           <span class="tbar-lab top" id="tbarLabTop">詳細</span>
           <div class="tbar-wrap">
@@ -388,8 +480,15 @@
   <script>
     'use strict';
 
-    var APP_VERSION = 'v0.2.0';
+    var APP_VERSION = 'v0.3.0';
     var RELEASE_NOTES = [
+      { ver: 'v0.3.0', date: '2026-06-10', changes: [
+        'チャンネル切替にトランジション演出を追加（MIX / WIPE / PUSH / GLITCH / CUT）',
+        'スイッチャーに TRANSITION 選択ボタンを追加（選んだ演出は次回も保持）',
+        '写真の事前読み込みで切替をなめらかに',
+        '見出しのグラデーションなど質感を調整',
+        'ブラウザタブにアイコンを追加'
+      ] },
       { ver: 'v0.2.0', date: '2026-06-10', changes: [
         '左イメージ／右テキスト／下部スイッチャー1列のデザインに刷新',
         '公式ロゴ（配信相談室 企画7課）を適用',
@@ -401,9 +500,10 @@
     ];
     var HOW_TO_USE = [
       { heading: '① 下のボタン（1〜8）を押す', text: 'スイッチャーのボタンを押すと、左のイメージと右のテキストがその事業内容に切り替わります。' },
-      { heading: '② Tバーで詳しく見る', text: '右下のTバーを上げる（または「詳細を見る」を押す）と、事例や会社概要などの詳細情報が表示されます。下げると基本情報に戻ります。' },
-      { heading: '③ 相談してみる', text: '黄色い「相談してみる」ボタンから、お問い合わせいただけます。企画が固まっていなくても大丈夫です。' },
-      { heading: 'キーボード', text: '数字 1〜8 = 切替 / ↑↓ または D = 基本⇔詳細 / Esc = 閉じる' }
+      { heading: '② TRANSITION で演出を選ぶ', text: '切り替わり方を MIX（溶け込み）/ WIPE（拭き取り）/ PUSH（押し出し）/ GLITCH（ノイズ）/ CUT（瞬時）から選べます。選択は次回も保持されます。' },
+      { heading: '③ Tバーで詳しく見る', text: '右下のTバーを上げる（または「詳細を見る」を押す）と、事例や会社概要などの詳細情報が表示されます。下げると基本情報に戻ります。' },
+      { heading: '④ 相談してみる', text: '黄色い「相談してみる」ボタンから、お問い合わせいただけます。企画が固まっていなくても大丈夫です。' },
+      { heading: 'キーボード', text: '数字 1〜8 = 切替 / T = トランジション切替 / ↑↓ または D = 基本⇔詳細 / Esc = 閉じる' }
     ];
 
     function cards(list) {
@@ -494,12 +594,98 @@
     var $ = function (id) { return document.getElementById(id); };
     var byId = function (n) { return channels[n - 1]; };
 
+    /* ===== トランジション（スイッチング演出） ===== */
+    var TRANS = [
+      { key: 'mix', label: 'MIX' },
+      { key: 'wipe', label: 'WIPE' },
+      { key: 'push', label: 'PUSH' },
+      { key: 'glitch', label: 'GLITCH' },
+      { key: 'cut', label: 'CUT' }
+    ];
+    var transType = (function () {
+      try { var v = localStorage.getItem('k7_trans'); if (v && TRANS.some(function (t) { return t.key === v; })) return v; } catch (e) {}
+      return 'mix';
+    })();
+    var layerA = $('imgA'), layerB = $('imgB');
+    var frontLayer = layerA;
+
+    function setImage(layer, id) { layer.style.backgroundImage = "url('images/ch" + id + ".jpg')"; }
+
+    function swapMedia(newId, type) {
+      var incoming = (frontLayer === layerA) ? layerB : layerA;
+      var outgoing = frontLayer;
+      if (incoming.__t) { clearTimeout(incoming.__t); incoming.__t = null; }
+      if (incoming.__h) { incoming.removeEventListener('animationend', incoming.__h); incoming.__h = null; }
+      setImage(incoming, newId);
+      incoming.className = 'media-img';
+      void incoming.offsetWidth;
+      incoming.style.zIndex = 2; outgoing.style.zIndex = 1;
+
+      var done = false;
+      function finalize() {
+        if (done) return; done = true;
+        if (incoming.__t) { clearTimeout(incoming.__t); incoming.__t = null; }
+        if (incoming.__h) { incoming.removeEventListener('animationend', incoming.__h); incoming.__h = null; }
+        incoming.className = 'media-img base';
+        outgoing.className = 'media-img';
+        outgoing.style.zIndex = 0;
+        frontLayer = incoming;
+      }
+
+      flashFx();
+      if (type === 'cut') { finalize(); return; }
+      var map = { mix: 't-mix-in', wipe: 't-wipe-in', push: 't-push-in', glitch: 't-glitch-in' };
+      incoming.classList.add(map[type] || 't-mix-in');
+      if (type === 'push') { outgoing.classList.add('t-push-out'); }
+      if (type === 'wipe') { runWipeEdge(); }
+      if (type === 'glitch') { joltMedia(); }
+      var onEnd = function (e) { if (e.target !== incoming) return; finalize(); };
+      incoming.__h = onEnd;
+      incoming.addEventListener('animationend', onEnd);
+      incoming.__t = setTimeout(finalize, 1000);   // 非表示タブ等でanimationendが来ない場合の保険
+    }
+
+    function animateText(type) {
+      var t = $('textInner');
+      t.className = 'text-inner'; void t.offsetWidth;
+      var m = { mix: 'tx-mix', wipe: 'tx-wipe', push: 'tx-push', glitch: 'tx-glitch' };
+      if (m[type]) { t.classList.add(m[type]); }
+    }
+
+    function runWipeEdge() { var e = $('wipeEdge'); e.classList.remove('run'); void e.offsetWidth; e.classList.add('run'); }
+    function joltMedia() { var m = document.querySelector('.media'); m.classList.remove('jolt'); void m.offsetWidth; m.classList.add('jolt'); }
+    function flashFx() { var c = $('fxCap'); c.classList.remove('ping'); void c.offsetWidth; c.classList.add('ping'); }
+
+    function renderTrans() {
+      var box = $('transGrid'); box.innerHTML = '';
+      TRANS.forEach(function (t) {
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'tbtn' + (t.key === transType ? ' on' : '') + (t.key === 'cut' ? ' cut-wide' : '');
+        b.innerHTML = '<span class="led"></span>' + t.label;
+        b.addEventListener('click', function () { setTrans(t.key); });
+        box.appendChild(b);
+      });
+      $('fxCap').textContent = transType.toUpperCase();
+    }
+    function setTrans(key) {
+      transType = key;
+      try { localStorage.setItem('k7_trans', key); } catch (e) {}
+      renderTrans();
+      flashFx();
+      logState('TRANS');
+    }
+    function cycleTrans() {
+      var i = 0;
+      TRANS.forEach(function (t, idx) { if (t.key === transType) i = idx; });
+      setTrans(TRANS[(i + 1) % TRANS.length].key);
+    }
+
     /* ===== 描画 ===== */
     function render(animate) {
       var ch = byId(currentId);
-      var img = $('mediaImg');
-      img.style.backgroundImage = "url('images/ch" + ch.id + ".jpg')";
-      if (animate) { img.classList.remove('swap'); void img.offsetWidth; img.classList.add('swap'); }
+      if (animate) { swapMedia(ch.id, transType); animateText(transType); }
+      else { setImage(frontLayer, ch.id); frontLayer.className = 'media-img base'; }
       $('mediaCap').textContent = 'CH' + ch.id + ' / ' + ch.code;
       $('chCode').textContent = 'CH ' + ch.id + ' / ' + ch.code;
       $('heading').textContent = ch.heading;
@@ -510,7 +696,6 @@
       if (ch.id === 8) { cta.textContent = '相談してみる（メール）'; cta.setAttribute('href', 'mailto:info@ps7.co.jp?subject=企画7課への相談'); cta.onclick = null; }
       else { cta.textContent = '相談してみる'; cta.setAttribute('href', '#'); cta.onclick = function (e) { e.preventDefault(); selectChannel(8); }; }
 
-      if (animate) { var t = $('textInner'); t.style.animation = 'none'; void t.offsetWidth; t.style.animation = ''; }
       renderButtons();
       tcSec = 0;
     }
@@ -577,6 +762,7 @@
       if (gateEl && !gateEl.classList.contains('hidden')) return;
       if ($('info-modal').classList.contains('open')) return;
       if (e.key >= '1' && e.key <= '8') { selectChannel(parseInt(e.key, 10)); }
+      else if (e.key.toLowerCase() === 't') { e.preventDefault(); cycleTrans(); }
       else if (e.key === 'ArrowUp' || e.key.toLowerCase() === 'd') { e.preventDefault(); snapDetail(1); }
       else if (e.key === 'ArrowDown') { e.preventDefault(); snapDetail(0); }
       else if (e.key === 'ArrowRight') { selectChannel(currentId % 8 + 1); }
@@ -602,9 +788,9 @@
     window.closeModal = closeModal; window.closeModalOnOverlay = closeModalOnOverlay;
 
     /* ===== デバッグ ===== */
-    function logState(mode) { console.log('[企画7課]', { mode: mode, ch: currentId, label: byId(currentId).label, detail: detail, ts: new Date().toISOString() }); }
+    function logState(mode) { console.log('[企画7課]', { mode: mode, ch: currentId, label: byId(currentId).label, trans: transType, detail: detail, ts: new Date().toISOString() }); }
     function copyDebug() {
-      var info = { app: '企画7課 配信相談室', version: APP_VERSION, channel: { id: currentId, label: byId(currentId).label }, detail: detail,
+      var info = { app: '企画7課 配信相談室', version: APP_VERSION, channel: { id: currentId, label: byId(currentId).label }, trans: transType, detail: detail,
         viewport: { w: window.innerWidth, h: window.innerHeight, orientation: window.matchMedia('(orientation: landscape)').matches ? 'landscape' : 'portrait' },
         ua: navigator.userAgent, ts: new Date().toISOString() };
       var txt = JSON.stringify(info, null, 2);
@@ -623,8 +809,12 @@
 
     /* ===== 初期化 ===== */
     function init() {
+      layerA.style.zIndex = 1; layerB.style.zIndex = 0;
+      channels.forEach(function (ch) { var im = new Image(); im.src = 'images/ch' + ch.id + '.jpg'; });   // 事前読み込み
       render(false);
+      renderTrans();
       setDetail(0);
+      animateText('mix');   // 初回表示の入場アニメ
 
       $('logo').addEventListener('click', openHowTo);
       $('detailToggle').addEventListener('click', function () { snapDetail(detail < 0.5 ? 1 : 0); });
