@@ -1075,7 +1075,7 @@
   <div class="logo">
     COCO-ITTA
     <span>ここいった — 家族の地図帳</span>
-    <span style="font-size:0.6rem;opacity:0.5;">v0.7.0</span>
+    <span style="font-size:0.6rem;opacity:0.5;">v0.7.1</span>
   </div>
   <div class="filters" id="filters">
     <button class="filter-btn active" data-filter="all">すべて</button>
@@ -1521,19 +1521,31 @@ auth.onAuthStateChanged((user) => {
 });
 
 // ===== Googleログインボタン =====
-// iOS SafariのITPはsignInWithRedirectのストレージを分割するため、
-// 最初にpopup（ボタン押下＝ユーザージェスチャ由来なのでiOSでも通る）を試し、
-// ブロックされた場合のみ redirect にフォールバックする。
+// iOS SafariのITPはsignInWithRedirectのストレージを分割し、popupは
+// blocker が無音失敗させることがある。両方をハンドルする：
+// 1. popup（ボタン押下＝ユーザージェスチャ由来）
+// 2. popup-blocked / 無音close は「ポップアップを許可してください」を案内し redirect にフォールバック
 document.getElementById('btnGoogleLogin').addEventListener('click', async () => {
+  const t0 = performance.now();
   try {
     await auth.signInWithPopup(provider);
   } catch (e) {
     const code = e.code || '';
-    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
-      return; // ユーザーが閉じた／キャンセル
+    const elapsed = performance.now() - t0;
+    log('signInWithPopup失敗:', code, e.message, `${Math.round(elapsed)}ms`);
+
+    // popup-closed-by-user が一瞬で起きた場合は popup blocker による無音失敗の可能性大
+    if (code === 'auth/popup-closed-by-user' && elapsed < 1500) {
+      showToast('⚠️ ポップアップがブロックされた可能性があります\nSafariの設定でポップアップを許可するか、もう一度お試しください', 'error', 7000);
+      // redirectに切替試行
+      try { await auth.signInWithRedirect(provider); } catch (e2) { log('redirectも失敗:', e2.code, e2.message); }
+      return;
     }
-    if (code === 'auth/popup-blocked' || code === 'auth/operation-not-supported-in-this-environment') {
-      log('popup失敗→redirectにフォールバック:', code);
+    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+      return; // ユーザーが明示的に閉じた
+    }
+    if (code === 'auth/popup-blocked' || code === 'auth/operation-not-supported-in-this-environment' || code === 'auth/web-storage-unsupported') {
+      showToast('🔄 ポップアップが使えないため、リダイレクト方式に切替えます', 'info', 4000);
       try {
         await auth.signInWithRedirect(provider);
         return;
@@ -1543,7 +1555,6 @@ document.getElementById('btnGoogleLogin').addEventListener('click', async () => 
         return;
       }
     }
-    log('ログインエラー:', code, e.message);
     showToast(`⚠️ ログインに失敗しました\n${code} ${e.message || ''}`, 'error', 9000);
   }
 });
@@ -3640,7 +3651,11 @@ if ('serviceWorker' in navigator) {
 
 // ===== UI共通コンポーネント（ページロード完了後に初期化）=====
 window.addEventListener('load', () => {
-const releaseNotes = `## v0.7.0 (2026-06-11)
+const releaseNotes = `## v0.7.1 (2026-06-11)
+- 📱 iPhone Safari でログインがループする問題を修正（Service Workerが認証経路を巻き込んでいた）
+- 🛟 ポップアップがブロックされたときに案内メッセージを表示するように
+
+## v0.7.0 (2026-06-11)
 - 🎬 写真ビューアにスライドショーを追加（再生/停止・タップで次へ・トランジション4種・表示時間5段階）
 - 📱 スマホで地図がもっと広く：ピン一覧を下からせり上がるシート式に変更（タップで開閉）
 - 📱 ピン一覧でピンを選ぶとシートが自動で閉じて、地図上のピンが開きます
@@ -3749,7 +3764,7 @@ const helpContent = `## 使い方
 // UI共通コンポーネント初期化
 const versionBadge = document.createElement('div');
   versionBadge.className = 'version-badge';
-  versionBadge.textContent = 'v0.7.0';
+  versionBadge.textContent = 'v0.7.1';
   versionBadge.addEventListener('click', () => {
     const modal = document.getElementById('releaseNotesModal');
     modal.classList.add('open');
