@@ -1,7 +1,7 @@
 # HANDOVER: COCO-ITTA（ここいった）
 
 > 生成日時: 2026-06-09  
-> 最終更新: 2026-06-10（v0.6.0 / Claude Code）  
+> 最終更新: 2026-06-11（v0.6.1 / Claude Code）  
 > 引き継ぎ元: Claude.ai チャット（セッションID: be965cb1）  
 > 引き継ぎ先: Claude Code / Cowork
 
@@ -10,7 +10,7 @@
 ## 📋 プロジェクト概要
 
 - **名前**: COCO-ITTA（ここいった）
-- **バージョン**: v0.6.0
+- **バージョン**: v0.6.1
 - **フェーズ**: Phase 3（本番運用中・写真共有E2E検証済み。スマホ実機確認のみ残）
 - **一言説明**: 家族みんなで「行った場所」「行きたい場所」を地図上で共有できるWebアプリ
 
@@ -116,16 +116,12 @@ function sanitizePinsForFirestore(pinsArray) {
 ### モバイル Google Auth ⚠️ 重要
 iOSは `signInWithPopup` がブロックされるため、`navigator.userAgent` で判定して `signInWithRedirect` を使用。
 
-**iOS Safari の ITP 対策（恒久対応・要GCP操作・未完）**
-現状の `authDomain: "cc-dev-ps7.firebaseapp.com"` のままだと iOS Safari の ITP が
-クロスドメインの認証情報を遮断し、「Googleアカウント選択 → 初期画面に戻る」症状で silent fail する。
+**iOS Safari の ITP 対策（v0.6.1 で完了）✅**
+- `authDomain: "cc-dev-ps7.web.app"`（配信元と same-origin）に設定済み
+- GCP の OAuth クライアントに `https://cc-dev-ps7.web.app/__/auth/handler` を承認済みリダイレクトURIとして登録済み（2026-06-11 完了）
+- 過去の経緯: v0.5.1 で同じ変更を試みた際は GCP 未登録で `redirect_uri_mismatch` になり全環境ログイン不可、hotfix(`3cb6a59`) で revert していた。手順書は `IPHONE_LOGIN_FIX.md` に残してある（再構築時の参照用）
 
-**恒久対応の手順**:
-1. GCP Console → APIとサービス → 認証情報 → OAuth 2.0 クライアントID（Firebase自動生成のもの）
-2. 「承認済みのリダイレクトURI」に `https://cc-dev-ps7.web.app/__/auth/handler` を追加
-3. 追加後にコード側で `authDomain: "cc-dev-ps7.web.app"` に再変更（same-origin化）
-
-GCPに未追加のまま authDomain を web.app にすると `redirect_uri_mismatch` で全環境ログイン不可になる（v0.5.1で実際に発生→`3cb6a59` でrevert済み）。手順1-2を先に必ず完了させてからコード変更すること。
+**authDomain を変更する場合の鉄則**: コード変更前に必ず GCP の承認済みURIに新ドメインのhandlerを追加すること。未追加で commit すると本番ログインが死ぬ。
 
 ---
 
@@ -180,7 +176,7 @@ GCPに未追加のまま authDomain を web.app にすると `redirect_uri_misma
   - テストデータは Storage ファイル含め完全クリーンアップ済み（28ピンに復元）
 
 ### 未着手 / WIP
-- [ ] **スマホ実機での確認**（iOS Safari の redirect ログイン・カメラからの写真追加・PWA「ホーム画面に追加」）
+- [ ] **スマホ実機での最終確認**（iOS Safari ログイン正常動作の確認・カメラからの写真追加・PWA「ホーム画面に追加」）  ← v0.6.1 で対応完了、最終目視確認のみ
 - [ ] **メンバー顔写真/アバター設定**
 - [ ] **Google Sheets 連携**（訪問記録エクスポート）
 - [ ] **リリースノートの自動更新**（現在は手書き）
@@ -245,6 +241,7 @@ npx firebase deploy --only firestore:rules
 ## 💬 引き継ぎメモ
 
 ### Claude Code 更新履歴
+- **v0.6.1**（commit `87adfea`, 2026-06-11）: iPhone Safari ITP対策完了。GCP の OAuth クライアントにユーザーが事前にリダイレクトURIを追加した上で authDomain を `cc-dev-ps7.web.app` に切替。デスクトップ既存セッション維持・本番動作（39ピン受信・評価1件含む）を確認。`IPHONE_LOGIN_FIX.md` 手順書も同梱
 - **v0.6.0**（commit `23e5c16`, 2026-06-10）: 評価機能（rating: 1-5、未評価時はフィールド削除）／写真ドラッグ並び替え（HTML5 D&D + タッチ長押し）／写真EXIF座標を常に優先（以前は `!pendingLatLng` ガードで無視されていた）／インラインSVGファビコン。ピン一覧・マーカーポップアップ・スタックタイムラインに★表示
 - **緊急 hotfix**（commit `3cb6a59`, 2026-06-10）: v0.5.1で authDomain を web.app に変更したがGCPのOAuth承認済みURIに未登録で `redirect_uri_mismatch` により全環境ログイン不可になっていたため、firebaseapp.com に即時revert。本番ログイン復旧。iOS Safari対応の恒久対策はGCP Consoleで `https://cc-dev-ps7.web.app/__/auth/handler` を承認済みリダイレクトURIに追加してから web.app への切替を再実施する必要あり
 - **v0.5.1**（commit `0555b88`, 2026-06-10）: iPhone Safari でログイン後に初期画面へ戻る問題を修正（authDomain を `cc-dev-ps7.web.app` に same-origin 化、ITP対策）。ログイン失敗時のエラーを画面トースト表示。本番反映・デスクトップ既存セッション維持を確認済み
