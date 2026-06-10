@@ -1,7 +1,7 @@
 # HANDOVER: COCO-ITTA（ここいった）
 
 > 生成日時: 2026-06-09  
-> 最終更新: 2026-06-11（v0.6.1 / Claude Code）  
+> 最終更新: 2026-06-11（v0.6.2 / Claude Code）  
 > 引き継ぎ元: Claude.ai チャット（セッションID: be965cb1）  
 > 引き継ぎ先: Claude Code / Cowork
 
@@ -10,7 +10,7 @@
 ## 📋 プロジェクト概要
 
 - **名前**: COCO-ITTA（ここいった）
-- **バージョン**: v0.6.1
+- **バージョン**: v0.6.2
 - **フェーズ**: Phase 3（本番運用中・写真共有E2E検証済み。スマホ実機確認のみ残）
 - **一言説明**: 家族みんなで「行った場所」「行きたい場所」を地図上で共有できるWebアプリ
 
@@ -241,6 +241,7 @@ npx firebase deploy --only firestore:rules
 ## 💬 引き継ぎメモ
 
 ### Claude Code 更新履歴
+- **v0.6.2**（commit `8e7072d`, 2026-06-11）: スマホヘッダーをコンパクト化。`@media (max-width:600px)` でロゴをinline+ellipsis化、フィルターを `overflow-x:auto` の横スクロールに（flex-wrap:nowrap）。ヘッダー約300px→約72pxに圧縮し地図表示エリア拡大
 - **v0.6.1**（commit `87adfea`, 2026-06-11）: iPhone Safari ITP対策完了。GCP の OAuth クライアントにユーザーが事前にリダイレクトURIを追加した上で authDomain を `cc-dev-ps7.web.app` に切替。デスクトップ既存セッション維持・本番動作（39ピン受信・評価1件含む）を確認。`IPHONE_LOGIN_FIX.md` 手順書も同梱
 - **v0.6.0**（commit `23e5c16`, 2026-06-10）: 評価機能（rating: 1-5、未評価時はフィールド削除）／写真ドラッグ並び替え（HTML5 D&D + タッチ長押し）／写真EXIF座標を常に優先（以前は `!pendingLatLng` ガードで無視されていた）／インラインSVGファビコン。ピン一覧・マーカーポップアップ・スタックタイムラインに★表示
 - **緊急 hotfix**（commit `3cb6a59`, 2026-06-10）: v0.5.1で authDomain を web.app に変更したがGCPのOAuth承認済みURIに未登録で `redirect_uri_mismatch` により全環境ログイン不可になっていたため、firebaseapp.com に即時revert。本番ログイン復旧。iOS Safari対応の恒久対策はGCP Consoleで `https://cc-dev-ps7.web.app/__/auth/handler` を承認済みリダイレクトURIに追加してから web.app への切替を再実施する必要あり
