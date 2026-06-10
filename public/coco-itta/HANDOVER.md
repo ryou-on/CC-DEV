@@ -1,7 +1,7 @@
 # HANDOVER: COCO-ITTA（ここいった）
 
 > 生成日時: 2026-06-09  
-> 最終更新: 2026-06-11（v0.6.3 / Claude Code）  
+> 最終更新: 2026-06-11（v0.7.0 / Claude Code）  
 > 引き継ぎ元: Claude.ai チャット（セッションID: be965cb1）  
 > 引き継ぎ先: Claude Code / Cowork
 
@@ -10,7 +10,7 @@
 ## 📋 プロジェクト概要
 
 - **名前**: COCO-ITTA（ここいった）
-- **バージョン**: v0.6.3
+- **バージョン**: v0.7.0
 - **フェーズ**: Phase 3（本番運用中・写真共有E2E検証済み。スマホ実機確認のみ残）
 - **一言説明**: 家族みんなで「行った場所」「行きたい場所」を地図上で共有できるWebアプリ
 
@@ -177,6 +177,9 @@ function sanitizePinsForFirestore(pinsArray) {
 - [x] 🔀 写真の並び替え（D&D / モバイル長押し）（v0.6.0）
 - [x] 📍 写真EXIFのGPS座標を常に優先（pendingLatLng があっても上書き＋トースト）（v0.6.0）
 - [x] 🗺️ ファビコン追加（インラインSVG・方眼紙×ピン）（v0.6.0）
+- [x] 📱 スマホヘッダーコンパクト化（横スクロールフィルター）（v0.6.2）
+- [x] 🎬 写真スライドショー（トランジション・表示時間変更可能）（v0.7.0）
+- [x] 📱 スマホ ピン一覧下部スライドシート（開閉トグル・focusPinで自動クローズ）（v0.7.0）
   - 本番環境・実グループ `V9XQG8` で2ブラウザクライアント（Claude in Chrome 自動操縦）により検証
   - クライアントA: ピン+写真追加 → Storage アップロード ✅ → クライアントB: onSnapshot 同期・写真URL受信・**画像読込成功** ✅ → A: 削除 → B: 削除同期 ✅
   - テストデータは Storage ファイル含め完全クリーンアップ済み（28ピンに復元）
@@ -247,6 +250,7 @@ npx firebase deploy --only firestore:rules
 ## 💬 引き継ぎメモ
 
 ### Claude Code 更新履歴
+- **v0.7.0**（commit `f5c0517`, 2026-06-11）: 写真ビューアにスライドショー機能（▶再生/⏸停止・タップで次へ・トランジション4種=fade/slide/zoom/cut・表示時間5段階・localStorage永続化・キーボード操作）／スマホでサイドパネルを下部スライドシート化（`.side-panel` を position:fixed + transform translateY、固定トグルボタン `.panel-toggle-btn` で開閉、focusPin でシート自動クローズ→ピン表示、開時に map.invalidateSize() で地図再計算）
 - **v0.6.3**（commit `cf7359f`, 2026-06-11）: iOS Safari の `signInWithRedirect` が sessionStorage 分割で `missing initial state` エラーになる問題を修正。`signInWithPopup` を主、popup-blocked時のみ redirect にフォールバック。getRedirectResult の missing-state 系エラーも無害化（残骸の掃除として無視）。デスクトップ既存セッション維持・40ピン受信を確認
 - **v0.6.2**（commit `8e7072d`, 2026-06-11）: スマホヘッダーをコンパクト化。`@media (max-width:600px)` でロゴをinline+ellipsis化、フィルターを `overflow-x:auto` の横スクロールに（flex-wrap:nowrap）。ヘッダー約300px→約72pxに圧縮し地図表示エリア拡大
 - **v0.6.1**（commit `87adfea`, 2026-06-11）: iPhone Safari ITP対策完了。GCP の OAuth クライアントにユーザーが事前にリダイレクトURIを追加した上で authDomain を `cc-dev-ps7.web.app` に切替。デスクトップ既存セッション維持・本番動作（39ピン受信・評価1件含む）を確認。`IPHONE_LOGIN_FIX.md` 手順書も同梱
