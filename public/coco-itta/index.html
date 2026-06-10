@@ -1015,7 +1015,7 @@
   <div class="logo">
     COCO-ITTA
     <span>ここいった — 家族の地図帳</span>
-    <span style="font-size:0.6rem;opacity:0.5;">v0.6.2</span>
+    <span style="font-size:0.6rem;opacity:0.5;">v0.6.3</span>
   </div>
   <div class="filters" id="filters">
     <button class="filter-btn active" data-filter="all">すべて</button>
@@ -1458,32 +1458,46 @@ auth.onAuthStateChanged((user) => {
 });
 
 // ===== Googleログインボタン =====
-// モバイル判定（iOS Safari / Android Chrome などポップアップが塞がれる環境）
-const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-
+// iOS SafariのITPはsignInWithRedirectのストレージを分割するため、
+// 最初にpopup（ボタン押下＝ユーザージェスチャ由来なのでiOSでも通る）を試し、
+// ブロックされた場合のみ redirect にフォールバックする。
 document.getElementById('btnGoogleLogin').addEventListener('click', async () => {
   try {
-    if (isMobile) {
-      // モバイルはリダイレクト方式（ポップアップが塞がれるため）
-      await auth.signInWithRedirect(provider);
-    } else {
-      await auth.signInWithPopup(provider);
-    }
+    await auth.signInWithPopup(provider);
   } catch (e) {
-    log('ログインエラー:', e.code, e.message);
-    if (e.code !== 'auth/popup-closed-by-user') {
-      alert('ログインに失敗しました: ' + e.message);
+    const code = e.code || '';
+    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+      return; // ユーザーが閉じた／キャンセル
     }
+    if (code === 'auth/popup-blocked' || code === 'auth/operation-not-supported-in-this-environment') {
+      log('popup失敗→redirectにフォールバック:', code);
+      try {
+        await auth.signInWithRedirect(provider);
+        return;
+      } catch (e2) {
+        log('redirect も失敗:', e2.code, e2.message);
+        showToast(`⚠️ ログインに失敗しました\n${e2.code || ''} ${e2.message || ''}`, 'error', 9000);
+        return;
+      }
+    }
+    log('ログインエラー:', code, e.message);
+    showToast(`⚠️ ログインに失敗しました\n${code} ${e.message || ''}`, 'error', 9000);
   }
 });
 
-// リダイレクト後の結果を受け取る
+// 過去のリダイレクト結果（redirectフォールバック使用時のみ存在）を受け取る
 auth.getRedirectResult().then(result => {
   if (result?.user) log('リダイレクトログイン成功:', result.user.email);
 }).catch(e => {
-  log('リダイレクト結果エラー:', e.code, e.message);
-  // スマホではコンソールが見えないため画面上にも表示
-  showToast(`⚠️ ログインに失敗しました\n${e.code || ''} ${e.message || ''}`, 'error', 9000);
+  const code = e.code || '';
+  const msg  = e.message || '';
+  log('リダイレクト結果エラー:', code, msg);
+  // ITP のストレージ分割で initial state が消えた場合は無害（次回のログインで普通に成功する）
+  if (msg.includes('missing initial state') || code === 'auth/missing-or-invalid-nonce' || code === 'auth/web-storage-unsupported') {
+    log('ストレージ分割によるinitial state消失 → 無視（次回popupで成功）');
+    return;
+  }
+  showToast(`⚠️ ログインに失敗しました\n${code} ${msg}`, 'error', 9000);
 });
 
 // ===== ログアウトボタン =====
@@ -3452,7 +3466,10 @@ if ('serviceWorker' in navigator) {
 
 // ===== UI共通コンポーネント（ページロード完了後に初期化）=====
 window.addEventListener('load', () => {
-const releaseNotes = `## v0.6.2 (2026-06-11)
+const releaseNotes = `## v0.6.3 (2026-06-11)
+- 📱 iPhone Safari でログイン後にエラー画面が出る問題を修正（ポップアップ方式に変更）
+
+## v0.6.2 (2026-06-11)
 - 📱 スマホのヘッダーをコンパクトに（フィルターを横スクロール化、地図表示エリアを拡大）
 
 ## v0.6.1 (2026-06-11)
@@ -3551,7 +3568,7 @@ const helpContent = `## 使い方
 // UI共通コンポーネント初期化
 const versionBadge = document.createElement('div');
   versionBadge.className = 'version-badge';
-  versionBadge.textContent = 'v0.6.2';
+  versionBadge.textContent = 'v0.6.3';
   versionBadge.addEventListener('click', () => {
     const modal = document.getElementById('releaseNotesModal');
     modal.classList.add('open');
