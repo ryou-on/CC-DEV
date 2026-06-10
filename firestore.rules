@@ -67,6 +67,27 @@ service cloud.firestore {
       allow read, write: if request.auth != null;
     }
 
+    // BOMBING BAY: 匿名ランキング＆プレイログ（認証なし・作成のみ・改ざん不可）
+    // bombing-bay/global/plays/{id}   … 1プレイ=1ドキュメント
+    // bombing-bay/global/players/{pid} … 1端末=1ドキュメント（人数カウント用）
+    match /bombing-bay/global/plays/{id} {
+      allow read: if true;
+      allow create: if
+        request.resource.data.keys().hasOnly(['pid','name','map','score','destroyed','timeSec','result','startedAt','ua','endedAt']) &&
+        request.resource.data.pid is string && request.resource.data.pid.size() <= 32 &&
+        request.resource.data.name is string && request.resource.data.name.size() <= 10 &&
+        request.resource.data.map is string && request.resource.data.map.size() <= 12 &&
+        request.resource.data.score is number && request.resource.data.score >= 0 && request.resource.data.score < 1000000 &&
+        request.resource.data.timeSec is number && request.resource.data.timeSec >= 0 && request.resource.data.timeSec < 36000 &&
+        request.resource.data.result in ['clear', 'over'];
+      allow update, delete: if false;
+    }
+    match /bombing-bay/global/players/{pid} {
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasOnly(['createdAt', 'ua']);
+      allow update, delete: if false;
+    }
+
     // その他は全拒否
     match /{document=**} {
       allow read, write: if false;

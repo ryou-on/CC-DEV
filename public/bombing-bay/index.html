@@ -13,7 +13,8 @@ canvas#game{image-rendering:pixelated;background:#123f86}
 #btnGun{right:112px;bottom:26px;width:72px;height:72px;font-size:26px}
 #btnBomb{right:16px;bottom:60px;width:84px;height:84px;font-size:30px;background:rgba(255,90,40,.18);border-color:rgba(255,140,80,.6)}
 .cornerbtn{position:fixed;top:8px;z-index:30;width:34px;height:34px;border-radius:8px;border:1px solid rgba(255,255,255,.35);background:rgba(0,0,0,.35);color:#fff;font-size:16px;line-height:32px;text-align:center;cursor:pointer}
-#btnHelp{right:8px}#btnMute{right:48px}#btnDbg{right:88px}
+#btnHelp{right:8px}#btnMute{right:48px}#btnDbg{right:88px}#btnRank{right:128px}
+.modal input{background:#091322;border:1px solid #44609a;border-radius:4px;color:#fff;padding:4px 8px;width:130px;font-family:inherit}
 .modal{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;padding:16px}
 .modal .box{max-width:540px;max-height:82vh;overflow:auto;background:#0e1c30;border:1px solid #3a5a8a;border-radius:10px;padding:18px 20px;color:#dce8f8;font-size:13px;line-height:1.9}
 .modal h2{margin:0 0 10px;font-size:16px;color:#ffd24a}
@@ -29,15 +30,20 @@ kbd{background:#223a5e;border-radius:4px;padding:1px 6px;border:1px solid #44609
 <div id="btnHelp" class="cornerbtn">?</div>
 <div id="btnMute" class="cornerbtn">🔊</div>
 <div id="btnDbg" class="cornerbtn">🐞</div>
+<div id="btnRank" class="cornerbtn">🏆</div>
 
 <div id="helpModal" class="modal"><div class="box">
 <h2>BOMBING BAY — 遊び方</h2>
-<b>目的:</b> 湾岸に点在する敵の<b>工場6つ</b>をすべて爆撃せよ！<br>
+<b>目的:</b> 敵の<b>工場6つ</b>をすべて爆撃せよ！<br>
+・タイトル画面で<b>マップを選択</b>できる：クラシック（架空の島々）/ 世界地図 / 日本列島 / 東京湾（実在の海岸線データ使用）<br>
 ・工場は放置すると修復される（爆弾3発で破壊）<br>
 ・爆弾は9発まで。<b>空母の上で低速ホバリング</b>すると着艦して補給＆修理<br>
 ・敵は対空砲・哨戒艇・戦闘機で迎撃してくる<br>
 ・南東のドックでは<b>敵戦艦</b>を建造中。完成して出撃すると空母が狙われる。建造中に叩くのも有効<br>
 ・空母が沈むと補給も復活もできない。守り切れ！<br><br>
+<b>世界ランキング / プレイログ</b><br>
+・終了時にスコアが世界ランキングへ自動送信される（🏆ボタンでTOP10閲覧・名前変更）<br>
+・送信されるのは匿名ID・パイロット名・スコア・マップ・プレイ時間・日時のみ。個人情報は送信しない<br><br>
 <b>操作（キーボード）</b><br>
 <kbd>←</kbd><kbd>→</kbd> 旋回 / <kbd>↑</kbd> 前進 / <kbd>↓</kbd> 減速<br>
 <kbd>Z</kbd> or <kbd>SPACE</kbd> 機銃 / <kbd>X</kbd> 爆弾投下<br>
@@ -54,9 +60,24 @@ kbd{background:#223a5e;border-radius:4px;padding:1px 6px;border:1px solid #44609
 <button id="dbgCopy">コンソールをコピー</button><button id="dbgClose">閉じる</button>
 </div></div>
 
+<div id="rankModal" class="modal"><div class="box">
+<h2>🏆 世界ランキング TOP10</h2>
+<div id="rankList" style="font-size:12px;line-height:1.8">読み込み中…</div>
+<div id="statLine" style="color:#8aa;margin-top:8px;font-size:12px"></div>
+<div style="margin-top:8px;font-size:12px">パイロット名: <input id="nameInput" maxlength="10"> <button id="nameSave" style="margin:0;padding:4px 10px">保存</button></div>
+<button id="rankClose">閉じる</button>
+</div></div>
+
+<div id="nameModal" class="modal"><div class="box">
+<h2>パイロット名を登録</h2>
+スコアを世界ランキングに記録します。パイロット名を入力してください（10文字まで・あとで🏆ボタンから変更できます）。<br><br>
+<input id="nameInput2" maxlength="10" placeholder="NONAME">
+<div><button id="nameOk">登録して送信</button><button id="nameSkip">NONAMEで送信</button></div>
+</div></div>
+
 <script>
 'use strict';
-const VERSION='v0.1.0';
+const VERSION='v0.3.0';
 
 // ===== デバッグログ収集（コンソールコピー用） =====
 const LOGBUF=[];
@@ -87,7 +108,8 @@ function angTo(a,b){let d=b-a;while(d>Math.PI)d-=Math.PI*2;while(d<-Math.PI)d+=M
 function hash(x,y){let h=(x*374761393+y*668265263)|0;h=((h^(h>>13))*1274126177)|0;return((h^(h>>16))>>>0)/4294967296;}
 const rnd=Math.random;
 
-// ===== マップ定義（島=円の集合） =====
+// ===== マップ定義 =====
+// クラシック: 架空の島々（円の集合）
 const ISLANDS=[
   [[380,340,120],[480,300,80],[300,420,70]],                    // A 北西
   [[1420,300,130],[1560,360,110],[1300,260,70],[1620,250,60]],  // B 北東（大・飛行場）
@@ -96,33 +118,164 @@ const ISLANDS=[
   [[1580,1530,120],[1480,1640,80],[1690,1620,70]]               // E 南東（ドック）
 ];
 function landDepth(px,py){let m=-1e9;for(const I of ISLANDS)for(const c of I){const d=c[2]-Math.hypot(px-c[0],py-c[1]);if(d>m)m=d;}return m;}
-const F_POS=[[390,330],[1395,290],[1565,355],[1010,965],[450,1495],[1585,1540]];
-const GUN_POS=[[330,390],[1340,300],[1500,250],[1610,320],[940,1000],[1080,1010],[500,1530],[1520,1580],[1650,1590]];
-const HARBORS=[
-  {x:1250,y:420,patrol:[[1250,420],[1150,520],[1300,560],[1380,470]]},
-  {x:1010,y:1140,patrol:[[1010,1140],[880,1180],[1010,1240],[1160,1160]]},
-  {x:1450,y:1740,patrol:[[1450,1740],[1330,1700],[1380,1800],[1550,1820]]}
-];
-const AIRFIELD={x:1450,y:332};
-const DOCK={x:1560,y:1780};
-const CARRIER_HOME={x:980,y:1800};
 
-// ===== タイル生成 0深海 1浅瀬 2砂 3草 4森 =====
-const tiles=new Uint8Array(MAPW*MAPH);
-(function(){
-  for(let ty=0;ty<MAPH;ty++)for(let tx=0;tx<MAPW;tx++){
-    const d=landDepth(tx*TILE+8,ty*TILE+8);let t;
-    if(d>0){t=d<14?2:(d>30&&hash(tx,ty)<0.45?4:3);}
-    else{t=d>-40?1:0;}
-    tiles[ty*MAPW+tx]=t;
+// 実在地図: Natural Earth海岸線を128x128にラスタライズしたRLE（tools/gen-maps.mjsで生成）
+// runs=海始まり交互ラン長(base36)。geo座標は[経度,緯度]、配置時に最寄りの適地へ自動スナップ
+const MAPS={
+  classic:{
+    name:'クラシック',type:'islands',
+    factories:[[390,330],[1395,290],[1565,355],[1010,965],[450,1495],[1585,1540]],
+    guns:[[330,390],[1340,300],[1500,250],[1610,320],[940,1000],[1080,1010],[500,1530],[1520,1580],[1650,1590]],
+    harbors:[[1250,420],[1010,1140],[1450,1740]],
+    airfield:[1450,332],dock:[1560,1780],carrier:[980,1800]
+  },
+  world:{
+    name:'世界地図',type:'rle',proj:'merc',
+    runs:'j6.4.34.1.b.5.30.6.7.8.2x.1.1.7.5.9.2w.a.1.2.1.7.2y.9.2.e.2.1.2t.8.2.i.2q.1.1.8.1.i.12.2.1n.2.3.4.1.i.d.2.8.1.f.2.1n.9.1.i.a.6.n.2.1n.3.1.4.3.g.b.3.q.3.1j.1.3.6.2.i.b.4.q.3.1i.1.1.1.1.1.1.4.1.j.b.3.t.1.1f.1.9.2.2.j.c.1.1.2.24.2.a.3.3.i.c.1.u.1.1c.1.6.1.1.6.3.h.v.1.c.4.1a.2.1.1.2.1.2.1.b.e.s.2.a.8.8.2.z.4.2.1.1.6.7.e.r.2.9.9.9.2.1.1.v.1.n.d.r.1.a.8.19.3.3.1.1.1.1.2.2.2.8.d.q.1.9.b.1.1.8.1.x.3.3.1.1.1.1.1.1.1.1.1.9.c.r.1.5.1.3.h.11.2.1.3.1.1.1.2.2.5.7.c.q.2.4.m.4.3.b.1.7.1.b.1.1.5.3.1.1.7.6.b.r.1.4.m.1.7.g.6.6.1.4.5.2.1.2.7.5.b.f.4.d.x.d.9.1.6.1.5.1.3.2.1.2.3.6.9.f.7.9.1.1.10.1.4.4.i.2.2.2.6.3.2.5.8.h.8.4.8.1.13.4.t.3.3.4.7.h.a.2.1f.1.s.5.2.1.1.3.6.4.4.9.4.1.3.3.1d.2.1.2.u.1.4.5.5.6.3.9.4.1.3.1.1f.3.1.3.p.1.1.4.3.5.3.i.4.1.1k.5.q.3.1.1.1.9.3.h.4.2.1j.6.q.5.3.8.2.h.4.2.1b.3.3.9.3.1.1.3.g.6.3.r.5.3.17.1.1.2.1.e.1.7.f.5.6.k.1.5.2.3.15.6.2.d.1.9.g.4.5.k.1.4.3.1.16.6.3.n.i.1.7.i.3.3.1.3.15.7.3.o.h.1.8.h.3.2.1d.4.2.q.g.1.8.i.2.1.1e.x.k.3.1.k.1e.y.l.2.2.h.1h.x.l.1.1.l.b.3.3.2.u.z.l.n.4.1.5.4.3.1.u.2.2.w.j.m.4.3.1.2.3.2.1.2.2.2.r.12.i.n.3.6.2.1.9.1.q.13.h.o.3.4.1.3.1.1.7.2.n.3.1.3.1.z.g.q.5.4.1.4.u.2.1.1.3.10.e.p.7.8.v.3.1.15.b.q.9.1.10.18.7.u.l.1.p.1a.4.6.1.n.h.1.5.2.n.1b.3.t.j.1.7.3.h.1e.2.3.1.3.1.l.j.1.7.5.5.2.5.1i.5.3.1.3.1.h.k.1.5.6.4.4.4.1l.3.o.k.1.3.8.2.7.4.1m.1.o.l.c.1.7.4.1n.1.2.1.1.3.h.n.9.2.8.1.1q.7.h.m.a.1.6.1.8.1.1j.a.l.e.h.1.1.1.4.1.1m.a.l.d.j.1.3.3.2.2.1h.d.j.c.l.1.2.2.1.2.3.1.1f.g.h.a.m.2.5.1.4.4.1c.g.h.9.o.2.9.3.1c.f.i.9.s.1.9.1.1c.d.j.9.3.1.s.3.1.1.1e.d.i.a.3.1.q.4.2.2.1f.b.i.9.3.2.p.9.b.1.13.b.j.7.4.1.p.b.5.1.18.9.l.8.2.2.n.e.1d.8.m.7.t.d.1d.8.n.6.t.e.1c.7.o.5.u.d.1d.6.p.4.v.3.4.6.1c.6.1x.5.1c.6.1y.3.9.1.13.4.2c.1.13.3.23.1.8.1.14.3.2b.1.14.3.2b.2.14.4.3g.3.3h.3.2.1.3f.2.3j.2.40n',
+    geo:{
+      factories:[[-74.0,40.7],[-46.6,-23.55],[-0.13,51.5],[31.24,30.05],[121.47,31.23],[151.2,-33.87]], // NY/サンパウロ/ロンドン/カイロ/上海/シドニー
+      harbors:[[-72,16],[16,35.5],[113.5,14]],   // カリブ海/地中海/南シナ海
+      airfield:[116.4,39.9],                      // 北京
+      dock:[124.5,28.5],                          // 東シナ海
+      carrier:[-157,15]                           // ハワイ南方
+    }
+  },
+  japan:{
+    name:'日本列島',type:'rle',bbox:[129,30.5,147,45.8],
+    runs:'0.1p.1v.1o.1w.1n.1x.1m.r.1.4.3.z.1k.y.4.y.1j.w.1.2.5.x.1i.10.6.w.1i.11.6.v.1h.12.7.u.1g.13.8.t.1f.14.9.s.1e.15.a.k.4.2.1d.16.d.i.2.5.1c.16.f.a.1.4.1.7.1b.17.i.6.1.4.1.8.1a.18.k.2.3.3.1.9.1a.17.q.2.1.8.1.1.19.17.r.2.1.a.18.18.r.d.17.19.s.c.15.1b.s.2.1.9.k.1.2.1.g.15.3.4.u.a.j.1.1.3.e.17.y.d.i.6.c.19.v.g.h.9.8.1b.p.m.g.d.2.1c.q.n.c.1t.r.o.d.1s.4.3.4.4.b.p.d.1s.4.4.1.8.8.q.a.1v.4.f.6.q.9.1t.1.3.4.g.4.q.8.1z.5.g.2.q.7.20.6.17.6.21.7.16.5.21.4.1a.5.21.3.1b.5.22.1.4.2.16.5.27.4.14.5.24.2.1.2.1.1.14.5.24.2.4.1.14.5.24.2.4.1.14.5.23.3.1.4.14.2.24.a.14.1.25.b.13.1.25.c.38.d.37.d.37.d.36.f.36.e.37.d.37.d.37.d.36.e.36.e.35.f.35.e.36.d.37.c.37.d.36.e.36.e.35.c.31.1.6.b.31.1.7.b.31.2.4.d.31.1.3.f.35.f.17.1.1w.g.17.1.c.1.18.1.a.h.16.2.1i.3.9.i.16.2.1h.3.9.i.17.3.1g.1.9.k.17.3.1g.2.5.n.17.3.1g.2.3.o.18.3.1g.3.1.p.18.3.1f.t.19.3.1e.u.19.3.1e.u.19.3.r.1.l.u.1a.3.r.1.k.v.1a.3.1b.x.19.4.1a.x.19.4.1a.y.18.3.14.2.5.y.18.3.z.6.5.s.2.3.1a.3.o.1d.2.3.1b.2.o.1e.2.3.1b.2.n.1b.3.1.1.4.1z.19.1.2.5.2.20.w.1.c.2.2.5.1.1z.x.2.b.3.2.24.j.2.d.5.7.3.2.24.h.a.8.3.2.5.1.1t.1.f.h.2.1.4.1.2.a.23.1.b.h.a.1.3.b.21.1.b.a.3.1.7.4.2.2.1.b.23.1.c.9.a.7.4.8.2i.4.2.3.4.2.4.7.4.7.2h.1.8.1.1.1.3.d.4.7.2a.1.4.4.c.e.5.5.2g.5.b.d.6.5.2e.b.5.e.8.3.2d.d.4.9.3.2.2m.f.6.6.6.1.2o.f.5.5.2w.2.2.b.3.5.2r.1.4.1.1.1.2.b.4.3.2x.5.1.a.5.2.2y.1.1.2.1.9.3c.7.38.3.1.8.38.2.2.8.38.1.2.8.3b.9.3b.9.3b.9.37.1.3.9.3b.2.2.4.3c.2.1.5.3b.3.2.2.3e.3.1.2.3i.1.ao.1.3j.1.6p',
+    geo:{
+      factories:[[141.35,43.07],[140.87,38.27],[139.69,35.69],[136.91,35.18],[135.5,34.69],[130.4,33.59]], // 札幌/仙台/東京/名古屋/大阪/福岡
+      harbors:[[130.0,34.3],[138.8,38.3],[142.4,39.3]], // 玄界灘/新潟沖/三陸沖
+      airfield:[139.1,36.4],                             // 関東内陸
+      dock:[132.4,32.5],                                 // 日向灘沖
+      carrier:[137.8,33.9]                               // 遠州灘沖
+    }
+  },
+  tokyo:{
+    name:'東京湾',type:'rle',bbox:[139.2,34.85,140.4,36.05],
+    runs:'0.40f.3.3f.7.3e.9.2t.1.h.b.2r.1.4.1.3.2.7.c.2q.1.3.3.1.6.2.f.2p.2.2.s.2p.x.2n.x.2o.w.2o.w.2o.x.2o.x.2n.w.2p.t.2q.t.2r.r.2t.q.2t.r.2r.s.2q.t.2p.u.2i.3.3.u.2j.y.2p.t.2t.p.2v.n.2w.o.2t.1.3.n.1g.1.1b.s.1g.1.1b.s.1g.1.1c.s.1f.1.1d.k.2.4.1g.1.1d.j.1n.1.1d.i.32.i.31.j.31.i.2a.8.k.e.28.g.6.1.b.h.1z.t.b.1.1.j.1r.z.c.i.1o.12.d.h.1n.14.f.e.1n.15.h.c.1m.15.h.d.1l.16.f.e.1l.17.d.f.1l.19.c.d.1m.19.b.d.1n.17.8.g.1o.18.7.g.1p.19.5.h.1o.1a.5.h.1k.1e.6.g.1j.1f.7.f.1j.1f.7.g.1i.1f.2.3.1.i.1c.2.2.24.18.2c.v.4.8.2d.u.2q.t.2r.s.2t.r.2t.q.2u.p.2v.l.2y.k.30.j.32.g.36.d.37.c.38.c.34.f.33.h.2x.n.2x.n.32.h.35.f.36.d.37.c.38.b.3a.1.jf',
+    geo:{
+      factories:[[139.72,35.50],[140.07,35.50],[139.87,35.31],[139.82,35.64],[139.98,35.68],[139.65,35.27]], // 川崎/市原/君津/江東/船橋/横須賀
+      harbors:[[139.83,35.36],[139.66,35.42],[139.45,35.25]], // 木更津沖/横浜沖/相模湾
+      airfield:[139.79,35.56],                                 // 羽田
+      dock:[139.72,35.05],                                     // 浦賀水道南方
+      carrier:[139.83,35.43]                                   // 東京湾中央
+    }
   }
-})();
+};
+const MAP_KEYS=['classic','world','japan','tokyo'];
+let mapKey='classic';try{const k=localStorage.getItem('bb_map');if(MAPS[k])mapKey=k;}catch(e){}
+let mapSel=Math.max(0,MAP_KEYS.indexOf(mapKey));
+// タイトルのマップ選択カード配置
+const CARD={w:98,h:84,gap:10,y:128};
+function cardX(i){return(VW-(CARD.w*MAP_KEYS.length+CARD.gap*(MAP_KEYS.length-1)))/2+i*(CARD.w+CARD.gap);}
+
+function geoToPx(def,lon,lat){
+  if(def.proj==='merc'){ // Webメルカトル全球
+    const x=(lon+180)/360*WW;
+    const my=Math.log(Math.tan(Math.PI/4+lat*Math.PI/360));
+    return[x,(1-my/Math.PI)/2*WH];
+  }
+  const b=def.bbox; // 正距円筒（矩形範囲）
+  return[(lon-b[0])/(b[2]-b[0])*WW,(b[3]-lat)/(b[3]-b[1])*WH];
+}
+function rleToMask(runs){
+  const m=new Uint8Array(MAPW*MAPH);let i=0,v=0;
+  for(const tok of runs.split('.')){const n=parseInt(tok,36);for(let k=0;k<n&&i<m.length;k++)m[i++]=v;v^=1;}
+  return m;
+}
+
+// ===== ワールド構築（タイル・地形画・拠点配置） =====
+let tiles=null,terra=null,mini=null,mapDef=null;
 function tileAt(px,py){return tiles[mod(Math.floor(py/TILE),MAPH)*MAPW+mod(Math.floor(px/TILE),MAPW)];}
 function isLand(px,py){return tileAt(px,py)>=2;}
-
-// ===== 地形プリレンダ =====
-const terra=document.createElement('canvas');terra.width=WW;terra.height=WH;
-(function(){
+function snapTo(x,y,ok){ // 条件を満たす最寄りタイル中心へスパイラル探索
+  x=mod(x,WW);y=mod(y,WH);
+  if(ok(x,y))return[x,y];
+  for(let r=1;r<=40;r++){
+    const n=r*8;
+    for(let i=0;i<n;i++){
+      const a=i/n*6.283;
+      const px=mod(Math.floor((x+Math.cos(a)*r*TILE)/TILE)*TILE+8,WW);
+      const py=mod(Math.floor((y+Math.sin(a)*r*TILE)/TILE)*TILE+8,WH);
+      if(ok(px,py))return[px,py];
+    }
+  }
+  return[x,y];
+}
+const okLand=(x,y)=>isLand(x,y);
+const okWater=(x,y)=>!isLand(x,y);
+const okCarrier=(x,y)=>{for(const dx of[-72,0,72])for(const dy of[-12,0,12])if(isLand(mod(x+dx,WW),mod(y+dy,WH)))return false;return true;};
+const okDock=(x,y)=>{for(const dx of[-32,0,32])if(isLand(mod(x+dx,WW),mod(y,WH)))return false;return true;};
+function genPatrol(hx,hy){ // 港周辺の水上哨戒ルート自動生成
+  let pts=[];
+  for(const r of[96,56]){
+    pts=[];
+    for(let i=0;i<8;i++){
+      const a=i/8*6.283,px=mod(hx+Math.cos(a)*r,WW),py=mod(hy+Math.sin(a)*r,WH);
+      if(!isLand(px,py))pts.push([px,py]);
+    }
+    if(pts.length>=4)break;
+  }
+  if(pts.length<2)pts=[[hx,hy],[mod(hx+40,WW),hy]];
+  return pts;
+}
+function calcCarrierRange(cx,cy){ // 空母の左右巡航可能距離（陸に当たらない範囲）
+  const blocked=d=>{const x=mod(cx+d,WW);return isLand(x,cy)||isLand(x,mod(cy-12,WH))||isLand(x,mod(cy+12,WH));};
+  for(let d=90;d<=170;d+=16)if(blocked(d)||blocked(-d))return clamp(d-90,0,80);
+  return 80;
+}
+function buildWorld(key){
+  mapKey=key;
+  const def=MAPS[key];
+  tiles=new Uint8Array(MAPW*MAPH); // 0深海 1浅瀬 2砂 3草 4森
+  if(def.type==='islands'){
+    for(let ty=0;ty<MAPH;ty++)for(let tx=0;tx<MAPW;tx++){
+      const d=landDepth(tx*TILE+8,ty*TILE+8);let t;
+      if(d>0){t=d<14?2:(d>30&&hash(tx,ty)<0.45?4:3);}
+      else{t=d>-40?1:0;}
+      tiles[ty*MAPW+tx]=t;
+    }
+  }else{
+    const mask=rleToMask(def.runs);
+    const at=(x,y)=>mask[mod(y,MAPH)*MAPW+mod(x,MAPW)];
+    for(let ty=0;ty<MAPH;ty++)for(let tx=0;tx<MAPW;tx++){
+      if(at(tx,ty)){
+        const coast=!at(tx-1,ty)||!at(tx+1,ty)||!at(tx,ty-1)||!at(tx,ty+1);
+        let inner=true;
+        for(let dy=-1;dy<=1&&inner;dy++)for(let dx=-1;dx<=1&&inner;dx++)if(!at(tx+dx,ty+dy))inner=false;
+        tiles[ty*MAPW+tx]=coast?2:(inner&&hash(tx,ty)<0.4?4:3);
+      }else{
+        let sh=false;
+        for(let dy=-2;dy<=2&&!sh;dy++)for(let dx=-2;dx<=2&&!sh;dx++)if(at(tx+dx,ty+dy))sh=true;
+        tiles[ty*MAPW+tx]=sh?1:0;
+      }
+    }
+  }
+  // 拠点配置（実在地図は緯度経度→px変換後、最寄りの適地へスナップ）
+  const raw=def.type==='islands'
+    ?{factories:def.factories,guns:def.guns,harbors:def.harbors,airfield:def.airfield,dock:def.dock,carrier:def.carrier}
+    :{factories:def.geo.factories.map(p=>geoToPx(def,p[0],p[1])),guns:null,
+      harbors:def.geo.harbors.map(p=>geoToPx(def,p[0],p[1])),
+      airfield:geoToPx(def,def.geo.airfield[0],def.geo.airfield[1]),
+      dock:geoToPx(def,def.geo.dock[0],def.geo.dock[1]),
+      carrier:geoToPx(def,def.geo.carrier[0],def.geo.carrier[1])};
+  const facs=raw.factories.map(p=>snapTo(p[0],p[1],okLand));
+  let gunsP;
+  if(raw.guns)gunsP=raw.guns.map(p=>snapTo(p[0],p[1],okLand));
+  else{ // 実在地図: 各工場の近傍に対空砲2基を自動配置
+    gunsP=[];
+    for(const f of facs)for(const o of[[-56,24],[48,-40]])gunsP.push(snapTo(f[0]+o[0],f[1]+o[1],okLand));
+  }
+  const af=snapTo(raw.airfield[0],raw.airfield[1],okLand);
+  const dk=snapTo(raw.dock[0],raw.dock[1],okDock);
+  const cr=snapTo(raw.carrier[0],raw.carrier[1],okCarrier);
+  const harbors=raw.harbors.map(p=>{const s=snapTo(p[0],p[1],okWater);return{x:s[0],y:s[1],patrol:genPatrol(s[0],s[1])};});
+  mapDef={key,name:def.name,factories:facs,guns:gunsP,harbors,
+    airfield:{x:af[0],y:af[1]},dock:{x:dk[0],y:dk[1]},
+    carrier:{x:cr[0],y:cr[1]},carrierRange:calcCarrierRange(cr[0],cr[1])};
+  // 地形プリレンダ
+  terra=document.createElement('canvas');terra.width=WW;terra.height=WH;
   const g=terra.getContext('2d');
   const cols=['#123f86','#1d5bb4','#dcc878','#3f9a40','#21712c'];
   for(let ty=0;ty<MAPH;ty++)for(let tx=0;tx<MAPW;tx++){
@@ -133,20 +286,31 @@ const terra=document.createElement('canvas');terra.width=WW;terra.height=WH;
     if(t===3&&h<0.3){g.fillStyle='rgba(0,60,0,.25)';g.fillRect(tx*16+((h*89)%12|0),ty*16+((h*41)%12|0),3,3);}
     if(t===4){g.fillStyle='#185a22';g.fillRect(tx*16+2,ty*16+2,5,5);g.fillRect(tx*16+9,ty*16+8,5,5);}
   }
-  // コンクリパッド
+  // コンクリパッド・滑走路・ドック
   const pad=(x,y,w,h)=>{g.fillStyle='#8f969e';g.fillRect(x-w/2,y-h/2,w,h);g.strokeStyle='#6d747c';g.strokeRect(x-w/2+.5,y-h/2+.5,w-1,h-1);};
-  F_POS.forEach(p=>pad(p[0],p[1],46,38));
-  GUN_POS.forEach(p=>pad(p[0],p[1],18,18));
-  // 滑走路
-  g.fillStyle='#555c64';g.fillRect(AIRFIELD.x-12,AIRFIELD.y-42,24,84);
-  g.fillStyle='#c8ccd0';for(let i=0;i<6;i++)g.fillRect(AIRFIELD.x-1,AIRFIELD.y-38+i*14,2,7);
-  // ドック（戦艦建造所）
-  g.fillStyle='#777e86';g.fillRect(DOCK.x-72,DOCK.y-28,144,8);g.fillRect(DOCK.x-72,DOCK.y+20,144,8);
-  g.fillRect(DOCK.x-72,DOCK.y-28,8,56);
-})();
-// ミニマップ用縮小画像
-const mini=document.createElement('canvas');mini.width=106;mini.height=106;
-mini.getContext('2d').drawImage(terra,0,0,106,106);
+  mapDef.factories.forEach(p=>pad(p[0],p[1],46,38));
+  mapDef.guns.forEach(p=>pad(p[0],p[1],18,18));
+  g.fillStyle='#555c64';g.fillRect(mapDef.airfield.x-12,mapDef.airfield.y-42,24,84);
+  g.fillStyle='#c8ccd0';for(let i=0;i<6;i++)g.fillRect(mapDef.airfield.x-1,mapDef.airfield.y-38+i*14,2,7);
+  g.fillStyle='#777e86';g.fillRect(mapDef.dock.x-72,mapDef.dock.y-28,144,8);g.fillRect(mapDef.dock.x-72,mapDef.dock.y+20,144,8);
+  g.fillRect(mapDef.dock.x-72,mapDef.dock.y-28,8,56);
+  // ミニマップ用縮小画像
+  mini=document.createElement('canvas');mini.width=106;mini.height=106;
+  mini.getContext('2d').drawImage(terra,0,0,106,106);
+}
+// タイトル用サムネイル（全マップ分）
+const thumbs={};
+for(const tk of MAP_KEYS){
+  const def=MAPS[tk];
+  const c=document.createElement('canvas');c.width=64;c.height=64;
+  const tg=c.getContext('2d');
+  let m;
+  if(def.type==='islands')m=(x,y)=>landDepth(x*2*TILE+8,y*2*TILE+8)>0;
+  else{const mask=rleToMask(def.runs);m=(x,y)=>mask[y*2*MAPW+x*2];}
+  for(let y=0;y<64;y++)for(let x=0;x<64;x++){tg.fillStyle=m(x,y)?'#3f9a40':'#16498f';tg.fillRect(x,y,1,1);}
+  thumbs[tk]=c;
+}
+buildWorld(mapKey);
 
 // ===== サウンド（WebAudio 全部生成音） =====
 let AC=null,muted=false;
@@ -197,15 +361,28 @@ addEventListener('keydown',e=>{
     if(e.code==='KeyM')toggleMute();
     if(e.code==='KeyP'&&state==='play'&&!modalOpen())paused=!paused;
     if(e.code==='KeyR'&&(state==='over'||state==='clear')&&stateT>0.8)wantStart=true;
+    if(state==='title'){ // マップ選択
+      if(e.code==='ArrowLeft')mapSel=(mapSel+MAP_KEYS.length-1)%MAP_KEYS.length;
+      if(e.code==='ArrowRight')mapSel=(mapSel+1)%MAP_KEYS.length;
+    }
     if((state==='title'||((state==='over'||state==='clear')&&stateT>0.8))&&['Enter','Space','KeyZ','KeyX'].includes(e.code))wantStart=true;
   }
   keys[e.code]=true;
 });
 addEventListener('keyup',e=>{keys[e.code]=false;});
-function modalOpen(){return $('helpModal').style.display==='flex'||$('dbgModal').style.display==='flex';}
+function modalOpen(){return['helpModal','dbgModal','rankModal','nameModal'].some(id=>$(id).style.display==='flex');}
 document.addEventListener('pointerdown',()=>{ac();},{capture:true});
-cv.addEventListener('pointerdown',()=>{
-  if(state!=='play')wantStart=true;
+function evPos(e){const r=cv.getBoundingClientRect();return[(e.clientX-r.left)/r.width*VW,(e.clientY-r.top)/r.height*VH];}
+cv.addEventListener('pointerdown',e=>{
+  if(state==='title'){
+    const p=evPos(e);
+    for(let i=0;i<MAP_KEYS.length;i++){
+      const x=cardX(i);
+      if(p[0]>=x&&p[0]<=x+CARD.w&&p[1]>=CARD.y&&p[1]<=CARD.y+CARD.h){mapSel=i;break;}
+    }
+    wantStart=true;
+  }
+  else if(state!=='play')wantStart=true;
   else if(paused&&!modalOpen())paused=false;
 });
 cv.addEventListener('contextmenu',e=>e.preventDefault());
@@ -245,21 +422,73 @@ $('dbgCopy').onclick=()=>{
     .then(()=>{$('dbgCopy').textContent='コピーしました';setTimeout(()=>$('dbgCopy').textContent='コンソールをコピー',1500);})
     .catch(()=>{const ta=document.createElement('textarea');ta.value=t;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');}catch(e){}ta.remove();});
 };
+// ランキングモーダル
+function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function updateStatLine(){const el=$('statLine');if(el)el.textContent=cloudStats?('累計プレイ '+cloudStats.plays+'回 / パイロット '+cloudStats.players+'人'):'';}
+function renderRankList(){
+  const el=$('rankList');if(!el)return;
+  updateStatLine();
+  if(!window.CLOUD){el.textContent='オフラインのため利用できません';return;}
+  if(!cloudTop){el.textContent='読み込み中…';return;}
+  if(!cloudTop.length){el.textContent='まだ記録がありません。一番乗りを狙え！';return;}
+  el.innerHTML=cloudTop.map((e,i)=>{
+    const d=e.at?new Date(e.at):null;
+    const ds=d?((d.getMonth()+1)+'/'+d.getDate()):'—';
+    const mn=(MAPS[e.map]&&MAPS[e.map].name)||e.map||'—';
+    const own=e.pid===PID;
+    return '<div style="display:flex;gap:10px;'+(own?'color:#ffd24a':'')+'">'
+      +'<span style="width:22px;text-align:right">'+(i+1)+'.</span>'
+      +'<b style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(e.name)+'</b>'
+      +'<span>'+String(e.score).padStart(6,'0')+'</span>'
+      +'<span style="color:#8aa;min-width:60px">'+esc(mn)+'</span>'
+      +'<span style="color:#8aa;min-width:34px">'+ds+'</span></div>';
+  }).join('');
+}
+$('btnRank').onclick=()=>{
+  $('nameInput').value=PNAME;
+  renderRankList();
+  $('rankModal').style.display='flex';
+  if(state==='play')paused=true;
+  refreshCloud(); // 開くたびに最新化
+};
+$('rankClose').onclick=()=>{$('rankModal').style.display='none';};
+$('nameSave').onclick=()=>{
+  PNAME=$('nameInput').value.trim().slice(0,10);
+  try{localStorage.setItem('bb_name',PNAME);}catch(e){}
+  $('nameSave').textContent='保存しました';setTimeout(()=>$('nameSave').textContent='保存',1200);
+};
+$('nameOk').onclick=()=>{
+  PNAME=$('nameInput2').value.trim().slice(0,10);
+  try{localStorage.setItem('bb_name',PNAME);}catch(e){}
+  $('nameModal').style.display='none';
+  if(pendingDoc){submitPlay(pendingDoc);pendingDoc=null;}
+};
+$('nameSkip').onclick=()=>{$('nameModal').style.display='none';if(pendingDoc){submitPlay(pendingDoc);pendingDoc=null;}};
 
 // ===== ゲーム状態 =====
 let state='title',stateT=0,animT=0,gtime=0,score=0,lives=3,destroyed=0;
 let best=0;try{best=+(localStorage.getItem('bb_best')||0);}catch(e){}
+// ===== クラウド連携の状態（ランキング・プレイログ） =====
+const IS_TOUCH='ontouchstart'in window;
+let PID='';try{PID=localStorage.getItem('bb_pid')||'';}catch(e){}
+if(!PID){ // 匿名プレイヤーID（端末ごとに1回生成）
+  try{PID=Array.from(crypto.getRandomValues(new Uint8Array(8))).map(b=>b.toString(16).padStart(2,'0')).join('');localStorage.setItem('bb_pid',PID);}
+  catch(e){PID='anon'+((Math.random()*1e9)|0);}
+}
+let PNAME='';try{PNAME=(localStorage.getItem('bb_name')||'').slice(0,10);}catch(e){}
+let cloudStats=null,cloudTop=null,cloudRank=0,cloudMsg=null,nameAsked=false,pendingDoc=null,playStartedAt=0;
 let player,factories,guns,boats,jets,bullets,ebullets,bombsArr,booms,sparks,smokes,pops,warns,carrier,bship;
 let shake=0,boatT=5,jetT=18,deathT=0,clearT=0,bonusInfo=null,jetWarned=false,newBest=false;
 
 function reset(){
   gtime=0;score=0;lives=3;destroyed=0;shake=0;boatT=5;jetT=18;deathT=0;clearT=0;bonusInfo=null;jetWarned=false;newBest=false;paused=false;
-  factories=F_POS.map(p=>({x:p[0],y:p[1],hp:180,max:180,dead:false,rcd:0,st:rnd()*1.5,hitT:0}));
-  guns=GUN_POS.map(p=>({x:p[0],y:p[1],hp:30,dead:false,aim:rnd()*6.28,cd:1+rnd()*2,hitT:0}));
+  factories=mapDef.factories.map(p=>({x:p[0],y:p[1],hp:180,max:180,dead:false,rcd:0,st:rnd()*1.5,hitT:0}));
+  guns=mapDef.guns.map(p=>({x:p[0],y:p[1],hp:30,dead:false,aim:rnd()*6.28,cd:1+rnd()*2,hitT:0}));
   boats=[];jets=[];bullets=[];ebullets=[];bombsArr=[];booms=[];sparks=[];smokes=[];pops=[];warns=[];
-  carrier={x:CARRIER_HOME.x,y:CARRIER_HOME.y,hp:250,max:250,dead:false,cd:0,dir:1,hitT:0,hitWarnT:0};
-  bship={x:DOCK.x,y:DOCK.y,a:Math.PI,hp:350,max:350,dead:false,launched:false,cd:0,cd2:0,hitT:0};
+  carrier={x:mapDef.carrier.x,y:mapDef.carrier.y,homeX:mapDef.carrier.x,range:mapDef.carrierRange,hp:250,max:250,dead:false,cd:0,dir:1,hitT:0,hitWarnT:0};
+  bship={x:mapDef.dock.x,y:mapDef.dock.y,a:Math.PI,hp:350,max:350,dead:false,launched:false,cd:0,cd2:0,hitT:0};
   player={x:carrier.x,y:carrier.y,a:-Math.PI/2,vx:0,vy:0,hp:100,bombs:9,landed:true,landT:0,landLock:0.5,inv:0,gunCd:0,bombCd:0,supplyT:0,dead:false,flash:0};
+  playStartedAt=Date.now();cloudRank=0;cloudMsg=null;
   rotorOff();
 }
 reset();
@@ -276,6 +505,37 @@ function pop(x,y,txt,col){pops.push({x,y,txt,col:col||'#fff',t:0});}
 function warn(txt,snd){warns.push({txt,t:0});if(warns.length>3)warns.shift();if(snd!==false)sfx.warn();}
 function addScore(n,x,y){score+=n;if(x!==undefined)pop(x,y,'+'+n,'#ffd24a');}
 function saveBest(){if(score>best){best=score;newBest=true;try{localStorage.setItem('bb_best',String(best));}catch(e){}}}
+// ===== クラウド連携（ランキング送信・プレイログ） =====
+function gameEnd(result){ // クリア/ゲームオーバー時に1回だけ呼ばれる
+  if(!window.CLOUD)return;
+  // 送信内容は終了時点の値でキャプチャ（名前入力中にリトライしても正しいスコアを送る）
+  const d={pid:PID,name:PNAME||'NONAME',map:mapKey,score:score,destroyed:destroyed,
+           timeSec:Math.round(gtime),result:result,startedAt:playStartedAt,ua:IS_TOUCH?'touch':'desktop'};
+  if(!PNAME&&!nameAsked){ // 初回のみ名前入力を促してから送信
+    nameAsked=true;pendingDoc=d;
+    $('nameInput2').value='';
+    $('nameModal').style.display='flex';
+    return;
+  }
+  submitPlay(d);
+}
+function submitPlay(d){
+  d.name=PNAME||'NONAME'; // モーダルで設定した名前を反映
+  cloudMsg='ランキング送信中…';cloudRank=0;
+  window.CLOUD.logPlay(d)
+    .then(()=>window.CLOUD.rankOf(d.score))
+    .then(r=>{cloudRank=r;cloudMsg=null;refreshCloud();})
+    .catch(e=>{cloudMsg='送信失敗（オフライン？）';console.warn('logPlay失敗: '+(e&&e.message));});
+}
+function refreshCloud(){
+  if(!window.CLOUD)return;
+  window.CLOUD.stats().then(s=>{cloudStats=s;updateStatLine();}).catch(()=>{});
+  window.CLOUD.top(10).then(t=>{cloudTop=t;renderRankList();}).catch(()=>{});
+}
+addEventListener('cloud-ready',()=>{
+  window.CLOUD.ensurePlayer(PID,IS_TOUCH?'touch':'desktop').catch(()=>{});
+  refreshCloud();
+});
 function playerDmg(n){
   if(player.dead||player.inv>0||player.landed)return;
   player.hp-=n;player.flash=0.18;sfx.hit();
@@ -328,6 +588,7 @@ function explodeBomb(x,y){
 
 // ===== 更新 =====
 function update(dt){
+  if(state!=='play')return; // 終了画面遷移後の二重実行ガード
   gtime+=dt;
   shake=Math.max(0,shake-9*dt);
   player.inv-=dt;player.flash-=dt;player.landLock-=dt;
@@ -338,7 +599,7 @@ function update(dt){
     deathT+=dt;
     if(deathT>1.6){
       if(lives>0&&!carrier.dead)respawn();
-      else{state='over';stateT=0;saveBest();rotorOff();return;}
+      else{state='over';stateT=0;saveBest();rotorOff();gameEnd('over');return;}
     }
   }else if(player.landed){
     player.x=carrier.x;player.y=carrier.y;player.vx=player.vy=0;
@@ -467,8 +728,8 @@ function update(dt){
   const bcap=destroyed>=4?6:5;
   if(boatT<=0&&boats.length<bcap){
     boatT=8+rnd()*6;
-    const h=HARBORS[(rnd()*HARBORS.length)|0];
-    const assault=h.y>1000&&rnd()<0.22+gtime/700;
+    const h=mapDef.harbors[(rnd()*mapDef.harbors.length)|0];
+    const assault=rnd()<0.22+gtime/700&&dist2(h.x,h.y,carrier.x,carrier.y)<1100*1100; // 空母に近い港なら襲撃型
     boats.push({x:h.x,y:h.y,a:rnd()*6.28,hp:20,dead:false,assault,wp:0,patrol:h.patrol,cd:1.5+rnd()*1.5,hitT:0});
   }
   for(const b of boats){
@@ -517,7 +778,7 @@ function update(dt){
     const jcap=destroyed>=4?3:2;
     if(jetT<=0&&jets.length<jcap){
       jetT=15+rnd()*10;
-      jets.push({x:AIRFIELD.x,y:AIRFIELD.y,a:Math.atan2(wdy(player.y,AIRFIELD.y),wdx(player.x,AIRFIELD.x)),hp:12,t:0,cd:2,burst:0,bcd:0,dead:false,hitT:0});
+      jets.push({x:mapDef.airfield.x,y:mapDef.airfield.y,a:Math.atan2(wdy(player.y,mapDef.airfield.y),wdx(player.x,mapDef.airfield.x)),hp:12,t:0,cd:2,burst:0,bcd:0,dead:false,hitT:0});
       if(!jetWarned){jetWarned=true;warn('敵戦闘機 接近！');}
     }
   }
@@ -548,7 +809,11 @@ function update(dt){
       const tgt=carrier.dead?player:carrier;
       if(dist2(bship.x,bship.y,tgt.x,tgt.y)>330*330){
         const want=Math.atan2(wdy(tgt.y,bship.y),wdx(tgt.x,bship.x));
-        bship.a+=clamp(angTo(bship.a,want),-0.5*dt,0.5*dt);
+        if(isLand(mod(bship.x+Math.cos(bship.a)*48,WW),mod(bship.y+Math.sin(bship.a)*48,WH))){
+          // 進路に陸 → 空いている側へ回頭（実在地図の海峡・湾を抜けるため）
+          const l=isLand(mod(bship.x+Math.cos(bship.a-0.7)*48,WW),mod(bship.y+Math.sin(bship.a-0.7)*48,WH));
+          bship.a+=(l?1:-1)*0.9*dt;
+        }else bship.a+=clamp(angTo(bship.a,want),-0.5*dt,0.5*dt);
         bship.x=mod(bship.x+Math.cos(bship.a)*26*dt,WW);bship.y=mod(bship.y+Math.sin(bship.a)*26*dt,WH);
       }
       bship.cd-=dt;
@@ -570,8 +835,8 @@ function update(dt){
 
   // --- 空母 ---
   if(!carrier.dead){
-    carrier.x+=carrier.dir*8*dt;
-    if(Math.abs(carrier.x-CARRIER_HOME.x)>80)carrier.dir*=-1;
+    carrier.x=mod(carrier.x+carrier.dir*8*dt,WW);
+    if(Math.abs(wdx(carrier.x,carrier.homeX))>carrier.range)carrier.dir*=-1;
     if(carrier.hp<carrier.max*0.4&&rnd()<0.15)smokes.push({x:carrier.x+rnd()*60-30,y:carrier.y-8,t:0,max:1.4,vx:6,vy:-12,col:'60,60,70'});
     carrier.cd-=dt;
     if(carrier.cd<=0){
@@ -606,7 +871,7 @@ function update(dt){
       state='clear';stateT=0;
       const lifeB=lives*1000,carB=carrier.dead?0:Math.round(carrier.hp)*4;
       bonusInfo={lifeB,carB};score+=lifeB+carB;
-      saveBest();rotorOff();
+      saveBest();rotorOff();gameEnd('clear');
     }
   }
 }
@@ -792,22 +1057,33 @@ function drawHUD(){
 }
 
 function drawTitle(){
-  ctx.fillStyle='rgba(4,10,24,0.6)';ctx.fillRect(0,0,VW,VH);
+  ctx.fillStyle='rgba(4,10,24,0.66)';ctx.fillRect(0,0,VW,VH);
   ctx.textAlign='center';
-  ctx.font='bold 42px '+FNT;
-  ctx.fillStyle='#7a3a00';ctx.fillText('BOMBING BAY',VW/2+3,89);
-  ctx.fillStyle='#ffd24a';ctx.fillText('BOMBING BAY',VW/2,86);
+  ctx.font='bold 40px '+FNT;
+  ctx.fillStyle='#7a3a00';ctx.fillText('BOMBING BAY',VW/2+3,73);
+  ctx.fillStyle='#ffd24a';ctx.fillText('BOMBING BAY',VW/2,70);
   ctx.font='12px '+FNT;ctx.fillStyle='#bcd5ee';
-  ctx.fillText('〜 ヘリ空爆アクション・鋼鉄の湾岸を叩け 〜',VW/2,112);
+  ctx.fillText('〜 ヘリ空爆アクション・鋼鉄の湾岸を叩け 〜',VW/2,94);
+  // マップ選択カード
   ctx.font='11px '+FNT;ctx.fillStyle='#9fb8d8';
-  ctx.fillText('←→ 旋回 / ↑ 前進 / ↓ 減速',VW/2,160);
-  ctx.fillText('Z・SPACE: 機銃   X: 爆弾',VW/2,178);
-  ctx.fillText('スマホ: 左ドラッグ=操縦 / 右下ボタン=攻撃',VW/2,196);
-  ctx.fillText('敵工場を6つ爆撃せよ。空母でホバリング=補給',VW/2,214);
-  if(stateT%1<0.6){ctx.font='bold 14px '+FNT;ctx.fillStyle='#fff';ctx.fillText('クリック / タップ で出撃',VW/2,256);}
+  ctx.fillText('MAP SELECT（←→キー / タップで選択）',VW/2,120);
+  for(let i=0;i<MAP_KEYS.length;i++){
+    const k=MAP_KEYS[i],x=cardX(i),sel=i===mapSel;
+    ctx.fillStyle=sel?'rgba(46,80,134,0.92)':'rgba(10,22,42,0.85)';
+    ctx.fillRect(x,CARD.y,CARD.w,CARD.h);
+    ctx.strokeStyle=sel?((stateT*3|0)%2?'#ffd24a':'#fff'):'#3a5a8a';
+    ctx.strokeRect(x+0.5,CARD.y+0.5,CARD.w-1,CARD.h-1);
+    ctx.drawImage(thumbs[k],x+(CARD.w-64)/2,CARD.y+4);
+    txtC(MAPS[k].name,x+CARD.w/2,CARD.y+80,sel?'#ffd24a':'#9fb8d8','bold 10px '+FNT);
+  }
+  ctx.textAlign='center';
+  ctx.font='10px '+FNT;ctx.fillStyle='#9fb8d8';
+  ctx.fillText('←→↑↓:操縦  Z/SPACE:機銃  X:爆弾  空母でホバリング=補給',VW/2,238);
+  if(stateT%1<0.6){ctx.font='bold 14px '+FNT;ctx.fillStyle='#fff';ctx.fillText('クリック / タップ で出撃',VW/2,264);}
   ctx.font='10px '+FNT;ctx.fillStyle='#8aa';
-  ctx.fillText('BEST '+String(best).padStart(6,'0'),VW/2,284);
-  ctx.textAlign='right';ctx.fillText(VERSION,VW-8,VH-8);
+  ctx.fillText('BEST '+String(best).padStart(6,'0'),VW/2,290);
+  if(cloudStats){ctx.fillStyle='#7e96b5';ctx.fillText('累計プレイ '+cloudStats.plays+'回 / パイロット '+cloudStats.players+'人',VW/2,304);}
+  ctx.textAlign='right';ctx.fillStyle='#8aa';ctx.fillText(VERSION,VW-8,VH-8);
   ctx.textAlign='left';
 }
 function drawResult(){
@@ -836,6 +1112,11 @@ function drawResult(){
   ctx.fillStyle='#9ab';
   const mm=String(Math.floor(gtime/60)).padStart(2,'0'),ss=String(Math.floor(gtime%60)).padStart(2,'0');
   ctx.fillText('破壊した工場 '+destroyed+'/6    時間 '+mm+':'+ss,VW/2,210);
+  if(window.CLOUD){
+    ctx.font='11px '+FNT;
+    if(cloudRank){ctx.fillStyle='#ffd24a';ctx.fillText('世界ランキング '+cloudRank+' 位！（🏆でTOP10）',VW/2,230);}
+    else if(cloudMsg){ctx.fillStyle='#9ab';ctx.fillText(cloudMsg,VW/2,230);}
+  }
   if(stateT>0.8&&stateT%1<0.6){ctx.font='bold 12px '+FNT;ctx.fillStyle='#fff';ctx.fillText('クリック / R でリトライ',VW/2,252);}
   ctx.textAlign='left';
 }
@@ -946,6 +1227,9 @@ function frame(now){
   animT+=dt;stateT+=dt;
   if(wantStart){
     if(state==='title'||((state==='over'||state==='clear')&&stateT>0.8)){
+      const k=MAP_KEYS[mapSel];
+      try{localStorage.setItem('bb_map',k);}catch(e){}
+      if(k!==mapKey)buildWorld(k); // マップが変わったらワールド再構築
       reset();state='play';stateT=0;ac();
     }
     wantStart=false;
@@ -961,9 +1245,61 @@ document.addEventListener('visibilitychange',()=>{if(document.hidden&&state==='p
 window.BB={
   keys,
   start(){wantStart=true;},
+  setMap(k){if(MAPS[k]){mapSel=MAP_KEYS.indexOf(k);buildWorld(k);reset();state='play';stateT=0;}},
+  mapInfo(){return JSON.parse(JSON.stringify(mapDef));},
+  cloud(){return{rank:cloudRank,msg:cloudMsg,stats:cloudStats,top:cloudTop,pid:PID,name:PNAME,nameAsked};},
   warp(x,y){player.x=mod(x,WW);player.y=mod(y,WH);player.vx=player.vy=0;player.landed=false;player.landT=0;},
-  snap(){return{state,score,lives,bombs:player.bombs,hp:Math.round(player.hp),landed:player.landed,dead:player.dead,px:Math.round(player.x),py:Math.round(player.y),destroyed,factories:factories.map(f=>Math.round(f.hp)),carrierHp:Math.round(carrier.hp),cx:Math.round(carrier.x),cy:Math.round(carrier.y),bship:{hp:Math.round(bship.hp),launched:bship.launched,dead:bship.dead},boats:boats.length,jets:jets.length,ebullets:ebullets.length,gunsAlive:guns.filter(g=>!g.dead).length};}
+  snap(){return{state,score,lives,bombs:player.bombs,hp:Math.round(player.hp),landed:player.landed,dead:player.dead,px:Math.round(player.x),py:Math.round(player.y),destroyed,factories:factories.map(f=>Math.round(f.hp)),carrierHp:Math.round(carrier.hp),cx:Math.round(carrier.x),cy:Math.round(carrier.y),bship:{hp:Math.round(bship.hp),launched:bship.launched,dead:bship.dead,bx:Math.round(bship.x),by:Math.round(bship.y)},boats:boats.length,jets:jets.length,ebullets:ebullets.length,gunsAlive:guns.filter(g=>!g.dead).length};}
 };
+</script>
+<script type="module">
+// ===== Firestore連携（世界ランキング・プレイログ送信） =====
+// 読み込み失敗・オフラインでもゲーム本体は動く（window.CLOUD未定義のまま）
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+import { getFirestore, collection, addDoc, doc, getDoc, setDoc, serverTimestamp,
+         query, orderBy, limit, getDocs, where, getCountFromServer } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+try{
+  const app=initializeApp({
+    apiKey:"AIzaSyDPlsAhtxbJBihy-EAHck9P7XbuMdzV0ds",
+    authDomain:"cc-dev-ps7.firebaseapp.com",
+    projectId:"cc-dev-ps7",
+    storageBucket:"cc-dev-ps7.firebasestorage.app",
+    messagingSenderId:"1029579090333",
+    appId:"1:1029579090333:web:c699eb13e9279f467f2774"
+  });
+  const db=getFirestore(app);
+  const col=name=>collection(db,'bombing-bay','global',name);
+  window.CLOUD={
+    // 初回起動時に匿名プレイヤー登録（プレイ人数カウント用・1端末1ドキュメント）
+    async ensurePlayer(pid,ua){
+      const ref=doc(db,'bombing-bay','global','players',pid);
+      const snap=await getDoc(ref);
+      if(!snap.exists())await setDoc(ref,{createdAt:serverTimestamp(),ua});
+    },
+    // 1プレイ分のログ（スコア・マップ・プレイ時間・開始/終了時刻・結果）
+    async logPlay(d){
+      await addDoc(col('plays'),{...d,endedAt:serverTimestamp()});
+    },
+    // スコア上位N件
+    async top(n){
+      const qs=await getDocs(query(col('plays'),orderBy('score','desc'),limit(n)));
+      return qs.docs.map(s=>{const v=s.data();return{pid:v.pid,name:v.name,score:v.score,map:v.map,at:(v.endedAt&&v.endedAt.toMillis)?v.endedAt.toMillis():0};});
+    },
+    // 自分より高スコアの件数+1 = 世界順位
+    async rankOf(score){
+      const c=await getCountFromServer(query(col('plays'),where('score','>',score)));
+      return c.data().count+1;
+    },
+    // 累計プレイ数・プレイヤー数（countサーバー集計＝読み出し量を消費しない）
+    async stats(){
+      const p=await getCountFromServer(col('plays'));
+      const u=await getCountFromServer(col('players'));
+      return{plays:p.data().count,players:u.data().count};
+    }
+  };
+  window.dispatchEvent(new Event('cloud-ready'));
+  console.log('CLOUD接続OK');
+}catch(e){console.warn('CLOUD初期化失敗: '+(e&&e.message));}
 </script>
 </body>
 </html>
