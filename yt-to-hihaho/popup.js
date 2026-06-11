@@ -274,6 +274,34 @@ async function fetchTranscriptViaWhisper(audioUrl) {
   return text;
 }
 
+/* ── Innertube API 経由でオーディオURL取得（streamingData 未取得時のフォールバック） ── */
+async function fetchAudioUrlFallback(videoId) {
+  const clients = [
+    { clientName: 'TVHTML5',             clientVersion: '7.20231219.01.00' },
+    { clientName: 'WEB_EMBEDDED_PLAYER', clientVersion: '2.20231219.01.00' },
+  ];
+  for (const client of clients) {
+    try {
+      const res = await fetch('https://www.youtube.com/youtubei/v1/player', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoId, context: { client } }),
+      });
+      if (!res.ok) continue;
+      const data = await res.json();
+      const formats = [
+        ...(data.streamingData?.adaptiveFormats || []),
+        ...(data.streamingData?.formats        || []),
+      ];
+      const audioFormats = formats.filter(f => f.mimeType?.startsWith('audio/') && f.url);
+      if (!audioFormats.length) continue;
+      audioFormats.sort((a, b) => (a.bitrate || 0) - (b.bitrate || 0));
+      return audioFormats[0].url;
+    } catch (_) { /* 次のクライアントを試す */ }
+  }
+  return null;
+}
+
 /* ── Claude API ── */
 async function callClaude(title, transcript) {
   const truncated = transcript.length > 9000 ? transcript.slice(0, 9000) + '...' : transcript;
@@ -658,14 +686,18 @@ el('generateBtn').addEventListener('click', async () => {
       if (lbl) lbl.textContent = '自動字幕を取得中...';
       transcript = await fetchAutoCaptions(videoData.videoId);
 
-      if (!transcript && videoData.audioStreamUrl && settings.openaiKey) {
-        // 3. Whisper API
+      if (!transcript && settings.openaiKey) {
+        // 3. Whisper API（audioStreamUrl が null なら Innertube API でURL取得）
+        let audioUrl = videoData.audioStreamUrl;
+        if (!audioUrl) {
+          if (lbl) lbl.textContent = '音声URLを取得中...';
+          audioUrl = await fetchAudioUrlFallback(videoData.videoId);
+        }
+        if (!audioUrl) throw new Error('音声ストリームの取得に失敗しました。\nページを再読み込みして再試行してください。');
         if (lbl) lbl.textContent = 'Whisper 音声文字起こし中...';
-        transcript = await fetchTranscriptViaWhisper(videoData.audioStreamUrl);
-      } else if (!transcript && !settings.openaiKey) {
-        throw new Error('この動画には字幕・自動字幕がありません。\n設定からOpenAI API Keyを入力するとWhisper APIで文字起こしできます。');
+        transcript = await fetchTranscriptViaWhisper(audioUrl);
       } else if (!transcript) {
-        throw new Error('字幕・自動字幕・音声ストリームのいずれも取得できませんでした。\nページを再読み込みして再試行してください。');
+        throw new Error('この動画には字幕・自動字幕がありません。\n設定からOpenAI API Keyを入力するとWhisper APIで文字起こしできます。');
       }
     }
     if (!transcript.trim()) throw new Error('文字起こしが空です。');
