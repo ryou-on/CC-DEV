@@ -1,0 +1,1038 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>平安京エイリアン</title>
+<meta name="description" content="平安京に出現したエイリアンを、穴を掘って埋めて退治する古典アクションゲーム。">
+<meta property="og:title" content="平安京エイリアン">
+<meta property="og:description" content="穴を掘ってエイリアンを落とし、埋めて退治！1979年の名作アーケードへのオマージュ。">
+<meta name="theme-color" content="#05060a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>👾</text></svg>">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html, body { height:100%; }
+  body {
+    background:#05060a; color:#e8ecf5;
+    font-family:-apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px;
+    overflow:hidden; touch-action:none; user-select:none; -webkit-user-select:none;
+  }
+  #appHeader { font-size:14px; font-weight:700; letter-spacing:.04em; display:flex; align-items:baseline; gap:8px; }
+  #appHeader .name { cursor:pointer; color:#e8ecf5; }
+  #appHeader .ver  { cursor:pointer; color:#c9a84c; font-size:11px; font-weight:400; opacity:.85; }
+  #appHeader .sub  { color:rgba(255,255,255,.4); font-size:11px; font-weight:400; }
+  #wrap { position:relative; line-height:0; }
+  canvas {
+    image-rendering:pixelated; border-radius:6px;
+    box-shadow:0 0 44px rgba(57,217,98,.07), 0 4px 30px rgba(0,0,0,.6);
+  }
+  #crt {
+    position:absolute; inset:0; pointer-events:none; border-radius:6px;
+    background:repeating-linear-gradient(0deg, rgba(0,0,0,.14) 0 1px, transparent 1px 3px);
+    box-shadow:inset 0 0 60px rgba(0,0,0,.45);
+  }
+  /* ===== タッチ操作 ===== */
+  #touch { display:none; width:100%; max-width:640px; padding:2px 14px 10px; align-items:center; justify-content:space-between; gap:10px; }
+  body.show-touch #touch { display:flex; }
+  #dpad {
+    display:grid; gap:4px;
+    grid-template-areas:". u ." "l c r" ". d .";
+    grid-template-columns:repeat(3, 54px); grid-template-rows:repeat(3, 54px);
+  }
+  .db { border:1px solid #3c4663; background:#161b2c; color:#aab4d4; font-size:18px; border-radius:10px; touch-action:none; }
+  .db.on { background:#2a3354; color:#fff; }
+  #acts { display:flex; gap:14px; align-items:flex-end; }
+  .ab { border-radius:50%; border:2px solid; font-weight:700; touch-action:none; font-family:inherit; }
+  #bDig  { width:76px; height:76px; font-size:17px; border-color:#caa45a; background:#2a2110; color:#ffd54f; }
+  #bFill { width:64px; height:64px; font-size:14px; border-color:#3f9e5f; background:#0f2417; color:#5ce08a; }
+  .ab.on { filter:brightness(1.7); }
+  /* ===== モーダル ===== */
+  .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:9999; align-items:center; justify-content:center; }
+  .modal-overlay.open { display:flex; }
+  .modal-box {
+    background:#10141f; border:1px solid rgba(201,168,76,.5); border-radius:10px;
+    width:520px; max-width:90vw; max-height:80vh; display:flex; flex-direction:column;
+    box-shadow:0 8px 40px rgba(0,0,0,.6);
+  }
+  .modal-header { display:flex; align-items:center; justify-content:space-between; padding:16px 20px 12px; border-bottom:1px solid rgba(255,255,255,.1); }
+  .modal-header h2 { font-size:15px; font-weight:700; color:#c9a84c; margin:0; }
+  .modal-close-btn { background:none; border:none; color:#aaa; font-size:18px; cursor:pointer; }
+  .modal-close-btn:hover { color:#fff; }
+  #modal-body { overflow-y:auto; padding:16px 20px 20px; font-size:13px; line-height:1.7; color:#ccc; }
+  #modal-body h3 { font-size:12px; color:#c9a84c; margin:14px 0 6px; font-weight:600; }
+  #modal-body ul { margin:0; padding-left:18px; }
+  .release-ver { display:flex; align-items:baseline; gap:10px; margin-top:16px; padding-top:12px; border-top:1px solid rgba(255,255,255,.07); }
+  .release-ver:first-child { margin-top:0; border-top:none; padding-top:0; }
+  .release-ver-tag { font-size:13px; font-weight:700; color:#c9a84c; white-space:nowrap; }
+  .release-ver-date { font-size:11px; color:#666; white-space:nowrap; }
+  /* ===== デバッグ ===== */
+  #dbg { position:fixed; right:8px; bottom:8px; z-index:50; font-size:11px; padding:4px 8px; border-radius:6px;
+         background:#10131c; color:#6c7690; border:1px solid #2a3147; opacity:.4; }
+  #dbg:active { opacity:1; }
+</style>
+</head>
+<body>
+
+<div id="appHeader">
+  <span class="name" onclick="openHowTo()" title="使い方を見る">▶ 平安京エイリアン</span>
+  <span class="ver" onclick="openReleaseNotes()" title="リリースノート">v0.1.0</span>
+  <span class="sub">HEIANKYO ALIEN</span>
+</div>
+
+<div id="wrap">
+  <canvas id="game"></canvas>
+  <div id="crt"></div>
+</div>
+
+<div id="touch">
+  <div id="dpad">
+    <button class="db" data-d="U" style="grid-area:u">▲</button>
+    <button class="db" data-d="L" style="grid-area:l">◀</button>
+    <button class="db" data-d="R" style="grid-area:r">▶</button>
+    <button class="db" data-d="D" style="grid-area:d">▼</button>
+  </div>
+  <div id="acts">
+    <button id="bFill" class="ab">埋める</button>
+    <button id="bDig" class="ab">掘る</button>
+  </div>
+</div>
+
+<div id="info-modal" class="modal-overlay" onclick="closeModalOnOverlay(event)">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h2 id="modal-title"></h2>
+      <button class="modal-close-btn" onclick="closeModal()">✕</button>
+    </div>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<button id="dbg">🐞 LOG</button>
+
+<script>
+'use strict';
+/* =========================================================
+   平安京エイリアン v0.1.0
+   1979年の名作アーケードへのオマージュ（単一HTML / 依存なし）
+   ========================================================= */
+
+/* ===== デバッグログ収集（コンソールコピー用） ===== */
+var LOGS = [];
+['log','warn','error'].forEach(function(k){
+  var orig = console[k].bind(console);
+  console[k] = function(){
+    var a = Array.prototype.slice.call(arguments);
+    try { LOGS.push('['+k+'] ' + a.map(function(v){ return typeof v==='object' ? JSON.stringify(v) : String(v); }).join(' ')); } catch(e){}
+    if (LOGS.length > 300) LOGS.shift();
+    orig.apply(null, a);
+  };
+});
+window.addEventListener('error', function(e){
+  LOGS.push('[onerror] ' + e.message + ' (' + (e.filename||'') + ':' + e.lineno + ')');
+});
+document.getElementById('dbg').addEventListener('click', function(){
+  var txt = LOGS.join('\n') || '(ログなし)';
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(txt).then(function(){ alert('コンソールログをコピーしました'); });
+  } else {
+    var ta = document.createElement('textarea'); ta.value = txt;
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+    alert('コンソールログをコピーしました');
+  }
+});
+
+/* ===== アプリメタ（使い方・リリースノート） ===== */
+var APP_VERSION = 'v0.1.0';
+var RELEASE_NOTES = [
+  { ver: 'v0.1.0', date: '2026-06-11', changes: [
+    '初回リリース',
+    '穴掘り・埋め立てによるエイリアン退治アクション',
+    'レベル進行（エイリアン増加・スピードアップ）',
+    'タッチ操作対応（十字キー＋掘る/埋めるボタン）',
+    'ハイスコア保存・サウンド（Mキーで切替）'
+  ]}
+];
+var HOW_TO_USE = [
+  { heading: '① 移動', text: '十字キー / WASD（スマホは左の十字ボタン）で検非違使を動かす。通りの交差点で曲がれる。' },
+  { heading: '② 穴を掘る', text: 'Zキー（スマホは「掘る」）で目の前のマスに穴を掘る。掘っている間は無防備なので注意。' },
+  { heading: '③ 埋めて退治', text: 'エイリアンが穴に落ちたら、Xキー（「埋める」）で埋めて退治！ 時間が経つと這い上がってくる。穴の周りのリングが残り時間。' },
+  { heading: '④ 救出に注意', text: '別のエイリアンが穴の上を通ると、落ちている仲間を引っぱり上げてしまう。' },
+  { heading: '⑤ その他', text: 'スペース＝目の前に穴があれば埋める／なければ掘る（自動）。自分が掘った穴は自分も通れない。P＝ポーズ、M＝サウンド切替。200点×退治、レベルクリアで+1000点。10000点でエクステンド。' }
+];
+function openHowTo(){
+  document.getElementById('modal-title').textContent = '▶ 平安京エイリアン の遊び方';
+  document.getElementById('modal-body').innerHTML = HOW_TO_USE.map(function(item){
+    return '<h3>'+item.heading+'</h3><p>'+item.text+'</p>';
+  }).join('');
+  document.getElementById('info-modal').classList.add('open');
+  if (state === 'play') togglePause();
+}
+function openReleaseNotes(){
+  document.getElementById('modal-title').textContent = 'リリースノート';
+  document.getElementById('modal-body').innerHTML = RELEASE_NOTES.map(function(r){
+    var items = r.changes.map(function(c){ return '<li>'+c+'</li>'; }).join('');
+    return '<div class="release-ver"><span class="release-ver-tag">'+r.ver+'</span><span class="release-ver-date">'+r.date+'</span></div><ul>'+items+'</ul>';
+  }).join('');
+  document.getElementById('info-modal').classList.add('open');
+  if (state === 'play') togglePause();
+}
+function closeModal(){ document.getElementById('info-modal').classList.remove('open'); }
+function closeModalOnOverlay(e){ if (e.target === document.getElementById('info-modal')) closeModal(); }
+function modalOpen(){ return document.getElementById('info-modal').classList.contains('open'); }
+
+/* ===== 基本定数 ===== */
+var COLS = 19, ROWS = 13, CELL = 32, HUD = 40;
+var W = COLS * CELL, H = ROWS * CELL + HUD;
+function key(c, r){ return r * COLS + c; }
+
+// 平安京の碁盤の目：外周は大路、内側は2x2の街区が3セル周期で並ぶ
+function isWall(c, r){
+  if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return true;
+  if (c === 0 || r === 0 || c === COLS - 1 || r === ROWS - 1) return false;
+  return ((c - 1) % 3) < 2 && ((r - 1) % 3) < 2;
+}
+
+/* ===== Canvas ===== */
+var cv = document.getElementById('game');
+var ctx = cv.getContext('2d');
+var DPR = Math.min(2, window.devicePixelRatio || 1);
+cv.width = W * DPR; cv.height = H * DPR;
+ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+ctx.imageSmoothingEnabled = false;
+
+/* ===== 迷路（事前描画） ===== */
+var mazeCv = document.createElement('canvas');
+mazeCv.width = W * DPR; mazeCv.height = ROWS * CELL * DPR;
+(function(){
+  var m = mazeCv.getContext('2d');
+  m.setTransform(DPR, 0, 0, DPR, 0, 0);
+  m.fillStyle = '#0a0c14'; m.fillRect(0, 0, W, ROWS * CELL);
+  // 通りの石畳ドット
+  m.fillStyle = '#151a28';
+  for (var r = 0; r < ROWS; r++) for (var c = 0; c < COLS; c++) {
+    if (!isWall(c, r)) m.fillRect(c * CELL + CELL / 2 - 1, r * CELL + CELL / 2 - 1, 2, 2);
+  }
+  // 街区（6列×4段）
+  for (var br = 0; br < 4; br++) for (var bc = 0; bc < 6; bc++) {
+    var x = (1 + bc * 3) * CELL, y = (1 + br * 3) * CELL, s = CELL * 2;
+    m.fillStyle = '#1d2335'; m.fillRect(x + 2, y + 2, s - 4, s - 4);
+    m.strokeStyle = '#3c4663'; m.lineWidth = 2; m.strokeRect(x + 3, y + 3, s - 6, s - 6);
+    m.fillStyle = '#323b59'; m.fillRect(x + 4, y + 4, s - 8, 3); // 屋根のハイライト
+    m.strokeStyle = '#272e47'; m.lineWidth = 1;
+    m.beginPath(); m.moveTo(x + 8, y + s / 2); m.lineTo(x + s - 8, y + s / 2); m.stroke(); // 瓦の線
+  }
+  // 外周の枠（朱）
+  m.strokeStyle = '#5a2733'; m.lineWidth = 2;
+  m.strokeRect(1, 1, W - 2, ROWS * CELL - 2);
+})();
+
+/* ===== ドット絵スプライト ===== */
+function makeSprite(rows, pal, scale){
+  scale = scale || 2;
+  var h = rows.length, w = rows[0].length;
+  var s = document.createElement('canvas');
+  s.width = w * scale; s.height = h * scale;
+  var x = s.getContext('2d');
+  rows.forEach(function(row, ry){
+    for (var rx = 0; rx < row.length; rx++) {
+      var col = pal[row[rx]];
+      if (col) { x.fillStyle = col; x.fillRect(rx * scale, ry * scale, scale, scale); }
+    }
+  });
+  return s;
+}
+// 検非違使（プレイヤー）K=烏帽子 S=肌 W=狩衣 B=襟
+var PAL_P = { K:'#23232e', S:'#ffd9a8', W:'#eef2ff', B:'#49c6ff' };
+var SPR_P = [
+  makeSprite([
+    '....KKKK....',
+    '....KKKK....',
+    '...KKKKKK...',
+    '...SSSSSS...',
+    '...SKSSKS...',
+    '...SSSSSS...',
+    '..WWWWWWWW..',
+    '.WWWWBBWWWW.',
+    '.WW.WWWW.WW.',
+    '.WW.WWWW.WW.',
+    '....WWWW....',
+    '...WWWWWW...',
+    '...WW..WW...',
+    '...KK..KK...'
+  ], PAL_P),
+  makeSprite([
+    '....KKKK....',
+    '....KKKK....',
+    '...KKKKKK...',
+    '...SSSSSS...',
+    '...SKSSKS...',
+    '...SSSSSS...',
+    '..WWWWWWWW..',
+    '.WWWWBBWWWW.',
+    '.W..WWWW..W.',
+    '.W..WWWW..W.',
+    '....WWWW....',
+    '...WWWWWW...',
+    '..WW....WW..',
+    '..KK....KK..'
+  ], PAL_P)
+];
+// エイリアン G=体 K=目
+var PAL_A = { G:'#39d962', K:'#0c2a14' };
+var SPR_A = [
+  makeSprite([
+    '..G......G..',
+    '...GGGGGG...',
+    '..GGGGGGGG..',
+    '.GGGGGGGGGG.',
+    '.GKKGGGGKKG.',
+    '.GKKGGGGKKG.',
+    'GGGGGGGGGGGG',
+    'GGGGGGGGGGGG',
+    '.GGGGGGGGGG.',
+    '.GGGGGGGGGG.',
+    '.GG.GG.GG.GG',
+    '.G..G..G..G.'
+  ], PAL_A),
+  makeSprite([
+    '..G......G..',
+    '...GGGGGG...',
+    '..GGGGGGGG..',
+    '.GGGGGGGGGG.',
+    '.GKKGGGGKKG.',
+    '.GKKGGGGKKG.',
+    'GGGGGGGGGGGG',
+    'GGGGGGGGGGGG',
+    '.GGGGGGGGGG.',
+    '.GGGGGGGGGG.',
+    'GG.GG.GG.GG.',
+    '..G..G..G..G'
+  ], PAL_A)
+];
+
+/* ===== サウンド（WebAudio） ===== */
+var AC = null, master = null, noiseBuf = null;
+var muted = localStorage.getItem('heiankyo_mute') === '1';
+function ensureAudio(){
+  try {
+    if (!AC) {
+      var A = window.AudioContext || window.webkitAudioContext;
+      if (!A) return;
+      AC = new A();
+      master = AC.createGain(); master.gain.value = 0.16; master.connect(AC.destination);
+    }
+    if (AC.state === 'suspended') AC.resume();
+  } catch(e) { console.warn('audio init 失敗', e); }
+}
+function tone(f, dur, type, vol, slideTo, when){
+  if (!AC || muted) return;
+  type = type || 'square'; vol = (vol == null) ? 1 : vol; when = when || 0;
+  var t = AC.currentTime + when;
+  var o = AC.createOscillator(), g = AC.createGain();
+  o.type = type; o.frequency.setValueAtTime(Math.max(30, f), t);
+  if (slideTo) o.frequency.exponentialRampToValueAtTime(Math.max(30, slideTo), t + dur);
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
+  o.connect(g); g.connect(master);
+  o.start(t); o.stop(t + dur + 0.03);
+}
+function noise(dur, vol, when, freq){
+  if (!AC || muted) return;
+  when = when || 0;
+  if (!noiseBuf) {
+    noiseBuf = AC.createBuffer(1, Math.floor(AC.sampleRate * 0.5), AC.sampleRate);
+    var d = noiseBuf.getChannelData(0);
+    for (var i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  }
+  var s = AC.createBufferSource(); s.buffer = noiseBuf; s.loop = true;
+  var f = AC.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = freq || 700;
+  var g = AC.createGain(); var t = AC.currentTime + when;
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.0008, t + dur);
+  s.connect(f); f.connect(g); g.connect(master);
+  s.start(t); s.stop(t + dur + 0.03);
+}
+var stepFlip = false;
+var SFX = {
+  step:     function(){ stepFlip = !stepFlip; tone(stepFlip ? 330 : 296, 0.035, 'square', 0.15); },
+  digTick:  function(){ noise(0.07, 0.5, 0, 420); tone(130, 0.07, 'square', 0.25, 90); },
+  fillTick: function(){ noise(0.06, 0.45, 0, 900); tone(180, 0.06, 'square', 0.22, 260); },
+  digDone:  function(){ tone(220, 0.09, 'square', 0.5, 140); },
+  fillDone: function(){ tone(240, 0.07, 'square', 0.5, 420); },
+  trap:     function(){ tone(520, 0.3, 'sine', 0.9, 140); },
+  rescue:   function(){ tone(700, 0.07, 'square', 0.5, 980); },
+  escape:   function(){ tone(300, 0.12, 'square', 0.5, 520); },
+  bury:     function(){ noise(0.12, 0.8, 0, 300); tone(660, 0.07, 'square', 0.7, null, 0.04); tone(880, 0.07, 'square', 0.7, null, 0.12); tone(1318, 0.14, 'square', 0.7, null, 0.2); },
+  death:    function(){ tone(640, 0.65, 'sawtooth', 0.8, 70); noise(0.4, 0.5, 0, 250); },
+  clear:    function(){ [523, 659, 784, 1046, 1318].forEach(function(f, i){ tone(f, 0.12, 'square', 0.6, null, 0.3 + i * 0.1); }); },
+  over:     function(){ [392, 330, 262, 196, 131].forEach(function(f, i){ tone(f, 0.22, 'triangle', 0.7, null, i * 0.2); }); },
+  extend:   function(){ [880, 1108, 1318, 1760].forEach(function(f, i){ tone(f, 0.09, 'square', 0.6, null, i * 0.08); }); },
+  start:    function(){ [262, 330, 392, 523].forEach(function(f, i){ tone(f, 0.1, 'square', 0.55, null, i * 0.09); }); }
+};
+function toggleMute(){
+  muted = !muted;
+  localStorage.setItem('heiankyo_mute', muted ? '1' : '0');
+}
+
+/* ===== 入力 ===== */
+var held = []; // 押下中の方向（後勝ち）
+var DIRS = { U:{dx:0,dy:-1}, D:{dx:0,dy:1}, L:{dx:-1,dy:0}, R:{dx:1,dy:0} };
+var KEYMAP = { ArrowUp:'U', KeyW:'U', ArrowDown:'D', KeyS:'D', ArrowLeft:'L', KeyA:'L', ArrowRight:'R', KeyD:'R' };
+function pressDir(d){ if (held.indexOf(d) < 0) held.push(d); }
+function releaseDir(d){ var i = held.indexOf(d); if (i >= 0) held.splice(i, 1); }
+
+window.addEventListener('keydown', function(e){
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].indexOf(e.code) >= 0) e.preventDefault();
+  if (e.key === 'Escape' && modalOpen()) { closeModal(); return; }
+  if (modalOpen()) return;
+  ensureAudio();
+  var d = KEYMAP[e.code];
+  if (d) { if (!e.repeat) pressDir(d); return; }
+  if (e.repeat) return;
+  if (e.code === 'KeyZ') requestAction('dig');
+  else if (e.code === 'KeyX') requestAction('fill');
+  else if (e.code === 'Space' || e.code === 'Enter') onAction();
+  else if (e.code === 'KeyP' || e.code === 'Escape') togglePause();
+  else if (e.code === 'KeyM') toggleMute();
+});
+window.addEventListener('keyup', function(e){
+  var d = KEYMAP[e.code];
+  if (d) releaseDir(d);
+});
+function onAction(){
+  if (state === 'title') startGame();
+  else if (state === 'gameover') toTitle();
+  else if (state === 'pause') togglePause();
+  else requestAction('smart');
+}
+
+/* ===== ゲーム状態 ===== */
+var state = 'title'; // title | ready | play | dying | clear | pause | gameover
+var stateT = 0, globalT = 0;
+var level = 1, score = 0, lives = 3, nextExtend = 10000, newHi = false;
+var hiscore = parseInt(localStorage.getItem('heiankyo_hi') || '0', 10);
+var aliens = [], holes = new Map(), particles = [], popups = [], attract = [];
+var START_C = 9, START_R = 12;
+var SPAWNS = [[0,0],[18,0],[0,12],[18,12],[9,0],[0,6],[18,6],[12,0]];
+
+var player = {
+  c: START_C, r: START_R, tc: START_C, tr: START_R, prog: 0, moving: false,
+  dir: null, face: DIRS.U, speed: 4.8, action: null, queued: null
+};
+
+function alienSpeed(){ return Math.min(4.4, 3.0 + 0.22 * (level - 1)); }
+function chaseP(){ return Math.min(0.75, 0.42 + 0.05 * (level - 1)); }
+function escapeTime(){ return Math.max(1.6, 3.4 - 0.18 * (level - 1)); }
+function alienCount(){ return Math.min(8, 3 + level); }
+
+function setState(s){ state = s; stateT = 0; }
+
+function makeAlien(c, r){
+  return { c:c, r:r, tc:c, tr:r, prog:1, dir:null, state:'walk', trapT:0, trapFull:1, holeKey:-1, animT:Math.random()*10 };
+}
+function resetPlayer(){
+  player.c = START_C; player.r = START_R; player.tc = START_C; player.tr = START_R;
+  player.prog = 0; player.moving = false; player.dir = null; player.face = DIRS.U;
+  player.action = null; player.queued = null;
+}
+function setupLevel(){
+  holes.clear(); particles.length = 0; popups.length = 0;
+  resetPlayer();
+  aliens = [];
+  var n = alienCount();
+  for (var i = 0; i < n; i++) {
+    var sp = SPAWNS[i % SPAWNS.length];
+    aliens.push(makeAlien(sp[0], sp[1]));
+  }
+  setState('ready');
+}
+function startGame(){
+  level = 1; score = 0; lives = 3; nextExtend = 10000; newHi = false;
+  SFX.start();
+  setupLevel();
+}
+function toTitle(){ initAttract(); setState('title'); }
+function togglePause(){
+  if (state === 'play') setState('pause');
+  else if (state === 'pause') setState('play');
+}
+function respawn(){
+  // 穴はそのまま残す。罠の中のエイリアンはタイマーを戻す
+  var si = 0;
+  aliens.forEach(function(a){
+    if (a.state === 'trapped') { a.trapT = escapeTime(); a.trapFull = a.trapT; return; }
+    var sp = SPAWNS[si++ % SPAWNS.length];
+    a.c = sp[0]; a.r = sp[1]; a.tc = sp[0]; a.tr = sp[1]; a.prog = 1; a.dir = null;
+  });
+  resetPlayer();
+  setState('ready');
+}
+function gameOver(){
+  if (score > 0 && score >= hiscore) newHi = true;
+  hiscore = Math.max(hiscore, score);
+  localStorage.setItem('heiankyo_hi', String(hiscore));
+  SFX.over();
+  setState('gameover');
+}
+function levelClear(){
+  addScore(1000, W / 2, H / 2);
+  SFX.clear();
+  setState('clear');
+}
+function addScore(n, x, y){
+  score += n;
+  if (x != null) popups.push({ x:x, y:y, txt:'+'+n, t:0, big:n >= 1000 });
+  while (score >= nextExtend) {
+    lives++;
+    nextExtend += 20000;
+    SFX.extend();
+    popups.push({ x:W/2, y:HUD+60, txt:'EXTEND!', t:0, big:true });
+  }
+  hiscore = Math.max(hiscore, score);
+}
+
+/* ===== プレイヤー ===== */
+function canPlayer(c, r){ return !isWall(c, r) && !holes.has(key(c, r)); }
+function canAlien(c, r){ return !isWall(c, r); }
+
+function requestAction(type){
+  if (state !== 'play') return;
+  if (player.action) return;
+  if (player.moving) { player.queued = type; return; }
+  startAction(type);
+}
+function startAction(type){
+  var fc = player.c + player.face.dx, fr = player.r + player.face.dy;
+  var k = key(fc, fr);
+  if (type === 'smart') type = holes.has(k) ? 'fill' : 'dig';
+  if (type === 'dig') {
+    if (isWall(fc, fr) || holes.has(k)) return; // 掘れない場所
+    player.action = { type:'dig', t:0, dur:0.55, tc:fc, tr:fr, tick:0 };
+  } else {
+    var h = holes.get(k);
+    if (!h) return;
+    h.filling = true;
+    player.action = { type:'fill', t:0, dur:0.5, tc:fc, tr:fr, tick:0, holeKey:k };
+  }
+}
+function finishAction(){
+  var a = player.action; player.action = null;
+  var k = key(a.tc, a.tr);
+  if (a.type === 'dig') {
+    if (!isWall(a.tc, a.tr) && !holes.has(k)) {
+      holes.set(k, { c:a.tc, r:a.tr, alien:null, filling:false });
+      SFX.digDone();
+    }
+  } else {
+    var h = holes.get(k);
+    if (h) {
+      if (h.alien) {
+        // 生き埋め成功！
+        var al = h.alien;
+        var idx = aliens.indexOf(al);
+        if (idx >= 0) aliens.splice(idx, 1);
+        holes.delete(k);
+        addScore(200, a.tc * CELL + CELL/2, a.tr * CELL + HUD);
+        SFX.bury();
+        spawnBurst(a.tc, a.tr);
+        if (aliens.length === 0) { levelClear(); return; }
+      } else {
+        holes.delete(k);
+        SFX.fillDone();
+      }
+    }
+  }
+}
+function cancelAction(){
+  if (player.action && player.action.type === 'fill') {
+    var h = holes.get(player.action.holeKey);
+    if (h) h.filling = false;
+  }
+  player.action = null;
+  player.queued = null;
+}
+function updatePlayer(dt){
+  if (player.action) {
+    var a = player.action;
+    a.t += dt; a.tick -= dt;
+    if (a.tick <= 0) {
+      a.tick = 0.16;
+      if (a.type === 'dig') SFX.digTick(); else SFX.fillTick();
+      spawnDirt(a.tc, a.tr, a.type === 'dig');
+    }
+    if (a.t >= a.dur) finishAction();
+    return; // 作業中は移動できない
+  }
+  var top = held[held.length - 1];
+  if (top) player.face = DIRS[top]; // 向きはいつでも変えられる
+  if (!player.moving) {
+    for (var i = held.length - 1; i >= 0; i--) {
+      var d = DIRS[held[i]];
+      if (canPlayer(player.c + d.dx, player.r + d.dy)) {
+        player.dir = d; player.face = d;
+        player.tc = player.c + d.dx; player.tr = player.r + d.dy;
+        player.prog = 0; player.moving = true;
+        break;
+      }
+    }
+  }
+  if (player.moving) {
+    // 逆方向なら即リバース
+    if (top) {
+      var rd = DIRS[top];
+      if (player.dir && rd.dx === -player.dir.dx && rd.dy === -player.dir.dy) {
+        var oc = player.c, or_ = player.r;
+        player.c = player.tc; player.r = player.tr;
+        player.tc = oc; player.tr = or_;
+        player.prog = 1 - player.prog;
+        player.dir = rd; player.face = rd;
+      }
+    }
+    player.prog += player.speed * dt;
+    if (player.prog >= 1) {
+      player.c = player.tc; player.r = player.tr;
+      player.prog = 0; player.moving = false;
+      SFX.step();
+      if (player.queued) { var q = player.queued; player.queued = null; startAction(q); }
+    }
+  }
+}
+function killPlayer(){
+  if (state !== 'play') return;
+  cancelAction();
+  SFX.death();
+  setState('dying');
+}
+
+/* ===== エイリアン ===== */
+function chooseAlienDir(a, chase){
+  var opts = [];
+  for (var dk in DIRS) {
+    var d = DIRS[dk];
+    if (canAlien(a.c + d.dx, a.r + d.dy)) opts.push(d);
+  }
+  var pool = opts.filter(function(d){
+    return !(a.dir && d.dx === -a.dir.dx && d.dy === -a.dir.dy);
+  });
+  if (pool.length === 0) pool = opts;
+  var sel;
+  if (Math.random() < chase) {
+    var best = 1e9;
+    pool.forEach(function(o){
+      var dist = Math.abs(a.c + o.dx - player.c) + Math.abs(a.r + o.dy - player.r);
+      if (dist < best) { best = dist; sel = o; }
+    });
+  } else {
+    sel = pool[(Math.random() * pool.length) | 0];
+  }
+  a.dir = sel; a.tc = a.c + sel.dx; a.tr = a.r + sel.dy; a.prog = 0;
+}
+function alienArrive(a){
+  var k = key(a.c, a.r);
+  var h = holes.get(k);
+  if (h && !h.alien && !h.filling) {
+    // 落とし穴に落ちた！
+    a.state = 'trapped';
+    a.trapT = escapeTime(); a.trapFull = a.trapT;
+    a.holeKey = k; h.alien = a;
+    addScore(50, a.c * CELL + CELL/2, a.r * CELL + HUD);
+    SFX.trap();
+    return;
+  }
+  if (h && h.alien && h.alien !== a) {
+    // 仲間を引っぱり上げる（救出）
+    if (h.alien.trapT > 0.3) { h.alien.trapT = 0.3; SFX.rescue(); }
+  }
+  chooseAlienDir(a, chaseP());
+}
+function escapeHole(a, h){
+  var cand = [];
+  for (var dk in DIRS) {
+    var d = DIRS[dk];
+    var nc = h.c + d.dx, nr = h.r + d.dy;
+    if (!isWall(nc, nr) && !holes.has(key(nc, nr))) cand.push(d);
+  }
+  if (cand.length === 0) { a.trapT = escapeTime(); return; } // 周りも穴→もがき続ける
+  var d2 = cand[(Math.random() * cand.length) | 0];
+  h.alien = null;
+  a.state = 'walk'; a.holeKey = -1;
+  a.c = h.c; a.r = h.r;
+  a.dir = d2; a.tc = h.c + d2.dx; a.tr = h.r + d2.dy; a.prog = 0.15;
+  SFX.escape();
+}
+function posOf(e){
+  return [
+    (e.c + (e.tc - e.c) * Math.min(1, e.prog)) * CELL + CELL / 2,
+    (e.r + (e.tr - e.r) * Math.min(1, e.prog)) * CELL + CELL / 2 + HUD
+  ];
+}
+function updateAlien(a, dt){
+  a.animT += dt;
+  if (a.state === 'trapped') {
+    var h = holes.get(a.holeKey);
+    if (!h) { a.state = 'walk'; chooseAlienDir(a, 0); return; }
+    if (!h.filling) {
+      a.trapT -= dt;
+      if (a.trapT <= 0) escapeHole(a, h);
+    }
+    return;
+  }
+  a.prog += alienSpeed() * dt;
+  while (a.prog >= 1) {
+    a.prog -= 1;
+    a.c = a.tc; a.r = a.tr;
+    alienArrive(a);
+    if (a.state !== 'walk') { a.prog = 0; break; }
+  }
+  if (a.state === 'walk' && state === 'play') {
+    var ap = posOf(a), pp = posOf(player);
+    if (Math.hypot(ap[0] - pp[0], ap[1] - pp[1]) < CELL * 0.55) killPlayer();
+  }
+}
+
+/* ===== タイトル画面のデモ ===== */
+function initAttract(){
+  attract = [];
+  for (var i = 0; i < 4; i++) {
+    var sp = SPAWNS[i];
+    var a = makeAlien(sp[0], sp[1]);
+    attract.push(a);
+  }
+}
+function updateAttract(dt){
+  attract.forEach(function(a){
+    a.animT += dt;
+    a.prog += 3.0 * dt;
+    while (a.prog >= 1) {
+      a.prog -= 1;
+      a.c = a.tc; a.r = a.tr;
+      chooseAlienDir(a, 0);
+    }
+  });
+}
+
+/* ===== パーティクル / ポップアップ ===== */
+function rand(a, b){ return a + Math.random() * (b - a); }
+function spawnDirt(c, r, isDig){
+  var x = c * CELL + CELL / 2, y = r * CELL + CELL / 2 + HUD;
+  for (var i = 0; i < 4; i++) {
+    particles.push({ x:x+rand(-6,6), y:y+rand(-4,4), vx:rand(-45,45), vy:rand(-95,-30), t:0.45, col: isDig ? '#6b4a2b' : '#4a3a22' });
+  }
+}
+function spawnBurst(c, r){
+  var x = c * CELL + CELL / 2, y = r * CELL + CELL / 2 + HUD;
+  for (var i = 0; i < 14; i++) {
+    particles.push({ x:x, y:y, vx:rand(-90,90), vy:rand(-130,-10), t:0.6, col: i % 3 === 0 ? '#39d962' : '#6b4a2b' });
+  }
+}
+function updateFx(dt){
+  for (var i = particles.length - 1; i >= 0; i--) {
+    var p = particles[i];
+    p.t -= dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 320 * dt;
+    if (p.t <= 0) particles.splice(i, 1);
+  }
+  for (var j = popups.length - 1; j >= 0; j--) {
+    var q = popups[j];
+    q.t += dt; q.y -= 22 * dt;
+    if (q.t >= 1) popups.splice(j, 1);
+  }
+}
+
+/* ===== 更新 ===== */
+function update(dt){
+  globalT += dt;
+  switch (state) {
+    case 'title':
+      updateAttract(dt);
+      break;
+    case 'ready':
+      stateT += dt;
+      if (stateT >= 1.4) setState('play');
+      break;
+    case 'play':
+      stateT += dt;
+      updatePlayer(dt);
+      for (var i = 0; i < aliens.length; i++) updateAlien(aliens[i], dt);
+      updateFx(dt);
+      break;
+    case 'dying':
+      stateT += dt; updateFx(dt);
+      if (stateT >= 1.5) {
+        lives--;
+        if (lives < 0) gameOver(); else respawn();
+      }
+      break;
+    case 'clear':
+      stateT += dt; updateFx(dt);
+      if (stateT >= 2.0) { level++; setupLevel(); }
+      break;
+    case 'gameover':
+      stateT += dt;
+      break;
+    case 'pause':
+      break;
+  }
+}
+
+/* ===== 描画 ===== */
+function drawHUD(){
+  ctx.fillStyle = '#07080d'; ctx.fillRect(0, 0, W, HUD);
+  ctx.strokeStyle = '#222a3f'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, HUD - 0.5); ctx.lineTo(W, HUD - 0.5); ctx.stroke();
+  ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+  ctx.font = 'bold 14px Menlo, Consolas, monospace';
+  ctx.fillStyle = '#eef2ff';
+  ctx.fillText('SCORE ' + String(score).padStart(6, '0'), 10, 13);
+  ctx.fillStyle = '#8a93ad';
+  ctx.fillText('HI    ' + String(hiscore).padStart(6, '0'), 10, 29);
+  ctx.fillStyle = '#eef2ff';
+  ctx.fillText('LV ' + level, 210, 13);
+  // 残りエイリアン
+  if (state !== 'title') {
+    ctx.drawImage(SPR_A[0], 0, 0, 24, 24, 206, 22, 13, 13);
+    ctx.fillStyle = '#8a93ad';
+    ctx.fillText('x ' + aliens.length, 224, 29);
+  }
+  // 残機
+  for (var i = 0; i < Math.min(lives, 6); i++) {
+    ctx.drawImage(SPR_P[0], 0, 0, 24, 28, W - 22 - i * 17, 6, 12, 14);
+  }
+  ctx.font = '10px Menlo, Consolas, monospace';
+  ctx.fillStyle = '#5a6378';
+  ctx.fillText(muted ? '♪OFF (M)' : '♪ON (M)', W - 70, 30);
+}
+function drawHoles(){
+  holes.forEach(function(h){
+    var cx = h.c * CELL + CELL / 2, cy = h.r * CELL + CELL / 2 + HUD;
+    var s = 1;
+    if (h.filling && player.action && player.action.type === 'fill' && key(h.c, h.r) === player.action.holeKey) {
+      s = 1 - (player.action.t / player.action.dur) * 0.8;
+    }
+    ctx.fillStyle = '#120d07';
+    ctx.beginPath(); ctx.ellipse(cx, cy + 1, 13 * s, 9.5 * s, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#000';
+    ctx.beginPath(); ctx.ellipse(cx, cy, 11 * s, 8 * s, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#5a4326'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.ellipse(cx, cy + 1, 13 * s, 9.5 * s, 0, 0, Math.PI * 2); ctx.stroke();
+    // 罠にかかったエイリアン（上半身だけ）
+    if (h.alien) {
+      var jit = Math.sin(globalT * (h.filling ? 40 : 16)) * 1.5;
+      var fr = Math.floor(globalT * 8) % 2;
+      ctx.drawImage(SPR_A[fr], 0, 0, 24, 16, cx - 12 + jit, cy - 11, 24, 16);
+      // 脱出までの残り時間リング
+      var frac = Math.max(0, h.alien.trapT / h.alien.trapFull);
+      ctx.strokeStyle = h.alien.trapT < 1 ? '#ff5252' : '#ffd54f';
+      ctx.lineWidth = 2.5; ctx.globalAlpha = 0.85;
+      ctx.beginPath(); ctx.arc(cx, cy, 15, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac); ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+  });
+}
+function drawMarker(){
+  if (state !== 'play' || player.action || player.moving) return;
+  var fc = player.c + player.face.dx, fr = player.r + player.face.dy;
+  if (isWall(fc, fr)) return;
+  var hasH = holes.has(key(fc, fr));
+  var x = fc * CELL, y = fr * CELL + HUD, n = 7;
+  ctx.save();
+  ctx.globalAlpha = 0.4 + 0.2 * Math.sin(globalT * 6);
+  ctx.strokeStyle = hasH ? '#5ce08a' : '#ffd54f';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x + 4, y + 4 + n); ctx.lineTo(x + 4, y + 4); ctx.lineTo(x + 4 + n, y + 4);
+  ctx.moveTo(x + CELL - 4 - n, y + 4); ctx.lineTo(x + CELL - 4, y + 4); ctx.lineTo(x + CELL - 4, y + 4 + n);
+  ctx.moveTo(x + CELL - 4, y + CELL - 4 - n); ctx.lineTo(x + CELL - 4, y + CELL - 4); ctx.lineTo(x + CELL - 4 - n, y + CELL - 4);
+  ctx.moveTo(x + 4 + n, y + CELL - 4); ctx.lineTo(x + 4, y + CELL - 4); ctx.lineTo(x + 4, y + CELL - 4 - n);
+  ctx.stroke();
+  ctx.restore();
+}
+function drawPlayer(){
+  if (state === 'gameover') return;
+  if (state === 'dying' && Math.floor(stateT * 12) % 2 === 0) return; // 点滅
+  var p = posOf(player);
+  var fr = player.moving ? Math.floor(globalT * 8) % 2 : 0;
+  var bob = player.action ? Math.sin(player.action.t * 30) * 2 : 0;
+  ctx.drawImage(SPR_P[fr], p[0] - 12, p[1] - 15 + bob);
+  // 作業の進捗バー
+  if (player.action) {
+    var w = 22, frac = player.action.t / player.action.dur;
+    ctx.fillStyle = 'rgba(0,0,0,.5)';
+    ctx.fillRect(p[0] - w / 2, p[1] - 24, w, 4);
+    ctx.fillStyle = player.action.type === 'dig' ? '#ffd54f' : '#5ce08a';
+    ctx.fillRect(p[0] - w / 2, p[1] - 24, w * Math.min(1, frac), 4);
+  }
+}
+function drawAliens(){
+  var blink = state === 'ready' && Math.floor(stateT * 7) % 2 === 0;
+  aliens.forEach(function(a){
+    if (a.state !== 'walk') return; // 罠の中は drawHoles で描画済み
+    var p = posOf(a);
+    var fr = Math.floor(a.animT * 7) % 2;
+    if (blink) ctx.globalAlpha = 0.35;
+    ctx.drawImage(SPR_A[fr], p[0] - 12, p[1] - 12);
+    ctx.globalAlpha = 1;
+  });
+}
+function drawFx(){
+  particles.forEach(function(p){
+    ctx.globalAlpha = Math.max(0, p.t / 0.45);
+    ctx.fillStyle = p.col;
+    ctx.fillRect(p.x - 1.5, p.y - 1.5, 3, 3);
+  });
+  ctx.globalAlpha = 1;
+  popups.forEach(function(q){
+    ctx.globalAlpha = Math.max(0, 1 - q.t);
+    ctx.font = q.big ? 'bold 18px Menlo, Consolas, monospace' : 'bold 12px Menlo, Consolas, monospace';
+    ctx.fillStyle = q.big ? '#ffd54f' : '#eef2ff';
+    ctx.textAlign = 'center';
+    ctx.fillText(q.txt, q.x, q.y);
+  });
+  ctx.globalAlpha = 1;
+  ctx.textAlign = 'left';
+}
+function dim(a){
+  ctx.fillStyle = 'rgba(3,4,8,' + a + ')';
+  ctx.fillRect(0, 0, W, H);
+}
+function centerText(txt, y, font, col){
+  ctx.font = font; ctx.fillStyle = col;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(txt, W / 2, y);
+  ctx.textAlign = 'left';
+}
+function drawTitle(){
+  // デモのエイリアン
+  attract.forEach(function(a){
+    var p = posOf(a);
+    var fr = Math.floor(a.animT * 7) % 2;
+    ctx.drawImage(SPR_A[fr], p[0] - 12, p[1] - 12);
+  });
+  dim(0.6);
+  var serif = '"Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif';
+  ctx.save();
+  centerText('平安京エイリアン', 92, 'bold 46px ' + serif, '#b03a2e');
+  centerText('平安京エイリアン', 89, 'bold 46px ' + serif, '#f2ead8');
+  centerText('— H E I A N K Y O   A L I E N —', 126, 'bold 12px Menlo, Consolas, monospace', '#39d962');
+  // 両脇のエイリアン
+  var fr = Math.floor(globalT * 4) % 2;
+  ctx.drawImage(SPR_A[fr], W / 2 - 200 - 16, 72, 32, 32);
+  ctx.drawImage(SPR_A[1 - fr], W / 2 + 200 - 16, 72, 32, 32);
+  var sans = '"Hiragino Sans", "Noto Sans JP", sans-serif';
+  centerText('穴を掘ってエイリアンを落とし、埋めて退治！', 178, 'bold 16px ' + sans, '#eef2ff');
+  centerText('移動: ↑↓←→ / WASD　　掘る: Z　　埋める: X', 212, '13px ' + sans, '#aab4d4');
+  centerText('スペース: 自動（目の前に穴があれば埋める／なければ掘る）', 234, '13px ' + sans, '#aab4d4');
+  centerText('P: ポーズ　　M: サウンド切替', 256, '13px ' + sans, '#aab4d4');
+  if (document.body.classList.contains('show-touch')) {
+    centerText('スマホ: 左の十字キーで移動 ／ 右のボタンで掘る・埋める', 278, '13px ' + sans, '#aab4d4');
+  }
+  if (Math.floor(globalT * 1.6) % 2 === 0) {
+    centerText('▶ SPACE または 画面タップ で スタート', 322, 'bold 17px ' + sans, '#ffd54f');
+  }
+  centerText('HI-SCORE  ' + String(hiscore).padStart(6, '0'), 360, 'bold 14px Menlo, Consolas, monospace', '#8a93ad');
+  centerText('1979年の名作アーケードへのオマージュ', H - 28, '11px ' + sans, '#5a6378');
+  centerText(APP_VERSION, H - 12, '10px Menlo, Consolas, monospace', '#3c4663');
+  ctx.restore();
+}
+function render(){
+  ctx.fillStyle = '#05060a'; ctx.fillRect(0, 0, W, H);
+  drawHUD();
+  ctx.drawImage(mazeCv, 0, 0, mazeCv.width, mazeCv.height, 0, HUD, W, ROWS * CELL);
+  if (state === 'title') { drawTitle(); return; }
+  drawHoles();
+  drawMarker();
+  drawPlayer();
+  drawAliens();
+  drawFx();
+  var sans = '"Hiragino Sans", "Noto Sans JP", sans-serif';
+  if (state === 'ready') {
+    centerText('LEVEL ' + level, H / 2 - 16, 'bold 24px Menlo, Consolas, monospace', '#eef2ff');
+    if (Math.floor(stateT * 5) % 2 === 0) centerText('READY!', H / 2 + 16, 'bold 18px Menlo, Consolas, monospace', '#ffd54f');
+  } else if (state === 'clear') {
+    centerText('一掃完了！', H / 2 - 16, 'bold 30px ' + sans, '#5ce08a');
+    centerText('LEVEL CLEAR  +1000', H / 2 + 18, 'bold 15px Menlo, Consolas, monospace', '#eef2ff');
+  } else if (state === 'pause') {
+    dim(0.55);
+    centerText('一時停止', H / 2 - 12, 'bold 26px ' + sans, '#eef2ff');
+    centerText('P または タップ で再開', H / 2 + 18, '14px ' + sans, '#aab4d4');
+  } else if (state === 'gameover') {
+    dim(0.6);
+    centerText('GAME OVER', H / 2 - 36, 'bold 36px Menlo, Consolas, monospace', '#ff6b6b');
+    centerText('SCORE  ' + String(score).padStart(6, '0'), H / 2 + 4, 'bold 16px Menlo, Consolas, monospace', '#eef2ff');
+    if (newHi) centerText('★ ハイスコア更新！ ★', H / 2 + 30, 'bold 15px ' + sans, '#ffd54f');
+    centerText('SPACE / タップ でタイトルへ', H / 2 + 60, '14px ' + sans, '#aab4d4');
+  }
+}
+
+/* ===== タッチ操作 ===== */
+if (window.matchMedia && matchMedia('(pointer: coarse)').matches) {
+  document.body.classList.add('show-touch');
+}
+document.querySelectorAll('.db').forEach(function(b){
+  var d = b.dataset.d;
+  b.addEventListener('pointerdown', function(e){
+    e.preventDefault(); ensureAudio();
+    try { b.setPointerCapture(e.pointerId); } catch(err){}
+    pressDir(d); b.classList.add('on');
+  });
+  function off(){ releaseDir(d); b.classList.remove('on'); }
+  b.addEventListener('pointerup', off);
+  b.addEventListener('pointercancel', off);
+});
+function bindActBtn(el, type){
+  el.addEventListener('pointerdown', function(e){
+    e.preventDefault(); ensureAudio();
+    el.classList.add('on');
+    setTimeout(function(){ el.classList.remove('on'); }, 130);
+    if (state === 'title') { startGame(); return; }
+    if (state === 'gameover') { toTitle(); return; }
+    if (state === 'pause') { togglePause(); return; }
+    requestAction(type);
+  });
+}
+bindActBtn(document.getElementById('bDig'), 'dig');
+bindActBtn(document.getElementById('bFill'), 'fill');
+cv.addEventListener('pointerdown', function(e){
+  e.preventDefault(); ensureAudio();
+  if (state === 'title') startGame();
+  else if (state === 'gameover') toTitle();
+  else if (state === 'pause') togglePause();
+});
+document.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+document.addEventListener('gesturestart', function(e){ e.preventDefault(); });
+document.addEventListener('visibilitychange', function(){
+  if (document.hidden && state === 'play') togglePause();
+});
+
+/* ===== リサイズ ===== */
+function fit(){
+  var headerH = document.getElementById('appHeader').offsetHeight + 6;
+  var touchH = document.body.classList.contains('show-touch')
+    ? document.getElementById('touch').offsetHeight + 8 : 0;
+  var aw = window.innerWidth - 12;
+  var ah = window.innerHeight - headerH - touchH - 16;
+  var s = Math.min(aw / W, ah / H);
+  cv.style.width = (W * s) + 'px';
+  cv.style.height = (H * s) + 'px';
+}
+window.addEventListener('resize', fit);
+window.addEventListener('orientationchange', function(){ setTimeout(fit, 200); });
+
+/* ===== メインループ ===== */
+var last = 0;
+function frame(ts){
+  var dt = Math.min(0.05, (ts - last) / 1000 || 0);
+  last = ts;
+  if (!modalOpen()) update(dt);
+  render();
+  requestAnimationFrame(frame);
+}
+initAttract();
+fit();
+requestAnimationFrame(frame);
+console.log('平安京エイリアン ' + APP_VERSION + ' 起動');
+</script>
+</body>
+</html>
