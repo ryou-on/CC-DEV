@@ -146,7 +146,10 @@ async function extractYTData(tabId) {
           ?.contents?.[0]?.videoPrimaryInfoRenderer?.title?.runs?.[0]?.text
         || document.title.replace(/ - YouTube$/, '');
 
-      const tracks = yd.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+      // ytInitialData と ytInitialPlayerResponse 両方からキャプショントラックを探す
+      const tracks =
+        yd?.captions?.playerCaptionsTracklistRenderer?.captionTracks ||
+        window.ytInitialPlayerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
       let captionUrl = null;
       if (tracks?.length) {
         const t = tracks.find(t => t.languageCode === 'ja')
