@@ -138,30 +138,39 @@ async function extractYTData(tabId) {
     target: { tabId },
     world: 'MAIN',
     func: () => {
-      const yd = window.ytInitialData;
-      if (!yd) return null;
+      const videoId = new URLSearchParams(location.search).get('v');
+      if (!videoId) return null;
 
-      const title =
-        yd.contents?.twoColumnWatchNextResults?.results?.results
-          ?.contents?.[0]?.videoPrimaryInfoRenderer?.title?.runs?.[0]?.text
+      // SPA遷移すると ytInitialPlayerResponse は古い動画のまま残るため、
+      // player API（#movie_player.getPlayerResponse）から現在の動画の情報を優先取得
+      let pr = null;
+      try {
+        const mp = document.getElementById('movie_player');
+        if (mp && typeof mp.getPlayerResponse === 'function') pr = mp.getPlayerResponse();
+      } catch (_) { /* player未初期化 */ }
+      if (pr?.videoDetails?.videoId !== videoId) {
+        const init = window.ytInitialPlayerResponse;
+        pr = (init?.videoDetails?.videoId === videoId) ? init : (pr || init || {});
+      }
+
+      const title = pr?.videoDetails?.title
+        || document.querySelector('h1.ytd-watch-metadata yt-formatted-string')?.textContent?.trim()
         || document.title.replace(/ - YouTube$/, '');
 
-      // ytInitialData と ytInitialPlayerResponse 両方からキャプショントラックを探す
-      const tracks =
-        yd?.captions?.playerCaptionsTracklistRenderer?.captionTracks ||
-        window.ytInitialPlayerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+      // キャプショントラック（手動字幕 > 自動字幕、ja > en）
+      const tracks = pr?.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
       let captionUrl = null;
-      if (tracks?.length) {
-        const t = tracks.find(t => t.languageCode === 'ja')
+      if (tracks.length) {
+        const t = tracks.find(t => t.languageCode === 'ja' && t.kind !== 'asr')
+               || tracks.find(t => t.languageCode === 'ja')
+               || tracks.find(t => t.languageCode === 'en' && t.kind !== 'asr')
                || tracks.find(t => t.languageCode === 'en')
                || tracks[0];
         captionUrl = t.baseUrl;
       }
 
-      const videoId = new URLSearchParams(location.search).get('v');
-
       // 動画の長さ（秒）: playerResponse優先、video要素フォールバック
-      let duration = Number(window.ytInitialPlayerResponse?.videoDetails?.lengthSeconds) || 0;
+      let duration = Number(pr?.videoDetails?.lengthSeconds) || 0;
       if (!duration) {
         const v = document.querySelector('video');
         if (v && isFinite(v.duration)) duration = Math.floor(v.duration);
@@ -169,7 +178,7 @@ async function extractYTData(tabId) {
 
       // Whisperフォールバック用: 最小ビットレートの音声ストリームURL
       // signatureCipher形式も考慮（url直接 or signatureCipherのurlパラメータ）
-      const formats = window.ytInitialPlayerResponse?.streamingData?.adaptiveFormats || [];
+      const formats = pr?.streamingData?.adaptiveFormats || [];
       const audioFormats = formats.filter(f => f.mimeType?.startsWith('audio/'));
       audioFormats.sort((a, b) => (a.bitrate || 0) - (b.bitrate || 0));
       const bestAudio = audioFormats[0];
@@ -276,19 +285,27 @@ async function fetchTranscriptViaWhisper(audioUrl) {
 
 /* ── Innertube API 経由でオーディオURL取得（streamingData 未取得時のフォールバック） ── */
 async function fetchAudioUrlFallback(videoId) {
+  // IOS / ANDROID クライアントは signatureCipher なしの直接URLを返しやすい
   const clients = [
-    { clientName: 'TVHTML5',             clientVersion: '7.20231219.01.00' },
-    { clientName: 'WEB_EMBEDDED_PLAYER', clientVersion: '2.20231219.01.00' },
+    { clientName: 'IOS',     clientVersion: '19.45.4', deviceMake: 'Apple', deviceModel: 'iPhone16,2', osName: 'iPhone', osVersion: '18.1.0.22B83' },
+    { clientName: 'ANDROID', clientVersion: '19.44.38', androidSdkVersion: 30, osName: 'Android', osVersion: '11' },
+    { clientName: 'TVHTML5', clientVersion: '7.20250120.19.00' },
   ];
   for (const client of clients) {
     try {
       const res = await fetch('https://www.youtube.com/youtubei/v1/player', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoId, context: { client } }),
+        body: JSON.stringify({
+          videoId,
+          context: { client: { ...client, hl: 'ja' } },
+          contentCheckOk: true,
+          racyCheckOk: true,
+        }),
       });
       if (!res.ok) continue;
       const data = await res.json();
+      if (data.playabilityStatus?.status && data.playabilityStatus.status !== 'OK') continue;
       const formats = [
         ...(data.streamingData?.adaptiveFormats || []),
         ...(data.streamingData?.formats        || []),
@@ -677,30 +694,35 @@ el('generateBtn').addEventListener('click', async () => {
     const stepLabel = () => document.querySelector('.step[data-step="0"] span:last-child');
     let transcript;
 
+    const lbl = stepLabel();
+
+    // 1. captionTracks から字幕取得（失敗・空なら次へフォールスルー）
     if (videoData.captionUrl) {
-      // 1. captionTracks から字幕取得
-      transcript = await fetchTranscript(videoData.captionUrl);
-    } else {
-      // 2. YouTube timedtext API（自動字幕）
-      const lbl = stepLabel();
+      try { transcript = await fetchTranscript(videoData.captionUrl); } catch (_) { /* 次へ */ }
+    }
+
+    // 2. YouTube timedtext API（自動字幕）
+    if (!transcript?.trim()) {
       if (lbl) lbl.textContent = '自動字幕を取得中...';
       transcript = await fetchAutoCaptions(videoData.videoId);
-
-      if (!transcript && settings.openaiKey) {
-        // 3. Whisper API（audioStreamUrl が null なら Innertube API でURL取得）
-        let audioUrl = videoData.audioStreamUrl;
-        if (!audioUrl) {
-          if (lbl) lbl.textContent = '音声URLを取得中...';
-          audioUrl = await fetchAudioUrlFallback(videoData.videoId);
-        }
-        if (!audioUrl) throw new Error('音声ストリームの取得に失敗しました。\nページを再読み込みして再試行してください。');
-        if (lbl) lbl.textContent = 'Whisper 音声文字起こし中...';
-        transcript = await fetchTranscriptViaWhisper(audioUrl);
-      } else if (!transcript) {
-        throw new Error('この動画には字幕・自動字幕がありません。\n設定からOpenAI API Keyを入力するとWhisper APIで文字起こしできます。');
-      }
     }
-    if (!transcript.trim()) throw new Error('文字起こしが空です。');
+
+    // 3. Whisper API（audioStreamUrl が null なら Innertube API でURL取得）
+    if (!transcript?.trim()) {
+      if (!settings.openaiKey) {
+        throw new Error('この動画から字幕・自動字幕を取得できませんでした。\n設定からOpenAI API Keyを入力するとWhisper APIで文字起こしできます。');
+      }
+      let audioUrl = videoData.audioStreamUrl;
+      if (!audioUrl) {
+        if (lbl) lbl.textContent = '音声URLを取得中...';
+        audioUrl = await fetchAudioUrlFallback(videoData.videoId);
+      }
+      if (!audioUrl) throw new Error('音声ストリームの取得に失敗しました。\nページを再読み込みして再試行してください。');
+      if (lbl) lbl.textContent = 'Whisper 音声文字起こし中...';
+      transcript = await fetchTranscriptViaWhisper(audioUrl);
+    }
+
+    if (!transcript?.trim()) throw new Error('文字起こしが空です。');
 
     // Step 1: Claude
     setStep(1);
