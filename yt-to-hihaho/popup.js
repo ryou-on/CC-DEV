@@ -761,9 +761,21 @@ async function deployToGitHub(slug, html) {
       ...(sha ? { sha } : {}),
     }),
   });
+  dbg('github:put', { status: res.status, repo, hadSha: !!sha });
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
+    if (res.status === 403 || res.status === 404) {
+      throw new Error(
+        `GitHub 権限エラー (HTTP ${res.status}): ${err.message || ''}\n\n` +
+        `トークンに ${repo} への Contents 書き込み権限がありません。\n` +
+        `Fine-grained token の場合:\n` +
+        `・Resource owner = ryou-on\n` +
+        `・Repository access = CC-DEV を選択\n` +
+        `・Permissions → Contents = Read and write\n` +
+        `で作り直して設定し直してください。`
+      );
+    }
     throw new Error('GitHub エラー: ' + (err.message || `HTTP ${res.status}`));
   }
 
