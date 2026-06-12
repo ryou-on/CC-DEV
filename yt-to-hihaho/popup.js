@@ -289,45 +289,56 @@ async function fetchCaptionUrlViaPlayer(tabId, videoId) {
     func: async (videoId) => {
       const out = {};
       try {
-        const mp = document.getElementById('movie_player');
-        if (!mp || typeof mp.getOption !== 'function') return { error: 'player API なし' };
+        // PerformanceObserver で timedtext リクエストを監視
+        // （Resource Timing バッファ溢れでも検知できるよう observer を使用）
+        let captured = null;
+        const obs = new PerformanceObserver(list => {
+          for (const e of list.getEntries()) {
+            if (e.name.includes('/api/timedtext') && e.name.includes(videoId)) captured = e.name;
+          }
+        });
+        obs.observe({ type: 'resource', buffered: true });
+        await new Promise(r => setTimeout(r, 100));
+        if (captured) { out.reused = true; out.url = captured; obs.disconnect(); return out; }
 
-        const timedtextUrls = () => performance.getEntriesByType('resource')
-          .map(e => e.name)
-          .filter(n => n.includes('/api/timedtext') && n.includes(videoId));
+        // CCボタンをクリックして字幕リクエストを発火させる（人間と同じ操作）
+        const btn = document.querySelector('.ytp-subtitles-button');
+        out.hasBtn = !!btn;
+        const wasOn = btn?.getAttribute('aria-pressed') === 'true';
+        out.wasOn = wasOn;
 
-        const seen = new Set(timedtextUrls());
-        out.preExisting = seen.size;
-
-        // 現在の字幕状態を保存してから字幕モジュールを起動
-        let prevTrack = null;
-        try { prevTrack = mp.getOption('captions', 'track'); } catch (_) {}
-        const hadTrack = !!(prevTrack && prevTrack.languageCode);
-        try { mp.loadModule('captions'); } catch (_) {}
-
-        let tracklist = [];
-        try { tracklist = mp.getOption('captions', 'tracklist') || []; } catch (_) {}
-        out.tracklist = tracklist.length;
-        const pick = tracklist.find(t => t.languageCode === 'ja') || tracklist[0];
-        if (pick) { try { mp.setOption('captions', 'track', pick); } catch (_) {} }
-
-        // 新しい timedtext リクエストを最大5秒待つ
-        let url = null;
-        for (let i = 0; i < 25; i++) {
-          await new Promise(r => setTimeout(r, 200));
-          const fresh = timedtextUrls().filter(n => !seen.has(n));
-          if (fresh.length) { url = fresh[fresh.length - 1]; break; }
+        if (btn) {
+          out.method = 'button';
+          if (wasOn) {
+            // ON状態なのにリクエスト履歴なし → OFF→ONで再発火
+            btn.click();
+            await new Promise(r => setTimeout(r, 150));
+          }
+          btn.click(); // CC ON
+        } else {
+          // ボタンが見つからない場合は player API で試行
+          out.method = 'setOption';
+          const mp = document.getElementById('movie_player');
+          if (!mp || typeof mp.getOption !== 'function') { obs.disconnect(); return { ...out, error: 'CCボタンもplayer APIもなし' }; }
+          try { mp.loadModule('captions'); } catch (_) {}
+          await new Promise(r => setTimeout(r, 600));
+          let tl = [];
+          try { tl = mp.getOption('captions', 'tracklist') || []; } catch (_) {}
+          out.tracklist = tl.length;
+          const pick = tl.find(t => t.languageCode === 'ja') || tl[0];
+          if (pick) { try { mp.setOption('captions', 'track', pick); } catch (_) {} }
         }
-        // 取れなければ過去のリクエスト（同一動画分）を流用
-        if (!url) { const all = timedtextUrls(); url = all[all.length - 1] || null; out.reused = !!url; }
 
-        // 字幕表示を元の状態へ戻す
-        try {
-          if (hadTrack) mp.setOption('captions', 'track', prevTrack);
-          else mp.unloadModule('captions');
-        } catch (_) {}
+        // 最大6秒待機
+        for (let i = 0; i < 30 && !captured; i++) {
+          await new Promise(r => setTimeout(r, 200));
+        }
+        obs.disconnect();
 
-        out.url = url;
+        // 字幕表示を元の状態へ戻す（クリックでONにした場合のみOFF）
+        if (btn && !wasOn) { try { btn.click(); } catch (_) {} }
+
+        out.url = captured;
         return out;
       } catch (e) {
         out.error = String(e);
@@ -337,7 +348,9 @@ async function fetchCaptionUrlViaPlayer(tabId, videoId) {
   });
   const r = results?.[0]?.result;
   dbg('harvest', {
-    preExisting: r?.preExisting ?? null,
+    method: r?.method || null,
+    hasBtn: r?.hasBtn ?? null,
+    wasOn: r?.wasOn ?? null,
     tracklist: r?.tracklist ?? null,
     reused: r?.reused || false,
     gotUrl: !!r?.url,
