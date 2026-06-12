@@ -5,6 +5,19 @@
 let settings = {};
 let videoData = null;
 
+/* ── デバッグログ（エラー時にコピー可能） ── */
+const DBG = [];
+function dbg(label, data) {
+  let detail = '';
+  if (data !== undefined) {
+    try { detail = ' ' + (typeof data === 'string' ? data : JSON.stringify(data)); }
+    catch (_) { detail = ' [unserializable]'; }
+  }
+  const line = `[${new Date().toISOString().slice(11, 19)}] ${label}${detail}`;
+  DBG.push(line);
+  console.log('[YT2hihaho]', line);
+}
+
 /* ── Init ── */
 document.addEventListener('DOMContentLoaded', async () => {
   settings = await loadSettings();
@@ -20,6 +33,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   showState('loading');
   try {
     videoData = await extractYTData(tab.id);
+    dbg('extract', videoData ? {
+      videoId: videoData.videoId,
+      hasCaptionUrl: !!videoData.captionUrl,
+      duration: videoData.duration,
+      hasAudioUrl: !!videoData.audioStreamUrl,
+      ...videoData._diag,
+    } : 'null');
     if (!videoData?.videoId) { showState('no-yt'); return; }
 
     const slug = 'yt-' + videoData.videoId;
@@ -53,6 +73,7 @@ function setStep(i) {
 }
 
 function showError(msg, canRetry = true) {
+  dbg('ERROR', msg);
   el('errorMsg').textContent = msg;
   el('retryBtn').hidden = !canRetry;
   showState('error');
@@ -144,13 +165,23 @@ async function extractYTData(tabId) {
       // SPA遷移すると ytInitialPlayerResponse は古い動画のまま残るため、
       // player API（#movie_player.getPlayerResponse）から現在の動画の情報を優先取得
       let pr = null;
+      let prSource = 'none';
       try {
         const mp = document.getElementById('movie_player');
-        if (mp && typeof mp.getPlayerResponse === 'function') pr = mp.getPlayerResponse();
+        if (mp && typeof mp.getPlayerResponse === 'function') {
+          pr = mp.getPlayerResponse();
+          if (pr) prSource = 'player_api';
+        }
       } catch (_) { /* player未初期化 */ }
       if (pr?.videoDetails?.videoId !== videoId) {
         const init = window.ytInitialPlayerResponse;
-        pr = (init?.videoDetails?.videoId === videoId) ? init : (pr || init || {});
+        if (init?.videoDetails?.videoId === videoId) {
+          pr = init;
+          prSource = 'initial';
+        } else {
+          pr = pr || init || {};
+          prSource += ':stale';
+        }
       }
 
       const title = pr?.videoDetails?.title
@@ -192,7 +223,20 @@ async function extractYTData(tabId) {
         }
       }
 
-      return { title, captionUrl, videoId, duration, audioStreamUrl };
+      return {
+        title, captionUrl, videoId, duration, audioStreamUrl,
+        _diag: {
+          prSource,
+          prVideoId: pr?.videoDetails?.videoId || null,
+          playability: pr?.playabilityStatus?.status || null,
+          tracksCount: tracks.length,
+          trackLangs: tracks.slice(0, 10).map(t => t.languageCode + (t.kind === 'asr' ? ':asr' : '')),
+          formatsCount: formats.length,
+          audioFormatsCount: audioFormats.length,
+          bestAudioMime: bestAudio?.mimeType?.split(';')[0] || null,
+          cipherOnly: !!(bestAudio && !bestAudio.url && (bestAudio.signatureCipher || bestAudio.cipher)),
+        },
+      };
     },
   });
   return results?.[0]?.result ?? null;
@@ -202,25 +246,30 @@ async function extractYTData(tabId) {
 async function fetchTranscript(captionUrl) {
   // Try JSON3 first (cleaner parse), fall back to XML
   const jsonRes = await fetch(captionUrl + '&fmt=json3');
+  dbg('captions:json3', { status: jsonRes.status });
   if (jsonRes.ok) {
-    const data = await jsonRes.json();
-    const text = (data.events || [])
+    const data = await jsonRes.json().catch(() => null);
+    const text = (data?.events || [])
       .filter(e => e.segs)
       .map(e => e.segs.map(s => s.utf8 || '').join('').replace(/\n/g, ' '))
       .filter(t => t.trim())
       .join(' ');
+    dbg('captions:json3:text', { length: text.length });
     if (text) return text;
   }
 
   // XML fallback
   const xmlRes = await fetch(captionUrl);
+  dbg('captions:xml', { status: xmlRes.status });
   if (!xmlRes.ok) throw new Error(`字幕取得失敗: HTTP ${xmlRes.status}`);
   const xml = await xmlRes.text();
   const doc = new DOMParser().parseFromString(xml, 'text/xml');
-  return Array.from(doc.querySelectorAll('text'))
+  const text = Array.from(doc.querySelectorAll('text'))
     .map(t => t.textContent.replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/\n/g, ' ').trim())
     .filter(Boolean)
     .join(' ');
+  dbg('captions:xml:text', { length: text.length });
+  return text;
 }
 
 /* ── YouTube timedtext API（自動字幕フォールバック） ── */
@@ -234,16 +283,17 @@ async function fetchAutoCaptions(videoId) {
   for (const url of attempts) {
     try {
       const res = await fetch(url);
-      if (!res.ok) continue;
-      const data = await res.json().catch(() => null);
-      if (!data) continue;
+      const body = res.ok ? await res.text() : '';
+      dbg('timedtext', { url: url.replace(/^https:\/\/www\.youtube\.com/, ''), status: res.status, bytes: body.length });
+      if (!res.ok || !body) continue;
+      const data = JSON.parse(body);
       const text = (data.events || [])
         .filter(e => e.segs)
         .map(e => e.segs.map(s => s.utf8 || '').join('').replace(/\n/g, ' '))
         .filter(t => t.trim())
         .join(' ');
       if (text.trim()) return text;
-    } catch (_) { /* 次を試す */ }
+    } catch (e) { dbg('timedtext:error', e.message); }
   }
   return null;
 }
@@ -251,10 +301,12 @@ async function fetchAutoCaptions(videoId) {
 /* ── Whisper API（字幕なし動画フォールバック） ── */
 async function fetchTranscriptViaWhisper(audioUrl) {
   const audioRes = await fetch(audioUrl);
+  dbg('whisper:audio', { status: audioRes.status });
   if (!audioRes.ok) throw new Error(`YouTube音声ストリーム取得失敗 (HTTP ${audioRes.status})。\nページを再読み込みして再試行してください。`);
 
   const audioBlob = await audioRes.blob();
   const sizeMB = (audioBlob.size / 1024 / 1024).toFixed(1);
+  dbg('whisper:blob', { sizeMB, mime: audioBlob.type });
   if (audioBlob.size > 24.5 * 1024 * 1024) {
     throw new Error(`音声ファイルが大きすぎます（${sizeMB}MB）。\nWhisper APIの上限は25MBです。約60分超の動画は対象外です。`);
   }
@@ -303,18 +355,29 @@ async function fetchAudioUrlFallback(videoId) {
           racyCheckOk: true,
         }),
       });
-      if (!res.ok) continue;
+      if (!res.ok) {
+        const errBody = await res.text().catch(() => '');
+        dbg('innertube:' + client.clientName, { status: res.status, body: errBody.slice(0, 200) });
+        continue;
+      }
       const data = await res.json();
-      if (data.playabilityStatus?.status && data.playabilityStatus.status !== 'OK') continue;
       const formats = [
         ...(data.streamingData?.adaptiveFormats || []),
         ...(data.streamingData?.formats        || []),
       ];
       const audioFormats = formats.filter(f => f.mimeType?.startsWith('audio/') && f.url);
+      dbg('innertube:' + client.clientName, {
+        status: res.status,
+        playability: data.playabilityStatus?.status || null,
+        reason: data.playabilityStatus?.reason || undefined,
+        formats: formats.length,
+        audioWithUrl: audioFormats.length,
+      });
+      if (data.playabilityStatus?.status && data.playabilityStatus.status !== 'OK') continue;
       if (!audioFormats.length) continue;
       audioFormats.sort((a, b) => (a.bitrate || 0) - (b.bitrate || 0));
       return audioFormats[0].url;
-    } catch (_) { /* 次のクライアントを試す */ }
+    } catch (e) { dbg('innertube:' + client.clientName + ':error', e.message); }
   }
   return null;
 }
@@ -723,10 +786,12 @@ el('generateBtn').addEventListener('click', async () => {
     }
 
     if (!transcript?.trim()) throw new Error('文字起こしが空です。');
+    dbg('transcript', { length: transcript.length });
 
     // Step 1: Claude
     setStep(1);
     const content = await callClaude(videoData.title, transcript);
+    dbg('claude', { sections: content.summary?.sections?.length || 0, glossary: content.glossary?.length || 0 });
 
     // Step 2: Generate HTML
     setStep(2);
@@ -735,6 +800,7 @@ el('generateBtn').addEventListener('click', async () => {
     // Step 3: Deploy
     setStep(3);
     const tabUrl = await deployToGitHub(slug, html);
+    dbg('deploy', tabUrl);
 
     const ytUrl = `https://www.youtube.com/watch?v=${videoData.videoId}`;
 
@@ -744,12 +810,16 @@ el('generateBtn').addEventListener('click', async () => {
     if (useHihahoApi) {
       setStep(4);
       const folderId = await resolveHihahoFolderId();
+      dbg('hihaho:folder', folderId);
       const beforeIds = await listHihahoVideoIds();
       hihahoVideo = await createHihahoVideoFromYouTube(folderId, ytUrl, beforeIds);
+      dbg('hihaho:video', { id: hihahoVideo.id, player_url: hihahoVideo.player_url || null });
       try {
         await createIframeInteraction(hihahoVideo.id, tabUrl, videoData.duration);
+        dbg('hihaho:iframe', 'ok');
       } catch (e) {
         iframeError = e.message;
+        dbg('hihaho:iframe:error', e.message);
       }
     }
 
@@ -838,6 +908,21 @@ el('settingsCancelBtn').addEventListener('click', () => {
 
 el('retryBtn').addEventListener('click', () => {
   showState(videoData ? 'ready' : 'no-yt');
+});
+
+el('copyLogBtn').addEventListener('click', () => {
+  const text = [
+    `=== YT→hihaho Tab v${chrome.runtime.getManifest().version} エラーログ ===`,
+    `動画: ${videoData?.videoId ? 'https://www.youtube.com/watch?v=' + videoData.videoId : '-'}`,
+    `エラー: ${el('errorMsg').textContent}`,
+    '',
+    ...DBG,
+  ].join('\n');
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = el('copyLogBtn');
+    btn.textContent = '✓ コピー完了';
+    setTimeout(() => { btn.textContent = '📋 エラーログをコピー'; }, 1800);
+  });
 });
 
 el('backBtn').addEventListener('click', () => showState('ready'));
