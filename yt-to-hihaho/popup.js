@@ -731,6 +731,57 @@ document.addEventListener('keydown',function(e){if(e.key==='Escape'&&F.getAttrib
 </body></html>`;
 }
 
+/* ── GitHub トークン診断 ──
+   403/404の原因を「認証/リポジトリ可視性/書込権限」のどこかに切り分ける */
+async function diagnoseGitHubToken() {
+  const repo = settings.githubRepo;
+  const headers = {
+    'Authorization': `Bearer ${settings.githubToken}`,
+    'Accept': 'application/vnd.github+json',
+  };
+  const out = [];
+
+  // 1. 認証できるか（誰として認証されているか）
+  let login = null;
+  try {
+    const uRes = await fetch('https://api.github.com/user', { headers });
+    dbg('diag:user', { status: uRes.status });
+    if (uRes.status === 401) {
+      return 'トークンが無効か期限切れです（認証に失敗 401）。\nトークンを作り直して貼り直してください。';
+    }
+    if (uRes.ok) { login = (await uRes.json()).login; out.push(`認証OK: ${login} として認証`); }
+  } catch (_) { /* 続行 */ }
+
+  // 2. リポジトリが見えるか・書込可能か
+  try {
+    const rRes = await fetch(`https://api.github.com/repos/${repo}`, { headers });
+    dbg('diag:repo', { status: rRes.status });
+    if (rRes.status === 404) {
+      return (login ? `認証は ${login} として成功。\n` : '') +
+        `しかし ${repo} にアクセスできません（404）。\n原因のどれか:\n` +
+        `・トークン作成時に Resource owner を「ryou-on」にしていない\n` +
+        `・Repository access で CC-DEV を選んでいない\n` +
+        `・ryou-on が組織の場合、Fine-grained tokenの承認待ち\n` +
+        `→ 確実なのは Classic token（repoスコープ全体にチェック）です。`;
+    }
+    if (rRes.ok) {
+      const data = await rRes.json();
+      const canPush = data.permissions?.push;
+      dbg('diag:perm', { push: canPush });
+      if (canPush) {
+        return (login ? `認証OK: ${login}。${repo} に書込権限あり。\n` : '') +
+          'それでも書き込めない場合、組織のSSO未認可の可能性があります。\n' +
+          'トークン一覧の「Configure SSO」で ryou-on を Authorize してください。';
+      }
+      return (login ? `認証OK: ${login}。\n` : '') +
+        `${repo} は見えますが書き込み権限がありません（読み取りのみ）。\n` +
+        `→ Permissions → Contents = Read and write で作り直してください。`;
+    }
+  } catch (_) { /* 続行 */ }
+
+  return out.join('\n') || '原因を特定できませんでした。Classic token（repoスコープ）をお試しください。';
+}
+
 /* ── GitHub Deploy ── */
 async function deployToGitHub(slug, html) {
   const repo = settings.githubRepo;
@@ -766,15 +817,8 @@ async function deployToGitHub(slug, html) {
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     if (res.status === 403 || res.status === 404) {
-      throw new Error(
-        `GitHub 権限エラー (HTTP ${res.status}): ${err.message || ''}\n\n` +
-        `トークンに ${repo} への Contents 書き込み権限がありません。\n` +
-        `Fine-grained token の場合:\n` +
-        `・Resource owner = ryou-on\n` +
-        `・Repository access = CC-DEV を選択\n` +
-        `・Permissions → Contents = Read and write\n` +
-        `で作り直して設定し直してください。`
-      );
+      const diagnosis = await diagnoseGitHubToken();
+      throw new Error(`GitHub 権限エラー (HTTP ${res.status})\n\n${diagnosis}`);
     }
     throw new Error('GitHub エラー: ' + (err.message || `HTTP ${res.status}`));
   }
