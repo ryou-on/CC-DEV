@@ -244,34 +244,106 @@ async function extractYTData(tabId) {
   return results?.[0]?.result ?? null;
 }
 
-/* ── Transcript Fetch ── */
+/* ── Transcript Fetch ──
+   URLに既に fmt が付いていればそのまま、無ければ json3 を要求。
+   ボディを JSON3 → XML(srv1:<text> / srv3:<p>) の順で寛容にパース */
 async function fetchTranscript(captionUrl) {
-  // Try JSON3 first (cleaner parse), fall back to XML
-  const jsonRes = await fetch(captionUrl + '&fmt=json3');
-  dbg('captions:json3', { status: jsonRes.status });
-  if (jsonRes.ok) {
-    const data = await jsonRes.json().catch(() => null);
-    const text = (data?.events || [])
+  const url = captionUrl.includes('fmt=') ? captionUrl : captionUrl + '&fmt=json3';
+  const res = await fetch(url);
+  dbg('captions:fetch', { status: res.status, fmt: /fmt=([^&]*)/.exec(url)?.[1] || '(none)' });
+  if (!res.ok) throw new Error(`字幕取得失敗: HTTP ${res.status}`);
+  const body = await res.text();
+  dbg('captions:body', { bytes: body.length });
+  if (!body.trim()) return '';
+
+  // JSON3
+  try {
+    const data = JSON.parse(body);
+    const text = (data.events || [])
       .filter(e => e.segs)
       .map(e => e.segs.map(s => s.utf8 || '').join('').replace(/\n/g, ' '))
       .filter(t => t.trim())
       .join(' ');
     dbg('captions:json3:text', { length: text.length });
-    if (text) return text;
-  }
+    if (text.trim()) return text;
+  } catch (_) { /* XMLへ */ }
 
-  // XML fallback
-  const xmlRes = await fetch(captionUrl);
-  dbg('captions:xml', { status: xmlRes.status });
-  if (!xmlRes.ok) throw new Error(`字幕取得失敗: HTTP ${xmlRes.status}`);
-  const xml = await xmlRes.text();
-  const doc = new DOMParser().parseFromString(xml, 'text/xml');
-  const text = Array.from(doc.querySelectorAll('text'))
+  // XML（srv1=<text>, srv3=<p>）
+  const doc = new DOMParser().parseFromString(body, 'text/xml');
+  const text = Array.from(doc.querySelectorAll('text, p'))
     .map(t => t.textContent.replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/\n/g, ' ').trim())
     .filter(Boolean)
     .join(' ');
   dbg('captions:xml:text', { length: text.length });
   return text;
+}
+
+/* ── プレイヤーに字幕を読み込ませ、PO token付き timedtext URL を横取り ──
+   timedtext は BotGuard 由来の pot パラメータ必須。自前で生成できないため、
+   プレイヤー本体に字幕リクエストを発行させ Resource Timing からURLを回収する */
+async function fetchCaptionUrlViaPlayer(tabId, videoId) {
+  const results = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: 'MAIN',
+    args: [videoId],
+    func: async (videoId) => {
+      const out = {};
+      try {
+        const mp = document.getElementById('movie_player');
+        if (!mp || typeof mp.getOption !== 'function') return { error: 'player API なし' };
+
+        const timedtextUrls = () => performance.getEntriesByType('resource')
+          .map(e => e.name)
+          .filter(n => n.includes('/api/timedtext') && n.includes(videoId));
+
+        const seen = new Set(timedtextUrls());
+        out.preExisting = seen.size;
+
+        // 現在の字幕状態を保存してから字幕モジュールを起動
+        let prevTrack = null;
+        try { prevTrack = mp.getOption('captions', 'track'); } catch (_) {}
+        const hadTrack = !!(prevTrack && prevTrack.languageCode);
+        try { mp.loadModule('captions'); } catch (_) {}
+
+        let tracklist = [];
+        try { tracklist = mp.getOption('captions', 'tracklist') || []; } catch (_) {}
+        out.tracklist = tracklist.length;
+        const pick = tracklist.find(t => t.languageCode === 'ja') || tracklist[0];
+        if (pick) { try { mp.setOption('captions', 'track', pick); } catch (_) {} }
+
+        // 新しい timedtext リクエストを最大5秒待つ
+        let url = null;
+        for (let i = 0; i < 25; i++) {
+          await new Promise(r => setTimeout(r, 200));
+          const fresh = timedtextUrls().filter(n => !seen.has(n));
+          if (fresh.length) { url = fresh[fresh.length - 1]; break; }
+        }
+        // 取れなければ過去のリクエスト（同一動画分）を流用
+        if (!url) { const all = timedtextUrls(); url = all[all.length - 1] || null; out.reused = !!url; }
+
+        // 字幕表示を元の状態へ戻す
+        try {
+          if (hadTrack) mp.setOption('captions', 'track', prevTrack);
+          else mp.unloadModule('captions');
+        } catch (_) {}
+
+        out.url = url;
+        return out;
+      } catch (e) {
+        out.error = String(e);
+        return out;
+      }
+    },
+  });
+  const r = results?.[0]?.result;
+  dbg('harvest', {
+    preExisting: r?.preExisting ?? null,
+    tracklist: r?.tracklist ?? null,
+    reused: r?.reused || false,
+    gotUrl: !!r?.url,
+    error: r?.error,
+  });
+  return r?.url || null;
 }
 
 /* ── YouTube timedtext API（自動字幕フォールバック） ── */
@@ -352,14 +424,35 @@ async function fetchTranscriptViaInnertube(tabId, videoId) {
         const key = get('INNERTUBE_API_KEY');
         const ctx = get('INNERTUBE_CONTEXT')
           || { client: { clientName: 'WEB', clientVersion: get('INNERTUBE_CLIENT_VERSION') || '2.20250101.00.00', hl: 'ja' } };
+        // ログイン状態と同じ扱いにするため SAPISIDHASH を計算（cookieから取得可能）
+        const sapisidHash = async () => {
+          const m = document.cookie.match(/(?:^|;\s*)(?:__Secure-3P)?SAPISID=([^;]+)/);
+          if (!m) return null;
+          const ts = Math.floor(Date.now() / 1000);
+          const buf = await crypto.subtle.digest('SHA-1',
+            new TextEncoder().encode(`${ts} ${m[1]} https://www.youtube.com`));
+          const hex = [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+          return `SAPISIDHASH ${ts}_${hex}`;
+        };
+        const auth = await sapisidHash();
+
         const post = async (path, body) => {
+          const headers = { 'Content-Type': 'application/json' };
+          if (auth) {
+            headers['Authorization'] = auth;
+            headers['X-Origin'] = 'https://www.youtube.com';
+          }
+          if (ctx?.client?.clientName === 'WEB') headers['X-Youtube-Client-Name'] = '1';
+          if (ctx?.client?.clientVersion) headers['X-Youtube-Client-Version'] = ctx.client.clientVersion;
           const r = await fetch(`https://www.youtube.com/youtubei/v1/${path}${key ? '?key=' + key : ''}`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             credentials: 'include',
             body: JSON.stringify({ context: ctx, ...body }),
           });
-          out.steps.push({ path, status: r.status });
+          const step = { path, status: r.status };
+          if (!r.ok) step.body = (await r.text().catch(() => '')).slice(0, 300);
+          out.steps.push(step);
           return r.ok ? r.json() : null;
         };
 
@@ -826,19 +919,28 @@ el('generateBtn').addEventListener('click', async () => {
       try { transcript = await fetchTranscript(videoData.captionUrl); } catch (_) { /* 次へ */ }
     }
 
-    // 2. Innertube get_transcript（ページ内「文字起こし」パネルと同じAPI）
+    // 2. プレイヤー経由で PO token 付き timedtext URL を回収して取得
+    if (!transcript?.trim()) {
+      if (lbl) lbl.textContent = 'プレイヤー経由で字幕を取得中...';
+      const harvestedUrl = await fetchCaptionUrlViaPlayer(currentTabId, videoData.videoId);
+      if (harvestedUrl) {
+        try { transcript = await fetchTranscript(harvestedUrl); } catch (_) { /* 次へ */ }
+      }
+    }
+
+    // 3. Innertube get_transcript（ページ内「文字起こし」パネルと同じAPI）
     if (!transcript?.trim()) {
       if (lbl) lbl.textContent = '文字起こしパネルから取得中...';
       transcript = await fetchTranscriptViaInnertube(currentTabId, videoData.videoId);
     }
 
-    // 3. YouTube timedtext API（自動字幕）
+    // 4. YouTube timedtext API（自動字幕）
     if (!transcript?.trim()) {
       if (lbl) lbl.textContent = '自動字幕を取得中...';
       transcript = await fetchAutoCaptions(videoData.videoId);
     }
 
-    // 4. Whisper API（audioStreamUrl が null なら Innertube API でURL取得）
+    // 5. Whisper API（audioStreamUrl が null なら Innertube API でURL取得）
     if (!transcript?.trim()) {
       if (!settings.openaiKey) {
         throw new Error('この動画から字幕・自動字幕を取得できませんでした。\n設定からOpenAI API Keyを入力するとWhisper APIで文字起こしできます。');
