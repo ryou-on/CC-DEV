@@ -1086,6 +1086,16 @@
       display: flex; align-items: center; justify-content: center;
       flex-shrink: 0; user-select: none;
     }
+    /* 写真の表記ルール（v0.8.3〜） */
+    .cal-pin-chip img, .cal-week-pin img, .cal-day-card-thumbs img { background: rgba(0,0,0,0.04); }
+    /* 横位置（横長）: 写真全部表示 */
+    .cal-pin-chip img.photo-landscape,
+    .cal-week-pin img.photo-landscape,
+    .cal-day-card-thumbs img.photo-landscape { object-fit: contain; }
+    /* 縦位置（縦長）: 1:1クロップ、顔は写真の上1/4にあることが多いので上寄り */
+    .cal-pin-chip img.photo-portrait,
+    .cal-week-pin img.photo-portrait,
+    .cal-day-card-thumbs img.photo-portrait { object-fit: cover; object-position: center 22%; }
     .cal-pin-chip .cal-thumb-placeholder { width: 100%; height: 42px; border-radius: 3px; font-size: 1.4rem; }
     .cal-week-pin .cal-thumb-placeholder { width: 100%; height: 90px; border-radius: 4px; font-size: 2.4rem; }
     .cal-day-card-thumbs .cal-thumb-placeholder { width: 128px; height: 128px; border-radius: 8px; font-size: 3rem; }
@@ -1316,7 +1326,7 @@
   <div class="logo">
     COCO-ITTA
     <span>ここいった — 家族の地図帳</span>
-    <span style="font-size:0.6rem;opacity:0.5;">v0.8.2</span>
+    <span style="font-size:0.6rem;opacity:0.5;">v0.8.3</span>
   </div>
   <div class="filters" id="filters">
     <button class="filter-btn active" data-filter="all">すべて</button>
@@ -2906,6 +2916,21 @@ function pinsByDate() {
   return map;
 }
 
+/** 画像の縦横比を判定してクラスを付与（landscape=全表示, portrait=上寄りクロップ） */
+function applyImgOrientation(img) {
+  const apply = () => {
+    if (img.naturalWidth && img.naturalHeight) {
+      const portrait = img.naturalHeight > img.naturalWidth;
+      img.classList.add(portrait ? 'photo-portrait' : 'photo-landscape');
+    }
+  };
+  if (img.complete && img.naturalWidth) apply();
+  else img.addEventListener('load', apply, { once: true });
+}
+function applyOrientationToAll(container) {
+  container.querySelectorAll('img').forEach(applyImgOrientation);
+}
+
 function setCalendarMode(on) {
   _calendarOn = on;
   document.getElementById('map').style.display = on ? 'none' : '';
@@ -2964,6 +2989,7 @@ function renderCalMonth() {
   }
   html += '</div>';
   _calBody.innerHTML = html;
+  applyOrientationToAll(_calBody);
 }
 
 function renderCalWeek() {
@@ -2996,6 +3022,7 @@ function renderCalWeek() {
   }
   html += '</div>';
   _calBody.innerHTML = html;
+  applyOrientationToAll(_calBody);
 }
 
 function renderCalDay() {
@@ -3033,6 +3060,7 @@ function renderCalDay() {
   }
   html += '</div>';
   _calBody.innerHTML = html;
+  applyOrientationToAll(_calBody);
 }
 
 window.calOpenDay = (dateStr) => {
@@ -4163,7 +4191,10 @@ if ('serviceWorker' in navigator) {
 
 // ===== UI共通コンポーネント（ページロード完了後に初期化）=====
 window.addEventListener('load', () => {
-const releaseNotes = `## v0.8.2 (2026-06-12)
+const releaseNotes = `## v0.8.3 (2026-06-12)
+- 📸 カレンダーの写真表示ルールを改善：横位置は写真全部を表示、縦位置は1:1で顔が見える位置にクロップ
+
+## v0.8.2 (2026-06-12)
 - 🗺️ カレンダー画面の左上に大きな「マップに戻る」ボタンを追加（戻る導線を分かりやすく）
 - 📷 カレンダーのサムネを大きく：月ビューは縦並び42pxへ、週ビューは90px、日ビューは128pxに拡大
 
@@ -4305,7 +4336,7 @@ const helpContent = `## 使い方
 // UI共通コンポーネント初期化
 const versionBadge = document.createElement('div');
   versionBadge.className = 'version-badge';
-  versionBadge.textContent = 'v0.8.2';
+  versionBadge.textContent = 'v0.8.3';
   versionBadge.addEventListener('click', () => {
     const modal = document.getElementById('releaseNotesModal');
     modal.classList.add('open');
@@ -4329,7 +4360,7 @@ const versionBadge = document.createElement('div');
   });
 
   const releaseModal = document.getElementById('releaseNotesModal');
-  const APP_VERSION = 'v0.8.2';
+  const APP_VERSION = 'v0.8.3';
   const LAST_SEEN_KEY = 'coco-itta-last-seen-version';
   releaseModal.addEventListener('click', e => {
     if (e.target === releaseModal) {
