@@ -4,6 +4,7 @@
 
 let settings = {};
 let videoData = null;
+let currentTabId = null;
 
 /* ── デバッグログ（エラー時にコピー可能） ── */
 const DBG = [];
@@ -30,6 +31,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     return;
   }
 
+  currentTabId = tab.id;
   showState('loading');
   try {
     videoData = await extractYTData(tab.id);
@@ -333,6 +335,66 @@ async function fetchTranscriptViaWhisper(audioUrl) {
   const text = await res.text();
   if (!text.trim()) throw new Error('Whisper の文字起こし結果が空でした。');
   return text;
+}
+
+/* ── Innertube get_transcript（ページ内「文字起こし」パネルと同じAPI・ページ文脈で実行） ──
+   timedtext が PO token 必須化され空を返すため、ページ自身の ytcfg
+   （INNERTUBE_API_KEY / INNERTUBE_CONTEXT）を使い page context から呼び出す */
+async function fetchTranscriptViaInnertube(tabId, videoId) {
+  const results = await chrome.scripting.executeScript({
+    target: { tabId },
+    world: 'MAIN',
+    args: [videoId],
+    func: async (videoId) => {
+      const out = { steps: [] };
+      try {
+        const get = k => (window.ytcfg?.get ? window.ytcfg.get(k) : window.ytcfg?.data_?.[k]);
+        const key = get('INNERTUBE_API_KEY');
+        const ctx = get('INNERTUBE_CONTEXT')
+          || { client: { clientName: 'WEB', clientVersion: get('INNERTUBE_CLIENT_VERSION') || '2.20250101.00.00', hl: 'ja' } };
+        const post = async (path, body) => {
+          const r = await fetch(`https://www.youtube.com/youtubei/v1/${path}${key ? '?key=' + key : ''}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ context: ctx, ...body }),
+          });
+          out.steps.push({ path, status: r.status });
+          return r.ok ? r.json() : null;
+        };
+
+        // 1. next レスポンスから文字起こしパネルの params を取得
+        const next = await post('next', { videoId });
+        if (!next) return out;
+        const m = JSON.stringify(next).match(/"getTranscriptEndpoint":\{"params":"([^"]+)"/);
+        out.hasParams = !!m;
+        if (!m) return out;
+
+        // 2. get_transcript でセグメント取得
+        const tr = await post('get_transcript', { params: m[1] });
+        if (!tr) return out;
+        const texts = [];
+        (function walk(o) {
+          if (!o || typeof o !== 'object') return;
+          if (o.transcriptSegmentRenderer?.snippet) {
+            const t = (o.transcriptSegmentRenderer.snippet.runs || []).map(r => r.text || '').join('');
+            if (t.trim()) texts.push(t.trim());
+            return;
+          }
+          for (const k in o) walk(o[k]);
+        })(tr);
+        out.segments = texts.length;
+        out.text = texts.join(' ');
+        return out;
+      } catch (e) {
+        out.error = String(e);
+        return out;
+      }
+    },
+  });
+  const r = results?.[0]?.result;
+  dbg('get_transcript', { steps: r?.steps, hasParams: r?.hasParams ?? null, segments: r?.segments || 0, error: r?.error });
+  return r?.text?.trim() ? r.text : null;
 }
 
 /* ── Innertube API 経由でオーディオURL取得（streamingData 未取得時のフォールバック） ── */
@@ -764,13 +826,19 @@ el('generateBtn').addEventListener('click', async () => {
       try { transcript = await fetchTranscript(videoData.captionUrl); } catch (_) { /* 次へ */ }
     }
 
-    // 2. YouTube timedtext API（自動字幕）
+    // 2. Innertube get_transcript（ページ内「文字起こし」パネルと同じAPI）
+    if (!transcript?.trim()) {
+      if (lbl) lbl.textContent = '文字起こしパネルから取得中...';
+      transcript = await fetchTranscriptViaInnertube(currentTabId, videoData.videoId);
+    }
+
+    // 3. YouTube timedtext API（自動字幕）
     if (!transcript?.trim()) {
       if (lbl) lbl.textContent = '自動字幕を取得中...';
       transcript = await fetchAutoCaptions(videoData.videoId);
     }
 
-    // 3. Whisper API（audioStreamUrl が null なら Innertube API でURL取得）
+    // 4. Whisper API（audioStreamUrl が null なら Innertube API でURL取得）
     if (!transcript?.trim()) {
       if (!settings.openaiKey) {
         throw new Error('この動画から字幕・自動字幕を取得できませんでした。\n設定からOpenAI API Keyを入力するとWhisper APIで文字起こしできます。');
