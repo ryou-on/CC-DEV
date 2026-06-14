@@ -252,8 +252,10 @@
         <input type="text" id="f-name" placeholder="例：ともえのお絵かき">
       </div>
       <div class="full">
-        <label>URL（iframe で表示する URL）</label>
-        <input type="text" id="f-url" placeholder="https://cc-dev-ps7.web.app/...">
+        <label>URL または YouTube 埋め込みコード（&lt;iframe ...&gt; ごと貼り付け OK）</label>
+        <textarea id="f-url" rows="3" placeholder="https://... またはYouTubeの埋め込みコードをそのまま貼り付け"
+          oninput="onUrlInput('f-url','f-name','icon-preview-auto')"></textarea>
+        <div id="f-url-parsed" style="font-size:11px;color:#aaa;margin-top:4px;word-break:break-all;"></div>
       </div>
       <div class="full">
         <label>説明文（省略可）</label>
@@ -283,8 +285,10 @@
         <input type="text" id="m-name">
       </div>
       <div class="full">
-        <label>URL</label>
-        <input type="text" id="m-url">
+        <label>URL または YouTube 埋め込みコード</label>
+        <textarea id="m-url" rows="3"
+          oninput="onUrlInput('m-url','m-name','m-icon-preview')"></textarea>
+        <div id="m-url-parsed" style="font-size:11px;color:#aaa;margin-top:4px;word-break:break-all;"></div>
       </div>
       <div class="full">
         <label>説明文（省略可）</label>
@@ -363,15 +367,52 @@ function esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+// ---- iframeコード or URL の解析 ----
+function parseUrl(raw) {
+  const s = raw.trim();
+  if (/^<iframe/i.test(s)) {
+    const m = s.match(/\bsrc=["']([^"']+)["']/i);
+    return m ? m[1] : '';
+  }
+  return s;
+}
+function parseIframeTitle(raw) {
+  const s = raw.trim();
+  if (/^<iframe/i.test(s)) {
+    const m = s.match(/\btitle=["']([^"']+)["']/i);
+    return m ? m[1] : '';
+  }
+  return '';
+}
+
+// URL/iframeフィールド入力時：抽出結果をプレビュー表示 & アプリ名を自動補完
+function onUrlInput(urlFieldId, nameFieldId) {
+  const raw = document.getElementById(urlFieldId).value;
+  const url = parseUrl(raw);
+  const parsedId = urlFieldId + '-parsed';
+  const parsedEl = document.getElementById(parsedId);
+  if (parsedEl) {
+    parsedEl.textContent = url && url !== raw.trim() ? '▶ 抽出URL: ' + url : '';
+  }
+  // アプリ名が空なら title を自動セット
+  const nameEl = document.getElementById(nameFieldId);
+  if (nameEl && !nameEl.value.trim()) {
+    const title = parseIframeTitle(raw);
+    if (title) nameEl.value = title;
+  }
+}
+
 // ---- 追加 ----
 function addApp() {
-  const icon = document.getElementById('f-icon').value.trim() || '🎮';
-  const name = document.getElementById('f-name').value.trim();
-  const url  = document.getElementById('f-url').value.trim();
-  const desc = document.getElementById('f-desc').value.trim();
+  const icon  = document.getElementById('f-icon').value.trim() || '🎮';
+  const raw   = document.getElementById('f-url').value.trim();
+  const url   = parseUrl(raw);
+  const desc  = document.getElementById('f-desc').value.trim();
+  // アプリ名：手入力 > iframeのtitle属性
+  const name  = document.getElementById('f-name').value.trim() || parseIframeTitle(raw);
 
   if (!name) { toast('アプリ名を入力してください'); return; }
-  if (!url)  { toast('URLを入力してください'); return; }
+  if (!url)  { toast('URLまたは埋め込みコードを入力してください'); return; }
 
   const apps = load();
   apps.push({ id: genId(), name, icon, url, desc });
@@ -385,6 +426,8 @@ function addApp() {
   document.getElementById('f-url').value  = '';
   document.getElementById('f-desc').value = '';
   document.getElementById('icon-preview').textContent = '🎮';
+  const parsedEl = document.getElementById('f-url-parsed');
+  if (parsedEl) parsedEl.textContent = '';
 }
 
 // ---- 削除 ----
@@ -468,12 +511,13 @@ function closeModal() {
 function saveEdit() {
   if (editIndex === null) return;
   const icon = document.getElementById('m-icon').value.trim() || '🎮';
-  const name = document.getElementById('m-name').value.trim();
-  const url  = document.getElementById('m-url').value.trim();
+  const raw  = document.getElementById('m-url').value.trim();
+  const url  = parseUrl(raw);
   const desc = document.getElementById('m-desc').value.trim();
+  const name = document.getElementById('m-name').value.trim() || parseIframeTitle(raw);
 
   if (!name) { toast('アプリ名を入力してください'); return; }
-  if (!url)  { toast('URLを入力してください'); return; }
+  if (!url)  { toast('URLまたは埋め込みコードを入力してください'); return; }
 
   const apps = load();
   apps[editIndex] = { ...apps[editIndex], icon, name, url, desc };
