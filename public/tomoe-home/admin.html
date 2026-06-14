@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ともえホーム 管理画面</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Noto Sans JP', sans-serif;
+      background: #f7f7f9;
+      color: #222;
+      min-height: 100vh;
+      padding: 0 0 80px;
+    }
+
+    /* ヘッダー */
+    .header {
+      background: #fff;
+      border-bottom: 2px solid #f0e0ea;
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .header h1 { font-size: 18px; font-weight: 900; color: #d63384; }
+    .header a {
+      margin-left: auto;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 700;
+      color: #d63384;
+      padding: 6px 16px;
+      border: 2px solid #d63384;
+      border-radius: 100px;
+      transition: background .15s, color .15s;
+    }
+    .header a:hover { background: #d63384; color: #fff; }
+
+    /* コンテンツ幅 */
+    .container { max-width: 760px; margin: 0 auto; padding: 28px 20px; }
+
+    /* セクション */
+    .section-title {
+      font-size: 13px;
+      font-weight: 900;
+      color: #aaa;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }
+
+    /* アプリリスト */
+    .app-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 32px; }
+
+    .app-row {
+      background: #fff;
+      border-radius: 14px;
+      border: 2px solid #efefef;
+      padding: 14px 16px;
+      display: grid;
+      grid-template-columns: 48px 1fr auto;
+      align-items: center;
+      gap: 12px;
+      transition: border-color .15s;
+    }
+    .app-row:hover { border-color: #f0c0d8; }
+    .app-row.dragging { opacity: 0.5; }
+
+    .app-icon-cell { font-size: 32px; text-align: center; cursor: grab; user-select: none; }
+
+    .app-info { min-width: 0; }
+    .app-name-disp { font-weight: 900; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .app-url-disp  { font-size: 12px; color: #aaa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+
+    .app-actions { display: flex; gap: 6px; flex-shrink: 0; }
+
+    .btn-icon {
+      width: 34px; height: 34px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-size: 16px;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .12s, transform .1s;
+      background: #f5f5f5;
+      color: #555;
+    }
+    .btn-icon:hover { background: #ebebeb; }
+    .btn-icon:active { transform: scale(0.92); }
+    .btn-icon.danger:hover { background: #fde8e8; color: #e53935; }
+    .btn-icon.edit-btn:hover { background: #e8f0fd; color: #1a73e8; }
+
+    /* 追加フォーム */
+    .add-card {
+      background: #fff;
+      border-radius: 16px;
+      border: 2px dashed #e0c0d4;
+      padding: 24px 20px;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .form-grid .full { grid-column: 1 / -1; }
+
+    label { display: block; font-size: 12px; font-weight: 700; color: #888; margin-bottom: 4px; }
+    input, textarea {
+      width: 100%;
+      padding: 9px 12px;
+      border: 2px solid #efefef;
+      border-radius: 10px;
+      font-family: 'Noto Sans JP', sans-serif;
+      font-size: 14px;
+      color: #222;
+      outline: none;
+      transition: border-color .15s;
+      background: #fafafa;
+    }
+    input:focus, textarea:focus { border-color: #d63384; background: #fff; }
+    textarea { resize: vertical; min-height: 60px; }
+
+    .icon-preview {
+      display: inline-block;
+      font-size: 32px;
+      line-height: 1;
+      padding: 6px;
+      border: 2px solid #efefef;
+      border-radius: 10px;
+      background: #fafafa;
+      min-width: 52px;
+      text-align: center;
+    }
+    .icon-row { display: flex; align-items: center; gap: 10px; }
+    .icon-row input { flex: 1; }
+
+    .btn-add {
+      width: 100%;
+      padding: 12px;
+      border-radius: 12px;
+      border: none;
+      background: #d63384;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 900;
+      cursor: pointer;
+      transition: opacity .15s, transform .1s;
+      margin-top: 4px;
+    }
+    .btn-add:hover { opacity: .88; }
+    .btn-add:active { transform: scale(0.98); }
+
+    /* 編集モーダル */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.4);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      padding: 20px;
+    }
+    .modal {
+      background: #fff;
+      border-radius: 20px;
+      padding: 28px 24px 24px;
+      width: 100%;
+      max-width: 480px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+    }
+    .modal h2 { font-size: 17px; font-weight: 900; color: #d63384; margin-bottom: 20px; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 16px; }
+    .btn-save {
+      flex: 1; padding: 11px; border-radius: 10px; border: none;
+      background: #d63384; color: #fff; font-size: 14px; font-weight: 900; cursor: pointer;
+    }
+    .btn-cancel {
+      flex: 1; padding: 11px; border-radius: 10px; border: 2px solid #ddd;
+      background: #fff; color: #555; font-size: 14px; font-weight: 700; cursor: pointer;
+    }
+
+    /* トースト */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: #222;
+      color: #fff;
+      padding: 10px 24px;
+      border-radius: 100px;
+      font-size: 14px;
+      font-weight: 700;
+      transition: transform .3s cubic-bezier(.34,1.56,.64,1);
+      pointer-events: none;
+      z-index: 200;
+      white-space: nowrap;
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); }
+
+    .empty-hint {
+      text-align: center;
+      color: #ccc;
+      font-size: 14px;
+      padding: 24px 0;
+    }
+
+    @media (max-width: 480px) {
+      .form-grid { grid-template-columns: 1fr; }
+      .form-grid .full { grid-column: 1; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="header">
+  <span style="font-size:22px">🌸</span>
+  <h1>ともえホーム 管理画面</h1>
+  <a href="index.html">← ホームに戻る</a>
+</header>
+
+<div class="container">
+
+  <!-- アプリリスト -->
+  <p class="section-title">登録アプリ</p>
+  <div class="app-list" id="app-list"></div>
+
+  <!-- 追加フォーム -->
+  <p class="section-title">アプリを追加</p>
+  <div class="add-card">
+    <div class="form-grid">
+      <div>
+        <label>アイコン（絵文字）</label>
+        <div class="icon-row">
+          <span class="icon-preview" id="icon-preview">🎮</span>
+          <input type="text" id="f-icon" value="🎮" maxlength="4" placeholder="🎮"
+            oninput="document.getElementById('icon-preview').textContent = this.value || '？'">
+        </div>
+      </div>
+      <div>
+        <label>アプリ名</label>
+        <input type="text" id="f-name" placeholder="例：ともえのお絵かき">
+      </div>
+      <div class="full">
+        <label>URL（iframe で表示する URL）</label>
+        <input type="url" id="f-url" placeholder="https://cc-dev-ps7.web.app/...">
+      </div>
+      <div class="full">
+        <label>説明文（省略可）</label>
+        <textarea id="f-desc" placeholder="例：たのしくお絵かきしよう！"></textarea>
+      </div>
+    </div>
+    <button class="btn-add" onclick="addApp()">＋ アプリを追加</button>
+  </div>
+
+</div>
+
+<!-- 編集モーダル -->
+<div class="modal-backdrop hidden" id="modal">
+  <div class="modal">
+    <h2>✏️ アプリを編集</h2>
+    <div class="form-grid">
+      <div>
+        <label>アイコン（絵文字）</label>
+        <div class="icon-row">
+          <span class="icon-preview" id="m-icon-preview">🎮</span>
+          <input type="text" id="m-icon" maxlength="4"
+            oninput="document.getElementById('m-icon-preview').textContent = this.value || '？'">
+        </div>
+      </div>
+      <div>
+        <label>アプリ名</label>
+        <input type="text" id="m-name">
+      </div>
+      <div class="full">
+        <label>URL</label>
+        <input type="url" id="m-url">
+      </div>
+      <div class="full">
+        <label>説明文（省略可）</label>
+        <textarea id="m-desc"></textarea>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">キャンセル</button>
+      <button class="btn-save" onclick="saveEdit()">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const STORAGE_KEY = 'tomoe_apps';
+
+const DEFAULT_APPS = [
+  { id: 'abc-world',       name: 'ワールドABC',  icon: '🌍', url: 'https://cc-dev-ps7.web.app/abc-world/',      desc: 'えいごのアルファベットを\nたのしくおぼえよう！' },
+  { id: 'ouchi-hamasushi', name: 'おうち巴寿司', icon: '🍣', url: 'https://cc-dev-ps7.web.app/ouchi-hamasushi/', desc: 'おすしをえらんで\nちゅうもんしてみよう！' },
+];
+
+function load() {
+  try { const s = localStorage.getItem(STORAGE_KEY); if (s) return JSON.parse(s); } catch(e) {}
+  return DEFAULT_APPS.map(a => ({ ...a }));
+}
+
+function save(apps) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(apps));
+}
+
+function genId() {
+  return 'app-' + Date.now().toString(36);
+}
+
+// ---- 描画 ----
+function render() {
+  const apps = load();
+  const list = document.getElementById('app-list');
+  list.innerHTML = '';
+
+  if (!apps.length) {
+    list.innerHTML = '<p class="empty-hint">まだアプリが登録されていません</p>';
+    return;
+  }
+
+  apps.forEach((app, i) => {
+    const row = document.createElement('div');
+    row.className = 'app-row';
+    row.dataset.id = app.id;
+    row.draggable = true;
+    row.innerHTML = `
+      <div class="app-icon-cell" title="ドラッグで並び替え">${app.icon}</div>
+      <div class="app-info">
+        <div class="app-name-disp">${esc(app.name)}</div>
+        <div class="app-url-disp">${esc(app.url)}</div>
+      </div>
+      <div class="app-actions">
+        <button class="btn-icon" onclick="moveUp(${i})" title="上へ">↑</button>
+        <button class="btn-icon" onclick="moveDown(${i})" title="下へ">↓</button>
+        <button class="btn-icon edit-btn" onclick="openEdit(${i})" title="編集">✏️</button>
+        <button class="btn-icon danger" onclick="deleteApp(${i})" title="削除">🗑</button>
+      </div>
+    `;
+    // ドラッグ&ドロップ
+    row.addEventListener('dragstart', onDragStart);
+    row.addEventListener('dragover',  onDragOver);
+    row.addEventListener('drop',      onDrop);
+    row.addEventListener('dragend',   onDragEnd);
+    list.appendChild(row);
+  });
+}
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ---- 追加 ----
+function addApp() {
+  const icon = document.getElementById('f-icon').value.trim() || '🎮';
+  const name = document.getElementById('f-name').value.trim();
+  const url  = document.getElementById('f-url').value.trim();
+  const desc = document.getElementById('f-desc').value.trim();
+
+  if (!name) { toast('アプリ名を入力してください'); return; }
+  if (!url)  { toast('URLを入力してください'); return; }
+
+  const apps = load();
+  apps.push({ id: genId(), name, icon, url, desc });
+  save(apps);
+  render();
+  toast('✅ アプリを追加しました');
+
+  // フォームリセット
+  document.getElementById('f-icon').value = '🎮';
+  document.getElementById('f-name').value = '';
+  document.getElementById('f-url').value  = '';
+  document.getElementById('f-desc').value = '';
+  document.getElementById('icon-preview').textContent = '🎮';
+}
+
+// ---- 削除 ----
+function deleteApp(i) {
+  const apps = load();
+  const name = apps[i]?.name || '';
+  if (!confirm(`「${name}」を削除しますか？`)) return;
+  apps.splice(i, 1);
+  save(apps);
+  render();
+  toast('🗑 削除しました');
+}
+
+// ---- 並び替え ----
+function moveUp(i) {
+  if (i === 0) return;
+  const apps = load();
+  [apps[i-1], apps[i]] = [apps[i], apps[i-1]];
+  save(apps);
+  render();
+}
+
+function moveDown(i) {
+  const apps = load();
+  if (i >= apps.length - 1) return;
+  [apps[i], apps[i+1]] = [apps[i+1], apps[i]];
+  save(apps);
+  render();
+}
+
+// ---- ドラッグ&ドロップ ----
+let dragSrcIndex = null;
+
+function onDragStart(e) {
+  dragSrcIndex = [...this.parentNode.children].indexOf(this);
+  this.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+}
+
+function onDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+}
+
+function onDrop(e) {
+  e.preventDefault();
+  const targetIndex = [...this.parentNode.children].indexOf(this);
+  if (dragSrcIndex === null || dragSrcIndex === targetIndex) return;
+  const apps = load();
+  const [moved] = apps.splice(dragSrcIndex, 1);
+  apps.splice(targetIndex, 0, moved);
+  save(apps);
+  render();
+}
+
+function onDragEnd() {
+  this.classList.remove('dragging');
+  dragSrcIndex = null;
+}
+
+// ---- 編集モーダル ----
+let editIndex = null;
+
+function openEdit(i) {
+  const apps = load();
+  const app = apps[i];
+  editIndex = i;
+  document.getElementById('m-icon').value = app.icon || '🎮';
+  document.getElementById('m-icon-preview').textContent = app.icon || '🎮';
+  document.getElementById('m-name').value = app.name || '';
+  document.getElementById('m-url').value  = app.url  || '';
+  document.getElementById('m-desc').value = app.desc || '';
+  document.getElementById('modal').classList.remove('hidden');
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.add('hidden');
+  editIndex = null;
+}
+
+function saveEdit() {
+  if (editIndex === null) return;
+  const icon = document.getElementById('m-icon').value.trim() || '🎮';
+  const name = document.getElementById('m-name').value.trim();
+  const url  = document.getElementById('m-url').value.trim();
+  const desc = document.getElementById('m-desc').value.trim();
+
+  if (!name) { toast('アプリ名を入力してください'); return; }
+  if (!url)  { toast('URLを入力してください'); return; }
+
+  const apps = load();
+  apps[editIndex] = { ...apps[editIndex], icon, name, url, desc };
+  save(apps);
+  closeModal();
+  render();
+  toast('✅ 保存しました');
+}
+
+// モーダル外クリックで閉じる
+document.getElementById('modal').addEventListener('click', function(e) {
+  if (e.target === this) closeModal();
+});
+
+// ---- トースト ----
+let toastTimer = null;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+}
+
+render();
+</script>
+</body>
+</html>
