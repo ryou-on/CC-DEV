@@ -6,6 +6,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="ともえホーム">
   <title>🌸 ともえちゃんのホーム</title>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@700;900&family=Fredoka+One&display=swap');
 
@@ -201,28 +203,29 @@ const DEFAULT_APPS = [
   { id: 'ouchi-hamasushi', name: 'おうち巴寿司', icon: '🍣', url: 'https://cc-dev-ps7.web.app/ouchi-hamasushi/', desc: 'おすしをえらんで\nちゅうもんしてみよう！' },
 ];
 
-// 色リスト（カードの --c に順番で割り当て）
 const COLORS = ['#ff7eb3','#e53935','#42a5f5','#66bb6a','#ffa726','#ab47bc','#26c6da','#ef5350'];
 
-function loadApps() {
-  try {
-    const s = localStorage.getItem(STORAGE_KEY);
-    if (s) return JSON.parse(s);
-  } catch(e) {}
-  return DEFAULT_APPS;
-}
+// ---- Firebase ----
+firebase.initializeApp({
+  apiKey: "AIzaSyDPlsAhtxbJBihy-EAHck9P7XbuM",
+  authDomain: "cc-dev-ps7.firebaseapp.com",
+  projectId: "cc-dev-ps7",
+  storageBucket: "cc-dev-ps7.firebasestorage.app",
+  messagingSenderId: "1029579090333",
+  appId: "1:1029579090333:web:5a2ea499fec97c497f2774"
+});
+const _db = firebase.firestore();
 
-let apps = loadApps();
+let apps = (() => {
+  try { const s = localStorage.getItem(STORAGE_KEY); if (s) return JSON.parse(s); } catch(e) {}
+  return DEFAULT_APPS.slice();
+})();
 let currentApp = null;
 
 function render() {
-  apps = loadApps();
-
-  // ナビボタン再描画（homeボタンの直後に挿入）
   document.querySelectorAll('.nav-app-btn').forEach(b => b.remove());
   const adminLink = document.querySelector('.nav-admin');
-
-  apps.forEach((app, i) => {
+  apps.forEach(app => {
     const btn = document.createElement('button');
     btn.className = 'nav-btn nav-app-btn';
     btn.id = 'nav-' + app.id;
@@ -231,7 +234,6 @@ function render() {
     adminLink.before(btn);
   });
 
-  // カードグリッド再描画
   const grid = document.getElementById('card-grid');
   grid.innerHTML = '';
   apps.forEach((app, i) => {
@@ -251,6 +253,9 @@ function render() {
     card.addEventListener('keydown', e => { if(e.key==='Enter'||e.key===' ') card.click(); });
     grid.appendChild(card);
   });
+
+  // 表示中のアプリのナビボタンをアクティブに戻す
+  if (currentApp) setActiveBtn(document.getElementById('nav-' + currentApp));
 }
 
 function setActiveBtn(btn) {
@@ -267,20 +272,23 @@ function showHome() {
 
 function showApp(app, btn) {
   const iframe = document.getElementById('app-iframe');
-  // src 比較で確実に切り替え（currentApp だけでは同一タブ再訪時に外れる場合がある）
-  if (iframe.getAttribute('src') !== app.url) {
-    iframe.src = app.url;
-  }
+  if (iframe.getAttribute('src') !== app.url) iframe.src = app.url;
   currentApp = app.id;
   document.getElementById('view-home').classList.add('hidden');
   document.getElementById('view-app').classList.remove('hidden');
   setActiveBtn(btn || document.getElementById('nav-' + app.id));
 }
 
-// LocalStorage 変更（管理画面などから）を検知して再描画
-window.addEventListener('storage', e => {
-  if (e.key === STORAGE_KEY) render();
-});
+// Firestore リアルタイム同期
+_db.collection('tomoe-home').doc('config').onSnapshot(snap => {
+  if (snap.exists && snap.data().apps) {
+    apps = snap.data().apps;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(apps));
+  } else {
+    apps = DEFAULT_APPS.slice();
+  }
+  render();
+}, err => { console.warn('Firestore:', err); render(); });
 
 render();
 </script>

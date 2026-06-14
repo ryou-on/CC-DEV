@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ともえホーム 管理画面</title>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap');
 
@@ -312,30 +314,48 @@ const DEFAULT_APPS = [
   { id: 'ouchi-hamasushi', name: 'おうち巴寿司', icon: '🍣', url: 'https://cc-dev-ps7.web.app/ouchi-hamasushi/', desc: 'おすしをえらんで\nちゅうもんしてみよう！' },
 ];
 
-function load() {
+// ---- Firebase ----
+firebase.initializeApp({
+  apiKey: "AIzaSyDPlsAhtxbJBihy-EAHck9P7XbuM",
+  authDomain: "cc-dev-ps7.firebaseapp.com",
+  projectId: "cc-dev-ps7",
+  storageBucket: "cc-dev-ps7.firebasestorage.app",
+  messagingSenderId: "1029579090333",
+  appId: "1:1029579090333:web:5a2ea499fec97c497f2774"
+});
+const _db = firebase.firestore();
+const CONFIG_REF = _db.collection('tomoe-home').doc('config');
+
+// ---- データ読み書き ----
+async function load() {
+  try {
+    const snap = await CONFIG_REF.get();
+    if (snap.exists && snap.data().apps) {
+      const apps = snap.data().apps;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(apps));
+      return apps;
+    }
+  } catch(e) { console.warn('Firestore load:', e); }
   try { const s = localStorage.getItem(STORAGE_KEY); if (s) return JSON.parse(s); } catch(e) {}
   return DEFAULT_APPS.map(a => ({ ...a }));
 }
 
-function save(apps) {
+async function save(apps) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(apps));
+  await CONFIG_REF.set({ apps });
 }
 
-function genId() {
-  return 'app-' + Date.now().toString(36);
-}
+function genId() { return 'app-' + Date.now().toString(36); }
 
 // ---- 描画 ----
-function render() {
-  const apps = load();
+async function render() {
+  const apps = await load();
   const list = document.getElementById('app-list');
   list.innerHTML = '';
-
   if (!apps.length) {
     list.innerHTML = '<p class="empty-hint">まだアプリが登録されていません</p>';
     return;
   }
-
   apps.forEach((app, i) => {
     const row = document.createElement('div');
     row.className = 'app-row';
@@ -354,7 +374,6 @@ function render() {
         <button class="btn-icon danger" onclick="deleteApp(${i})" title="削除">🗑</button>
       </div>
     `;
-    // ドラッグ&ドロップ
     row.addEventListener('dragstart', onDragStart);
     row.addEventListener('dragover',  onDragOver);
     row.addEventListener('drop',      onDrop);
@@ -385,16 +404,11 @@ function parseIframeTitle(raw) {
   return '';
 }
 
-// URL/iframeフィールド入力時：抽出結果をプレビュー表示 & アプリ名を自動補完
 function onUrlInput(urlFieldId, nameFieldId) {
   const raw = document.getElementById(urlFieldId).value;
   const url = parseUrl(raw);
-  const parsedId = urlFieldId + '-parsed';
-  const parsedEl = document.getElementById(parsedId);
-  if (parsedEl) {
-    parsedEl.textContent = url && url !== raw.trim() ? '▶ 抽出URL: ' + url : '';
-  }
-  // アプリ名が空なら title を自動セット
+  const parsedEl = document.getElementById(urlFieldId + '-parsed');
+  if (parsedEl) parsedEl.textContent = url && url !== raw.trim() ? '▶ 抽出URL: ' + url : '';
   const nameEl = document.getElementById(nameFieldId);
   if (nameEl && !nameEl.value.trim()) {
     const title = parseIframeTitle(raw);
@@ -403,24 +417,20 @@ function onUrlInput(urlFieldId, nameFieldId) {
 }
 
 // ---- 追加 ----
-function addApp() {
+async function addApp() {
   const icon  = document.getElementById('f-icon').value.trim() || '🎮';
   const raw   = document.getElementById('f-url').value.trim();
   const url   = parseUrl(raw);
   const desc  = document.getElementById('f-desc').value.trim();
-  // アプリ名：手入力 > iframeのtitle属性
   const name  = document.getElementById('f-name').value.trim() || parseIframeTitle(raw);
-
   if (!name) { toast('アプリ名を入力してください'); return; }
   if (!url)  { toast('URLまたは埋め込みコードを入力してください'); return; }
-
-  const apps = load();
+  const apps = await load();
   apps.push({ id: genId(), name, icon, url, desc });
-  save(apps);
-  render();
+  toast('⏳ 保存中...');
+  await save(apps);
+  await render();
   toast('✅ アプリを追加しました');
-
-  // フォームリセット
   document.getElementById('f-icon').value = '🎮';
   document.getElementById('f-name').value = '';
   document.getElementById('f-url').value  = '';
@@ -431,68 +441,57 @@ function addApp() {
 }
 
 // ---- 削除 ----
-function deleteApp(i) {
-  const apps = load();
+async function deleteApp(i) {
+  const apps = await load();
   const name = apps[i]?.name || '';
   if (!confirm(`「${name}」を削除しますか？`)) return;
   apps.splice(i, 1);
-  save(apps);
-  render();
+  toast('⏳ 保存中...');
+  await save(apps);
+  await render();
   toast('🗑 削除しました');
 }
 
 // ---- 並び替え ----
-function moveUp(i) {
+async function moveUp(i) {
   if (i === 0) return;
-  const apps = load();
+  const apps = await load();
   [apps[i-1], apps[i]] = [apps[i], apps[i-1]];
-  save(apps);
-  render();
+  await save(apps);
+  await render();
 }
-
-function moveDown(i) {
-  const apps = load();
+async function moveDown(i) {
+  const apps = await load();
   if (i >= apps.length - 1) return;
   [apps[i], apps[i+1]] = [apps[i+1], apps[i]];
-  save(apps);
-  render();
+  await save(apps);
+  await render();
 }
 
 // ---- ドラッグ&ドロップ ----
 let dragSrcIndex = null;
-
 function onDragStart(e) {
   dragSrcIndex = [...this.parentNode.children].indexOf(this);
   this.classList.add('dragging');
   e.dataTransfer.effectAllowed = 'move';
 }
-
-function onDragOver(e) {
-  e.preventDefault();
-  e.dataTransfer.dropEffect = 'move';
-}
-
-function onDrop(e) {
+function onDragOver(e) { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }
+async function onDrop(e) {
   e.preventDefault();
   const targetIndex = [...this.parentNode.children].indexOf(this);
   if (dragSrcIndex === null || dragSrcIndex === targetIndex) return;
-  const apps = load();
+  const apps = await load();
   const [moved] = apps.splice(dragSrcIndex, 1);
   apps.splice(targetIndex, 0, moved);
-  save(apps);
-  render();
+  await save(apps);
+  await render();
 }
-
-function onDragEnd() {
-  this.classList.remove('dragging');
-  dragSrcIndex = null;
-}
+function onDragEnd() { this.classList.remove('dragging'); dragSrcIndex = null; }
 
 // ---- 編集モーダル ----
 let editIndex = null;
-
-function openEdit(i) {
-  const apps = load();
+async function openEdit(i) {
+  const apps = await load();
   const app = apps[i];
   editIndex = i;
   document.getElementById('m-icon').value = app.icon || '🎮';
@@ -500,34 +499,32 @@ function openEdit(i) {
   document.getElementById('m-name').value = app.name || '';
   document.getElementById('m-url').value  = app.url  || '';
   document.getElementById('m-desc').value = app.desc || '';
+  const parsedEl = document.getElementById('m-url-parsed');
+  if (parsedEl) parsedEl.textContent = '';
   document.getElementById('modal').style.display = 'flex';
 }
-
 function closeModal() {
   document.getElementById('modal').style.display = 'none';
   editIndex = null;
 }
-
-function saveEdit() {
+async function saveEdit() {
   if (editIndex === null) return;
   const icon = document.getElementById('m-icon').value.trim() || '🎮';
   const raw  = document.getElementById('m-url').value.trim();
   const url  = parseUrl(raw);
   const desc = document.getElementById('m-desc').value.trim();
   const name = document.getElementById('m-name').value.trim() || parseIframeTitle(raw);
-
   if (!name) { toast('アプリ名を入力してください'); return; }
   if (!url)  { toast('URLまたは埋め込みコードを入力してください'); return; }
-
-  const apps = load();
+  const apps = await load();
   apps[editIndex] = { ...apps[editIndex], icon, name, url, desc };
-  save(apps);
+  toast('⏳ 保存中...');
+  await save(apps);
   closeModal();
-  render();
+  await render();
   toast('✅ 保存しました');
 }
 
-// モーダル外クリックで閉じる
 document.getElementById('modal').addEventListener('click', function(e) {
   if (e.target === this) closeModal();
 });
