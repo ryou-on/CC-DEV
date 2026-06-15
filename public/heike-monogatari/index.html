@@ -312,12 +312,85 @@ svg rect.pnode:hover { filter: brightness(1.08); }
   border-bottom: 1px solid rgba(201,168,76,0.3);
   padding-bottom: 5px;
 }
+
+/* ══ タブ位置バリエーション ══ */
+
+/* BOTTOM (data-tabv="b") */
+.frame[data-tabv="b"] .tab-row { top: auto; bottom: 0; }
+.frame[data-tabv="b"] .tab {
+  border-radius: 20px 20px 0 0;
+  border-top: none;
+  border-bottom: 3px solid var(--gold-dark);
+  box-shadow: 0 -6px 20px rgba(0,0,0,0.35), 0 -1px 4px rgba(0,0,0,0.15);
+}
+.frame[data-tabv="b"] .tab-chevron { transform: rotate(180deg); }
+.frame[data-open="true"][data-tabv="b"] .tab[aria-pressed="true"] {
+  border-bottom-color: var(--gold);
+  border-top-color: transparent;
+}
+.frame[data-open="true"][data-tabv="b"] .tab[aria-pressed="true"] .tab-chevron { transform: rotate(360deg); }
+.frame[data-tabv="b"] .panel {
+  top: auto; bottom: 0;
+  border-radius: 24px 24px 0 0;
+  border-bottom: none;
+  border-top: 2px solid var(--gold-dark);
+  box-shadow: 0 -16px 60px rgba(0,0,0,0.55), 0 -2px 8px rgba(0,0,0,0.2);
+  transform: translate(-50%, 102%);
+}
+.frame[data-open="true"][data-tabv="b"] .panel { transform: translate(-50%, 0); }
+.frame[data-tabv="b"] .panel-inner { padding: 24px 44px 58px; }
+
+/* LEFT (data-tabh="l") */
+.frame[data-tabh="l"] .tab-row { left: 40px; transform: none; }
+.frame[data-tabh="l"] .panel { left: 40px; transform: translateY(-102%); }
+.frame[data-open="true"][data-tabh="l"] .panel { transform: translateY(0); }
+.frame[data-tabv="b"][data-tabh="l"] .panel { transform: translateY(102%); }
+.frame[data-open="true"][data-tabv="b"][data-tabh="l"] .panel { transform: translateY(0); }
+
+/* RIGHT (data-tabh="r") */
+.frame[data-tabh="r"] .tab-row { left: auto; right: 40px; transform: none; }
+.frame[data-tabh="r"] .panel { left: auto; right: 40px; transform: translateY(-102%); }
+.frame[data-open="true"][data-tabh="r"] .panel { transform: translateY(0); }
+.frame[data-tabv="b"][data-tabh="r"] .panel { transform: translateY(102%); }
+.frame[data-open="true"][data-tabv="b"][data-tabh="r"] .panel { transform: translateY(0); }
+
+/* ── ホットスポット ── */
+.hotspot {
+  position: fixed;
+  bottom: 16px;
+  width: 48px; height: 48px;
+  background: rgba(10,7,3,0.65);
+  border: 1px solid rgba(201,168,76,0.28);
+  border-radius: 10px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  opacity: 0.14;
+  transition: opacity 0.22s, background 0.22s, border-color 0.22s;
+  pointer-events: auto;
+  color: #c9a84c;
+  font-family: 'Noto Serif JP', serif;
+  font-size: 10px;
+  font-weight: 700;
+  gap: 3px;
+  padding: 0;
+  user-select: none;
+}
+.hotspot:hover { opacity: 0.92; background: rgba(30,58,95,0.88); border-color: rgba(201,168,76,0.75); }
+.hotspot svg { overflow: visible; }
+.hotspot svg .hi { fill: rgba(201,168,76,0.2); }
+.hotspot svg .ha { fill: #c9a84c; }
+#hotH { left: 16px; }
+#hotV { right: 92px; }
 </style>
 </head>
 <body>
 
 <!-- ══ FRAME ══ -->
-<div class="frame" data-open="false" data-active="nenpyo" id="auxFrame">
+<div class="frame" data-open="false" data-active="nenpyo" data-tabh="c" data-tabv="t" id="auxFrame">
 
   <!-- パネル -->
   <div class="panel">
@@ -930,7 +1003,75 @@ function switchSub(idx, btn) {
   });
   document.getElementById('panelInner').scrollTop = 0;
 }
+
+// ── タブ位置制御 ──
+var tabH = localStorage.getItem('heike-tabh') || 'c';
+var tabV = localStorage.getItem('heike-tabv') || 't';
+
+function applyTabPos() {
+  frame.setAttribute('data-tabh', tabH);
+  frame.setAttribute('data-tabv', tabV);
+  localStorage.setItem('heike-tabh', tabH);
+  localStorage.setItem('heike-tabv', tabV);
+  updateHotIcons();
+}
+
+function cycleH() {
+  tabH = tabH === 'l' ? 'c' : tabH === 'c' ? 'r' : 'l';
+  applyTabPos();
+}
+
+function cycleV() {
+  if (frame.getAttribute('data-open') === 'true') {
+    closePanel();
+    setTimeout(function() {
+      tabV = tabV === 't' ? 'b' : 't';
+      applyTabPos();
+    }, 430);
+  } else {
+    tabV = tabV === 't' ? 'b' : 't';
+    applyTabPos();
+  }
+}
+
+function updateHotIcons() {
+  var labelH = document.getElementById('hotHLabel');
+  var labelV = document.getElementById('hotVLabel');
+  if (labelH) labelH.textContent = {l:'左', c:'中', r:'右'}[tabH];
+  if (labelV) labelV.textContent = tabV === 't' ? '上' : '下';
+  ['hl','hc','hr'].forEach(function(id) {
+    var r = document.getElementById(id);
+    if (r) r.setAttribute('class', 'hi');
+  });
+  ['vt','vb'].forEach(function(id) {
+    var r = document.getElementById(id);
+    if (r) r.setAttribute('class', 'hi');
+  });
+  var hEl = document.getElementById({l:'hl',c:'hc',r:'hr'}[tabH]);
+  var vEl = document.getElementById(tabV === 't' ? 'vt' : 'vb');
+  if (hEl) hEl.setAttribute('class', 'ha');
+  if (vEl) vEl.setAttribute('class', 'ha');
+}
+
+applyTabPos();
 </script>
+
+<!-- ホットスポット：タブ位置調整 -->
+<button class="hotspot" id="hotH" onclick="cycleH()" title="タブ左右位置">
+  <svg width="28" height="18" viewBox="0 0 28 18" xmlns="http://www.w3.org/2000/svg">
+    <rect class="hi" id="hl" x="1" y="1" width="7" height="16" rx="2"/>
+    <rect class="hi" id="hc" x="10.5" y="1" width="7" height="16" rx="2"/>
+    <rect class="hi" id="hr" x="20" y="1" width="7" height="16" rx="2"/>
+  </svg>
+  <span id="hotHLabel">中</span>
+</button>
+<button class="hotspot" id="hotV" onclick="cycleV()" title="タブ上下位置">
+  <svg width="18" height="28" viewBox="0 0 18 28" xmlns="http://www.w3.org/2000/svg">
+    <rect class="hi" id="vt" x="1" y="1" width="16" height="7" rx="2"/>
+    <rect class="hi" id="vb" x="1" y="20" width="16" height="7" rx="2"/>
+  </svg>
+  <span id="hotVLabel">上</span>
+</button>
 
 <!-- UI_COMMON_COMPONENTS -->
 <style>
@@ -942,12 +1083,12 @@ function switchSub(idx, btn) {
 .__mb{background:#1e1e2e;color:#cdd6f4;border-radius:10px;padding:24px;max-width:520px;width:90%;max-height:80vh;overflow-y:auto;position:relative;font-size:14px;line-height:1.7}
 .__mc{position:absolute;top:12px;right:14px;background:none;border:none;color:#888;font-size:18px;cursor:pointer}
 </style>
-<div id="__ui_fixed"><button id="__debug_btn">DBG</button><span id="__version_badge">v0.1.0</span></div>
+<div id="__ui_fixed"><button id="__debug_btn">DBG</button><span id="__version_badge">v0.1.2</span></div>
 <div id="__rm" class="__mo" onclick="if(event.target===this)this.classList.remove('open')"><div class="__mb"><button class="__mc" onclick="document.getElementById('__rm').classList.remove('open')">x</button><h2>Release Notes</h2><div id="__rc"></div></div></div>
 <div id="__hm" class="__mo" onclick="if(event.target===this)this.classList.remove('open')"><div class="__mb"><button class="__mc" onclick="document.getElementById('__hm').classList.remove('open')">x</button><h2>Help</h2><p>このアプリの使い方です。</p></div></div>
 <script>
 (function(){
-var RN=[{v:"v0.1.0",d:"2026-06-08",n:["初回リリース"]}];
+var RN=[{v:"v0.1.2",d:"2026-06-15",n:["タブの表示位置を上下・左右に変更できるホットスポットボタンを画面の左下・右下に追加（位置はlocalStorageに保存）"]},{v:"v0.1.0",d:"2026-06-08",n:["初回リリース"]}];
 var b=document.getElementById("__version_badge");
 b.textContent=RN[0].v;
 b.addEventListener("click",function(){document.getElementById("__rc").innerHTML=RN.map(function(r){return"<h3>"+r.v+" ("+r.d+")</h3><ul>"+r.n.map(function(n){return"<li>"+n+"</li>";}).join("")+"</ul>";}).join("");document.getElementById("__rm").classList.add("open");});
