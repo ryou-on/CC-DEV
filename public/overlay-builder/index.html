@@ -860,7 +860,7 @@ html, body {
   <div id="header">
     <h1>
       <span onclick="openHowTo()" style="cursor:pointer;" title="使い方を見る">▶ Video Note Navigator</span>
-      <span onclick="openReleaseNotes()" style="cursor:pointer;font-size:12px;color:#c9a84c;font-weight:400;margin-left:8px;opacity:0.85;" title="リリースノート">v0.6.0</span>
+      <span onclick="openReleaseNotes()" style="cursor:pointer;font-size:12px;color:#c9a84c;font-weight:400;margin-left:8px;opacity:0.85;" title="リリースノート">v0.6.1</span>
       <span style="font-weight:400;font-size:13px;color:rgba(255,255,255,0.55);margin-left:10px;">ビデオノート・ナビゲーター</span>
     </h1>
     <div style="display:flex;gap:8px;align-items:center;">
@@ -1112,8 +1112,9 @@ var logs = [];
 /* ══════════════════════════════════════════
    バージョン情報
    ══════════════════════════════════════════ */
-var APP_VERSION = 'v0.6.0';
+var APP_VERSION = 'v0.6.1';
 var RELEASE_NOTES = [
+  { ver: 'v0.6.1', date: '2026-06-15', changes: ['GitHubアップロード時にファイル名へ日時を自動付与（毎回ユニークなファイルとして公開・上書きされない）'] },
   { ver: 'v0.6.0', date: '2026-06-15', changes: ['字幕ファイル（.srt / .vtt / .txt）読み込み機能を追加（ドラッグ＆ドロップ対応）', 'タイムコード・連番・タグを自動除去して本文を抽出', '「要約」コンテンツタイプを追加（字幕・文字起こしから要点を自動整理）'] },
   { ver: 'v0.5.1', date: '2026-06-15', changes: ['アプリ名を「Video Note Navigator（ビデオノート・ナビゲーター）」に改称'] },
   { ver: 'v0.5.0', date: '2026-05-22', changes: ['AIコンテンツ自動生成機能を追加', 'URLまたはテキストから「年表」「用語集」「家系図」「人間関係」「沿革」「会社概要」「応募フォーム」の7種類をClaude APIで生成', '生成結果をワンクリックでタブとして追加'] },
@@ -2411,6 +2412,21 @@ function tabNameToFilename() {
     .replace(/-+/g, '-').replace(/^-|-$/g, '') || 'overlay';
 }
 
+// アップロード時刻の日時サフィックス（YYYYMMDD-HHMMSS）
+function timestampSuffix() {
+  var d = new Date();
+  function p(n) { return String(n).padStart(2, '0'); }
+  return '' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) +
+    '-' + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+}
+
+// ベースファイル名に日時を付与して毎回ユニークにする
+//   例: my-overlay.html → my-overlay-20260615-143052.html
+function uniqueFilename(base) {
+  var name = (base || 'overlay').replace(/\.html$/i, '');
+  return name + '-' + timestampSuffix() + '.html';
+}
+
 function onGhFolderChange(val) {
   try { localStorage.setItem(GITHUB_FOLDER_KEY, val.trim()); } catch(e) {}
   updateGhUrlPreview();
@@ -2431,7 +2447,9 @@ function autoFillFilename() {
 
 function updateGhUrlPreview() {
   var folder   = getGhFolder().replace(/^\/|\/$/g, '');
-  var filename = getGhFilename();
+  // 実際のアップロードでは日時が付与されるため、プレビューもパターンを表示
+  var base     = getGhFilename().replace(/\.html$/i, '');
+  var filename = base + '-<日時>.html';
   var ghPath   = 'public/' + folder + '/' + filename;
   var deployUrl = 'https://cc-dev-ps7.web.app/' + folder + '/' + filename;
   var pathEl = document.getElementById('gh-path-preview');
@@ -2453,7 +2471,8 @@ async function uploadToGitHub() {
 
   var html     = generateHTML();
   var folder   = getGhFolder().replace(/^\/|\/$/g, '');
-  var filename = getGhFilename();
+  // 毎回ファイル名に日時を付与してユニークにする（上書きせず新規ファイルとして公開）
+  var filename = uniqueFilename(getGhFilename());
   var filePath = 'public/' + folder + '/' + filename;
   var apiUrl = 'https://api.github.com/repos/' + GITHUB_REPO + '/contents/' + filePath;
   var headers = {
