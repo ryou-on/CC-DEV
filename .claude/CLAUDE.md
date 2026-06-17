@@ -147,7 +147,7 @@ public/{project-name}/
 
 - ストリーミング必須: fetch + TextDecoder + chunkリアルタイム表示
 - ローディング表示: スピナー +「生成中...（X字）」文字カウンター
-- モデル: claude-sonnet-4-20250514
+- モデル: claude-sonnet-4-6
 - max_tokens: 1000（Artifact内）/ 4096（エージェント）
 
 ---
