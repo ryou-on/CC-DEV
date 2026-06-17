@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Overlay</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --gold: #c9a84c;
+  --gold-light: #e7c66a;
+  --gold-dark: #b59438;
+  --blue-ink: #1e3a5f;
+  --washi: #f5f0e8;
+  --washi-dark: #e2d9c4;
+  --text-dark: #1a1208;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: 'Noto Serif JP', serif;
+  background: transparent;
+  color: #222;
+  position: relative;
+}
+
+.frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.tab-row { position:absolute; top:0; left:50%; transform:translate(-50%,0.000%); display:flex; gap:12px; z-index:20; pointer-events:none; }
+
+.tab {
+  pointer-events: auto;
+  background: rgba(245,240,232,0.95);
+  color: var(--blue-ink);
+  font-family: 'Noto Serif JP', serif;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  padding: 12px 36px;
+  border: none;
+  border-radius: 0 0 20px 20px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.35), 0 1px 4px rgba(0,0,0,0.15);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  transition: background 0.18s, color 0.18s, box-shadow 0.18s, transform 0.1s;
+  white-space: nowrap;
+  border-top: 3px solid var(--gold-dark); border-bottom: none;
+}
+.tab:hover { background: #fff8ee; }
+.tab:active { transform: scale(0.95); }
+
+.tab-chevron {
+  width: 15px; height: 15px;
+  transition: transform 0.3s ease;
+  color: currentColor; flex-shrink: 0;
+}
+
+.frame[data-open="true"] .tab[aria-pressed="true"] {
+  background: var(--blue-ink);
+  color: #f0ece0;
+  border-top-color: var(--gold);
+}
+.frame[data-open="true"] .tab[aria-pressed="true"] .tab-chevron { transform: rotate(180deg); }
+
+.panel {
+  position:absolute; top:0; left:50%; transform:translate(-50%,-102%);
+  width: min(1060px, 90%);
+  max-height: min(830px, 80%);
+  background: var(--washi);
+  border-radius: 0 0 24px 24px;
+  box-shadow: 0 16px 60px rgba(0,0,0,0.55), 0 2px 8px rgba(0,0,0,0.2);
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+  transition: transform 0.4s cubic-bezier(0.32,0.72,0,1), visibility 0s linear 0.4s;
+  overflow: hidden;
+  visibility: hidden;
+  border-left: 1px solid rgba(201,168,76,0.3);
+  border-right: 1px solid rgba(201,168,76,0.3);
+  border-bottom: 2px solid var(--gold-dark); border-top: none;
+}
+
+.frame[data-open="true"] .panel {
+  transform:translate(-50%,0.000%);
+  visibility: visible;
+  transition: transform 0.4s cubic-bezier(0.32,0.72,0,1), visibility 0s linear 0s;
+}
+
+.panel-inner {
+  flex: 1;
+  overflow-y: auto;
+  padding: 58px 36px 20px;
+  -webkit-overflow-scrolling: touch;
+}
+.panel-inner::-webkit-scrollbar { width: 6px; }
+.panel-inner::-webkit-scrollbar-track { background: rgba(0,0,0,0.05); }
+.panel-inner::-webkit-scrollbar-thumb { background: var(--gold-dark); border-radius: 3px; }
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid var(--gold-dark);
+}
+
+.section-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--blue-ink);
+  letter-spacing: 0.2em;
+}
+
+.close-btn {
+  width: 42px; height: 42px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1.5px solid #c8bfa8;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  color: #666;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.1s;
+  pointer-events: auto;
+}
+.close-btn:hover { background: #fff0f0; border-color: #c0392b; color: #c0392b; }
+.close-btn:active { transform: scale(0.92); }
+.close-btn svg { width: 18px; height: 18px; }
+
+.section { display: none; }
+.frame[data-active="id_mqemsodpw35qw"] .section[data-section="id_mqemsodpw35qw"] { display: block; }
+.frame[data-active="id_mqen42mtmhaj8"] .section[data-section="id_mqen42mtmhaj8"] { display: block; }
+
+.accordion {
+  background: #fff;
+  border: 1px solid #d8cdb0;
+  border-radius: 6px;
+  margin-bottom: 10px;
+  overflow: hidden;
+  transition: box-shadow 0.15s;
+}
+.accordion:hover { box-shadow: 0 2px 10px rgba(30,58,95,0.08); }
+
+.accordion-header {
+  padding: 16px 22px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  user-select: none;
+  transition: background 0.15s;
+}
+.accordion-header:hover { background: rgba(30,58,95,0.03); }
+.accordion.open .accordion-header { background: rgba(30,58,95,0.04); }
+
+.acc-year {
+  font-size: 13px;
+  color: #fff;
+  background: var(--blue-ink);
+  padding: 4px 12px;
+  border-radius: 4px;
+  min-width: 76px;
+  text-align: center;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+
+.acc-title {
+  font-size: 19px;
+  font-weight: 700;
+  color: #1a1208;
+  letter-spacing: 0.08em;
+  flex: 1;
+}
+
+.acc-sub {
+  font-size: 13px;
+  color: #907060;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+
+.acc-arrow {
+  color: #a09060;
+  font-size: 13px;
+  transition: transform 0.3s ease;
+  flex-shrink: 0;
+}
+.accordion.open .acc-arrow { transform: rotate(180deg); }
+
+.accordion-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.38s ease;
+}
+.accordion.open .accordion-body { max-height: 400px; }
+
+.accordion-content {
+  padding: 14px 22px 20px 120px;
+  font-size: 16px;
+  line-height: 1.95;
+  color: #3a2e1e;
+  border-top: 1px solid #e8dfc8;
+}
+.accordion-content p { margin-bottom: 10px; }
+.accordion-content p:last-child { margin-bottom: 0; }
+
+.text-section {
+  font-size: 16px;
+  line-height: 1.95;
+  color: #3a2e1e;
+  margin-bottom: 12px;
+  padding: 14px 22px;
+  background: #fff;
+  border: 1px solid #e8dfc8;
+  border-radius: 6px;
+}
+.text-section p { margin-bottom: 10px; }
+.text-section p:last-child { margin-bottom: 0; }
+</style>
+</head>
+<body>
+
+<div class="frame" data-open="false" data-active="id_mqemsodpw35qw" id="auxFrame">
+
+  <div class="panel">
+    <div class="panel-inner" id="panelInner">
+<div class="section" data-section="id_mqemsodpw35qw">
+  <div class="section-header">
+    <div class="section-title">📋 要約</div>
+    <button class="close-btn" onclick="closePanel()">
+      <svg viewBox="0 0 20 20" fill="none"><path d="M5 5L15 15M15 5L5 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <div class="accordion" id="a1">
+    <div class="accordion-header" onclick="toggle('a1')">
+      <span class="acc-year">EDBファイルとは</span>
+      <span class="acc-title">EDBファイルの基本概念</span>
+      <span class="acc-arrow">▼</span>
+    </div>
+    <div class="accordion-body"><div class="accordion-content"><p>&lt;strong&gt;EDBファイル&lt;/strong&gt;はオンライン授業で使用するホワイトボードファイルで、授業前に準備できます。写真や文字を事前にホワイトボードに配置し、&lt;strong&gt;複数のクラスで保存・再利用&lt;/strong&gt;が可能です。授業中にリアルタイムで作成する必要がありません。</p></div></div>
+  </div>
+  <div class="accordion" id="a2">
+    <div class="accordion-header" onclick="toggle('a2')">
+      <span class="acc-year">画像追加方法</span>
+      <span class="acc-title">ホワイトボードへの画像アップロード</span>
+      <span class="acc-arrow">▼</span>
+    </div>
+    <div class="accordion-body"><div class="accordion-content"><p>画像をアップロードする方法は&lt;strong&gt;2つ&lt;/strong&gt;あります。1つ目は「Load Image Board File」をクリックして画像を選択する方法。2つ目は他のアプリで画像を開き、全選択（Ctrl+A/Cmd+A）してコピーし、クラスでペースト（Ctrl+V/Cmd+V）する方法です。</p></div></div>
+  </div>
+  <div class="accordion" id="a3">
+    <div class="accordion-header" onclick="toggle('a3')">
+      <span class="acc-year">画像編集機能</span>
+      <span class="acc-title">アップロードした画像の調整</span>
+      <span class="acc-arrow">▼</span>
+    </div>
+    <div class="accordion-body"><div class="accordion-content"><p>画像は&lt;strong&gt;コーナーをドラッグ&lt;/strong&gt;してサイズ調整が可能です。画像を&lt;strong&gt;ロック&lt;/strong&gt;して誤削除や誤編集を防げます。ホワイトボード上の全ての画像は&lt;strong&gt;レイヤー構造&lt;/strong&gt;になっており、前面・背面への移動、複製、削除などの操作ができます。</p></div></div>
+  </div>
+  <div class="accordion" id="a4">
+    <div class="accordion-header" onclick="toggle('a4')">
+      <span class="acc-year">テキスト追加</span>
+      <span class="acc-title">テキストの追加と編集</span>
+      <span class="acc-arrow">▼</span>
+    </div>
+    <div class="accordion-body"><div class="accordion-content"><p>テキスト追加も&lt;strong&gt;2つの方法&lt;/strong&gt;があります。ツールメニューの「テキスト」をクリックして直接入力する方法と、他のアプリからテキストをコピー&amp;ペーストする方法です。追加後は&lt;strong&gt;フォントサイズや色の変更&lt;/strong&gt;、ロック、移動、複製、削除などが可能です。</p></div></div>
+  </div>
+  <div class="accordion" id="a5">
+    <div class="accordion-header" onclick="toggle('a5')">
+      <span class="acc-year">ファイル保存</span>
+      <span class="acc-title">EDBファイルの保存オプション</span>
+      <span class="acc-arrow">▼</span>
+    </div>
+    <div class="accordion-body"><div class="accordion-content"><p>作成したEDBファイルは&lt;strong&gt;ローカル保存&lt;/strong&gt;または&lt;strong&gt;クラウド保存&lt;/strong&gt;が選択できます。ローカル保存は同一デバイスからのみアクセス可能ですが、クラウド保存なら&lt;strong&gt;複数デバイスから&lt;/strong&gt;アクセスできるため便利です。「Save Board File」から保存場所を選択します。</p></div></div>
+  </div>
+  <div class="accordion" id="a6">
+    <div class="accordion-header" onclick="toggle('a6')">
+      <span class="acc-year">ファイル再利用</span>
+      <span class="acc-title">保存したEDBファイルの活用</span>
+      <span class="acc-arrow">▼</span>
+    </div>
+    <div class="accordion-body"><div class="accordion-content"><p>保存したEDBファイルは「Open Board File」から簡単に呼び出せます。&lt;strong&gt;何度でも再利用&lt;/strong&gt;可能で、異なる授業でも同じ教材を使い回せます。クラウド保存したファイルなら、どのデバイスからでもアクセスして授業で活用できます。</p></div></div>
+  </div>
+</div>
+<div class="section" data-section="id_mqen42mtmhaj8">
+  <div class="section-header">
+    <div class="section-title">📖 用語集</div>
+    <button class="close-btn" onclick="closePanel()">
+      <svg viewBox="0 0 20 20" fill="none"><path d="M5 5L15 15M15 5L5 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  <div class="accordion" id="a7">
+    <div class="accordion-header" onclick="toggle('a7')">
+      <span class="acc-title">EDBファイル</span>
+      <span class="acc-sub">イーディービーファイル・ファイル形式</span>
+      <span class="acc-arrow">▼</span>
+    </div>
+    <div class="accordion-body"><div class="accordion-content"><p>クラスで使用するブレーキボードファイルの形式。事前に準備でき、多くのクラスで保存・再利用が可能。</p></div></div>
+  </div>
+  <div class="accordion" id="a8">
+    <div class="accordion-header" onclick="toggle('a8')">
+      <span class="acc-title">ブレーキボード</span>
+      <span class="acc-sub">ブレーキボード・教育ツール</span>
+      <span class="acc-arrow">▼</span>
+    </div>
+    <div class="accordion-body"><div class="accordion-content"><p>デジタル黒板機能。写真、文字、画像などを表示でき、授業中にリアルタイムで編集可能。</p></div></div>
+  </div>
+  <div class="accordion" id="a9">
+    <div class="accordion-header" onclick="toggle('a9')">
+      <span class="acc-title">ブレーキボードエディター</span>
+      <span class="acc-sub">ブレーキボードエディター・編集ツール</span>
+      <span class="acc-arrow">▼</span>
+    </div>
+    <div class="accordion-body"><div class="accordion-content"><p>EDBファイルを作成・編集するためのツール。クラス内の小さなアイコンをクリックしてアクセス。</p></div></div>
+  </div>
+  <div class="accordion" id="a10">
+    <div class="accordion-header" onclick="toggle('a10')">
+      <span class="acc-title">ロードイメージボードファイル</span>
+      <span class="acc-sub">ロードイメージボードファイル・機能</span>
+      <span class="acc-arrow">▼</span>
+    </div>
+    <div class="accordion-body"><div class="accordion-content"><p>ブレーキボードに画像をアップロードする機能の一つ。ファイルを選択して直接読み込める。</p></div></div>
+  </div>
+  <div class="accordion" id="a11">
+    <div class="accordion-header" onclick="toggle('a11')">
+      <span class="acc-title">コピー&amp;ペースト</span>
+      <span class="acc-sub">コピーアンドペースト・操作方法</span>
+      <span class="acc-arrow">▼</span>
+    </div>
+    <div class="accordion-body"><div class="accordion-content"><p>他のアプリケーションから画像やテキストを取り込む方法。Command+V（Control+V）で実行。</p></div></div>
+  </div>
+  <div class="accordion" id="a12">
+    <div class="accordion-header" onclick="toggle('a12')">
+      <span class="acc-title">レイヤー</span>
+      <span class="acc-sub">レイヤー・表示概念</span>
+      <span class="acc-arrow">▼</span>
+    </div>
+    <div class="accordion-body"><div class="accordion-content"><p>ブレーキボード上の全ての画像が配置される層構造。一つの画像は常に別の画像の上に位置する。</p></div></div>
+  </div>
+  <div class="accordion" id="a13">
+    <div class="accordion-header" onclick="toggle('a13')">
+      <span class="acc-title">ロック機能</span>
+      <span class="acc-sub">ロックきのう・保護機能</span>
+      <span class="acc-arrow">▼</span>
+    </div>
+    <div class="accordion-body"><div class="accordion-content"><p>画像やテキストを誤って削除・編集されないように保護する機能。位置やサイズをロック可能。</p></div></div>
+  </div>
+  <div class="accordion" id="a14">
+    <div class="accordion-header" onclick="toggle('a14')">
+      <span class="acc-title">テキストツール</span>
+      <span class="acc-sub">テキストツール・編集機能</span>
+      <span class="acc-arrow">▼</span>
+    </div>
+    <div class="accordion-body"><div class="accordion-content"><p>ブレーキボードにテキストを追加するためのツール。フォントサイズや色の変更も可能。</p></div></div>
+  </div>
+  <div class="accordion" id="a15">
+    <div class="accordion-header" onclick="toggle('a15')">
+      <span class="acc-title">シェアボードファイル</span>
+      <span class="acc-sub">シェアボードファイル・共有機能</span>
+      <span class="acc-arrow">▼</span>
+    </div>
+    <div class="accordion-body"><div class="accordion-content"><p>作成したEDBファイルを保存・共有するための機能。ローカルドライブまたはクラウドドライブに保存可能。</p></div></div>
+  </div>
+  <div class="accordion" id="a16">
+    <div class="accordion-header" onclick="toggle('a16')">
+      <span class="acc-title">ローカルドライブ</span>
+      <span class="acc-sub">ローカルドライブ・保存場所</span>
+      <span class="acc-arrow">▼</span>
+    </div>
+    <div class="accordion-body"><div class="accordion-content"><p>端末内の記憶装置にファイルを保存する方式。その端末からのみアクセス可能。</p></div></div>
+  </div>
+  <div class="accordion" id="a17">
+    <div class="accordion-header" onclick="toggle('a17')">
+      <span class="acc-title">クラウドドライブ</span>
+      <span class="acc-sub">クラウドドライブ・保存場所</span>
+      <span class="acc-arrow">▼</span>
+    </div>
+    <div class="accordion-body"><div class="accordion-content"><p>オンライン上の記憶装置にファイルを保存する方式。複数のデバイスからアクセス可能。</p></div></div>
+  </div>
+  <div class="accordion" id="a18">
+    <div class="accordion-header" onclick="toggle('a18')">
+      <span class="acc-title">フロント/バック送り</span>
+      <span class="acc-sub">フロントバックおくり・表示順序</span>
+      <span class="acc-arrow">▼</span>
+    </div>
+    <div class="accordion-body"><div class="accordion-content"><p>レイヤー構造内での画像の表示順序を変更する機能。前面や背面に移動できる。</p></div></div>
+  </div>
+</div>
+    </div>
+  </div>
+
+  <div class="tab-row">
+<button class="tab" data-target="id_mqemsodpw35qw" aria-pressed="false" onclick="onTab('id_mqemsodpw35qw')">
+  <span>📋 要約</span>
+  <svg class="tab-chevron" viewBox="0 0 16 16" fill="none"><path d="M3 6L8 11L13 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+</button>
+<button class="tab" data-target="id_mqen42mtmhaj8" aria-pressed="false" onclick="onTab('id_mqen42mtmhaj8')">
+  <span>📖 用語集</span>
+  <svg class="tab-chevron" viewBox="0 0 16 16" fill="none"><path d="M3 6L8 11L13 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+</button>
+  </div>
+
+</div>
+
+<script>
+var frame = document.getElementById('auxFrame');
+
+function onTab(target) {
+  var isOpen = frame.getAttribute('data-open') === 'true';
+  var current = frame.getAttribute('data-active');
+  if (!isOpen) {
+    frame.setAttribute('data-active', target);
+    frame.setAttribute('data-open', 'true');
+  } else if (current === target) {
+    frame.setAttribute('data-open', 'false');
+  } else {
+    frame.setAttribute('data-active', target);
+    document.getElementById('panelInner').scrollTop = 0;
+  }
+  updateTabState(target);
+}
+
+function updateTabState(target) {
+  document.querySelectorAll('.tab[data-target]').forEach(function(t) {
+    t.setAttribute('aria-pressed', t.getAttribute('data-target') === target ? 'true' : 'false');
+  });
+}
+
+function closePanel() {
+  frame.setAttribute('data-open', 'false');
+}
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape' && frame.getAttribute('data-open') === 'true') closePanel();
+});
+
+function toggle(id) {
+  var el = document.getElementById(id);
+  el.classList.toggle('open');
+}
+</script>
+</body>
+</html>
