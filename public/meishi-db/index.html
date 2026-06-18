@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>名刺Vault</title>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:#0a0e1a; --surface:#111827; --surface2:#1a2235; --border:#2a3650;
+      --accent:#00d4ff; --accent2:#7c3aed; --success:#10b981; --warn:#f59e0b;
+      --danger:#ef4444; --text:#e2e8f0; --text2:#94a3b8; --text3:#64748b;
+      --radius:12px;
+    }
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:'Noto Sans JP',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+    .hidden{display:none!important;}
+
+    /* ===== LOGIN ===== */
+    #screenLogin{min-height:100vh;display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse at center,#111827 0%,#0a0e1a 100%);}
+    .login-card{text-align:center;padding:48px 40px;background:var(--surface);border:1px solid var(--border);border-radius:20px;max-width:380px;width:90%;}
+    .login-icon{font-size:64px;margin-bottom:16px;}
+    .login-title{font-size:28px;font-weight:700;color:var(--accent);font-family:'Space Mono',monospace;margin-bottom:8px;}
+    .login-sub{font-size:13px;color:var(--text2);margin-bottom:32px;}
+    .btn-google{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:14px 20px;background:white;color:#333;border:none;border-radius:10px;font-size:15px;font-weight:500;cursor:pointer;transition:opacity .2s;}
+    .btn-google:hover{opacity:.9;}
+    .btn-google svg{width:20px;height:20px;flex-shrink:0;}
+
+    /* ===== HEADER ===== */
+    .app-header{position:sticky;top:0;z-index:50;background:rgba(10,14,26,.95);backdrop-filter:blur(10px);border-bottom:1px solid var(--border);padding:10px 16px;display:flex;align-items:center;gap:10px;}
+    .app-logo{font-family:'Space Mono',monospace;font-size:13px;color:var(--accent);white-space:nowrap;cursor:pointer;}
+    .search-input{flex:1;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 12px;border-radius:8px;font-size:13px;font-family:'Noto Sans JP',sans-serif;outline:none;transition:border-color .2s;}
+    .search-input:focus{border-color:var(--accent);}
+    .search-input::placeholder{color:var(--text3);}
+    .hbtn{background:var(--surface2);border:1px solid var(--border);color:var(--text2);padding:7px 11px;border-radius:8px;font-size:12px;cursor:pointer;white-space:nowrap;transition:all .2s;}
+    .hbtn:hover{border-color:var(--accent);color:var(--accent);}
+
+    /* ===== MAIN ===== */
+    .main-content{padding:16px;max-width:1280px;margin:0 auto;}
+    .stats-bar{font-size:11px;color:var(--text3);font-family:'Space Mono',monospace;margin-bottom:14px;}
+    .card-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:14px;}
+
+    /* ===== CARD ITEM ===== */
+    .ci{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:18px;cursor:pointer;transition:all .2s;}
+    .ci:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:0 8px 32px rgba(0,212,255,.1);}
+    .ci-top{display:flex;align-items:center;gap:12px;margin-bottom:12px;}
+    .ci-avatar{width:52px;height:52px;border-radius:50%;object-fit:cover;flex-shrink:0;border:2px solid var(--border);}
+    .ci-initials{width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,var(--accent2),var(--accent));display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;color:white;flex-shrink:0;font-family:'Space Mono',monospace;}
+    .ci-info{flex:1;min-width:0;}
+    .ci-name{font-size:16px;font-weight:700;line-height:1.3;}
+    .ci-kana{font-size:10px;color:var(--text3);font-family:'Space Mono',monospace;margin-top:2px;}
+    .ci-company{font-size:12px;color:var(--accent);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .ci-titledept{font-size:11px;color:var(--text2);margin-top:2px;}
+    .ci-divider{border:none;border-top:1px solid var(--border);margin:10px 0;}
+    .ci-contacts{display:flex;flex-direction:column;gap:4px;}
+    .ci-row{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text2);overflow:hidden;}
+    .ci-row .ico{font-size:11px;flex-shrink:0;color:var(--text3);}
+    .ci-row span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .ci-scan{width:100%;max-height:60px;object-fit:cover;border-radius:6px;margin-top:8px;opacity:.65;border:1px solid var(--border);}
+    .ci-notes{margin-top:6px;font-size:11px;color:var(--text3);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+    .ci-date{font-size:10px;color:var(--text3);font-family:'Space Mono',monospace;margin-top:6px;}
+
+    /* ===== EMPTY STATE ===== */
+    .empty-state{text-align:center;padding:80px 20px;color:var(--text3);}
+    .empty-state-icon{font-size:60px;margin-bottom:14px;}
+    .empty-state h3{font-size:17px;color:var(--text2);margin-bottom:8px;}
+    .empty-state p{font-size:13px;}
+
+    /* ===== FAB ===== */
+    .fab{position:fixed;bottom:24px;right:24px;width:54px;height:54px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#0099cc);color:#000;font-size:26px;font-weight:700;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 20px rgba(0,212,255,.4);transition:all .2s;z-index:40;}
+    .fab:hover{transform:scale(1.1);}
+
+    /* ===== MODAL ===== */
+    .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.72);backdrop-filter:blur(4px);z-index:100;display:flex;align-items:flex-start;justify-content:center;overflow-y:auto;padding:20px;}
+    @media(max-width:640px){.modal-overlay{padding:0;align-items:flex-end;}}
+    .modal-box{background:var(--surface);border:1px solid var(--border);border-radius:16px;width:100%;max-width:580px;margin:auto;animation:slideUp .22s ease;}
+    @media(max-width:640px){.modal-box{border-radius:16px 16px 0 0;}}
+    @keyframes slideUp{from{transform:translateY(18px);opacity:0}to{transform:translateY(0);opacity:1}}
+    .mhdr{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--border);}
+    .mtitle{font-size:14px;font-weight:700;font-family:'Space Mono',monospace;color:var(--accent);}
+    .mclose{background:none;border:none;color:var(--text2);font-size:20px;cursor:pointer;padding:4px;line-height:1;}
+    .mclose:hover{color:var(--text);}
+    .mbody{padding:18px 20px;max-height:80vh;overflow-y:auto;}
+    .mfoot{padding:14px 20px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:center;}
+
+    /* ===== UPLOAD ZONE ===== */
+    .upload-zone{border:2px dashed var(--border);border-radius:10px;padding:24px 16px;text-align:center;cursor:pointer;transition:all .2s;background:var(--surface2);margin-bottom:10px;}
+    .upload-zone:hover,.upload-zone.dragover{border-color:var(--accent);background:rgba(0,212,255,.03);}
+    .upload-zone.has-file{border-color:var(--success);}
+    .upload-zone-icon{font-size:28px;margin-bottom:6px;}
+    .upload-zone-text{font-size:13px;color:var(--text2);}
+    .upload-zone-sub{font-size:11px;color:var(--text3);margin-top:3px;}
+    .scan-preview{width:100%;max-height:160px;object-fit:contain;border-radius:8px;border:1px solid var(--border);margin-bottom:10px;display:none;}
+    .scan-preview.show{display:block;}
+
+    /* ===== FACE UPLOAD ===== */
+    .face-row{display:flex;align-items:center;gap:12px;margin-bottom:14px;}
+    .face-ph{width:60px;height:60px;border-radius:50%;border:2px dashed var(--border);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;cursor:pointer;transition:border-color .2s;}
+    .face-ph:hover{border-color:var(--accent);}
+    .face-img{width:60px;height:60px;border-radius:50%;object-fit:cover;border:2px solid var(--border);flex-shrink:0;cursor:pointer;}
+
+    /* ===== FORM ===== */
+    .fsec{font-family:'Space Mono',monospace;font-size:10px;color:var(--accent);letter-spacing:.15em;text-transform:uppercase;margin-bottom:8px;padding-bottom:5px;border-bottom:1px solid var(--border);margin-top:14px;}
+    .fgrid{display:grid;gap:9px;margin-bottom:4px;}
+    .frow{display:grid;grid-template-columns:1fr 1fr;gap:9px;}
+    .field label{display:block;font-size:11px;color:var(--text3);margin-bottom:3px;}
+    .field input,.field textarea{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:8px 11px;border-radius:8px;font-size:13px;font-family:'Noto Sans JP',sans-serif;transition:border-color .2s;outline:none;}
+    .field input:focus,.field textarea:focus{border-color:var(--accent);}
+    .field textarea{resize:vertical;min-height:72px;}
+
+    /* ===== BUTTONS ===== */
+    .btn{display:flex;align-items:center;justify-content:center;gap:7px;padding:10px 16px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;border:none;transition:all .2s;font-family:'Noto Sans JP',sans-serif;}
+    .btn-primary{background:linear-gradient(135deg,var(--accent),#0099cc);color:#000;font-weight:700;flex:1;}
+    .btn-primary:hover{opacity:.9;}
+    .btn-primary:disabled{opacity:.4;cursor:not-allowed;}
+    .btn-secondary{background:var(--surface2);color:var(--text);border:1px solid var(--border);}
+    .btn-secondary:hover{border-color:var(--accent);color:var(--accent);}
+    .btn-danger{background:var(--danger);color:white;}
+    .btn-danger:hover{opacity:.9;}
+    .btn-outline{background:transparent;color:var(--accent);border:1px solid var(--accent);}
+    .btn-outline:hover{background:rgba(0,212,255,.05);}
+    .btn-sm{padding:6px 11px;font-size:12px;}
+    .btn-full{width:100%;}
+    .spinner-sm{width:14px;height:14px;border:2px solid rgba(0,0,0,.2);border-top-color:#000;border-radius:50%;animation:spin .7s linear infinite;}
+    @keyframes spin{to{transform:rotate(360deg)}}
+
+    /* ===== DETAIL MODAL ===== */
+    .dh{display:flex;gap:14px;align-items:flex-start;margin-bottom:16px;}
+    .d-face{width:74px;height:74px;border-radius:50%;object-fit:cover;border:2px solid var(--border);flex-shrink:0;}
+    .d-face-ph{width:74px;height:74px;border-radius:50%;background:linear-gradient(135deg,var(--accent2),var(--accent));display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;color:white;flex-shrink:0;font-family:'Space Mono',monospace;}
+    .d-name{font-size:21px;font-weight:700;}
+    .d-kana{font-size:11px;color:var(--text3);margin-top:2px;}
+    .d-company{font-size:14px;color:var(--accent);margin-top:5px;}
+    .d-titledept{font-size:12px;color:var(--text2);margin-top:2px;}
+    .dgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px;}
+    @media(max-width:480px){.dgrid{grid-template-columns:1fr;}}
+    .dfield label{font-size:10px;color:var(--text3);margin-bottom:2px;display:block;}
+    .dfield a{font-size:13px;color:var(--accent);text-decoration:none;}
+    .dfield a:hover{text-decoration:underline;}
+    .dfield span{font-size:13px;color:var(--text);}
+    .d-card-img{width:100%;border-radius:8px;border:1px solid var(--border);margin-bottom:14px;max-height:150px;object-fit:contain;}
+    .d-notes{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:9px 11px;border-radius:8px;font-size:13px;font-family:'Noto Sans JP',sans-serif;resize:vertical;min-height:72px;outline:none;}
+    .d-notes:focus{border-color:var(--accent);}
+
+    /* ===== SETTINGS ===== */
+    .s-label{font-size:11px;color:var(--text3);margin-bottom:5px;display:block;}
+    .s-input{width:100%;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:9px 11px;border-radius:8px;font-size:13px;font-family:'Space Mono',monospace;outline:none;margin-bottom:4px;}
+    .s-input:focus{border-color:var(--accent);}
+    .s-hint{font-size:11px;color:var(--text3);}
+    .sdiv{border:none;border-top:1px solid var(--border);margin:14px 0;}
+
+    /* ===== TOAST ===== */
+    #toast{position:fixed;bottom:84px;left:50%;transform:translateX(-50%) translateY(16px);background:var(--surface);border:1px solid var(--border);color:var(--text);padding:9px 16px;border-radius:8px;font-size:13px;opacity:0;transition:all .3s;z-index:9999;white-space:nowrap;pointer-events:none;}
+    #toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+    /* ===== DEBUG ===== */
+    .dbg-wrap{position:fixed;bottom:14px;left:14px;z-index:200;}
+    .dbg-toggle{background:var(--surface2);border:1px solid var(--border);color:var(--text3);padding:4px 8px;border-radius:6px;font-size:10px;font-family:'Space Mono',monospace;cursor:pointer;}
+    .dbg-panel{position:absolute;bottom:28px;left:0;width:270px;max-height:180px;background:#050810;border:1px solid var(--border);border-radius:8px;padding:8px;overflow-y:auto;display:none;}
+    .dbg-panel.open{display:block;}
+    .dbg-log{font-size:10px;font-family:'Space Mono',monospace;color:#4ade80;line-height:1.5;white-space:pre-wrap;}
+
+    @media(max-width:640px){
+      .app-header{padding:8px 10px;gap:7px;}
+      .hbtn-csv{display:none;}
+      .main-content{padding:10px;}
+      .card-grid{grid-template-columns:1fr;}
+      .frow{grid-template-columns:1fr;}
+    }
+  </style>
+</head>
+<body>
+
+<!-- ===== LOGIN ===== -->
+<div id="screenLogin">
+  <div class="login-card">
+    <div class="login-icon">📇</div>
+    <div class="login-title">名刺Vault</div>
+    <div class="login-sub">PDF / JPEG スキャン × AI解析 × Salesforce CSV</div>
+    <button class="btn-google" onclick="loginGoogle()">
+      <svg viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+      Googleでログイン
+    </button>
+  </div>
+</div>
+
+<!-- ===== MAIN APP ===== -->
+<div id="appMain" class="hidden">
+  <header class="app-header">
+    <span class="app-logo" id="appTitle">📇 名刺Vault</span>
+    <input type="search" class="search-input" id="searchInput" placeholder="名前・会社・メールで検索..." oninput="filterCards(this.value)">
+    <button class="hbtn hbtn-csv" onclick="exportCSV()" title="Salesforce CSV出力">⬇ CSV</button>
+    <button class="hbtn" onclick="openSettings()">⚙️</button>
+    <button class="hbtn" onclick="doLogout()" title="ログアウト">⏻</button>
+  </header>
+  <div class="main-content">
+    <div class="stats-bar" id="statsBar">読み込み中...</div>
+    <div id="cardGrid" class="card-grid"></div>
+    <div id="emptyState" class="empty-state hidden">
+      <div class="empty-state-icon">📭</div>
+      <h3>名刺がまだありません</h3>
+      <p>右下の ＋ ボタンから登録してください</p>
+    </div>
+  </div>
+  <button class="fab" onclick="openAddModal(null)">＋</button>
+</div>
+
+<!-- ===== ADD / EDIT MODAL ===== -->
+<div id="modalAdd" class="modal-overlay hidden" onclick="closeBg(event,'modalAdd')">
+  <div class="modal-box">
+    <div class="mhdr">
+      <span class="mtitle" id="addTitle">名刺を追加</span>
+      <button class="mclose" onclick="closeModal('modalAdd')">✕</button>
+    </div>
+    <div class="mbody">
+
+      <div class="fsec">📷 名刺スキャン（PDF / JPEG）</div>
+      <div class="upload-zone" id="scanZone"
+           onclick="document.getElementById('scanFile').click()"
+           ondragover="dov(event,'scanZone')" ondragleave="dol('scanZone')" ondrop="doDrop(event,'scan')">
+        <div class="upload-zone-icon">📄</div>
+        <div class="upload-zone-text">クリック / ドラッグ＆ドロップ</div>
+        <div class="upload-zone-sub">ScanSnap PDF・スマホ写真・JPEG に対応</div>
+      </div>
+      <input type="file" id="scanFile" accept="image/*,.pdf" class="hidden" onchange="onScanFile(event)">
+      <img id="scanPreview" class="scan-preview" alt="名刺">
+      <button class="btn btn-outline btn-full btn-sm" id="btnAnalyze" onclick="analyzeCard()" disabled style="margin-bottom:6px;">
+        🤖 AIで自動解析
+      </button>
+
+      <div class="fsec" style="margin-top:10px;">🙂 顔写真（任意）</div>
+      <div class="face-row">
+        <div id="facePh" class="face-ph" onclick="document.getElementById('faceFile').click()" title="顔写真を選択">📷</div>
+        <img id="faceImg" class="face-img hidden" alt="顔写真" onclick="document.getElementById('faceFile').click()">
+        <div>
+          <div style="font-size:12px;color:var(--text2);">クリックして顔写真を選択</div>
+          <div style="font-size:11px;color:var(--text3);margin-top:2px;">名刺・SNS・プロフ写真など</div>
+          <button class="btn btn-secondary btn-sm" style="margin-top:6px;" onclick="clearFace()">削除</button>
+        </div>
+      </div>
+      <input type="file" id="faceFile" accept="image/*" class="hidden" onchange="onFaceFile(event)">
+
+      <div class="fsec">👤 取引先担当者</div>
+      <div class="fgrid">
+        <div class="frow">
+          <div class="field"><label>姓</label><input id="f_lastName" placeholder="山田"></div>
+          <div class="field"><label>名</label><input id="f_firstName" placeholder="太郎"></div>
+        </div>
+        <div class="frow">
+          <div class="field"><label>セイ</label><input id="f_lastNameKana" placeholder="ヤマダ"></div>
+          <div class="field"><label>メイ</label><input id="f_firstNameKana" placeholder="タロウ"></div>
+        </div>
+        <div class="field"><label>メール</label><input id="f_email" type="email" placeholder="yamada@example.com"></div>
+        <div class="frow">
+          <div class="field"><label>電話</label><input id="f_phone" type="tel" placeholder="03-0000-0000"></div>
+          <div class="field"><label>携帯</label><input id="f_mobile" type="tel" placeholder="090-0000-0000"></div>
+        </div>
+      </div>
+
+      <div class="fsec">🏢 会社情報</div>
+      <div class="fgrid">
+        <div class="field"><label>会社名</label><input id="f_company" placeholder="株式会社サンプル"></div>
+        <div class="frow">
+          <div class="field"><label>部署</label><input id="f_department" placeholder="営業部"></div>
+          <div class="field"><label>役職</label><input id="f_title" placeholder="部長"></div>
+        </div>
+        <div class="frow">
+          <div class="field"><label>業種</label><input id="f_industry" placeholder="IT・通信"></div>
+          <div class="field"><label>Webサイト</label><input id="f_website" type="url" placeholder="https://..."></div>
+        </div>
+        <div class="field"><label>住所</label><input id="f_address" placeholder="東京都渋谷区..."></div>
+      </div>
+
+      <div class="fsec">📝 メモ</div>
+      <div class="field">
+        <textarea id="f_notes" placeholder="展示会で名刺交換 / 興味あり など"></textarea>
+      </div>
+    </div>
+    <div class="mfoot">
+      <button class="btn btn-secondary" onclick="closeModal('modalAdd')">キャンセル</button>
+      <button class="btn btn-primary" id="btnSave" onclick="saveCard()">
+        <span id="saveTxt">保存する</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== DETAIL MODAL ===== -->
+<div id="modalDetail" class="modal-overlay hidden" onclick="closeBg(event,'modalDetail')">
+  <div class="modal-box">
+    <div class="mhdr">
+      <span class="mtitle">名刺詳細</span>
+      <button class="mclose" onclick="closeModal('modalDetail')">✕</button>
+    </div>
+    <div class="mbody">
+      <img id="d_cardImg" class="d-card-img hidden" alt="名刺画像">
+      <div class="dh">
+        <div id="d_facePh" class="d-face-ph"></div>
+        <img id="d_faceImg" class="d-face hidden" alt="顔写真">
+        <div>
+          <div class="d-name" id="d_name"></div>
+          <div class="d-kana" id="d_kana"></div>
+          <div class="d-company" id="d_company"></div>
+          <div class="d-titledept" id="d_titledept"></div>
+        </div>
+      </div>
+      <div class="dgrid">
+        <div class="dfield"><label>メール</label><div id="d_email"></div></div>
+        <div class="dfield"><label>電話</label><div id="d_phone"></div></div>
+        <div class="dfield"><label>携帯</label><div id="d_mobile"></div></div>
+        <div class="dfield"><label>Webサイト</label><div id="d_website"></div></div>
+        <div class="dfield" style="grid-column:1/-1"><label>住所</label><div id="d_address"></div></div>
+        <div class="dfield" style="grid-column:1/-1"><label>業種</label><div id="d_industry"></div></div>
+      </div>
+      <div class="fsec" style="margin-top:4px;">📝 メモ</div>
+      <textarea class="d-notes" id="d_notes" placeholder="メモを入力..." oninput="onNoteInput()"></textarea>
+      <div id="noteSaveRow" class="hidden" style="margin-top:6px;">
+        <button class="btn btn-outline btn-sm" onclick="saveNotes()">💾 メモを保存</button>
+      </div>
+    </div>
+    <div class="mfoot">
+      <button class="btn btn-danger btn-sm" onclick="deleteCard()">🗑 削除</button>
+      <div style="flex:1"></div>
+      <button class="btn btn-secondary btn-sm" onclick="exportOneCSV()">⬇ CSV</button>
+      <button class="btn btn-outline btn-sm" onclick="editCard()">✏️ 編集</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SETTINGS MODAL ===== -->
+<div id="modalSettings" class="modal-overlay hidden" onclick="closeBg(event,'modalSettings')">
+  <div class="modal-box">
+    <div class="mhdr">
+      <span class="mtitle">⚙️ 設定</span>
+      <button class="mclose" onclick="closeModal('modalSettings')">✕</button>
+    </div>
+    <div class="mbody">
+      <div class="fsec">AI解析 — Cloudflare Worker（推奨）</div>
+      <label class="s-label">Worker URL</label>
+      <input class="s-input" id="s_wurl" placeholder="https://meishi-sf-proxy.xxxxx.workers.dev">
+      <label class="s-label" style="margin-top:8px;">Worker 認証トークン</label>
+      <input class="s-input" id="s_wtok" placeholder="SHARED_TOKEN の値" type="password">
+      <div class="s-hint">Worker をデプロイ済みの場合はこちらを優先</div>
+      <div class="sdiv"></div>
+      <div class="fsec">AI解析 — Anthropic API キー（直接呼び出し）</div>
+      <label class="s-label">API キー</label>
+      <input class="s-input" id="s_akey" placeholder="sk-ant-..." type="password">
+      <div class="s-hint">Worker 未設定時はブラウザから直接 Anthropic API を呼び出します</div>
+      <div class="sdiv"></div>
+      <div class="fsec">Salesforce 連携</div>
+      <label class="s-label">SF インスタンス URL（任意）</label>
+      <input class="s-input" id="s_sfurl" placeholder="https://yourorg.my.salesforce.com">
+      <div class="s-hint">CSV 出力時のリンク生成に使用</div>
+    </div>
+    <div class="mfoot">
+      <button class="btn btn-secondary" onclick="closeModal('modalSettings')">キャンセル</button>
+      <button class="btn btn-primary" onclick="saveSettings()">保存</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<div class="dbg-wrap">
+  <button class="dbg-toggle" onclick="toggleDbg()">🐛</button>
+  <div class="dbg-panel" id="dbgPanel"><div class="dbg-log" id="dbgLog">// ready</div></div>
+</div>
+
+<!-- PDF.js -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+  from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
+import { getFirestore, collection, doc, addDoc, getDocs, updateDoc, deleteDoc, query, orderBy, serverTimestamp }
+  from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
+import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject }
+  from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-storage.js';
+
+const fbApp = initializeApp({
+  apiKey:"AIzaSyDPlsAhtxbJBihy-EAHck9P7XbuMdzV0ds",
+  authDomain:"cc-dev-ps7.firebaseapp.com",
+  projectId:"cc-dev-ps7",
+  storageBucket:"cc-dev-ps7.firebasestorage.app",
+  messagingSenderId:"1029579090333",
+  appId:"1:1029579090333:web:5a2ea499fec97c497f2774"
+});
+const auth = getAuth(fbApp);
+const db = getFirestore(fbApp);
+const storage = getStorage(fbApp);
+
+// ── State ──
+let user = null;
+let allCards = [];
+let filtered = [];
+let detailId = null;
+let editId = null;
+let scanB64 = null;
+let scanMime = 'image/jpeg';
+let faceFile = null;
+
+// ── Settings ──
+const S = {
+  get: () => ({
+    wurl: ls('mv_wurl'), wtok: ls('mv_wtok'),
+    akey: ls('mv_akey'), sfurl: ls('mv_sfurl')
+  })
+};
+function ls(k, v) {
+  if (v === undefined) return localStorage.getItem(k) || '';
+  localStorage.setItem(k, v);
+}
+
+// ── Expose to window (for onclick="") ──
+Object.assign(window, {
+  loginGoogle, doLogout, filterCards, openAddModal, closeModal, closeBg,
+  dov, dol, doDrop, onScanFile, onFaceFile, clearFace,
+  analyzeCard, saveCard, openDetailModal, deleteCard, editCard, saveNotes, onNoteInput,
+  exportCSV, exportOneCSV, openSettings, saveSettings, toggleDbg
+});
+
+// ── Auth ──
+function loginGoogle() {
+  signInWithPopup(auth, new GoogleAuthProvider()).catch(e => toast('ログイン失敗: ' + e.message));
+}
+function doLogout() {
+  if (confirm('ログアウトしますか？')) signOut(auth);
+}
+onAuthStateChanged(auth, u => {
+  user = u;
+  if (u) {
+    log('✅ ' + u.email);
+    id('screenLogin').classList.add('hidden');
+    id('appMain').classList.remove('hidden');
+    loadCards();
+  } else {
+    id('screenLogin').classList.remove('hidden');
+    id('appMain').classList.add('hidden');
+  }
+});
+
+// ── Firestore ──
+const col = () => collection(db, 'users', user.uid, 'meishiCards');
+const dref = cid => doc(db, 'users', user.uid, 'meishiCards', cid);
+
+async function loadCards() {
+  try {
+    log('📥 読み込み中...');
+    const snap = await getDocs(query(col(), orderBy('createdAt','desc')));
+    allCards = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    filtered = [...allCards];
+    log(`✅ ${allCards.length}件`);
+    render();
+  } catch (e) { log('❌ ' + e.message); }
+}
+
+async function saveCard() {
+  if (!v('f_lastName') && !v('f_company')) { toast('姓か会社名を入力してください'); return; }
+  const btn = id('btnSave'); const txt = id('saveTxt');
+  btn.disabled = true; txt.innerHTML = '<div class="spinner-sm"></div>';
+
+  try {
+    let cardImageUrl = editId ? (allCards.find(c=>c.id===editId)?.cardImageUrl||'') : '';
+    let facePhotoUrl = editId ? (allCards.find(c=>c.id===editId)?.facePhotoUrl||'') : '';
+
+    if (scanB64) {
+      log('📤 名刺画像...');
+      const r = ref(storage, `users/${user.uid}/cards/${Date.now()}_s.jpg`);
+      await uploadBytes(r, b64Blob(scanB64, scanMime));
+      cardImageUrl = await getDownloadURL(r);
+    }
+    if (faceFile) {
+      log('📤 顔写真...');
+      const r = ref(storage, `users/${user.uid}/faces/${Date.now()}_f.jpg`);
+      await uploadBytes(r, faceFile);
+      facePhotoUrl = await getDownloadURL(r);
+    }
+
+    const data = {
+      lastName:v('f_lastName'), firstName:v('f_firstName'),
+      lastNameKana:v('f_lastNameKana'), firstNameKana:v('f_firstNameKana'),
+      email:v('f_email'), phone:v('f_phone'), mobile:v('f_mobile'),
+      company:v('f_company'), department:v('f_department'), title:v('f_title'),
+      industry:v('f_industry'), website:v('f_website'), address:v('f_address'),
+      notes:v('f_notes'), cardImageUrl, facePhotoUrl, updatedAt:serverTimestamp()
+    };
+
+    if (editId) {
+      await updateDoc(dref(editId), data);
+      toast('更新しました');
+    } else {
+      data.createdAt = serverTimestamp();
+      await addDoc(col(), data);
+      toast('名刺を登録しました');
+    }
+    closeModal('modalAdd');
+    await loadCards();
+  } catch (e) { log('❌ ' + e.message); toast('保存失敗: ' + e.message); }
+  finally { btn.disabled = false; txt.textContent = '保存する'; }
+}
+
+async function deleteCard() {
+  const c = allCards.find(x => x.id === detailId);
+  const nm = ((c?.lastName||'') + ' ' + (c?.firstName||'')).trim() || c?.company || '名刺';
+  if (!confirm(nm + ' を削除しますか？')) return;
+  try {
+    if (c?.cardImageUrl) try { await deleteObject(ref(storage, storagePath(c.cardImageUrl))); } catch {}
+    if (c?.facePhotoUrl) try { await deleteObject(ref(storage, storagePath(c.facePhotoUrl))); } catch {}
+    await deleteDoc(dref(detailId));
+    closeModal('modalDetail');
+    await loadCards();
+    toast('削除しました');
+  } catch (e) { toast('削除失敗: ' + e.message); }
+}
+
+// ── Render ──
+function render() {
+  const grid = id('cardGrid'), empty = id('emptyState'), stats = id('statsBar');
+  if (!filtered.length) {
+    grid.innerHTML = '';
+    empty.classList.remove('hidden');
+    stats.textContent = allCards.length ? `${allCards.length}件中 0件` : '0件';
+    return;
+  }
+  empty.classList.add('hidden');
+  stats.textContent = allCards.length === filtered.length
+    ? `${allCards.length}件` : `${allCards.length}件中 ${filtered.length}件`;
+  grid.innerHTML = filtered.map(renderCard).join('');
+}
+
+function renderCard(c) {
+  const name = ((c.lastName||'') + ' ' + (c.firstName||'')).trim() || '名前なし';
+  const init = c.lastName?.[0] || c.company?.[0] || '?';
+  const kana = ((c.lastNameKana||'') + ' ' + (c.firstNameKana||'')).trim();
+  const face = c.facePhotoUrl
+    ? `<img class="ci-avatar" src="${e(c.facePhotoUrl)}" loading="lazy">`
+    : `<div class="ci-initials">${e(init)}</div>`;
+  const contacts = [
+    c.email && `<div class="ci-row"><span class="ico">✉</span><span>${e(c.email)}</span></div>`,
+    c.phone && `<div class="ci-row"><span class="ico">☎</span><span>${e(c.phone)}</span></div>`,
+    c.mobile && `<div class="ci-row"><span class="ico">📱</span><span>${e(c.mobile)}</span></div>`
+  ].filter(Boolean).join('');
+  const dt = c.createdAt?.toDate ? c.createdAt.toDate().toLocaleDateString('ja-JP') : '';
+  return `<div class="ci" onclick="openDetailModal('${c.id}')">
+    <div class="ci-top">${face}<div class="ci-info">
+      <div class="ci-name">${e(name)}</div>
+      ${kana?`<div class="ci-kana">${e(kana)}</div>`:''}
+      ${c.company?`<div class="ci-company">${e(c.company)}</div>`:''}
+      ${(c.title||c.department)?`<div class="ci-titledept">${e([c.title,c.department].filter(Boolean).join(' / '))}</div>`:''}
+    </div></div>
+    ${contacts?`<hr class="ci-divider"><div class="ci-contacts">${contacts}</div>`:''}
+    ${c.cardImageUrl?`<img class="ci-scan" src="${e(c.cardImageUrl)}" loading="lazy">`:''}
+    ${c.notes?`<div class="ci-notes">💬 ${e(c.notes)}</div>`:''}
+    ${dt?`<div class="ci-date">${dt}</div>`:''}
+  </div>`;
+}
+
+function filterCards(q) {
+  const lq = q.toLowerCase();
+  filtered = lq ? allCards.filter(c =>
+    [c.lastName,c.firstName,c.lastNameKana,c.firstNameKana,
+     c.company,c.email,c.phone,c.mobile,c.title,c.department,c.notes]
+    .filter(Boolean).join(' ').toLowerCase().includes(lq)
+  ) : [...allCards];
+  render();
+}
+
+// ── Detail ──
+function openDetailModal(cid) {
+  detailId = cid;
+  const c = allCards.find(x => x.id === cid);
+  if (!c) return;
+  id('noteSaveRow').classList.add('hidden');
+
+  const cardImg = id('d_cardImg');
+  c.cardImageUrl ? (cardImg.src = c.cardImageUrl, cardImg.classList.remove('hidden'))
+    : cardImg.classList.add('hidden');
+
+  const init = c.lastName?.[0] || c.company?.[0] || '?';
+  if (c.facePhotoUrl) {
+    id('d_faceImg').src = c.facePhotoUrl; id('d_faceImg').classList.remove('hidden');
+    id('d_facePh').classList.add('hidden');
+  } else {
+    id('d_faceImg').classList.add('hidden');
+    id('d_facePh').classList.remove('hidden');
+    id('d_facePh').textContent = init;
+  }
+
+  const name = ((c.lastName||'') + ' ' + (c.firstName||'')).trim() || '名前なし';
+  const kana = ((c.lastNameKana||'') + ' ' + (c.firstNameKana||'')).trim();
+  id('d_name').textContent = name;
+  id('d_kana').textContent = kana;
+  id('d_company').textContent = c.company || '';
+  id('d_titledept').textContent = [c.title,c.department].filter(Boolean).join(' / ');
+
+  setDF('d_email', c.email, c.email ? 'mailto:'+c.email : null);
+  setDF('d_phone', c.phone, c.phone ? 'tel:'+c.phone : null);
+  setDF('d_mobile', c.mobile, c.mobile ? 'tel:'+c.mobile : null);
+  setDF('d_website', c.website, c.website || null);
+  setDF('d_address', c.address, null);
+  setDF('d_industry', c.industry, null);
+  id('d_notes').value = c.notes || '';
+  openModal('modalDetail');
+}
+
+function setDF(eid, text, href) {
+  const el = id(eid);
+  if (!text) { el.innerHTML = '<span style="color:var(--text3)">—</span>'; return; }
+  el.innerHTML = href
+    ? `<a href="${e(href)}" target="_blank" rel="noopener">${e(text)}</a>`
+    : `<span>${e(text)}</span>`;
+}
+
+function editCard() { closeModal('modalDetail'); openAddModal(detailId); }
+
+function onNoteInput() {
+  id('noteSaveRow').classList.remove('hidden');
+}
+
+async function saveNotes() {
+  const notes = id('d_notes').value;
+  try {
+    await updateDoc(dref(detailId), { notes, updatedAt: serverTimestamp() });
+    const c = allCards.find(x=>x.id===detailId);
+    if (c) c.notes = notes;
+    id('noteSaveRow').classList.add('hidden');
+    toast('メモを保存しました');
+    render();
+  } catch (e) { toast('保存失敗'); }
+}
+
+// ── Add/Edit Modal ──
+function openAddModal(cid) {
+  editId = cid;
+  scanB64 = null; faceFile = null;
+  id('addTitle').textContent = cid ? '名刺を編集' : '名刺を追加';
+  const fields = ['lastName','firstName','lastNameKana','firstNameKana','email','phone','mobile','company','department','title','industry','website','address','notes'];
+  fields.forEach(f => { const el = id('f_'+f); if(el) el.value = ''; });
+  id('scanPreview').classList.remove('show'); id('scanPreview').src = '';
+  id('scanZone').classList.remove('hidden');
+  id('btnAnalyze').disabled = true;
+  id('facePh').classList.remove('hidden'); id('faceImg').classList.add('hidden'); id('faceImg').src = '';
+
+  if (cid) {
+    const c = allCards.find(x=>x.id===cid);
+    if (c) {
+      fields.forEach(f => { const el=id('f_'+f); if(el&&c[f]) el.value=c[f]; });
+      if (c.cardImageUrl) {
+        id('scanPreview').src=c.cardImageUrl; id('scanPreview').classList.add('show');
+        id('scanZone').classList.add('hidden'); id('btnAnalyze').disabled=false;
+      }
+      if (c.facePhotoUrl) {
+        id('faceImg').src=c.facePhotoUrl; id('faceImg').classList.remove('hidden');
+        id('facePh').classList.add('hidden');
+      }
+    }
+  }
+  openModal('modalAdd');
+}
+
+// ── File Handling ──
+async function onScanFile(ev) {
+  const f = ev.target.files[0];
+  if (f) await loadScanFile(f);
+  ev.target.value = '';
+}
+
+function dov(ev, zid) { ev.preventDefault(); id(zid).classList.add('dragover'); }
+function dol(zid) { id(zid)?.classList.remove('dragover'); }
+async function doDrop(ev, type) {
+  ev.preventDefault(); dol('scanZone');
+  const f = ev.dataTransfer.files[0];
+  if (f && type==='scan') await loadScanFile(f);
+}
+
+async function loadScanFile(file) {
+  try {
+    log(`📎 ${file.name} (${file.type})`);
+    let b64, mime;
+    if (file.type === 'application/pdf') {
+      log('📄 PDF変換中...');
+      const r = await pdfFirstPage(file);
+      b64 = r.b64; mime = 'image/jpeg';
+      toast('PDF → 1ページ目を取得');
+    } else {
+      const r = await resizeImg(file, 1280);
+      b64 = r.b64; mime = 'image/jpeg';
+    }
+    scanB64 = b64; scanMime = mime;
+    id('scanPreview').src = 'data:'+mime+';base64,'+b64;
+    id('scanPreview').classList.add('show');
+    id('scanZone').classList.add('hidden');
+    id('btnAnalyze').disabled = false;
+    log(`✅ ${(b64.length*.75/1024).toFixed(0)}KB`);
+  } catch (err) { log('❌ '+err.message); toast('読み込み失敗: '+err.message); }
+}
+
+function onFaceFile(ev) {
+  const f = ev.target.files[0]; if (!f) return;
+  faceFile = f;
+  const reader = new FileReader();
+  reader.onload = ev2 => {
+    id('faceImg').src = ev2.target.result;
+    id('faceImg').classList.remove('hidden');
+    id('facePh').classList.add('hidden');
+  };
+  reader.readAsDataURL(f);
+  ev.target.value = '';
+}
+
+function clearFace() {
+  faceFile = null;
+  id('faceImg').classList.add('hidden'); id('faceImg').src = '';
+  id('facePh').classList.remove('hidden');
+}
+
+// ── Image Processing ──
+function resizeImg(file, max) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let w=img.width, h=img.height;
+      if (w>max||h>max) { if(w>h){h=Math.round(h*max/w);w=max;}else{w=Math.round(w*max/h);h=max;} }
+      const cv = document.createElement('canvas'); cv.width=w; cv.height=h;
+      cv.getContext('2d').drawImage(img,0,0,w,h);
+      res({ b64: cv.toDataURL('image/jpeg',.88).split(',')[1] });
+    };
+    img.onerror = rej; img.src = url;
+  });
+}
+
+async function pdfFirstPage(file) {
+  if (!window.pdfjsLib) throw new Error('PDF.js が未ロード');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+  const page = await pdf.getPage(1);
+  const vp = page.getViewport({ scale: 2 });
+  const cv = document.createElement('canvas'); cv.width=vp.width; cv.height=vp.height;
+  await page.render({ canvasContext: cv.getContext('2d'), viewport: vp }).promise;
+  return { b64: cv.toDataURL('image/jpeg',.88).split(',')[1] };
+}
+
+// ── Claude OCR ──
+const PROMPT = `この名刺画像から情報を抽出してください。JSONのみ返答してください（マークダウン不要）。
+{"lastName":"姓","firstName":"名","lastNameKana":"セイ","firstNameKana":"メイ","email":"メール","phone":"電話","mobile":"携帯","department":"部署","title":"役職","company":"会社名","industry":"業種","website":"URL","address":"住所"}`;
+
+async function analyzeCard() {
+  if (!scanB64) return;
+  const btn = id('btnAnalyze'); btn.disabled=true; btn.textContent='解析中...';
+  try {
+    const s = S.get();
+    let data;
+    if (s.wurl && s.wtok) {
+      log('🤖 Worker経由...');
+      const res = await fetch(s.wurl+'/analyze', {
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+s.wtok},
+        body: JSON.stringify({ image:scanB64, mediaType:scanMime })
+      });
+      if (!res.ok) throw new Error('Worker '+res.status+': '+await res.text());
+      data = await res.json();
+    } else if (s.akey) {
+      log('🤖 直接API...');
+      const res = await fetch('https://api.anthropic.com/v1/messages', {
+        method:'POST',
+        headers:{'Content-Type':'application/json','x-api-key':s.akey,'anthropic-version':'2023-06-01'},
+        body: JSON.stringify({ model:'claude-sonnet-4-6', max_tokens:1000, messages:[{role:'user',content:[
+          {type:'image',source:{type:'base64',media_type:scanMime,data:scanB64}},
+          {type:'text',text:PROMPT}
+        ]}]})
+      });
+      if (!res.ok) throw new Error('API '+res.status);
+      const raw = await res.json();
+      const txt = raw.content?.map(c=>c.text||'').join('') || '';
+      data = JSON.parse(txt.replace(/```json|```/g,'').trim());
+    } else {
+      toast('設定からAPIキーを入力してください');
+      openSettings(); return;
+    }
+    fillForm(data);
+    toast('解析完了！内容を確認してください');
+    log('✅ ' + JSON.stringify(data).slice(0,80));
+  } catch (err) { log('❌ '+err.message); toast('解析失敗: '+err.message); }
+  finally { btn.disabled=false; btn.textContent='🤖 AIで自動解析'; }
+}
+
+function fillForm(d) {
+  const map = { f_lastName:'lastName', f_firstName:'firstName', f_lastNameKana:'lastNameKana',
+    f_firstNameKana:'firstNameKana', f_email:'email', f_phone:'phone', f_mobile:'mobile',
+    f_company: d.company!==undefined ? 'company' : 'accountName',
+    f_department:'department', f_title:'title', f_industry:'industry',
+    f_website:'website', f_address:'address' };
+  Object.entries(map).forEach(([eid, key]) => {
+    const el=id(eid); const val=d[key]||d.company||'';
+    if (el && val) el.value = val;
+  });
+  // fix company separately
+  if (id('f_company') && d.company) id('f_company').value = d.company;
+}
+
+// ── CSV Export ──
+const CSV_HDR = '"Last Name","First Name","Last Name (Kana)","First Name (Kana)","Email","Phone","Mobile","Department","Title","Account Name","Industry","Website","Mailing Street","Description"';
+
+function cardRow(c) {
+  return [c.lastName,c.firstName,c.lastNameKana,c.firstNameKana,c.email,c.phone,c.mobile,
+    c.department,c.title,c.company,c.industry,c.website,c.address,c.notes]
+    .map(x=>`"${String(x||'').replace(/"/g,'""')}"`).join(',');
+}
+
+function dlCsv(content, name) {
+  const blob = new Blob(['﻿'+content], {type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name; a.click();
+}
+
+function exportCSV() {
+  if (!filtered.length) { toast('データがありません'); return; }
+  dlCsv([CSV_HDR,...filtered.map(cardRow)].join('\n'),
+    `meishi_${new Date().toISOString().slice(0,10)}.csv`);
+  toast(`${filtered.length}件をCSVに出力しました`);
+}
+
+function exportOneCSV() {
+  const c = allCards.find(x=>x.id===detailId);
+  if (!c) return;
+  dlCsv([CSV_HDR,cardRow(c)].join('\n'),
+    `meishi_${(c.lastName||c.company||'export').replace(/\s+/g,'_')}.csv`);
+  toast('CSVに出力しました');
+}
+
+// ── Settings ──
+function openSettings() {
+  const s=S.get();
+  id('s_wurl').value=s.wurl; id('s_wtok').value=s.wtok;
+  id('s_akey').value=s.akey; id('s_sfurl').value=s.sfurl;
+  openModal('modalSettings');
+}
+function saveSettings() {
+  ls('mv_wurl',id('s_wurl').value.trim()); ls('mv_wtok',id('s_wtok').value.trim());
+  ls('mv_akey',id('s_akey').value.trim()); ls('mv_sfurl',id('s_sfurl').value.trim());
+  closeModal('modalSettings'); toast('設定を保存しました');
+}
+
+// ── Modal Helpers ──
+function openModal(mid) { id(mid).classList.remove('hidden'); }
+function closeModal(mid) { id(mid).classList.add('hidden'); }
+function closeBg(ev, mid) { if (ev.target===id(mid)) closeModal(mid); }
+
+// ── Utils ──
+function id(x) { return document.getElementById(x); }
+function v(x) { return (id(x)?.value||'').trim(); }
+function e(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function b64Blob(b, mime) {
+  const bin=atob(b), arr=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+  return new Blob([arr],{type:mime});
+}
+function storagePath(url) {
+  try { return decodeURIComponent(new URL(url).pathname.split('/o/')[1].split('?')[0]); }
+  catch { return ''; }
+}
+
+const dbgLines = [];
+function log(msg) {
+  const t=new Date().toLocaleTimeString('ja-JP');
+  const l=`[${t}] ${msg}`; dbgLines.push(l);
+  id('dbgLog').textContent=dbgLines.slice(-50).join('\n');
+}
+function toggleDbg() { id('dbgPanel').classList.toggle('open'); }
+
+let _toast;
+function toast(msg, ms=3000) {
+  clearTimeout(_toast);
+  const el=id('toast'); el.textContent=msg; el.classList.add('show');
+  _toast=setTimeout(()=>el.classList.remove('show'),ms);
+}
+
+log('📇 名刺Vault 起動');
+</script>
+
+<!-- UI_COMMON_COMPONENTS -->
+<style>
+#__ui_fixed{position:fixed;bottom:12px;right:12px;display:flex;gap:6px;z-index:99999;font-family:monospace}
+#__version_badge{background:rgba(0,0,0,.55);color:#aef;font-size:11px;padding:3px 8px;border-radius:4px;cursor:pointer}
+#__debug_btn{background:rgba(0,0,0,.45);color:#fa8;font-size:10px;padding:3px 7px;border-radius:4px;cursor:pointer}
+.__mo{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:999999;align-items:center;justify-content:center}
+.__mo.open{display:flex}
+.__mb{background:#1e1e2e;color:#cdd6f4;border-radius:10px;padding:24px;max-width:520px;width:90%;max-height:80vh;overflow-y:auto;position:relative;font-size:14px;line-height:1.7}
+.__mc{position:absolute;top:12px;right:14px;background:none;border:none;color:#888;font-size:18px;cursor:pointer}
+</style>
+<div id="__ui_fixed"><button id="__debug_btn">DBG</button><span id="__version_badge">v0.1.0</span></div>
+<div id="__rm" class="__mo" onclick="if(event.target===this)this.classList.remove('open')"><div class="__mb"><button class="__mc" onclick="document.getElementById('__rm').classList.remove('open')">x</button><h2>Release Notes</h2><div id="__rc"></div></div></div>
+<div id="__hm" class="__mo" onclick="if(event.target===this)this.classList.remove('open')"><div class="__mb"><button class="__mc" onclick="document.getElementById('__hm').classList.remove('open')">x</button><h2>名刺Vault — 使い方</h2>
+<p><strong>基本操作</strong></p>
+<ul>
+<li>＋ボタン → 名刺追加（PDF・JPEG・スマホ写真対応）</li>
+<li>「🤖 AIで自動解析」→ Claude Vision OCR でフィールド自動入力</li>
+<li>顔写真エリア → 別途顔写真を登録可能</li>
+<li>カードクリック → 詳細表示・メモ編集</li>
+<li>⬇ CSV → Salesforce 取り込み用 CSV 一括出力</li>
+<li>検索バー → 名前・会社・メールでリアルタイム絞り込み</li>
+</ul>
+<p style="margin-top:12px;"><strong>⚙️ 設定</strong></p>
+<ul>
+<li>Cloudflare Worker URL + トークン：Worker 経由（API キー安全）</li>
+<li>Anthropic API キー：直接呼び出し（個人利用向け）</li>
+</ul>
+<p style="margin-top:12px;"><strong>🔒 セキュリティ</strong></p>
+<ul>
+<li>Google ログインのみアクセス可能</li>
+<li>データは Firebase（Firestore / Storage）に保存</li>
+</ul>
+</div></div>
+<script>
+(function(){
+var RN=[{v:"v0.1.0",d:"2026-06-18",n:["初回リリース","PDF・JPEG・スマホ写真対応","Claude Vision OCR自動解析","顔写真登録機能","Salesforce CSV エクスポート","Firebase Auth/Firestore/Storage連携","モバイル対応レスポンシブUI"]}];
+var b=document.getElementById("__version_badge");
+b.textContent=RN[0].v;
+b.addEventListener("click",function(){document.getElementById("__rc").innerHTML=RN.map(function(r){return"<h3>"+r.v+" ("+r.d+")</h3><ul>"+r.n.map(function(n){return"<li>"+n+"</li>";}).join("")+"</ul>";}).join("");document.getElementById("__rm").classList.add("open");});
+var logs=[];var orig=console.log.bind(console);
+console.log=function(){var a=Array.prototype.slice.call(arguments);logs.push("["+new Date().toLocaleTimeString("ja-JP")+"] "+a.join(" "));orig.apply(console,a);};
+document.getElementById("__debug_btn").addEventListener("click",function(){navigator.clipboard.writeText(logs.length?logs.join("\n"):"(no logs)").then(function(){var b=document.getElementById("__debug_btn");b.textContent="OK";setTimeout(function(){b.textContent="DBG";},1500);});});
+window.addEventListener("DOMContentLoaded",function(){var el=document.getElementById("appTitle");if(el){el.style.cursor="pointer";el.addEventListener("click",function(){document.getElementById("__hm").classList.add("open");});}});
+})();
+</script>
+<!-- /UI_COMMON_COMPONENTS -->
+</body>
+</html>
