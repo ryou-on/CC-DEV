@@ -405,6 +405,31 @@
   </div>
 </div>
 
+<!-- Face Crop Modal -->
+<div id="modalFaceCrop" class="modal-overlay hidden" style="z-index:2000;">
+  <div class="modal-box" style="max-width:360px;">
+    <div class="modal-head">
+      <span class="modal-title">🙂 顔写真を調整</span>
+      <button class="modal-close" onclick="closeFaceCrop()">✕</button>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:14px;padding:16px 0 0;">
+      <div style="position:relative;width:260px;height:260px;border-radius:50%;overflow:hidden;border:3px solid var(--accent);box-shadow:0 0 0 4px var(--surface2);cursor:grab;" id="cropWrap">
+        <canvas id="cropCanvas" width="260" height="260" style="position:absolute;top:0;left:0;touch-action:none;user-select:none;"></canvas>
+      </div>
+      <div style="width:100%;display:flex;align-items:center;gap:10px;padding:0 4px;">
+        <span style="font-size:18px;">🔍−</span>
+        <input type="range" id="cropZoom" min="0.1" max="5" step="0.01" value="1" style="flex:1;accent-color:var(--accent);">
+        <span style="font-size:18px;">🔍+</span>
+      </div>
+      <p style="font-size:11px;color:var(--text3);margin:0;text-align:center;">ドラッグで位置調整・スライダーでズーム</p>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-secondary btn-sm" onclick="closeFaceCrop()">キャンセル</button>
+      <button class="btn btn-primary btn-sm" onclick="confirmFaceCrop()">✓ 確定</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 <div class="dbg-wrap">
   <button class="dbg-toggle" onclick="toggleDbg()">🐛</button>
@@ -467,7 +492,7 @@ Object.assign(window, {
   dov, dol, doDrop, onScanFile, onFaceFile, clearFace,
   analyzeCard, saveCard, openDetailModal, deleteCard, editCard, saveNotes, onNoteInput,
   exportCSV, exportOneCSV, openSettings, saveSettings, toggleDbg,
-  mergeAction
+  mergeAction, closeFaceCrop, confirmFaceCrop
 });
 
 // ── Auth ──
@@ -754,15 +779,71 @@ async function loadScanFile(file) {
 
 function onFaceFile(ev) {
   const f = ev.target.files[0]; if (!f) return;
-  faceFile = f;
-  const reader = new FileReader();
-  reader.onload = ev2 => {
-    id('faceImg').src = ev2.target.result;
-    id('faceImg').classList.remove('hidden');
-    id('facePh').classList.add('hidden');
-  };
-  reader.readAsDataURL(f);
   ev.target.value = '';
+  openFaceCrop(f);
+}
+
+// ── Face Crop ──────────────────────────────────────────
+let _cropImg = null, _cropX = 0, _cropY = 0, _cropScale = 1;
+let _cropDrag = false, _cropLast = {x:0, y:0};
+
+function openFaceCrop(file) {
+  const url = URL.createObjectURL(file);
+  _cropImg = new Image();
+  _cropImg.onload = () => {
+    const cv = id('cropCanvas');
+    const cw = cv.width, ch = cv.height;
+    const ratio = Math.max(cw / _cropImg.width, ch / _cropImg.height);
+    _cropScale = ratio;
+    _cropX = (cw - _cropImg.width * ratio) / 2;
+    _cropY = (ch - _cropImg.height * ratio) / 2;
+    const zEl = id('cropZoom');
+    zEl.min = ratio * 0.3; zEl.max = ratio * 5; zEl.step = ratio * 0.01;
+    zEl.value = ratio;
+    _setupCropEvents();
+    drawCrop();
+    openModal('modalFaceCrop');
+  };
+  _cropImg.src = url;
+}
+
+function drawCrop() {
+  const cv = id('cropCanvas');
+  const ctx = cv.getContext('2d');
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  if (_cropImg) ctx.drawImage(_cropImg, _cropX, _cropY, _cropImg.width * _cropScale, _cropImg.height * _cropScale);
+}
+
+function _setupCropEvents() {
+  const cv = id('cropCanvas');
+  const move = (dx, dy) => { _cropX += dx; _cropY += dy; drawCrop(); };
+  cv.onmousedown = ev => { _cropDrag = true; _cropLast = {x:ev.clientX, y:ev.clientY}; cv.style.cursor='grabbing'; };
+  cv.onmousemove = ev => { if (!_cropDrag) return; move(ev.clientX-_cropLast.x, ev.clientY-_cropLast.y); _cropLast={x:ev.clientX,y:ev.clientY}; };
+  cv.onmouseup = cv.onmouseleave = () => { _cropDrag=false; cv.style.cursor='grab'; };
+  cv.ontouchstart = ev => { ev.preventDefault(); _cropDrag=true; const t=ev.touches[0]; _cropLast={x:t.clientX,y:t.clientY}; };
+  cv.ontouchmove = ev => { ev.preventDefault(); if(!_cropDrag) return; const t=ev.touches[0]; move(t.clientX-_cropLast.x,t.clientY-_cropLast.y); _cropLast={x:t.clientX,y:t.clientY}; };
+  cv.ontouchend = () => { _cropDrag=false; };
+  id('cropZoom').oninput = ev => {
+    const ns = parseFloat(ev.target.value), cx=130, cy=130;
+    _cropX = cx - (cx - _cropX) * ns / _cropScale;
+    _cropY = cy - (cy - _cropY) * ns / _cropScale;
+    _cropScale = ns; drawCrop();
+  };
+}
+
+function closeFaceCrop() { closeModal('modalFaceCrop'); }
+
+function confirmFaceCrop() {
+  const src = id('cropCanvas');
+  const out = document.createElement('canvas'); out.width = 300; out.height = 300;
+  out.getContext('2d').drawImage(src, 0, 0, 260, 260, 0, 0, 300, 300);
+  out.toBlob(blob => {
+    faceFile = new File([blob], 'face.jpg', {type:'image/jpeg'});
+    const url = URL.createObjectURL(blob);
+    id('faceImg').src = url; id('faceImg').classList.remove('hidden');
+    id('facePh').classList.add('hidden');
+    closeModal('modalFaceCrop');
+  }, 'image/jpeg', 0.92);
 }
 
 function clearFace() {
