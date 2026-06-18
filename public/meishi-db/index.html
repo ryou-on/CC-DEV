@@ -224,7 +224,7 @@
         <div class="upload-zone-text">クリック / ドラッグ＆ドロップ</div>
         <div class="upload-zone-sub">ScanSnap PDF・スマホ写真・JPEG に対応</div>
       </div>
-      <input type="file" id="scanFile" accept="image/*,.pdf" class="hidden" onchange="onScanFile(event)">
+      <input type="file" id="scanFile" accept="image/*,.pdf" class="hidden" multiple onchange="onScanFile(event)">
       <img id="scanPreview" class="scan-preview" alt="名刺">
       <button class="btn btn-outline btn-full btn-sm" id="btnAnalyze" onclick="analyzeCard()" disabled style="margin-bottom:6px;">
         🤖 AIで自動解析
@@ -361,6 +361,50 @@
   </div>
 </div>
 
+<!-- ===== BATCH PROGRESS ===== -->
+<div id="batchOverlay" class="modal-overlay hidden">
+  <div class="modal-box" style="max-width:420px;">
+    <div class="mhdr"><span class="mtitle">📦 一括登録</span></div>
+    <div class="mbody">
+      <div style="text-align:center;padding:16px 0 12px;">
+        <div id="batchIcon" style="font-size:36px;margin-bottom:10px;">⏳</div>
+        <div id="batchStatus" style="font-size:15px;font-weight:700;color:var(--text);">処理中...</div>
+        <div id="batchSub" style="font-size:12px;color:var(--text3);margin-top:5px;"></div>
+        <div style="margin-top:14px;background:var(--surface2);border-radius:8px;height:6px;overflow:hidden;">
+          <div id="batchBar" style="height:100%;background:var(--accent);transition:width .4s;width:0%;border-radius:8px;"></div>
+        </div>
+      </div>
+      <div id="batchLog" style="font-size:10px;font-family:'Space Mono',monospace;color:var(--text3);max-height:140px;overflow-y:auto;padding:8px 10px;background:var(--surface2);border-radius:8px;white-space:pre-wrap;line-height:1.6;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== MERGE MODAL ===== -->
+<div id="modalMerge" class="modal-overlay hidden">
+  <div class="modal-box" style="max-width:560px;">
+    <div class="mhdr"><span class="mtitle">⚠️ 重複候補が見つかりました</span></div>
+    <div class="mbody">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:14px;">同じ人物の名刺が既に登録されている可能性があります。処理を選択してください。</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div>
+          <div class="fsec" style="margin-top:0;">既存データ</div>
+          <div id="mergeExisting" style="font-size:12px;line-height:1.8;color:var(--text2);"></div>
+        </div>
+        <div>
+          <div class="fsec" style="margin-top:0;color:var(--warn);">新しいデータ</div>
+          <div id="mergeIncoming" style="font-size:12px;line-height:1.8;color:var(--text2);"></div>
+        </div>
+      </div>
+    </div>
+    <div class="mfoot" style="flex-wrap:wrap;gap:8px;">
+      <button class="btn btn-secondary btn-sm" onclick="mergeAction('skip')">スキップ</button>
+      <button class="btn btn-secondary btn-sm" onclick="mergeAction('separate')">別に保存</button>
+      <button class="btn btn-outline btn-sm" onclick="mergeAction('overwrite')">上書き</button>
+      <button class="btn btn-primary btn-sm" style="flex:1;min-width:100px;" onclick="mergeAction('merge')">🔀 マージ</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 <div class="dbg-wrap">
   <button class="dbg-toggle" onclick="toggleDbg()">🐛</button>
@@ -374,7 +418,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
-import { getFirestore, collection, doc, addDoc, getDocs, updateDoc, deleteDoc, query, orderBy, serverTimestamp }
+import { getFirestore, collection, doc, addDoc, getDocs, updateDoc, deleteDoc, query, orderBy, where, serverTimestamp }
   from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject }
   from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-storage.js';
@@ -401,6 +445,10 @@ let scanB64 = null;
 let scanMime = 'image/jpeg';
 let faceFile = null;
 
+// ── Batch state ──
+let batchResolve = null;
+let batchResults = {};
+
 // ── Settings ──
 const S = {
   get: () => ({
@@ -418,7 +466,8 @@ Object.assign(window, {
   loginGoogle, doLogout, filterCards, openAddModal, closeModal, closeBg,
   dov, dol, doDrop, onScanFile, onFaceFile, clearFace,
   analyzeCard, saveCard, openDetailModal, deleteCard, editCard, saveNotes, onNoteInput,
-  exportCSV, exportOneCSV, openSettings, saveSettings, toggleDbg
+  exportCSV, exportOneCSV, openSettings, saveSettings, toggleDbg,
+  mergeAction
 });
 
 // ── Auth ──
@@ -662,9 +711,15 @@ function openAddModal(cid) {
 
 // ── File Handling ──
 async function onScanFile(ev) {
-  const f = ev.target.files[0];
-  if (f) await loadScanFile(f);
+  const files = Array.from(ev.target.files);
   ev.target.value = '';
+  if (!files.length) return;
+  if (files.length === 1) {
+    await loadScanFile(files[0]);
+  } else {
+    closeModal('modalAdd');
+    await processBatch(files);
+  }
 }
 
 function dov(ev, zid) { ev.preventDefault(); id(zid).classList.add('dragover'); }
@@ -862,6 +917,173 @@ function b64Blob(b, mime) {
 function storagePath(url) {
   try { return decodeURIComponent(new URL(url).pathname.split('/o/')[1].split('?')[0]); }
   catch { return ''; }
+}
+
+// ── Batch Processing ──
+async function processBatch(files) {
+  batchResults = { saved: 0, skipped: 0, merged: 0, errors: 0 };
+  const total = files.length;
+  id('batchIcon').textContent = '⏳';
+  id('batchLog').textContent = '';
+  id('batchBar').style.width = '0%';
+  openModal('batchOverlay');
+
+  for (let i = 0; i < total; i++) {
+    const file = files[i];
+    id('batchBar').style.width = Math.round((i / total) * 100) + '%';
+    id('batchStatus').textContent = `${i + 1} / ${total} 件処理中`;
+    id('batchSub').textContent = file.name;
+    batchLog(`\n📄 ${file.name}`);
+
+    try {
+      let b64, mime;
+      if (file.type === 'application/pdf') {
+        batchLog('  📄 PDF変換中...');
+        const r = await pdfFirstPage(file); b64 = r.b64; mime = 'image/jpeg';
+      } else {
+        const r = await resizeImg(file, 1280); b64 = r.b64; mime = 'image/jpeg';
+      }
+
+      batchLog('  🤖 OCR解析中...');
+      const s = S.get();
+      let data;
+      if (s.wurl && s.wtok) {
+        const res = await fetch(s.wurl + '/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + s.wtok },
+          body: JSON.stringify({ image: b64, mediaType: mime })
+        });
+        if (!res.ok) throw new Error('Worker ' + res.status);
+        data = await res.json();
+      } else if (s.akey) {
+        const res = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-api-key': s.akey, 'anthropic-version': '2023-06-01' },
+          body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 1000, messages: [{ role: 'user', content: [
+            { type: 'image', source: { type: 'base64', media_type: mime, data: b64 } },
+            { type: 'text', text: PROMPT }
+          ]}]})
+        });
+        const raw = await res.json();
+        const txt = raw.content?.map(c => c.text || '').join('') || '';
+        data = JSON.parse(txt.replace(/```json|```/g, '').trim());
+      } else {
+        throw new Error('API設定なし — ⚙️設定からAPIキーを入力してください');
+      }
+
+      data.company = data.company || data.accountName || '';
+      const nm = ((data.lastName || '') + ' ' + (data.firstName || '')).trim() || data.company || '?';
+      batchLog(`  ✅ 抽出: ${nm}`);
+
+      const dup = await findDuplicate(data);
+      let action = 'save';
+      if (dup) {
+        batchLog(`  ⚠️ 重複候補: ${((dup.lastName||'') + ' ' + (dup.firstName||'')).trim() || dup.company}`);
+        action = await showMergeModal(dup, data);
+        batchLog(`  → ${action}`);
+      }
+
+      if (action === 'skip') {
+        batchResults.skipped++;
+      } else if (action === 'merge') {
+        const merged = mergeCardData(dup, data);
+        if (b64) {
+          const r = ref(storage, `users/${user.uid}/cards/${Date.now()}_s.jpg`);
+          await uploadBytes(r, b64Blob(b64, mime));
+          merged.cardImageUrl = await getDownloadURL(r);
+        }
+        merged.updatedAt = serverTimestamp();
+        await updateDoc(dref(dup.id), merged);
+        batchResults.merged++;
+      } else if (action === 'overwrite') {
+        const payload = { ...data, updatedAt: serverTimestamp() };
+        if (b64) {
+          const r = ref(storage, `users/${user.uid}/cards/${Date.now()}_s.jpg`);
+          await uploadBytes(r, b64Blob(b64, mime));
+          payload.cardImageUrl = await getDownloadURL(r);
+        }
+        await updateDoc(dref(dup.id), payload);
+        batchResults.saved++;
+      } else {
+        const payload = { ...data, cardImageUrl: '', facePhotoUrl: '', createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+        if (b64) {
+          const r = ref(storage, `users/${user.uid}/cards/${Date.now()}_s.jpg`);
+          await uploadBytes(r, b64Blob(b64, mime));
+          payload.cardImageUrl = await getDownloadURL(r);
+        }
+        await addDoc(col(), payload);
+        batchResults.saved++;
+      }
+    } catch (err) {
+      batchLog(`  ❌ エラー: ${err.message}`);
+      batchResults.errors++;
+    }
+  }
+
+  id('batchBar').style.width = '100%';
+  id('batchIcon').textContent = '✅';
+  id('batchStatus').textContent = '完了！';
+  const r = batchResults;
+  id('batchSub').textContent = `登録${r.saved}件・マージ${r.merged}件・スキップ${r.skipped}件・エラー${r.errors}件`;
+  await loadCards();
+  setTimeout(() => { closeModal('batchOverlay'); toast(`一括登録完了: ${r.saved + r.merged}件`); }, 2500);
+}
+
+async function findDuplicate(data) {
+  try {
+    if (data.email) {
+      const snap = await getDocs(query(col(), where('email', '==', data.email)));
+      if (!snap.empty) return { id: snap.docs[0].id, ...snap.docs[0].data() };
+    }
+    if (data.lastName && data.firstName) {
+      const snap = await getDocs(query(col(), where('lastName', '==', data.lastName), where('firstName', '==', data.firstName)));
+      if (!snap.empty) return { id: snap.docs[0].id, ...snap.docs[0].data() };
+    }
+  } catch (err) { log('dup check: ' + err.message); }
+  return null;
+}
+
+function showMergeModal(existing, incoming) {
+  return new Promise(resolve => {
+    batchResolve = resolve;
+    const mkHtml = c => [
+      ['姓名', ((c.lastName||'') + ' ' + (c.firstName||'')).trim()],
+      ['カナ', ((c.lastNameKana||'') + ' ' + (c.firstNameKana||'')).trim()],
+      ['会社', c.company || ''], ['役職', c.title || ''],
+      ['部署', c.department || ''], ['メール', c.email || ''],
+      ['電話', c.phone || ''], ['携帯', c.mobile || ''],
+    ].filter(([,v]) => v).map(([k,v]) =>
+      `<div><span style="color:var(--text3);font-size:10px;">${k}:</span> ${e(v)}</div>`
+    ).join('');
+    id('mergeExisting').innerHTML = mkHtml(existing);
+    id('mergeIncoming').innerHTML = mkHtml(incoming);
+    openModal('modalMerge');
+  });
+}
+
+function mergeAction(action) {
+  closeModal('modalMerge');
+  if (batchResolve) { batchResolve(action); batchResolve = null; }
+}
+
+function mergeCardData(existing, incoming) {
+  const merged = { ...existing };
+  ['lastName','firstName','lastNameKana','firstNameKana','email','phone','mobile',
+   'company','department','title','industry','website','address'].forEach(f => {
+    if (incoming[f] && !existing[f]) merged[f] = incoming[f];
+  });
+  if (incoming.notes && existing.notes && incoming.notes !== existing.notes) {
+    merged.notes = existing.notes + '\n---\n' + incoming.notes;
+  } else if (incoming.notes && !existing.notes) {
+    merged.notes = incoming.notes;
+  }
+  return merged;
+}
+
+function batchLog(msg) {
+  const el = id('batchLog');
+  el.textContent += msg + '\n';
+  el.scrollTop = el.scrollHeight;
 }
 
 const dbgLines = [];
