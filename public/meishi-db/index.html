@@ -162,6 +162,18 @@
     .dbg-panel.open{display:block;}
     .dbg-log{font-size:10px;font-family:'Space Mono',monospace;color:#4ade80;line-height:1.5;white-space:pre-wrap;}
 
+    /* Sort & Select */
+    .ci{position:relative;}
+    .ci.selected{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent);}
+    .ci-check{position:absolute;top:10px;right:10px;width:22px;height:22px;border-radius:6px;border:2px solid var(--border);background:var(--surface);display:flex;align-items:center;justify-content:center;font-size:13px;pointer-events:none;transition:all .15s;}
+    .ci.selected .ci-check{background:var(--accent);border-color:var(--accent);color:#fff;}
+    .sort-sel{background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:7px 8px;border-radius:8px;font-size:12px;font-family:'Noto Sans JP',sans-serif;cursor:pointer;outline:none;flex-shrink:0;}
+    .hbtn-sel{padding:7px 11px;border-radius:8px;font-size:12px;cursor:pointer;white-space:nowrap;transition:all .2s;flex-shrink:0;}
+    .hbtn-sel.off{background:var(--surface2);border:1px solid var(--border);color:var(--text2);}
+    .hbtn-sel.on{background:var(--accent);border:1px solid var(--accent);color:#fff;}
+    .sel-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+    .sel-count{font-size:13px;color:var(--accent);font-weight:700;flex:1;}
+
     @media(max-width:640px){
       .app-header{padding:8px 10px;gap:7px;}
       .hbtn-csv{display:none;}
@@ -191,7 +203,14 @@
   <header class="app-header">
     <span class="app-logo" id="appTitle">📇 名刺Vault</span>
     <input type="search" class="search-input" id="searchInput" placeholder="名前・会社・メールで検索..." oninput="filterCards(this.value)">
-    <button class="hbtn hbtn-csv" onclick="exportCSV()" title="Salesforce CSV出力">⬇ CSV</button>
+    <select class="sort-sel" id="sortSel" onchange="setSort(this.value)" title="並び替え">
+      <option value="createdAt_desc">登録日↓</option>
+      <option value="createdAt_asc">登録日↑</option>
+      <option value="name_asc">名前順</option>
+      <option value="company_asc">会社名順</option>
+    </select>
+    <button class="hbtn-sel off" id="btnSel" onclick="toggleSelectMode()" title="選択モード">☑ 選択</button>
+    <button class="hbtn hbtn-csv" id="btnCsv" onclick="exportCSV()" title="Salesforce CSV出力">⬇ CSV</button>
     <button class="hbtn" onclick="openSettings()">⚙️</button>
     <button class="hbtn" onclick="doLogout()" title="ログアウト">⏻</button>
   </header>
@@ -470,6 +489,11 @@ let scanB64 = null;
 let scanMime = 'image/jpeg';
 let faceFile = null;
 
+// ── Sort & Select state ──
+let sortKey = 'createdAt_desc';
+let selectMode = false;
+let selectedIds = new Set();
+
 // ── Batch state ──
 let batchResolve = null;
 let batchResults = {};
@@ -492,7 +516,8 @@ Object.assign(window, {
   dov, dol, doDrop, onScanFile, onFaceFile, clearFace,
   analyzeCard, saveCard, openDetailModal, deleteCard, editCard, saveNotes, onNoteInput,
   exportCSV, exportOneCSV, openSettings, saveSettings, toggleDbg,
-  mergeAction, closeFaceCrop, confirmFaceCrop
+  mergeAction, closeFaceCrop, confirmFaceCrop,
+  setSort, toggleSelectMode, cardClick, toggleSelect, selectAll, clearSelection, exportSelected
 });
 
 // ── Auth ──
@@ -591,16 +616,27 @@ async function deleteCard() {
 
 // ── Render ──
 function render() {
+  applySort();
   const grid = id('cardGrid'), empty = id('emptyState'), stats = id('statsBar');
   if (!filtered.length) {
     grid.innerHTML = '';
     empty.classList.remove('hidden');
-    stats.textContent = allCards.length ? `${allCards.length}件中 0件` : '0件';
+    stats.innerHTML = allCards.length ? `${allCards.length}件中 0件` : '0件';
     return;
   }
   empty.classList.add('hidden');
-  stats.textContent = allCards.length === filtered.length
-    ? `${allCards.length}件` : `${allCards.length}件中 ${filtered.length}件`;
+  if (selectMode) {
+    const n = selectedIds.size;
+    stats.innerHTML = `<div class="sel-bar">
+      <span class="sel-count">☑ ${n}件選択中（全${filtered.length}件）</span>
+      <button class="btn btn-secondary btn-sm" onclick="selectAll()">全選択</button>
+      <button class="btn btn-secondary btn-sm" onclick="clearSelection()">解除</button>
+      <button class="btn btn-primary btn-sm" onclick="exportSelected()" ${n===0?'disabled':''}>⬇ CSV出力 (${n}件)</button>
+    </div>`;
+  } else {
+    stats.innerHTML = allCards.length === filtered.length
+      ? `${allCards.length}件` : `${allCards.length}件中 ${filtered.length}件`;
+  }
   grid.innerHTML = filtered.map(renderCard).join('');
 }
 
@@ -617,7 +653,9 @@ function renderCard(c) {
     c.mobile && `<div class="ci-row"><span class="ico">📱</span><span>${e(c.mobile)}</span></div>`
   ].filter(Boolean).join('');
   const dt = c.createdAt?.toDate ? c.createdAt.toDate().toLocaleDateString('ja-JP') : '';
-  return `<div class="ci" onclick="openDetailModal('${c.id}')">
+  const sel = selectMode && selectedIds.has(c.id);
+  return `<div class="ci${sel?' selected':''}" onclick="cardClick('${c.id}')">
+    ${selectMode ? `<div class="ci-check">${sel?'✓':''}</div>` : ''}
     <div class="ci-top">${face}<div class="ci-info">
       <div class="ci-name">${e(name)}</div>
       ${kana?`<div class="ci-kana">${e(kana)}</div>`:''}
@@ -632,13 +670,78 @@ function renderCard(c) {
 }
 
 function filterCards(q) {
-  const lq = q.toLowerCase();
+  const lq = (q||id('searchInput')?.value||'').toLowerCase();
   filtered = lq ? allCards.filter(c =>
     [c.lastName,c.firstName,c.lastNameKana,c.firstNameKana,
      c.company,c.email,c.phone,c.mobile,c.title,c.department,c.notes]
     .filter(Boolean).join(' ').toLowerCase().includes(lq)
   ) : [...allCards];
   render();
+}
+
+// ── Sort ──
+function applySort() {
+  const [key, dir] = sortKey.split('_');
+  filtered.sort((a, b) => {
+    let av, bv;
+    if (key === 'createdAt') {
+      av = a.createdAt?.toDate?.()?.getTime() || 0;
+      bv = b.createdAt?.toDate?.()?.getTime() || 0;
+    } else if (key === 'name') {
+      av = ((a.lastNameKana||a.lastName||'') + (a.firstNameKana||a.firstName||'')).toLowerCase();
+      bv = ((b.lastNameKana||b.lastName||'') + (b.firstNameKana||b.firstName||'')).toLowerCase();
+    } else {
+      av = (a.company||'').toLowerCase();
+      bv = (b.company||'').toLowerCase();
+    }
+    if (av < bv) return dir === 'asc' ? -1 : 1;
+    if (av > bv) return dir === 'asc' ? 1 : -1;
+    return 0;
+  });
+}
+
+function setSort(val) {
+  sortKey = val;
+  render();
+}
+
+// ── Select Mode ──
+function toggleSelectMode() {
+  selectMode = !selectMode;
+  selectedIds.clear();
+  const btn = id('btnSel');
+  btn.className = 'hbtn-sel ' + (selectMode ? 'on' : 'off');
+  btn.textContent = selectMode ? '✕ 解除' : '☑ 選択';
+  render();
+}
+
+function cardClick(cid) {
+  if (selectMode) toggleSelect(cid);
+  else openDetailModal(cid);
+}
+
+function toggleSelect(cid) {
+  if (selectedIds.has(cid)) selectedIds.delete(cid);
+  else selectedIds.add(cid);
+  render();
+}
+
+function selectAll() {
+  filtered.forEach(c => selectedIds.add(c.id));
+  render();
+}
+
+function clearSelection() {
+  selectedIds.clear();
+  render();
+}
+
+function exportSelected() {
+  const target = filtered.filter(c => selectedIds.has(c.id));
+  if (!target.length) { toast('選択してください'); return; }
+  dlCsv([CSV_HDR,...target.map(cardRow)].join('\n'),
+    `meishi_selected_${new Date().toISOString().slice(0,10)}.csv`);
+  toast(`${target.length}件をCSVに出力しました`);
 }
 
 // ── Detail ──
@@ -954,10 +1057,13 @@ function dlCsv(content, name) {
 }
 
 function exportCSV() {
-  if (!filtered.length) { toast('データがありません'); return; }
-  dlCsv([CSV_HDR,...filtered.map(cardRow)].join('\n'),
+  const target = selectMode && selectedIds.size > 0
+    ? filtered.filter(c => selectedIds.has(c.id))
+    : filtered;
+  if (!target.length) { toast('データがありません'); return; }
+  dlCsv([CSV_HDR,...target.map(cardRow)].join('\n'),
     `meishi_${new Date().toISOString().slice(0,10)}.csv`);
-  toast(`${filtered.length}件をCSVに出力しました`);
+  toast(`${target.length}件をCSVに出力しました`);
 }
 
 function exportOneCSV() {
