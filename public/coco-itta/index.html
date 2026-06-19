@@ -686,6 +686,38 @@
       border-color: var(--amber);
       font-weight: 700;
     }
+    .member-avatar {
+      width: 24px; height: 24px; border-radius: 50%;
+      object-fit: cover; border: 1.5px solid var(--amber);
+      vertical-align: middle; flex-shrink: 0;
+    }
+    .member-avatar-sm {
+      width: 20px; height: 20px; border-radius: 50%;
+      object-fit: cover; border: 1px solid var(--amber);
+      vertical-align: middle; flex-shrink: 0; display: inline-block;
+    }
+    .member-initial {
+      width: 24px; height: 24px; border-radius: 50%;
+      background: var(--amber-lt); border: 1.5px solid var(--amber);
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 0.6rem; color: var(--ink); font-weight: 700; flex-shrink: 0;
+    }
+    .member-initial-sm {
+      width: 20px; height: 20px; border-radius: 50%;
+      background: var(--amber-lt); border: 1px solid var(--amber);
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 0.55rem; color: var(--ink); font-weight: 700; flex-shrink: 0;
+    }
+    .member-avatar-edit {
+      width: 36px; height: 36px; border-radius: 50%;
+      object-fit: cover; border: 2px solid var(--amber); cursor: pointer; flex-shrink: 0;
+    }
+    .member-avatar-edit-placeholder {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: var(--amber-lt); border: 2px dashed var(--amber);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.75rem; cursor: pointer; flex-shrink: 0; color: var(--ink-light);
+    }
 
     /* ===== メンバー設定編集リスト ===== */
     .member-edit-row {
@@ -1326,7 +1358,7 @@
   <div class="logo">
     COCO-ITTA
     <span>ここいった — 家族の地図帳</span>
-    <span style="font-size:0.6rem;opacity:0.5;">v0.9.0</span>
+    <span style="font-size:0.6rem;opacity:0.5;">v0.10.0</span>
   </div>
   <div class="filters" id="filters">
     <button class="filter-btn active" data-filter="all">すべて</button>
@@ -1413,6 +1445,7 @@
       <div style="display:flex;gap:6px;margin-top:6px;">
         <button class="btn-route-done" id="btnRouteDone">✅ 完了</button>
         <button class="btn-route-cancel" id="btnRouteUndo" style="background:#f5f0e8;border:1px solid #c8a87a;color:var(--ink);padding:8px 12px;border-radius:8px;font-family:'Zen Maru Gothic',sans-serif;cursor:pointer;">↩ UNDO</button>
+        <button class="btn-route-cancel" id="btnRouteRedo" style="background:#f5f0e8;border:1px solid #c8a87a;color:var(--ink);padding:8px 12px;border-radius:8px;font-family:'Zen Maru Gothic',sans-serif;cursor:pointer;">↪ REDO</button>
         <button class="btn-route-cancel" id="btnRouteCancel">✕ キャンセル</button>
       </div>
     </div>
@@ -1565,6 +1598,23 @@
       <button class="btn-cancel" id="btnCancel">キャンセル</button>
       <button class="btn-revisit" id="btnRevisit" style="display:none;background:var(--blue);color:white;border:none;padding:10px;border-radius:8px;cursor:pointer;font-family:'Zen Maru Gothic',sans-serif;font-size:0.82rem;flex:1;">🔄 再訪を記録</button>
       <button class="btn-delete" id="btnDelete" style="display:none;">削除</button>
+    </div>
+
+    <!-- 再訪日付パネル（btnRevisitクリック後に表示） -->
+    <div id="revisitPanel" style="display:none;border:1px solid var(--amber);border-radius:10px;padding:12px 14px;background:var(--cream);margin-top:10px;">
+      <p style="font-size:0.8rem;font-weight:700;margin:0 0 10px 0;color:var(--ink);">🔄 再訪日を選択</p>
+      <div class="form-group" style="margin-bottom:8px;">
+        <label style="font-size:0.75rem;">訪問日</label>
+        <input type="date" id="revisitDate" style="width:100%;padding:6px 8px;border:1px solid var(--tan);border-radius:8px;font-family:'Zen Maru Gothic',sans-serif;font-size:0.82rem;box-sizing:border-box;" />
+      </div>
+      <div class="form-group" style="margin-bottom:10px;">
+        <label style="font-size:0.75rem;">メモ（省略可）</label>
+        <input type="text" id="revisitMemo" placeholder="感想など…" style="width:100%;padding:6px 8px;border:1px solid var(--tan);border-radius:8px;font-family:'Zen Maru Gothic',sans-serif;font-size:0.82rem;box-sizing:border-box;" />
+      </div>
+      <div style="display:flex;gap:6px;">
+        <button id="btnRevisitConfirm" style="flex:1;background:var(--blue);color:#fff;border:none;padding:8px;border-radius:8px;cursor:pointer;font-family:'Zen Maru Gothic',sans-serif;font-size:0.8rem;">記録する</button>
+        <button id="btnRevisitPanelCancel" style="flex:1;background:var(--cream);color:var(--ink);border:1px solid var(--tan);padding:8px;border-radius:8px;cursor:pointer;font-family:'Zen Maru Gothic',sans-serif;font-size:0.8rem;">戻る</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1730,7 +1780,7 @@
 
 <script>
 // ============================================================
-// COCO-ITTA v0.9.0 - 日英 i18n 対応
+// COCO-ITTA v0.10.0 - ルートREDO・再訪日付指定・メンバー顔写真
 // - Leaflet + OpenStreetMap
 // - localStorage でデータ永続化
 // - ピン追加・編集・削除
@@ -3026,6 +3076,7 @@ let routeSettings = loadRouteSettings();
 let selectedRouteColor = routeSettings.color;
 let isDrawingMode = false;
 let drawingPoints = [];
+let redoStack = [];
 let previewLine = null;
 let tempMarkers = [];
 
@@ -3074,6 +3125,20 @@ function getVisitRank(pin) {
     .sort((a, b) => (a.date || a.createdAt || '').localeCompare(b.date || b.createdAt || ''));
   const idx = same.findIndex(p => p.id === pin.id);
   return { rank: idx + 1, total: same.length };
+}
+
+/** メンバー名リストからアバターHTMLを生成（popupとpinList共用） */
+function buildMemberAvatarsHtml(memberList, size = 'sm') {
+  if (!memberList?.length) return '';
+  const cls = size === 'sm' ? 'member-avatar-sm' : 'member-avatar';
+  const initCls = size === 'sm' ? 'member-initial-sm' : 'member-initial';
+  const chips = memberList.map(m => {
+    const photo = memberPhotos?.[m];
+    return photo
+      ? `<img src="${photo}" class="${cls}" title="${m}" />`
+      : `<span class="${initCls}" title="${m}">${m.slice(0,1)}</span>`;
+  }).join('');
+  return `<div style="display:inline-flex;gap:3px;align-items:center;flex-wrap:wrap;margin-top:2px;">${chips}</div>`;
 }
 
 /** ピンの写真を取得（pin.photosのURL優先 → localStorage fallback） */
@@ -3222,6 +3287,7 @@ function addMarkerToMap(pin) {
     ${ratingPopupHtml}
     ${badgeHtml ? `<br>${badgeHtml}` : ''}
     ${pin.memo ? `<br><span style="font-size:0.72rem">${pin.memo}</span>` : ''}
+    ${pin.members?.length ? `<br>${buildMemberAvatarsHtml(pin.members)}` : ''}
     ${photoHtml}
     <br><button onclick="openEdit('${pin.id}')" style="margin-top:6px;font-family:'Zen Maru Gothic',sans-serif;font-size:0.72rem;padding:3px 8px;border-radius:6px;background:#c8821a;border:none;color:#fff;cursor:pointer;">${t('popup.btn.edit')}</button>
   `);
@@ -3269,7 +3335,7 @@ function addStackedMarkerToMap(groupPins) {
         <span style="background:#e8388a;color:#fff;font-size:0.62rem;font-weight:700;padding:1px 5px;border-radius:10px;">${t('pin.visitBadge', {n: rank})}</span>
         <span style="font-size:0.7rem;color:#6b5c45;margin-left:4px;">${statusLabel} ${p.date ? '· ' + p.date : ''}${rateInline}</span>
         ${p.memo ? `<div style="font-size:0.68rem;color:#888;margin-top:2px;">${p.memo}</div>` : ''}
-        ${p.members?.length ? `<div style="font-size:0.65rem;color:#aaa;">${p.members.join('・')}</div>` : ''}
+        ${p.members?.length ? buildMemberAvatarsHtml(p.members) : ''}
         <br style="clear:both;"/>
         <button onclick="openEdit('${p.id}')" style="font-size:0.68rem;padding:2px 8px;border-radius:5px;background:#c8821a;border:none;color:#fff;cursor:pointer;margin-top:3px;font-family:'Zen Maru Gothic',sans-serif;">${t('popup.btn.edit')}</button>
       </div>`;
@@ -3421,6 +3487,7 @@ function renderPinList() {
         <div class="pin-info" style="flex:1;min-width:0;">
           <div class="pin-name">${pin.name}</div>
           <div class="pin-meta">${ratingHtml}${ratingHtml && (dateStr || pin.memo) ? ' · ' : ''}${dateStr}${pin.memo ? ' · ' + pin.memo.slice(0,18) : ''}</div>
+          ${pin.members?.length ? buildMemberAvatarsHtml(pin.members) : ''}
         </div>
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex-shrink:0;">
           ${badgeHtml}
@@ -4226,15 +4293,22 @@ document.getElementById('btnDelete').addEventListener('click', () => {
   log('削除:', editingId);
 });
 
-/** 再訪を記録 */
+/** 再訪を記録（日付選択パネルを表示） */
 document.getElementById('btnRevisit').addEventListener('click', () => {
+  if (!editingId) return;
+  const today = new Date().toISOString().slice(0, 10);
+  document.getElementById('revisitDate').value = today;
+  document.getElementById('revisitMemo').value = '';
+  document.getElementById('revisitPanel').style.display = 'block';
+});
+
+/** 再訪パネル「記録する」確定 */
+document.getElementById('btnRevisitConfirm').addEventListener('click', () => {
   if (!editingId) return;
   const originalPin = pins.find(p => p.id === editingId);
   if (!originalPin) return;
-  // 同名スポットの訪問回数を数えて「○回目」を自動付与
-  const sameNameCount = pins.filter(p => p.name === originalPin.name).length;
-  const visitLabel = t('revisit.memoLabel', {n: sameNameCount + 1});
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD形式
+  const date = document.getElementById('revisitDate').value;
+  const memo = document.getElementById('revisitMemo').value.trim();
   const newPin = {
     id: `pin_${Date.now()}`,
     lat: originalPin.lat,
@@ -4242,9 +4316,9 @@ document.getElementById('btnRevisit').addEventListener('click', () => {
     name: originalPin.name,
     status: 'visited',
     layer: originalPin.layer,
-    date: today,
-    dateUnknown: false,
-    memo: visitLabel,
+    date,
+    dateUnknown: !date,
+    memo,
     members: originalPin.members || [],
     createdAt: new Date().toISOString(),
   };
@@ -4252,8 +4326,14 @@ document.getElementById('btnRevisit').addEventListener('click', () => {
   savePins(pins);
   renderMarkers(); // 同名ピンをスタック表示するため全再描画
   renderPinList();
+  document.getElementById('revisitPanel').style.display = 'none';
   overlay.classList.remove('open');
-  log('再訪を記録:', newPin.name, visitLabel);
+  log('再訪を記録:', newPin.name, date);
+});
+
+/** 再訪パネル「戻る」 */
+document.getElementById('btnRevisitPanelCancel').addEventListener('click', () => {
+  document.getElementById('revisitPanel').style.display = 'none';
 });
 
 /** キャンセル & 右上の閉じる×（両方同じ動作） */
@@ -4284,6 +4364,7 @@ map.on('click', (e) => {
 // メンバー管理
 // ============================================================
 const MEMBERS_KEY = 'coco-itta-members';
+const MEMBER_PHOTOS_KEY = 'coco-itta-member-photos';
 const DEFAULT_MEMBERS = [t('member.default.father'), t('member.default.mother'), t('member.default.child')];
 
 /** メンバー一覧をlocalStorageから読み込み */
@@ -4299,18 +4380,35 @@ function saveMembers(list) {
   pushToCloud();
 }
 
-let members = loadMembers();
+/** メンバー顔写真マップを読み込み（{名前: base64DataURL}） */
+function loadMemberPhotos() {
+  try { return JSON.parse(localStorage.getItem(MEMBER_PHOTOS_KEY)) || {}; }
+  catch { return {}; }
+}
 
-/** ピンモーダル内のメンバーチェックボックスを描画 */
+/** メンバー顔写真マップを保存 */
+function saveMemberPhotos(map) {
+  localStorage.setItem(MEMBER_PHOTOS_KEY, JSON.stringify(map));
+}
+
+let members = loadMembers();
+let memberPhotos = loadMemberPhotos();
+
+/** ピンモーダル内のメンバーチェックボックスを描画（顔写真対応） */
 function renderMemberCheckboxes(checkedList = []) {
   const container = document.getElementById('memberCheckboxes');
-  container.innerHTML = members.map(m => `
-    <label class="member-chip ${checkedList.includes(m) ? 'checked' : ''}">
-      <input type="checkbox" value="${m}" ${checkedList.includes(m) ? 'checked' : ''} />
-      ${m}
-    </label>
-  `).join('');
-  // チェック時のスタイル切り替え
+  container.innerHTML = members.map(m => {
+    const photo = memberPhotos[m];
+    const avatarHtml = photo
+      ? `<img src="${photo}" class="member-avatar" />`
+      : `<span class="member-initial">${m.slice(0,1)}</span>`;
+    return `
+      <label class="member-chip ${checkedList.includes(m) ? 'checked' : ''}">
+        <input type="checkbox" value="${m}" ${checkedList.includes(m) ? 'checked' : ''} />
+        ${avatarHtml} ${m}
+      </label>
+    `;
+  }).join('');
   container.querySelectorAll('.member-chip').forEach(chip => {
     chip.addEventListener('click', () => {
       const cb = chip.querySelector('input');
@@ -4405,19 +4503,62 @@ routeSettingsOverlay.addEventListener('click', e => {
   if (e.target === routeSettingsOverlay) routeSettingsOverlay.classList.remove('open');
 });
 
-/** メンバー設定の編集リストを描画 */
+/** メンバー設定の編集リストを描画（顔写真対応） */
 function renderMemberEditList() {
   const list = document.getElementById('memberEditList');
-  list.innerHTML = members.map((m, i) => `
-    <div class="member-edit-row" data-idx="${i}">
-      <input type="text" value="${m}" placeholder="メンバー名" />
-      <button class="btn-member-remove" title="削除">✕</button>
-    </div>
-  `).join('');
+  list.innerHTML = members.map((m, i) => {
+    const photo = memberPhotos[m];
+    const avatarHtml = photo
+      ? `<img src="${photo}" class="member-avatar-edit" data-idx="${i}" title="タップで変更" />`
+      : `<div class="member-avatar-edit-placeholder" data-idx="${i}" title="写真を追加">📷</div>`;
+    return `
+      <div class="member-edit-row" data-idx="${i}">
+        ${avatarHtml}
+        <input type="text" value="${m}" placeholder="メンバー名" />
+        <button class="btn-member-remove" title="削除">✕</button>
+      </div>
+    `;
+  }).join('');
+
+  // 顔写真アップロード（アバタークリック）
+  list.querySelectorAll('.member-avatar-edit, .member-avatar-edit-placeholder').forEach(el => {
+    el.addEventListener('click', () => {
+      const idx = parseInt(el.dataset.idx);
+      const input = document.createElement('input');
+      input.type = 'file'; input.accept = 'image/*';
+      input.addEventListener('change', e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => {
+          // 128pxに縮小してbase64保存
+          const img = new Image();
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = canvas.height = 128;
+            const ctx = canvas.getContext('2d');
+            const size = Math.min(img.width, img.height);
+            const sx = (img.width - size) / 2, sy = (img.height - size) / 2;
+            ctx.drawImage(img, sx, sy, size, size, 0, 0, 128, 128);
+            memberPhotos[members[idx]] = canvas.toDataURL('image/jpeg', 0.8);
+            saveMemberPhotos(memberPhotos);
+            renderMemberEditList();
+          };
+          img.src = ev.target.result;
+        };
+        reader.readAsDataURL(file);
+      });
+      input.click();
+    });
+  });
+
   list.querySelectorAll('.btn-member-remove').forEach((btn, i) => {
     btn.addEventListener('click', () => {
+      const name = members[i];
       members.splice(i, 1);
+      delete memberPhotos[name];
       saveMembers(members);
+      saveMemberPhotos(memberPhotos);
       renderMemberEditList();
       log('メンバー削除:', i);
     });
@@ -4435,10 +4576,19 @@ document.getElementById('btnMemberAdd').addEventListener('click', () => {
   if (last) { last.focus(); last.select(); }
 });
 
-/** メンバー設定保存 */
+/** メンバー設定保存（名前変更時に写真キーも移行） */
 document.getElementById('btnMemberSave').addEventListener('click', () => {
   const inputs = document.querySelectorAll('#memberEditList input');
-  members = Array.from(inputs).map(i => i.value.trim()).filter(Boolean);
+  const newNames = Array.from(inputs).map(i => i.value.trim()).filter(Boolean);
+  // 名前変更があれば写真キーを引き継ぐ（インデックス順で照合）
+  const newPhotos = {};
+  newNames.forEach((newName, i) => {
+    const oldName = members[i];
+    if (oldName && memberPhotos[oldName]) newPhotos[newName] = memberPhotos[oldName];
+  });
+  memberPhotos = newPhotos;
+  saveMemberPhotos(memberPhotos);
+  members = newNames;
   saveMembers(members);
   memberOverlay.classList.remove('open');
   log('メンバー保存:', members);
@@ -4612,6 +4762,7 @@ const routeNameInput = document.getElementById('routeName');
 function startDrawing() {
   isDrawingMode    = true;
   drawingPoints    = [];
+  redoStack        = [];
   document.body.classList.add('drawing-mode');
   btnRouteStart.style.display  = 'none';
   routeDrawingBar.style.display = 'block';
@@ -4638,6 +4789,7 @@ function cancelDrawing() {
   previewLine?.remove(); previewLine = null;
   tempMarkers.forEach(m => m.remove()); tempMarkers = [];
   drawingPoints = [];
+  redoStack = [];
   log('描画キャンセル');
 }
 
@@ -4667,7 +4819,8 @@ function finishDrawing() {
 /** 描画UNDO（最後の点を取り消し） */
 function undoDrawing() {
   if (drawingPoints.length === 0) return;
-  drawingPoints.pop();
+  const point = drawingPoints.pop();
+  redoStack.push(point);
   const last = tempMarkers.pop();
   last?.remove();
   previewLine?.remove(); previewLine = null;
@@ -4676,17 +4829,37 @@ function undoDrawing() {
       color: routeSettings.color || '#c8821a', weight: 3, opacity: 0.7, dashArray: '6 4',
     }).addTo(map);
   }
-  log('UNDO: 残り', drawingPoints.length, '点');
+  log('UNDO: 残り', drawingPoints.length, '点 / REDO待ち', redoStack.length, '点');
+}
+
+/** 描画REDO（UNDOした点を復元） */
+function redoDrawing() {
+  if (redoStack.length === 0) return;
+  const point = redoStack.pop();
+  drawingPoints.push(point);
+  const dot = L.circleMarker({lat: point[0], lng: point[1]}, {
+    radius: 5, color: '#c8821a', fillColor: '#c8821a', fillOpacity: 1, weight: 2,
+  }).addTo(map);
+  tempMarkers.push(dot);
+  previewLine?.remove(); previewLine = null;
+  if (drawingPoints.length >= 2) {
+    previewLine = L.polyline(drawingPoints, {
+      color: routeSettings.color || '#c8821a', weight: 3, opacity: 0.7, dashArray: '6 4',
+    }).addTo(map);
+  }
+  log('REDO: 復元', drawingPoints.length, '点');
 }
 
 btnRouteStart.addEventListener('click', startDrawing);
 btnRouteDone.addEventListener('click', finishDrawing);
 btnRouteCancel.addEventListener('click', cancelDrawing);
 document.getElementById('btnRouteUndo').addEventListener('click', undoDrawing);
+document.getElementById('btnRouteRedo').addEventListener('click', redoDrawing);
 
 /** 地図クリックで点を追加（描画モード中） */
 map.on('click', (e) => {
   if (!isDrawingMode) return;
+  redoStack = []; // 新点追加でREDO履歴をクリア
   drawingPoints.push([e.latlng.lat, e.latlng.lng]);
 
   // 仮マーカー（小さい点）
