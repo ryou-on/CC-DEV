@@ -140,6 +140,9 @@
     let currentTab = "all";
     let editingId = null;
     let consoleLog = [];
+    let searchQuery = "";
+    let sortBy = "updated"; // "updated" | "name"
+    let isAdmin = false;
 
     // コンソールログ記録
     function log(msg) {
@@ -244,15 +247,35 @@
     }
 
     function renderCards() {
-      const filtered = currentTab === "all"
+      let filtered = currentTab === "all"
         ? allApps
         : allApps.filter(a => a.type === currentTab);
+
+      // フィルター（検索）
+      if (searchQuery) {
+        filtered = filtered.filter(a =>
+          a.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          a.releaseNote?.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+      }
+
+      // ソート
+      if (sortBy === "name") {
+        filtered = [...filtered].sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+      } else if (sortBy === "updated") {
+        filtered = [...filtered].sort((a, b) => {
+          const timeA = a.updatedAt?.toMillis?.() || 0;
+          const timeB = b.updatedAt?.toMillis?.() || 0;
+          return timeB - timeA;
+        });
+      }
+
       const el = document.getElementById("cards");
 
       if (filtered.length === 0) {
         el.innerHTML = `<div class="empty-state">
           <div class="empty-icon">◎</div>
-          <p>このカテゴリにはまだアプリがありません</p>
+          <p>${searchQuery ? "検索結果がありません" : "このカテゴリにはまだアプリがありません"}</p>
           <button class="btn-add-empty" onclick="window._openModal()">＋ 追加する</button>
         </div>`;
         return;
@@ -266,8 +289,12 @@
           `<a href="${d.url}" target="_blank" class="doc-link" title="${d.label}">
             ${d.type === "gdoc" ? "📄" : d.type === "notion" ? "🔲" : "📝"} ${d.label}
           </a>`).join("");
+        const iconHtml = app.icon
+          ? `<img src="${app.icon}" alt="${app.name}" class="card-icon" />`
+          : `<div class="card-icon-placeholder">🎨</div>`;
 
         return `<div class="card" data-id="${app.id}">
+          ${iconHtml}
           <div class="card-header">
             <div class="card-title-row">
               <h3 class="card-name">${app.name}</h3>
@@ -294,10 +321,10 @@
             ${app.url
               ? `<a href="${app.url}" target="_blank" class="btn-launch">▶ 開く</a>`
               : `<span class="btn-launch disabled">URL未設定</span>`}
-            <div class="card-actions">
+            ${isAdmin ? `<div class="card-actions">
               <button class="btn-icon" onclick="window._openModal('${app.id}')" title="編集">✎</button>
               <button class="btn-icon danger" onclick="window._delete('${app.id}','${app.name.replace(/'/g,"\\'")}')">✕</button>
-            </div>
+            </div>` : ""}
           </div>
         </div>`;
       }).join("");
@@ -333,6 +360,7 @@
       document.getElementById("f-version").value = app?.version || "0.1.0";
       document.getElementById("f-status").value  = app?.status  || "dev";
       document.getElementById("f-url").value     = app?.url     || "";
+      document.getElementById("f-icon").value    = app?.icon    || "";
       document.getElementById("f-env").value     = (app?.env || []).join(", ");
       document.getElementById("f-note").value    = app?.releaseNote || "";
       document.getElementById("f-docs").value    =
@@ -363,6 +391,7 @@
         version:     document.getElementById("f-version").value,
         status:      document.getElementById("f-status").value,
         url:         document.getElementById("f-url").value.trim(),
+        icon:        document.getElementById("f-icon").value.trim(),
         env:         document.getElementById("f-env").value.split(",").map(s => s.trim()).filter(Boolean),
         releaseNote: document.getElementById("f-note").value.trim(),
         docs
@@ -412,6 +441,33 @@
         if (btn) btn.textContent = '☀️';
       }
     };
+    window._search = (query) => {
+      searchQuery = query.trim();
+      renderCards();
+      renderCount();
+    };
+    window._setSortBy = (field) => {
+      sortBy = field;
+      renderCards();
+      renderCount();
+    };
+    window._toggleAdmin = () => {
+      isAdmin = !isAdmin;
+      const toggle = document.getElementById('admin-toggle');
+      const btnAdd = document.getElementById('btn-add-app');
+      if (isAdmin) {
+        toggle.style.background = 'rgba(0, 229, 200, 0.2)';
+        toggle.title = '管理者モード ON (クリックで OFF)';
+        btnAdd.style.display = 'block';
+        log('🔓 管理者モードをONにしました');
+      } else {
+        toggle.style.background = 'none';
+        toggle.title = '管理者モード OFF (クリックで ON)';
+        btnAdd.style.display = 'none';
+        log('🔒 管理者モードをOFFにしました');
+      }
+      renderCards();
+    };
 
     /* ============================================================
        初期化
@@ -424,6 +480,10 @@
         const btn = document.getElementById('theme-toggle');
         if (btn) btn.textContent = '🌙';
       }
+
+      // 管理者トグルボタンを表示
+      const adminToggle = document.getElementById('admin-toggle');
+      if (adminToggle) adminToggle.style.display = 'block';
 
       log("🚀 App Dashboard 起動中...");
       try {
@@ -616,6 +676,51 @@
       justify-content: space-between;
       align-items: center;
       margin-bottom: 1.2rem;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+    .toolbar-left {
+      display: flex;
+      align-items: center;
+    }
+    .toolbar-right {
+      display: flex;
+      gap: 0.8rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .search-box {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.5rem 0.8rem;
+      font-size: 0.85rem;
+      font-family: 'Noto Sans JP', sans-serif;
+      border-radius: 4px;
+      min-width: 200px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .search-box:focus {
+      border-color: var(--accent);
+    }
+    .search-box::placeholder {
+      color: var(--muted);
+    }
+    .sort-select {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.5rem 0.8rem;
+      font-size: 0.85rem;
+      font-family: 'Noto Sans JP', sans-serif;
+      border-radius: 4px;
+      outline: none;
+      transition: border-color 0.2s;
+      cursor: pointer;
+    }
+    .sort-select:focus {
+      border-color: var(--accent);
     }
 
     #count {
@@ -645,6 +750,25 @@
       transition: border-color 0.2s, transform 0.2s;
       position: relative;
       overflow: hidden;
+    }
+    .card-icon {
+      width: 100%;
+      height: 120px;
+      object-fit: cover;
+      border-radius: 4px;
+      margin: -1.2rem -1.2rem 0 -1.2rem;
+    }
+    .card-icon-placeholder {
+      width: 100%;
+      height: 80px;
+      background: linear-gradient(135deg, rgba(0,229,200,0.1), rgba(255,77,109,0.1));
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      color: var(--muted);
+      margin: -1.2rem -1.2rem 0 -1.2rem;
     }
     .card::before {
       content: "";
@@ -973,6 +1097,17 @@
       header, .tab-bar, .main, .console-panel { padding-left: 1rem; padding-right: 1rem; }
       #cards { grid-template-columns: 1fr; }
       .form-grid { grid-template-columns: 1fr; }
+      .toolbar {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      .toolbar-right {
+        flex-direction: column;
+      }
+      .search-box, .sort-select {
+        width: 100%;
+        min-width: unset;
+      }
     }
   </style>
 </head>
@@ -986,7 +1121,8 @@
     </div>
     <div style="display: flex; gap: 0.8rem; align-items: center;">
       <button id="theme-toggle" onclick="window._toggleTheme()" title="テーマ切り替え">☀️</button>
-      <button class="btn-add" onclick="window._openModal()">＋ アプリを追加</button>
+      <button id="admin-toggle" onclick="window._toggleAdmin()" title="管理者モード" style="display: none;">🔐</button>
+      <button id="btn-add-app" class="btn-add" onclick="window._openModal()" style="display: none;">＋ アプリを追加</button>
     </div>
   </header>
 
@@ -996,7 +1132,16 @@
   <!-- メインエリア -->
   <main class="main">
     <div class="toolbar">
-      <span id="count">—</span>
+      <div class="toolbar-left">
+        <span id="count">—</span>
+      </div>
+      <div class="toolbar-right">
+        <input type="text" id="search-input" placeholder="🔍 アプリ名で検索..." class="search-box" onkeyup="window._search(this.value)" />
+        <select id="sort-select" onchange="window._setSortBy(this.value)" class="sort-select">
+          <option value="updated">更新日時（新しい順）</option>
+          <option value="name">名前（A-Z順）</option>
+        </select>
+      </div>
     </div>
     <div id="cards">
       <div class="empty-state">
@@ -1060,6 +1205,12 @@
           <label>URL</label>
           <input id="f-url" type="url" placeholder="https://..." />
         </div>
+      </div>
+
+      <div class="form-row">
+        <label>アイコン画像URL</label>
+        <input id="f-icon" type="url" placeholder="https://example.com/icon.png" />
+        <p class="form-hint">カード上部に表示されます（推奨: 幅400px 以上、アスペクト比 3:1）</p>
       </div>
 
       <div class="form-row">
