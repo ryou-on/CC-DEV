@@ -172,6 +172,10 @@
     .dbg-panel.open{display:block;}
     .dbg-log{font-size:10px;font-family:'Space Mono',monospace;color:#4ade80;line-height:1.5;white-space:pre-wrap;}
 
+    /* Exchange info */
+    .ci-exchange{margin-top:6px;font-size:11px;color:var(--accent);display:flex;align-items:center;gap:5px;flex-wrap:wrap;}
+    .ci-exchange-tag{background:rgba(59,130,246,.13);border:1px solid rgba(59,130,246,.3);border-radius:4px;padding:1px 6px;font-size:10px;}
+    .field input[type="date"]{color-scheme:dark;}
     /* Sort & Select */
     .ci{position:relative;}
     .ci.selected{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent);}
@@ -271,6 +275,12 @@
       </div>
       <input type="file" id="faceFile" accept="image/*" class="hidden" onchange="onFaceFile(event)">
 
+      <div class="fsec">📅 交換情報</div>
+      <div class="frow">
+        <div class="field"><label>交換日</label><input id="f_exchangeDate" type="date"></div>
+        <div class="field"><label>イベント・場所</label><input id="f_exchangeEvent" placeholder="〇〇展示会 / 商談など"></div>
+      </div>
+
       <div class="fsec">👤 取引先担当者</div>
       <div class="fgrid">
         <div class="frow">
@@ -342,6 +352,11 @@
         <div class="dfield"><label>Webサイト</label><div id="d_website"></div></div>
         <div class="dfield" style="grid-column:1/-1"><label>住所</label><div id="d_address"></div></div>
         <div class="dfield" style="grid-column:1/-1"><label>業種</label><div id="d_industry"></div></div>
+      </div>
+      <div id="d_exchangeRow" class="hidden" style="margin:10px 0 4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span style="font-size:12px;color:var(--text3);">📅</span>
+        <span id="d_exchangeDate" style="font-size:13px;color:var(--text2);"></span>
+        <span id="d_exchangeEvent" style="font-size:12px;background:rgba(59,130,246,.15);border:1px solid rgba(59,130,246,.3);border-radius:4px;padding:1px 8px;color:var(--accent);"></span>
       </div>
       <div class="fsec" style="margin-top:4px;">📝 メモ</div>
       <textarea class="d-notes" id="d_notes" placeholder="メモを入力..." oninput="onNoteInput()"></textarea>
@@ -600,7 +615,8 @@ async function saveCard() {
       email:v('f_email'), phone:v('f_phone'), mobile:v('f_mobile'),
       company:v('f_company'), department:v('f_department'), title:v('f_title'),
       industry:v('f_industry'), website:v('f_website'), address:v('f_address'),
-      notes:v('f_notes'), cardImageUrl, facePhotoUrl, updatedAt:serverTimestamp()
+      notes:v('f_notes'), exchangeDate:v('f_exchangeDate'), exchangeEvent:v('f_exchangeEvent'),
+      cardImageUrl, facePhotoUrl, updatedAt:serverTimestamp()
     };
 
     if (editId) {
@@ -682,6 +698,7 @@ function renderCard(c) {
     ${contacts?`<hr class="ci-divider"><div class="ci-contacts">${contacts}</div>`:''}
     ${c.cardImageUrl?`<img class="ci-scan" src="${e(c.cardImageUrl)}" loading="lazy" onclick="event.stopPropagation();openImgModal(this.src)">`:''}
     ${c.notes?`<div class="ci-notes">💬 ${e(c.notes)}</div>`:''}
+    ${(c.exchangeDate||c.exchangeEvent)?`<div class="ci-exchange">📅<span class="ci-exchange-tag">${e(c.exchangeDate?c.exchangeDate.replace(/-/g,'/'):'')}</span>${c.exchangeEvent?`<span class="ci-exchange-tag">${e(c.exchangeEvent)}</span>`:''}</div>`:''}
     ${dt?`<div class="ci-date">${dt}</div>`:''}
   </div>`;
 }
@@ -690,7 +707,7 @@ function filterCards(q) {
   const lq = (q||id('searchInput')?.value||'').toLowerCase();
   filtered = lq ? allCards.filter(c =>
     [c.lastName,c.firstName,c.lastNameKana,c.firstNameKana,
-     c.company,c.email,c.phone,c.mobile,c.title,c.department,c.notes]
+     c.company,c.email,c.phone,c.mobile,c.title,c.department,c.notes,c.exchangeEvent]
     .filter(Boolean).join(' ').toLowerCase().includes(lq)
   ) : [...allCards];
   render();
@@ -796,6 +813,13 @@ function openDetailModal(cid) {
   setDF('d_address', c.address, null);
   setDF('d_industry', c.industry, null);
   id('d_notes').value = c.notes || '';
+  const hasExchange = c.exchangeDate || c.exchangeEvent;
+  id('d_exchangeRow').classList.toggle('hidden', !hasExchange);
+  if (hasExchange) {
+    id('d_exchangeDate').textContent = c.exchangeDate ? c.exchangeDate.replace(/-/g,'/') : '';
+    id('d_exchangeEvent').textContent = c.exchangeEvent || '';
+    id('d_exchangeEvent').classList.toggle('hidden', !c.exchangeEvent);
+  }
   openModal('modalDetail');
 }
 
@@ -830,13 +854,16 @@ function openAddModal(cid) {
   editId = cid;
   scanB64 = null; faceFile = null;
   id('addTitle').textContent = cid ? '名刺を編集' : '名刺を追加';
-  const fields = ['lastName','firstName','lastNameKana','firstNameKana','email','phone','mobile','company','department','title','industry','website','address','notes'];
+  const fields = ['lastName','firstName','lastNameKana','firstNameKana','email','phone','mobile','company','department','title','industry','website','address','notes','exchangeDate','exchangeEvent'];
   fields.forEach(f => { const el = id('f_'+f); if(el) el.value = ''; });
   id('scanPreview').classList.remove('show'); id('scanPreview').src = '';
   id('scanZone').classList.remove('hidden');
   id('btnAnalyze').disabled = true;
   id('facePh').classList.remove('hidden'); id('faceImg').classList.add('hidden'); id('faceImg').src = '';
 
+  if (!cid) {
+    id('f_exchangeDate').value = new Date().toISOString().slice(0,10);
+  }
   if (cid) {
     const c = allCards.find(x=>x.id===cid);
     if (c) {
@@ -1059,11 +1086,12 @@ function fillForm(d) {
 }
 
 // ── CSV Export ──
-const CSV_HDR = '"Last Name","First Name","Last Name (Kana)","First Name (Kana)","Email","Phone","Mobile","Department","Title","Account Name","Industry","Website","Mailing Street","Description"';
+const CSV_HDR = '"Last Name","First Name","Last Name (Kana)","First Name (Kana)","Email","Phone","Mobile","Department","Title","Account Name","Industry","Website","Mailing Street","Description","Exchange Date","Exchange Event"';
 
 function cardRow(c) {
   return [c.lastName,c.firstName,c.lastNameKana,c.firstNameKana,c.email,c.phone,c.mobile,
-    c.department,c.title,c.company,c.industry,c.website,c.address,c.notes]
+    c.department,c.title,c.company,c.industry,c.website,c.address,c.notes,
+    c.exchangeDate,c.exchangeEvent]
     .map(x=>`"${String(x||'').replace(/"/g,'""')}"`).join(',');
 }
 
