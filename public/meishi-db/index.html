@@ -449,6 +449,28 @@
   </div>
 </div>
 
+<!-- ===== BULK EDIT MODAL ===== -->
+<div id="modalBulkEdit" class="modal-overlay hidden" onclick="closeBg(event,'modalBulkEdit')">
+  <div class="modal-box" style="max-width:420px;">
+    <div class="mhdr">
+      <span class="mtitle">✏️ 一括編集</span>
+      <button class="mclose" onclick="closeModal('modalBulkEdit')">✕</button>
+    </div>
+    <div class="mbody">
+      <div style="font-size:12px;color:var(--text2);margin-bottom:16px;" id="bulkEditCount"></div>
+      <div class="fsec">変更する項目だけ入力してください（空欄は変更しません）</div>
+      <label class="s-label" style="margin-top:12px;">登録日（交換日）</label>
+      <input class="s-input" id="be_date" type="date">
+      <label class="s-label" style="margin-top:10px;">イベント名</label>
+      <input class="s-input" id="be_event" type="text" placeholder="例: 〇〇展示会 2026">
+    </div>
+    <div class="mfoot">
+      <button class="btn btn-secondary" onclick="closeModal('modalBulkEdit')">キャンセル</button>
+      <button class="btn btn-primary" id="bulkEditSaveBtn" onclick="saveBulkEdit()">一括更新する</button>
+    </div>
+  </div>
+</div>
+
 <!-- Lightbox -->
 <div id="modalImg" class="hidden" onclick="closeModal('modalImg')">
   <button id="modalImgClose" onclick="closeModal('modalImg')">✕</button>
@@ -493,7 +515,7 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
   from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-auth.js';
-import { getFirestore, collection, doc, addDoc, getDocs, updateDoc, deleteDoc, query, orderBy, where, serverTimestamp }
+import { getFirestore, collection, doc, addDoc, getDocs, updateDoc, deleteDoc, query, orderBy, where, serverTimestamp, writeBatch }
   from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js';
 import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject }
   from 'https://www.gstatic.com/firebasejs/11.0.0/firebase-storage.js';
@@ -549,6 +571,7 @@ Object.assign(window, {
   exportCSV, exportOneCSV, openSettings, saveSettings, toggleDbg,
   mergeAction, closeFaceCrop, confirmFaceCrop,
   setSort, toggleSelectMode, cardClick, toggleSelect, selectAll, clearSelection, exportSelected,
+  bulkEdit, saveBulkEdit,
   openImgModal
 });
 
@@ -664,6 +687,7 @@ function render() {
       <span class="sel-count">☑ ${n}件選択中（全${filtered.length}件）</span>
       <button class="btn btn-secondary btn-sm" onclick="selectAll()">全選択</button>
       <button class="btn btn-secondary btn-sm" onclick="clearSelection()">解除</button>
+      <button class="btn btn-secondary btn-sm" onclick="bulkEdit()" ${n===0?'disabled':''}>✏️ 一括編集 (${n}件)</button>
       <button class="btn btn-primary btn-sm" onclick="exportSelected()" ${n===0?'disabled':''}>⬇ CSV出力 (${n}件)</button>
     </div>`;
   } else {
@@ -776,6 +800,47 @@ function exportSelected() {
   dlCsv([CSV_HDR,...target.map(cardRow)].join('\n'),
     `meishi_selected_${new Date().toISOString().slice(0,10)}.csv`);
   toast(`${target.length}件をCSVに出力しました`);
+}
+
+// ── Bulk Edit ──
+function bulkEdit() {
+  const n = selectedIds.size;
+  if (!n) { toast('選択してください'); return; }
+  id('bulkEditCount').textContent = `${n}件を一括編集します`;
+  id('be_date').value = '';
+  id('be_event').value = '';
+  openModal('modalBulkEdit');
+}
+
+async function saveBulkEdit() {
+  const dateVal = id('be_date').value.trim();
+  const eventVal = id('be_event').value.trim();
+  if (!dateVal && !eventVal) { toast('変更する項目を入力してください'); return; }
+
+  const btn = id('bulkEditSaveBtn');
+  btn.disabled = true;
+  btn.textContent = '更新中...';
+
+  try {
+    const batch = writeBatch(db);
+    const update = {};
+    if (dateVal)  update.exchangeDate  = dateVal;
+    if (eventVal) update.exchangeEvent = eventVal;
+    update.updatedAt = serverTimestamp();
+
+    selectedIds.forEach(cid => batch.update(dref(cid), update));
+    await batch.commit();
+
+    closeModal('modalBulkEdit');
+    await loadCards();
+    toast(`${selectedIds.size}件を更新しました`);
+    clearSelection();
+  } catch (e) {
+    toast('更新失敗: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '一括更新する';
+  }
 }
 
 // ── Detail ──
