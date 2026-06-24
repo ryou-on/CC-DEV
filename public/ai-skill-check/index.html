@@ -8,6 +8,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Kaisei+Decol:wght@400;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
@@ -572,6 +573,8 @@ function ResultScreen({ scores, lang }) {
   const [showFreeReport, setShowFreeReport] = useState(false);
   const [freeReport, setFreeReport] = useState('');
   const [freeLoading, setFreeLoading] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const freeReportRef = React.useRef(null);
   const dashboardRef = React.useRef(null);
   const t = I18N[lang];
   const categories = getCategories(lang);
@@ -911,6 +914,31 @@ AIタイプ: ${aiType.name}（${aiType.desc}）
     }
   };
 
+  const handleDownloadPDF = async () => {
+    if (!freeReportRef.current) return;
+    setPdfLoading(true);
+    try {
+      const canvas = await html2canvas(freeReportRef.current, { backgroundColor: '#1a1a2e', scale: 2, useCORS: true });
+      const imgData = canvas.toDataURL('image/png');
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const pageW = pdf.internal.pageSize.getWidth();
+      const pageH = pdf.internal.pageSize.getHeight();
+      const imgH = (canvas.height * pageW) / canvas.width;
+      let y = 0;
+      while (y < imgH) {
+        if (y > 0) pdf.addPage();
+        pdf.addImage(imgData, 'PNG', 0, -y, pageW, imgH);
+        y += pageH;
+      }
+      pdf.save(`ai-skill-report-${aiType.name}.pdf`);
+    } catch (err) {
+      alert('PDF生成に失敗しました: ' + err.message);
+    } finally {
+      setPdfLoading(false);
+    }
+  };
+
   // テキストのみシェア
   const handleShare = () => {
     const text = encodeURIComponent(getShareText());
@@ -942,7 +970,7 @@ AIタイプ: ${aiType.name}（${aiType.desc}）
       {showFreeReport && (
         <div onClick={e => { if (e.target === e.currentTarget) setShowFreeReport(false); }}
           style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '20px', overflowY: 'auto' }}>
-          <div style={{ background: '#1a1a2e', border: '1px solid rgba(124,106,255,0.4)', borderRadius: '24px', padding: '32px', width: '100%', maxWidth: '640px', marginTop: '40px', marginBottom: '40px', animation: 'fadeUp 0.3s ease', position: 'relative' }}>
+          <div ref={freeReportRef} style={{ background: '#1a1a2e', border: '1px solid rgba(124,106,255,0.4)', borderRadius: '24px', padding: '32px', width: '100%', maxWidth: '640px', marginTop: '40px', marginBottom: '40px', animation: 'fadeUp 0.3s ease', position: 'relative' }}>
             <button onClick={() => setShowFreeReport(false)} style={{ position: 'absolute', top: '16px', right: '20px', background: 'none', border: 'none', color: '#7a7a9a', fontSize: '24px', cursor: 'pointer', lineHeight: 1 }}>×</button>
             <div style={{ fontSize: '13px', color: '#6affda', fontWeight: '700', marginBottom: '4px' }}>📄 詳細AIスキル診断レポート（今だけ無料）</div>
             <div style={{ fontSize: '18px', fontWeight: '700', color: '#e8e8f5', marginBottom: '20px' }}>{aiType.emoji} {aiType.name} のための<br/>パーソナルレポート</div>
@@ -953,6 +981,12 @@ AIタイプ: ${aiType.name}（${aiType.desc}）
               </div>
             )}
             <div style={{ color: '#c8c8e8', lineHeight: 1.85, fontSize: '14px', whiteSpace: 'pre-wrap' }}>{freeReport}</div>
+            {!freeLoading && freeReport && (
+              <button className="btn btn-primary" onClick={handleDownloadPDF} disabled={pdfLoading}
+                style={{ marginTop: '24px', width: '100%', padding: '14px', fontSize: '15px', opacity: pdfLoading ? 0.7 : 1 }}>
+                {pdfLoading ? '📄 PDF生成中...' : '📥 PDFでダウンロード'}
+              </button>
+            )}
           </div>
         </div>
       )}
