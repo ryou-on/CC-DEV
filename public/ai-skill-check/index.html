@@ -569,6 +569,9 @@ function ResultScreen({ scores, lang }) {
   const [showModal, setShowModal] = useState(true);
   const [saved, setSaved] = useState(false);
   const [capturing, setCapturing] = useState(false);
+  const [showFreeReport, setShowFreeReport] = useState(false);
+  const [freeReport, setFreeReport] = useState('');
+  const [freeLoading, setFreeLoading] = useState(false);
   const dashboardRef = React.useRef(null);
   const t = I18N[lang];
   const categories = getCategories(lang);
@@ -845,6 +848,69 @@ function ResultScreen({ scores, lang }) {
     }
   };
 
+  const fetchFreeReport = async () => {
+    if (freeReport) { setShowFreeReport(true); return; }
+    setShowFreeReport(true);
+    setFreeLoading(true);
+    const scoreText = categories.map(c => `${c.label}: ${scores[c.id].toFixed(1)}/5.0`).join('\n');
+    const prompt = `あなたはAI活用コーチです。以下の診断結果を元に、詳細なパーソナルレポートを日本語で作成してください。
+
+【診断結果】
+${scoreText}
+総合スコア: ${avg.toFixed(1)}/5.0
+AIタイプ: ${aiType.name}（${aiType.desc}）
+
+【出力形式】
+## 🎯 あなたの強み
+（最もスコアが高い軸について2〜3文）
+
+## 📈 伸びしろエリア
+（最もスコアが低い軸について具体的なアドバイスを2〜3文）
+
+## 🛠 今すぐ使えるツール・リソース（3〜5個）
+（具体的なツール名と使い方を箇条書き）
+
+## 🗓 3ヶ月学習ロードマップ
+- 1ヶ月目：
+- 2ヶ月目：
+- 3ヶ月目：
+
+全体的に前向きで実践的なトーン。絵文字を適度に使う。`;
+    try {
+      const res = await fetch('https://ai-skill-proxy.junpei-omote.workers.dev', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: 2000, stream: true, messages: [{ role: 'user', content: prompt }] })
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop();
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const data = line.slice(6).trim();
+          if (data === '[DONE]') continue;
+          try {
+            const json = JSON.parse(data);
+            if (json.type === 'content_block_delta' && json.delta?.text) {
+              setFreeReport(prev => prev + json.delta.text);
+            }
+          } catch {}
+        }
+      }
+    } catch (err) {
+      setFreeReport('レポートの生成に失敗しました。もう一度お試しください。');
+    } finally {
+      setFreeLoading(false);
+    }
+  };
+
   // テキストのみシェア
   const handleShare = () => {
     const text = encodeURIComponent(getShareText());
@@ -871,6 +937,25 @@ function ResultScreen({ scores, lang }) {
       flexDirection: 'column',
       alignItems: 'center',
     }}>
+
+      {/* 無料詳細レポートモーダル */}
+      {showFreeReport && (
+        <div onClick={e => { if (e.target === e.currentTarget) setShowFreeReport(false); }}
+          style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '20px', overflowY: 'auto' }}>
+          <div style={{ background: '#1a1a2e', border: '1px solid rgba(124,106,255,0.4)', borderRadius: '24px', padding: '32px', width: '100%', maxWidth: '640px', marginTop: '40px', marginBottom: '40px', animation: 'fadeUp 0.3s ease', position: 'relative' }}>
+            <button onClick={() => setShowFreeReport(false)} style={{ position: 'absolute', top: '16px', right: '20px', background: 'none', border: 'none', color: '#7a7a9a', fontSize: '24px', cursor: 'pointer', lineHeight: 1 }}>×</button>
+            <div style={{ fontSize: '13px', color: '#6affda', fontWeight: '700', marginBottom: '4px' }}>📄 詳細AIスキル診断レポート（今だけ無料）</div>
+            <div style={{ fontSize: '18px', fontWeight: '700', color: '#e8e8f5', marginBottom: '20px' }}>{aiType.emoji} {aiType.name} のための<br/>パーソナルレポート</div>
+            {freeLoading && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#7a7a9a', fontSize: '14px', marginBottom: '12px' }}>
+                <span style={{ width: '16px', height: '16px', borderRadius: '50%', border: '2px solid #7c6aff', borderTopColor: 'transparent', display: 'inline-block', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
+                レポート生成中...（{freeReport.length}字）
+              </div>
+            )}
+            <div style={{ color: '#c8c8e8', lineHeight: 1.85, fontSize: '14px', whiteSpace: 'pre-wrap' }}>{freeReport}</div>
+          </div>
+        </div>
+      )}
 
       {/* 属性入力モーダル */}
       {showModal && (
@@ -1020,11 +1105,16 @@ function ResultScreen({ scores, lang }) {
           <div style={{ fontSize: '15px', color: '#e8e8f5', fontWeight: '700', marginBottom: '4px' }}>あなたのAIスキル診断書（PDF）</div>
           <div style={{ fontSize: '12px', color: '#7a7a9a', lineHeight: 1.6 }}>5軸スコア・タイプ分析・改善提案・学習ロードマップ付き</div>
         </div>
-        <button className="btn btn-primary" onClick={() => {
-          window.open('https://buy.stripe.com/test_6oUcN5eXt68m5Vi38L1ck00', '_blank');
-        }} style={{ padding: '14px 28px', fontSize: '16px', whiteSpace: 'nowrap', flexShrink: 0 }}>
-          ¥500 で購入
-        </button>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', flexShrink: 0 }}>
+          <button className="btn" onClick={fetchFreeReport} style={{ padding: '14px 20px', fontSize: '14px', whiteSpace: 'nowrap', background: 'rgba(106,255,218,0.12)', border: '1px solid rgba(106,255,218,0.5)', color: '#6affda', borderRadius: '12px', fontFamily: 'Noto Sans JP, sans-serif', fontWeight: '700', cursor: 'pointer', transition: 'all 0.2s ease' }}>
+            今だけ無料
+          </button>
+          <button className="btn btn-primary" onClick={() => {
+            window.open('https://buy.stripe.com/test_6oUcN5eXt68m5Vi38L1ck00', '_blank');
+          }} style={{ padding: '14px 28px', fontSize: '16px', whiteSpace: 'nowrap' }}>
+            ¥500 で購入
+          </button>
+        </div>
       </div>
 
       {/* シェアボタン */}
