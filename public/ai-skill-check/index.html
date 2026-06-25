@@ -562,12 +562,12 @@ function AttributeModal({ onSave, onSkip, lang }) {
 /* ==============================
    結果画面
 ============================== */
-function ResultScreen({ scores, lang }) {
+function ResultScreen({ scores, lang, autoOpenReport }) {
   const [aiComment, setAiComment] = useState('');
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
   const [consoleLogs, setConsoleLogs] = useState([]);
-  const [showModal, setShowModal] = useState(true);
+  const [showModal, setShowModal] = useState(!autoOpenReport);
   const [saved, setSaved] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const [showFreeReport, setShowFreeReport] = useState(false);
@@ -615,7 +615,24 @@ function ResultScreen({ scores, lang }) {
   };
 
   useEffect(() => {
-    // モーダルが閉じたあとにコメント取得（handleSave内で呼ぶ）
+    if (autoOpenReport) {
+      (async () => {
+        const percentile = getPercentile(avg);
+        const data = {
+          score_prompt: parseFloat(scores.prompt.toFixed(1)),
+          score_automate: parseFloat(scores.automate.toFixed(1)),
+          score_image: parseFloat(scores.image.toFixed(1)),
+          score_analysis: parseFloat(scores.analysis.toFixed(1)),
+          score_learning: parseFloat(scores.learning.toFixed(1)),
+          score_avg: parseFloat(avg.toFixed(1)),
+          level: level.label, ai_type: aiType.name, percentile,
+          job_type: null, age_group: null,
+        };
+        try { await saveToSupabase(data); setSaved(true); } catch {}
+        fetchAIComment();
+        fetchFreeReport();
+      })();
+    }
   }, []);
 
   const fetchAIComment = async () => {
@@ -972,6 +989,11 @@ AIタイプ: ${aiType.name}（${aiType.desc}）
           style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '20px', overflowY: 'auto' }}>
           <div ref={freeReportRef} style={{ background: '#1a1a2e', border: '1px solid rgba(124,106,255,0.4)', borderRadius: '24px', padding: '32px', width: '100%', maxWidth: '640px', marginTop: '40px', marginBottom: '40px', animation: 'fadeUp 0.3s ease', position: 'relative' }}>
             <button onClick={() => setShowFreeReport(false)} style={{ position: 'absolute', top: '16px', right: '20px', background: 'none', border: 'none', color: '#7a7a9a', fontSize: '24px', cursor: 'pointer', lineHeight: 1 }}>×</button>
+            {autoOpenReport && (
+              <div style={{ background: 'rgba(106,255,218,0.12)', border: '1px solid rgba(106,255,218,0.4)', borderRadius: '10px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', color: '#6affda' }}>
+                🎉 購入ありがとうございます！あなた専用のレポートを生成しています。
+              </div>
+            )}
             <div style={{ fontSize: '13px', color: '#6affda', fontWeight: '700', marginBottom: '4px' }}>📄 詳細AIスキル診断レポート（今だけ無料）</div>
             <div style={{ fontSize: '18px', fontWeight: '700', color: '#e8e8f5', marginBottom: '20px' }}>{aiType.emoji} {aiType.name} のための<br/>パーソナルレポート</div>
             {freeLoading && (
@@ -1144,6 +1166,7 @@ AIタイプ: ${aiType.name}（${aiType.desc}）
             今だけ無料
           </button>
           <button className="btn btn-primary" onClick={() => {
+            localStorage.setItem('ai_skill_pending_scores', JSON.stringify({ scores, lang }));
             window.open('https://buy.stripe.com/test_6oUcN5eXt68m5Vi38L1ck00', '_blank');
           }} style={{ padding: '14px 28px', fontSize: '16px', whiteSpace: 'nowrap' }}>
             ¥500 で購入
@@ -1187,13 +1210,29 @@ AIタイプ: ${aiType.name}（${aiType.desc}）
    メインアプリ
 ============================== */
 function App() {
-  const [screen, setScreen] = useState('start'); // start | quiz | result
-  const [scores, setScores] = useState(null);
-  const [lang, setLang] = useState('ja'); // 言語state
+  const params = new URLSearchParams(window.location.search);
+  const paymentSuccess = params.get('payment') === 'success';
+
+  const savedData = React.useMemo(() => {
+    if (!paymentSuccess) return null;
+    try {
+      const d = JSON.parse(localStorage.getItem('ai_skill_pending_scores') || 'null');
+      localStorage.removeItem('ai_skill_pending_scores');
+      return d;
+    } catch { return null; }
+  }, []);
+
+  const [screen, setScreen] = useState(savedData ? 'result' : 'start');
+  const [scores, setScores] = useState(savedData?.scores || null);
+  const [lang, setLang] = useState(savedData?.lang || 'ja');
+
+  useEffect(() => {
+    if (paymentSuccess) window.history.replaceState({}, '', window.location.pathname);
+  }, []);
 
   if (screen === 'start') return <StartScreen onStart={() => setScreen('quiz')} lang={lang} setLang={setLang} />;
   if (screen === 'quiz') return <QuizScreen onComplete={(s) => { setScores(s); setScreen('result'); }} lang={lang} />;
-  if (screen === 'result') return <ResultScreen scores={scores} lang={lang} />;
+  if (screen === 'result') return <ResultScreen scores={scores} lang={lang} autoOpenReport={paymentSuccess && !!savedData} />;
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(<App />);
