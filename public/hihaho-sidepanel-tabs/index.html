@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>hihaho サイドパネル（用語集・要約）</title>
+<style>
+  /* 背景を完全に透明化（iframe埋め込み用） */
+  html, body { margin: 0; padding: 0; background: transparent; height: 100%; }
+  * { box-sizing: border-box; font-family: -apple-system, "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif; }
+
+  /* タブ以外はクリックを透過させ、下の動画を操作できるようにする */
+  #hhSP { position: fixed; inset: 0; pointer-events: none; z-index: 10; }
+  /* タブを上下中央に配置 */
+  #hhSP .sp-tabs {
+    position: absolute; top: 50%; left: 0; transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 8px;
+    pointer-events: auto;
+  }
+  /* ▼ 縦書きタブ（幅=左右padding / 高さ=min-height で調整） */
+  #hhSP .sp-tab {
+    writing-mode: vertical-rl;
+    text-orientation: upright;   /* 縦に文字を積む。横に寝かせたい場合は mixed */
+    background: #3d9be0; border: 2px solid #fff; border-left: none;
+    border-radius: 0 16px 16px 0;
+    padding: 16px 2px;           /* 左右2px = 極細タブ */
+    font-size: 16px; font-weight: 700; letter-spacing: 2px;
+    color: #fff; cursor: pointer;
+    box-shadow: 2px 2px 6px rgba(0,0,0,.18);
+    min-height: 120px;           /* 高さ */
+  }
+  #hhSP .sp-tab:hover { background: #2f8bcf; }
+  /* スライドパネル本体（左横から出てくる） */
+  #hhSP .sp-panel {
+    position: absolute; top: 0; left: 0; height: 100%; width: 300px; max-width: 82%;
+    background: #fff; transform: translateX(-100%); transition: transform .28s ease;
+    pointer-events: auto;
+    display: flex; flex-direction: column;
+    box-shadow: 4px 0 16px rgba(0,0,0,.15);
+  }
+  #hhSP .sp-panel.open { transform: translateX(0); }
+  #hhSP .sp-head {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 16px; border-bottom: 1px solid #eee;
+  }
+  #hhSP .sp-title { font-size: 16px; font-weight: 600; color: #1a1a1a; }
+  #hhSP .sp-close {
+    background: transparent; border: none; cursor: pointer;
+    font-size: 22px; line-height: 1; color: #888; padding: 0 4px;
+  }
+  #hhSP .sp-body {
+    padding: 14px 16px; overflow-y: auto;
+    font-size: 14px; line-height: 1.75; color: #555;
+  }
+  #hhSP .sp-body dt { font-weight: 600; color: #1a1a1a; margin-top: 12px; }
+  #hhSP .sp-body dt:first-child { margin-top: 0; }
+  #hhSP .sp-body dd { margin: 2px 0 0; }
+  #hhSP .sp-body p:first-child { margin-top: 0; }
+  #hhSP .sp-body p:last-child { margin-bottom: 0; }
+
+  /* UI共通コンポーネント（右下・半透明） */
+  #hhUI { position: fixed; right: 8px; bottom: 8px; z-index: 20; display: flex; gap: 6px; align-items: center; pointer-events: auto; }
+  #hhUI button, #hhUI .ver {
+    font-size: 11px; color: rgba(255,255,255,.9); background: rgba(0,0,0,.35);
+    border: none; border-radius: 6px; padding: 3px 7px; cursor: pointer;
+  }
+  #hhUI button:hover, #hhUI .ver:hover { background: rgba(0,0,0,.55); }
+  /* モーダル（ヘルプ・リリースノート共通） */
+  .hh-modal { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 50; display: none; align-items: center; justify-content: center; pointer-events: auto; }
+  .hh-modal.open { display: flex; }
+  .hh-modal__box { background: #fff; border-radius: 12px; max-width: 380px; width: 86%; max-height: 76%; overflow-y: auto; padding: 20px 22px; font-size: 13px; line-height: 1.7; color: #333; }
+  .hh-modal__box h3 { margin: 0 0 10px; font-size: 15px; }
+  .hh-modal__close { float: right; cursor: pointer; color: #999; font-size: 18px; border: none; background: none; }
+</style>
+</head>
+<body>
+<div id="hhSP">
+  <div class="sp-tabs">
+    <button class="sp-tab" data-panel="glossary">用語集</button>
+    <button class="sp-tab" data-panel="summary">要約</button>
+  </div>
+  <div class="sp-panel">
+    <div class="sp-head">
+      <span class="sp-title"></span>
+      <button class="sp-close" aria-label="閉じる">×</button>
+    </div>
+    <div class="sp-body"></div>
+  </div>
+</div>
+
+<!-- UI共通コンポーネント -->
+<div id="hhUI">
+  <button id="hhHelp" title="使い方">?</button>
+  <button id="hhDebug" title="ログをコピー">DBG</button>
+  <span class="ver" id="hhVer">v0.1.0</span>
+</div>
+<div class="hh-modal" id="hhHelpModal">
+  <div class="hh-modal__box">
+    <button class="hh-modal__close" data-close>×</button>
+    <h3>使い方</h3>
+    <p>画面左中央の「用語集」「要約」タブをクリックすると、左からパネルが開きます。同じタブをもう一度押すか、パネル右上の × で閉じます。</p>
+    <p>hihaho動画の上にオーバーレイ表示する補助教材です。</p>
+  </div>
+</div>
+<div class="hh-modal" id="hhRelModal">
+  <div class="hh-modal__box">
+    <button class="hh-modal__close" data-close>×</button>
+    <h3>リリースノート</h3>
+    <p><strong>v0.1.0 (2026-07-02)</strong><br>初回リリース。用語集・要約の縦書きサイドパネルタブ。透明背景でhihaho埋め込み対応。</p>
+  </div>
+</div>
+
+<script>
+(function(){
+  // ▼ タブの中身。ここを書き換えるだけで内容変更できます
+  var content = {
+    glossary: {
+      title: "用語集",
+      html:
+        '<dl>' +
+        '<dt>インタラクティブ動画</dt><dd>視聴者がタップやクリックで操作でき、選択・ジャンプ・クイズ回答などができる動画。</dd>' +
+        '<dt>分岐（カスタマイズ）</dt><dd>回答や選択に応じて、その後の動画内容を一人一人に合わせて変えられる仕組み。</dd>' +
+        '<dt>目次機能</dt><dd>知りたい説明をタップで選び、指定箇所へジャンプできる仕組み。</dd>' +
+        '<dt>視聴履歴（分析）</dt><dd>よく見られる箇所や離脱地点、アンケート結果を把握し改善に活かせるデータ。</dd>' +
+        '<dt>多言語字幕</dt><dd>字幕による多言語対応で、世界中の視聴者が学習・視聴できる機能。</dd>' +
+        '</dl>'
+    },
+    summary: {
+      title: "要約",
+      html:
+        '<p>従来の動画は提供者からの一方通行のコミュニケーションで、視聴者は興味のない内容まで見たり、知りたい情報にすぐたどり着けなかったりしていました。</p>' +
+        '<p>hihahoは、視聴者一人一人に合わせて求めている情報を届けられるインタラクティブ動画プラットフォームです。タップ・クリックでの選択、指定箇所へのジャンプ、クイズ・アンケート・ファイルのダウンロードができます。</p>' +
+        '<p>これにより、記憶の定着・理解促進・購買意欲の向上などの効果が見込めます。提供者は視聴履歴を分析し、より高いユーザー体験を実現する動画へ改善していけます。</p>' +
+        '<p>営業研修、保険相談、医療の服薬説明など幅広い業界で活用されており、世界4,000社・1万人を超えるユーザーに利用されているパイオニアです。制作リソースがない場合は、企画から制作までご支援いたします。</p>'
+    }
+  };
+
+  var root = document.getElementById('hhSP');
+  var panel = root.querySelector('.sp-panel');
+  var titleEl = root.querySelector('.sp-title');
+  var bodyEl = root.querySelector('.sp-body');
+  var current = null;
+
+  function openPanel(key){
+    if(current === key){ closePanel(); return; } // 同じタブ再クリックで閉じる
+    current = key;
+    titleEl.textContent = content[key].title;
+    bodyEl.innerHTML = content[key].html;
+    panel.classList.add('open');
+  }
+  function closePanel(){ current = null; panel.classList.remove('open'); }
+
+  root.querySelectorAll('.sp-tab').forEach(function(btn){
+    btn.addEventListener('click', function(){ openPanel(btn.dataset.panel); });
+  });
+  root.querySelector('.sp-close').addEventListener('click', closePanel);
+
+  // === UI共通コンポーネント ===
+  var logs = [];
+  var _log = console.log;
+  console.log = function(){ logs.push(Array.prototype.slice.call(arguments).join(' ')); _log.apply(console, arguments); };
+  console.log('hihaho-sidepanel-tabs v0.1.0 loaded');
+
+  function openModal(id){ document.getElementById(id).classList.add('open'); }
+  function closeModal(el){ el.closest('.hh-modal').classList.remove('open'); }
+
+  document.getElementById('hhHelp').addEventListener('click', function(){ openModal('hhHelpModal'); });
+  document.getElementById('hhVer').addEventListener('click', function(){ openModal('hhRelModal'); });
+  document.querySelectorAll('.hh-modal [data-close]').forEach(function(b){ b.addEventListener('click', function(){ closeModal(b); }); });
+  document.querySelectorAll('.hh-modal').forEach(function(m){ m.addEventListener('click', function(e){ if(e.target === m) m.classList.remove('open'); }); });
+
+  document.getElementById('hhDebug').addEventListener('click', function(){
+    var text = logs.join('\n');
+    navigator.clipboard.writeText(text).then(function(){
+      var b = document.getElementById('hhDebug'); var o = b.textContent;
+      b.textContent = 'コピー済'; setTimeout(function(){ b.textContent = o; }, 1200);
+    });
+  });
+})();
+</script>
+</body>
+</html>
