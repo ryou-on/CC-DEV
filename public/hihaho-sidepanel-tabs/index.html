@@ -37,13 +37,21 @@
 
   /* スライドパネル本体 */
   #hhSP .sp-panel {
-    position: absolute; top: 0; left: 0; height: 100%; width: 300px; max-width: 82%;
+    position: absolute; top: 0; left: 0; height: 100%; width: 300px;
+    min-width: 180px; max-width: 82%;
     background: #fff; transform: translateX(-100%); transition: transform .28s ease;
     pointer-events: auto;
     display: flex; flex-direction: column;
     box-shadow: 4px 0 16px rgba(0,0,0,.15);
   }
   #hhSP .sp-panel.open { transform: translateX(0); }
+  #hhSP .sp-resize {
+    position: absolute; top: 0; right: -4px; width: 8px; height: 100%;
+    cursor: col-resize; z-index: 5; background: transparent;
+  }
+  #hhSP .sp-resize:hover, #hhSP .sp-resize.dragging {
+    background: rgba(61,155,224,.25);
+  }
 
   /* パネルヘッダー */
   #hhSP .sp-head {
@@ -122,6 +130,7 @@
     <button class="sp-tab" data-panel="summary">要約</button>
   </div>
   <div class="sp-panel">
+    <div class="sp-resize" id="spResize" aria-hidden="true"></div>
     <div class="sp-head">
       <span class="sp-title"></span>
       <!-- 文字サイズ切替 -->
@@ -140,7 +149,7 @@
 <div id="hhUI">
   <button id="hhHelp">?</button>
   <button id="hhDebug">DBG</button>
-  <span class="ver" id="hhVer">v0.2.0</span>
+  <span class="ver" id="hhVer">v0.3.0</span>
 </div>
 
 <div class="hh-modal" id="hhHelpModal">
@@ -149,6 +158,7 @@
     <h3>使い方</h3>
     <p>画面左中央の「用語集」「要約」タブをクリックするとパネルが左からスライドして開きます。同じタブを再クリックか × で閉じます。</p>
     <p>パネル内の【大】【中】【小】ボタンで文字サイズを切り替えられます。</p>
+    <p>パネルの右端（青帯）をドラッグして幅を変えられます。</p>
   </div>
 </div>
 
@@ -156,6 +166,8 @@
   <div class="hh-modal__box">
     <button class="hh-modal__close" data-close>×</button>
     <h3>リリースノート</h3>
+    <p><strong>v0.3.0 (2026-07-02)</strong><br>
+    - パネル右端をドラッグして幅変更可能に</p>
     <p><strong>v0.2.0 (2026-07-02)</strong><br>
     - タブ幅を100%に戻す<br>
     - タブ内文字サイズを150%（25.5px）に変更<br>
@@ -232,7 +244,39 @@
   var logs = [];
   var _log = console.log;
   console.log = function() { logs.push([].slice.call(arguments).join(' ')); _log.apply(console, arguments); };
-  console.log('hihaho-sidepanel-tabs v0.2.0 loaded');
+  console.log('hihaho-sidepanel-tabs v0.3.0 loaded');
+
+  /* ---- パネル幅ドラッグリサイズ ---- */
+  var resizeHandle = document.getElementById('spResize');
+  var isDragging = false, startX = 0, startW = 0;
+  var MIN_W = 180;
+
+  resizeHandle.addEventListener('mousedown', function(e) {
+    isDragging = true;
+    startX = e.clientX;
+    startW = panel.offsetWidth;
+    resizeHandle.classList.add('dragging');
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', function(e) {
+    if (!isDragging) return;
+    var dx   = e.clientX - startX;
+    var maxW = window.innerWidth * 0.82;
+    var newW = Math.min(Math.max(startW + dx, MIN_W), maxW);
+    panel.style.width = newW + 'px';
+    panel.style.transition = 'none';
+  });
+
+  document.addEventListener('mouseup', function() {
+    if (!isDragging) return;
+    isDragging = false;
+    resizeHandle.classList.remove('dragging');
+    document.body.style.userSelect = '';
+    panel.style.transition = '';
+  });
+
 
   function openModal(id)  { document.getElementById(id).classList.add('open'); }
 
