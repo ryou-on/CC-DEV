@@ -1327,6 +1327,40 @@ function playCountOverlay(videoId) {
 }
 
 // =========================================================
+// =========================================================
+// アナリティクス
+// =========================================================
+let _analyticsDb = null;
+let _analyticsPlaylistId = null;
+
+function trackPlaylistView(db, playlistId) {
+  if (!playlistId) return;
+  _analyticsDb = db;
+  _analyticsPlaylistId = playlistId;
+  try {
+    db.collection('playlist_analytics').doc(playlistId).set({
+      viewCount: firebase.firestore.FieldValue.increment(1),
+      lastViewed: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+  } catch(e) { /* 無視 */ }
+}
+
+function trackVideoPlay(uuid, videoId) {
+  if (!_analyticsDb || !uuid) return;
+  try {
+    const data = {
+      playCount: firebase.firestore.FieldValue.increment(1),
+      lastPlayed: firebase.firestore.FieldValue.serverTimestamp(),
+      videoId: videoId
+    };
+    if (_analyticsPlaylistId) {
+      data[`playlists.${_analyticsPlaylistId}`] = firebase.firestore.FieldValue.increment(1);
+    }
+    _analyticsDb.collection('video_analytics').doc(uuid).set(data, { merge: true });
+  } catch(e) { /* 無視 */ }
+}
+
+// =========================================================
 // 初期化
 // =========================================================
 async function init() {
@@ -1355,6 +1389,7 @@ async function init() {
         if (pd.playerName) { const el=document.getElementById('logoText'); if(el) el.textContent=pd.playerName; }
         if (pd.logoUrl) { const el=document.getElementById('logoImg'); if(el){ el.src=pd.logoUrl; el.style.cssText='height:28px;width:auto;object-fit:contain;margin-right:6px;'; } }
         renderCtaBar(pd);
+        trackPlaylistView(db, playlistId);
       log(`プレイリスト: ${pd.name} / フォルダ${SHOW_FOLDER_IDS.length}件`);
     } else {
       // ?id= なし → フォールバック
@@ -1548,6 +1583,7 @@ function play(id) {
   const vid = allVideos.find(v => v.id === id);
   if (!vid) return;
   activeVidId = id;
+  trackVideoPlay(vid.uuid, vid.id);
   log(`再生: ${vid.display_name} (uuid: ${vid.uuid})`);
 
   const wrap = document.getElementById('playerWrap');

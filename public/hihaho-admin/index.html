@@ -176,6 +176,7 @@ main{margin-left:var(--sw);margin-top:var(--hh);padding:24px;}
 <div class="divider"></div>
 <div class="nav-s">設定</div>
 <div class="nav-i" onclick="showPage('thumbnails',this)">🖼 サムネイル設定</div>
+<div class="nav-i" onclick="showPage('analytics',this);loadAnalytics()">📊 アナリティクス</div>
 <div class="divider"></div>
 <div class="nav-s">リンク</div>
 <div class="nav-i" onclick="window.open('https://cc-dev-ps7.web.app/hihaho-view/')">▶ プレイヤー</div>
@@ -375,6 +376,34 @@ style="width:100%;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;fo
 </div>
 </div>
 </div>
+
+<!-- アナリティクス -->
+<div class="page" id="page-analytics">
+<div class="pt">📊 アナリティクス</div>
+<div class="pd">プレイリスト表示回数・動画再生回数を集計します。</div>
+<!-- タブ -->
+<div style="display:flex;gap:6px;margin-bottom:16px">
+<button id="anTabPl" onclick="switchAnTab('playlist')" style="padding:6px 16px;border-radius:6px;font-size:13px;font-weight:600;border:1px solid #1565c0;background:#1565c0;color:#fff;cursor:pointer">📋 プレイリスト</button>
+<button id="anTabVid" onclick="switchAnTab('video')" style="padding:6px 16px;border-radius:6px;font-size:13px;font-weight:600;border:1px solid #d1d5db;background:#f3f4f6;color:#374151;cursor:pointer">🎬 動画再生</button>
+<button onclick="loadAnalytics()" style="margin-left:auto;padding:6px 14px;border-radius:6px;font-size:12px;border:1px solid #d1d5db;background:#fff;cursor:pointer">🔄 更新</button>
+</div>
+<!-- プレイリスト表示回数 -->
+<div id="anPanelPlaylist">
+<div id="anPlaylistTable"><div class="load"><div class="spin"></div>読み込み中...</div></div>
+</div>
+<!-- 動画再生回数 -->
+<div id="anPanelVideo" style="display:none">
+<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+<input type="text" id="anVideoSearch" placeholder="🔍 動画名・UUIDで絞り込み…" oninput="filterAnVideo(this.value)"
+style="flex:1;padding:7px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:13px">
+<select id="anVideoPlaylist" onchange="filterAnVideo(document.getElementById('anVideoSearch').value)"
+style="padding:7px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;background:#fff">
+<option value="">全プレイリスト</option>
+</select>
+</div>
+<div id="anVideoTable"><div class="load"><div class="spin"></div>読み込み中...</div></div>
+</div>
+</div>
 </main>
 
 <!-- 発行完了モーダル -->
@@ -447,6 +476,7 @@ renderOrderCard, renderDefaultVideoSelect, onDragStart, onDragOver, onDragLeave,
 toggleOrderCheck, bulkRemoveFromOrder, clearOrderCheck, loadAllFolderVideos,
 toggleCtaContact, toggleCtaMeeting, setCtaType,
 loadAllPlaylists, addVideoToPlaylist,
+loadAnalytics, switchAnTab, filterAnVideo,
 copyConsole:()=>navigator.clipboard.writeText(clog.join('\n')||'（ログなし）').then(()=>toast('コピーしました','suc'))
 });
 
@@ -1526,6 +1556,108 @@ thumbVideos=vs;
 renderThumbList();
 const info=document.getElementById('thumbGlobalInfo');
 if(info) info.textContent=vs.length+'本が見つかりました（全'+allThumbVideos.length+'本中）';
+}
+
+// =========================================================
+// アナリティクス
+// =========================================================
+let _anPlaylistData=[], _anVideoData=[], _anTab='playlist';
+
+async function loadAnalytics(){
+  // プレイリスト分析
+  const [plSnap, vidSnap] = await Promise.all([
+    getDocs(collection(db,'playlist_analytics')),
+    getDocs(collection(db,'video_analytics'))
+  ]);
+  // プレイリスト名をマージ
+  const plMap={};
+  try{const ps=await getDocs(collection(db,'playlists'));ps.forEach(d=>plMap[d.id]=d.data().name);}catch(e){}
+  _anPlaylistData=[];
+  plSnap.forEach(d=>{
+    const data=d.data();
+    _anPlaylistData.push({id:d.id,name:plMap[d.id]||d.id,viewCount:data.viewCount||0,lastViewed:data.lastViewed});
+  });
+  _anPlaylistData.sort((a,b)=>b.viewCount-a.viewCount);
+
+  _anVideoData=[];
+  vidSnap.forEach(d=>{
+    const data=d.data();
+    _anVideoData.push({uuid:d.id,playCount:data.playCount||0,lastPlayed:data.lastPlayed,playlists:data.playlists||{},videoId:data.videoId});
+  });
+  _anVideoData.sort((a,b)=>b.playCount-a.playCount);
+
+  // プレイリストフィルター用セレクト更新
+  const sel=document.getElementById('anVideoPlaylist');
+  if(sel){
+    const opts=_anPlaylistData.map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join('');
+    sel.innerHTML='<option value="">全プレイリスト</option>'+opts;
+  }
+  renderAnPlaylistTable();
+  renderAnVideoTable();
+}
+
+function switchAnTab(tab){
+  _anTab=tab;
+  const isVid=(tab==='video');
+  document.getElementById('anTabPl').style.cssText='padding:6px 16px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid '+(isVid?'#d1d5db;background:#f3f4f6;color:#374151':'#1565c0;background:#1565c0;color:#fff');
+  document.getElementById('anTabVid').style.cssText='padding:6px 16px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid '+(isVid?'#1565c0;background:#1565c0;color:#fff':'#d1d5db;background:#f3f4f6;color:#374151');
+  document.getElementById('anPanelPlaylist').style.display=isVid?'none':'block';
+  document.getElementById('anPanelVideo').style.display=isVid?'block':'none';
+}
+
+function renderAnPlaylistTable(){
+  const el=document.getElementById('anPlaylistTable');
+  if(!el) return;
+  if(!_anPlaylistData.length){el.innerHTML='<div class="emp"><div class="ei">📊</div><p>データがありません。プレイヤーを表示すると集計が始まります。</p></div>';return;}
+  const total=_anPlaylistData.reduce((s,p)=>s+p.viewCount,0);
+  el.innerHTML=`<div style="margin-bottom:8px;font-size:12px;color:#6b7280">合計 ${total} 回表示</div>
+<table style="width:100%;border-collapse:collapse;font-size:13px">
+<thead><tr style="background:#f9fafb;border-bottom:2px solid #e5e7eb">
+<th style="padding:8px 10px;text-align:left;font-weight:600">プレイリスト名</th>
+<th style="padding:8px 10px;text-align:right;font-weight:600;width:80px">表示回数</th>
+<th style="padding:8px 10px;text-align:right;font-weight:600;width:130px">最終表示</th>
+</tr></thead><tbody>
+${_anPlaylistData.map((p,i)=>`<tr style="border-bottom:1px solid #f3f4f6;${i%2?'background:#fafafa':''}">
+<td style="padding:8px 10px"><span style="font-weight:600">${esc(p.name)}</span><span style="font-size:10px;color:#9ca3af;margin-left:6px;font-family:monospace">${p.id}</span></td>
+<td style="padding:8px 10px;text-align:right;font-weight:700;color:#1565c0">${p.viewCount.toLocaleString()}</td>
+<td style="padding:8px 10px;text-align:right;color:#6b7280;font-size:11px">${p.lastViewed?new Date(p.lastViewed.seconds*1000).toLocaleString('ja'):'—'}</td>
+</tr>`).join('')}
+</tbody></table>`;
+}
+
+function filterAnVideo(q){
+  const plId=document.getElementById('anVideoPlaylist')?.value||'';
+  renderAnVideoTable(q,plId);
+}
+
+function renderAnVideoTable(q='',plId=''){
+  const el=document.getElementById('anVideoTable');
+  if(!el) return;
+  let data=[..._anVideoData];
+  if(q){const lq=q.toLowerCase();data=data.filter(v=>v.uuid.toLowerCase().includes(lq)||(vmeta[v.uuid]?.description||'').toLowerCase().includes(lq));}
+  if(plId) data=data.filter(v=>v.playlists[plId]>0);
+  if(!data.length){el.innerHTML='<div class="emp"><div class="ei">🎬</div><p>データがありません</p></div>';return;}
+  const total=data.reduce((s,v)=>s+v.playCount,0);
+  el.innerHTML=`<div style="margin-bottom:8px;font-size:12px;color:#6b7280">合計 ${total} 回再生</div>
+<table style="width:100%;border-collapse:collapse;font-size:13px">
+<thead><tr style="background:#f9fafb;border-bottom:2px solid #e5e7eb">
+<th style="padding:8px 10px;text-align:left;font-weight:600">動画</th>
+<th style="padding:8px 10px;text-align:right;font-weight:600;width:80px">再生回数</th>
+${plId?`<th style="padding:8px 10px;text-align:right;font-weight:600;width:100px">このPLで</th>`:''}
+<th style="padding:8px 10px;text-align:right;font-weight:600;width:130px">最終再生</th>
+</tr></thead><tbody>
+${data.map((v,i)=>{
+const meta=vmeta[v.uuid]||{};
+const thumb=meta.thumbnailUrl?`<img src="${meta.thumbnailUrl}" style="width:40px;height:28px;object-fit:cover;border-radius:3px;margin-right:8px;vertical-align:middle">`:'<span style="display:inline-block;width:40px;height:28px;background:#f3f4f6;border-radius:3px;margin-right:8px;vertical-align:middle;text-align:center;line-height:28px;font-size:14px">🎬</span>';
+const name=videoMap[v.videoId]?.display_name||v.uuid.slice(0,16)+'…';
+return `<tr style="border-bottom:1px solid #f3f4f6;${i%2?'background:#fafafa':''}">
+<td style="padding:6px 10px">${thumb}<span style="font-weight:600">${esc(name)}</span><br><span style="font-size:10px;color:#9ca3af;font-family:monospace;margin-left:48px">${v.uuid}</span></td>
+<td style="padding:6px 10px;text-align:right;font-weight:700;color:#1565c0">${v.playCount.toLocaleString()}</td>
+${plId?`<td style="padding:6px 10px;text-align:right;color:#059669;font-weight:600">${(v.playlists[plId]||0).toLocaleString()}</td>`:''}
+<td style="padding:6px 10px;text-align:right;color:#6b7280;font-size:11px">${v.lastPlayed?new Date(v.lastPlayed.seconds*1000).toLocaleString('ja'):'—'}</td>
+</tr>`;
+}).join('')}
+</tbody></table>`;
 }
 
 // HTMLインラインハンドラー用グローバル公開
