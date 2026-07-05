@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Meet Knowledge — 会議同伴ナレッジサイドバー</title>
+<style>
+  :root {
+    --bg: #f5f6fa;
+    --panel: #ffffff;
+    --border: #e3e6ee;
+    --text: #1f2430;
+    --sub: #6b7385;
+    --accent: #4f5df0;
+    --accent-soft: #eef0fe;
+    --green: #18a05e;
+    --green-soft: #e6f7ee;
+    --orange: #e08a00;
+    --orange-soft: #fdf3e0;
+    --red: #d64545;
+    --radius: 12px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+    background: var(--bg); color: var(--text); font-size: 14px; height: 100vh;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+
+  /* ===== ヘッダー ===== */
+  header {
+    display: flex; align-items: center; gap: 12px; padding: 10px 16px;
+    background: var(--panel); border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  header h1 { font-size: 15px; font-weight: 700; white-space: nowrap; }
+  body.embed header h1 { display: none; }
+  .team-box span:not(.sync-dot) { white-space: nowrap; }
+  header h1 .ver { font-size: 11px; color: var(--sub); font-weight: 400; margin-left: 4px; }
+  .tabs { display: flex; gap: 4px; margin-left: 8px; }
+  .tab-btn {
+    border: none; background: transparent; padding: 7px 14px; border-radius: 8px;
+    font-size: 13px; cursor: pointer; color: var(--sub); font-weight: 600; white-space: nowrap;
+  }
+  .tab-btn.active { background: var(--accent-soft); color: var(--accent); }
+  .spacer { flex: 1; }
+  .team-box { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--sub); }
+  .team-box input {
+    width: 90px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 12px;
+  }
+  .sync-dot { width: 8px; height: 8px; border-radius: 50%; background: #bbb; flex-shrink: 0; }
+  .sync-dot.on { background: var(--green); }
+  .sync-dot.err { background: var(--red); }
+
+  /* ===== レイアウト ===== */
+  main { flex: 1; display: flex; overflow: hidden; }
+  .view { flex: 1; display: none; overflow: hidden; }
+  .view.active { display: flex; }
+
+  /* ===== 会議ビュー ===== */
+  #viewMeeting { gap: 0; }
+  .col-transcript {
+    flex: 1; min-width: 0; display: flex; flex-direction: column;
+    border-right: 1px solid var(--border); background: var(--panel);
+  }
+  .col-side { width: 400px; flex-shrink: 0; display: flex; flex-direction: column; background: var(--bg); }
+
+  .transcript-head {
+    display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+    border-bottom: 1px solid var(--border); flex-wrap: wrap;
+  }
+  .btn {
+    border: none; border-radius: 8px; padding: 8px 14px; font-size: 13px; font-weight: 600;
+    cursor: pointer; background: #eceef4; color: var(--text);
+  }
+  .btn:hover { filter: brightness(0.96); }
+  .btn.primary { background: var(--accent); color: #fff; }
+  .btn.danger  { background: #fdeaea; color: var(--red); }
+  .btn.small { padding: 4px 10px; font-size: 12px; border-radius: 6px; }
+  .rec-indicator { display: none; align-items: center; gap: 6px; font-size: 12px; color: var(--red); font-weight: 700; }
+  .rec-indicator.on { display: flex; }
+  .rec-indicator .pulse {
+    width: 10px; height: 10px; border-radius: 50%; background: var(--red);
+    animation: pulse 1.2s infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+  #transcript { flex: 1; overflow-y: auto; padding: 14px; }
+  .utter { margin-bottom: 10px; line-height: 1.7; }
+  .utter .time { font-size: 11px; color: var(--sub); margin-right: 6px; }
+  .utter .speaker { font-size: 11px; color: var(--accent); font-weight: 700; margin-right: 6px; }
+  .utter.question { background: var(--orange-soft); border-radius: 8px; padding: 6px 10px; }
+  .utter.question::before { content: "❓ "; }
+  .utter.interim { color: var(--sub); opacity: 0.7; }
+  .empty-note { color: var(--sub); text-align: center; padding: 40px 20px; line-height: 2; }
+
+  .demo-bar { display: flex; gap: 6px; padding: 10px 14px; border-top: 1px solid var(--border); }
+  .demo-bar input {
+    flex: 1; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px;
+  }
+
+  /* サイドバー（質問フィード） */
+  .side-head { padding: 12px 14px 6px; font-size: 13px; font-weight: 700; color: var(--sub); }
+  #qaFeed { flex: 1; overflow-y: auto; padding: 0 12px 12px; }
+  .qa-card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 12px; margin-bottom: 10px; animation: slideIn 0.25s ease;
+  }
+  @keyframes slideIn { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .qa-q { font-weight: 700; line-height: 1.5; margin-bottom: 8px; }
+  .qa-q::before { content: "Q. "; color: var(--orange); }
+  .match { border-top: 1px dashed var(--border); padding-top: 8px; margin-top: 8px; }
+  .match-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .match-score {
+    font-size: 11px; font-weight: 700; color: var(--green); background: var(--green-soft);
+    border-radius: 20px; padding: 2px 8px;
+  }
+  .match-src { font-size: 11px; color: var(--sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .match-answer { line-height: 1.6; white-space: pre-wrap; }
+  .match-actions { display: flex; gap: 6px; margin-top: 6px; }
+  .no-match { color: var(--sub); font-size: 13px; padding: 4px 0; }
+  .inline-form textarea {
+    width: 100%; min-height: 64px; margin-top: 6px; padding: 8px; font-size: 13px;
+    border: 1px solid var(--border); border-radius: 8px; resize: vertical; font-family: inherit;
+  }
+  .inline-form .row { display: flex; gap: 6px; margin-top: 6px; }
+
+  /* ===== ナレッジビュー ===== */
+  #viewKnowledge { flex-direction: column; padding: 16px; overflow-y: auto; gap: 14px; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px;
+  }
+  .panel h2 { font-size: 14px; margin-bottom: 10px; }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .form-grid .full { grid-column: 1 / -1; }
+  .form-grid label { display: block; font-size: 12px; color: var(--sub); margin-bottom: 4px; }
+  .form-grid input, .form-grid textarea, .form-grid select {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+    font-size: 13px; font-family: inherit;
+  }
+  .form-grid textarea { min-height: 70px; resize: vertical; }
+  .k-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .k-toolbar input[type="search"] {
+    flex: 1; min-width: 200px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px;
+  }
+  .k-count { font-size: 12px; color: var(--sub); }
+  .k-item {
+    border-bottom: 1px solid var(--border); padding: 12px 4px; display: flex; gap: 10px; align-items: flex-start;
+  }
+  .k-item:last-child { border-bottom: none; }
+  .k-body { flex: 1; min-width: 0; }
+  .k-q { font-weight: 700; line-height: 1.5; }
+  .k-a { color: var(--sub); line-height: 1.6; margin-top: 4px; white-space: pre-wrap; }
+  .k-tags { margin-top: 6px; display: flex; gap: 4px; flex-wrap: wrap; }
+  .k-tag {
+    font-size: 11px; background: var(--accent-soft); color: var(--accent);
+    border-radius: 20px; padding: 2px 8px;
+  }
+  .k-tag.cat { background: var(--green-soft); color: var(--green); }
+  .k-tag.hits { background: #f0f0f0; color: var(--sub); }
+  .k-actions { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
+
+  /* ===== フッター（デバッグ） ===== */
+  footer {
+    flex-shrink: 0; border-top: 1px solid var(--border); background: var(--panel);
+    padding: 4px 16px; display: flex; align-items: center; gap: 10px;
+  }
+  footer .log-line {
+    flex: 1; font-size: 11px; color: var(--sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font-family: Menlo, monospace;
+  }
+
+  /* モーダル（編集用） */
+  dialog {
+    border: none; border-radius: var(--radius); padding: 20px; width: min(560px, 92vw);
+    box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+  }
+  dialog::backdrop { background: rgba(0,0,0,0.35); }
+
+  /* 埋め込みモード（Chrome拡張サイドパネル内） */
+  body.embed .col-transcript { display: none; }
+  body.embed .col-side { width: 100%; }
+  body.embed header h1 span.full-title { display: none; }
+
+  @media (max-width: 760px) {
+    #viewMeeting { flex-direction: column; }
+    .col-transcript { border-right: none; border-bottom: 1px solid var(--border); max-height: 40vh; }
+    .col-side { width: 100%; flex: 1; }
+    .form-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📚 Meet Knowledge<span class="ver">v0.1.0</span></h1>
+  <nav class="tabs">
+    <button class="tab-btn active" data-view="viewMeeting">🎙 会議</button>
+    <button class="tab-btn" data-view="viewKnowledge">📖 ナレッジ</button>
+  </nav>
+  <div class="spacer"></div>
+  <div class="team-box">
+    <span class="sync-dot" id="syncDot"></span>
+    <span>チーム</span>
+    <input type="text" id="teamCodeInput" placeholder="default" maxlength="20">
+  </div>
+</header>
+
+<main>
+  <!-- ===== 会議ビュー ===== -->
+  <section class="view active" id="viewMeeting">
+    <div class="col-transcript">
+      <div class="transcript-head">
+        <button class="btn primary" id="btnMic">🎙 認識開始</button>
+        <div class="rec-indicator" id="recIndicator"><span class="pulse"></span>認識中</div>
+        <div class="spacer"></div>
+        <button class="btn small" id="btnCopyTranscript">📋 全文コピー</button>
+        <button class="btn small danger" id="btnClearTranscript">クリア</button>
+      </div>
+      <div id="transcript">
+        <div class="empty-note" id="transcriptEmpty">
+          「認識開始」を押すと、この画面で話している内容（Meetの音声をスピーカーで流していればその音声も）を文字起こしします。<br>
+          質問と判定された発言は自動でハイライトされ、右のサイドバーにナレッジ候補が表示されます。
+        </div>
+      </div>
+      <div class="demo-bar">
+        <input type="text" id="demoInput" placeholder="デモ入力：発言をテキストで直接投入（Enter）">
+        <button class="btn small" id="btnDemoSend">投入</button>
+      </div>
+    </div>
+
+    <div class="col-side">
+      <div class="side-head">❓ 検知された質問とナレッジ候補</div>
+      <div id="qaFeed">
+        <div class="empty-note" id="qaEmpty">まだ質問は検知されていません</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== ナレッジビュー ===== -->
+  <section class="view" id="viewKnowledge">
+    <div class="panel">
+      <h2>➕ ナレッジ登録</h2>
+      <div class="form-grid">
+        <div class="full">
+          <label>質問（お客様から聞かれる形で書く）</label>
+          <input type="text" id="addQuestion" placeholder="例：料金プランはいくらですか？">
+        </div>
+        <div class="full">
+          <label>回答</label>
+          <textarea id="addAnswer" placeholder="例：スタンダードプランは月額5万円、..."></textarea>
+        </div>
+        <div>
+          <label>キーワード（カンマ区切り・検索ヒット率が上がります）</label>
+          <input type="text" id="addKeywords" placeholder="料金, 価格, プラン, 費用">
+        </div>
+        <div>
+          <label>カテゴリ</label>
+          <input type="text" id="addCategory" placeholder="料金 / 機能 / 導入 / セキュリティ など">
+        </div>
+        <div class="full">
+          <button class="btn primary" id="btnAddEntry">登録する</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="k-toolbar">
+        <h2 style="margin:0">📖 ナレッジ一覧</h2>
+        <span class="k-count" id="kCount"></span>
+        <input type="search" id="kSearch" placeholder="ナレッジ内を検索...">
+        <button class="btn small" id="btnExport">⬇ JSONエクスポート</button>
+        <button class="btn small" id="btnImport">⬆ インポート</button>
+        <input type="file" id="importFile" accept=".json" hidden>
+      </div>
+      <div id="kList"></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <span class="log-line" id="lastLog">ready</span>
+  <button class="btn small" id="btnCopyLog">🐞 コンソールコピー</button>
+</footer>
+
+<!-- 編集モーダル -->
+<dialog id="editDialog">
+  <h2 style="margin-bottom:12px">✏️ ナレッジ編集</h2>
+  <div class="form-grid">
+    <div class="full"><label>質問</label><input type="text" id="editQuestion"></div>
+    <div class="full"><label>回答</label><textarea id="editAnswer"></textarea></div>
+    <div><label>キーワード（カンマ区切り）</label><input type="text" id="editKeywords"></div>
+    <div><label>カテゴリ</label><input type="text" id="editCategory"></div>
+    <div class="full" style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn" id="btnEditCancel">キャンセル</button>
+      <button class="btn primary" id="btnEditSave">保存</button>
+    </div>
+  </div>
+</dialog>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+import {
+  getFirestore, collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, increment
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+
+/* ================= デバッグログ（コンソールコピー用） ================= */
+const debugLogs = [];
+function dlog(...args) {
+  const line = `[${new Date().toLocaleTimeString('ja-JP')}] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')}`;
+  debugLogs.push(line);
+  if (debugLogs.length > 500) debugLogs.shift();
+  document.getElementById('lastLog').textContent = line;
+  console.log(...args);
+}
+window.addEventListener('error', e => dlog('ERROR:', e.message, `${e.filename}:${e.lineno}`));
+window.addEventListener('unhandledrejection', e => dlog('REJECTION:', e.reason?.message || String(e.reason)));
+document.getElementById('btnCopyLog').addEventListener('click', async () => {
+  await navigator.clipboard.writeText(debugLogs.join('\n'));
+  dlog('デバッグログをコピーしました');
+});
+
+/* ================= 埋め込みモード判定（Chrome拡張サイドパネル用） ================= */
+const isEmbed = new URLSearchParams(location.search).has('embed');
+if (isEmbed) {
+  document.body.classList.add('embed');
+  dlog('埋め込みモードで起動（拡張から字幕を受信します）');
+}
+
+/* ================= Firebase 初期化 ================= */
+const firebaseConfig = {
+  apiKey: "AIzaSyDPlsAhtxbJBihy-EAHck9P7XbuMdzV0ds",
+  authDomain: "cc-dev-ps7.firebaseapp.com",
+  projectId: "cc-dev-ps7",
+  storageBucket: "cc-dev-ps7.firebasestorage.app",
+  messagingSenderId: "1029579090333",
+  appId: "1:1029579090333:web:c699eb13e9279f467f2774"
+};
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+/* ================= 状態 ================= */
+const LS_TEAM = 'mk_teamCode';
+let teamCode = (localStorage.getItem(LS_TEAM) || 'default').trim() || 'default';
+let entries = [];          // ナレッジ全件（メモリ上でマッチング）
+let unsubscribe = null;    // onSnapshot 解除用
+const syncDot = document.getElementById('syncDot');
+
+function cacheKey() { return `mk_cache_${teamCode}`; }
+
+/* Firestore 購読（チームコード単位）。オフライン時は localStorage キャッシュで動作 */
+function subscribe() {
+  if (unsubscribe) unsubscribe();
+  syncDot.className = 'sync-dot';
+  // まずキャッシュから即時復元
+  try {
+    const cached = JSON.parse(localStorage.getItem(cacheKey()) || '[]');
+    if (cached.length) { entries = cached; renderKnowledge(); }
+  } catch (_) {}
+
+  const col = collection(db, 'meet-knowledge', teamCode, 'entries');
+  unsubscribe = onSnapshot(col, snap => {
+    entries = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    entries.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+    localStorage.setItem(cacheKey(), JSON.stringify(entries.map(({ _grams, ...e }) => e)));
+    syncDot.className = 'sync-dot on';
+    dlog(`Firestore同期: ${entries.length}件 (team=${teamCode})`);
+    renderKnowledge();
+  }, err => {
+    syncDot.className = 'sync-dot err';
+    dlog('Firestore同期エラー:', err.message);
+  });
+}
+
+const teamInput = document.getElementById('teamCodeInput');
+teamInput.value = teamCode;
+teamInput.addEventListener('change', () => {
+  const v = teamInput.value.trim().replace(/[^\w-]/g, '') || 'default';
+  teamInput.value = v;
+  teamCode = v;
+  localStorage.setItem(LS_TEAM, v);
+  dlog('チームコード変更:', v);
+  subscribe();
+});
+subscribe();
+
+/* ================= ナレッジ CRUD ================= */
+async function saveEntry(data, id = null) {
+  const entryId = id || crypto.randomUUID();
+  const now = Date.now();
+  const payload = {
+    question: data.question,
+    answer: data.answer,
+    keywords: data.keywords,
+    category: data.category || '',
+    createdAt: data.createdAt || now,
+    updatedAt: now,
+    hits: data.hits || 0,
+    source: data.source || 'manual'
+  };
+  await setDoc(doc(db, 'meet-knowledge', teamCode, 'entries', entryId), payload);
+  dlog('ナレッジ保存:', payload.question.slice(0, 30));
+  return entryId;
+}
+
+async function removeEntry(id) {
+  await deleteDoc(doc(db, 'meet-knowledge', teamCode, 'entries', id));
+  dlog('ナレッジ削除:', id);
+}
+
+async function countHit(id) {
+  try {
+    await updateDoc(doc(db, 'meet-knowledge', teamCode, 'entries', id), { hits: increment(1), updatedAt: Date.now() });
+  } catch (e) { dlog('hits更新失敗:', e.message); }
+}
+
+function parseKeywords(str) {
+  return (str || '').split(/[,、，]/).map(s => s.trim()).filter(Boolean).slice(0, 20);
+}
+
+/* ================= 質問検知（日本語ルールベース） ================= */
+const QUESTION_ENDINGS = /(ですか|ますか|でしょうか|ですかね|ますかね|ありますか|いますか|できますか|可能ですか|いかがですか|どうですか|なんですか|何ですか|ください)[。\s]*$/;
+const QUESTION_REQUESTS = /(教えて|知りたい|聞きたい|伺いたい|お伺いしたい|確認したい|気になる|気になって)/;
+const INTERROGATIVES = /(いくら|何[がをにでかの]|なに|なん[でだ]|いつ|どこ|だれ|誰|なぜ|どうして|どうやって|どのように|どのくらい|どれくらい|どんな|どちら)/;
+
+function isQuestion(text) {
+  const t = text.trim();
+  if (!t || t.length < 4) return false;
+  if (/[?？]\s*$/.test(t)) return true;
+  if (QUESTION_ENDINGS.test(t)) return true;
+  if (QUESTION_REQUESTS.test(t)) return true;
+  if (INTERROGATIVES.test(t) && /(か|かな|かね)[。]?\s*$/.test(t)) return true;
+  return false;
+}
+
+/* ================= マッチングエンジン（バイグラム類似度＋キーワード） ================= */
+function normalizeText(s) {
+  return (s || '').normalize('NFKC').toLowerCase()
+    .replace(/[\s。、．，,.「」『』（）()!！?？:：;；・～〜\-ー]/g, '');
+}
+function bigrams(s) {
+  const set = new Set();
+  for (let i = 0; i < s.length - 1; i++) set.add(s.slice(i, i + 2));
+  return set;
+}
+function diceCoef(a, b) {
+  if (!a.size || !b.size) return 0;
+  let inter = 0;
+  for (const g of a) if (b.has(g)) inter++;
+  return 2 * inter / (a.size + b.size);
+}
+
+const MATCH_THRESHOLD = 0.18;
+const MAX_MATCHES = 3;
+
+function searchKnowledge(questionText) {
+  const qNorm = normalizeText(questionText);
+  const qGrams = bigrams(qNorm);
+  const scored = [];
+  for (const e of entries) {
+    if (!e._grams) e._grams = bigrams(normalizeText(e.question));
+    let score = diceCoef(qGrams, e._grams) * 0.75;
+    let kwBoost = 0;
+    for (const k of e.keywords || []) {
+      const kn = normalizeText(k);
+      if (kn && qNorm.includes(kn)) kwBoost += 0.25;
+    }
+    score = Math.min(1, score + Math.min(kwBoost, 0.5));
+    if (score >= MATCH_THRESHOLD) scored.push({ entry: e, score });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, MAX_MATCHES);
+}
+
+/* ================= 文字起こし表示 ================= */
+const transcriptEl = document.getElementById('transcript');
+const transcriptEmpty = document.getElementById('transcriptEmpty');
+const transcriptLines = []; // { time, text, isQ, speaker }
+let interimEl = null;
+
+function addUtterance(text, { speaker = '', viaExternal = false } = {}) {
+  const t = text.trim();
+  if (!t) return;
+  // 文単位に分割して質問検知（「〜です。〜はいくらですか？」のような複文対応）
+  const sentences = t.split(/(?<=[。？?！!])/).map(s => s.trim()).filter(Boolean);
+  for (const s of sentences) {
+    const q = isQuestion(s);
+    const time = new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+    transcriptLines.push({ time, text: s, isQ: q, speaker });
+
+    transcriptEmpty.style.display = 'none';
+    const div = document.createElement('div');
+    div.className = 'utter' + (q ? ' question' : '');
+    div.innerHTML = `<span class="time">${time}</span>` +
+      (speaker ? `<span class="speaker">${escapeHtml(speaker)}</span>` : '') +
+      escapeHtml(s);
+    transcriptEl.appendChild(div);
+    transcriptEl.scrollTop = transcriptEl.scrollHeight;
+
+    if (q) handleQuestion(s, speaker);
+  }
+  if (viaExternal) dlog('外部字幕:', t.slice(0, 40));
+}
+
+function showInterim(text) {
+  if (!interimEl) {
+    interimEl = document.createElement('div');
+    interimEl.className = 'utter interim';
+    transcriptEl.appendChild(interimEl);
+  }
+  interimEl.textContent = text;
+  transcriptEl.scrollTop = transcriptEl.scrollHeight;
+}
+function clearInterim() {
+  if (interimEl) { interimEl.remove(); interimEl = null; }
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+/* ================= 質問フィード（サイドバー） ================= */
+const qaFeed = document.getElementById('qaFeed');
+const qaEmpty = document.getElementById('qaEmpty');
+const recentQuestions = []; // 重複検知用（直近の質問の正規化文字列）
+
+function handleQuestion(questionText, speaker) {
+  // 直近5件と酷似する質問はスキップ（認識の揺れによる二重検知防止）
+  const qn = normalizeText(questionText);
+  const qg = bigrams(qn);
+  for (const prev of recentQuestions.slice(-5)) {
+    if (diceCoef(qg, prev) > 0.85) { dlog('重複質問スキップ:', questionText.slice(0, 30)); return; }
+  }
+  recentQuestions.push(qg);
+
+  const matches = searchKnowledge(questionText);
+  dlog(`質問検知: "${questionText.slice(0, 40)}" → ${matches.length}件ヒット`);
+
+  qaEmpty.style.display = 'none';
+  const card = document.createElement('div');
+  card.className = 'qa-card';
+
+  let html = `<div class="qa-q">${escapeHtml(questionText)}</div>`;
+  if (matches.length) {
+    for (const m of matches) {
+      const pct = Math.round(m.score * 100);
+      html += `
+        <div class="match">
+          <div class="match-meta">
+            <span class="match-score">関連度 ${pct}%</span>
+            <span class="match-src">${escapeHtml(m.entry.category || '')} ${escapeHtml(m.entry.question)}</span>
+          </div>
+          <div class="match-answer">${escapeHtml(m.entry.answer)}</div>
+          <div class="match-actions">
+            <button class="btn small" data-copy="${escapeHtml(m.entry.answer)}">📋 コピー</button>
+            <button class="btn small" data-hit="${m.entry.id}">✅ 回答に使った</button>
+          </div>
+        </div>`;
+    }
+  } else {
+    html += `
+      <div class="no-match">ナレッジ未登録の質問です。回答をその場で登録すると次回から即答できます。</div>
+      <div class="inline-form">
+        <textarea placeholder="この質問への回答を入力..."></textarea>
+        <div class="row">
+          <button class="btn small primary" data-register>ナレッジに登録</button>
+        </div>
+      </div>`;
+  }
+  card.innerHTML = html;
+
+  // イベント付与
+  card.querySelectorAll('[data-copy]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await navigator.clipboard.writeText(btn.dataset.copy);
+      btn.textContent = '✔ コピー済';
+    });
+  });
+  card.querySelectorAll('[data-hit]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      countHit(btn.dataset.hit);
+      btn.textContent = '✔ 記録しました';
+      btn.disabled = true;
+    });
+  });
+  const regBtn = card.querySelector('[data-register]');
+  if (regBtn) {
+    regBtn.addEventListener('click', async () => {
+      const ta = card.querySelector('textarea');
+      const answer = ta.value.trim();
+      if (!answer) { ta.focus(); return; }
+      regBtn.disabled = true;
+      try {
+        await saveEntry({ question: questionText, answer, keywords: [], category: '', source: 'meeting' });
+        card.querySelector('.inline-form').innerHTML = '<div class="no-match" style="color:var(--green)">✔ ナレッジに登録しました</div>';
+      } catch (e) {
+        dlog('登録失敗:', e.message);
+        regBtn.disabled = false;
+      }
+    });
+  }
+
+  qaFeed.prepend(card);
+}
+
+/* ================= 音声認識（Web Speech API） ================= */
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+const btnMic = document.getElementById('btnMic');
+const recIndicator = document.getElementById('recIndicator');
+let recognition = null;
+let listening = false;
+
+if (!SpeechRecognition && !isEmbed) {
+  btnMic.disabled = true;
+  btnMic.textContent = 'このブラウザは音声認識非対応（Chrome推奨）';
+}
+
+function startRecognition() {
+  recognition = new SpeechRecognition();
+  recognition.lang = 'ja-JP';
+  recognition.continuous = true;
+  recognition.interimResults = true;
+
+  recognition.onresult = (event) => {
+    let interim = '';
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const res = event.results[i];
+      if (res.isFinal) {
+        clearInterim();
+        addUtterance(res[0].transcript);
+      } else {
+        interim += res[0].transcript;
+      }
+    }
+    if (interim) showInterim(interim);
+  };
+
+  recognition.onerror = (e) => {
+    dlog('認識エラー:', e.error);
+    if (e.error === 'not-allowed') {
+      stopListening();
+      alert('マイクの使用が許可されていません。ブラウザのマイク許可を確認してください。');
+    }
+  };
+
+  // continuous でも無音等で勝手に止まるため、listening 中は自動再起動
+  recognition.onend = () => {
+    clearInterim();
+    if (listening) {
+      setTimeout(() => { try { recognition.start(); } catch (_) {} }, 300);
+    }
+  };
+
+  recognition.start();
+}
+
+function stopListening() {
+  listening = false;
+  if (recognition) { try { recognition.stop(); } catch (_) {} }
+  btnMic.textContent = '🎙 認識開始';
+  btnMic.classList.add('primary');
+  recIndicator.classList.remove('on');
+}
+
+btnMic.addEventListener('click', () => {
+  if (listening) { stopListening(); return; }
+  listening = true;
+  btnMic.textContent = '⏹ 停止';
+  btnMic.classList.remove('primary');
+  recIndicator.classList.add('on');
+  dlog('音声認識開始');
+  startRecognition();
+});
+
+/* ================= デモ入力 ================= */
+const demoInput = document.getElementById('demoInput');
+function sendDemo() {
+  const v = demoInput.value.trim();
+  if (!v) return;
+  addUtterance(v);
+  demoInput.value = '';
+}
+demoInput.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) sendDemo(); });
+document.getElementById('btnDemoSend').addEventListener('click', sendDemo);
+
+/* ================= 文字起こし操作 ================= */
+document.getElementById('btnCopyTranscript').addEventListener('click', async () => {
+  const text = transcriptLines.map(l => `${l.time} ${l.speaker ? l.speaker + ': ' : ''}${l.text}`).join('\n');
+  await navigator.clipboard.writeText(text);
+  dlog('文字起こしをコピーしました');
+});
+document.getElementById('btnClearTranscript').addEventListener('click', () => {
+  transcriptLines.length = 0;
+  recentQuestions.length = 0;
+  transcriptEl.querySelectorAll('.utter').forEach(el => el.remove());
+  transcriptEmpty.style.display = '';
+  qaFeed.querySelectorAll('.qa-card').forEach(el => el.remove());
+  qaEmpty.style.display = '';
+});
+
+/* ================= 外部字幕受信（Chrome拡張 → postMessage） ================= */
+window.addEventListener('message', (e) => {
+  const d = e.data;
+  if (!d || d.type !== 'mk-caption' || typeof d.text !== 'string') return;
+  addUtterance(d.text, { speaker: typeof d.speaker === 'string' ? d.speaker.slice(0, 30) : '', viaExternal: true });
+});
+
+/* ================= ナレッジビュー ================= */
+const kList = document.getElementById('kList');
+const kCount = document.getElementById('kCount');
+const kSearch = document.getElementById('kSearch');
+
+function renderKnowledge() {
+  const filter = normalizeText(kSearch.value);
+  const shown = entries.filter(e => {
+    if (!filter) return true;
+    return normalizeText(e.question + e.answer + (e.keywords || []).join(' ') + (e.category || '')).includes(filter);
+  });
+  kCount.textContent = `${shown.length} / ${entries.length}件`;
+  kList.innerHTML = '';
+  if (!shown.length) {
+    kList.innerHTML = '<div class="empty-note">ナレッジがありません。上のフォームから登録してください。</div>';
+    return;
+  }
+  for (const e of shown) {
+    const item = document.createElement('div');
+    item.className = 'k-item';
+    item.innerHTML = `
+      <div class="k-body">
+        <div class="k-q">${escapeHtml(e.question)}</div>
+        <div class="k-a">${escapeHtml(e.answer)}</div>
+        <div class="k-tags">
+          ${e.category ? `<span class="k-tag cat">${escapeHtml(e.category)}</span>` : ''}
+          ${(e.keywords || []).map(k => `<span class="k-tag">${escapeHtml(k)}</span>`).join('')}
+          ${e.hits ? `<span class="k-tag hits">使用 ${e.hits}回</span>` : ''}
+          ${e.source === 'meeting' ? `<span class="k-tag hits">会議中に登録</span>` : ''}
+        </div>
+      </div>
+      <div class="k-actions">
+        <button class="btn small" data-edit="${e.id}">✏️</button>
+        <button class="btn small danger" data-del="${e.id}">🗑</button>
+      </div>`;
+    item.querySelector('[data-edit]').addEventListener('click', () => openEdit(e));
+    item.querySelector('[data-del]').addEventListener('click', async () => {
+      if (confirm(`削除しますか？\n「${e.question}」`)) await removeEntry(e.id);
+    });
+    kList.appendChild(item);
+  }
+}
+kSearch.addEventListener('input', renderKnowledge);
+
+document.getElementById('btnAddEntry').addEventListener('click', async () => {
+  const question = document.getElementById('addQuestion').value.trim();
+  const answer = document.getElementById('addAnswer').value.trim();
+  if (!question || !answer) { alert('質問と回答は必須です'); return; }
+  await saveEntry({
+    question, answer,
+    keywords: parseKeywords(document.getElementById('addKeywords').value),
+    category: document.getElementById('addCategory').value.trim()
+  });
+  ['addQuestion', 'addAnswer', 'addKeywords', 'addCategory'].forEach(id => document.getElementById(id).value = '');
+});
+
+/* 編集モーダル */
+const editDialog = document.getElementById('editDialog');
+let editTarget = null;
+function openEdit(e) {
+  editTarget = e;
+  document.getElementById('editQuestion').value = e.question;
+  document.getElementById('editAnswer').value = e.answer;
+  document.getElementById('editKeywords').value = (e.keywords || []).join(', ');
+  document.getElementById('editCategory').value = e.category || '';
+  editDialog.showModal();
+}
+document.getElementById('btnEditCancel').addEventListener('click', () => editDialog.close());
+document.getElementById('btnEditSave').addEventListener('click', async () => {
+  const question = document.getElementById('editQuestion').value.trim();
+  const answer = document.getElementById('editAnswer').value.trim();
+  if (!question || !answer) return;
+  await saveEntry({
+    ...editTarget, question, answer,
+    keywords: parseKeywords(document.getElementById('editKeywords').value),
+    category: document.getElementById('editCategory').value.trim()
+  }, editTarget.id);
+  editDialog.close();
+});
+
+/* エクスポート / インポート */
+document.getElementById('btnExport').addEventListener('click', () => {
+  const data = entries.map(({ id, _grams, ...e }) => e);
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `meet-knowledge_${teamCode}_${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+document.getElementById('btnImport').addEventListener('click', () => document.getElementById('importFile').click());
+document.getElementById('importFile').addEventListener('change', async (ev) => {
+  const file = ev.target.files[0];
+  if (!file) return;
+  try {
+    const data = JSON.parse(await file.text());
+    if (!Array.isArray(data)) throw new Error('配列形式のJSONではありません');
+    let ok = 0;
+    for (const item of data) {
+      if (!item.question || !item.answer) continue;
+      await saveEntry({
+        question: String(item.question), answer: String(item.answer),
+        keywords: Array.isArray(item.keywords) ? item.keywords.map(String) : [],
+        category: String(item.category || ''), source: 'import'
+      });
+      ok++;
+    }
+    alert(`${ok}件インポートしました`);
+  } catch (e) {
+    alert('インポート失敗: ' + e.message);
+  }
+  ev.target.value = '';
+});
+
+/* ================= タブ切替 ================= */
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+    document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === btn.dataset.view));
+  });
+});
+
+dlog('Meet Knowledge v0.1.0 起動');
+</script>
+</body>
+</html>
