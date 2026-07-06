@@ -604,15 +604,33 @@
     alert('コンソールログをコピーしました');
   });
 
-  // ===== 問い合わせフォーム（モック：送信内容をログに残して成功表示） =====
-  // TODO: 本番では Formspree / Firebase Functions / Google Forms 等に差し替える
-  document.getElementById('contactForm').addEventListener('submit', e => {
+  // ===== 問い合わせフォーム（Formspree経由で実送信） =====
+  document.getElementById('contactForm').addEventListener('submit', async e => {
     e.preventDefault();
-    const data = Object.fromEntries(new FormData(e.target).entries());
-    console.log('contact form submitted (mock):', data);
-    document.getElementById('formSuccess').style.display = 'block';
-    e.target.querySelector('button[type=submit]').disabled = true;
-    e.target.querySelector('button[type=submit]').textContent = '送信済み ✓';
+    const form = e.target;
+    const submitBtn = form.querySelector('button[type=submit]');
+    const originalLabel = submitBtn.textContent;
+    submitBtn.disabled = true;
+    submitBtn.textContent = '送信中...';
+    try {
+      const res = await fetch('https://formspree.io/f/xgojqyja', {
+        method: 'POST',
+        body: new FormData(form),
+        headers: { 'Accept': 'application/json' }
+      });
+      if (res.ok) {
+        console.log('contact form submitted:', Object.fromEntries(new FormData(form).entries()));
+        document.getElementById('formSuccess').style.display = 'block';
+        submitBtn.textContent = '送信済み ✓';
+      } else {
+        throw new Error('Formspree returned ' + res.status);
+      }
+    } catch (err) {
+      console.error('contact form submit failed:', err);
+      submitBtn.disabled = false;
+      submitBtn.textContent = originalLabel;
+      alert('送信に失敗しました。お手数ですがLINEからご連絡いただくか、時間をおいて再度お試しください。');
+    }
   });
 
   // ===== 決済ボタンのクリック計測（モック） =====
