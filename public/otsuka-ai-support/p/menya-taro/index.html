@@ -213,6 +213,17 @@
     font-size: 13.5px; font-weight: 600; color: #9a4a00;
   }
 
+  /* ===== 事例協力割引 ===== */
+  .case-offer {
+    margin-top: 16px; background: #fff; border: 1.5px solid var(--line); border-radius: var(--radius);
+    padding: 16px 20px;
+  }
+  .co-title { font-family: var(--disp); font-weight: 700; font-size: 13.5px; color: var(--navy); margin-bottom: 10px; }
+  .co-item { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--muted); padding: 6px 0; cursor: pointer; }
+  .co-item input { width: 20px; height: 20px; accent-color: var(--accent); flex: 0 0 20px; cursor: pointer; }
+  .co-item input:disabled { cursor: not-allowed; opacity: .4; }
+  .co-item b { color: var(--navy); font-weight: 700; }
+
   /* ===== セミオーダー導線 ===== */
   .semi {
     margin: 40px 0 20px; background: var(--navy); color: #eef1f7; border-radius: var(--radius);
@@ -368,6 +379,12 @@
       <label class="menu-item"><input type="checkbox" value="9800" data-name="ロゴ" data-disc="7800"><span class="body"><span class="name">ロゴリフレッシュ 3案</span><br><span class="desc">現在の屋号ロゴをAIでブラッシュアップ</span></span><span class="price" data-full="9800" data-disc="7800">¥9,800</span></label>
     </div>
     <div class="set-banner" id="setBanner" style="display:none;">Webサイト特典が適用されました。販促物はすべて<b>20%オフ</b>です（納品後1週間以内のご注文も同じ価格でご案内します）。</div>
+
+    <div class="case-offer" id="caseOffer" style="display:none;">
+      <p class="co-title">サイトを事例としてご紹介させてください（任意・値引き特典あり）</p>
+      <label class="co-item"><input type="checkbox" id="caseOk"><span>事例集への掲載でOK <b>−¥5,000</b></span></label>
+      <label class="co-item"><input type="checkbox" id="interviewOk" disabled><span>取材（お話・お写真）にも応じてOK <b>さらに−¥5,000</b></span></label>
+    </div>
   </section>
 
   <div class="semi">
@@ -424,13 +441,16 @@
     });
   });
 
-  // ===== STEP3: 合計計算（Webサイト購入で販促物20%オフ） =====
+  // ===== STEP3: 合計計算（Webサイト購入で販促物20%オフ＋事例協力割引） =====
   const fmt = n => '¥' + n.toLocaleString();
+  const caseOkEl = document.getElementById('caseOk');
+  const interviewOkEl = document.getElementById('interviewOk');
+
   function recalc() {
     const siteOn = document.getElementById('siteItem').checked;
     const checked = [...document.querySelectorAll('#menuList input:checked')];
     const priceOf = c => (siteOn && c.dataset.disc) ? Number(c.dataset.disc) : Number(c.value);
-    const total = checked.reduce((sum, c) => sum + priceOf(c), 0);
+    let total = checked.reduce((sum, c) => sum + priceOf(c), 0);
 
     // 販促物の表示価格を切り替え（サイト選択中は20%オフ表示）
     document.querySelectorAll('#menuList .price[data-disc]').forEach(el => {
@@ -439,6 +459,15 @@
         : fmt(Number(el.dataset.full));
     });
 
+    // 事例協力割引（Webサイトご購入の方限定・任意）
+    document.getElementById('caseOffer').style.display = siteOn ? '' : 'none';
+    if (!siteOn) { caseOkEl.checked = false; interviewOkEl.checked = false; }
+    interviewOkEl.disabled = !caseOkEl.checked;
+    if (!caseOkEl.checked) interviewOkEl.checked = false;
+    const caseDiscount = siteOn && caseOkEl.checked ? 5000 : 0;
+    const interviewDiscount = siteOn && caseOkEl.checked && interviewOkEl.checked ? 5000 : 0;
+    total = Math.max(0, total - caseDiscount - interviewDiscount);
+
     document.getElementById('totalAmount').textContent = fmt(total);
     document.getElementById('offBadge').style.display = siteOn ? '' : 'none';
     document.getElementById('setBanner').style.display = siteOn ? '' : 'none';
@@ -446,9 +475,11 @@
       ? `${checked.length}点選択中（${checked.map(c => c.dataset.name).join('・')}）｜テーマ${currentTheme}`
       : '商品を選択してください';
     document.getElementById('payBtn').disabled = checked.length === 0;
-    console.log('recalc:', { items: checked.length, siteOn, total });
+    console.log('recalc:', { items: checked.length, siteOn, caseDiscount, interviewDiscount, total });
   }
   document.querySelectorAll('#menuList input').forEach(c => c.addEventListener('change', recalc));
+  caseOkEl.addEventListener('change', recalc);
+  interviewOkEl.addEventListener('change', recalc);
 
   // ===== 決済（モック） =====
   // TODO: 本番では Cloud Functions で Stripe Checkout Session を生成してリダイレクトする
