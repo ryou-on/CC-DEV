@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>hihaho ナレッジベース（日本語版）</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+  .prose-kb h1{font-size:1.5rem;font-weight:700;margin:1.2em 0 .6em;color:#1e1b4b}
+  .prose-kb h2{font-size:1.25rem;font-weight:700;margin:1.2em 0 .5em;color:#312e81;border-bottom:1px solid #e0e7ff;padding-bottom:.3em}
+  .prose-kb h3{font-size:1.1rem;font-weight:600;margin:1em 0 .4em;color:#3730a3}
+  .prose-kb p{margin:.6em 0;line-height:1.8}
+  .prose-kb ul,.prose-kb ol{margin:.6em 0;padding-left:1.5em;line-height:1.8}
+  .prose-kb ul{list-style:disc}.prose-kb ol{list-style:decimal}
+  .prose-kb img{max-width:100%;border-radius:.5rem;border:1px solid #e5e7eb;margin:.8em 0}
+  .prose-kb a{color:#7c3aed;text-decoration:underline}
+  .prose-kb code{background:#f3f4f6;padding:.1em .4em;border-radius:.25rem;font-size:.9em}
+  .prose-kb pre{background:#1e1e2e;color:#e5e7eb;padding:1em;border-radius:.5rem;overflow-x:auto;margin:.8em 0}
+  .prose-kb pre code{background:transparent;padding:0;color:inherit}
+  .prose-kb table{border-collapse:collapse;margin:.8em 0;width:100%}
+  .prose-kb th,.prose-kb td{border:1px solid #e5e7eb;padding:.4em .8em;text-align:left}
+  .prose-kb th{background:#f5f3ff}
+  .prose-kb blockquote{border-left:4px solid #a78bfa;padding-left:1em;color:#6b7280;margin:.8em 0}
+</style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+<!-- ヘッダー -->
+<header class="bg-gradient-to-r from-violet-700 to-purple-600 text-white sticky top-0 z-40 shadow">
+  <div class="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
+    <button id="btnHome" class="flex items-center gap-2 font-bold text-lg hover:opacity-80">
+      <span class="bg-white/20 rounded-lg px-2 py-0.5">hihaho</span>
+      <span>ナレッジベース</span>
+    </button>
+    <span id="btnVersion" class="text-xs bg-white/20 rounded-full px-2 py-0.5 cursor-pointer hover:bg-white/30">v0.1.0</span>
+    <div class="flex-1"></div>
+    <span id="artCount" class="text-xs opacity-80 hidden sm:inline"></span>
+  </div>
+  <div class="max-w-6xl mx-auto px-4 pb-3">
+    <div class="relative">
+      <input id="searchBox" type="search" placeholder="キーワードで検索（例: SCORM / 字幕 / 公開 / 統計）"
+        class="w-full rounded-xl px-4 py-2.5 pl-10 text-slate-800 focus:outline-none focus:ring-4 focus:ring-purple-300">
+      <svg class="w-5 h-5 absolute left-3 top-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 10.5a6.5 6.5 0 11-13 0 6.5 6.5 0 0113 0z"/></svg>
+    </div>
+  </div>
+</header>
+
+<div class="max-w-6xl mx-auto px-4 py-6 flex gap-6">
+  <!-- カテゴリサイドバー -->
+  <aside id="sidebar" class="hidden md:block w-60 shrink-0">
+    <div class="sticky top-32">
+      <h2 class="text-xs font-bold text-slate-500 uppercase mb-2">カテゴリ</h2>
+      <nav id="catNav" class="space-y-1"></nav>
+    </div>
+  </aside>
+
+  <!-- メイン -->
+  <main class="flex-1 min-w-0">
+    <div id="catChips" class="md:hidden flex gap-2 overflow-x-auto pb-3 mb-2 -mx-1 px-1"></div>
+    <div id="listView"></div>
+    <div id="articleView" class="hidden"></div>
+  </main>
+</div>
+
+<!-- フッター -->
+<footer class="border-t bg-white mt-10">
+  <div class="max-w-6xl mx-auto px-4 py-4 flex items-center gap-3 text-xs text-slate-500">
+    <span>hihaho ナレッジベース 日本語版 — スプライングローバル</span>
+    <a href="https://support.hihaho.com/en" target="_blank" rel="noopener" class="underline">英語版オリジナル</a>
+    <div class="flex-1"></div>
+    <button id="btnCopyLog" class="border rounded px-2 py-1 hover:bg-slate-50">🐞 デバッグログをコピー</button>
+  </div>
+</footer>
+
+<!-- モーダル（使い方 / リリースノート） -->
+<div id="modal" class="hidden fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl max-w-lg w-full max-h-[80vh] overflow-y-auto p-6">
+    <div class="flex items-center mb-3">
+      <h3 id="modalTitle" class="font-bold text-lg"></h3>
+      <button id="modalClose" class="ml-auto text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
+    </div>
+    <div id="modalBody" class="text-sm leading-relaxed"></div>
+  </div>
+</div>
+
+<script>
+// ===== デバッグログ収集（コンソールコピー機能） =====
+const _logs = [];
+['log','warn','error'].forEach(k => {
+  const orig = console[k].bind(console);
+  console[k] = (...a) => { _logs.push(`[${k}] ${a.map(x => { try { return typeof x === 'string' ? x : JSON.stringify(x); } catch { return String(x); } }).join(' ')}`); orig(...a); };
+});
+window.addEventListener('error', e => _logs.push(`[uncaught] ${e.message} @${e.filename}:${e.lineno}`));
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('btnCopyLog').onclick = () => {
+    navigator.clipboard.writeText(`hihaho-kb v${VERSION}\nUA: ${navigator.userAgent}\n\n${_logs.join('\n')}`);
+    alert('デバッグログをコピーしました');
+  };
+});
+
+// ===== 定数 =====
+const VERSION = '0.1.0';
+const RELEASE_NOTES = [
+  { v: '0.1.0', date: '2026-07-08', changes: ['初回リリース：公式サポートKB全記事の日本語版＋サービス資料ナレッジを公開', 'キーワード検索・カテゴリ絞り込み・記事のMarkdownコピーに対応'] },
+];
+const CAT_ORDER = ['プラットフォーム概要','アカウント設定','動画の追加・接続','インタラクション作成','公開・共有','統計・効果測定','よくある質問','活用アイデア・上級テクニック','パートナーシップ','サービス資料'];
+
+// ===== Firebase（管理画面から追加された公開ナレッジの読み込み） =====
+const firebaseConfig = {
+  apiKey: "AIzaSyDPlsAhtxbJBihy-EAHck9P7XbuMdzV0ds",
+  authDomain: "cc-dev-ps7.firebaseapp.com",
+  projectId: "cc-dev-ps7",
+  storageBucket: "cc-dev-ps7.firebasestorage.app",
+  messagingSenderId: "1029579090333",
+  appId: "1:1029579090333:web:5a2ea499fec97c497f2774"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+// ===== データ読み込み =====
+let ARTICLES = [];
+let currentCat = 'all';
+
+async function loadData() {
+  try {
+    const res = await fetch('kb-data.json?v=' + Date.now());
+    const json = await res.json();
+    ARTICLES = json.articles || [];
+  } catch (e) { console.error('kb-data.json 読み込み失敗', e.message); }
+  try {
+    const snap = await db.collection('hihaho-kb').where('audience', '==', 'public').get();
+    snap.forEach(d => {
+      const a = d.data();
+      ARTICLES.push({ id: d.id, title: a.title, category_ja: a.category_ja || 'その他', summary: a.summary || '', tags: a.tags || [], body: a.body || '', source: a.source || '', updated: a.updatedAt ? a.updatedAt.toDate().toISOString().slice(0,10) : '', fromDb: true });
+    });
+    console.log('Firestore公開ナレッジ:', snap.size, '件');
+  } catch (e) { console.warn('Firestore読み込みスキップ:', e.message); }
+  document.getElementById('artCount').textContent = `全${ARTICLES.length}記事`;
+  renderCats();
+  route();
+}
+
+// ===== カテゴリ =====
+function catList() {
+  const counts = {};
+  ARTICLES.forEach(a => counts[a.category_ja] = (counts[a.category_ja] || 0) + 1);
+  const cats = Object.keys(counts).sort((a, b) => {
+    const ia = CAT_ORDER.indexOf(a), ib = CAT_ORDER.indexOf(b);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+  });
+  return { cats, counts };
+}
+function renderCats() {
+  const { cats, counts } = catList();
+  const mk = (cat, label, count) => `<button data-cat="${cat}" class="catBtn w-full text-left rounded-lg px-3 py-2 text-sm hover:bg-violet-50 ${currentCat === cat ? 'bg-violet-100 text-violet-800 font-bold' : 'text-slate-600'}">${label}${count != null ? ` <span class="text-xs text-slate-400">(${count})</span>` : ''}</button>`;
+  document.getElementById('catNav').innerHTML = mk('all', 'すべて', ARTICLES.length) + cats.map(c => mk(c, c, counts[c])).join('');
+  document.getElementById('catChips').innerHTML = ['all', ...cats].map(c =>
+    `<button data-cat="${c}" class="catBtn shrink-0 rounded-full px-3 py-1.5 text-xs border ${currentCat === c ? 'bg-violet-600 text-white border-violet-600' : 'bg-white text-slate-600'}">${c === 'all' ? 'すべて' : c}</button>`).join('');
+  document.querySelectorAll('.catBtn').forEach(b => b.onclick = () => { currentCat = b.dataset.cat; location.hash = ''; renderCats(); renderList(); });
+}
+
+// ===== 検索・一覧 =====
+function searchFilter() {
+  const q = document.getElementById('searchBox').value.trim().toLowerCase();
+  let list = currentCat === 'all' ? ARTICLES : ARTICLES.filter(a => a.category_ja === currentCat);
+  if (!q) {
+    list = [...list].sort((x, y) => {
+      const ix = CAT_ORDER.indexOf(x.category_ja), iy = CAT_ORDER.indexOf(y.category_ja);
+      if (ix !== iy) return (ix < 0 ? 99 : ix) - (iy < 0 ? 99 : iy);
+      return x.title.localeCompare(y.title, 'ja');
+    });
+    return { list, q };
+  }
+  const terms = q.split(/[\s　]+/).filter(Boolean);
+  list = list.map(a => {
+    let score = 0;
+    const title = (a.title + ' ' + (a.title_en || '')).toLowerCase();
+    const sum = (a.summary || '').toLowerCase();
+    const body = (a.body || '').toLowerCase();
+    const tags = (a.tags || []).join(' ').toLowerCase();
+    for (const t of terms) {
+      if (title.includes(t)) score += 10;
+      else if (sum.includes(t) || tags.includes(t)) score += 5;
+      else if (body.includes(t)) score += 1;
+      else return null;
+    }
+    return { a, score };
+  }).filter(Boolean).sort((x, y) => y.score - x.score).map(x => x.a);
+  return { list, q };
+}
+function snippet(a, q) {
+  if (!q) return a.summary || '';
+  const body = a.body || '';
+  const idx = body.toLowerCase().indexOf(q.split(/[\s　]+/)[0]);
+  if (idx < 0) return a.summary || '';
+  return '…' + body.slice(Math.max(0, idx - 30), idx + 90).replace(/[#*\[\]!\n]/g, ' ') + '…';
+}
+function renderList() {
+  const { list, q } = searchFilter();
+  const lv = document.getElementById('listView');
+  document.getElementById('articleView').classList.add('hidden');
+  lv.classList.remove('hidden');
+  if (!list.length) { lv.innerHTML = `<div class="text-center text-slate-400 py-20">該当する記事がありません</div>`; return; }
+  lv.innerHTML = `<div class="space-y-2">` + list.map(a => `
+    <button data-id="${a.id}" class="artBtn w-full text-left bg-white rounded-xl border hover:border-violet-400 hover:shadow-sm transition p-4">
+      <div class="flex items-start gap-2">
+        <div class="min-w-0 flex-1">
+          <div class="font-bold text-slate-800">${esc(a.title)}</div>
+          <div class="text-xs text-slate-500 mt-1 line-clamp-2">${esc(snippet(a, q))}</div>
+        </div>
+        <span class="shrink-0 text-[10px] bg-violet-50 text-violet-700 rounded-full px-2 py-0.5 mt-0.5">${esc(a.category_ja)}</span>
+      </div>
+    </button>`).join('') + `</div>`;
+  lv.querySelectorAll('.artBtn').forEach(b => b.onclick = () => { location.hash = '#/a/' + encodeURIComponent(b.dataset.id); });
+}
+
+// ===== 記事表示 =====
+function renderArticle(id) {
+  const a = ARTICLES.find(x => String(x.id) === String(id));
+  const av = document.getElementById('articleView');
+  document.getElementById('listView').classList.add('hidden');
+  av.classList.remove('hidden');
+  if (!a) { av.innerHTML = '<div class="text-slate-400 py-20 text-center">記事が見つかりません</div>'; return; }
+  const html = DOMPurify.sanitize(marked.parse(a.body || ''));
+  av.innerHTML = `
+    <button id="btnBack" class="text-sm text-violet-700 hover:underline mb-3">← 一覧に戻る</button>
+    <article class="bg-white rounded-2xl border p-6 md:p-8">
+      <div class="flex flex-wrap items-center gap-2 mb-2">
+        <span class="text-[10px] bg-violet-50 text-violet-700 rounded-full px-2 py-0.5">${esc(a.category_ja)}</span>
+        ${a.updated ? `<span class="text-[10px] text-slate-400">${esc(a.updated)} 更新</span>` : ''}
+      </div>
+      <h1 class="text-2xl font-bold text-slate-900 mb-1">${esc(a.title)}</h1>
+      ${a.title_en ? `<div class="text-xs text-slate-400 mb-4">${esc(a.title_en)}</div>` : '<div class="mb-4"></div>'}
+      <div class="prose-kb text-[15px]">${html}</div>
+      <div class="mt-6 pt-4 border-t flex flex-wrap gap-2 text-xs">
+        <button id="btnCopyMd" class="border rounded-lg px-3 py-1.5 hover:bg-slate-50">📋 Markdownをコピー</button>
+        <button id="btnCopyUrl" class="border rounded-lg px-3 py-1.5 hover:bg-slate-50">🔗 この記事のURLをコピー</button>
+        ${a.source && a.source.startsWith('http') ? `<a href="${esc(a.source)}" target="_blank" rel="noopener" class="border rounded-lg px-3 py-1.5 hover:bg-slate-50">🌐 英語版オリジナル</a>` : ''}
+      </div>
+    </article>`;
+  document.getElementById('btnBack').onclick = () => { location.hash = ''; };
+  document.getElementById('btnCopyMd').onclick = e => { navigator.clipboard.writeText(`# ${a.title}\n\n${a.body}`); e.target.textContent = '✅ コピーしました'; };
+  document.getElementById('btnCopyUrl').onclick = e => { navigator.clipboard.writeText(location.href); e.target.textContent = '✅ コピーしました'; };
+  window.scrollTo(0, 0);
+}
+
+// ===== ルーティング =====
+function route() {
+  const m = location.hash.match(/^#\/a\/(.+)$/);
+  if (m) renderArticle(decodeURIComponent(m[1]));
+  else renderList();
+}
+window.addEventListener('hashchange', route);
+
+// ===== モーダル =====
+function showModal(title, html) {
+  document.getElementById('modalTitle').textContent = title;
+  document.getElementById('modalBody').innerHTML = html;
+  document.getElementById('modal').classList.remove('hidden');
+}
+document.getElementById('modal').onclick = e => { if (e.target.id === 'modal') e.target.classList.add('hidden'); };
+document.getElementById('modalClose').onclick = () => document.getElementById('modal').classList.add('hidden');
+document.getElementById('btnVersion').onclick = () => showModal('リリースノート',
+  RELEASE_NOTES.map(r => `<div class="mb-3"><div class="font-bold">v${r.v} <span class="text-xs text-slate-400 font-normal">${r.date}</span></div><ul class="list-disc pl-5 text-slate-600">${r.changes.map(c => `<li>${c}</li>`).join('')}</ul></div>`).join(''));
+document.getElementById('btnHome').onclick = () => { currentCat = 'all'; document.getElementById('searchBox').value = ''; location.hash = ''; renderCats(); renderList(); };
+
+// ===== 検索イベント =====
+let _t;
+document.getElementById('searchBox').addEventListener('input', () => { clearTimeout(_t); _t = setTimeout(() => { location.hash = ''; renderList(); }, 200); });
+
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+loadData();
+</script>
+</body>
+</html>

@@ -119,6 +119,24 @@ service cloud.firestore {
       allow delete: if true;
     }
 
+    // hihaho ナレッジベース
+    // audience: 'public' は誰でも読める / 'internal' は編集者のみ
+    // 編集者 = @splineglobal.com ドメイン or 許可リストのGoogleアカウント
+    function isKbEditor() {
+      return request.auth != null && (
+        request.auth.token.email.matches('.*@splineglobal[.]com') ||
+        request.auth.token.email == 'junpei.omote@gmail.com'
+      );
+    }
+    match /hihaho-kb/{docId} {
+      allow read: if resource.data.audience == 'public' || isKbEditor();
+      allow create, update: if isKbEditor() &&
+        request.resource.data.audience in ['public', 'internal'] &&
+        request.resource.data.title is string && request.resource.data.title.size() <= 200 &&
+        request.resource.data.body is string && request.resource.data.body.size() <= 100000;
+      allow delete: if isKbEditor();
+    }
+
     // その他は全拒否
     match /{document=**} {
       allow read, write: if false;

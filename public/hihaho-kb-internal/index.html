@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>hihaho ナレッジベース（社内版）</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+  .prose-kb h1{font-size:1.5rem;font-weight:700;margin:1.2em 0 .6em;color:#0f172a}
+  .prose-kb h2{font-size:1.25rem;font-weight:700;margin:1.2em 0 .5em;color:#1e293b;border-bottom:1px solid #e2e8f0;padding-bottom:.3em}
+  .prose-kb h3{font-size:1.1rem;font-weight:600;margin:1em 0 .4em;color:#334155}
+  .prose-kb p{margin:.6em 0;line-height:1.8}
+  .prose-kb ul,.prose-kb ol{margin:.6em 0;padding-left:1.5em;line-height:1.8}
+  .prose-kb ul{list-style:disc}.prose-kb ol{list-style:decimal}
+  .prose-kb img{max-width:100%;border-radius:.5rem;border:1px solid #e5e7eb;margin:.8em 0}
+  .prose-kb a{color:#0d9488;text-decoration:underline}
+  .prose-kb code{background:#f1f5f9;padding:.1em .4em;border-radius:.25rem;font-size:.9em}
+  .prose-kb pre{background:#0f172a;color:#e2e8f0;padding:1em;border-radius:.5rem;overflow-x:auto;margin:.8em 0}
+  .prose-kb pre code{background:transparent;padding:0;color:inherit}
+  .prose-kb table{border-collapse:collapse;margin:.8em 0;width:100%}
+  .prose-kb th,.prose-kb td{border:1px solid #e2e8f0;padding:.4em .8em;text-align:left}
+  .prose-kb th{background:#f0fdfa}
+  .prose-kb blockquote{border-left:4px solid #2dd4bf;padding-left:1em;color:#64748b;margin:.8em 0}
+</style>
+</head>
+<body class="bg-slate-100 text-slate-800">
+
+<!-- ログインゲート -->
+<div id="gate" class="fixed inset-0 z-50 bg-slate-900 flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl p-8 max-w-sm w-full text-center">
+    <div class="text-3xl mb-2">🔒</div>
+    <h1 class="font-bold text-xl mb-1">hihaho ナレッジベース</h1>
+    <div class="text-sm text-slate-500 mb-6">社内版（スプライングローバル）</div>
+    <button id="btnLogin" class="w-full bg-slate-800 text-white rounded-xl py-3 font-bold hover:bg-slate-700">Googleアカウントでログイン</button>
+    <div id="gateMsg" class="text-xs text-red-500 mt-3"></div>
+  </div>
+</div>
+
+<!-- ヘッダー -->
+<header class="bg-gradient-to-r from-slate-800 to-slate-700 text-white sticky top-0 z-40 shadow">
+  <div class="max-w-6xl mx-auto px-4 py-3 flex items-center gap-3">
+    <button id="btnHome" class="flex items-center gap-2 font-bold text-lg hover:opacity-80">
+      <span class="bg-teal-500/80 rounded-lg px-2 py-0.5">hihaho</span>
+      <span>ナレッジベース <span class="text-teal-300 text-sm">社内版</span></span>
+    </button>
+    <span id="btnVersion" class="text-xs bg-white/20 rounded-full px-2 py-0.5 cursor-pointer hover:bg-white/30">v0.1.0</span>
+    <div class="flex-1"></div>
+    <a href="../hihaho-kb-admin/" class="text-xs bg-teal-600 hover:bg-teal-500 rounded-lg px-3 py-1.5 hidden sm:inline">✏️ 管理画面</a>
+    <button id="btnLogout" class="text-xs opacity-70 hover:opacity-100">ログアウト</button>
+  </div>
+  <div class="max-w-6xl mx-auto px-4 pb-3">
+    <div class="relative">
+      <input id="searchBox" type="search" placeholder="キーワードで検索（社内ナレッジ含む全記事）"
+        class="w-full rounded-xl px-4 py-2.5 pl-10 text-slate-800 focus:outline-none focus:ring-4 focus:ring-teal-300">
+      <svg class="w-5 h-5 absolute left-3 top-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 10.5a6.5 6.5 0 11-13 0 6.5 6.5 0 0113 0z"/></svg>
+    </div>
+    <div class="flex gap-3 mt-2 text-xs">
+      <label class="flex items-center gap-1 cursor-pointer"><input type="radio" name="scope" value="all" checked class="scopeRadio accent-teal-400"> すべて</label>
+      <label class="flex items-center gap-1 cursor-pointer"><input type="radio" name="scope" value="internal" class="scopeRadio accent-teal-400"> 🔒 社内限定のみ</label>
+      <label class="flex items-center gap-1 cursor-pointer"><input type="radio" name="scope" value="public" class="scopeRadio accent-teal-400"> 🌐 公開情報のみ</label>
+      <span id="artCount" class="ml-auto opacity-70"></span>
+    </div>
+  </div>
+</header>
+
+<div class="max-w-6xl mx-auto px-4 py-6 flex gap-6">
+  <aside class="hidden md:block w-60 shrink-0">
+    <div class="sticky top-40">
+      <h2 class="text-xs font-bold text-slate-500 uppercase mb-2">カテゴリ</h2>
+      <nav id="catNav" class="space-y-1"></nav>
+    </div>
+  </aside>
+  <main class="flex-1 min-w-0">
+    <div id="catChips" class="md:hidden flex gap-2 overflow-x-auto pb-3 mb-2 -mx-1 px-1"></div>
+    <div id="listView"></div>
+    <div id="articleView" class="hidden"></div>
+  </main>
+</div>
+
+<footer class="border-t bg-white mt-10">
+  <div class="max-w-6xl mx-auto px-4 py-4 flex items-center gap-3 text-xs text-slate-500">
+    <span>hihaho ナレッジベース 社内版 — スプライングローバル</span>
+    <span id="userEmail"></span>
+    <div class="flex-1"></div>
+    <button id="btnCopyLog" class="border rounded px-2 py-1 hover:bg-slate-50">🐞 デバッグログをコピー</button>
+  </div>
+</footer>
+
+<div id="modal" class="hidden fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl max-w-lg w-full max-h-[80vh] overflow-y-auto p-6">
+    <div class="flex items-center mb-3">
+      <h3 id="modalTitle" class="font-bold text-lg"></h3>
+      <button id="modalClose" class="ml-auto text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
+    </div>
+    <div id="modalBody" class="text-sm leading-relaxed"></div>
+  </div>
+</div>
+
+<script>
+// ===== デバッグログ収集 =====
+const _logs = [];
+['log','warn','error'].forEach(k => {
+  const orig = console[k].bind(console);
+  console[k] = (...a) => { _logs.push(`[${k}] ${a.map(x => { try { return typeof x === 'string' ? x : JSON.stringify(x); } catch { return String(x); } }).join(' ')}`); orig(...a); };
+});
+window.addEventListener('error', e => _logs.push(`[uncaught] ${e.message} @${e.filename}:${e.lineno}`));
+
+const VERSION = '0.1.0';
+const RELEASE_NOTES = [
+  { v: '0.1.0', date: '2026-07-08', changes: ['初回リリース：公開KB全記事＋営業完全ガイド（社内限定）を横断検索', '社内限定/公開の絞り込み表示に対応'] },
+];
+const CAT_ORDER = ['営業ガイド（社内）','サービス資料','プラットフォーム概要','アカウント設定','動画の追加・接続','インタラクション作成','公開・共有','統計・効果測定','よくある質問','活用アイデア・上級テクニック','パートナーシップ'];
+const ALLOW = e => !!e && (/@splineglobal\.com$/.test(e) || e === 'junpei.omote@gmail.com');
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDPlsAhtxbJBihy-EAHck9P7XbuMdzV0ds",
+  authDomain: "cc-dev-ps7.firebaseapp.com",
+  projectId: "cc-dev-ps7",
+  storageBucket: "cc-dev-ps7.firebasestorage.app",
+  messagingSenderId: "1029579090333",
+  appId: "1:1029579090333:web:5a2ea499fec97c497f2774"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+// ===== 認証 =====
+document.getElementById('btnLogin').onclick = async () => {
+  try { await auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()); }
+  catch (e) { document.getElementById('gateMsg').textContent = 'ログイン失敗: ' + e.message; }
+};
+document.getElementById('btnLogout').onclick = () => auth.signOut().then(() => location.reload());
+auth.onAuthStateChanged(u => {
+  if (!u) { document.getElementById('gate').classList.remove('hidden'); return; }
+  if (!ALLOW(u.email)) {
+    document.getElementById('gateMsg').textContent = `${u.email} には閲覧権限がありません`;
+    auth.signOut();
+    return;
+  }
+  document.getElementById('gate').classList.add('hidden');
+  document.getElementById('userEmail').textContent = u.email;
+  loadData();
+});
+
+// ===== データ =====
+let ARTICLES = [], currentCat = 'all', scope = 'all', loaded = false;
+async function loadData() {
+  if (loaded) return; loaded = true;
+  try {
+    const res = await fetch('../hihaho-kb/kb-data.json?v=' + Date.now());
+    const json = await res.json();
+    (json.articles || []).forEach(a => ARTICLES.push(a));
+  } catch (e) { console.error('kb-data.json 読み込み失敗', e.message); }
+  try {
+    const snap = await db.collection('hihaho-kb').get();
+    snap.forEach(d => {
+      const a = d.data();
+      ARTICLES.push({ id: d.id, title: a.title, title_en: a.title_en || '', category_ja: a.category_ja || 'その他', audience: a.audience || 'internal', summary: a.summary || '', tags: a.tags || [], body: a.body || '', source: a.source || '', updated: a.updatedAt ? a.updatedAt.toDate().toISOString().slice(0,10) : '', fromDb: true });
+    });
+    console.log('Firestoreナレッジ:', snap.size, '件');
+  } catch (e) {
+    console.error('Firestore読み込み失敗:', e.message);
+    alert('社内ナレッジの読み込みに失敗しました（権限エラーの可能性）。デバッグログを確認してください。');
+  }
+  document.getElementById('artCount').textContent = `全${ARTICLES.length}記事`;
+  renderCats(); route();
+}
+
+// ===== カテゴリ・検索・一覧（公開版と共通ロジック） =====
+function scoped() {
+  if (scope === 'internal') return ARTICLES.filter(a => a.audience === 'internal');
+  if (scope === 'public') return ARTICLES.filter(a => a.audience !== 'internal');
+  return ARTICLES;
+}
+function catList() {
+  const counts = {};
+  scoped().forEach(a => counts[a.category_ja] = (counts[a.category_ja] || 0) + 1);
+  const cats = Object.keys(counts).sort((a, b) => {
+    const ia = CAT_ORDER.indexOf(a), ib = CAT_ORDER.indexOf(b);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+  });
+  return { cats, counts };
+}
+function renderCats() {
+  const { cats, counts } = catList();
+  const lock = c => (scoped().find(a => a.category_ja === c) || {}).audience === 'internal' ? '🔒 ' : '';
+  const mk = (cat, label, count) => `<button data-cat="${cat}" class="catBtn w-full text-left rounded-lg px-3 py-2 text-sm hover:bg-teal-50 ${currentCat === cat ? 'bg-teal-100 text-teal-900 font-bold' : 'text-slate-600'}">${label}${count != null ? ` <span class="text-xs text-slate-400">(${count})</span>` : ''}</button>`;
+  document.getElementById('catNav').innerHTML = mk('all', 'すべて', scoped().length) + cats.map(c => mk(c, lock(c) + c, counts[c])).join('');
+  document.getElementById('catChips').innerHTML = ['all', ...cats].map(c =>
+    `<button data-cat="${c}" class="catBtn shrink-0 rounded-full px-3 py-1.5 text-xs border ${currentCat === c ? 'bg-teal-700 text-white border-teal-700' : 'bg-white text-slate-600'}">${c === 'all' ? 'すべて' : c}</button>`).join('');
+  document.querySelectorAll('.catBtn').forEach(b => b.onclick = () => { currentCat = b.dataset.cat; location.hash = ''; renderCats(); renderList(); });
+}
+function searchFilter() {
+  const q = document.getElementById('searchBox').value.trim().toLowerCase();
+  let list = currentCat === 'all' ? scoped() : scoped().filter(a => a.category_ja === currentCat);
+  if (!q) {
+    list = [...list].sort((x, y) => {
+      const ix = CAT_ORDER.indexOf(x.category_ja), iy = CAT_ORDER.indexOf(y.category_ja);
+      if (ix !== iy) return (ix < 0 ? 99 : ix) - (iy < 0 ? 99 : iy);
+      return x.title.localeCompare(y.title, 'ja');
+    });
+    return { list, q };
+  }
+  const terms = q.split(/[\s　]+/).filter(Boolean);
+  list = list.map(a => {
+    let score = 0;
+    const title = (a.title + ' ' + (a.title_en || '')).toLowerCase();
+    const sum = (a.summary || '').toLowerCase();
+    const body = (a.body || '').toLowerCase();
+    const tags = (a.tags || []).join(' ').toLowerCase();
+    for (const t of terms) {
+      if (title.includes(t)) score += 10;
+      else if (sum.includes(t) || tags.includes(t)) score += 5;
+      else if (body.includes(t)) score += 1;
+      else return null;
+    }
+    return { a, score };
+  }).filter(Boolean).sort((x, y) => y.score - x.score).map(x => x.a);
+  return { list, q };
+}
+function snippet(a, q) {
+  if (!q) return a.summary || '';
+  const body = a.body || '';
+  const idx = body.toLowerCase().indexOf(q.split(/[\s　]+/)[0]);
+  if (idx < 0) return a.summary || '';
+  return '…' + body.slice(Math.max(0, idx - 30), idx + 90).replace(/[#*\[\]!\n]/g, ' ') + '…';
+}
+function renderList() {
+  const { list, q } = searchFilter();
+  const lv = document.getElementById('listView');
+  document.getElementById('articleView').classList.add('hidden');
+  lv.classList.remove('hidden');
+  if (!list.length) { lv.innerHTML = `<div class="text-center text-slate-400 py-20">該当する記事がありません</div>`; return; }
+  lv.innerHTML = `<div class="space-y-2">` + list.map(a => `
+    <button data-id="${esc(String(a.id))}" class="artBtn w-full text-left bg-white rounded-xl border hover:border-teal-400 hover:shadow-sm transition p-4 ${a.audience === 'internal' ? 'border-l-4 border-l-amber-400' : ''}">
+      <div class="flex items-start gap-2">
+        <div class="min-w-0 flex-1">
+          <div class="font-bold text-slate-800">${a.audience === 'internal' ? '🔒 ' : ''}${esc(a.title)}</div>
+          <div class="text-xs text-slate-500 mt-1 line-clamp-2">${esc(snippet(a, q))}</div>
+        </div>
+        <span class="shrink-0 text-[10px] ${a.audience === 'internal' ? 'bg-amber-50 text-amber-700' : 'bg-teal-50 text-teal-700'} rounded-full px-2 py-0.5 mt-0.5">${esc(a.category_ja)}</span>
+      </div>
+    </button>`).join('') + `</div>`;
+  lv.querySelectorAll('.artBtn').forEach(b => b.onclick = () => { location.hash = '#/a/' + encodeURIComponent(b.dataset.id); });
+}
+function renderArticle(id) {
+  const a = ARTICLES.find(x => String(x.id) === String(id));
+  const av = document.getElementById('articleView');
+  document.getElementById('listView').classList.add('hidden');
+  av.classList.remove('hidden');
+  if (!a) { av.innerHTML = '<div class="text-slate-400 py-20 text-center">記事が見つかりません</div>'; return; }
+  const html = DOMPurify.sanitize(marked.parse(a.body || ''));
+  av.innerHTML = `
+    <button id="btnBack" class="text-sm text-teal-700 hover:underline mb-3">← 一覧に戻る</button>
+    <article class="bg-white rounded-2xl border p-6 md:p-8">
+      <div class="flex flex-wrap items-center gap-2 mb-2">
+        <span class="text-[10px] ${a.audience === 'internal' ? 'bg-amber-50 text-amber-700' : 'bg-teal-50 text-teal-700'} rounded-full px-2 py-0.5">${a.audience === 'internal' ? '🔒 社内限定・' : ''}${esc(a.category_ja)}</span>
+        ${a.updated ? `<span class="text-[10px] text-slate-400">${esc(a.updated)} 更新</span>` : ''}
+      </div>
+      ${a.audience === 'internal' ? '<div class="text-xs bg-amber-50 border border-amber-200 text-amber-800 rounded-lg px-3 py-2 mb-3">⚠️ 社内限定情報です。社外への共有・転載は不可。</div>' : ''}
+      <h1 class="text-2xl font-bold text-slate-900 mb-1">${esc(a.title)}</h1>
+      ${a.title_en ? `<div class="text-xs text-slate-400 mb-4">${esc(a.title_en)}</div>` : '<div class="mb-4"></div>'}
+      <div class="prose-kb text-[15px]">${html}</div>
+      <div class="mt-6 pt-4 border-t flex flex-wrap gap-2 text-xs">
+        <button id="btnCopyMd" class="border rounded-lg px-3 py-1.5 hover:bg-slate-50">📋 Markdownをコピー</button>
+        ${a.source && String(a.source).startsWith('http') ? `<a href="${esc(a.source)}" target="_blank" rel="noopener" class="border rounded-lg px-3 py-1.5 hover:bg-slate-50">🌐 英語版オリジナル</a>` : ''}
+        ${a.source && !String(a.source).startsWith('http') ? `<span class="text-slate-400 px-1 py-1.5">出典: ${esc(a.source)}</span>` : ''}
+      </div>
+    </article>`;
+  document.getElementById('btnBack').onclick = () => { location.hash = ''; };
+  document.getElementById('btnCopyMd').onclick = e => { navigator.clipboard.writeText(`# ${a.title}\n\n${a.body}`); e.target.textContent = '✅ コピーしました'; };
+  window.scrollTo(0, 0);
+}
+function route() {
+  const m = location.hash.match(/^#\/a\/(.+)$/);
+  if (m) renderArticle(decodeURIComponent(m[1]));
+  else renderList();
+}
+window.addEventListener('hashchange', route);
+
+// ===== UIイベント =====
+document.querySelectorAll('.scopeRadio').forEach(r => r.onchange = () => { scope = r.value; currentCat = 'all'; location.hash = ''; renderCats(); renderList(); });
+function showModal(title, html) {
+  document.getElementById('modalTitle').textContent = title;
+  document.getElementById('modalBody').innerHTML = html;
+  document.getElementById('modal').classList.remove('hidden');
+}
+document.getElementById('modal').onclick = e => { if (e.target.id === 'modal') e.target.classList.add('hidden'); };
+document.getElementById('modalClose').onclick = () => document.getElementById('modal').classList.add('hidden');
+document.getElementById('btnVersion').onclick = () => showModal('リリースノート',
+  RELEASE_NOTES.map(r => `<div class="mb-3"><div class="font-bold">v${r.v} <span class="text-xs text-slate-400 font-normal">${r.date}</span></div><ul class="list-disc pl-5 text-slate-600">${r.changes.map(c => `<li>${c}</li>`).join('')}</ul></div>`).join(''));
+document.getElementById('btnHome').onclick = () => { currentCat = 'all'; document.getElementById('searchBox').value = ''; location.hash = ''; renderCats(); renderList(); };
+let _t;
+document.getElementById('searchBox').addEventListener('input', () => { clearTimeout(_t); _t = setTimeout(() => { location.hash = ''; renderList(); }, 200); });
+document.getElementById('btnCopyLog').onclick = () => {
+  navigator.clipboard.writeText(`hihaho-kb-internal v${VERSION}\nUA: ${navigator.userAgent}\n\n${_logs.join('\n')}`);
+  alert('デバッグログをコピーしました');
+};
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+</script>
+</body>
+</html>

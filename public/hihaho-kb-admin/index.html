@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>hihaho KB 管理画面</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+  .prose-kb h1{font-size:1.3rem;font-weight:700;margin:1em 0 .5em}
+  .prose-kb h2{font-size:1.15rem;font-weight:700;margin:1em 0 .4em;border-bottom:1px solid #e5e7eb;padding-bottom:.2em}
+  .prose-kb h3{font-size:1.05rem;font-weight:600;margin:.8em 0 .3em}
+  .prose-kb p{margin:.5em 0;line-height:1.7}
+  .prose-kb ul,.prose-kb ol{margin:.5em 0;padding-left:1.4em;line-height:1.7}
+  .prose-kb ul{list-style:disc}.prose-kb ol{list-style:decimal}
+  .prose-kb img{max-width:100%;border-radius:.4rem;margin:.6em 0}
+  .prose-kb code{background:#f3f4f6;padding:.1em .3em;border-radius:.2rem;font-size:.9em}
+  .prose-kb table{border-collapse:collapse;margin:.6em 0}
+  .prose-kb th,.prose-kb td{border:1px solid #e5e7eb;padding:.3em .6em}
+</style>
+</head>
+<body class="bg-slate-100 text-slate-800">
+
+<!-- ログインゲート -->
+<div id="gate" class="fixed inset-0 z-50 bg-emerald-950 flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl p-8 max-w-sm w-full text-center">
+    <div class="text-3xl mb-2">✏️</div>
+    <h1 class="font-bold text-xl mb-1">hihaho KB 管理画面</h1>
+    <div class="text-sm text-slate-500 mb-6">ナレッジの追加・編集（編集者のみ）</div>
+    <button id="btnLogin" class="w-full bg-emerald-700 text-white rounded-xl py-3 font-bold hover:bg-emerald-600">Googleアカウントでログイン</button>
+    <div id="gateMsg" class="text-xs text-red-500 mt-3"></div>
+  </div>
+</div>
+
+<!-- ヘッダー -->
+<header class="bg-emerald-800 text-white sticky top-0 z-40 shadow">
+  <div class="max-w-5xl mx-auto px-4 py-3 flex items-center gap-3">
+    <span class="font-bold text-lg"><span class="bg-white/20 rounded-lg px-2 py-0.5">hihaho</span> KB 管理画面</span>
+    <span id="btnVersion" class="text-xs bg-white/20 rounded-full px-2 py-0.5 cursor-pointer hover:bg-white/30">v0.1.0</span>
+    <div class="flex-1"></div>
+    <a href="../hihaho-kb-internal/" class="text-xs underline opacity-80 hover:opacity-100 hidden sm:inline">社内KBを見る</a>
+    <button id="btnLogout" class="text-xs opacity-70 hover:opacity-100">ログアウト</button>
+  </div>
+</header>
+
+<div class="max-w-5xl mx-auto px-4 py-6 space-y-6">
+
+  <!-- 新規追加 / 編集フォーム -->
+  <section class="bg-white rounded-2xl border p-5">
+    <div class="flex items-center gap-2 mb-4">
+      <h2 id="formTitle" class="font-bold text-lg">➕ ナレッジを追加</h2>
+      <button id="btnResetForm" class="hidden text-xs border rounded-lg px-2 py-1 hover:bg-slate-50">新規追加に戻す</button>
+    </div>
+    <div class="grid md:grid-cols-2 gap-3 mb-3">
+      <div>
+        <label class="text-xs font-bold text-slate-500">タイトル *</label>
+        <input id="fTitle" class="w-full border rounded-lg px-3 py-2 mt-1" placeholder="例: 〇〇社との商談でのFAQ">
+      </div>
+      <div>
+        <label class="text-xs font-bold text-slate-500">カテゴリ *</label>
+        <input id="fCat" list="catOptions" class="w-full border rounded-lg px-3 py-2 mt-1" placeholder="選択または新規入力">
+        <datalist id="catOptions"></datalist>
+      </div>
+      <div>
+        <label class="text-xs font-bold text-slate-500">公開範囲 *</label>
+        <div class="flex gap-4 mt-2 text-sm">
+          <label class="flex items-center gap-1.5 cursor-pointer"><input type="radio" name="fAud" value="internal" checked class="accent-emerald-600"> 🔒 社内限定</label>
+          <label class="flex items-center gap-1.5 cursor-pointer"><input type="radio" name="fAud" value="public" class="accent-emerald-600"> 🌐 公開</label>
+        </div>
+      </div>
+      <div>
+        <label class="text-xs font-bold text-slate-500">タグ（カンマ区切り）</label>
+        <input id="fTags" class="w-full border rounded-lg px-3 py-2 mt-1" placeholder="hihaho, 商談, LMS">
+      </div>
+      <div class="md:col-span-2">
+        <label class="text-xs font-bold text-slate-500">概要（検索一覧に表示・1文）</label>
+        <input id="fSummary" class="w-full border rounded-lg px-3 py-2 mt-1" placeholder="この記事の内容を1文で">
+      </div>
+      <div class="md:col-span-2">
+        <label class="text-xs font-bold text-slate-500">出典（会議名・資料名・URLなど）</label>
+        <input id="fSource" class="w-full border rounded-lg px-3 py-2 mt-1" placeholder="例: 2026-07-01 〇〇社ミーティング議事録">
+      </div>
+    </div>
+    <div class="flex items-center gap-2 mb-1">
+      <label class="text-xs font-bold text-slate-500">本文（Markdown可）*</label>
+      <button id="btnPreview" class="ml-auto text-xs border rounded-lg px-2 py-1 hover:bg-slate-50">👁 プレビュー</button>
+    </div>
+    <textarea id="fBody" rows="10" class="w-full border rounded-lg px-3 py-2 font-mono text-sm" placeholder="## 質問&#10;〇〇はできますか？&#10;&#10;## 回答&#10;できます。手順は…&#10;&#10;（会議の文字起こしやメモを貼り付けて整形してもOK）"></textarea>
+    <div id="previewPane" class="hidden border rounded-lg p-4 mt-2 bg-slate-50 prose-kb text-sm"></div>
+    <div class="flex gap-2 mt-4">
+      <button id="btnSave" class="bg-emerald-700 text-white rounded-xl px-6 py-2.5 font-bold hover:bg-emerald-600">保存</button>
+      <span id="saveMsg" class="text-sm text-emerald-700 self-center"></span>
+    </div>
+  </section>
+
+  <!-- 登録済み一覧 -->
+  <section class="bg-white rounded-2xl border p-5">
+    <div class="flex flex-wrap items-center gap-2 mb-4">
+      <h2 class="font-bold text-lg">📚 登録済みナレッジ（Firestore）</h2>
+      <span id="dbCount" class="text-xs text-slate-400"></span>
+      <div class="flex-1"></div>
+      <input id="listSearch" type="search" placeholder="絞り込み" class="border rounded-lg px-3 py-1.5 text-sm w-40">
+      <button id="btnImport" class="text-xs border rounded-lg px-3 py-1.5 hover:bg-slate-50">📥 JSON一括インポート</button>
+      <button id="btnExport" class="text-xs border rounded-lg px-3 py-1.5 hover:bg-slate-50">📤 JSONエクスポート</button>
+      <input type="file" id="importFile" accept=".json" class="hidden">
+    </div>
+    <div class="text-xs text-slate-400 mb-3">※ 翻訳済みサポート記事・サービス資料ノートはリポジトリ（hihaho-kb-content/）で管理され、ここには表示されません。ここで管理するのは追加ナレッジ（会議・音声由来など）と営業ガイドです。</div>
+    <div id="dbList" class="space-y-2"></div>
+  </section>
+
+  <footer class="flex items-center gap-3 text-xs text-slate-500 pb-8">
+    <span>hihaho KB 管理画面 — スプライングローバル</span>
+    <span id="userEmail"></span>
+    <div class="flex-1"></div>
+    <button id="btnCopyLog" class="border rounded px-2 py-1 hover:bg-white">🐞 デバッグログをコピー</button>
+  </footer>
+</div>
+
+<div id="modal" class="hidden fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl max-w-lg w-full max-h-[80vh] overflow-y-auto p-6">
+    <div class="flex items-center mb-3">
+      <h3 id="modalTitle" class="font-bold text-lg"></h3>
+      <button id="modalClose" class="ml-auto text-slate-400 hover:text-slate-600 text-2xl leading-none">&times;</button>
+    </div>
+    <div id="modalBody" class="text-sm leading-relaxed"></div>
+  </div>
+</div>
+
+<script>
+// ===== デバッグログ収集 =====
+const _logs = [];
+['log','warn','error'].forEach(k => {
+  const orig = console[k].bind(console);
+  console[k] = (...a) => { _logs.push(`[${k}] ${a.map(x => { try { return typeof x === 'string' ? x : JSON.stringify(x); } catch { return String(x); } }).join(' ')}`); orig(...a); };
+});
+window.addEventListener('error', e => _logs.push(`[uncaught] ${e.message} @${e.filename}:${e.lineno}`));
+
+const VERSION = '0.1.0';
+const RELEASE_NOTES = [
+  { v: '0.1.0', date: '2026-07-08', changes: ['初回リリース：ナレッジの追加・編集・削除', 'JSON一括インポート／エクスポート', 'Markdownプレビュー・Obsidian用Markdownコピー'] },
+];
+const DEFAULT_CATS = ['営業ガイド（社内）','会議ナレッジ','顧客FAQ','サービス資料','プラットフォーム概要','アカウント設定','動画の追加・接続','インタラクション作成','公開・共有','統計・効果測定','よくある質問','活用アイデア・上級テクニック','その他'];
+const ALLOW = e => !!e && (/@splineglobal\.com$/.test(e) || e === 'junpei.omote@gmail.com');
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDPlsAhtxbJBihy-EAHck9P7XbuMdzV0ds",
+  authDomain: "cc-dev-ps7.firebaseapp.com",
+  projectId: "cc-dev-ps7",
+  storageBucket: "cc-dev-ps7.firebasestorage.app",
+  messagingSenderId: "1029579090333",
+  appId: "1:1029579090333:web:5a2ea499fec97c497f2774"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+const COL = 'hihaho-kb';
+
+// ===== 認証 =====
+document.getElementById('btnLogin').onclick = async () => {
+  try { await auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()); }
+  catch (e) { document.getElementById('gateMsg').textContent = 'ログイン失敗: ' + e.message; }
+};
+document.getElementById('btnLogout').onclick = () => auth.signOut().then(() => location.reload());
+auth.onAuthStateChanged(u => {
+  if (!u) { document.getElementById('gate').classList.remove('hidden'); return; }
+  if (!ALLOW(u.email)) {
+    document.getElementById('gateMsg').textContent = `${u.email} には編集権限がありません`;
+    auth.signOut();
+    return;
+  }
+  document.getElementById('gate').classList.add('hidden');
+  document.getElementById('userEmail').textContent = u.email;
+  loadList();
+});
+
+// ===== 一覧 =====
+let DOCS = [], editId = null;
+async function loadList() {
+  try {
+    const snap = await db.collection(COL).get();
+    DOCS = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    DOCS.sort((a, b) => (b.updatedAt?.seconds || 0) - (a.updatedAt?.seconds || 0));
+    console.log('Firestore件数:', DOCS.length);
+  } catch (e) { console.error('一覧取得失敗:', e.message); alert('一覧の取得に失敗: ' + e.message); }
+  renderCatOptions();
+  renderList();
+}
+function renderCatOptions() {
+  const cats = [...new Set([...DEFAULT_CATS, ...DOCS.map(d => d.category_ja).filter(Boolean)])];
+  document.getElementById('catOptions').innerHTML = cats.map(c => `<option value="${esc(c)}">`).join('');
+}
+function renderList() {
+  const q = document.getElementById('listSearch').value.trim().toLowerCase();
+  const list = q ? DOCS.filter(d => (d.title + d.category_ja + (d.body || '') + (d.summary || '')).toLowerCase().includes(q)) : DOCS;
+  document.getElementById('dbCount').textContent = `${list.length} / ${DOCS.length}件`;
+  document.getElementById('dbList').innerHTML = list.length ? list.map(d => `
+    <div class="border rounded-xl p-3 flex items-start gap-3 ${d.audience === 'internal' ? 'border-l-4 border-l-amber-400' : 'border-l-4 border-l-teal-400'}">
+      <div class="min-w-0 flex-1">
+        <div class="font-bold text-sm">${d.audience === 'internal' ? '🔒' : '🌐'} ${esc(d.title)}</div>
+        <div class="text-xs text-slate-400 mt-0.5">${esc(d.category_ja || '')}${d.updatedAt ? ' ・ ' + new Date(d.updatedAt.seconds * 1000).toLocaleDateString('ja-JP') : ''} ・ ${esc(d.summary || '')}</div>
+      </div>
+      <div class="flex gap-1 shrink-0">
+        <button data-id="${d.id}" class="editBtn text-xs border rounded-lg px-2 py-1 hover:bg-slate-50">編集</button>
+        <button data-id="${d.id}" class="mdBtn text-xs border rounded-lg px-2 py-1 hover:bg-slate-50" title="Obsidian用Markdownをコピー">md</button>
+        <button data-id="${d.id}" class="delBtn text-xs border border-red-200 text-red-500 rounded-lg px-2 py-1 hover:bg-red-50">削除</button>
+      </div>
+    </div>`).join('') : '<div class="text-center text-slate-400 py-8 text-sm">まだ登録がありません。上のフォームまたはJSON一括インポートから追加してください。</div>';
+  document.querySelectorAll('.editBtn').forEach(b => b.onclick = () => startEdit(b.dataset.id));
+  document.querySelectorAll('.delBtn').forEach(b => b.onclick = () => delDoc(b.dataset.id));
+  document.querySelectorAll('.mdBtn').forEach(b => b.onclick = e => copyMd(b.dataset.id, e.target));
+}
+document.getElementById('listSearch').addEventListener('input', renderList);
+
+// ===== フォーム =====
+function formData() {
+  return {
+    title: document.getElementById('fTitle').value.trim(),
+    category_ja: document.getElementById('fCat').value.trim(),
+    audience: document.querySelector('input[name="fAud"]:checked').value,
+    tags: document.getElementById('fTags').value.split(',').map(s => s.trim()).filter(Boolean),
+    summary: document.getElementById('fSummary').value.trim(),
+    source: document.getElementById('fSource').value.trim(),
+    body: document.getElementById('fBody').value.trim(),
+  };
+}
+function fillForm(d) {
+  document.getElementById('fTitle').value = d.title || '';
+  document.getElementById('fCat').value = d.category_ja || '';
+  document.querySelector(`input[name="fAud"][value="${d.audience === 'public' ? 'public' : 'internal'}"]`).checked = true;
+  document.getElementById('fTags').value = (d.tags || []).join(', ');
+  document.getElementById('fSummary').value = d.summary || '';
+  document.getElementById('fSource').value = d.source || '';
+  document.getElementById('fBody').value = d.body || '';
+}
+function startEdit(id) {
+  const d = DOCS.find(x => x.id === id);
+  if (!d) return;
+  editId = id;
+  fillForm(d);
+  document.getElementById('formTitle').textContent = '✏️ 編集中: ' + d.title;
+  document.getElementById('btnResetForm').classList.remove('hidden');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+document.getElementById('btnResetForm').onclick = () => {
+  editId = null;
+  fillForm({});
+  document.getElementById('formTitle').textContent = '➕ ナレッジを追加';
+  document.getElementById('btnResetForm').classList.add('hidden');
+};
+document.getElementById('btnSave').onclick = async () => {
+  const d = formData();
+  if (!d.title || !d.category_ja || !d.body) { alert('タイトル・カテゴリ・本文は必須です'); return; }
+  const msg = document.getElementById('saveMsg');
+  try {
+    const payload = { ...d, updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: auth.currentUser.email };
+    if (editId) await db.collection(COL).doc(editId).update(payload);
+    else { payload.createdAt = firebase.firestore.FieldValue.serverTimestamp(); await db.collection(COL).add(payload); }
+    msg.textContent = '✅ 保存しました';
+    setTimeout(() => msg.textContent = '', 3000);
+    document.getElementById('btnResetForm').onclick();
+    loadList();
+  } catch (e) { console.error('保存失敗:', e.message); alert('保存失敗: ' + e.message); }
+};
+async function delDoc(id) {
+  const d = DOCS.find(x => x.id === id);
+  if (!confirm(`「${d?.title}」を削除しますか？この操作は取り消せません。`)) return;
+  try { await db.collection(COL).doc(id).delete(); loadList(); }
+  catch (e) { alert('削除失敗: ' + e.message); }
+}
+function copyMd(id, btn) {
+  const d = DOCS.find(x => x.id === id);
+  if (!d) return;
+  const md = `---\ntitle: "${d.title}"\ncategory_ja: ${d.category_ja}\naudience: ${d.audience}\nsource: "${d.source || ''}"\nsummary: "${d.summary || ''}"\ntags: [${(d.tags || []).join(', ')}]\n---\n\n${d.body}\n\n## 関連トピック\n- [[hihahoナレッジベース INDEX]]\n`;
+  navigator.clipboard.writeText(md);
+  btn.textContent = '✅';
+  setTimeout(() => btn.textContent = 'md', 2000);
+}
+
+// ===== プレビュー =====
+document.getElementById('btnPreview').onclick = () => {
+  const p = document.getElementById('previewPane');
+  p.classList.toggle('hidden');
+  if (!p.classList.contains('hidden')) p.innerHTML = DOMPurify.sanitize(marked.parse(document.getElementById('fBody').value));
+};
+
+// ===== インポート / エクスポート =====
+document.getElementById('btnImport').onclick = () => document.getElementById('importFile').click();
+document.getElementById('importFile').onchange = async e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    const json = JSON.parse(await file.text());
+    const arts = json.articles || json;
+    if (!Array.isArray(arts)) throw new Error('articles 配列が見つかりません');
+    if (!confirm(`${arts.length}件をインポートします。既存の同一IDは上書きされます。よろしいですか？`)) return;
+    let n = 0;
+    for (let i = 0; i < arts.length; i += 400) {
+      const batch = db.batch();
+      for (const a of arts.slice(i, i + 400)) {
+        const ref = a.id ? db.collection(COL).doc(String(a.id)) : db.collection(COL).doc();
+        batch.set(ref, {
+          title: a.title || '無題', title_en: a.title_en || '', category_ja: a.category_ja || 'その他',
+          audience: a.audience === 'public' ? 'public' : 'internal',
+          tags: a.tags || [], summary: a.summary || '', source: a.source || '', body: a.body || '',
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(), updatedBy: auth.currentUser.email,
+        });
+        n++;
+      }
+      await batch.commit();
+    }
+    alert(`✅ ${n}件をインポートしました`);
+    loadList();
+  } catch (err) { console.error('インポート失敗:', err.message); alert('インポート失敗: ' + err.message); }
+  e.target.value = '';
+};
+document.getElementById('btnExport').onclick = () => {
+  const blob = new Blob([JSON.stringify({ exported: new Date().toISOString(), count: DOCS.length, articles: DOCS }, null, 1)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `hihaho-kb-export-${new Date().toISOString().slice(0, 10)}.json`;
+  a.click();
+};
+
+// ===== モーダル・その他 =====
+function showModal(title, html) {
+  document.getElementById('modalTitle').textContent = title;
+  document.getElementById('modalBody').innerHTML = html;
+  document.getElementById('modal').classList.remove('hidden');
+}
+document.getElementById('modal').onclick = e => { if (e.target.id === 'modal') e.target.classList.add('hidden'); };
+document.getElementById('modalClose').onclick = () => document.getElementById('modal').classList.add('hidden');
+document.getElementById('btnVersion').onclick = () => showModal('リリースノート',
+  RELEASE_NOTES.map(r => `<div class="mb-3"><div class="font-bold">v${r.v} <span class="text-xs text-slate-400 font-normal">${r.date}</span></div><ul class="list-disc pl-5 text-slate-600">${r.changes.map(c => `<li>${c}</li>`).join('')}</ul></div>`).join(''));
+document.getElementById('btnCopyLog').onclick = () => {
+  navigator.clipboard.writeText(`hihaho-kb-admin v${VERSION}\nUA: ${navigator.userAgent}\n\n${_logs.join('\n')}`);
+  alert('デバッグログをコピーしました');
+};
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+</script>
+</body>
+</html>
