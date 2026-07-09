@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1920">
+<title>MATLABによるプログラミング入門 — 要約・用語集</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --fs: 15px;
+  --bg:       rgba(12, 20, 36, 0.95);
+  --surface:  rgba(22, 33, 54, 0.97);
+  --border:   rgba(80, 120, 200, 0.28);
+  --text:     #e2ecff;
+  --text-sub: #8ba0c0;
+  --accent:   #4f9cf9;
+  --ok:       #34d399;
+  --panel-max-h: 460px;
+}
+
+html, body {
+  width: 1920px;
+  height: 1080px;
+  overflow: hidden;
+  background: transparent;
+  font-family: 'Hiragino Sans', 'Yu Gothic UI', 'Noto Sans JP', system-ui, sans-serif;
+}
+
+/* ── 常時表示タブボタン ── */
+#tab-btn {
+  position: absolute;
+  top: 0;
+  left: 32px;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 20px;
+  height: 48px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 12px 12px;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  cursor: pointer;
+  user-select: none;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: background .15s;
+}
+#tab-btn:hover { background: rgba(30, 45, 72, 0.99); }
+#tab-btn .arrow {
+  font-size: 11px;
+  color: var(--text-sub);
+  transition: transform .3s ease;
+}
+#tab-btn.open .arrow { transform: rotate(180deg); }
+
+/* ── パネル本体 ── */
+#panel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1920px;
+  background: var(--bg);
+  border-bottom: 2px solid var(--accent);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height .38s cubic-bezier(.4, 0, .2, 1);
+  z-index: 199;
+}
+#panel.open { max-height: var(--panel-max-h); }
+
+/* ── パネルヘッダー ── */
+.p-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 32px;
+  height: 56px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.p-title { font-size: 16px; font-weight: 800; color: var(--text); }
+.p-sub   { font-size: 12px; color: var(--text-sub); margin-left: 2px; }
+
+/* タブ切り替え */
+.tabs {
+  display: flex;
+  gap: 3px;
+  background: rgba(0,0,0,.35);
+  border-radius: 8px;
+  padding: 3px;
+}
+.t-btn {
+  padding: 5px 18px;
+  border: none; border-radius: 6px;
+  background: transparent;
+  color: var(--text-sub);
+  font-size: 13px; font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all .15s;
+}
+.t-btn.active { background: var(--accent); color: #fff; }
+
+/* 文字サイズ */
+.fs-ctrl {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+  color: var(--text-sub);
+  font-size: 12px;
+}
+.fs-btn {
+  width: 28px; height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(255,255,255,.06);
+  color: var(--text);
+  font-size: 16px; font-weight: 800;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  line-height: 1;
+  font-family: inherit;
+  transition: background .12s;
+}
+.fs-btn:hover { background: rgba(255,255,255,.14); }
+.fs-val { min-width: 30px; text-align: center; color: var(--text); font-size: 12px; font-weight: 600; }
+
+/* 閉じるボタン */
+.cls-btn {
+  width: 32px; height: 32px;
+  border: none; border-radius: 7px;
+  background: rgba(255,255,255,.06);
+  color: var(--text-sub);
+  font-size: 17px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  margin-left: 6px;
+  transition: background .12s, color .12s;
+  font-family: inherit;
+}
+.cls-btn:hover { background: rgba(239,68,68,.22); color: #f87171; }
+
+/* ── コンテンツ ── */
+#content-area {
+  overflow-y: auto;
+  padding: 16px 32px 20px;
+  height: calc(var(--panel-max-h) - 56px);
+  scrollbar-width: thin;
+  scrollbar-color: rgba(80,120,200,.3) transparent;
+}
+#content-area::-webkit-scrollbar { width: 5px; }
+#content-area::-webkit-scrollbar-thumb { background: rgba(80,120,200,.3); border-radius: 3px; }
+
+.tab-pane { display: none; }
+.tab-pane.active { display: block; }
+
+/* 要約 */
+.summary {
+  font-size: var(--fs);
+  line-height: 1.9;
+  color: var(--text);
+  max-width: 1580px;
+  column-count: 2;
+  column-gap: 48px;
+}
+.summary p { margin-bottom: 10px; break-inside: avoid; }
+.summary p:last-child { margin-bottom: 0; }
+
+/* 用語集 */
+.glossary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  max-width: 1580px;
+}
+.g-item {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 11px 14px;
+}
+.g-term {
+  font-size: calc(var(--fs) - 1px);
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 5px;
+  line-height: 1.4;
+}
+.g-kana {
+  font-size: calc(var(--fs) - 3px);
+  color: var(--text-sub);
+  font-weight: 400;
+}
+.g-def {
+  font-size: calc(var(--fs) - 2px);
+  color: var(--text-sub);
+  line-height: 1.7;
+}
+</style>
+</head>
+<body>
+
+<button id="tab-btn" onclick="toggle()">
+  <span>≡ 要約・用語集</span>
+  <span class="arrow">▼</span>
+</button>
+
+<div id="panel">
+  <div class="p-header">
+    <div>
+      <span class="p-title">MATLABによるプログラミング入門</span>
+      <span class="p-sub">長崎大学「応用情報処理」</span>
+    </div>
+    <div class="tabs">
+      <button class="t-btn active" onclick="switchTab('summary', this)">📄 要約</button>
+      <button class="t-btn"        onclick="switchTab('glossary', this)">📖 用語集</button>
+    </div>
+    <div class="fs-ctrl">
+      文字サイズ
+      <button class="fs-btn" onclick="changeFs(-1)">－</button>
+      <span class="fs-val" id="fsVal">15</span>
+      <button class="fs-btn" onclick="changeFs(1)">＋</button>
+    </div>
+    <button class="cls-btn" onclick="toggle()" title="閉じる">✕</button>
+  </div>
+
+  <div id="content-area">
+
+    <!-- 要約 -->
+    <div id="pane-summary" class="tab-pane active">
+      <div class="summary">
+        <p>長崎大学の「応用情報処理」を受講する学生に向けて、Excelでのデータ処理をプログラミングへとステップアップさせるツールとして「MATLAB」を紹介しています。Excelでは1万件規模のデータになると動作が重くなるなどの課題がありますが、プログラミングを用いれば、データの読み込みから統計量の計算、グラフ化までをコード化して効率的に処理できるようになります。</p>
+        <p>MATLABは「Matrix Laboratory（行列の実験室）」を由来としており、大量の数値データや表データをまとめて扱うのに非常に適しています。readtableやcorrcoefなどのシンプルな命令を用いることで処理を一気に進めることができ、医療・気象・ロボットシミュレーター・機械学習など幅広い分野で活用されています。</p>
+        <p>長崎大学の学生は大学のメールアドレスでMathWorksアカウントを作成することで、ブラウザ上で動く「MATLAB Online」や、パソコンにダウンロードする「デスクトップ版」を利用することが可能です。第4回の発展課題（ステップ8・9）では、600名分のデータから300名を取り出して相関係数や偏差値を求めるMATLAB演習が用意されています。</p>
+      </div>
+    </div>
+
+    <!-- 用語集 -->
+    <div id="pane-glossary" class="tab-pane">
+      <div class="glossary">
+        <div class="g-item">
+          <div class="g-term">応用情報処理</div>
+          <div class="g-def">長崎大学で開講されている授業。第4回の発展課題（ステップ8・9）として、600名分のデータから300名を取り出して相関係数や偏差値を求めるMATLAB演習が用意されています。</div>
+        </div>
+        <div class="g-item">
+          <div class="g-term">MATLAB <span class="g-kana">（マトラボ）</span></div>
+          <div class="g-def">「Matrix Laboratory（行列の実験室）」に由来する、計算・分析・グラフ化を1つの環境で進められるツール。医療・気象・ロボット・機械学習など幅広い分野で活用されています。</div>
+        </div>
+        <div class="g-item">
+          <div class="g-term">MATLAB Online</div>
+          <div class="g-def">ソフトウェアのインストール不要で、Webブラウザ上で動作するMATLAB。大学のメールで無料利用可能。</div>
+        </div>
+        <div class="g-item">
+          <div class="g-term">デスクトップ版</div>
+          <div class="g-def">自身のパソコンに直接ダウンロードして使用するMATLAB。オフライン環境でも利用可能。</div>
+        </div>
+        <div class="g-item">
+          <div class="g-term">readtable <span class="g-kana">（リードテーブル）</span></div>
+          <div class="g-def">CSVやExcelファイルなどのデータを読み込むためのMATLABの命令。</div>
+        </div>
+        <div class="g-item">
+          <div class="g-term">corrcoef <span class="g-kana">（コアコフ）</span></div>
+          <div class="g-def">変数間の相関係数を求めるためのMATLABの命令。</div>
+        </div>
+        <div class="g-item">
+          <div class="g-term">zscore <span class="g-kana">（Zスコア）</span></div>
+          <div class="g-def">偏差値（標準化スコア）を求めるためのMATLABの命令。</div>
+        </div>
+        <div class="g-item">
+          <div class="g-term">plot / histogram</div>
+          <div class="g-def">データを折れ線グラフ（plot）やヒストグラム（histogram）として視覚化するMATLABの命令。</div>
+        </div>
+        <div class="g-item">
+          <div class="g-term">最小2乗法</div>
+          <div class="g-def">データの関係性を直線として近似する際に用いられる手法。残差の2乗和を最小にする直線を求めます。</div>
+        </div>
+        <div class="g-item">
+          <div class="g-term">MathWorks <span class="g-kana">（マスワークス）</span>アカウント</div>
+          <div class="g-def">MATLABを利用するために作成するアカウント。長崎大学のメールアドレス（nagasaki-u.ac.jp）と紐付けることで大学ライセンスが使えます。</div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /content-area -->
+</div><!-- /panel -->
+
+<script>
+let fsVal = 15;
+const FS_MIN = 11, FS_MAX = 22;
+
+function toggle() {
+  const panel = document.getElementById('panel');
+  const btn   = document.getElementById('tab-btn');
+  const open  = panel.classList.toggle('open');
+  btn.classList.toggle('open', open);
+}
+
+function switchTab(name, clickedBtn) {
+  document.querySelectorAll('.tab-pane').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.t-btn').forEach(el => el.classList.remove('active'));
+  document.getElementById('pane-' + name).classList.add('active');
+  clickedBtn.classList.add('active');
+  document.getElementById('content-area').scrollTop = 0;
+}
+
+function changeFs(delta) {
+  fsVal = Math.min(FS_MAX, Math.max(FS_MIN, fsVal + delta));
+  document.documentElement.style.setProperty('--fs', fsVal + 'px');
+  document.getElementById('fsVal').textContent = fsVal;
+}
+</script>
+</body>
+</html>
