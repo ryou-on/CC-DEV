@@ -8,6 +8,7 @@ let settings = {};
 let videoData = null;     // 現在開いているYouTube動画（新規ジョブ起動用）
 let currentTabId = null;
 let currentJob = null;    // storage上の実行中/直近ジョブ
+let stuckRecheckTimer = null;
 
 const el = id => document.getElementById(id);
 
@@ -16,6 +17,22 @@ document.addEventListener('DOMContentLoaded', async () => {
   settings = await loadSettings();
   applyTheme(settings.theme);
   applySettingsToForm();
+
+  // バージョンバッジ
+  el('versionBadge').textContent = 'v' + chrome.runtime.getManifest().version;
+
+  // 使い方モーダル
+  el('usageBtn').addEventListener('click', () => { el('modal-usage').hidden = false; });
+  el('usageBtn2').addEventListener('click', () => { el('modal-usage').hidden = false; });
+  // リリースノートモーダル
+  el('versionBadge').addEventListener('click', () => { el('modal-relnotes').hidden = false; });
+  // モーダルを閉じる
+  document.querySelectorAll('.modal-close-btn').forEach(btn => {
+    btn.addEventListener('click', () => { el(btn.dataset.close).hidden = true; });
+  });
+  document.querySelectorAll('.modal-overlay').forEach(overlay => {
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.hidden = true; });
+  });
 
   // popupを開いた＝バッジ確認済み → バッジを消す
   chrome.runtime.sendMessage({ type: 'ackBadge' }).catch(() => {});
@@ -67,22 +84,49 @@ function showState(state) {
   });
 }
 
-function setStepUI(i) {
-  document.querySelectorAll('.step').forEach((s, idx) => {
-    s.classList.remove('active', 'done');
-    if (idx < i) s.classList.add('done');
-    else if (idx === i) s.classList.add('active');
-  });
-}
-
 /* ── 各ビューのレンダリング ── */
 function renderProcessing(j) {
   el('processingTitle').textContent = j.title || '—';
   el('stepHihaho').style.display = j.useHihaho ? '' : 'none';
-  setStepUI(j.step || 0);
-  const lbl = document.querySelector('.step[data-step="0"] span:last-child');
-  if (lbl) lbl.textContent = j.stepLabel || '文字起こし取得';
+
+  const currentStep = j.step || 0;
+  const progress = j.progress || 0;
+  const elapsed = Date.now() - (j.stepStartedAt || Date.now());
+  const isStuck = j.status === 'running' && elapsed > 90000 && progress < 95;
+
+  document.querySelectorAll('.step').forEach((s, idx) => {
+    s.classList.remove('active', 'done', 'stuck');
+    const bar = s.querySelector('.step-bar-fill');
+    const pct = s.querySelector('.step-pct');
+    if (idx < currentStep) {
+      s.classList.add('done');
+      if (bar) bar.style.width = '100%';
+    } else if (idx === currentStep) {
+      s.classList.add('active');
+      if (isStuck) s.classList.add('stuck');
+      if (pct) pct.textContent = progress + '%';
+      if (bar) bar.style.width = progress + '%';
+    } else {
+      if (bar) bar.style.width = '0%';
+    }
+  });
+
+  const lbl = document.querySelector('.step[data-step="0"] .step-lbl');
+  if (lbl) lbl.textContent = (currentStep === 0 && j.stepLabel) ? j.stepLabel : '文字起こし取得';
+
   showState('processing');
+  startStuckRecheck();
+}
+
+function startStuckRecheck() {
+  if (stuckRecheckTimer) return;
+  stuckRecheckTimer = setInterval(() => {
+    if (!currentJob || currentJob.status !== 'running') {
+      clearInterval(stuckRecheckTimer); stuckRecheckTimer = null;
+    } else {
+      renderProcessing(currentJob);
+    }
+  }, 5000);
 }
 
 function renderDone(result) {
@@ -274,7 +318,7 @@ el('generateBtn').addEventListener('click', () => {
   const useHihaho = hasHihahoSettings();
 
   // 楽観的に processing 表示（直後に background が job を更新して上書き）
-  currentJob = { status: 'running', step: 0, stepLabel: '', useHihaho, title: videoData.title, videoId: videoData.videoId };
+  currentJob = { status: 'running', step: 0, stepLabel: '', useHihaho, title: videoData.title, videoId: videoData.videoId, stepStartedAt: Date.now(), progress: 0 };
   renderProcessing(currentJob);
 
   chrome.runtime.sendMessage({ type: 'startJob', tabId: currentTabId, videoData, slug, useHihaho }).catch(() => {});
@@ -282,6 +326,7 @@ el('generateBtn').addEventListener('click', () => {
 
 /* ── 処理を破棄（詰まった時の脱出） ── */
 el('discardBtn').addEventListener('click', () => {
+  if (stuckRecheckTimer) { clearInterval(stuckRecheckTimer); stuckRecheckTimer = null; }
   chrome.runtime.sendMessage({ type: 'discardJob' }).catch(() => {});
   currentJob = null;
   showState(videoData?.videoId ? 'ready' : 'no-yt');

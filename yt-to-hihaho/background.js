@@ -6,6 +6,7 @@
 
 let settings = {};
 let job = null;          // 実行中ジョブ（永続化対象）
+let progressTimer = null;
 let videoData = null;    // 実行中ジョブの動画情報（メモリのみ）
 
 /* ── ジョブ状態の永続化 ── */
@@ -23,7 +24,25 @@ function dbg(label, data) {
   job.dbg.push(line);
   console.log('[YT2hihaho/bg]', line);
 }
-function setStep(i) { job.step = i; job.stepLabel = ''; persist(); }
+function setStep(i) {
+  stopProgressTimer();
+  job.step = i; job.stepLabel = ''; job.progress = 0; job.stepStartedAt = Date.now();
+  persist();
+}
+function startProgressTimer(maxPct, durationMs) {
+  stopProgressTimer();
+  const increment = maxPct / (durationMs / 500);
+  let current = 0;
+  progressTimer = setInterval(() => {
+    if (!job) { stopProgressTimer(); return; }
+    current = Math.min(maxPct, current + increment);
+    job.progress = Math.round(current);
+    persist();
+  }, 500);
+}
+function stopProgressTimer() {
+  if (progressTimer) { clearInterval(progressTimer); progressTimer = null; }
+}
 function setLabel(label) { job.stepLabel = label; persist(); }
 
 function setBadge(text, color) {
@@ -694,7 +713,8 @@ async function processJob(tabId, vData, slug, useHihaho) {
   job = {
     status: 'running', step: 0, stepLabel: '', useHihaho,
     title: vData.title, videoId: vData.videoId, slug, ytUrl,
-    startedAt: Date.now(), dbg: [], result: null, error: null,
+    startedAt: Date.now(), stepStartedAt: Date.now(), progress: 0,
+    dbg: [], result: null, error: null,
   };
   setBadge('…', '#3b82f6');
   await persist();
@@ -702,6 +722,7 @@ async function processJob(tabId, vData, slug, useHihaho) {
   try {
     // Step 0: 文字起こし（字幕 → プレイヤー横取り → get_transcript → 自動字幕 → Whisper）
     setStep(0);
+    startProgressTimer(85, 30000);
     let transcript;
     if (vData.captionUrl) {
       try { transcript = await fetchTranscript(vData.captionUrl); } catch (_) { /* 次へ */ }
@@ -729,25 +750,32 @@ async function processJob(tabId, vData, slug, useHihaho) {
     }
     if (!transcript?.trim()) throw new Error('文字起こしが空です。');
     dbg('transcript', { length: transcript.length });
+    stopProgressTimer(); job.progress = 100; await persist();
 
     // Step 1: Claude
     setStep(1);
+    startProgressTimer(88, 25000);
     const content = await callClaude(vData.title, transcript);
     dbg('claude', { sections: content.summary?.sections?.length || 0, glossary: content.glossary?.length || 0 });
+    stopProgressTimer(); job.progress = 100; await persist();
 
     // Step 2: HTML生成
     setStep(2);
     const html = generateHTML(vData.title, content);
+    job.progress = 100; await persist();
 
     // Step 3: GitHub デプロイ
     setStep(3);
+    startProgressTimer(85, 8000);
     const tabUrl = await deployToGitHub(slug, html);
     dbg('deploy', tabUrl);
+    stopProgressTimer(); job.progress = 100; await persist();
 
     // Step 4: hihaho
     let hihahoVideo = null, iframeError = null;
     if (useHihaho) {
       setStep(4);
+      startProgressTimer(85, 40000);
       const folderId = await resolveHihahoFolderId();
       dbg('hihaho:folder', folderId);
       const beforeIds = await listHihahoVideoIds();
@@ -755,6 +783,7 @@ async function processJob(tabId, vData, slug, useHihaho) {
       dbg('hihaho:video', { id: hihahoVideo.id, player_url: hihahoVideo.player_url || null });
       try { await createIframeInteraction(hihahoVideo.id, tabUrl, vData.duration); dbg('hihaho:iframe', 'ok'); }
       catch (e) { iframeError = e.message; dbg('hihaho:iframe:error', e.message); }
+      stopProgressTimer(); job.progress = 100; await persist();
     }
 
     // 結果を組み立て
@@ -782,6 +811,7 @@ async function processJob(tabId, vData, slug, useHihaho) {
       };
     }
 
+    stopProgressTimer();
     job.status = 'done';
     job.step = 5;
     job.result = result;
@@ -793,6 +823,7 @@ async function processJob(tabId, vData, slug, useHihaho) {
       tabUrl: result.tabUrl, playerUrl: result.playerUrl || null, createdAt: Date.now(),
     });
   } catch (e) {
+    stopProgressTimer();
     job.status = 'error';
     job.error = e.message;
     await persist();
