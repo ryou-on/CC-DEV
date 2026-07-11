@@ -146,6 +146,11 @@ const I18N = {
     reportGenerating: (n) => `レポート生成中...（${n}字）`,
     reportError: 'レポートの生成に失敗しました。',
     reportRetry: '↺ もう一度生成する',
+    reportTagPaid: '📄 詳細AIスキル診断レポート',
+    verifyChecking: '決済を確認しています...',
+    verifyUnpaid: '決済が確認できませんでした。購入が完了していない可能性があります。お手数ですが、購入ボタンからもう一度お手続きください。',
+    verifyError: '決済の確認中にエラーが発生しました。通信環境をご確認のうえ、もう一度お試しください。',
+    verifyRetry: '↺ もう一度確認する',
     pdfBtn: '📥 PDFでダウンロード',
     pdfMaking: '📄 PDF生成中...',
     pdfError: 'PDF生成に失敗しました: ',
@@ -222,6 +227,11 @@ const I18N = {
     reportGenerating: (n) => `Generating report... (${n} chars)`,
     reportError: 'Failed to generate the report.',
     reportRetry: '↺ Try again',
+    reportTagPaid: '📄 Detailed AI Skill Report',
+    verifyChecking: 'Verifying your payment...',
+    verifyUnpaid: 'We could not confirm your payment. It may not have been completed — please try purchasing again.',
+    verifyError: 'An error occurred while verifying your payment. Please check your connection and try again.',
+    verifyRetry: '↺ Check again',
     pdfBtn: '📥 Download as PDF',
     pdfMaking: '📄 Generating PDF...',
     pdfError: 'Failed to generate PDF: ',
@@ -300,14 +310,27 @@ async function streamClaude({ prompt, maxTokens, signal, onStatus, onDelta }) {
 }
 
 /* ==============================
-   決済リダイレクト復元（?payment=success）
+   決済リダイレクト復元と決済検証
+   - 新方式: ?session_id={CHECKOUT_SESSION_ID} → Worker経由でStripeに支払い状態を照会してからレポート生成
+   - 旧方式: ?payment=success → クライアント文字列で検証不能のため、無料キャンペーン中のみ受け付ける
    ※ 復元は冪等：キーは消費せず、再診断開始時にのみ破棄する
 ============================== */
+// 「今だけ無料」キャンペーンのスイッチ。有料化するときはここを false にする。
+// false にすると「今だけ無料」ボタンと旧 ?payment=success 復元が同時に無効になり、
+// レポートは Stripe 決済検証（session_id）を通過した場合のみ生成される。
+// ※ false に切り替える前に Worker デプロイと Stripe 成功URL変更が必須（worker/README.md 参照）
+const FREE_REPORT_MODE = true;
+
 const PENDING_SCORES_KEY = 'ai_skill_pending_scores';
-const paymentSuccess = new URLSearchParams(window.location.search).get('payment') === 'success';
+const VERIFIED_SESSION_KEY = 'ai_skill_verified_session';
+
+const urlQuery = new URLSearchParams(window.location.search);
+const rawSessionId = urlQuery.get('session_id') || '';
+const checkoutSessionId = /^cs_(live|test)_[A-Za-z0-9]{8,200}$/.test(rawSessionId) ? rawSessionId : null;
+const legacyPaymentSuccess = FREE_REPORT_MODE && urlQuery.get('payment') === 'success';
 
 function readPendingScores() {
-  if (!paymentSuccess) return null;
+  if (!checkoutSessionId && !legacyPaymentSuccess) return null;
   try {
     const d = JSON.parse(localStorage.getItem(PENDING_SCORES_KEY) || 'null');
     const CATS = ['prompt', 'automate', 'image', 'analysis', 'learning'];
@@ -319,7 +342,28 @@ const restoredData = readPendingScores();
 
 function clearPendingScores() {
   try { localStorage.removeItem(PENDING_SCORES_KEY); } catch {}
+  try { localStorage.removeItem(VERIFIED_SESSION_KEY); } catch {}
   if (window.location.search) window.history.replaceState({}, '', window.location.pathname);
+}
+
+/* 検証済み session_id は端末に記録し、リロード時にWorker障害があってもレポートが消えないようにする */
+function isSessionVerifiedLocally(sid) {
+  try { return localStorage.getItem(VERIFIED_SESSION_KEY) === sid; } catch { return false; }
+}
+function markSessionVerified(sid) {
+  try { localStorage.setItem(VERIFIED_SESSION_KEY, sid); } catch {}
+}
+
+/* Worker経由でStripe決済を検証する。
+   戻り値: true=支払い確認OK / false=未決済が確定 / throw=一時エラー（再試行可能） */
+async function verifyCheckoutSession(sid) {
+  if (isSessionVerifiedLocally(sid)) return true;
+  const res = await fetch(`${CLAUDE_PROXY}/verify-session?session_id=${encodeURIComponent(sid)}`);
+  let data = null;
+  try { data = await res.json(); } catch {}
+  if (data && data.paid === true) { markSessionVerified(sid); return true; }
+  if (res.ok && data) return false;
+  throw new Error(`verify failed: HTTP ${res.status}`);
 }
 
 /* ==============================
@@ -670,6 +714,8 @@ function ResultScreen({ scores, lang, autoOpenReport }) {
   const [freeReport, setFreeReport] = useState('');
   const [freeLoading, setFreeLoading] = useState(false);
   const [freeError, setFreeError] = useState(false);
+  // 決済検証状態: ok(検証不要または通過) / checking / unpaid(未決済が確定) / error(一時エラー・再試行可)
+  const [verifyState, setVerifyState] = useState(autoOpenReport && checkoutSessionId ? 'checking' : 'ok');
   const [pdfLoading, setPdfLoading] = useState(false);
   const freeReportRef = React.useRef(null);
   const freeAbortRef = React.useRef(null);
@@ -721,7 +767,11 @@ function ResultScreen({ scores, lang, autoOpenReport }) {
       // 診断結果は購入前（クイズ完了時）に保存済み。二重保存せずレポート生成のみ行う。
       // AIコーチコメントはモーダルを閉じたタイミングで遅延取得する（同時2ストリーム回避）。
       setSaved(true);
-      fetchFreeReport();
+      if (checkoutSessionId) {
+        verifyThenFetchReport();
+      } else {
+        fetchFreeReport(); // 旧 ?payment=success 復帰（無料キャンペーン中のみ到達）
+      }
     }
   }, []);
 
@@ -926,8 +976,31 @@ function ResultScreen({ scores, lang, autoOpenReport }) {
     }
   };
 
+  // Stripe決済を検証してからレポートを生成する（?session_id= 復帰時のエントリポイント）
+  const verifyThenFetchReport = async () => {
+    setShowFreeReport(true);
+    setVerifyState('checking');
+    addLog('決済検証開始...');
+    try {
+      const paid = await verifyCheckoutSession(checkoutSessionId);
+      if (paid) {
+        addLog('✅ 決済確認OK');
+        setVerifyState('ok');
+        fetchFreeReport();
+      } else {
+        addLog('❌ 決済が確認できないためレポート生成を中止');
+        setVerifyState('unpaid');
+      }
+    } catch (err) {
+      addLog(`決済確認エラー: ${err.message}`);
+      setVerifyState('error');
+    }
+  };
+
   const fetchFreeReport = async () => {
     setShowFreeReport(true);
+    // 明示的な生成開始で決済検証UIを畳む（このパスに来るのは検証通過後か無料キャンペーン中のみ）
+    setVerifyState('ok');
     // 生成中の再クリックでストリームを重複起動しない
     if (freeLoading) return;
     // 完成済みレポートはキャッシュ表示（エラー時は再生成できる）
@@ -1035,13 +1108,34 @@ function ResultScreen({ scores, lang, autoOpenReport }) {
           <div ref={freeReportRef} style={{ background: '#1a1a2e', border: '1px solid rgba(124,106,255,0.4)', borderRadius: '24px', padding: '32px', width: '100%', maxWidth: '640px', marginTop: '40px', marginBottom: '40px', animation: 'fadeUp 0.3s ease', position: 'relative' }}>
             {/* data-html2canvas-ignore: 操作UIをPDFに写り込ませない */}
             <button data-html2canvas-ignore="true" onClick={closeFreeReport} style={{ position: 'absolute', top: '16px', right: '20px', background: 'none', border: 'none', color: '#7a7a9a', fontSize: '24px', cursor: 'pointer', lineHeight: 1 }}>×</button>
-            {autoOpenReport && (
+            {autoOpenReport && verifyState === 'ok' && (
               <div data-html2canvas-ignore="true" style={{ background: 'rgba(106,255,218,0.12)', border: '1px solid rgba(106,255,218,0.4)', borderRadius: '10px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', color: '#6affda' }}>
                 {t.thanksBanner}
               </div>
             )}
-            <div style={{ fontSize: '13px', color: '#6affda', fontWeight: '700', marginBottom: '4px' }}>{t.reportTag}</div>
+            <div style={{ fontSize: '13px', color: '#6affda', fontWeight: '700', marginBottom: '4px' }}>{FREE_REPORT_MODE ? t.reportTag : t.reportTagPaid}</div>
             <div style={{ fontSize: '18px', fontWeight: '700', color: '#e8e8f5', marginBottom: '20px', whiteSpace: 'pre-line' }}>{aiType.emoji} {t.reportTitle(aiType.name)}</div>
+            {verifyState === 'checking' && (
+              <div data-html2canvas-ignore="true" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#7a7a9a', fontSize: '14px', marginBottom: '12px' }}>
+                <span style={{ width: '16px', height: '16px', borderRadius: '50%', border: '2px solid #6affda', borderTopColor: 'transparent', display: 'inline-block', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
+                {t.verifyChecking}
+              </div>
+            )}
+            {verifyState === 'unpaid' && (
+              <div data-html2canvas-ignore="true" style={{ background: 'rgba(255,106,176,0.1)', border: '1px solid rgba(255,106,176,0.4)', borderRadius: '10px', padding: '10px 14px', fontSize: '13px', color: '#ff6ab0' }}>
+                {t.verifyUnpaid}
+              </div>
+            )}
+            {verifyState === 'error' && (
+              <div data-html2canvas-ignore="true">
+                <div style={{ background: 'rgba(255,184,106,0.1)', border: '1px solid rgba(255,184,106,0.4)', borderRadius: '10px', padding: '10px 14px', fontSize: '13px', color: '#ffb86a', marginBottom: '12px' }}>
+                  {t.verifyError}
+                </div>
+                <button className="btn btn-primary" onClick={verifyThenFetchReport} style={{ width: '100%', padding: '14px', fontSize: '15px' }}>
+                  {t.verifyRetry}
+                </button>
+              </div>
+            )}
             {freeLoading && (
               <div data-html2canvas-ignore="true" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#7a7a9a', fontSize: '14px', marginBottom: '12px' }}>
                 <span style={{ width: '16px', height: '16px', borderRadius: '50%', border: '2px solid #7c6aff', borderTopColor: 'transparent', display: 'inline-block', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
@@ -1215,9 +1309,11 @@ function ResultScreen({ scores, lang, autoOpenReport }) {
           <div style={{ fontSize: '12px', color: '#7a7a9a', lineHeight: 1.6 }}>{t.buyBoxDesc}</div>
         </div>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', flexShrink: 0 }}>
-          <button className="btn" onClick={fetchFreeReport} style={{ padding: '14px 20px', fontSize: '14px', whiteSpace: 'nowrap', background: 'rgba(106,255,218,0.12)', border: '1px solid rgba(106,255,218,0.5)', color: '#6affda', borderRadius: '12px' }}>
-            {t.freeBtn}
-          </button>
+          {FREE_REPORT_MODE && (
+            <button className="btn" onClick={fetchFreeReport} style={{ padding: '14px 20px', fontSize: '14px', whiteSpace: 'nowrap', background: 'rgba(106,255,218,0.12)', border: '1px solid rgba(106,255,218,0.5)', color: '#6affda', borderRadius: '12px' }}>
+              {t.freeBtn}
+            </button>
+          )}
           <button className="btn btn-primary" onClick={() => {
             localStorage.setItem(PENDING_SCORES_KEY, JSON.stringify({ scores, lang }));
             window.open('https://buy.stripe.com/bJeeVd6xKaMXfrO0Xn8Ra00', '_blank');
@@ -1287,12 +1383,12 @@ ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 .__mb{background:#1e1e2e;color:#cdd6f4;border-radius:10px;padding:24px;max-width:520px;width:90%;max-height:80vh;overflow-y:auto;position:relative;font-size:14px;line-height:1.7}
 .__mc{position:absolute;top:12px;right:14px;background:none;border:none;color:#888;font-size:18px;cursor:pointer}
 </style>
-<div id="__ui_fixed"><button id="__debug_btn">DBG</button><span id="__version_badge">v0.3.1</span></div>
+<div id="__ui_fixed"><button id="__debug_btn">DBG</button><span id="__version_badge">v0.4.0</span></div>
 <div id="__rm" class="__mo" onclick="if(event.target===this)this.classList.remove('open')"><div class="__mb"><button class="__mc" onclick="document.getElementById('__rm').classList.remove('open')">x</button><h2>Release Notes</h2><div id="__rc"></div></div></div>
 <div id="__hm" class="__mo" onclick="if(event.target===this)this.classList.remove('open')"><div class="__mb"><button class="__mc" onclick="document.getElementById('__hm').classList.remove('open')">x</button><h2>Help</h2><p>このアプリの使い方です。</p></div></div>
 <script>
 (function(){
-var RN=[{v:"v0.3.1",d:"2026-07-11",n:["決済後のレポート画面がリロードしても消えないように改善","レポート生成に失敗したときの再試行ボタンを追加","PDFに閉じるボタン等の操作UIが写り込まないように改善・ファイルサイズを削減","英語モードで詳細レポートと購入まわりの表示も英語化","ページ表示を高速化"]},{v:"v0.3.0",d:"2026-06-29",n:["Stripe本番決済に切り替え（¥500詳細レポート）","「今だけ無料」詳細AIレポートとPDFダウンロード機能を追加"]},{v:"v0.2.0",d:"2026-06-24",n:["¥500詳細レポート購入ボタン追加（Stripe Payment Links）"]},{v:"v0.1.0",d:"2026-06-08",n:["初回リリース"]}];
+var RN=[{v:"v0.4.0",d:"2026-07-12",n:["ご購入後のレポート表示前に、決済の確認を自動で行うようになりました","決済確認に失敗した場合の再試行ボタンを追加"]},{v:"v0.3.1",d:"2026-07-11",n:["決済後のレポート画面がリロードしても消えないように改善","レポート生成に失敗したときの再試行ボタンを追加","PDFに閉じるボタン等の操作UIが写り込まないように改善・ファイルサイズを削減","英語モードで詳細レポートと購入まわりの表示も英語化","ページ表示を高速化"]},{v:"v0.3.0",d:"2026-06-29",n:["Stripe本番決済に切り替え（¥500詳細レポート）","「今だけ無料」詳細AIレポートとPDFダウンロード機能を追加"]},{v:"v0.2.0",d:"2026-06-24",n:["¥500詳細レポート購入ボタン追加（Stripe Payment Links）"]},{v:"v0.1.0",d:"2026-06-08",n:["初回リリース"]}];
 var b=document.getElementById("__version_badge");
 b.textContent=RN[0].v;
 b.addEventListener("click",function(){document.getElementById("__rc").innerHTML=RN.map(function(r){return"<h3>"+r.v+" ("+r.d+")</h3><ul>"+r.n.map(function(n){return"<li>"+n+"</li>";}).join("")+"</ul>";}).join("");document.getElementById("__rm").classList.add("open");});
