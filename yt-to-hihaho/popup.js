@@ -35,6 +35,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
   });
+  // タブエディタを開く（完了画面）
+  el('editTabBtn').addEventListener('click', () => openEditor(el('editTabBtn').dataset.slug));
 
   // popupを開いた＝バッジ確認済み → バッジを消す
   chrome.runtime.sendMessage({ type: 'ackBadge' }).catch(() => {});
@@ -136,6 +138,10 @@ function renderDone(result) {
   el('tabUrl').textContent = result.tabUrl;
   el('tabUrl').href = result.tabUrl;
 
+  const editBtn = el('editTabBtn');
+  editBtn.hidden = !result.slug;
+  if (result.slug) editBtn.dataset.slug = result.slug;
+
   const auto = result.mode === 'auto';
   el('playerUrlBox').hidden = !auto;
   if (auto) {
@@ -161,7 +167,7 @@ function renderError(j) {
 }
 
 async function renderHistory() {
-  const { history = [] } = await chrome.storage.local.get('history');
+  const { history = [], tabDrafts = {} } = await chrome.storage.local.get(['history', 'tabDrafts']);
   const list = el('historyList');
   if (!history.length) {
     list.innerHTML = '<div class="msg" style="padding:24px 4px"><div class="emoji">🕘</div>履歴はまだありません</div>';
@@ -174,7 +180,14 @@ async function renderHistory() {
       <a class="result-url" href="${esc(h.tabUrl)}" target="_blank">🌐 タブURL</a><br>
       ${h.playerUrl ? `<a class="result-url" href="${esc(h.playerUrl)}" target="_blank" style="display:inline-block;margin-top:5px">🎬 プレイヤー</a><br>` : ''}
       <a class="result-url" href="${esc(h.ytUrl)}" target="_blank" style="display:inline-block;margin-top:5px;color:var(--text-faint)">▶️ 元動画</a>
+      ${h.slug && tabDrafts[h.slug] ? `<br><button class="hist-edit" data-slug="${esc(h.slug)}">✏️ 編集</button>` : ''}
     </div>`).join('');
+  list.querySelectorAll('.hist-edit').forEach(b => b.addEventListener('click', () => openEditor(b.dataset.slug)));
+}
+
+function openEditor(slug) {
+  if (!slug) return;
+  chrome.tabs.create({ url: chrome.runtime.getURL('editor.html') + '?slug=' + encodeURIComponent(slug) });
 }
 
 function fmtDate(ts) {

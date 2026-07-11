@@ -4,6 +4,8 @@
    進捗・結果は chrome.storage.local.job に書き、履歴は history[] に蓄積する。
    ───────────────────────────────────────── */
 
+importScripts('tab-template.js');
+
 let settings = {};
 let job = null;          // 実行中ジョブ（永続化対象）
 let progressTimer = null;
@@ -56,6 +58,15 @@ async function pushHistory(item) {
   const { history = [] } = await chrome.storage.local.get('history');
   history.unshift(item);
   await chrome.storage.local.set({ history: history.slice(0, 30) });
+}
+
+/* ── タブ編集用ドラフト（エディタが読む。直近20件保持） ── */
+async function saveDraft(slug, draft) {
+  const { tabDrafts = {} } = await chrome.storage.local.get('tabDrafts');
+  tabDrafts[slug] = { ...(tabDrafts[slug] || {}), ...draft, slug, updatedAt: Date.now() };
+  const keys = Object.keys(tabDrafts).sort((a, b) => (tabDrafts[b].updatedAt || 0) - (tabDrafts[a].updatedAt || 0));
+  keys.slice(20).forEach(k => delete tabDrafts[k]);
+  await chrome.storage.local.set({ tabDrafts });
 }
 
 /* ── Settings ── */
@@ -411,122 +422,6 @@ ${truncated}`,
   catch { throw new Error('JSON形式が不正です。もう一度試してください。'); }
 }
 
-/* ── HTML Escape ── */
-function esc(s) {
-  return String(s ?? '')
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-/* ── HTML Generator ── */
-function generateHTML(title, content) {
-  const { summary, glossary } = content;
-  const summaryCards = (summary?.sections || []).map(s => `
-        <div class="summary-card">
-          <div class="s-head"><span class="s-emoji">${esc(s.emoji)}</span>${esc(s.heading)}</div>
-          <div class="s-text">${esc(s.text)}</div>
-        </div>`).join('') || '<p style="color:#64748b;padding:12px">要約データなし</p>';
-  const glossaryItems = (glossary || []).map((g, i) => `
-        <div class="acc" id="g${i}">
-          <div class="acc-h" onclick="tg('g${i}')">
-            <span class="acc-term">${esc(g.term)}</span>${g.reading ? `<span class="acc-rd">${esc(g.reading)}</span>` : ''}
-            <span class="acc-arr">▼</span>
-          </div>
-          <div class="acc-body"><div class="acc-cnt">${esc(g.definition)}</div></div>
-        </div>`).join('') || '<p style="color:#64748b;padding:12px">用語データなし</p>';
-
-  return `<!DOCTYPE html>
-<html lang="ja"><head>
-<meta charset="UTF-8"><meta name="viewport" content="width=1920">
-<title>${esc(title)}</title>
-<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
-<style>
-*{box-sizing:border-box;margin:0;padding:0}
-:root{--a:#1a56db;--ad:#1040b0;--bg:#fff;--bd:#e2e8f0;--t:#1e293b;--s:#64748b;--gold:#f59e0b}
-html,body{width:1920px;height:1080px;overflow:hidden;font-family:'Noto Sans JP',sans-serif;background:transparent;color:var(--t)}
-.frame{position:fixed;inset:0;pointer-events:none}
-.tab-row{position:absolute;top:0;left:50%;transform:translateX(-50%);display:flex;gap:10px;z-index:20;pointer-events:none}
-.tab{pointer-events:auto;background:rgba(255,255,255,.96);color:var(--ad);font-size:18px;font-weight:700;letter-spacing:.08em;padding:11px 32px;border:none;border-radius:0 0 18px 18px;box-shadow:0 5px 18px rgba(0,0,0,.3);cursor:pointer;display:flex;align-items:center;gap:8px;min-height:48px;transition:background .18s,color .18s,transform .1s;white-space:nowrap;border-top:3px solid var(--a)}
-.tab:hover{background:#eff6ff}.tab:active{transform:scale(.95)}
-.tc{width:14px;height:14px;transition:transform .3s;flex-shrink:0}
-.frame[data-open="true"] .tab[aria-pressed="true"]{background:var(--a);color:#fff;border-top-color:var(--gold)}
-.frame[data-open="true"] .tab[aria-pressed="true"] .tc{transform:rotate(180deg)}
-.panel{position:absolute;top:0;left:50%;width:980px;max-height:820px;background:var(--bg);border-radius:0 0 20px 20px;box-shadow:0 14px 50px rgba(0,0,0,.4);pointer-events:auto;display:flex;flex-direction:column;z-index:10;transform:translate(-50%,-102%);transition:transform .4s cubic-bezier(.32,.72,0,1),visibility 0s linear .4s;overflow:hidden;visibility:hidden;border:1px solid var(--bd);border-top:none}
-.frame[data-open="true"] .panel{transform:translate(-50%,0);visibility:visible;transition:transform .4s cubic-bezier(.32,.72,0,1),visibility 0s linear 0s}
-.pi{flex:1;overflow-y:auto;padding:52px 32px 24px}
-.pi::-webkit-scrollbar{width:5px}
-.pi::-webkit-scrollbar-thumb{background:var(--a);border-radius:3px;opacity:.5}
-.sh{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;padding-bottom:12px;border-bottom:2px solid var(--a)}
-.st{font-size:20px;font-weight:700;color:var(--ad)}
-.cb{width:38px;height:38px;border-radius:50%;background:#f1f5f9;border:1.5px solid var(--bd);cursor:pointer;display:flex;align-items:center;justify-content:center;color:#64748b;transition:all .15s}
-.cb:hover{background:#fee2e2;border-color:#f87171;color:#ef4444}.cb:active{transform:scale(.92)}
-.cb svg{width:16px;height:16px}
-.sec{display:none}
-.frame[data-active="summary"] .sec[data-section="summary"]{display:block}
-.frame[data-active="glossary"] .sec[data-section="glossary"]{display:block}
-.summary-card{background:#f8faff;border:1px solid #dbeafe;border-left:4px solid var(--a);border-radius:6px;padding:16px 20px;margin-bottom:12px}
-.s-head{font-size:17px;font-weight:700;color:var(--ad);margin-bottom:8px;display:flex;align-items:center;gap:8px}
-.s-emoji{font-size:20px}
-.s-text{font-size:15px;line-height:1.85;color:#374151}
-.acc{background:#fff;border:1px solid var(--bd);border-radius:6px;margin-bottom:8px;overflow:hidden;transition:box-shadow .15s}
-.acc:hover{box-shadow:0 2px 8px rgba(26,86,219,.1)}
-.acc-h{padding:14px 18px;cursor:pointer;display:flex;align-items:center;gap:12px;user-select:none;transition:background .15s}
-.acc-h:hover{background:#f0f7ff}
-.acc.open .acc-h{background:#eff6ff}
-.acc-term{font-size:17px;font-weight:700;flex:1}
-.acc-rd{font-size:12px;color:var(--s);background:#f1f5f9;padding:2px 8px;border-radius:3px;flex-shrink:0}
-.acc-arr{color:var(--s);font-size:12px;transition:transform .3s;flex-shrink:0}
-.acc.open .acc-arr{transform:rotate(180deg)}
-.acc-body{max-height:0;overflow:hidden;transition:max-height .35s ease}
-.acc.open .acc-body{max-height:300px}
-.acc-cnt{padding:12px 18px 16px;font-size:15px;line-height:1.8;color:#374151;border-top:1px solid var(--bd)}
-</style></head>
-<body>
-<div class="frame" data-open="false" data-active="summary" id="F">
-  <div class="panel"><div class="pi" id="PI">
-    <div class="sec" data-section="summary">
-      <div class="sh">
-        <div class="st">📋 要約</div>
-        <button class="cb" onclick="cls()"><svg viewBox="0 0 20 20" fill="none"><path d="M5 5L15 15M15 5L5 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
-      </div>
-      ${summaryCards}
-    </div>
-    <div class="sec" data-section="glossary">
-      <div class="sh">
-        <div class="st">📚 用語集</div>
-        <button class="cb" onclick="cls()"><svg viewBox="0 0 20 20" fill="none"><path d="M5 5L15 15M15 5L5 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
-      </div>
-      ${glossaryItems}
-    </div>
-  </div></div>
-  <div class="tab-row">
-    <button class="tab" data-target="summary" aria-pressed="true" onclick="tab_('summary')">
-      <span>📋 要約</span>
-      <svg class="tc" viewBox="0 0 16 16" fill="none"><path d="M3 6L8 11L13 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    </button>
-    <button class="tab" data-target="glossary" aria-pressed="false" onclick="tab_('glossary')">
-      <span>📚 用語集</span>
-      <svg class="tc" viewBox="0 0 16 16" fill="none"><path d="M3 6L8 11L13 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    </button>
-  </div>
-</div>
-<script>
-var F=document.getElementById('F');
-function tab_(t){
-  var o=F.getAttribute('data-open')==='true';
-  if(!o){F.setAttribute('data-active',t);F.setAttribute('data-open','true');}
-  else if(F.getAttribute('data-active')===t){F.setAttribute('data-open','false');}
-  else{F.setAttribute('data-active',t);document.getElementById('PI').scrollTop=0;}
-  document.querySelectorAll('.tab[data-target]').forEach(function(b){
-    b.setAttribute('aria-pressed',b.getAttribute('data-target')===t?'true':'false');
-  });
-}
-function cls(){F.setAttribute('data-open','false');}
-function tg(id){document.getElementById(id).classList.toggle('open');}
-document.addEventListener('keydown',function(e){if(e.key==='Escape'&&F.getAttribute('data-open')==='true')cls();});
-<\/script>
-</body></html>`;
-}
-
 /* ── GitHub トークン診断 ── */
 async function diagnoseGitHubToken() {
   const repo = settings.githubRepo;
@@ -567,7 +462,7 @@ async function diagnoseGitHubToken() {
 }
 
 /* ── GitHub Deploy ── */
-async function deployToGitHub(slug, html) {
+async function deployToGitHub(slug, html, commitMsg) {
   const repo = settings.githubRepo;
   const path = `public/${slug}/index.html`;
   const apiUrl = `https://api.github.com/repos/${repo}/contents/${path}`;
@@ -587,7 +482,7 @@ async function deployToGitHub(slug, html) {
     method: 'PUT',
     headers,
     body: JSON.stringify({
-      message: `feat: AI生成タブ追加 (${slug})\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>`,
+      message: `${commitMsg || `feat: AI生成タブ追加 (${slug})`}\n\nCo-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>`,
       content: encoded,
       ...(sha ? { sha } : {}),
     }),
@@ -761,7 +656,7 @@ async function processJob(tabId, vData, slug, useHihaho) {
 
     // Step 2: HTML生成
     setStep(2);
-    const html = generateHTML(vData.title, content);
+    const html = generateTabHTML(vData.title, content, DEFAULT_DESIGN);
     job.progress = 100; await persist();
 
     // Step 3: GitHub デプロイ
@@ -770,6 +665,12 @@ async function processJob(tabId, vData, slug, useHihaho) {
     const tabUrl = await deployToGitHub(slug, html);
     dbg('deploy', tabUrl);
     stopProgressTimer(); job.progress = 100; await persist();
+
+    // エディタ用ドラフトを保存（内容JSON＋デザイン設定）
+    await saveDraft(slug, {
+      title: vData.title, videoId: vData.videoId, ytUrl,
+      duration: vData.duration || 0, content, design: { ...DEFAULT_DESIGN }, tabUrl,
+    });
 
     // Step 4: hihaho
     let hihahoVideo = null, iframeError = null;
@@ -792,20 +693,20 @@ async function processJob(tabId, vData, slug, useHihaho) {
       const playerUrl = hihahoVideo.player_url || null;
       if (iframeError) {
         result = {
-          mode: 'auto', tabUrl, playerUrl,
-          iframeWarnMsg: `APIエラー:\n${iframeError}\n\nstudioで手動追加してください:\nインタラクション → iFrame\nURL: ${tabUrl}\nサイズ: 全画面 / 表示: 動画全体`,
+          mode: 'auto', tabUrl, playerUrl, slug,
+          iframeWarnMsg: `APIエラー:\n${iframeError}\n\n※ hihaho公開APIの対応インタラクションは chapter/image/link/text のみで、iFrame型は未対応の可能性があります。\n\nstudioで手動追加してください:\nインタラクション → iFrame\nURL: ${tabUrl}\nサイズ: 全画面 / 表示: 動画全体（0:00〜終了）`,
           setupLabel: null, setupText: null,
         };
       } else {
         result = {
-          mode: 'auto', tabUrl, playerUrl, iframeWarnMsg: null,
+          mode: 'auto', tabUrl, playerUrl, slug, iframeWarnMsg: null,
           setupLabel: '✅ 残作業（studio）',
           setupText: `① studio.hihaho.com で動画を開く\n   「${vData.title}」\n② プレビューでタブ動作を確認\n③ 公開設定を ON にする`,
         };
       }
     } else {
       result = {
-        mode: 'manual', tabUrl, playerUrl: null, iframeWarnMsg: null,
+        mode: 'manual', tabUrl, playerUrl: null, slug, iframeWarnMsg: null,
         setupLabel: '📹 hihaho 設定手順',
         setupText: `① hihaho 新規動画作成\n   動画ソース: YouTube\n   URL: ${ytUrl}\n\n② インタラクション追加 → [iFrame]\n   URL: ${tabUrl}\n   サイズ: 1920 × 1080\n   位置: X=0, Y=0\n\n③ 表示設定\n   表示: 動画全体（開始〜終了）\n   背景透過: ON\n\n④ 公開して player.hihaho.com で確認\n\n💡 設定(⚙)にhihaho API情報を入れると①②も自動化されます`,
       };
@@ -849,5 +750,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     setBadge('', null);
     sendResponse({ ok: true });
     return;
+  }
+  if (msg?.type === 'redeployTab') {
+    (async () => {
+      try {
+        settings = await loadSettings();
+        if (!settings.githubToken) throw new Error('GitHub Token が未設定です。ポップアップの設定(⚙)から入力してください。');
+        const tabUrl = await deployToGitHub(msg.slug, msg.html, `fix: タブ編集を反映 (${msg.slug})`);
+        await saveDraft(msg.slug, { tabUrl });
+        sendResponse({ ok: true, tabUrl });
+      } catch (e) {
+        sendResponse({ ok: false, error: e.message });
+      }
+    })();
+    return true; // 非同期レスポンス
   }
 });
