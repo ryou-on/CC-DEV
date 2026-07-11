@@ -21,17 +21,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   // バージョンバッジ
   el('versionBadge').textContent = 'v' + chrome.runtime.getManifest().version;
 
-  // 使い方モーダル
-  el('usageBtn').addEventListener('click', () => { el('modal-usage').hidden = false; });
-  el('usageBtn2').addEventListener('click', () => { el('modal-usage').hidden = false; });
-  // リリースノートモーダル
-  el('versionBadge').addEventListener('click', () => { el('modal-relnotes').hidden = false; });
-  // モーダルを閉じる
+  // 使い方モーダル（アプリ名クリック）
+  el('usageBtn').addEventListener('click', () => { el('modal-usage').classList.add('open'); });
+  // リリースノートモーダル（バージョンバッジクリック）
+  el('versionBadge').addEventListener('click', () => { el('modal-relnotes').classList.add('open'); });
+  // モーダルを閉じる（✕ボタン / 背景クリック / ESC）
   document.querySelectorAll('.modal-close-btn').forEach(btn => {
-    btn.addEventListener('click', () => { el(btn.dataset.close).hidden = true; });
+    btn.addEventListener('click', () => { el(btn.dataset.close).classList.remove('open'); });
   });
   document.querySelectorAll('.modal-overlay').forEach(overlay => {
-    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.hidden = true; });
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.classList.remove('open'); });
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
   });
 
   // popupを開いた＝バッジ確認済み → バッジを消す
