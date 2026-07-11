@@ -3,6 +3,16 @@ name: ER Auto Sync
 on:
   push:
     branches: [main]
+    # Flight_Strip 関連の変更時のみ実行（モノレポ他アプリのコミットでER台帳を汚染しない）
+    paths:
+      - 'public/Flight_Strip_TODO/**'
+      - 'public/Flight_Strip_TODO_dev/**'
+      - '!public/Flight_Strip_TODO_dev/er-sync.json'
+
+# 連続pushで並走するとpushがnon-fast-forwardで失敗するため直列化する
+concurrency:
+  group: er-sync-main
+  cancel-in-progress: false
 
 jobs:
   er-sync:
@@ -24,7 +34,7 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/ryou-on/CC-DEV.git"
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
           git pull --rebase origin main
 
       - name: Write sync script
@@ -70,8 +80,9 @@ jobs:
           const appliedSet = new Set(current.appliedCommits || []);
 
           // 新しいコミット取得（最大20件、処理済み除外）
-          const rawLog = execSync('git log --format="%H|||%s|||%b" -20').toString().trim();
-          const commits = rawLog.split('\n')
+          // Flight_Strip 関連コミットのみ対象（er-sync.json自体の更新は除外）・-z区切りで複数行bodyのキーワードも拾う
+          const rawLog = execSync('git log -z --format="%H|||%s|||%b" -20 -- public/Flight_Strip_TODO public/Flight_Strip_TODO_dev ":(exclude)public/Flight_Strip_TODO_dev/er-sync.json"').toString();
+          const commits = rawLog.split('\0')
             .map(l => {
               const parts = l.split('|||');
               return { hash: parts[0]?.trim(), msg: (parts[1] || '').trim(), body: (parts[2] || '').trim() };
@@ -151,6 +162,6 @@ jobs:
           if git diff --staged --quiet; then
             echo "No changes to er-sync.json"
           else
-            git commit -m "[er-sync] Auto update ER status $(date -u +%Y-%m-%d)"
-            git push origin HEAD:main
+            git commit -m "[er-sync] Auto update ER status $(date -u +%Y-%m-%d) [skip ci]"
+            git push origin HEAD:main || { git pull --rebase origin main && git push origin HEAD:main; }
           fi
