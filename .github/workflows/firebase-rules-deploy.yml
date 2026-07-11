@@ -1,0 +1,35 @@
+# Firestore / Storage rules のデプロイ（rulesファイル変更時のみ）
+#
+# firebase-hosting-merge.yml から分離。hosting用SAにはrules権限が無く
+# 毎push赤くなっていたため、rules変更時だけ実行して失敗を「意味のある赤」にする。
+#
+# ⚠ このworkflowを成功させるには、サービスアカウント
+#   FIREBASE_SERVICE_ACCOUNT_CC_DEV_PS7 に以下のIAMロールが必要:
+#   - 最小: Firebase Rules 管理者 (roles/firebaserules.admin)
+#   - 確実: Firebase 管理者 (roles/firebase.admin)
+#   付与場所: https://console.cloud.google.com/iam-admin/iam?project=cc-dev-ps7
+#   （それまでは従来どおり手動デプロイ: npx firebase deploy --only firestore:rules,storage）
+name: Deploy Firebase Rules
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - firestore.rules
+      - storage.rules
+      - firestore.indexes.json
+      - firebase.json
+  workflow_dispatch:
+jobs:
+  deploy_rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy Firebase Storage & Firestore rules
+        env:
+          FIREBASE_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_CC_DEV_PS7 }}
+        run: |
+          echo "$FIREBASE_SA" > /tmp/sa.json
+          export GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa.json
+          npm install -g firebase-tools@15.23.0
+          firebase deploy --only storage,firestore --project cc-dev-ps7
