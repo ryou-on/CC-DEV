@@ -1,0 +1,700 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Meeting Interpreter Duo</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { background:#0f1a2b; color:#e5e9f0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Hiragino Sans",sans-serif; }
+  .panel { background:#1a2a3e; border:1px solid rgba(255,255,255,0.08); }
+  select, textarea, input[type=text] { background:#0f1a2b; border:1px solid rgba(255,255,255,0.15); color:#e5e9f0; }
+  select:disabled { opacity:0.5; }
+  .meter { transition:width .08s linear; }
+  .ptt-btn { touch-action:none; user-select:none; -webkit-user-select:none; }
+  .ptt-active { background:#16a34a !important; box-shadow:0 0 24px rgba(22,163,74,0.6); transform:scale(0.98); }
+
+  /* ===== info modal (app-header-meta pattern) ===== */
+  .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:9999; align-items:center; justify-content:center; }
+  .modal-overlay.open { display:flex; }
+  .modal-box { background:#1a2a3e; border:1px solid rgba(201,168,76,0.5); border-radius:10px; width:640px; max-width:92vw; max-height:82vh; display:flex; flex-direction:column; box-shadow:0 8px 40px rgba(0,0,0,0.6); }
+  .modal-header { display:flex; align-items:center; justify-content:space-between; padding:16px 20px 12px; border-bottom:1px solid rgba(255,255,255,0.1); }
+  .modal-header h2 { font-size:15px; font-weight:700; color:#c9a84c; margin:0; }
+  .modal-close-btn { background:none; border:none; color:#aaa; font-size:18px; cursor:pointer; }
+  .modal-close-btn:hover { color:#fff; }
+  #modal-body { overflow-y:auto; padding:16px 20px 20px; font-size:13px; line-height:1.7; color:#ccc; }
+  #modal-body h3 { font-size:12px; color:#c9a84c; margin:14px 0 6px; font-weight:600; }
+  #modal-body ul { margin:0; padding-left:18px; }
+  #modal-body pre { background:#0f1a2b; border:1px solid rgba(255,255,255,0.1); border-radius:8px; padding:10px 12px; font-size:12px; overflow-x:auto; margin:6px 0; }
+  .release-ver { display:flex; align-items:baseline; gap:10px; margin-top:16px; padding-top:12px; border-top:1px solid rgba(255,255,255,0.07); }
+  .release-ver:first-child { margin-top:0; border-top:none; padding-top:0; }
+  .release-ver-tag { font-size:13px; font-weight:700; color:#c9a84c; white-space:nowrap; }
+  .release-ver-date { font-size:11px; color:#666; white-space:nowrap; }
+</style>
+</head>
+<body>
+
+<main class="min-h-screen p-4 lg:p-6">
+<div class="max-w-7xl mx-auto">
+
+  <!-- ===== header ===== -->
+  <div class="flex flex-wrap justify-between items-center gap-3 mb-5">
+    <h1 class="text-2xl lg:text-3xl font-bold">
+      <span onclick="openHowTo()" style="cursor:pointer;" title="使い方を見る">🎧 Meeting Interpreter Duo</span>
+      <span onclick="openReleaseNotes()" style="cursor:pointer;font-size:12px;color:#c9a84c;font-weight:400;margin-left:8px;opacity:0.85;" title="リリースノート">v0.1.0</span>
+      <span style="font-weight:400;font-size:13px;color:rgba(255,255,255,0.55);margin-left:10px;">双方向リアルタイム会議通訳</span>
+    </h1>
+    <div class="flex items-center gap-2">
+      <button id="setupGuideButton" class="text-xs px-3 py-2 rounded-lg border border-white/20 hover:bg-white/10">🔊 音声ルーティング設定ガイド</button>
+      <button id="copyDebugButton" class="text-xs px-3 py-2 rounded-lg border border-white/20 hover:bg-white/10">🐞 デバッグ情報コピー</button>
+    </div>
+  </div>
+
+  <!-- ===== shared settings ===== -->
+  <div class="panel rounded-2xl p-4 mb-4 grid lg:grid-cols-[220px_1fr] gap-4">
+    <div>
+      <label class="text-xs font-semibold text-gray-400">モデル（両方向共通）</label>
+      <select id="model" class="w-full rounded-xl p-2.5 mt-1 text-sm">
+        <option value="gpt-realtime">gpt-realtime（高品質）</option>
+        <option value="gpt-realtime-mini">gpt-realtime-mini（低コスト）</option>
+      </select>
+      <button id="refreshButton" class="w-full mt-3 text-xs px-3 py-2 rounded-lg border border-white/20 hover:bg-white/10">🔄 デバイス一覧を更新</button>
+    </div>
+    <div>
+      <label class="text-xs font-semibold text-gray-400">用語辞書（訳さない固有名詞・1行1語、両方向へ適用）</label>
+      <textarea id="glossary" rows="3" class="w-full rounded-xl p-2.5 mt-1 text-sm font-mono" spellcheck="false"></textarea>
+    </div>
+  </div>
+
+  <div class="grid lg:grid-cols-2 gap-4 mb-4">
+
+    <!-- ===== EN -> JA panel ===== -->
+    <div class="panel rounded-2xl p-4 border-t-4 !border-t-blue-500">
+      <div class="flex justify-between items-center mb-3">
+        <h2 class="font-bold text-blue-300">🎧 相手の英語 → 日本語（常時）</h2>
+        <div class="text-xs"><span id="dotA" class="inline-block w-2.5 h-2.5 rounded-full bg-gray-500"></span> <span id="statusA" class="text-gray-400">未接続</span></div>
+      </div>
+      <div class="grid grid-cols-2 gap-3 mb-3">
+        <div>
+          <label class="text-xs text-gray-400">入力（Meetの相手音声）</label>
+          <select id="inputA" class="w-full rounded-xl p-2.5 mt-1 text-sm"></select>
+          <p class="text-[11px] text-gray-500 mt-1">推奨: BlackHole 2ch</p>
+        </div>
+        <div>
+          <label class="text-xs text-gray-400">出力（自分のイヤホン）</label>
+          <select id="outputA" class="w-full rounded-xl p-2.5 mt-1 text-sm"></select>
+          <p class="text-[11px] text-gray-500 mt-1">推奨: 外部ヘッドフォン</p>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-3 items-end mb-3">
+        <div>
+          <label class="text-xs text-gray-400">日本語の声</label>
+          <select id="voiceA" class="w-full rounded-xl p-2.5 mt-1 text-sm">
+            <option value="marin">marin（女性・落ち着き）</option>
+            <option value="cedar">cedar（男性・低め）</option>
+            <option value="alloy">alloy</option>
+            <option value="echo">echo</option>
+          </select>
+        </div>
+        <div>
+          <div class="flex justify-between text-[11px] text-gray-500 mb-1"><span>入力レベル</span><span id="levelTextA">0%</span></div>
+          <div class="h-2 rounded-full bg-black/40 overflow-hidden"><div id="levelBarA" class="meter h-full bg-blue-500" style="width:0%"></div></div>
+        </div>
+      </div>
+      <button id="startA" class="w-full bg-blue-600 hover:bg-blue-500 text-white rounded-xl p-3 font-bold">通訳を開始（聞く）</button>
+    </div>
+
+    <!-- ===== JA -> EN panel ===== -->
+    <div class="panel rounded-2xl p-4 border-t-4 !border-t-green-500">
+      <div class="flex justify-between items-center mb-3">
+        <h2 class="font-bold text-green-300">🎤 自分の日本語 → 英語（押して話す）</h2>
+        <div class="text-xs"><span id="dotB" class="inline-block w-2.5 h-2.5 rounded-full bg-gray-500"></span> <span id="statusB" class="text-gray-400">未接続</span></div>
+      </div>
+      <div class="grid grid-cols-2 gap-3 mb-3">
+        <div>
+          <label class="text-xs text-gray-400">入力（自分のマイク）</label>
+          <select id="inputB" class="w-full rounded-xl p-2.5 mt-1 text-sm"></select>
+          <p class="text-[11px] text-gray-500 mt-1">推奨: 外部マイク</p>
+        </div>
+        <div>
+          <label class="text-xs text-gray-400">出力（Meetのマイクへ）</label>
+          <select id="outputB" class="w-full rounded-xl p-2.5 mt-1 text-sm"></select>
+          <p class="text-[11px] text-gray-500 mt-1">推奨: BlackHole 16ch</p>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-3 items-end mb-3">
+        <div>
+          <label class="text-xs text-gray-400">英語の声</label>
+          <select id="voiceB" class="w-full rounded-xl p-2.5 mt-1 text-sm">
+            <option value="cedar">cedar（男性・低め）</option>
+            <option value="marin">marin（女性・落ち着き）</option>
+            <option value="alloy">alloy</option>
+            <option value="echo">echo</option>
+          </select>
+          <label class="flex items-center gap-2 mt-2 text-xs text-gray-400 cursor-pointer">
+            <input type="checkbox" id="monitorB" /> 自分の訳もイヤホンで聞く（モニター）
+          </label>
+        </div>
+        <div>
+          <div class="flex justify-between text-[11px] text-gray-500 mb-1"><span>入力レベル</span><span id="levelTextB">0%</span></div>
+          <div class="h-2 rounded-full bg-black/40 overflow-hidden"><div id="levelBarB" class="meter h-full bg-green-500" style="width:0%"></div></div>
+        </div>
+      </div>
+      <button id="startB" class="w-full bg-green-700 hover:bg-green-600 text-white rounded-xl p-3 font-bold">接続する（話す準備）</button>
+      <button id="pttButton" class="ptt-btn w-full mt-2 bg-gray-700 text-white rounded-xl p-4 font-bold text-lg opacity-40 cursor-not-allowed" disabled>
+        🎙 押している間だけ日本語で話す<span class="block text-[11px] font-normal opacity-70">（Spaceキー長押しでもOK）</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ===== transcript ===== -->
+  <div class="panel rounded-2xl p-4">
+    <div class="flex flex-wrap justify-between items-center gap-2 mb-3">
+      <h2 class="font-bold">📝 通訳ログ</h2>
+      <div class="flex gap-2">
+        <button id="copyTranscriptButton" class="text-xs px-3 py-1.5 rounded-lg border border-white/20 hover:bg-white/10">コピー</button>
+        <button id="downloadTranscriptButton" class="text-xs px-3 py-1.5 rounded-lg border border-white/20 hover:bg-white/10">💾 保存 (.md)</button>
+        <button id="clearTranscriptButton" class="text-xs px-3 py-1.5 rounded-lg border border-white/20 hover:bg-white/10">クリア</button>
+      </div>
+    </div>
+    <div id="transcript" class="h-72 overflow-y-auto rounded-xl bg-black/30 p-4 text-sm leading-7">
+      <div id="emptyMessage" class="text-center text-gray-500 mt-24">通訳を開始するとここへ表示されます</div>
+    </div>
+  </div>
+
+</div>
+</main>
+
+<audio id="audioA" autoplay></audio>
+<audio id="audioB" autoplay></audio>
+<audio id="audioBMonitor" autoplay muted></audio>
+
+<!-- ===== info modal ===== -->
+<div id="info-modal" class="modal-overlay" onclick="closeModalOnOverlay(event)">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h2 id="modal-title"></h2>
+      <button class="modal-close-btn" onclick="closeModal()">✕</button>
+    </div>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ================= version / meta ================= */
+var APP_VERSION = 'v0.1.0';
+
+var RELEASE_NOTES = [
+  { ver: 'v0.1.0', date: '2026-07-16', changes: [
+    '初回リリース：英語→日本語（常時）と日本語→英語（プッシュ・トゥ・トーク）の双方向通訳',
+    '方向ごとの入出力デバイス選択・声の選択',
+    '用語辞書（訳さない固有名詞リスト）を通訳指示へ自動適用',
+    '通訳ログのコピー・Markdown保存・クリア',
+    '自分の英訳をイヤホンでも確認できるモニター機能',
+    '音声ルーティング設定ガイド内蔵'
+  ]}
+];
+
+var HOW_TO_USE = [
+  { heading: '① 事前準備（初回のみ）', text: 'BlackHole 2ch / 16ch をインストールし、Audio MIDI設定で「複数出力装置」（イヤホン + BlackHole 2ch）を作成します。詳細は右上の「🔊 音声ルーティング設定ガイド」を参照。' },
+  { heading: '② 聞く（相手の英語→日本語）', text: '左パネルで入力に BlackHole 2ch、出力に自分のイヤホンを選び「通訳を開始」。相手の英語が日本語音声と字幕になります。' },
+  { heading: '③ 話す（自分の日本語→英語）', text: '右パネルで入力に自分のマイク、出力に BlackHole 16ch を選び「接続する」。緑のボタンを押している間だけ日本語を話すと、英語音声がGoogle Meetへ流れます（MeetのマイクをBlackHole 16chに設定）。' },
+  { heading: '④ 用語辞書', text: 'hihaho・xAPI など訳してほしくない固有名詞を1行1語で登録すると、両方向の通訳に適用されます（次回接続時から有効）。' },
+  { heading: '⑤ ログ保存', text: '会議後に「💾 保存」でMarkdownの議事ログをダウンロードできます。' },
+  { heading: '⚠️ 注意', text: '会議参加者へAI通訳の利用を伝えてください。OpenAI APIの従量課金が発生します（gpt-realtime-miniで大幅節約可）。' }
+];
+
+/* ================= state ================= */
+var els = {};
+['model','glossary','refreshButton','copyDebugButton','setupGuideButton',
+ 'inputA','outputA','voiceA','startA','dotA','statusA','levelBarA','levelTextA',
+ 'inputB','outputB','voiceB','startB','dotB','statusB','levelBarB','levelTextB','pttButton','monitorB',
+ 'transcript','emptyMessage','copyTranscriptButton','downloadTranscriptButton','clearTranscriptButton',
+ 'audioA','audioB','audioBMonitor'
+].forEach(function(id){ els[id] = document.getElementById(id); });
+
+var logs = [];
+function addLog(message, data) {
+  logs.push({ time: new Date().toISOString(), message: message, data: data === undefined ? null : data });
+  logs = logs.slice(-400);
+  console.log('[Duo]', message, data === undefined ? '' : data);
+}
+
+var transcriptItems = [];
+
+/* session objects */
+function makeSession(key) {
+  return {
+    key: key,                 // 'A' (en2ja) / 'B' (ja2en)
+    direction: key === 'A' ? 'en2ja' : 'ja2en',
+    running: false, pc: null, dc: null, stream: null, track: null,
+    audioContext: null, animationFrame: null,
+    seenItemIds: {}, lastInputText: '',
+    streamingEl: null
+  };
+}
+var sessions = { A: makeSession('A'), B: makeSession('B') };
+
+/* ================= persistence ================= */
+var DEFAULT_GLOSSARY = ['hihaho','xAPI','SCORM','LMS','LTI','LIBRO+','Kinescope','interactive video','viewer analytics','branching','interaction layer'].join('\n');
+function loadSettings() {
+  els.glossary.value = localStorage.getItem('duo_glossary') || DEFAULT_GLOSSARY;
+  els.model.value = localStorage.getItem('duo_model') || 'gpt-realtime';
+  els.voiceA.value = localStorage.getItem('duo_voiceA') || 'marin';
+  els.voiceB.value = localStorage.getItem('duo_voiceB') || 'cedar';
+  els.monitorB.checked = localStorage.getItem('duo_monitorB') === '1';
+}
+function saveSettings() {
+  localStorage.setItem('duo_glossary', els.glossary.value);
+  localStorage.setItem('duo_model', els.model.value);
+  localStorage.setItem('duo_voiceA', els.voiceA.value);
+  localStorage.setItem('duo_voiceB', els.voiceB.value);
+  localStorage.setItem('duo_monitorB', els.monitorB.checked ? '1' : '0');
+  ['inputA','outputA','inputB','outputB'].forEach(function(id){
+    if (els[id].value) localStorage.setItem('duo_dev_' + id, els[id].value);
+  });
+}
+['glossary','model','voiceA','voiceB','inputA','outputA','inputB','outputB'].forEach(function(id){
+  els[id].addEventListener('change', saveSettings);
+});
+els.monitorB.addEventListener('change', function(){
+  els.audioBMonitor.muted = !els.monitorB.checked;
+  saveSettings();
+});
+
+/* ================= devices ================= */
+async function refreshDevices() {
+  try {
+    var perm = await navigator.mediaDevices.getUserMedia({ audio: true });
+    perm.getTracks().forEach(function(t){ t.stop(); });
+    var devices = await navigator.mediaDevices.enumerateDevices();
+    var inputs = devices.filter(function(d){ return d.kind === 'audioinput'; });
+    var outputs = devices.filter(function(d){ return d.kind === 'audiooutput'; });
+
+    function fill(select, list, emptyLabel) {
+      var current = select.value || localStorage.getItem('duo_dev_' + select.id) || '';
+      select.innerHTML = '<option value="">' + emptyLabel + '</option>';
+      list.forEach(function(d){
+        var o = document.createElement('option');
+        o.value = d.deviceId;
+        o.textContent = d.label || '名称不明';
+        select.append(o);
+      });
+      if (current && list.some(function(d){ return d.deviceId === current; })) select.value = current;
+      return current;
+    }
+    fill(els.inputA, inputs, '既定の入力');
+    fill(els.outputA, outputs, 'システム既定');
+    fill(els.inputB, inputs, '既定の入力');
+    fill(els.outputB, outputs, 'システム既定');
+
+    // 自動推奨: A入力=BlackHole 2ch / B出力=BlackHole 16ch / B入力=BlackHole以外
+    function findDev(list, needle) {
+      return list.find(function(d){ return d.label.toLowerCase().includes(needle); });
+    }
+    if (!els.inputA.value) {
+      var bh2 = findDev(inputs, 'blackhole 2ch');
+      if (bh2) els.inputA.value = bh2.deviceId;
+    }
+    if (!els.outputB.value) {
+      var bh16 = findDev(outputs, 'blackhole 16ch');
+      if (bh16) els.outputB.value = bh16.deviceId;
+    }
+    if (!els.inputB.value) {
+      var mic = inputs.find(function(d){ return !d.label.toLowerCase().includes('blackhole'); });
+      if (mic) els.inputB.value = mic.deviceId;
+    }
+    addLog('デバイス一覧を取得', { inputs: inputs.map(function(d){return d.label;}), outputs: outputs.map(function(d){return d.label;}) });
+  } catch (e) {
+    addLog('デバイス取得エラー', e.message);
+    alert('ブラウザのマイク利用を許可してください。');
+  }
+}
+
+/* ================= level meter ================= */
+function startMeter(s, stream) {
+  var ctx = new AudioContext();
+  var analyser = ctx.createAnalyser();
+  analyser.fftSize = 256;
+  ctx.createMediaStreamSource(stream).connect(analyser);
+  s.audioContext = ctx;
+  var values = new Uint8Array(analyser.frequencyBinCount);
+  var bar = els['levelBar' + s.key], text = els['levelText' + s.key];
+  (function update(){
+    analyser.getByteFrequencyData(values);
+    var avg = values.reduce(function(a,b){return a+b;},0) / values.length;
+    var level = Math.min(100, Math.round(avg / 128 * 100));
+    bar.style.width = level + '%';
+    text.textContent = level + '%';
+    s.animationFrame = requestAnimationFrame(update);
+  })();
+}
+function stopMeter(s) {
+  if (s.animationFrame) cancelAnimationFrame(s.animationFrame);
+  if (s.audioContext) s.audioContext.close();
+  s.audioContext = null; s.animationFrame = null;
+  els['levelBar' + s.key].style.width = '0%';
+  els['levelText' + s.key].textContent = '0%';
+}
+
+/* ================= status ================= */
+function setStatus(s, text, active, error) {
+  els['status' + s.key].textContent = text;
+  var dot = els['dot' + s.key];
+  dot.className = 'inline-block w-2.5 h-2.5 rounded-full ' + (error ? 'bg-red-500' : active ? (s.key === 'A' ? 'bg-blue-400 animate-pulse' : 'bg-green-400 animate-pulse') : 'bg-gray-500');
+}
+
+/* ================= transcript ================= */
+var ROLE_STYLE = {
+  'EN':    { badge: 'bg-gray-600 text-gray-100',   text: 'text-gray-400' },
+  '訳→日': { badge: 'bg-blue-600 text-white',      text: 'text-blue-100' },
+  '日':    { badge: 'bg-gray-600 text-gray-100',   text: 'text-gray-400' },
+  '訳→EN': { badge: 'bg-green-700 text-white',     text: 'text-green-100' }
+};
+
+function timeString() {
+  return new Date().toTimeString().slice(0, 8);
+}
+
+function appendTranscript(role, text, streaming) {
+  if (els.emptyMessage) { els.emptyMessage.remove(); els.emptyMessage = null; }
+  var style = ROLE_STYLE[role];
+  var wrapper = document.createElement('div');
+  wrapper.className = 'mb-2 ' + style.text;
+  var badge = document.createElement('span');
+  badge.className = 'mr-2 inline-block rounded px-1.5 py-0.5 text-[11px] font-bold align-middle ' + style.badge;
+  badge.textContent = role;
+  var content = document.createElement('span');
+  content.textContent = text;
+  wrapper.append(badge, content);
+  els.transcript.append(wrapper);
+  els.transcript.scrollTop = els.transcript.scrollHeight;
+
+  var item = { time: timeString(), role: role, text: text };
+  transcriptItems.push(item);
+  return { wrapper: wrapper, content: content, item: item };
+}
+
+function appendDelta(s, role, delta) {
+  if (!s.streamingEl) {
+    s.streamingEl = appendTranscript(role, delta, true);
+    return;
+  }
+  s.streamingEl.content.textContent += delta;
+  s.streamingEl.item.text += delta;
+  els.transcript.scrollTop = els.transcript.scrollHeight;
+}
+
+/* ================= realtime events ================= */
+function handleEvent(s, event) {
+  var inputRole = s.key === 'A' ? 'EN' : '日';
+  var outputRole = s.key === 'A' ? '訳→日' : '訳→EN';
+
+  switch (event.type) {
+    case 'response.output_audio_transcript.delta':
+      if (event.delta) appendDelta(s, outputRole, event.delta);
+      break;
+    case 'response.output_audio_transcript.done':
+      s.streamingEl = null;
+      break;
+    case 'conversation.item.input_audio_transcription.completed':
+      if (!event.transcript || !event.transcript.trim()) break;
+      // 重複除去: item_id 済み or 直前と同一テキストはスキップ
+      if (event.item_id) {
+        if (s.seenItemIds[event.item_id]) { addLog('重複transcriptをスキップ(item_id)', event.item_id); break; }
+        s.seenItemIds[event.item_id] = true;
+      }
+      if (event.transcript.trim() === s.lastInputText) { addLog('重複transcriptをスキップ(同一テキスト)'); break; }
+      s.lastInputText = event.transcript.trim();
+      appendTranscript(inputRole, event.transcript.trim());
+      break;
+    case 'error':
+      addLog('Realtime APIエラー(' + s.direction + ')', event.error);
+      break;
+  }
+}
+
+/* ================= connect / disconnect ================= */
+async function startSession(s) {
+  if (s.running) return;
+  try {
+    setStatus(s, '接続中...', false, false);
+    addLog('接続開始', s.direction);
+    saveSettings();
+
+    var inputSel = els['input' + s.key];
+    var stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        deviceId: inputSel.value ? { exact: inputSel.value } : undefined,
+        echoCancellation: s.key === 'B',   // マイクはEC有効、BlackHoleは無効
+        noiseSuppression: s.key === 'B',
+        autoGainControl: false,
+        channelCount: 1
+      }
+    });
+    s.stream = stream;
+    s.track = stream.getAudioTracks()[0];
+    if (s.key === 'B') s.track.enabled = false; // PTT: 押すまでミュート
+    startMeter(s, stream);
+
+    var pc = new RTCPeerConnection();
+    s.pc = pc;
+
+    pc.ontrack = async function(event) {
+      var audio = els['audio' + s.key];
+      audio.srcObject = event.streams[0];
+      var outputSel = els['output' + s.key];
+      try {
+        if (outputSel.value && typeof audio.setSinkId === 'function') {
+          await audio.setSinkId(outputSel.value);
+        }
+        await audio.play();
+      } catch (e) { addLog('音声出力エラー', e.message); }
+
+      if (s.key === 'B') {
+        // モニター: 同じストリームをイヤホン(=Aの出力先 or 既定)でも再生
+        var mon = els.audioBMonitor;
+        mon.srcObject = event.streams[0];
+        mon.muted = !els.monitorB.checked;
+        try {
+          if (els.outputA.value && typeof mon.setSinkId === 'function') {
+            await mon.setSinkId(els.outputA.value);
+          }
+          await mon.play();
+        } catch (e) { addLog('モニター出力エラー', e.message); }
+      }
+      addLog('音声トラック受信', s.direction);
+    };
+
+    stream.getTracks().forEach(function(t){ pc.addTrack(t, stream); });
+
+    var dc = pc.createDataChannel('oai-events');
+    s.dc = dc;
+    dc.addEventListener('open', function(){
+      s.running = true;
+      updateButtons(s);
+      setStatus(s, s.key === 'A' ? '通訳中（聞く）' : '接続済み（押して話す）', true, false);
+      addLog('Realtime API接続完了', s.direction);
+    });
+    dc.addEventListener('message', function(m){
+      try { handleEvent(s, JSON.parse(m.data)); } catch (e) { addLog('イベント解析エラー', e.message); }
+    });
+    dc.addEventListener('close', function(){ addLog('データチャンネル終了', s.direction); });
+
+    pc.addEventListener('connectionstatechange', function(){
+      addLog('WebRTC状態(' + s.direction + ')', pc.connectionState);
+      if (['failed','disconnected'].includes(pc.connectionState)) {
+        setStatus(s, pc.connectionState, false, true);
+      }
+    });
+
+    var offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+
+    var response = await fetch('/api/interpreter-call', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sdp: offer.sdp,
+        direction: s.direction,
+        model: els.model.value,
+        voice: els['voice' + s.key].value,
+        glossary: els.glossary.value
+      })
+    });
+    if (!response.ok) throw new Error(await response.text());
+    await pc.setRemoteDescription({ type: 'answer', sdp: await response.text() });
+  } catch (e) {
+    addLog('接続エラー(' + s.direction + ')', e.message);
+    setStatus(s, 'エラー', false, true);
+    stopSession(s, false);
+    alert('接続できませんでした。\n\n' + e.message);
+  }
+}
+
+function stopSession(s, updateStatus) {
+  if (updateStatus === undefined) updateStatus = true;
+  if (s.dc) s.dc.close();
+  if (s.pc) s.pc.close();
+  if (s.stream) s.stream.getTracks().forEach(function(t){ t.stop(); });
+  var audio = els['audio' + s.key];
+  audio.pause(); audio.srcObject = null;
+  if (s.key === 'B') { els.audioBMonitor.pause(); els.audioBMonitor.srcObject = null; }
+  stopMeter(s);
+  s.pc = null; s.dc = null; s.stream = null; s.track = null;
+  s.running = false; s.streamingEl = null;
+  s.seenItemIds = {}; s.lastInputText = '';
+  updateButtons(s);
+  if (updateStatus) setStatus(s, '停止', false, false);
+  addLog('セッション停止', s.direction);
+}
+
+function updateButtons(s) {
+  var running = s.running;
+  var sels = ['input' + s.key, 'output' + s.key, 'voice' + s.key];
+  sels.forEach(function(id){ els[id].disabled = running; });
+  els.model.disabled = sessions.A.running || sessions.B.running;
+
+  if (s.key === 'A') {
+    els.startA.textContent = running ? '停止' : '通訳を開始（聞く）';
+    els.startA.className = 'w-full text-white rounded-xl p-3 font-bold ' + (running ? 'bg-red-600 hover:bg-red-500' : 'bg-blue-600 hover:bg-blue-500');
+  } else {
+    els.startB.textContent = running ? '切断' : '接続する（話す準備）';
+    els.startB.className = 'w-full text-white rounded-xl p-3 font-bold ' + (running ? 'bg-red-600 hover:bg-red-500' : 'bg-green-700 hover:bg-green-600');
+    els.pttButton.disabled = !running;
+    els.pttButton.classList.toggle('opacity-40', !running);
+    els.pttButton.classList.toggle('cursor-not-allowed', !running);
+  }
+}
+
+/* ================= push-to-talk ================= */
+var pttPressed = false;
+function pttDown() {
+  var s = sessions.B;
+  if (!s.running || !s.track || pttPressed) return;
+  pttPressed = true;
+  s.track.enabled = true;
+  els.pttButton.classList.add('ptt-active');
+  addLog('PTT開始');
+}
+function pttUp() {
+  var s = sessions.B;
+  if (!pttPressed) return;
+  pttPressed = false;
+  if (s.track) s.track.enabled = false;
+  els.pttButton.classList.remove('ptt-active');
+  addLog('PTT終了');
+}
+els.pttButton.addEventListener('pointerdown', function(e){ e.preventDefault(); pttDown(); });
+window.addEventListener('pointerup', pttUp);
+els.pttButton.addEventListener('pointerleave', pttUp);
+
+document.addEventListener('keydown', function(e){
+  if (e.key === 'Escape') { closeModal(); return; }
+  if (e.code === 'Space' && !e.repeat && !['TEXTAREA','INPUT','SELECT'].includes(document.activeElement.tagName)) {
+    e.preventDefault(); pttDown();
+  }
+});
+document.addEventListener('keyup', function(e){
+  if (e.code === 'Space' && !['TEXTAREA','INPUT','SELECT'].includes(document.activeElement.tagName)) {
+    e.preventDefault(); pttUp();
+  }
+});
+
+/* ================= transcript actions ================= */
+function transcriptText() {
+  return transcriptItems.map(function(i){ return '[' + i.time + '] [' + i.role + '] ' + i.text; }).join('\n');
+}
+els.copyTranscriptButton.addEventListener('click', async function(){
+  await navigator.clipboard.writeText(transcriptText());
+  alert('通訳ログをコピーしました');
+});
+els.downloadTranscriptButton.addEventListener('click', function(){
+  var d = new Date();
+  var pad = function(n){ return String(n).padStart(2, '0'); };
+  var stamp = d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate());
+  var md = '# 会議通訳ログ ' + stamp + '\n\n' +
+    transcriptItems.map(function(i){ return '- `' + i.time + '` **' + i.role + '** ' + i.text; }).join('\n') + '\n';
+  var blob = new Blob([md], { type: 'text/markdown' });
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'meeting-log-' + stamp + '.md';
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+els.clearTranscriptButton.addEventListener('click', function(){
+  transcriptItems = [];
+  sessions.A.streamingEl = null; sessions.B.streamingEl = null;
+  els.transcript.innerHTML = '<div id="emptyMessage" class="text-center text-gray-500 mt-24">通訳を開始するとここへ表示されます</div>';
+  els.emptyMessage = document.getElementById('emptyMessage');
+});
+
+/* ================= debug ================= */
+els.copyDebugButton.addEventListener('click', async function(){
+  var payload = {
+    app: 'meeting-interpreter-duo', version: APP_VERSION,
+    timestamp: new Date().toISOString(),
+    userAgent: navigator.userAgent,
+    secureContext: window.isSecureContext,
+    location: window.location.href,
+    statusA: els.statusA.textContent, statusB: els.statusB.textContent,
+    devices: {
+      inputA: els.inputA.selectedOptions[0] && els.inputA.selectedOptions[0].text,
+      outputA: els.outputA.selectedOptions[0] && els.outputA.selectedOptions[0].text,
+      inputB: els.inputB.selectedOptions[0] && els.inputB.selectedOptions[0].text,
+      outputB: els.outputB.selectedOptions[0] && els.outputB.selectedOptions[0].text
+    },
+    model: els.model.value,
+    logs: logs
+  };
+  await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+  alert('デバッグ情報をコピーしました');
+});
+
+/* ================= modals ================= */
+function openHowTo() {
+  document.getElementById('modal-title').textContent = '🎧 Meeting Interpreter Duo の使い方';
+  document.getElementById('modal-body').innerHTML = HOW_TO_USE.map(function(item){
+    return '<h3>' + item.heading + '</h3><p>' + item.text + '</p>';
+  }).join('');
+  document.getElementById('info-modal').classList.add('open');
+}
+function openReleaseNotes() {
+  document.getElementById('modal-title').textContent = 'リリースノート';
+  document.getElementById('modal-body').innerHTML = RELEASE_NOTES.map(function(r){
+    var items = r.changes.map(function(c){ return '<li>' + c + '</li>'; }).join('');
+    return '<div class="release-ver"><span class="release-ver-tag">' + r.ver + '</span><span class="release-ver-date">' + r.date + '</span></div><ul>' + items + '</ul>';
+  }).join('');
+  document.getElementById('info-modal').classList.add('open');
+}
+function openSetupGuide() {
+  document.getElementById('modal-title').textContent = '🔊 音声ルーティング設定ガイド';
+  document.getElementById('modal-body').innerHTML =
+    '<h3>必要なもの</h3><ul>' +
+    '<li>BlackHole 2ch（相手の音声取り込み用）</li>' +
+    '<li>BlackHole 16ch（自分の英訳をMeetへ送る用）</li></ul>' +
+    '<pre>brew install --cask blackhole-2ch\nbrew install --cask blackhole-16ch</pre>' +
+    '<h3>Audio MIDI設定</h3><ul>' +
+    '<li>「複数出力装置」を作成し、<b>外部ヘッドフォン + BlackHole 2ch</b> にチェック</li>' +
+    '<li>macOSのサウンド出力を「複数出力装置」にする</li></ul>' +
+    '<h3>Google Meet側</h3><ul>' +
+    '<li>スピーカー: システム既定（=複数出力装置）</li>' +
+    '<li>マイク: <b>BlackHole 16ch</b>（英語で話してもらう場合）</li></ul>' +
+    '<h3>音の流れ</h3>' +
+    '<pre>相手の英語: Meet → 複数出力装置 ─┬→ イヤホン(原音)\n' +
+    '                                └→ BlackHole 2ch → 本アプリ → 日本語音声 → イヤホン\n\n' +
+    '自分の日本語: マイク → 本アプリ(押して話す) → 英語音声 → BlackHole 16ch → Meetマイク → 相手</pre>' +
+    '<h3>ハウリング防止</h3><ul>' +
+    '<li>必ずイヤホン/ヘッドフォンを使用（スピーカー禁止）</li>' +
+    '<li>「聞く」側の出力に BlackHole を選ばない（ループします）</li></ul>';
+  document.getElementById('info-modal').classList.add('open');
+}
+function closeModal() { document.getElementById('info-modal').classList.remove('open'); }
+function closeModalOnOverlay(e) { if (e.target === document.getElementById('info-modal')) closeModal(); }
+
+/* ================= wire up ================= */
+els.startA.addEventListener('click', function(){ sessions.A.running ? stopSession(sessions.A) : startSession(sessions.A); });
+els.startB.addEventListener('click', function(){ sessions.B.running ? stopSession(sessions.B) : startSession(sessions.B); });
+els.refreshButton.addEventListener('click', refreshDevices);
+els.setupGuideButton.addEventListener('click', openSetupGuide);
+if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+  navigator.mediaDevices.addEventListener('devicechange', refreshDevices);
+}
+window.addEventListener('beforeunload', function(){
+  stopSession(sessions.A, false);
+  stopSession(sessions.B, false);
+});
+
+loadSettings();
+refreshDevices();
+
+// 初回起動時は使い方を表示
+if (!localStorage.getItem('duo_seen_' + APP_VERSION)) {
+  localStorage.setItem('duo_seen_' + APP_VERSION, '1');
+  openHowTo();
+}
+</script>
+</body>
+</html>
