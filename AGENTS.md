@@ -162,7 +162,7 @@ cd "$HOME/Library/Mobile Documents/com~apple~CloudDocs/#git/cc-DEV"
 - Firestore パス: `ouchi-hamasushi/{familyCode}/assets/{assetKey}`
 - `onSnapshot` でリアルタイム同期、localStorage をキャッシュとして使用
 - 家族コードは `setting_familyCode` (localStorage)、デフォルト `default`
-- **firestore.rules 変更時は手動デプロイが必須**（GH Actions は Hosting のみ）:
+- **firestore.rules / storage.rules は main への push で自動デプロイされる**（`.github/workflows/firebase-rules-deploy.yml`、2026-07-13 SA に Firebase 管理者ロール付与済み）。手動デプロイは緊急時のみ:
   ```bash
   cd "$HOME/Library/Mobile Documents/com~apple~CloudDocs/#git/cc-DEV"
   npx firebase deploy --only firestore:rules
