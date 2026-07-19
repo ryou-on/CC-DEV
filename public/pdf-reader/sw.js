@@ -1,5 +1,5 @@
 // PDF Reader Service Worker — オフライン対応（アプリシェル + pdf.js CDN をキャッシュ）
-const CACHE_NAME = 'pdfreader-v0.2.0';
+const CACHE_NAME = 'pdfreader-v0.3.0';
 const PRECACHE = [
   './',
   './index.html',
@@ -8,7 +8,8 @@ const PRECACHE = [
   './icon-512.png',
   './apple-touch-icon.png',
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js',
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js'
 ];
 
 self.addEventListener('install', function (e) {

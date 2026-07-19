@@ -62,6 +62,35 @@
   }
   #version { font-size: 11px; color: var(--fg-dim); opacity: .7; }
   #autoSecWrap { display: flex; align-items: center; gap: 3px; font-size: 13px; color: var(--fg-dim); }
+  /* ---------- しおりパネル ---------- */
+  #bmPanel {
+    position: fixed; top: 52px; right: 10px; z-index: 40;
+    width: 240px; max-height: 60vh; display: none; flex-direction: column;
+    background: var(--bar); border: 1px solid #3f4870; border-radius: 10px;
+    box-shadow: 0 8px 32px rgba(0,0,0,.5); overflow: hidden;
+  }
+  #bmPanel.open { display: flex; }
+  #bmHeader {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 12px; font-size: 14px; font-weight: 600;
+    border-bottom: 1px solid #3f4870;
+  }
+  #bmHeader button { background: none; border: none; color: var(--fg-dim); font-size: 14px; cursor: pointer; }
+  #bmList { overflow-y: auto; flex: 1; }
+  #bmList .bmEmpty { padding: 16px 12px; font-size: 12px; color: var(--fg-dim); line-height: 1.6; }
+  .bmItem {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 9px 12px; font-size: 13px; cursor: pointer;
+    border-bottom: 1px solid #2c3252;
+  }
+  .bmItem:hover { background: #2c3252; }
+  .bmItem .bmDel { background: none; border: none; color: var(--fg-dim); cursor: pointer; font-size: 13px; padding: 2px 6px; }
+  .bmItem .bmDel:hover { color: #ff8a80; }
+  #btnBmDownload {
+    margin: 10px; padding: 10px; border: none; border-radius: 8px;
+    background: var(--accent-on); color: #fff; font-size: 13px; cursor: pointer;
+  }
+  #btnBmDownload:disabled { opacity: .4; cursor: default; }
   /* ---------- 表示エリア ---------- */
   #stage {
     flex: 1; overflow: auto; position: relative;
@@ -135,13 +164,16 @@
   <div class="sep"></div>
   <button id="btnAuto" title="自動めくり 開始/停止（a）">▶ 自動</button>
   <span id="autoSecWrap"><input id="autoSecInput" inputmode="decimal" title="自動めくりの間隔（秒）">秒</span>
+  <div class="sep"></div>
+  <button id="btnBookmark" title="このページにしおりを挟む/外す（m）">🔖</button>
+  <button id="btnBmPanel" title="しおり一覧">📑</button>
   <div class="spacer"></div>
   <button id="btnZoomOut" title="縮小">−</button>
   <button id="btnZoomReset" title="ズームリセット">100%</button>
   <button id="btnZoomIn" title="拡大">＋</button>
   <button id="btnFullscreen" title="フルスクリーン">⛶</button>
   <button id="btnDebug" title="デバッグログをコピー">🐛</button>
-  <span id="version">v0.2.0</span>
+  <span id="version">v0.3.0</span>
 </div>
 
 <div id="stage">
@@ -154,6 +186,12 @@
     <p>右開き（右綴じ）の見開き表示に対応。<br>「±1P」で見開きの組み合わせを調整できます。</p>
   </div>
   <div id="loading"><div class="spinner"></div><span>読み込み中...</span></div>
+</div>
+
+<div id="bmPanel">
+  <div id="bmHeader"><span>🔖 しおり</span><button id="bmClose" title="閉じる">✕</button></div>
+  <div id="bmList"></div>
+  <button id="btnBmDownload">⬇ しおりページをPDFで保存</button>
 </div>
 
 <div id="dropOverlay">📥 ドロップしてPDFを開く</div>
@@ -199,6 +237,9 @@ const state = {
   docKey: null,       // ファイルごとの設定保存キー
   autoOn: false,      // 自動めくり中か
   autoSec: 5,         // 自動めくりの間隔（秒）
+  bookmarks: new Set(),  // しおりを挟んだページ番号
+  pdfBytes: null,     // 元PDFのバイト列（しおりページDL用に保持）
+  docName: 'document',
 };
 let renderToken = 0;
 
@@ -213,7 +254,7 @@ function savePrefs() {
     }));
     if (state.docKey) {
       const docs = JSON.parse(localStorage.getItem('pdfreader_docs') || '{}');
-      docs[state.docKey] = { page: state.currentPage, offset: state.offset };
+      docs[state.docKey] = { page: state.currentPage, offset: state.offset, bookmarks: Array.from(state.bookmarks) };
       // 直近50件だけ保持
       const keys = Object.keys(docs);
       if (keys.length > 50) delete docs[keys[0]];
@@ -236,6 +277,7 @@ function loadDocPrefs() {
     if (d) {
       state.offset = d.offset || 0;
       state.currentPage = Math.min(d.page || 1, state.pdfDoc.numPages);
+      state.bookmarks = new Set(d.bookmarks || []);
       return true;
     }
   } catch (e) {}
@@ -304,6 +346,100 @@ function updateAutoButton() {
   $('btnAuto').classList.toggle('active', state.autoOn);
 }
 
+// ================= しおり =================
+// 現在の見開き（単ページ時は1ページ）単位でしおりを付け外しする
+function currentSpreadBookmarked() {
+  const pages = spreadOf(state.currentPage);
+  return pages.every(function (p) { return state.bookmarks.has(p); });
+}
+function toggleBookmark() {
+  if (!state.pdfDoc) { showToast('先にPDFを開いてください'); return; }
+  const pages = spreadOf(state.currentPage);
+  if (currentSpreadBookmarked()) {
+    pages.forEach(function (p) { state.bookmarks.delete(p); });
+    showToast('しおりを外しました（P.' + pages.join('-') + '）');
+  } else {
+    pages.forEach(function (p) { state.bookmarks.add(p); });
+    showToast('しおりを挟みました（P.' + pages.join('-') + '）');
+  }
+  savePrefs();
+  updateToolbar(spreadOf(state.currentPage));
+  renderBmList();
+}
+function renderBmList() {
+  const list = $('bmList');
+  const pages = Array.from(state.bookmarks).sort(function (a, b) { return a - b; });
+  $('btnBmDownload').disabled = pages.length === 0;
+  if (!pages.length) {
+    list.innerHTML = '<div class="bmEmpty">しおりはまだありません。<br>🔖ボタン（またはmキー）で現在のページに挟めます。</div>';
+    return;
+  }
+  list.innerHTML = '';
+  pages.forEach(function (p) {
+    const item = document.createElement('div');
+    item.className = 'bmItem';
+    const label = document.createElement('span');
+    label.textContent = 'P.' + p;
+    const del = document.createElement('button');
+    del.className = 'bmDel';
+    del.textContent = '✕';
+    del.title = 'このしおりを削除';
+    del.onclick = function (e) {
+      e.stopPropagation();
+      state.bookmarks.delete(p);
+      savePrefs();
+      updateToolbar(spreadOf(state.currentPage));
+      renderBmList();
+    };
+    item.appendChild(label);
+    item.appendChild(del);
+    item.onclick = function () { state.currentPage = p; renderView(); };
+    list.appendChild(item);
+  });
+}
+
+// しおりページだけを1つのPDFにまとめてダウンロード（pdf-libは初回使用時に遅延ロード）
+const PDFLIB_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js';
+function ensurePdfLib() {
+  if (window.PDFLib) return Promise.resolve();
+  return new Promise(function (resolve, reject) {
+    const s = document.createElement('script');
+    s.src = PDFLIB_URL;
+    s.onload = resolve;
+    s.onerror = function () { reject(new Error('pdf-lib の読み込みに失敗しました（オフライン？）')); };
+    document.head.appendChild(s);
+  });
+}
+async function downloadBookmarkedPages() {
+  const pages = Array.from(state.bookmarks).sort(function (a, b) { return a - b; });
+  if (!pages.length) { showToast('しおりがありません'); return; }
+  if (!state.pdfBytes) { showToast('元のPDFデータがありません。開き直してください'); return; }
+  $('loading').style.display = 'flex';
+  try {
+    await ensurePdfLib();
+    const src = await PDFLib.PDFDocument.load(state.pdfBytes, { ignoreEncryption: true });
+    const out = await PDFLib.PDFDocument.create();
+    const copied = await out.copyPages(src, pages.map(function (p) { return p - 1; }));
+    copied.forEach(function (pg) { out.addPage(pg); });
+    const bytes = await out.save();
+    const blob = new Blob([bytes], { type: 'application/pdf' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = state.docName + '_しおり' + pages.length + 'P.pdf';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 10000);
+    console.log('bookmark export:', pages.join(','), bytes.length + ' bytes');
+    showToast(pages.length + 'ページをPDFで保存しました');
+  } catch (err) {
+    console.error('bookmark export error:', err.message || err);
+    showToast('保存に失敗しました: ' + (err.message || err));
+  } finally {
+    $('loading').style.display = 'none';
+  }
+}
+
 // ================= 描画 =================
 async function renderView() {
   if (!state.pdfDoc) return;
@@ -366,23 +502,37 @@ function updateToolbar(pages) {
   const cur = pages || [state.currentPage];
   $('btnPrev').disabled = !state.pdfDoc || cur[0] <= 1;
   $('btnNext').disabled = !state.pdfDoc || cur[cur.length - 1] >= n;
+  $('btnBookmark').classList.toggle('active', !!state.pdfDoc && currentSpreadBookmarked());
 }
 
 // ================= PDF読み込み =================
 async function loadPdf(source, name) {
   $('loading').style.display = 'flex';
   try {
-    const task = pdfjsLib.getDocument(source);
+    // URL指定でもバイト列を取得してから開く（しおりページDLで元データが必要なため）
+    let data;
+    if (typeof source === 'string') {
+      const res = await fetch(source);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      data = await res.arrayBuffer();
+    } else {
+      data = source;
+    }
+    state.pdfBytes = data.slice(0);  // pdf.jsに渡すとバッファが移譲されるためコピーを保持
+    const task = pdfjsLib.getDocument({ data: data });
     const doc = await task.promise;
     state.pdfDoc = doc;
     state.currentPage = 1;
     state.zoom = 1;
     stopAuto();  // 新しいPDFを開いたら自動めくりは停止
+    state.bookmarks = new Set();
+    state.docName = (name || 'document').replace(/\.pdf$/i, '');
     state.docKey = (name || 'unknown') + ':' + doc.numPages;
-    loadDocPrefs();  // 前回の位置・オフセットを復元
+    loadDocPrefs();  // 前回の位置・オフセット・しおりを復元
     $('empty').style.display = 'none';
     document.title = (name ? name + ' — ' : '') + 'PDF Reader';
     console.log('loaded:', name, doc.numPages + 'p');
+    renderBmList();
     await renderView();
   } catch (err) {
     console.error('load error:', err.message || err);
@@ -398,7 +548,7 @@ async function loadFile(file) {
     showToast('PDFファイルを選択してください'); return;
   }
   const buf = await file.arrayBuffer();
-  loadPdf({ data: buf }, file.name);
+  loadPdf(buf, file.name);
 }
 
 // ================= UIイベント =================
@@ -436,6 +586,13 @@ $('autoSecInput').onchange = function () {
   this.value = state.autoSec;
 };
 $('autoSecInput').onfocus = function () { this.select(); };
+$('btnBookmark').onclick = toggleBookmark;
+$('btnBmPanel').onclick = function () {
+  $('bmPanel').classList.toggle('open');
+  if ($('bmPanel').classList.contains('open')) renderBmList();
+};
+$('bmClose').onclick = function () { $('bmPanel').classList.remove('open'); };
+$('btnBmDownload').onclick = downloadBookmarkedPages;
 $('btnZoomIn').onclick = function () { state.zoom = Math.min(state.zoom * 1.25, 5); renderView(); };
 $('btnZoomOut').onclick = function () { state.zoom = Math.max(state.zoom / 1.25, 0.25); renderView(); };
 $('btnZoomReset').onclick = function () { state.zoom = 1; renderView(); };
@@ -481,6 +638,7 @@ document.addEventListener('keydown', function (e) {
     case 'b': $('btnBinding').click(); break;
     case 'o': $('btnOffset').click(); break;
     case 'a': $('btnAuto').click(); break;
+    case 'm': toggleBookmark(); break;
   }
 });
 
