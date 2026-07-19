@@ -1,0 +1,67 @@
+# HANDOVER.md - PDF Reader（右開き対応軽量PDFリーダー）
+
+## 基本情報
+- バージョン: v0.1.0
+- フェーズ: Phase 1（MVP）
+- 最終更新: 2026-07-19
+
+## 技術スタック
+- Frontend: Vanilla JS + pdf.js 3.11.174（CDN）— 軽量性優先のためフレームワーク不使用
+- Backend: なし（完全クライアントサイド。PDFはローカルで開くのみ、外部送信なし）
+- Hosting: Firebase Hosting（PWA対応: manifest + Service Worker）
+
+## ファイル構成
+public/pdf-reader/
+├── index.html          … アプリ本体（単一ファイル）
+├── manifest.json       … PWAマニフェスト
+├── sw.js               … Service Worker（アプリシェル + pdf.js CDN をキャッシュ）
+├── icon-192.png / icon-512.png / apple-touch-icon.png
+├── sample.pdf          … 動作確認用サンプル（12ページ・ページ番号入り）
+└── HANDOVER.md
+
+## 完全なコード
+単一ファイル構成のため `index.html` を参照（このリポジトリ内で完結）。
+
+## 主な機能
+- **右開き（右綴じ）見開き表示**: macOSプレビューでは逆になる右綴じ本の見開きを正しい左右で表示。左開きにも切替可
+- **±1P（見開き組み合わせ調整）**: 表紙単独（1 / 2-3 / 4-5…）⇄ 1P目からペア（1-2 / 3-4…）をワンタップで切替
+- 単ページ / 見開き切替、ズーム（25%〜500%）、フルスクリーン
+- 開き方: ファイル選択・ドラッグ＆ドロップ・`?url=` パラメータ（同一オリジン）
+- 操作: キーボード（←→は綴じ方向に追従 / Space / Home / End / s=見開き b=綴じ o=±1P）、画面左右30%タップ、スワイプ（紙の本と同方向）
+- しおり: ファイルごとに最終ページ・±1P設定を自動記憶（localStorage、ファイル名+ページ数で識別）
+- デバッグログコピーボタン（🐛）
+
+## プラットフォーム展開
+| 対象 | 方法 |
+|---|---|
+| ブラウザ版 | https://cc-dev-ps7.web.app/pdf-reader/ をそのまま利用 |
+| Mac アプリ版 | Chrome/Edge で上記URLを開き「アプリをインストール」（PWA）。Safari は「Dockに追加」 |
+| iPadOS 版 | Safari で開き 共有 →「ホーム画面に追加」（PWA・スタンドアロン起動） |
+
+ネイティブ化（Tauri / SwiftUI+PDFKit）は Phase 2 以降の検討事項。
+
+## デプロイ先
+- GitHub Actions: https://github.com/ryou-on/CC-DEV/actions
+- 本番URL: https://cc-dev-ps7.web.app/pdf-reader/
+
+## 進捗チェックリスト
+- [x] 右開き/左開き見開き表示
+- [x] ±1P 見開き組み合わせ調整
+- [x] 単ページ/見開き切替・ズーム・フルスクリーン
+- [x] キーボード / タップ / スワイプ操作
+- [x] ファイルごとの位置・設定記憶
+- [x] PWA（manifest / SW / アイコン）
+- [ ] iPad 実機での PWA インストール確認
+- [ ] ピンチズーム対応
+- [ ] サムネイル一覧 / 目次ジャンプ
+
+## 次のステップ
+1. iPad / Mac 実機で PWA インストールと操作感を確認
+2. 要望に応じてピンチズーム・サムネイル・ダブルタップズーム追加
+3. ネイティブ版が必要なら Tauri（Mac）/ SwiftUI+PDFKit（iPad）を検討
+
+## 既知の問題・注意事項
+- pdf.js の描画は `intent: 'print'` を使用（バックグラウンドタブでも描画が止まらないため）。注釈のインタラクションは無効だが閲覧用途では影響なし
+- 巨大PDF（数百MB）はメモリに全読みするため端末性能に依存
+- `?url=` は同一オリジンのPDFのみ（CORS制約）
+- Service Worker 更新時は `sw.js` の `CACHE_NAME` のバージョンを必ず上げること
