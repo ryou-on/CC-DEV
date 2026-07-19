@@ -54,13 +54,14 @@
   .sep { width: 1px; height: 22px; background: #3f4870; margin: 0 2px; }
   .spacer { flex: 1; }
   #pageInfo { display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--fg-dim); }
-  #pageInput {
+  #pageInput, #autoSecInput {
     width: 3.2em; text-align: center;
     background: #1a1d2e; color: var(--fg);
     border: 1px solid #3f4870; border-radius: 6px;
     padding: 5px 2px; font-size: 13px;
   }
   #version { font-size: 11px; color: var(--fg-dim); opacity: .7; }
+  #autoSecWrap { display: flex; align-items: center; gap: 3px; font-size: 13px; color: var(--fg-dim); }
   /* ---------- 表示エリア ---------- */
   #stage {
     flex: 1; overflow: auto; position: relative;
@@ -131,13 +132,16 @@
   <button id="btnSpread" title="見開き / 単ページ切り替え">見開き</button>
   <button id="btnBinding" title="綴じ方向の切り替え">右開き</button>
   <button id="btnOffset" title="見開きの組み合わせを1ページずらす">±1P</button>
+  <div class="sep"></div>
+  <button id="btnAuto" title="自動めくり 開始/停止（a）">▶ 自動</button>
+  <span id="autoSecWrap"><input id="autoSecInput" inputmode="decimal" title="自動めくりの間隔（秒）">秒</span>
   <div class="spacer"></div>
   <button id="btnZoomOut" title="縮小">−</button>
   <button id="btnZoomReset" title="ズームリセット">100%</button>
   <button id="btnZoomIn" title="拡大">＋</button>
   <button id="btnFullscreen" title="フルスクリーン">⛶</button>
   <button id="btnDebug" title="デバッグログをコピー">🐛</button>
-  <span id="version">v0.1.0</span>
+  <span id="version">v0.2.0</span>
 </div>
 
 <div id="stage">
@@ -193,6 +197,8 @@ const state = {
   offset: 0,          // 0: 1P目が単独（表紙扱い） / 1: 1P目からペア
   zoom: 1,            // フィット倍率に対する追加ズーム
   docKey: null,       // ファイルごとの設定保存キー
+  autoOn: false,      // 自動めくり中か
+  autoSec: 5,         // 自動めくりの間隔（秒）
 };
 let renderToken = 0;
 
@@ -203,7 +209,7 @@ const stage = $('stage'), spreadBox = $('spreadBox');
 function savePrefs() {
   try {
     localStorage.setItem('pdfreader_prefs', JSON.stringify({
-      spreadMode: state.spreadMode, rtl: state.rtl,
+      spreadMode: state.spreadMode, rtl: state.rtl, autoSec: state.autoSec,
     }));
     if (state.docKey) {
       const docs = JSON.parse(localStorage.getItem('pdfreader_docs') || '{}');
@@ -220,6 +226,7 @@ function loadPrefs() {
     const p = JSON.parse(localStorage.getItem('pdfreader_prefs') || '{}');
     if (typeof p.spreadMode === 'boolean') state.spreadMode = p.spreadMode;
     if (typeof p.rtl === 'boolean') state.rtl = p.rtl;
+    if (typeof p.autoSec === 'number' && p.autoSec >= 0.5) state.autoSec = p.autoSec;
   } catch (e) {}
 }
 function loadDocPrefs() {
@@ -256,16 +263,45 @@ function spreadOf(page) {
 }
 
 function goNext() {
-  if (!state.pdfDoc) return;
+  if (!state.pdfDoc) return false;
   const cur = spreadOf(state.currentPage);
   const next = cur[cur.length - 1] + 1;
-  if (next <= state.pdfDoc.numPages) { state.currentPage = next; renderView(); }
+  if (next > state.pdfDoc.numPages) return false;
+  state.currentPage = next; renderView();
+  if (state.autoOn) startAuto();  // 手動めくり時もカウントダウンをリセット
+  return true;
 }
 function goPrev() {
-  if (!state.pdfDoc) return;
+  if (!state.pdfDoc) return false;
   const cur = spreadOf(state.currentPage);
   const prev = cur[0] - 1;
-  if (prev >= 1) { state.currentPage = prev; renderView(); }
+  if (prev < 1) return false;
+  state.currentPage = prev; renderView();
+  if (state.autoOn) startAuto();
+  return true;
+}
+
+// ================= 自動めくり =================
+let autoTimer = null;
+function startAuto() {
+  clearInterval(autoTimer);
+  autoTimer = setInterval(autoTick, state.autoSec * 1000);
+  state.autoOn = true;
+  updateAutoButton();
+}
+function stopAuto() {
+  clearInterval(autoTimer);
+  autoTimer = null;
+  state.autoOn = false;
+  updateAutoButton();
+}
+function autoTick() {
+  // autoTick→goNext成功時はgoNext側でカウントダウンが再スタートする
+  if (!goNext()) { stopAuto(); showToast('最終ページのため自動めくりを停止しました'); }
+}
+function updateAutoButton() {
+  $('btnAuto').textContent = state.autoOn ? '⏸ 自動' : '▶ 自動';
+  $('btnAuto').classList.toggle('active', state.autoOn);
 }
 
 // ================= 描画 =================
@@ -341,6 +377,7 @@ async function loadPdf(source, name) {
     state.pdfDoc = doc;
     state.currentPage = 1;
     state.zoom = 1;
+    stopAuto();  // 新しいPDFを開いたら自動めくりは停止
     state.docKey = (name || 'unknown') + ':' + doc.numPages;
     loadDocPrefs();  // 前回の位置・オフセットを復元
     $('empty').style.display = 'none';
@@ -379,6 +416,26 @@ $('btnOffset').onclick = function () {
   showToast(state.offset === 1 ? '1P目からペア（1-2, 3-4…）' : '1P目は単独表示（表紙）＋ 2-3, 4-5…');
   renderView();
 };
+$('btnAuto').onclick = function () {
+  if (state.autoOn) { stopAuto(); showToast('自動めくりを停止しました'); }
+  else {
+    if (!state.pdfDoc) { showToast('先にPDFを開いてください'); return; }
+    startAuto();
+    showToast(state.autoSec + '秒ごとに自動めくりします');
+  }
+};
+$('autoSecInput').onchange = function () {
+  const v = parseFloat(this.value);
+  if (v >= 0.5 && v <= 600) {
+    state.autoSec = v;
+    savePrefs();
+    if (state.autoOn) { startAuto(); showToast(v + '秒間隔に変更しました'); }
+  } else {
+    showToast('0.5〜600秒で指定してください');
+  }
+  this.value = state.autoSec;
+};
+$('autoSecInput').onfocus = function () { this.select(); };
 $('btnZoomIn').onclick = function () { state.zoom = Math.min(state.zoom * 1.25, 5); renderView(); };
 $('btnZoomOut').onclick = function () { state.zoom = Math.max(state.zoom / 1.25, 0.25); renderView(); };
 $('btnZoomReset').onclick = function () { state.zoom = 1; renderView(); };
@@ -423,6 +480,7 @@ document.addEventListener('keydown', function (e) {
     case 's': $('btnSpread').click(); break;
     case 'b': $('btnBinding').click(); break;
     case 'o': $('btnOffset').click(); break;
+    case 'a': $('btnAuto').click(); break;
   }
 });
 
@@ -492,6 +550,7 @@ function showToast(msg) {
 // ================= 起動 =================
 loadPrefs();
 updateToolbar(null);
+$('autoSecInput').value = state.autoSec;
 
 // ?url= で同一オリジンのPDFを直接開ける（デモ・検証用）
 (function () {

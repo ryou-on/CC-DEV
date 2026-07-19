@@ -1,5 +1,5 @@
 // PDF Reader Service Worker — オフライン対応（アプリシェル + pdf.js CDN をキャッシュ）
-const CACHE_NAME = 'pdfreader-v0.1.0';
+const CACHE_NAME = 'pdfreader-v0.2.0';
 const PRECACHE = [
   './',
   './index.html',
