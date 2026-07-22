@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Editor v5.29.0</title>
+  <script src="jspdf.min.js"></script>
+  <style>
+    body { margin: 0; background: #0f172a; font-family: sans-serif; color: white; overflow-x: hidden; user-select: none; }
+    .toolbar { position: fixed; top: 0; left: 0; right: 0; background: rgba(15,23,42,0.98); padding: 12px 20px; z-index: 2000; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; backdrop-filter: blur(10px); }
+    .btn { padding: 8px 16px; border-radius: 12px; border: none; font-weight: bold; cursor: pointer; font-size: 12px; transition: 0.2s; }
+    .btn-save { background: linear-gradient(135deg, #6366f1, #a855f7); color: white; }
+    .btn-neutral { background: #334155; color: #cbd5e1; }
+    .btn-danger { background: #7f1d1d; color: #fca5a5; }
+    .btn-crop { background: #166534; color: #bbf7d0; }
+    .btn-crop.off { background: #334155; color: #94a3b8; }
+    .progress-wrap { position: fixed; top: 60px; left: 0; right: 0; height: 4px; background: #1e293b; z-index: 2001; display: none; }
+    .progress-bar { height: 100%; width: 0%; background: #818cf8; transition: width 0.1s; }
+    .container { max-width: 1400px; margin: 100px auto 40px; padding: 0 40px; display: grid; gap: 20px; }
+    .page-card { position: relative; background: #1e293b; padding: 10px; border-radius: 16px; border: 2px solid transparent; }
+    .page-card.focused { border-color: #818cf8; box-shadow: 0 0 20px rgba(99,102,241,0.3); }
+    .page-card.selected { border-color: #f43f5e; background: #311b23; }
+    canvas { max-width: 100%; height: auto; display: block; border-radius: 8px; margin: 0 auto; }
+    .selector { position: absolute; top: 10px; left: 10px; z-index: 20; width: 22px; height: 22px; cursor: pointer; }
+    .page-num { position: absolute; bottom: 12px; right: 12px; background: rgba(0,0,0,0.8); color: white; padding: 2px 8px; border-radius: 6px; font-size: 10px; font-weight: bold; border: 1px solid rgba(255,255,255,0.1); }
+    .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 3000; display: none; align-items: center; justify-content: center; }
+    .modal-content { background: #1e293b; padding: 30px; border-radius: 24px; display: flex; gap: 30px; max-width: 900px; border: 1px solid #334155; }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <div style="display:flex; align-items:center; gap:15px;"><span id="info" style="font-size:12px; color:#94a3b8;">読込中...</span><input type="range" id="sizeSlider" min="150" max="1000" value="300"></div>
+    <div style="display:flex; gap:10px;"><select id="splitSel" class="btn btn-neutral" style="cursor:pointer;"><option value="auto">分割:自動</option><option value="single">分割:なし</option><option value="spread">分割:見開き</option></select><button id="cropBtn" class="btn btn-crop">余白カット:ON</button><select id="marginSel" class="btn btn-neutral" style="cursor:pointer;" title="選択ページ（無ければ全ページ）の外側マージンを変更"><option value="" selected disabled>マージン</option><option value="none">なし</option><option value="narrow">狭い</option><option value="std">標準</option><option value="wide">広い</option></select><button id="detectBtn" class="btn btn-neutral" title="横長（見開きのまま）のページを全ページから自動検知して一括2分割">見開き検知</button><button id="splitBtn" class="btn btn-neutral" title="選択中（無ければフォーカス中）の見開きページを左右2ページに強制分割">2分割</button><button id="mergeBtn" class="btn btn-neutral" title="分割の取り消し: 選択中ページと同じ撮影画像由来の隣ページを1枚に結合して戻す">結合</button><button id="trimBtn" class="btn btn-neutral" title="フォーカス/選択中ページの余白カット枠を手動調整（カードのダブルクリックでも開けます）">トリミング</button><button id="replaceBtn" class="btn btn-neutral" title="選択中ページを画像ファイルで差し替え">差し替え</button><button id="insertBtn" class="btn btn-neutral" title="選択中ページの後ろに画像ファイルを追加">追加</button><button id="dedupBtn" class="btn btn-neutral">重複削除</button><select id="selectSel" class="btn btn-neutral" style="cursor:pointer;" title="ページの一括選択（全ページ/偶数/奇数/解除）"><option value="" selected disabled>選択</option><option value="all">全選択</option><option value="even">偶数ページ</option><option value="odd">奇数ページ</option><option value="none">選択解除</option></select><button id="undoBtn" class="btn btn-neutral" title="直前の操作を取り消し（Ctrl+Z）">↩</button><button id="redoBtn" class="btn btn-neutral" title="取り消した操作をやり直し（Ctrl+Shift+Z / Ctrl+Y）">↪</button><button id="deleteBtn" class="btn btn-danger">削除(y)</button><button id="saveBtn" class="btn btn-save">保存</button><button id="closeBtn" class="btn btn-neutral">閉じる</button></div>
+  </div>
+  <input type="file" id="fileInput" accept="image/*" style="display:none">
+  <div id="pWrap" class="progress-wrap"><div id="pBar" class="progress-bar"></div></div>
+  <div id="container" class="container"></div>
+  <div id="trimModal" class="modal"><div class="modal-content" style="flex-direction:column; max-width:95vw; gap:15px;"><div style="font-size:13px; color:#94a3b8;">枠をドラッグで移動、端・角をドラッグでサイズ変更。<span style="color:#f87171;">赤の破線＝自動検出した本の縁 ／ 赤の実線＝現在枠の中心線</span>。「選択ページにも適用」は枠の調整量（各辺の動かし幅）を選択中の全ページに反映します</div><canvas id="trimCanvas" style="max-width:90vw; max-height:70vh; border-radius:8px; cursor:crosshair;"></canvas><div style="display:flex; gap:10px; justify-content:center;"><button id="trimApply" class="btn btn-save">適用</button><button id="trimApplySel" class="btn btn-save" title="このページで動かした各辺の調整量を、選択中の全ページの枠にも適用">選択ページにも適用</button><button id="trimReset" class="btn btn-neutral">自動に戻す</button><button id="trimCancel" class="btn btn-neutral">キャンセル (Esc)</button></div></div></div>
+  <div id="aiModal" class="modal"><div class="modal-content"><img id="coverPreview" style="max-height:500px; border-radius:8px;"><div style="flex:1; display:flex; flex-direction:column; gap:15px;"><h2 style="color:#818cf8; margin:0;">保存 / タイトル確認</h2><label>タイトル（自動入力・修正可）</label><input type="text" id="aiTitle" style="padding:10px; border-radius:8px; background:#0f172a; color:white; border:1px solid #334155;"><label>著者名</label><input type="text" id="aiAuthor" style="padding:10px; border-radius:8px; background:#0f172a; color:white; border:1px solid #334155;"><button id="aiConfirmBtn" class="btn btn-save">確定して保存</button></div></div></div>
+  <script src="viewer.js"></script>
+</body>
+</html>
