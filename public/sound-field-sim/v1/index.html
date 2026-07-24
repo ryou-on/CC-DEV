@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>音場シミュレーター</title>
+<style>
+  :root {
+    --bg: #0d1017;
+    --panel: #161b26;
+    --panel2: #1e2534;
+    --border: #2a3347;
+    --text: #dde3ee;
+    --dim: #8a94a8;
+    --accent: #4da3ff;
+    --green: #3ddc84;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: "Hiragino Sans", "Noto Sans JP", sans-serif;
+    height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+  }
+  header {
+    display: flex; align-items: center; gap: 14px;
+    padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  header h1 { font-size: 16px; font-weight: 700; }
+  header .ver { font-size: 11px; color: var(--dim); }
+  .room-tabs { display: flex; gap: 6px; margin-left: 12px; }
+  .room-tabs button {
+    padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--panel2); color: var(--text); cursor: pointer; font-size: 13px;
+  }
+  .room-tabs button.active { background: var(--accent); border-color: var(--accent); color: #06131f; font-weight: 700; }
+  .mode-tabs { display: flex; gap: 6px; margin-left: auto; }
+  .mode-tabs button {
+    padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--panel2); color: var(--text); cursor: pointer; font-size: 13px;
+  }
+  .mode-tabs button.active { background: #e8894a; border-color: #e8894a; color: #1a0e04; font-weight: 700; }
+  main { flex: 1; display: flex; min-height: 0; }
+  #sidebar {
+    width: 300px; flex-shrink: 0; background: var(--panel);
+    border-right: 1px solid var(--border); overflow-y: auto; padding: 14px;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  .section h2 { font-size: 12px; color: var(--dim); margin-bottom: 8px; letter-spacing: 0.05em; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; margin-bottom: 6px; }
+  .row .val { color: var(--accent); font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 130px; accent-color: var(--accent); }
+  .btnrow { display: flex; gap: 8px; }
+  .btnrow button {
+    flex: 1; padding: 8px 0; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--panel2); color: var(--text); cursor: pointer; font-size: 13px;
+  }
+  .btnrow button:hover { border-color: var(--accent); }
+  .btnrow button.on { background: var(--green); border-color: var(--green); color: #06131f; font-weight: 700; }
+  #sourceList { display: flex; flex-direction: column; gap: 10px; }
+  .src-card {
+    background: var(--panel2); border: 1px solid var(--border); border-radius: 8px; padding: 10px;
+  }
+  .src-card .head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 13px; }
+  .src-card .chip { width: 12px; height: 12px; border-radius: 50%; }
+  .src-card .del {
+    margin-left: auto; background: none; border: none; color: var(--dim); cursor: pointer; font-size: 15px;
+  }
+  .src-card .del:hover { color: #ff6b6b; }
+  .info { font-size: 12px; color: var(--dim); line-height: 1.7; }
+  .info b { color: var(--text); font-weight: 600; }
+  .hint { font-size: 11px; color: var(--dim); line-height: 1.6; background: var(--panel2); border-radius: 6px; padding: 8px 10px; }
+  #stage { flex: 1; display: flex; align-items: center; justify-content: center; min-width: 0; position: relative; padding: 16px; }
+  #canvas { border: 2px solid var(--border); border-radius: 4px; cursor: crosshair; max-width: 100%; max-height: 100%; }
+  #legend {
+    position: absolute; right: 24px; bottom: 24px; background: rgba(13,16,23,0.85);
+    border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 11px; color: var(--dim);
+  }
+  #legend .bar { width: 140px; height: 10px; border-radius: 3px; margin: 4px 0; }
+  #legend .lab { display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🔊 音場シミュレーター</h1>
+  <span class="ver">v1.0.0</span>
+  <div class="room-tabs" id="roomTabs">
+    <button data-room="6">6畳</button>
+    <button data-room="15" class="active">15畳</button>
+    <button data-room="30">30畳</button>
+  </div>
+  <div class="mode-tabs" id="modeTabs">
+    <button data-mode="wave" class="active">波動アニメーション</button>
+    <button data-mode="heat">音圧ヒートマップ</button>
+  </div>
+</header>
+<main>
+  <div id="sidebar">
+    <div class="section">
+      <h2>シミュレーション</h2>
+      <div class="btnrow" style="margin-bottom:8px">
+        <button id="btnPause">⏸ 一時停止</button>
+        <button id="btnReset">↺ リセット</button>
+        <button id="btnAudio">🔈 音を聞く</button>
+      </div>
+      <div class="row"><span>壁の吸音率 α</span><input type="range" id="absorb" min="0" max="100" value="20"><span class="val" id="absorbVal">0.20</span></div>
+      <div class="row"><span>再生速度</span><input type="range" id="speed" min="1" max="16" value="6"><span class="val" id="speedVal"></span></div>
+    </div>
+    <div class="section">
+      <h2>音源（最大8個 / キャンバスをクリックで追加）</h2>
+      <div id="sourceList"></div>
+    </div>
+    <div class="section">
+      <h2>部屋の情報</h2>
+      <div class="info" id="roomInfo"></div>
+    </div>
+    <div class="section">
+      <h2>リスナー 🎧（緑マーカーをドラッグ）</h2>
+      <div class="info" id="listenerInfo"></div>
+    </div>
+    <div class="hint">
+      <b>使い方</b><br>
+      ・空きスペースをクリック → 音源を追加<br>
+      ・音源/リスナーをドラッグ → 移動<br>
+      ・音源をダブルクリック → 削除<br>
+      ・波動モードは実時間の約1/40のスロー再生です
+    </div>
+  </div>
+  <div id="stage">
+    <canvas id="canvas"></canvas>
+    <div id="legend">
+      <div id="legendWave">
+        <div class="bar" style="background:linear-gradient(90deg,#3b6fff,#0d1017,#ff5a3c)"></div>
+        <div class="lab"><span>負圧</span><span>0</span><span>正圧</span></div>
+      </div>
+      <div id="legendHeat" style="display:none">
+        <div class="bar" id="heatBar"></div>
+        <div class="lab"><span>-50 dB</span><span>相対音圧レベル</span><span>0 dB</span></div>
+      </div>
+    </div>
+  </div>
+</main>
+<script>
+"use strict";
+// ---------- 定数 ----------
+const C = 343;            // 音速 m/s
+const DX = 0.03;          // 格子間隔 m
+const DT = 0.95 * DX / (C * Math.SQRT2);
+const C2 = (C * DT / DX) ** 2;
+const SPONGE = 8;         // 吸音境界層の厚さ(セル)
+const CEIL_H = 2.4;       // 天井高 m（残響計算用）
+// 畳サイズ: 中京間ベース（1畳 ≈ 0.91m × 1.82m）
+const ROOMS = {
+  6:  { w: 3.64, d: 2.73,  label: "6畳" },
+  15: { w: 5.46, d: 4.55,  label: "15畳" },
+  30: { w: 7.28, d: 6.825, label: "30畳" }
+};
+const SRC_COLORS = ["#ff5a3c","#ffb13c","#3ddc84","#4da3ff","#c77dff","#ff7ab8","#5ce1e6","#d4e157"];
+const MAX_SRC = 8;
+
+// ---------- 状態 ----------
+let roomKey = 15;
+let viewMode = "wave";        // wave | heat
+let paused = false;
+let stepsPerFrame = 6;
+let absorption = 0.20;
+let audioOn = false;
+let sources = [];             // {rx, ry(0-1相対座標), freq, vol, color, phase}
+let listener = { rx: 0.75, ry: 0.5 };
+let nx, ny, u, uPrev, uNext, rms, dampMap;
+let simTime = 0;
+
+// ---------- DOM ----------
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const off = document.createElement("canvas");
+const octx = off.getContext("2d");
+let img = null;
+
+// ---------- ヒートマップ用カラーLUT ----------
+const HEAT_STOPS = [
+  [0.00,  13, 16, 26], [0.20,  38, 48,140], [0.40,  31,158,137],
+  [0.62, 232,216, 74], [0.82, 244,120, 50], [1.00, 255, 40, 60]
+];
+const heatLUT = new Uint8Array(256 * 3);
+for (let i = 0; i < 256; i++) {
+  const t = i / 255;
+  let a = HEAT_STOPS[0], b = HEAT_STOPS[HEAT_STOPS.length - 1];
+  for (let s = 0; s < HEAT_STOPS.length - 1; s++)
+    if (t >= HEAT_STOPS[s][0] && t <= HEAT_STOPS[s+1][0]) { a = HEAT_STOPS[s]; b = HEAT_STOPS[s+1]; break; }
+  const f = (t - a[0]) / Math.max(1e-9, b[0] - a[0]);
+  heatLUT[i*3]   = a[1] + (b[1]-a[1]) * f;
+  heatLUT[i*3+1] = a[2] + (b[2]-a[2]) * f;
+  heatLUT[i*3+2] = a[3] + (b[3]-a[3]) * f;
+}
+document.getElementById("heatBar").style.background =
+  "linear-gradient(90deg," + HEAT_STOPS.map(s => `rgb(${s[1]},${s[2]},${s[3]}) ${s[0]*100}%`).join(",") + ")";
+
+// ---------- グリッド構築 ----------
+function buildGrid() {
+  const r = ROOMS[roomKey];
+  nx = Math.round(r.w / DX);
+  ny = Math.round(r.d / DX);
+  u = new Float32Array(nx * ny);
+  uPrev = new Float32Array(nx * ny);
+  uNext = new Float32Array(nx * ny);
+  rms = new Float32Array(nx * ny);
+  dampMap = new Float32Array(nx * ny);
+  buildDamp();
+  simTime = 0;
+  off.width = nx; off.height = ny;
+  img = octx.createImageData(nx, ny);
+  fitCanvas();
+  updateRoomInfo();
+}
+function buildDamp() {
+  for (let j = 0; j < ny; j++) {
+    for (let i = 0; i < nx; i++) {
+      const edge = Math.min(i, j, nx - 1 - i, ny - 1 - j);
+      let d = 0;
+      if (edge < SPONGE) {
+        const t = (SPONGE - edge) / SPONGE;
+        d = absorption * 0.35 * t * t;
+      }
+      dampMap[j * nx + i] = 1 - d;
+    }
+  }
+}
+function fitCanvas() {
+  const stage = document.getElementById("stage");
+  const availW = stage.clientWidth - 40, availH = stage.clientHeight - 40;
+  const r = ROOMS[roomKey];
+  const scale = Math.min(availW / r.w, availH / r.d);
+  canvas.width = Math.round(r.w * scale);
+  canvas.height = Math.round(r.d * scale);
+}
+
+// ---------- FDTD ステップ ----------
+function step() {
+  const t = simTime;
+  for (let j = 1; j < ny - 1; j++) {
+    const row = j * nx;
+    for (let i = 1; i < nx - 1; i++) {
+      const idx = row + i;
+      const lap = u[idx-1] + u[idx+1] + u[idx-nx] + u[idx+nx] - 4 * u[idx];
+      uNext[idx] = dampMap[idx] * (2 * u[idx] - uPrev[idx] + C2 * lap);
+    }
+  }
+  // 剛壁（Neumann境界）: 外周セルは隣接値をコピー
+  for (let i = 0; i < nx; i++) { uNext[i] = uNext[nx + i]; uNext[(ny-1)*nx + i] = uNext[(ny-2)*nx + i]; }
+  for (let j = 0; j < ny; j++) { uNext[j*nx] = uNext[j*nx + 1]; uNext[j*nx + nx-1] = uNext[j*nx + nx-2]; }
+  // 音源（ソフトソース）
+  for (const s of sources) {
+    if (s.vol <= 0) continue;
+    const idx = srcIndex(s);
+    uNext[idx] += s.vol * 1.5 * Math.sin(2 * Math.PI * s.freq * t + s.phase);
+  }
+  const tmp = uPrev; uPrev = u; u = uNext; uNext = tmp;
+  simTime += DT;
+}
+function srcIndex(s) {
+  const i = Math.max(1, Math.min(nx - 2, Math.round(s.rx * (nx - 1))));
+  const j = Math.max(1, Math.min(ny - 2, Math.round(s.ry * (ny - 1))));
+  return j * nx + i;
+}
+
+// ---------- 描画 ----------
+function render() {
+  const data = img.data;
+  if (viewMode === "wave") {
+    for (let k = 0; k < u.length; k++) {
+      const v = Math.max(-1, Math.min(1, u[k] * 4));
+      const p = k * 4;
+      if (v >= 0) { data[p] = 13 + v * 242; data[p+1] = 16 + v * 74;  data[p+2] = 23 + v * 37; }
+      else        { data[p] = 13 - v * 46;  data[p+1] = 16 - v * 95;  data[p+2] = 23 - v * 232; }
+      data[p+3] = 255;
+    }
+  } else {
+    let maxR = 1e-12;
+    for (let k = 0; k < rms.length; k++) if (rms[k] > maxR) maxR = rms[k];
+    const dbMax = 10 * Math.log10(maxR);
+    for (let k = 0; k < rms.length; k++) {
+      const db = 10 * Math.log10(rms[k] + 1e-12);
+      let n = (db - dbMax + 50) / 50;
+      n = Math.max(0, Math.min(1, n));
+      const li = Math.round(n * 255) * 3;
+      const p = k * 4;
+      data[p] = heatLUT[li]; data[p+1] = heatLUT[li+1]; data[p+2] = heatLUT[li+2]; data[p+3] = 255;
+    }
+  }
+  octx.putImageData(img, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(off, 0, 0, canvas.width, canvas.height);
+  drawTatamiGrid();
+  drawMarkers();
+}
+function drawTatamiGrid() {
+  const r = ROOMS[roomKey];
+  const sx = canvas.width / r.w, sy = canvas.height / r.d;
+  ctx.strokeStyle = "rgba(255,255,255,0.07)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let x = 0.91; x < r.w - 0.01; x += 0.91) { ctx.moveTo(x * sx, 0); ctx.lineTo(x * sx, canvas.height); }
+  for (let y = 0.91; y < r.d - 0.01; y += 0.91) { ctx.moveTo(0, y * sy); ctx.lineTo(canvas.width, y * sy); }
+  ctx.stroke();
+}
+function drawMarkers() {
+  for (const s of sources) {
+    const x = s.rx * canvas.width, y = s.ry * canvas.height;
+    ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2);
+    ctx.fillStyle = s.color; ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = "#0d1017"; ctx.stroke();
+    ctx.fillStyle = "#0d1017"; ctx.font = "bold 10px sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText("♪", x, y + 0.5);
+  }
+  const lx = listener.rx * canvas.width, ly = listener.ry * canvas.height;
+  ctx.beginPath(); ctx.arc(lx, ly, 9, 0, Math.PI * 2);
+  ctx.fillStyle = "#3ddc84"; ctx.fill();
+  ctx.lineWidth = 2; ctx.strokeStyle = "#0d1017"; ctx.stroke();
+  ctx.fillStyle = "#0d1017"; ctx.font = "bold 11px sans-serif";
+  ctx.fillText("L", lx, ly + 0.5);
+}
+
+// ---------- メインループ ----------
+function frame() {
+  if (!paused) {
+    for (let n = 0; n < stepsPerFrame; n++) step();
+    for (let k = 0; k < u.length; k++) rms[k] = rms[k] * 0.985 + u[k] * u[k] * 0.015;
+  }
+  render();
+  updateListenerInfo();
+  requestAnimationFrame(frame);
+}
+
+// ---------- 情報パネル ----------
+function updateRoomInfo() {
+  const r = ROOMS[roomKey];
+  const area = r.w * r.d;
+  const V = area * CEIL_H;
+  const S = 2 * area + 2 * (r.w + r.d) * CEIL_H;
+  const rt60 = absorption > 0.001 ? (0.161 * V / (absorption * S)).toFixed(2) + " 秒" : "∞（吸音なし）";
+  document.getElementById("roomInfo").innerHTML =
+    `広さ: <b>${r.label}</b>（${r.w.toFixed(2)} × ${r.d.toFixed(2)} m / ${area.toFixed(1)} m²）<br>` +
+    `天井高: ${CEIL_H} m ／ 容積: ${V.toFixed(1)} m³<br>` +
+    `残響時間 RT60（Sabine推定）: <b>${rt60}</b><br>` +
+    `計算格子: ${nx} × ${ny}（${DX*100} cm間隔）`;
+}
+function updateListenerInfo() {
+  const i = Math.round(listener.rx * (nx - 1));
+  const j = Math.round(listener.ry * (ny - 1));
+  const db = 10 * Math.log10(rms[j * nx + i] + 1e-12);
+  let maxR = 1e-12;
+  for (let k = 0; k < rms.length; k++) if (rms[k] > maxR) maxR = rms[k];
+  const rel = (db - 10 * Math.log10(maxR)).toFixed(1);
+  document.getElementById("listenerInfo").innerHTML =
+    `位置: (${(listener.rx * ROOMS[roomKey].w).toFixed(2)}, ${(listener.ry * ROOMS[roomKey].d).toFixed(2)}) m<br>` +
+    `相対音圧レベル: <b>${rel} dB</b>（室内最大値=0 dB）`;
+}
+
+// ---------- 音源管理 ----------
+function addSource(rx, ry) {
+  if (sources.length >= MAX_SRC) return;
+  sources.push({
+    rx, ry, freq: 440, vol: 0.8,
+    color: SRC_COLORS[sources.length % SRC_COLORS.length],
+    phase: 0, osc: null, gain: null, pan: null
+  });
+  renderSourceList();
+  syncAudio();
+}
+function removeSource(idx) {
+  stopSourceAudio(sources[idx]);
+  sources.splice(idx, 1);
+  renderSourceList();
+}
+function renderSourceList() {
+  const list = document.getElementById("sourceList");
+  list.innerHTML = "";
+  sources.forEach((s, idx) => {
+    const card = document.createElement("div");
+    card.className = "src-card";
+    card.innerHTML =
+      `<div class="head"><span class="chip" style="background:${s.color}"></span>音源 ${idx + 1}` +
+      `<button class="del" title="削除">✕</button></div>` +
+      `<div class="row"><span>周波数</span><input type="range" class="fq" min="100" max="1000" step="10" value="${s.freq}"><span class="val fqv">${s.freq} Hz</span></div>` +
+      `<div class="row"><span>音量</span><input type="range" class="vl" min="0" max="100" value="${Math.round(s.vol * 100)}"><span class="val vlv">${Math.round(s.vol * 100)}%</span></div>`;
+    card.querySelector(".del").onclick = () => removeSource(idx);
+    card.querySelector(".fq").oninput = e => {
+      s.freq = +e.target.value;
+      card.querySelector(".fqv").textContent = s.freq + " Hz";
+      if (s.osc) s.osc.frequency.value = s.freq;
+    };
+    card.querySelector(".vl").oninput = e => {
+      s.vol = +e.target.value / 100;
+      card.querySelector(".vlv").textContent = e.target.value + "%";
+      if (s.gain) s.gain.gain.value = s.vol * 0.08;
+    };
+    list.appendChild(card);
+  });
+}
+
+// ---------- Web Audio ----------
+let ac = null;
+function syncAudio() {
+  if (!audioOn) return;
+  if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)();
+  for (const s of sources) {
+    if (!s.osc) {
+      s.osc = ac.createOscillator();
+      s.gain = ac.createGain();
+      s.pan = ac.createStereoPanner();
+      s.osc.frequency.value = s.freq;
+      s.gain.gain.value = s.vol * 0.08;
+      s.osc.connect(s.gain).connect(s.pan).connect(ac.destination);
+      s.osc.start();
+    }
+    s.pan.pan.value = Math.max(-1, Math.min(1, (s.rx - listener.rx) * 2));
+  }
+}
+function stopSourceAudio(s) {
+  if (s.osc) { try { s.osc.stop(); } catch(e){} s.osc.disconnect(); s.osc = null; s.gain = null; s.pan = null; }
+}
+function stopAllAudio() { for (const s of sources) stopSourceAudio(s); }
+
+// ---------- 入力 ----------
+let dragging = null, dragMoved = false;
+function hitTest(mx, my) {
+  const R = 14;
+  for (let i = sources.length - 1; i >= 0; i--) {
+    const s = sources[i];
+    if (Math.hypot(mx - s.rx * canvas.width, my - s.ry * canvas.height) < R) return { type: "src", obj: s, idx: i };
+  }
+  if (Math.hypot(mx - listener.rx * canvas.width, my - listener.ry * canvas.height) < R) return { type: "listener", obj: listener };
+  return null;
+}
+function canvasPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  return { mx: (e.clientX - rect.left) * canvas.width / rect.width, my: (e.clientY - rect.top) * canvas.height / rect.height };
+}
+canvas.addEventListener("mousedown", e => {
+  const { mx, my } = canvasPos(e);
+  dragging = hitTest(mx, my);
+  dragMoved = false;
+});
+canvas.addEventListener("mousemove", e => {
+  const { mx, my } = canvasPos(e);
+  if (dragging) {
+    dragMoved = true;
+    dragging.obj.rx = Math.max(0.03, Math.min(0.97, mx / canvas.width));
+    dragging.obj.ry = Math.max(0.03, Math.min(0.97, my / canvas.height));
+    if (dragging.type === "src") syncAudio();
+  } else {
+    canvas.style.cursor = hitTest(mx, my) ? "grab" : "crosshair";
+  }
+});
+window.addEventListener("mouseup", e => {
+  if (dragging && !dragMoved) { /* クリックのみ: 何もしない（既存オブジェクト上） */ }
+  else if (!dragging && e.target === canvas) { /* handled in click */ }
+  dragging = null;
+});
+canvas.addEventListener("click", e => {
+  if (dragMoved) return;
+  const { mx, my } = canvasPos(e);
+  if (!hitTest(mx, my)) addSource(mx / canvas.width, my / canvas.height);
+});
+canvas.addEventListener("dblclick", e => {
+  const { mx, my } = canvasPos(e);
+  const hit = hitTest(mx, my);
+  if (hit && hit.type === "src") removeSource(hit.idx);
+});
+
+// ---------- UI イベント ----------
+document.getElementById("roomTabs").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  document.querySelectorAll("#roomTabs button").forEach(x => x.classList.remove("active"));
+  b.classList.add("active");
+  roomKey = +b.dataset.room;
+  buildGrid();
+});
+document.getElementById("modeTabs").addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  document.querySelectorAll("#modeTabs button").forEach(x => x.classList.remove("active"));
+  b.classList.add("active");
+  viewMode = b.dataset.mode;
+  document.getElementById("legendWave").style.display = viewMode === "wave" ? "" : "none";
+  document.getElementById("legendHeat").style.display = viewMode === "heat" ? "" : "none";
+});
+document.getElementById("btnPause").addEventListener("click", e => {
+  paused = !paused;
+  e.target.textContent = paused ? "▶ 再開" : "⏸ 一時停止";
+});
+document.getElementById("btnReset").addEventListener("click", () => {
+  u.fill(0); uPrev.fill(0); uNext.fill(0); rms.fill(0); simTime = 0;
+});
+document.getElementById("btnAudio").addEventListener("click", e => {
+  audioOn = !audioOn;
+  e.target.classList.toggle("on", audioOn);
+  e.target.textContent = audioOn ? "🔊 再生中" : "🔈 音を聞く";
+  if (audioOn) syncAudio(); else stopAllAudio();
+});
+document.getElementById("absorb").addEventListener("input", e => {
+  absorption = +e.target.value / 100;
+  document.getElementById("absorbVal").textContent = absorption.toFixed(2);
+  buildDamp();
+  updateRoomInfo();
+});
+const speedEl = document.getElementById("speed");
+function updateSpeedLabel() {
+  stepsPerFrame = +speedEl.value;
+  const factor = Math.round(1 / (stepsPerFrame * DT * 60));
+  document.getElementById("speedVal").textContent = `1/${factor}`;
+}
+speedEl.addEventListener("input", updateSpeedLabel);
+window.addEventListener("resize", fitCanvas);
+
+// ---------- 起動 ----------
+buildGrid();
+updateSpeedLabel();
+addSource(0.3, 0.4);
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
