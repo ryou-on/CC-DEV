@@ -82,7 +82,7 @@
 <body>
 <header>
   <h1>🔊 音場シミュレーター 3D</h1>
-  <span class="ver">v2.2.0</span>
+  <span class="ver">v2.2.1</span>
   <div class="tabs room" id="roomTabs">
     <button data-room="6">6畳</button>
     <button data-room="15" class="active">15畳</button>
@@ -947,11 +947,28 @@ document.getElementById("modeTabs").addEventListener("click", e => {
   document.getElementById("legendWave").style.display = viewMode === "wave" ? "" : "none";
   document.getElementById("legendHeat").style.display = viewMode === "heat" ? "" : "none";
 });
+let fpPose = null;   // 俯瞰に切り替える前の一人称カメラ姿勢
 document.getElementById("viewTabs").addEventListener("click", e => {
   const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.view === camMode) return;
   document.querySelectorAll("#viewTabs button").forEach(x => x.classList.remove("active"));
   b.classList.add("active");
+  if (b.dataset.view === "top" && camMode === "fp") {
+    fpPose = { x: camera.position.x, z: camera.position.z, yaw, pitch };
+  }
   camMode = b.dataset.view;
+  if (camMode === "fp") {
+    const r = ROOMS[roomKey];
+    if (fpPose) {
+      camera.position.set(
+        Math.max(0.3, Math.min(r.w - 0.3, fpPose.x)), EYE_H,
+        Math.max(0.3, Math.min(r.d - 0.3, fpPose.z)));
+      yaw = fpPose.yaw; pitch = fpPose.pitch;
+    } else {
+      camera.position.set(r.w * 0.72, EYE_H, r.d * 0.78);
+      yaw = -2.35; pitch = -0.08;
+    }
+  }
 });
 document.getElementById("btnPause").addEventListener("click", e => {
   paused = !paused;
