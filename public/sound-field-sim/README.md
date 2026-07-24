@@ -20,7 +20,8 @@
 
 | バージョン | 内容 | 開発元ファイル（知の泉Vault） |
 |---|---|---|
-| v2.1.0 | 一人称3D（Three.js/CDN）＋家具＋防音パネル（サイズ・厚さ・A/B/Cグレード） | 03_Projects/音場シミュレーター/sound-field-simulator-3d.html |
+| v2.2.0 | 音源/パネルの左ドラッグ移動・右ドラッグ回転（パネルは任意角度）、音源の指向性切替（無指向/カーディオイド） | 03_Projects/音場シミュレーター/sound-field-simulator-3d.html |
+| v2.1.0 | 一人称3D（Three.js/CDN）＋家具＋防音パネル（サイズ・厚さ・A/B/Cグレード） | （v2.2.0で上書き） |
 | v1.0.0 | 2D俯瞰・完全スタンドアロン。波動/ヒートマップ・リスナー・Web Audio | 03_Projects/音場シミュレーター/sound-field-simulator.html |
 
 技術メモ: 2D FDTD（格子3cm・音速343m/s）。v2はThree.js r160をjsdelivrから読むためオフライン不可。
