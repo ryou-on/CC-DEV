@@ -1,0 +1,1909 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ちいさなじぶん｜写真から作るミニチュアフィギュア</title>
+<meta name="description" content="手持ちの写真をアップロードするだけで、AIが3Dモデル化。ミニチュアフィギュアを3Dプリントしてご自宅へお届けします。アクアリウムに、テラリウムに、記念日のギフトに。">
+<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.169.0/build/three.module.js","three/addons/":"https://unpkg.com/three@0.169.0/examples/jsm/"}}</script>
+<style>
+:root{
+  --ink:#0B2027;
+  --deep:#16323C;
+  --mint:#4ECDC4;
+  --coral:#FF7A6B;
+  --sand:#F7F3E9;
+  --paper:#FFFFFF;
+  --text:#12262C;
+  --text-inv:#E8F1F2;
+  --radius:16px;
+  --muted:#5B7078;
+  --line:rgba(18,38,44,.12);
+  --line-inv:rgba(232,241,242,.16);
+  --shadow:0 10px 30px rgba(11,32,39,.10);
+  --font:system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box}
+[hidden]{display:none !important}
+html,body{margin:0;padding:0;max-width:100%;overflow-x:hidden}
+body{
+  font-family:var(--font);
+  color:var(--text);
+  background:var(--sand);
+  line-height:1.75;
+  -webkit-text-size-adjust:100%;
+  overflow-wrap:anywhere;
+}
+img,canvas,svg{max-width:100%;display:block}
+h1,h2,h3,h4{line-height:1.35;margin:0;font-weight:800;letter-spacing:.01em}
+p{margin:0}
+a{color:inherit}
+button{font-family:inherit}
+.wrap{width:100%;max-width:1080px;margin-inline:auto;padding-inline:18px}
+.sec{padding:clamp(48px,8vw,88px) 0}
+.sec-head{max-width:640px;margin-bottom:clamp(24px,4vw,40px)}
+.eyebrow{
+  display:inline-block;font-size:12px;font-weight:700;letter-spacing:.14em;
+  color:var(--mint);background:rgba(78,205,196,.12);
+  padding:5px 12px;border-radius:999px;margin-bottom:14px;
+}
+.sec-title{font-size:clamp(23px,4.4vw,34px)}
+.sec-lead{margin-top:12px;color:var(--muted);font-size:15px}
+
+/* ---------- header ---------- */
+.hdr{
+  position:sticky;top:0;z-index:60;
+  background:rgba(11,32,39,.92);
+  backdrop-filter:saturate(1.4) blur(10px);
+  -webkit-backdrop-filter:saturate(1.4) blur(10px);
+  color:var(--text-inv);
+  border-bottom:1px solid var(--line-inv);
+}
+.hdr-in{display:flex;align-items:center;gap:10px;min-height:58px;flex-wrap:wrap}
+.logo-btn{
+  display:inline-flex;align-items:center;gap:8px;
+  background:none;border:0;padding:4px 2px;cursor:pointer;color:var(--text-inv);
+  font-size:18px;font-weight:800;letter-spacing:.06em;
+}
+.logo-btn:hover{color:var(--mint)}
+.logo-mark{width:22px;height:22px;flex:none}
+.ver-btn{
+  background:none;border:1px solid var(--line-inv);border-radius:999px;
+  color:var(--mint);font-size:11px;font-weight:700;padding:2px 9px;cursor:pointer;
+  letter-spacing:.04em;
+}
+.ver-btn:hover{background:rgba(78,205,196,.14)}
+.hdr-nav{margin-left:auto;display:flex;align-items:center;gap:6px}
+.hdr-nav a{
+  color:var(--text-inv);text-decoration:none;font-size:13px;opacity:.85;
+  padding:6px 8px;border-radius:9px;
+}
+.hdr-nav a:hover{opacity:1;background:rgba(232,241,242,.10)}
+.hdr-cta{
+  background:var(--coral);color:#fff;text-decoration:none;font-weight:700;font-size:13px;
+  padding:8px 14px;border-radius:999px;opacity:1 !important;white-space:nowrap;
+}
+.hdr-cta:hover{filter:brightness(1.06)}
+@media(max-width:520px){ .hdr-nav .navlink{display:none} }
+
+/* demo badge */
+.demo-badge{
+  position:fixed;top:10px;right:10px;z-index:200;
+  background:var(--coral);color:#fff;font-size:11px;font-weight:800;letter-spacing:.08em;
+  padding:5px 11px;border-radius:999px;box-shadow:0 4px 14px rgba(255,122,107,.45);
+  display:none;pointer-events:none;
+}
+.demo-badge.on{display:block}
+body.demo .hdr-in{padding-right:92px}
+@media(max-width:430px){ body.demo .hdr-cta{display:none} }
+
+/* ---------- hero ---------- */
+.hero{
+  position:relative;overflow:hidden;color:var(--text-inv);
+  background:
+    radial-gradient(120% 90% at 78% 8%,rgba(78,205,196,.30),transparent 58%),
+    radial-gradient(100% 80% at 8% 100%,rgba(255,122,107,.22),transparent 60%),
+    linear-gradient(170deg,var(--ink),var(--deep));
+}
+.hero::after{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:
+    radial-gradient(38% 22% at 20% 18%,rgba(255,255,255,.10),transparent 70%),
+    radial-gradient(30% 18% at 76% 62%,rgba(255,255,255,.07),transparent 70%);
+  animation:drift 14s ease-in-out infinite alternate;
+}
+@keyframes drift{from{transform:translate3d(0,0,0)}to{transform:translate3d(0,-16px,0)}}
+.hero-in{position:relative;z-index:1;display:grid;grid-template-columns:1.15fr .85fr;gap:34px;align-items:center;padding:clamp(44px,7vw,86px) 0}
+@media(max-width:820px){ .hero-in{grid-template-columns:1fr;gap:26px} }
+.hero h1{font-size:clamp(28px,6vw,48px);letter-spacing:.005em}
+.hero h1 .accent{color:var(--mint)}
+.hero-sub{margin-top:16px;font-size:clamp(14px,2.3vw,17px);color:rgba(232,241,242,.86);max-width:34em}
+.hero-note{margin-top:10px;font-size:12px;color:rgba(232,241,242,.55)}
+.hero-cta{display:flex;flex-wrap:wrap;gap:12px;margin-top:26px}
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  border:0;border-radius:999px;cursor:pointer;font-weight:700;font-size:15px;
+  padding:14px 26px;text-decoration:none;transition:transform .12s ease,filter .12s ease;
+  min-height:48px;
+}
+.btn:hover{transform:translateY(-1px)}
+.btn-primary{background:var(--coral);color:#fff;box-shadow:0 8px 22px rgba(255,122,107,.35)}
+.btn-ghost{background:rgba(232,241,242,.10);color:var(--text-inv);border:1px solid var(--line-inv)}
+.btn-mint{background:var(--mint);color:var(--ink)}
+.btn:disabled{
+  cursor:not-allowed;transform:none;box-shadow:none;
+  background:rgba(232,241,242,.10);color:rgba(232,241,242,.42);
+  border:1px solid var(--line-inv);
+}
+.hero-badges{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}
+.chip{
+  font-size:12px;padding:5px 11px;border-radius:999px;
+  background:rgba(232,241,242,.10);border:1px solid var(--line-inv);color:rgba(232,241,242,.9);
+}
+.hero-art{
+  border-radius:calc(var(--radius) + 6px);overflow:hidden;
+  border:1px solid var(--line-inv);
+  background:linear-gradient(160deg,rgba(78,205,196,.20),rgba(11,32,39,.55));
+  box-shadow:0 20px 50px rgba(0,0,0,.35);
+}
+
+/* ---------- generic cards ---------- */
+.grid{display:grid;gap:16px}
+.g3{grid-template-columns:repeat(3,1fr)}
+.g2{grid-template-columns:repeat(2,1fr)}
+@media(max-width:820px){ .g3{grid-template-columns:1fr} .g2{grid-template-columns:1fr} }
+.card{
+  background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);
+  padding:22px;box-shadow:var(--shadow);
+}
+.card h3{font-size:17px;margin-bottom:8px}
+.card p{font-size:14px;color:var(--muted)}
+.step-no{
+  width:34px;height:34px;border-radius:11px;display:grid;place-items:center;
+  background:var(--mint);color:var(--ink);font-weight:800;font-size:15px;margin-bottom:14px;
+}
+.usecase{
+  border-radius:var(--radius);overflow:hidden;border:1px solid var(--line);
+  background:var(--paper);box-shadow:var(--shadow);display:flex;flex-direction:column;
+}
+.usecase-art{height:150px;position:relative;overflow:hidden}
+.usecase-body{padding:20px}
+.usecase-body h3{font-size:18px}
+.usecase-body ul{margin:12px 0 0;padding-left:1.15em;color:var(--muted);font-size:14px}
+.usecase-body li{margin-bottom:5px}
+
+/* ---------- pricing ---------- */
+.price-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+@media(max-width:900px){ .price-grid{grid-template-columns:repeat(2,1fr)} }
+@media(max-width:520px){ .price-grid{grid-template-columns:1fr} }
+.price-card{
+  background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);
+  padding:20px;display:flex;flex-direction:column;gap:6px;box-shadow:var(--shadow);position:relative;
+}
+.price-card.pop{border-color:var(--mint);box-shadow:0 12px 34px rgba(78,205,196,.22)}
+.price-tag{position:absolute;top:-11px;left:16px;background:var(--mint);color:var(--ink);font-size:11px;font-weight:800;padding:3px 10px;border-radius:999px}
+.price-name{font-size:13px;font-weight:800;letter-spacing:.08em;color:var(--muted)}
+.price-size{font-size:12px;color:var(--muted)}
+.price-num{font-size:27px;font-weight:800;letter-spacing:-.01em}
+.price-num small{font-size:12px;font-weight:600;color:var(--muted);margin-left:3px}
+.price-use{font-size:13px;color:var(--muted);margin-top:2px}
+.opt-list{margin-top:18px;display:grid;gap:8px;grid-template-columns:repeat(2,1fr)}
+@media(max-width:640px){ .opt-list{grid-template-columns:1fr} }
+.opt-item{
+  background:rgba(78,205,196,.09);border:1px solid rgba(78,205,196,.30);
+  border-radius:12px;padding:10px 14px;font-size:13px;
+}
+.note{font-size:12px;color:var(--muted);margin-top:14px}
+
+/* ---------- order / stepper ---------- */
+.order{background:var(--ink);color:var(--text-inv)}
+.order .sec-title,.order h3,.order h4{color:var(--text-inv)}
+.order .sec-lead{color:rgba(232,241,242,.66)}
+.stepper{display:flex;gap:6px;margin-bottom:22px;flex-wrap:wrap}
+.stepper-item{
+  flex:1 1 120px;min-width:0;display:flex;align-items:center;gap:8px;
+  padding:9px 11px;border-radius:12px;border:1px solid var(--line-inv);
+  background:rgba(232,241,242,.05);font-size:12.5px;color:rgba(232,241,242,.62);
+}
+.stepper-item .n{
+  width:22px;height:22px;flex:none;border-radius:50%;display:grid;place-items:center;
+  background:rgba(232,241,242,.14);font-size:11px;font-weight:800;
+}
+.stepper-item.active{border-color:var(--mint);background:rgba(78,205,196,.14);color:var(--text-inv);font-weight:700}
+.stepper-item.active .n{background:var(--mint);color:var(--ink)}
+.stepper-item.done .n{background:var(--mint);color:var(--ink)}
+.stepper-item .lbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.panel{
+  background:var(--deep);border:1px solid var(--line-inv);border-radius:calc(var(--radius) + 4px);
+  padding:clamp(18px,3.4vw,30px);
+}
+.panel[hidden]{display:none}
+.panel h3{font-size:19px;margin-bottom:6px}
+.panel .desc{font-size:13.5px;color:rgba(232,241,242,.66);margin-bottom:18px}
+
+/* dropzone */
+.drop{
+  border:2px dashed rgba(78,205,196,.55);border-radius:var(--radius);
+  background:rgba(78,205,196,.06);padding:clamp(22px,5vw,38px) 18px;text-align:center;
+  cursor:pointer;transition:background .15s ease,border-color .15s ease;
+}
+.drop:hover,.drop.over{background:rgba(78,205,196,.14);border-color:var(--mint)}
+.drop svg{margin:0 auto 12px}
+.drop-main{font-weight:700;font-size:15px}
+.drop-sub{font-size:12.5px;color:rgba(232,241,242,.6);margin-top:6px}
+.preview{display:grid;grid-template-columns:150px 1fr;gap:16px;align-items:start}
+@media(max-width:560px){ .preview{grid-template-columns:1fr} }
+.preview img{
+  width:100%;border-radius:12px;border:1px solid var(--line-inv);
+  aspect-ratio:1/1;object-fit:cover;background:var(--ink);
+}
+.preview-meta{font-size:13px;color:rgba(232,241,242,.75)}
+.preview-meta dt{font-size:11px;color:rgba(232,241,242,.5);letter-spacing:.06em}
+.preview-meta dd{margin:0 0 8px}
+.err{
+  color:#FFD5CF;background:rgba(255,122,107,.16);border:1px solid rgba(255,122,107,.5);
+  border-radius:12px;padding:10px 13px;font-size:13px;margin-top:12px;
+}
+.err[hidden]{display:none}
+.tips{
+  margin-top:16px;background:rgba(232,241,242,.05);border:1px solid var(--line-inv);
+  border-radius:12px;padding:13px 16px;
+}
+.tips h4{font-size:12.5px;letter-spacing:.06em;color:var(--mint);margin-bottom:6px}
+.tips ul{margin:0;padding-left:1.15em;font-size:12.5px;color:rgba(232,241,242,.72)}
+.consents{margin-top:18px;display:grid;gap:10px}
+.consent{
+  display:flex;gap:11px;align-items:flex-start;
+  background:rgba(232,241,242,.05);border:1px solid var(--line-inv);
+  border-radius:12px;padding:12px 14px;font-size:13px;cursor:pointer;line-height:1.6;
+}
+.consent input{margin-top:3px;width:18px;height:18px;flex:none;accent-color:var(--mint);cursor:pointer}
+.consent.checked{border-color:rgba(78,205,196,.6);background:rgba(78,205,196,.10)}
+.req{color:var(--coral);font-weight:800;font-size:11px;margin-right:5px}
+.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:20px;align-items:center}
+.hint{font-size:12px;color:rgba(232,241,242,.55)}
+
+/* progress */
+.prog-wrap{text-align:center;padding:22px 0}
+.spinner{
+  width:64px;height:64px;margin:0 auto 18px;border-radius:50%;
+  border:5px solid rgba(232,241,242,.14);border-top-color:var(--mint);
+  animation:spin 1s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){ .spinner{animation-duration:2.4s} .hero::after{animation:none} }
+.prog-bar{height:8px;border-radius:999px;background:rgba(232,241,242,.12);overflow:hidden;max-width:420px;margin:0 auto}
+.prog-bar span{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--mint),var(--coral));transition:width .4s ease}
+.prog-num{font-size:13px;color:rgba(232,241,242,.7);margin-top:12px}
+
+/* viewer */
+.viewer-tools{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.tool{
+  background:rgba(232,241,242,.07);border:1px solid var(--line-inv);color:var(--text-inv);
+  border-radius:999px;padding:8px 14px;font-size:12.5px;cursor:pointer;min-height:38px;
+}
+.tool:hover{background:rgba(232,241,242,.15)}
+.tool.on{background:var(--mint);color:var(--ink);border-color:var(--mint);font-weight:700}
+.stage{
+  position:relative;width:100%;aspect-ratio:4/3;max-height:60vh;min-height:260px;
+  border-radius:var(--radius);overflow:hidden;border:1px solid var(--line-inv);
+  background:#101f26;touch-action:none;
+}
+@media(max-width:560px){ .stage{aspect-ratio:1/1} }
+.stage canvas{width:100%;height:100%;display:block}
+.stage-bg{position:absolute;inset:0;z-index:0}
+.bg-studio{background:radial-gradient(80% 70% at 50% 22%,#2b4650,#0e1c22 78%)}
+.bg-aqua{background:linear-gradient(180deg,#0e5a63 0%,#0b3a45 46%,#071f27 100%)}
+.bg-aqua::before,.bg-aqua::after{
+  content:"";position:absolute;inset:-20%;
+  background:radial-gradient(28% 16% at 30% 24%,rgba(180,255,248,.20),transparent 70%),
+             radial-gradient(22% 12% at 70% 58%,rgba(180,255,248,.14),transparent 70%),
+             radial-gradient(18% 10% at 50% 84%,rgba(180,255,248,.10),transparent 70%);
+  animation:wobble 9s ease-in-out infinite alternate;
+}
+.bg-aqua::after{animation-duration:13s;animation-direction:alternate-reverse;opacity:.75}
+@keyframes wobble{
+  from{transform:translate3d(-3%,-2%,0) scale(1)}
+  to{transform:translate3d(3%,3%,0) scale(1.08)}
+}
+.bg-desk{background:linear-gradient(180deg,#F7F3E9 0%,#EADFC8 58%,#C9B294 100%)}
+.stage canvas{position:relative;z-index:1}
+.stage-fallback{
+  position:absolute;inset:0;z-index:2;display:none;place-items:center;text-align:center;
+  padding:24px;background:var(--deep);color:rgba(232,241,242,.8);font-size:13.5px;
+}
+.stage-fallback.on{display:grid}
+.viewer-hint{font-size:12px;color:rgba(232,241,242,.55);margin-top:10px}
+
+/* options / form */
+.field{margin-bottom:18px}
+.field > label.lb,.field .lb{display:block;font-size:12.5px;font-weight:700;letter-spacing:.05em;color:var(--mint);margin-bottom:9px}
+.radios{display:grid;gap:9px;grid-template-columns:repeat(3,1fr)}
+@media(max-width:640px){ .radios{grid-template-columns:1fr} }
+.pick{
+  display:flex;gap:10px;align-items:flex-start;cursor:pointer;
+  background:rgba(232,241,242,.05);border:1px solid var(--line-inv);border-radius:12px;
+  padding:12px 14px;font-size:13.5px;line-height:1.5;
+}
+.pick input{margin-top:3px;accent-color:var(--mint);width:17px;height:17px;flex:none;cursor:pointer}
+.pick.checked{border-color:var(--mint);background:rgba(78,205,196,.12)}
+.pick b{display:block;font-size:14px}
+.pick .sub{font-size:12px;color:rgba(232,241,242,.62)}
+.qty{display:flex;align-items:center;gap:10px}
+.qty button{
+  width:40px;height:40px;border-radius:11px;border:1px solid var(--line-inv);
+  background:rgba(232,241,242,.07);color:var(--text-inv);font-size:19px;cursor:pointer;line-height:1;
+}
+.qty button:hover{background:rgba(232,241,242,.16)}
+.qty output{min-width:44px;text-align:center;font-size:17px;font-weight:800}
+.inp{
+  width:100%;background:rgba(11,32,39,.55);border:1px solid var(--line-inv);
+  color:var(--text-inv);border-radius:11px;padding:11px 13px;font-size:15px;font-family:inherit;
+}
+.inp:focus{outline:2px solid var(--mint);outline-offset:1px;border-color:transparent}
+.inp::placeholder{color:rgba(232,241,242,.35)}
+.form-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}
+@media(max-width:640px){ .form-grid{grid-template-columns:1fr} }
+.form-grid .full{grid-column:1/-1}
+.fl{display:block;font-size:12px;color:rgba(232,241,242,.65);margin-bottom:5px}
+.summary{
+  background:rgba(11,32,39,.6);border:1px solid var(--line-inv);border-radius:var(--radius);
+  padding:18px;position:sticky;top:74px;
+}
+.summary h4{font-size:13px;letter-spacing:.08em;color:var(--mint);margin-bottom:12px}
+.srow{display:flex;justify-content:space-between;gap:12px;font-size:13.5px;padding:6px 0;color:rgba(232,241,242,.82)}
+.srow.disc{color:var(--mint)}
+.srow.total{
+  border-top:1px solid var(--line-inv);margin-top:8px;padding-top:12px;
+  font-size:19px;font-weight:800;color:var(--text-inv);align-items:baseline;
+}
+.srow .lbl{color:rgba(232,241,242,.62)}
+.free-note{font-size:11.5px;color:var(--mint);margin-top:6px}
+.order-cols{display:grid;grid-template-columns:1.35fr .65fr;gap:22px;align-items:start}
+@media(max-width:900px){ .order-cols{grid-template-columns:1fr} .summary{position:static} }
+
+/* faq */
+.faq details{
+  background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);
+  margin-bottom:10px;overflow:hidden;
+}
+.faq summary{
+  cursor:pointer;padding:16px 18px;font-weight:700;font-size:15px;list-style:none;
+  display:flex;gap:12px;align-items:flex-start;
+}
+.faq summary::-webkit-details-marker{display:none}
+.faq summary::before{content:"Q";color:var(--mint);font-weight:800;flex:none}
+.faq summary::after{content:"＋";margin-left:auto;color:var(--muted);flex:none}
+.faq details[open] summary::after{content:"−"}
+.faq .a{padding:0 18px 18px 44px;font-size:14px;color:var(--muted)}
+
+/* footer */
+.ftr{background:var(--ink);color:rgba(232,241,242,.7);padding:44px 0 34px;font-size:13px}
+.ftr-in{display:flex;flex-wrap:wrap;gap:22px;justify-content:space-between}
+.ftr strong{color:var(--text-inv);font-size:15px;letter-spacing:.06em}
+.ftr-links{display:flex;flex-wrap:wrap;gap:14px}
+.ftr-links a{color:rgba(232,241,242,.75)}
+.ftr-copy{margin-top:26px;font-size:11.5px;color:rgba(232,241,242,.42)}
+
+/* modal */
+.modal-overlay{
+  display:none;position:fixed;inset:0;background:rgba(11,32,39,.72);z-index:9999;
+  align-items:center;justify-content:center;padding:18px;
+}
+.modal-overlay.open{display:flex}
+.modal-box{
+  background:var(--deep);border:1px solid rgba(78,205,196,.42);border-radius:var(--radius);
+  width:560px;max-width:100%;max-height:84vh;display:flex;flex-direction:column;
+  box-shadow:0 20px 60px rgba(0,0,0,.55);color:var(--text-inv);
+}
+.modal-header{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:16px 20px 12px;border-bottom:1px solid var(--line-inv);
+}
+.modal-header h2{font-size:15px;color:var(--mint);margin:0}
+.modal-close-btn{background:none;border:0;color:rgba(232,241,242,.6);font-size:19px;cursor:pointer;line-height:1}
+.modal-close-btn:hover{color:var(--text-inv)}
+#modal-body{overflow-y:auto;padding:16px 20px 22px;font-size:13.5px;line-height:1.8;color:rgba(232,241,242,.82)}
+#modal-body h3{font-size:13px;color:var(--mint);margin:16px 0 4px;font-weight:700}
+#modal-body h3:first-child{margin-top:0}
+#modal-body p{margin:0 0 4px}
+#modal-body ul{margin:0 0 4px;padding-left:1.2em}
+.release-ver{display:flex;align-items:baseline;gap:10px;margin-top:16px;padding-top:12px;border-top:1px solid var(--line-inv)}
+.release-ver:first-child{margin-top:0;border-top:none;padding-top:0}
+.release-ver-tag{font-size:13px;font-weight:800;color:var(--mint);white-space:nowrap}
+.release-ver-date{font-size:11px;color:rgba(232,241,242,.45);white-space:nowrap}
+.done-icon{
+  width:56px;height:56px;border-radius:50%;background:rgba(78,205,196,.18);
+  display:grid;place-items:center;margin:4px auto 14px;font-size:26px;
+}
+.recap{background:rgba(11,32,39,.5);border:1px solid var(--line-inv);border-radius:12px;padding:12px 14px;margin-top:12px}
+.recap .srow{font-size:13px}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+</style>
+</head>
+<body>
+
+<div class="demo-badge" id="demoBadge">デモモード</div>
+
+<header class="hdr">
+  <div class="wrap hdr-in">
+    <button class="logo-btn" id="logoBtn" title="使い方を見る">
+      <svg class="logo-mark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <circle cx="12" cy="6" r="3.1" fill="#4ECDC4"/>
+        <path d="M6.6 21c0-3.6 2.4-6.2 5.4-6.2s5.4 2.6 5.4 6.2" stroke="#4ECDC4" stroke-width="2.1" stroke-linecap="round"/>
+        <ellipse cx="12" cy="21.3" rx="7.4" ry="1.5" fill="#FF7A6B" opacity=".85"/>
+      </svg>
+      ちいさなじぶん
+    </button>
+    <button class="ver-btn" id="verBtn" title="リリースノート">v0.2.0</button>
+    <nav class="hdr-nav">
+      <a class="navlink" href="#how">3ステップ</a>
+      <a class="navlink" href="#price">料金</a>
+      <a class="navlink" href="#faq">FAQ</a>
+      <a class="hdr-cta" href="#order">写真をアップロード</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+
+<!-- ===== HERO ===== -->
+<section class="hero">
+  <div class="wrap hero-in">
+    <div>
+      <span class="eyebrow">写真 → AI 3Dモデル → 3Dプリント</span>
+      <h1>その1枚を、<br><span class="accent">ちいさなじぶん</span>に。</h1>
+      <p class="hero-sub">
+        スマホの写真をアップロードするだけ。AIが立体化して、手のひらサイズのミニチュアフィギュアを3Dプリントし、ご自宅へお届けします。
+        水槽の中に、テラリウムの中に、棚の上に。
+      </p>
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="#order">写真をアップロードする</a>
+        <a class="btn btn-ghost" href="#price">料金を見る</a>
+      </div>
+      <div class="hero-badges">
+        <span class="chip">40mm ¥7,800〜</span>
+        <span class="chip">防水コーティング対応</span>
+        <span class="chip">2体目から本体20%OFF</span>
+      </div>
+      <p class="hero-note">※表示価格・納期はすべて税込・推定です。</p>
+    </div>
+    <div class="hero-art" aria-hidden="true">
+      <svg viewBox="0 0 420 340" width="100%" height="100%" role="presentation">
+        <defs>
+          <linearGradient id="tank" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#0E5A63"/><stop offset="1" stop-color="#071F27"/>
+          </linearGradient>
+          <linearGradient id="glow" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#B4FFF8" stop-opacity=".35"/><stop offset="1" stop-color="#B4FFF8" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <rect x="24" y="28" width="372" height="284" rx="18" fill="url(#tank)"/>
+        <rect x="24" y="28" width="372" height="284" rx="18" fill="none" stroke="#4ECDC4" stroke-opacity=".45" stroke-width="2"/>
+        <path d="M40 40 L120 40 L86 300 L40 300 Z" fill="url(#glow)"/>
+        <path d="M250 44 L330 44 L296 300 L250 300 Z" fill="url(#glow)" opacity=".7"/>
+        <ellipse cx="210" cy="288" rx="86" ry="13" fill="#000" opacity=".28"/>
+        <g>
+          <ellipse cx="210" cy="282" rx="46" ry="10" fill="#F7F3E9" opacity=".9"/>
+          <rect x="164" y="270" width="92" height="12" rx="6" fill="#F7F3E9" opacity=".9"/>
+          <rect x="192" y="196" width="16" height="78" rx="8" fill="#16323C"/>
+          <rect x="212" y="196" width="16" height="78" rx="8" fill="#16323C"/>
+          <rect x="184" y="132" width="52" height="78" rx="26" fill="#4ECDC4"/>
+          <rect x="160" y="140" width="15" height="62" rx="7.5" fill="#F2C6A0" transform="rotate(11 167 171)"/>
+          <rect x="245" y="140" width="15" height="62" rx="7.5" fill="#F2C6A0" transform="rotate(-11 252 171)"/>
+          <circle cx="210" cy="106" r="30" fill="#F2C6A0"/>
+          <path d="M181 100a29 29 0 0 1 58 0c0 -14 -13 -22 -29 -22s-29 8 -29 22z" fill="#2B1D18"/>
+          <circle cx="200" cy="108" r="3.2" fill="#12262C"/><circle cx="220" cy="108" r="3.2" fill="#12262C"/>
+          <path d="M203 118q7 6 14 0" stroke="#12262C" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+        </g>
+        <g fill="#FF7A6B" opacity=".85">
+          <path d="M92 118c10-9 26-9 34 0-8 9-24 9-34 0z"/><path d="M92 118l-11-8v16z"/>
+          <path d="M300 214c8-7 21-7 27 0-6 7-19 7-27 0z"/><path d="M300 214l-9-6v12z"/>
+        </g>
+        <g fill="#B4FFF8" opacity=".45">
+          <circle cx="330" cy="120" r="5"/><circle cx="344" cy="92" r="3.4"/><circle cx="322" cy="76" r="2.6"/>
+          <circle cx="72" cy="196" r="4"/><circle cx="84" cy="168" r="2.8"/>
+        </g>
+        <path d="M56 300c6-40 2-72 18-96 6 26 2 58 6 96z" fill="#2E7D6A" opacity=".75"/>
+        <path d="M364 300c-8-44-2-78-20-104-6 28-2 64-8 104z" fill="#2E7D6A" opacity=".6"/>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<!-- ===== 3 STEPS ===== -->
+<section class="sec" id="how">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">HOW IT WORKS</span>
+      <h2 class="sec-title">3ステップで、あなたのフィギュアが届く</h2>
+      <p class="sec-lead">むずかしい操作はありません。スマホ1台、写真1枚から始められます。</p>
+    </div>
+    <div class="grid g3">
+      <div class="card">
+        <div class="step-no">1</div>
+        <h3>写真をアップロード</h3>
+        <p>正面・全身が写った明るい写真を1枚選ぶだけ。ドラッグ&ドロップにも対応しています。</p>
+      </div>
+      <div class="card">
+        <div class="step-no">2</div>
+        <h3>AIが3Dモデル化</h3>
+        <p>通常1〜3分（推定）で立体データが完成。ブラウザ上でぐるぐる回して仕上がりを確認できます。</p>
+      </div>
+      <div class="card">
+        <div class="step-no">3</div>
+        <h3>印刷してお届け</h3>
+        <p>サイズとオプションを選んで決済。フルカラー3Dプリントで造形し、ご自宅へ発送します（推定 7〜10営業日）。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== USE CASES ===== -->
+<section class="sec" style="background:var(--paper)">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">USE CASES</span>
+      <h2 class="sec-title">こんな場所で、ちいさなじぶんが活きる</h2>
+    </div>
+    <div class="grid g2">
+      <article class="usecase">
+        <div class="usecase-art bg-aqua"></div>
+        <div class="usecase-body">
+          <h3>アクアリウム / テラリウムに</h3>
+          <p style="font-size:14px;color:var(--muted);margin-top:8px">水槽やテラリウムの中に自分や家族を配置して、自分だけの世界観をつくる。SNSでいちばん映えるのはこの使い方です。</p>
+          <ul>
+            <li>防水コーティング（+¥1,500）で水中設置に対応</li>
+            <li>S(40mm)なら30cm水槽でもスケール感が破綻しない</li>
+            <li>ポーズ違いを追加すると2体目以降は本体価格が20%OFF</li>
+          </ul>
+        </div>
+      </article>
+      <article class="usecase">
+        <div class="usecase-art" style="background:linear-gradient(160deg,#FFE7D6,#FFC7BC 55%,#FF7A6B)"></div>
+        <div class="usecase-body">
+          <h3>記念日のギフトに</h3>
+          <p style="font-size:14px;color:var(--muted);margin-top:8px">写真は残るけれど、手に取れるものは残らない。誕生日・結婚記念日・ペットの記念に、立体で残す贈りものとして。</p>
+          <ul>
+            <li>M(65mm)なら机や棚に置いて存在感が出る</li>
+            <li>2人並べて注文すると2体目は本体価格が20%OFF</li>
+            <li>台座（アクリル / 流木風）を付けると飾りやすい</li>
+          </ul>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<!-- ===== PRICING ===== -->
+<section class="sec" id="price">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">PRICE</span>
+      <h2 class="sec-title">料金</h2>
+      <p class="sec-lead">すべて税込・推定価格です。送料は全国一律 ¥800（¥15,000以上のご注文で無料）。</p>
+    </div>
+    <div class="price-grid">
+      <div class="price-card">
+        <span class="price-name">S</span>
+        <span class="price-size">高さ 約40mm</span>
+        <span class="price-num">¥7,800</span>
+        <span class="price-use">アクアリウム内・水槽レイアウト</span>
+      </div>
+      <div class="price-card pop">
+        <span class="price-tag">人気</span>
+        <span class="price-name">M</span>
+        <span class="price-size">高さ 約65mm</span>
+        <span class="price-num">¥12,800</span>
+        <span class="price-use">定番・デスク上</span>
+      </div>
+      <div class="price-card">
+        <span class="price-name">L</span>
+        <span class="price-size">高さ 約100mm</span>
+        <span class="price-num">¥19,800</span>
+        <span class="price-use">記念・ギフト</span>
+      </div>
+    </div>
+    <div class="opt-list">
+      <div class="opt-item">台座（アクリル / 流木風）　<b>+¥1,200</b></div>
+      <div class="opt-item">防水コーティング（水中設置対応）　<b>+¥1,500</b></div>
+      <div class="opt-item">追加ポーズ 2体目以降　<b>本体価格 20%OFF</b>（オプション代は対象外）</div>
+      <div class="opt-item">送料 全国一律　<b>¥800</b>（¥15,000以上で無料）</div>
+    </div>
+    <p class="note">※価格・納期はいずれも推定であり、正式版で変更となる場合があります。</p>
+  </div>
+</section>
+
+<!-- ===== ORDER FLOW ===== -->
+<section class="sec order" id="order">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">ORDER</span>
+      <h2 class="sec-title">写真から3Dモデルを作る</h2>
+      <p class="sec-lead">写真をアップロードして、その場で3Dプレビュー。気に入ったらそのままご注文いただけます。</p>
+    </div>
+
+    <div class="stepper" id="stepper">
+      <div class="stepper-item active" data-step="1"><span class="n">1</span><span class="lbl">写真アップロード</span></div>
+      <div class="stepper-item" data-step="2"><span class="n">2</span><span class="lbl">AI生成中</span></div>
+      <div class="stepper-item" data-step="3"><span class="n">3</span><span class="lbl">3Dプレビュー</span></div>
+      <div class="stepper-item" data-step="4"><span class="n">4</span><span class="lbl">オプション・発注</span></div>
+    </div>
+
+    <!-- STEP 1 -->
+    <div class="panel" id="panel1">
+      <h3>STEP 1　写真をアップロード</h3>
+      <p class="desc">JPEG / PNG / WebP・10MB以下・短辺512px以上の画像をお選びください。</p>
+
+      <div id="dropZone" class="drop" role="button" tabindex="0" aria-label="写真を選択またはドラッグ&ドロップ">
+        <svg width="42" height="42" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5" stroke="#4ECDC4" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" stroke="#4ECDC4" stroke-width="1.8" stroke-linecap="round"/>
+        </svg>
+        <div class="drop-main">写真をドラッグ&ドロップ</div>
+        <div class="drop-sub">またはクリックしてファイルを選択</div>
+      </div>
+      <input type="file" id="fileInput" accept="image/*" class="sr-only" aria-hidden="true">
+
+      <div id="previewBox" hidden style="margin-top:16px">
+        <div class="preview">
+          <img id="previewImg" alt="アップロードした写真のプレビュー">
+          <div>
+            <dl class="preview-meta">
+              <dt>ファイル名</dt><dd id="mName">-</dd>
+              <dt>サイズ</dt><dd id="mSize">-</dd>
+              <dt>解像度</dt><dd id="mDim">-</dd>
+            </dl>
+            <button class="tool" id="resetPhotoBtn" type="button">別の写真を選ぶ</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="err" id="uploadErr" hidden role="alert"></div>
+
+      <div class="tips">
+        <h4>きれいに仕上がる撮影のコツ</h4>
+        <ul>
+          <li>正面から / 明るい場所で / 全身が入るように / 背景はできるだけシンプルに</li>
+        </ul>
+      </div>
+
+      <div class="consents">
+        <label class="consent" id="c1w">
+          <input type="checkbox" id="consent1">
+          <span><span class="req">必須</span>アップロードした写真が第三者の3Dモデル生成サービス（海外サーバーを含む）に送信されることに同意します</span>
+        </label>
+        <label class="consent" id="c2w">
+          <input type="checkbox" id="consent2">
+          <span><span class="req">必須</span>被写体本人（未成年の場合はその保護者）の同意を得ています</span>
+        </label>
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-primary" id="genBtn" type="button" disabled>3Dモデルを作る</button>
+        <span class="hint" id="genHint">写真の選択と同意2項目のチェックが必要です</span>
+      </div>
+    </div>
+
+    <!-- STEP 2 -->
+    <div class="panel" id="panel2" hidden>
+      <h3>STEP 2　AIが3Dモデルを生成しています</h3>
+      <p class="desc">通常1〜3分かかります。このページを開いたままお待ちください。</p>
+      <div class="prog-wrap">
+        <div class="spinner" role="status" aria-label="生成中"></div>
+        <div class="prog-bar"><span id="progFill"></span></div>
+        <div class="prog-num"><span id="progPct">0</span>%　/　経過 <span id="progSec">0</span> 秒</div>
+        <div class="actions" style="justify-content:center">
+          <button class="tool" id="cancelBtn" type="button">キャンセル</button>
+        </div>
+      </div>
+      <div class="err" id="genErr" hidden role="alert"></div>
+    </div>
+
+    <!-- STEP 3 -->
+    <div class="panel" id="panel3" hidden>
+      <h3>STEP 3　3Dプレビュー</h3>
+      <p class="desc">ドラッグで回転、ホイール／2本指ピンチで拡大縮小、右ドラッグ／2本指スワイプで移動できます。</p>
+      <div class="viewer-tools">
+        <button class="tool on" type="button" data-bg="studio">スタジオ（無地）</button>
+        <button class="tool" type="button" data-bg="aqua">アクアリウム</button>
+        <button class="tool" type="button" data-bg="desk">デスク</button>
+        <button class="tool" type="button" id="resetViewBtn">リセット</button>
+      </div>
+      <div class="stage" id="stage">
+        <div class="stage-bg bg-studio" id="stageBg"></div>
+        <div class="stage-fallback" id="stageFallback">
+          <div>
+            <div style="font-size:38px;margin-bottom:10px">🧍</div>
+            <p id="fallbackMsg">お使いのブラウザは3Dプレビューに対応していません</p>
+            <p style="font-size:12px;opacity:.7;margin-top:8px">最新のChrome / Safari / Edge でお試しください。ご注文自体はこのまま進められます。</p>
+          </div>
+        </div>
+      </div>
+      <p class="viewer-hint" id="viewerHint">プレビューは造形イメージです。実際の仕上がりとは色味・細部が異なる場合があります。</p>
+      <div class="actions">
+        <button class="btn btn-mint" id="toStep4Btn" type="button">この仕上がりで進む</button>
+        <button class="tool" id="redoBtn" type="button">写真を選び直す</button>
+      </div>
+    </div>
+
+    <!-- STEP 4 -->
+    <div class="panel" id="panel4" hidden>
+      <h3>STEP 4　サイズ・オプションを選んで発注</h3>
+      <p class="desc">選択に応じて合計金額がリアルタイムで更新されます（すべて税込・推定）。</p>
+      <div class="order-cols">
+        <div>
+          <div class="field">
+            <span class="lb">サイズ</span>
+            <div class="radios" id="planRadios">
+              <label class="pick checked"><input type="radio" name="plan" value="S" checked><span><b>S / 40mm</b><span class="sub">¥7,800・水槽向け</span></span></label>
+              <label class="pick"><input type="radio" name="plan" value="M"><span><b>M / 65mm</b><span class="sub">¥12,800・定番</span></span></label>
+              <label class="pick"><input type="radio" name="plan" value="L"><span><b>L / 100mm</b><span class="sub">¥19,800・ギフト</span></span></label>
+            </div>
+          </div>
+
+          <div class="field">
+            <span class="lb">オプション</span>
+            <div class="radios" style="grid-template-columns:repeat(2,1fr)" id="optWrap">
+              <label class="pick"><input type="checkbox" id="optBase"><span><b>台座</b><span class="sub">アクリル / 流木風　+¥1,200</span></span></label>
+              <label class="pick"><input type="checkbox" id="optWater"><span><b>防水コーティング</b><span class="sub">水中設置対応　+¥1,500</span></span></label>
+            </div>
+          </div>
+
+          <div class="field">
+            <span class="lb">数量（2体目以降は本体価格 20%OFF・オプション代は対象外）</span>
+            <div class="qty">
+              <button type="button" id="qtyMinus" aria-label="数量を減らす">−</button>
+              <output id="qtyOut" aria-live="polite">1</output>
+              <button type="button" id="qtyPlus" aria-label="数量を増やす">＋</button>
+              <span class="hint">最大 20 体</span>
+            </div>
+          </div>
+
+          <div class="field">
+            <span class="lb">紹介店舗コード（任意）</span>
+            <input class="inp" id="shopCode" type="text" inputmode="latin" placeholder="例）AQUA-1234　店頭チラシに記載のコード">
+          </div>
+
+          <div class="field">
+            <span class="lb">お届け先</span>
+            <div class="form-grid">
+              <div class="full"><label class="fl" for="cName">お名前（必須）</label><input class="inp req-f" id="cName" type="text" autocomplete="name" placeholder="山田 太郎"></div>
+              <div><label class="fl" for="cZip">郵便番号（必須）</label><input class="inp req-f" id="cZip" type="text" inputmode="numeric" autocomplete="postal-code" placeholder="1500001"></div>
+              <div><label class="fl" for="cTel">電話番号（必須）</label><input class="inp req-f" id="cTel" type="tel" autocomplete="tel" placeholder="09012345678"></div>
+              <div class="full"><label class="fl" for="cAddr">住所（必須）</label><input class="inp req-f" id="cAddr" type="text" autocomplete="street-address" placeholder="東京都渋谷区神宮前0-0-0 マンション名101"></div>
+              <div class="full"><label class="fl" for="cMail">メールアドレス（必須）</label><input class="inp req-f" id="cMail" type="email" autocomplete="email" placeholder="you@example.com"></div>
+            </div>
+          </div>
+        </div>
+
+        <aside class="summary">
+          <h4>お見積り</h4>
+          <div class="srow"><span class="lbl" id="sumBaseLabel">本体</span><span id="sumBase">¥7,800</span></div>
+          <div class="srow"><span class="lbl">オプション</span><span id="sumOpt">¥0</span></div>
+          <div class="srow disc" id="sumDiscRow" hidden><span class="lbl">複数割引（2体目以降・本体20%OFF）</span><span id="sumDisc">-¥0</span></div>
+          <div class="srow"><span class="lbl">送料</span><span id="sumShip">¥800</span></div>
+          <div class="srow total"><span>合計</span><span id="sumTotal">¥8,600</span></div>
+          <p class="free-note" id="freeNote">あと ¥7,200 で送料無料</p>
+          <div class="actions" style="margin-top:16px">
+            <button class="btn btn-primary" id="payBtn" type="button" disabled style="width:100%">決済に進む</button>
+          </div>
+          <p class="hint" id="payHint" style="margin-top:8px">必須項目をすべて入力すると決済に進めます</p>
+        </aside>
+      </div>
+      <div class="err" id="payErr" hidden role="alert"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== FAQ ===== -->
+<section class="sec faq" id="faq" style="background:var(--paper)">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">FAQ</span>
+      <h2 class="sec-title">よくあるご質問</h2>
+    </div>
+    <details open>
+      <summary>写真は1枚だけで大丈夫ですか？</summary>
+      <div class="a">はい、1枚から制作可能です。正面・全身・明るい場所で撮影された写真ほど精度が上がります（推定）。横向きや一部が隠れている写真は、仕上がりが実物と異なる場合があります。</div>
+    </details>
+    <details>
+      <summary>水槽の中に入れても大丈夫ですか？</summary>
+      <div class="a">防水コーティング（+¥1,500）をお選びいただくと、淡水水槽への設置に対応します（推定）。海水・高温環境での長期設置は色あせの原因となるため推奨していません。</div>
+    </details>
+    <details>
+      <summary>アップロードした写真はどう扱われますか？</summary>
+      <div class="a">3Dモデル生成のため、海外サーバーを含む第三者の生成サービスへ送信されます。この点にご同意いただいたうえでご利用ください。詳細は<a href="privacy.html">プライバシーポリシー</a>をご確認ください。</div>
+    </details>
+    <details>
+      <summary>子どもの写真を使ってもいいですか？</summary>
+      <div class="a">保護者の方の同意があればご利用いただけます。アップロード時に同意チェックが必須となります。第三者を無断で被写体にすることはお断りしています。</div>
+    </details>
+    <details>
+      <summary>納期はどれくらいですか？</summary>
+      <div class="a">3Dモデルの生成は通常1〜3分。造形・発送はご決済から7〜10営業日が目安です（いずれも推定。繁忙期は前後します）。</div>
+    </details>
+    <details>
+      <summary>何体かまとめて注文できますか？</summary>
+      <div class="a">数量欄で最大20体までご注文いただけます。2体目以降は本体価格が20%OFF（オプション代は対象外）。ポーズや服装の違う写真をそれぞれアップロードしたい場合は、お手数ですが1体ずつご注文ください。</div>
+    </details>
+    <details>
+      <summary>店舗で紹介されました。コードはどこに入れますか？</summary>
+      <div class="a">STEP4の「紹介店舗コード」欄にご入力ください。店舗経由のご注文には送客手数料をお支払いする仕組みです（お客様の負担額は変わりません）。</div>
+    </details>
+  </div>
+</section>
+
+</main>
+
+<footer class="ftr">
+  <div class="wrap ftr-in">
+    <div>
+      <strong>ちいさなじぶん</strong>
+      <p style="margin-top:6px">運営: 株式会社企画7課</p>
+          </div>
+    <div class="ftr-links">
+      <a href="privacy.html">プライバシーポリシー</a>
+      <a href="terms.html">利用規約</a>
+      <a href="#faq">よくあるご質問</a>
+      <a href="#order">注文する</a>
+    </div>
+  </div>
+  <div class="wrap ftr-copy">© 株式会社企画7課　表示価格・納期はすべて税込・推定です。</div>
+</footer>
+
+<!-- info modal -->
+<div id="info-modal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h2 id="modal-title"></h2>
+      <button class="modal-close-btn" id="modalCloseBtn" aria-label="閉じる">✕</button>
+    </div>
+    <div id="modal-body"></div>
+  </div>
+</div>
+
+<script type="module">
+/* ============================================================
+   three.js は「静的 import しない」。
+   ここで静的 import すると unpkg に到達できない環境（オフライン／社内プロキシ／
+   CSP／CDN障害）でモジュール評価そのものが落ち、アップロード・同意・金額計算など
+   3Dと無関係な機能まで全滅する（イベントリスナが1つも登録されない）。
+   three.js は STEP3 に入る直前に動的 import し、失敗したら webglOK=false と
+   同じ代替表示パスへ倒す。GLTFLoader はライブモードで実モデルを読むときだけ読む。
+   ============================================================ */
+let THREE = null, OrbitControls = null, GLTFLoader = null;
+let threePromise = null, gltfPromise = null;
+
+function loadThree(){
+  if (threePromise) return threePromise;
+  threePromise = Promise.all([
+    import('three'),
+    import('three/addons/controls/OrbitControls.js')
+  ]).then(([three, oc]) => {
+    THREE = three;
+    OrbitControls = oc.OrbitControls;
+    return true;
+  }).catch(() => {
+    threePromise = null;   // 次回の再試行を許す
+    return false;
+  });
+  return threePromise;
+}
+
+function loadGLTFLoader(){
+  if (gltfPromise) return gltfPromise;
+  gltfPromise = import('three/addons/loaders/GLTFLoader.js')
+    .then(m => { GLTFLoader = m.GLTFLoader; return true; })
+    .catch(() => { gltfPromise = null; return false; });
+  return gltfPromise;
+}
+
+/* ============================================================
+   定数
+   ============================================================ */
+const APP_VERSION = 'v0.2.0';
+
+const RELEASE_NOTES = [
+  { ver: 'v0.2.0', date: '2026-07-31', changes: [
+    'サービス名を「ちいさなじぶん」に確定しました（旧称 TINY ME）',
+    '保育園団体プランの取り扱いを終了しました。料金表・FAQから該当項目を削除しています',
+    '使用シーンに「記念日のギフト」を追加（誕生日・結婚記念日・ペットの記念）',
+    '「何体かまとめて注文できますか？」をFAQに追加しました'
+  ]},
+  { ver: 'v0.1.3', date: '2026-07-29', changes: [
+    '【重要】3Dライブラリ(CDN)を読み込めない環境で、写真アップロードも同意チェックも金額計算も一切動かなくなる不具合を修正。3D以外の機能はCDNに依存しないよう分離しました',
+    '3Dライブラリの読み込みを、3Dプレビューに進む直前まで遅延させるよう変更（初期表示が軽くなります）',
+    '3Dライブラリを読み込めなかった場合は、WebGL非対応時と同じ代替表示に切り替えてそのまま注文できるよう修正',
+    'バックエンドの状態確認が終わるまで「3Dモデルを作る」を押せないよう修正（確認前に実APIへ発注が飛ぶ問題を解消）',
+    '生成の開始に失敗したとき（未配備・通信エラー等）に自動でデモモードへ切り替える／「デモで続ける」ボタンから復帰できるよう追加。STEP3以降に進めなくなる行き止まりを解消',
+    'ローカルファイル(file://)で開いたときに発生していたコンソールエラーを解消'
+  ]},
+  { ver: 'v0.1.2', date: '2026-07-29', changes: [
+    '3Dプレビューのカメラ自動フィットを調整し、フィギュアが画面いっぱいに正面から表示されるように修正',
+    'デモフィギュアの髪が顔を覆ってしまう不具合を修正（前髪と後頭部を分離）',
+    'デモモードバッジがヘッダーの「写真をアップロード」ボタンと重なる問題を修正',
+    '無効状態のボタンの配色を調整し、押せないことが一目で分かるように変更',
+    '「2体目以降20%OFF」の対象が本体価格のみである旨を、料金表・数量欄・見積内訳の画面表示にも明記'
+  ]},
+  { ver: 'v0.1.1', date: '2026-07-29', changes: [
+    '【重要】画面表示の合計額と実際の請求額が食い違う不具合を修正（オプション選択時、2体以上の注文で表示額より高い金額が決済されていました）',
+    '金額はサーバー確定値を表示するよう変更（クライアント計算は通信できない場合のフォールバック）',
+    '2体目以降20%OFFの対象は「本体価格のみ」であることを明記（台座・防水コーティングは割引対象外）',
+    '大きな写真を送信前に自動で縮小（長辺1600px / JPEG）。高解像度のスマホ写真で生成が失敗する問題を解消',
+    'HEIC など非対応形式の写真もJPEGへ自動変換して送信'
+  ]},
+  { ver: 'v0.1.0', date: '2026-07-29', changes: [
+    '初回リリース（プロトタイプ）',
+    '写真アップロード → AI 3Dモデル生成 → 3Dプレビュー → 発注の4ステップUIを実装',
+    'Three.js + OrbitControls による3Dプレビュー（回転・ズーム・パン・タッチ操作対応）',
+    '背景切替3種（スタジオ / アクアリウム / デスク）とカメラリセットを追加',
+    'サイズ・オプション・数量に応じた合計金額のリアルタイム計算（送料無料判定つき）',
+    'バックエンド未接続時に自動で切り替わるデモモードを実装',
+    '価格・納期はすべて税込・推定値です'
+  ]}
+];
+
+const HOW_TO_USE = [
+  { heading: '① 写真を選ぶ', text: '正面・全身・明るい場所で撮影した写真を1枚アップロードします。JPEG / PNG / WebP、10MB以下、短辺512px以上が条件です。大きな写真は送信前に自動で縮小されます（長辺1600px / JPEG）。' },
+  { heading: '② 同意にチェック', text: '写真が第三者の3Dモデル生成サービス（海外サーバーを含む）へ送信されること、被写体本人（未成年の場合は保護者）の同意を得ていることの2点にチェックすると「3Dモデルを作る」が押せるようになります。' },
+  { heading: '③ 生成を待つ', text: '通常1〜3分（推定）で立体データが完成します。途中でキャンセルもできます。' },
+  { heading: '④ 3Dプレビューで確認', text: 'ドラッグで回転、ホイールまたは2本指ピンチで拡大縮小、右ドラッグまたは2本指スワイプで移動。背景を「アクアリウム」に切り替えると水槽内での見え方を確認できます。' },
+  { heading: '⑤ サイズとオプションを選ぶ', text: 'S / M / L、台座、防水コーティング、数量を選ぶと合計金額がその場で更新されます。¥15,000以上で送料無料です。' },
+  { heading: '⑥ 発注', text: 'お届け先を入力して「決済に進む」でStripeの決済画面へ。店頭でチラシを見た方は紹介店舗コードもご入力ください。' },
+  { heading: 'デモモードについて', text: 'バックエンドに接続できない環境では自動的にデモモードになります。URLに ?demo=1 を付けても強制的にデモモードで起動します。デモモードでは擬似的な3Dフィギュアが表示され、決済は行われません。' }
+];
+
+const PLANS = { S:{label:'S / 40mm', price:7800}, M:{label:'M / 65mm', price:12800}, L:{label:'L / 100mm', price:19800} };
+const OPT_BASE_PRICE  = 1200;
+const OPT_WATER_PRICE = 1500;
+const SHIPPING = 800;
+const FREE_SHIPPING_THRESHOLD = 15000;
+const MULTI_DISCOUNT = 0.2;
+const MAX_QTY = 20;
+
+/* 画像送信の制約
+   サーバー(functions/mini-me.js)の実効上限はデコード後6MB。
+   それ以上は functions-framework のJSONボディ上限に先に当たり、JSONでない413が返って
+   エラー内容すら表示できないため、クライアント側で必ず縮小してから送る。 */
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;   // 元ファイルとして受け付ける上限
+const MAX_SEND_BYTES   = Math.round(5.5 * 1024 * 1024); // 送信するデータの上限（6MBに対し安全側）
+const MAX_SEND_EDGE    = 1600;               // 送信時の長辺（px）
+const SENDABLE_MIME    = ['image/png', 'image/jpeg', 'image/webp'];
+
+const API_GENERATE = '/api/mini-me-generate';
+const API_CHECKOUT = '/api/mini-me-checkout';
+const POLL_INTERVAL = 3000;
+const POLL_TIMEOUT  = 10 * 60 * 1000;
+
+/* ============================================================
+   状態
+   ============================================================ */
+const state = {
+  demo: false,
+  probed: false,     // probeBackend() が完了したか（完了まで生成ボタンは押させない）
+  file: null,
+  imageBase64: null,
+  mimeType: null,
+  taskId: null,
+  modelUrl: null,
+  qty: 1,
+  polling: null,
+  ticker: null,
+  startedAt: 0,
+  aborted: false
+};
+
+const $ = (id) => document.getElementById(id);
+const yen = (n) => '¥' + Math.round(n).toLocaleString('ja-JP');
+
+/* ============================================================
+   ヘッダーモーダル
+   ============================================================ */
+function openModal(title, html){
+  $('modal-title').textContent = title;
+  $('modal-body').innerHTML = html;
+  $('info-modal').classList.add('open');
+}
+function closeModal(){ $('info-modal').classList.remove('open'); }
+
+function openHowTo(){
+  const html = HOW_TO_USE.map(i => '<h3>' + i.heading + '</h3><p>' + i.text + '</p>').join('');
+  openModal('ちいさなじぶん の使い方', html);
+}
+function openReleaseNotes(){
+  const html = RELEASE_NOTES.map(r => {
+    const items = r.changes.map(c => '<li>' + c + '</li>').join('');
+    return '<div class="release-ver"><span class="release-ver-tag">' + r.ver + '</span>'
+         + '<span class="release-ver-date">' + r.date + '</span></div><ul>' + items + '</ul>';
+  }).join('');
+  openModal('リリースノート', html);
+}
+
+$('logoBtn').addEventListener('click', openHowTo);
+$('verBtn').addEventListener('click', openReleaseNotes);
+$('verBtn').textContent = APP_VERSION;
+$('modalCloseBtn').addEventListener('click', closeModal);
+$('info-modal').addEventListener('click', (e) => { if (e.target === $('info-modal')) closeModal(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+
+/* ============================================================
+   ステップ制御
+   ============================================================ */
+function goStep(n){
+  for (let i = 1; i <= 4; i++) $('panel' + i).hidden = (i !== n);
+  document.querySelectorAll('.stepper-item').forEach(el => {
+    const s = Number(el.dataset.step);
+    el.classList.toggle('active', s === n);
+    el.classList.toggle('done', s < n);
+  });
+  if (n === 3) requestAnimationFrame(() => resizeRenderer());
+}
+
+/* ============================================================
+   STEP1 : アップロード
+   ============================================================ */
+const dropZone = $('dropZone');
+const fileInput = $('fileInput');
+
+function showUploadError(msg){
+  const el = $('uploadErr');
+  el.textContent = msg;
+  el.hidden = false;
+}
+function clearUploadError(){ $('uploadErr').hidden = true; }
+
+function resetPhoto(){
+  state.file = null; state.imageBase64 = null; state.mimeType = null;
+  $('previewBox').hidden = true;
+  $('previewImg').removeAttribute('src');
+  fileInput.value = '';
+  dropZone.hidden = false;
+  clearUploadError();
+  updateGenButton();
+}
+
+async function handleFile(file){
+  clearUploadError();
+  if (!file) return;
+  if (!file.type || !file.type.startsWith('image/')) {
+    showUploadError('画像ファイルを選択してください（JPEG / PNG / WebP など）。');
+    return;
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    showUploadError('ファイルサイズが10MBを超えています（選択されたファイル: ' + (file.size / 1024 / 1024).toFixed(1) + 'MB）。');
+    return;
+  }
+  let dataUrl;
+  try {
+    dataUrl = await readAsDataURL(file);
+  } catch (e) {
+    showUploadError('ファイルを読み込めませんでした。別の画像でお試しください。');
+    return;
+  }
+  let dim;
+  try {
+    dim = await getImageSize(dataUrl);
+  } catch (e) {
+    showUploadError('画像として読み込めませんでした。ファイルが壊れていないかご確認ください。');
+    return;
+  }
+  if (Math.min(dim.w, dim.h) < 512) {
+    showUploadError('画像が小さすぎます。短辺512px以上の写真をお選びください（選択された画像: ' + dim.w + '×' + dim.h + 'px）。');
+    return;
+  }
+
+  // 送信用データを用意する（必要なら縮小・JPEG変換）
+  let send = { dataUrl: dataUrl, mimeType: file.type, w: dim.w, h: dim.h, bytes: file.size };
+  const needsConvert =
+    Math.max(dim.w, dim.h) > MAX_SEND_EDGE ||
+    file.size > MAX_SEND_BYTES ||
+    !SENDABLE_MIME.includes(file.type);
+  if (needsConvert) {
+    try {
+      send = await downscaleForUpload(dataUrl, dim);
+    } catch (e) {
+      showUploadError('画像を送信用に変換できませんでした。別の画像でお試しください。');
+      return;
+    }
+    if (send.bytes > MAX_SEND_BYTES) {
+      showUploadError('画像を十分に小さくできませんでした。別の写真でお試しください。');
+      return;
+    }
+  }
+
+  state.file = file;
+  state.mimeType = send.mimeType;
+  state.imageBase64 = send.dataUrl.slice(send.dataUrl.indexOf(',') + 1);
+
+  $('previewImg').src = dataUrl;
+  $('mName').textContent = file.name;
+  $('mSize').textContent = (file.size / 1024 / 1024).toFixed(2) + ' MB'
+    + (needsConvert ? '（送信時 ' + (send.bytes / 1024 / 1024).toFixed(2) + ' MB に縮小）' : '');
+  $('mDim').textContent = dim.w + ' × ' + dim.h + ' px'
+    + (needsConvert ? '（送信時 ' + send.w + ' × ' + send.h + ' px）' : '');
+  $('previewBox').hidden = false;
+  dropZone.hidden = true;
+  updateGenButton();
+}
+
+function readAsDataURL(file){
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(String(fr.result));
+    fr.onerror = () => reject(new Error('read error'));
+    fr.readAsDataURL(file);
+  });
+}
+function loadImage(src){
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('decode error'));
+    img.src = src;
+  });
+}
+async function getImageSize(src){
+  const img = await loadImage(src);
+  return { w: img.naturalWidth, h: img.naturalHeight };
+}
+
+/** dataURL(base64) のおおよそのバイト数 */
+function dataUrlBytes(dataUrl){
+  const b64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+  const pad = b64.endsWith('==') ? 2 : (b64.endsWith('=') ? 1 : 0);
+  return Math.max(0, Math.floor(b64.length * 3 / 4) - pad);
+}
+
+/**
+ * 送信用に長辺 MAX_SEND_EDGE まで縮小し JPEG 化する。
+ * サーバーの実効上限（デコード後6MB）を超えると JSON でない 413 が返り
+ * エラー本文すら表示できなくなるため、必ずこの関数を通してから送信する。
+ */
+async function downscaleForUpload(dataUrl, dim){
+  const img = await loadImage(dataUrl);
+  const scale = Math.min(1, MAX_SEND_EDGE / Math.max(dim.w, dim.h));
+  const w = Math.max(1, Math.round(dim.w * scale));
+  const h = Math.max(1, Math.round(dim.h * scale));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('canvas unavailable');
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.fillStyle = '#ffffff';           // JPEG は透過を持てないので白背景で埋める
+  ctx.fillRect(0, 0, w, h);
+  ctx.drawImage(img, 0, 0, w, h);
+
+  let out = '';
+  for (const q of [0.85, 0.75, 0.65, 0.55]) {
+    out = canvas.toDataURL('image/jpeg', q);
+    if (!out.startsWith('data:image/jpeg')) throw new Error('encode error');
+    if (dataUrlBytes(out) <= MAX_SEND_BYTES) break;
+  }
+  return { dataUrl: out, mimeType: 'image/jpeg', w, h, bytes: dataUrlBytes(out) };
+}
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); }
+});
+['dragenter','dragover'].forEach(ev => dropZone.addEventListener(ev, (e) => {
+  e.preventDefault(); dropZone.classList.add('over');
+}));
+['dragleave','drop'].forEach(ev => dropZone.addEventListener(ev, (e) => {
+  e.preventDefault(); dropZone.classList.remove('over');
+}));
+dropZone.addEventListener('drop', (e) => {
+  const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+  if (f) handleFile(f);
+});
+fileInput.addEventListener('change', () => handleFile(fileInput.files[0]));
+$('resetPhotoBtn').addEventListener('click', resetPhoto);
+
+function updateGenButton(){
+  const c1 = $('consent1').checked;
+  const c2 = $('consent2').checked;
+  $('c1w').classList.toggle('checked', c1);
+  $('c2w').classList.toggle('checked', c2);
+  // state.probed が立つまで押させない。デモ判定より先に実APIへPOSTが飛ぶのを防ぐ。
+  const ok = !!state.imageBase64 && c1 && c2 && state.probed;
+  $('genBtn').disabled = !ok;
+  const missing = [];
+  if (!state.imageBase64) missing.push('写真の選択');
+  if (!c1 || !c2) missing.push('同意2項目のチェック');
+  if (ok) {
+    $('genHint').textContent = '準備完了です。生成を開始できます。';
+  } else if (missing.length) {
+    $('genHint').textContent = missing.join('と') + 'が必要です';
+  } else {
+    $('genHint').textContent = 'サーバーの状態を確認しています…';
+  }
+}
+$('consent1').addEventListener('change', updateGenButton);
+$('consent2').addEventListener('change', updateGenButton);
+
+/* ============================================================
+   STEP2 : 生成
+   ============================================================ */
+function setProgress(pct){
+  const p = Math.max(0, Math.min(100, Math.round(pct)));
+  $('progFill').style.width = p + '%';
+  $('progPct').textContent = p;
+}
+function startTicker(){
+  state.startedAt = Date.now();
+  $('progSec').textContent = '0';
+  stopTicker();
+  state.ticker = setInterval(() => {
+    $('progSec').textContent = String(Math.floor((Date.now() - state.startedAt) / 1000));
+  }, 1000);
+}
+function stopTicker(){ if (state.ticker) { clearInterval(state.ticker); state.ticker = null; } }
+function stopPolling(){ if (state.polling) { clearTimeout(state.polling); state.polling = null; } }
+
+/**
+ * @param {string} msg
+ * @param {{offerDemo?:boolean}} [opts] offerDemo:true でエラー枠に「デモで続ける」導線を出す。
+ *   これが無いと、実APIの生成開始が失敗した時点で STEP3/STEP4 へ到達する手段が
+ *   URLに ?demo=1 を手で足す以外なくなり、行き止まりになる。
+ */
+function showGenError(msg, opts){
+  const el = $('genErr');
+  el.textContent = msg;
+  el.hidden = false;
+  if (opts && opts.offerDemo) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'tool';
+    btn.textContent = 'デモで続ける';
+    btn.style.marginTop = '10px';
+    btn.style.display = 'block';
+    btn.addEventListener('click', () => { enableDemo(); startGeneration(); });
+    el.appendChild(btn);
+  }
+}
+
+/** STEP2 に入って生成を開始する共通処理 */
+function startGeneration(){
+  $('genErr').hidden = true;
+  $('genErr').textContent = '';
+  state.aborted = false;
+  stopPolling();
+  setProgress(0);
+  startTicker();
+  goStep(2);
+  $('panel2').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // three.js の取得を生成と並行して先に始めておく（await しない：失敗しても代替表示に倒れる）
+  ensureViewer();
+  if (state.demo) runDemoGeneration(); else runRealGeneration();
+}
+
+$('genBtn').addEventListener('click', () => {
+  if ($('genBtn').disabled) return;
+  startGeneration();
+});
+
+$('cancelBtn').addEventListener('click', () => {
+  state.aborted = true;
+  stopPolling(); stopTicker();
+  goStep(1);
+});
+
+function runDemoGeneration(){
+  const total = 4000;
+  const t0 = Date.now();
+  const tick = () => {
+    if (state.aborted) return;
+    const r = Math.min(1, (Date.now() - t0) / total);
+    setProgress(r * 100);
+    if (r < 1) { state.polling = setTimeout(tick, 90); }
+    else {
+      stopTicker();
+      state.taskId = 'demo-' + Date.now().toString(36);
+      state.modelUrl = null;
+      goStep(3);
+      loadDemoModel();
+      $('panel3').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  };
+  tick();
+}
+
+/** エンドポイント未配備・通信不能とみなせる失敗（＝写真のせいではない）に付けるフラグ */
+function infraError(msg){ const e = new Error(msg); e.infra = true; return e; }
+
+async function runRealGeneration(){
+  try {
+    const res = await fetch(API_GENERATE, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ imageBase64: state.imageBase64, mimeType: state.mimeType })
+    });
+    if (!res.ok) {
+      // 404 / 5xx はエンドポイント未配備・障害。写真を変えても直らないのでデモへ倒す。
+      if (res.status === 404 || res.status >= 500) throw infraError('generate ' + res.status);
+      throw new Error('generate failed: ' + res.status);
+    }
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('json')) throw infraError('non-json response');
+    const data = await res.json();
+    if (!data || !data.taskId) throw infraError('taskId missing');
+    state.taskId = data.taskId;
+    pollStatus();
+  } catch (e) {
+    if (state.aborted) return;
+    // fetch 自体の失敗（CORS / オフライン / DNS）は TypeError で来る。これもインフラ側。
+    const isInfra = !!(e && (e.infra || e.name === 'TypeError'));
+    if (isInfra) {
+      enableDemo();
+      runDemoGeneration();       // その場でデモ生成に切り替えて先へ進ませる
+      return;
+    }
+    stopTicker();
+    showGenError(
+      '生成の開始に失敗しました。時間をおいて再度お試しください。（' + (e && e.message ? e.message : 'error') + '）',
+      { offerDemo: true }
+    );
+  }
+}
+
+function pollStatus(){
+  if (state.aborted) return;
+  if (Date.now() - state.startedAt > POLL_TIMEOUT) {
+    stopTicker();
+    showGenError('生成がタイムアウトしました（10分）。写真を変えて再度お試しください。', { offerDemo: true });
+    return;
+  }
+  fetch(API_GENERATE + '?taskId=' + encodeURIComponent(state.taskId))
+    .then(r => { if (!r.ok) throw new Error('status ' + r.status); return r.json(); })
+    .then(data => {
+      if (state.aborted) return;
+      if (typeof data.progress === 'number') setProgress(data.progress);
+      if (data.status === 'SUCCEEDED') {
+        stopTicker();
+        setProgress(100);
+        state.modelUrl = data.modelUrl || null;
+        goStep(3);
+        loadRemoteModel(state.modelUrl);
+        $('panel3').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } else if (data.status === 'FAILED') {
+        stopTicker();
+        showGenError('生成に失敗しました。' + (data.error ? '（' + data.error + '）' : '') + ' 別の写真でお試しください。', { offerDemo: true });
+      } else {
+        state.polling = setTimeout(pollStatus, POLL_INTERVAL);
+      }
+    })
+    .catch(() => {
+      if (state.aborted) return;
+      state.polling = setTimeout(pollStatus, POLL_INTERVAL);
+    });
+}
+
+/* ============================================================
+   STEP3 : 3Dビューア
+   ============================================================ */
+const stage = $('stage');
+let renderer = null, scene = null, camera = null, controls = null;
+let currentModel = null, webglOK = true;
+let viewerPromise = null;
+
+function detectWebGL(){
+  try {
+    const c = document.createElement('canvas');
+    return !!(window.WebGLRenderingContext && (c.getContext('webgl2') || c.getContext('webgl')));
+  } catch (e) { return false; }
+}
+
+/** 3Dが使えないときの共通処理（WebGL非対応 / CDN到達不能 / WebGLRenderer生成失敗） */
+function fallbackViewer(msg, hint){
+  webglOK = false;
+  $('stageFallback').classList.add('on');
+  if (msg)  $('fallbackMsg').textContent = msg;
+  if (hint) $('viewerHint').textContent = hint;
+  return false;
+}
+
+/** 起動時ではなく STEP3 に入る直前に一度だけ呼ぶ。戻り値は webglOK 相当の boolean。 */
+function ensureViewer(){
+  if (!viewerPromise) {
+    // 何が起きても reject させない（未処理のPromise拒否で先の処理が止まらないように）
+    viewerPromise = initViewer().catch(() => fallbackViewer(
+      '3Dプレビューを初期化できませんでした',
+      '3Dプレビューは表示できませんでしたが、ご注文はこのまま進められます。'
+    ));
+  }
+  return viewerPromise;
+}
+
+async function initViewer(){
+  if (!detectWebGL()) {
+    return fallbackViewer(null, '3Dプレビューは利用できませんが、このままご注文いただけます。');
+  }
+  if (!(await loadThree())) {
+    return fallbackViewer(
+      '3Dプレビューの読み込みに失敗しました',
+      '3Dプレビューは表示できませんでしたが、ご注文はこのまま進められます。'
+    );
+  }
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  } catch (e) {
+    return fallbackViewer(null, '3Dプレビューは利用できませんが、このままご注文いただけます。');
+  }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  stage.appendChild(renderer.domElement);
+
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(38, 4/3, 0.05, 200);
+  camera.position.set(2.2, 1.8, 3.4);
+
+  const hemi = new THREE.HemisphereLight(0xE8F1F2, 0x16323C, 1.05);
+  scene.add(hemi);
+  const dir = new THREE.DirectionalLight(0xffffff, 1.5);
+  dir.position.set(3.2, 5.4, 3.0);
+  dir.castShadow = true;
+  dir.shadow.mapSize.set(1024, 1024);
+  dir.shadow.camera.near = 0.5;
+  dir.shadow.camera.far = 24;
+  dir.shadow.camera.left = -4; dir.shadow.camera.right = 4;
+  dir.shadow.camera.top = 4;   dir.shadow.camera.bottom = -4;
+  dir.shadow.bias = -0.0012;
+  scene.add(dir);
+  const fill = new THREE.DirectionalLight(0x4ECDC4, 0.45);
+  fill.position.set(-3.4, 1.8, -2.6);
+  scene.add(fill);
+
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(40, 40),
+    new THREE.ShadowMaterial({ opacity: 0.28 })
+  );
+  ground.rotation.x = -Math.PI / 2;
+  ground.receiveShadow = true;
+  scene.add(ground);
+
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.enablePan = true;
+  controls.enableZoom = true;
+  controls.minDistance = 0.6;
+  controls.maxDistance = 40;
+  controls.maxPolarAngle = Math.PI * 0.495;
+  controls.target.set(0, 0.9, 0);
+  controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
+  controls.saveState();
+
+  if (typeof ResizeObserver !== 'undefined') {
+    new ResizeObserver(() => resizeRenderer()).observe(stage);
+  }
+  window.addEventListener('resize', resizeRenderer);
+  resizeRenderer();
+  renderer.setAnimationLoop(() => {
+    controls.update();
+    renderer.render(scene, camera);
+  });
+  return true;
+}
+
+function resizeRenderer(){
+  if (!renderer || !camera) return;
+  const w = stage.clientWidth || 1;
+  const h = stage.clientHeight || 1;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+
+function clearModel(){
+  if (!currentModel || !scene) return;
+  scene.remove(currentModel);
+  currentModel.traverse(o => {
+    if (o.geometry) o.geometry.dispose();
+    if (o.material) {
+      if (Array.isArray(o.material)) o.material.forEach(m => m.dispose());
+      else o.material.dispose();
+    }
+  });
+  currentModel = null;
+}
+
+function fitCameraToObject(obj){
+  const box = new THREE.Box3().setFromObject(obj);
+  const size = box.getSize(new THREE.Vector3());
+  const maxDim = Math.max(size.x, size.y, size.z) || 1;
+  obj.scale.multiplyScalar(1.9 / maxDim);
+
+  box.setFromObject(obj);
+  box.getSize(size);
+  const center = box.getCenter(new THREE.Vector3());
+  obj.position.x -= center.x;
+  obj.position.z -= center.z;
+  obj.position.y -= box.min.y;      // 地面に立たせる
+
+  box.setFromObject(obj);
+  box.getSize(size);
+  const h = size.y || 1;
+  const fov = camera.fov * Math.PI / 180;
+  const fitH = (h / 2) / Math.tan(fov / 2);
+  const fitW = (Math.max(size.x, size.z) / 2) / (Math.tan(fov / 2) * Math.max(camera.aspect, 0.2));
+  const dist = Math.max(fitH, fitW) * 1.2 + 0.15;
+
+  camera.position.set(dist * 0.30, h * 0.70, dist * 0.96);
+  camera.near = Math.max(dist / 200, 0.01);
+  camera.far = dist * 40;
+  camera.updateProjectionMatrix();
+  controls.target.set(0, h * 0.45, 0);
+  controls.minDistance = Math.max(h * 0.4, 0.3);
+  controls.maxDistance = dist * 6;
+  controls.update();
+  controls.saveState();
+}
+
+/* --- デモ用フィギュア（Three.js プリミティブのみで構築） --- */
+function buildDemoFigure(){
+  const g = new THREE.Group();
+  const M = (color, opts) => new THREE.MeshStandardMaterial(Object.assign({ color, roughness: 0.72, metalness: 0.03 }, opts || {}));
+  const skin  = M(0xF2C6A0);
+  const shirt = M(0x4ECDC4, { roughness: 0.6 });
+  const pants = M(0x16323C, { roughness: 0.82 });
+  const hair  = M(0x2B1D18, { roughness: 0.9 });
+  const shoe  = M(0xFF7A6B, { roughness: 0.55 });
+  const plate = M(0xF7F3E9, { roughness: 0.35, metalness: 0.12 });
+  const eye   = M(0x12262C, { roughness: 0.3 });
+
+  const add = (geo, mat, x, y, z, rz) => {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z || 0);
+    if (rz) m.rotation.z = rz;
+    m.castShadow = true; m.receiveShadow = true;
+    g.add(m);
+    return m;
+  };
+
+  // 台座
+  add(new THREE.CylinderGeometry(0.66, 0.72, 0.12, 48), plate, 0, 0.06, 0);
+  add(new THREE.CylinderGeometry(0.50, 0.50, 0.03, 48), M(0x4ECDC4, { roughness: 0.4 }), 0, 0.13, 0);
+
+  // 脚
+  add(new THREE.CapsuleGeometry(0.125, 0.40, 6, 18), pants, -0.155, 0.47, 0);
+  add(new THREE.CapsuleGeometry(0.125, 0.40, 6, 18), pants,  0.155, 0.47, 0);
+  // 靴
+  add(new THREE.SphereGeometry(0.15, 20, 14), shoe, -0.155, 0.20, 0.05).scale.set(1, 0.62, 1.35);
+  add(new THREE.SphereGeometry(0.15, 20, 14), shoe,  0.155, 0.20, 0.05).scale.set(1, 0.62, 1.35);
+
+  // 胴
+  add(new THREE.CapsuleGeometry(0.255, 0.36, 8, 24), shirt, 0, 1.02, 0);
+  // 腕
+  add(new THREE.CapsuleGeometry(0.095, 0.34, 6, 16), shirt, -0.33, 1.04, 0,  0.20);
+  add(new THREE.CapsuleGeometry(0.095, 0.34, 6, 16), shirt,  0.33, 1.04, 0, -0.20);
+  // 手
+  add(new THREE.SphereGeometry(0.10, 18, 14), skin, -0.395, 0.80, 0);
+  add(new THREE.SphereGeometry(0.10, 18, 14), skin,  0.395, 0.80, 0);
+  // 首
+  add(new THREE.CylinderGeometry(0.10, 0.11, 0.12, 20), skin, 0, 1.32, 0);
+  // 頭
+  add(new THREE.SphereGeometry(0.30, 40, 28), skin, 0, 1.66, 0);
+  // 髪
+  const hairMesh = add(new THREE.SphereGeometry(0.315, 40, 28, 0, Math.PI * 2, 0, Math.PI * 0.44), hair, 0, 1.668, 0);
+  hairMesh.scale.set(1, 1.04, 1.03);
+  // 後頭部（うしろ側だけ深めに）
+  const hairBack = add(new THREE.SphereGeometry(0.318, 40, 28, Math.PI * 1.05, Math.PI * 0.9, 0, Math.PI * 0.66), hair, 0, 1.665, 0);
+  hairBack.scale.set(1, 1.02, 1.02);
+  // 目
+  add(new THREE.SphereGeometry(0.036, 14, 12), eye, -0.098, 1.665, 0.272);
+  add(new THREE.SphereGeometry(0.036, 14, 12), eye,  0.098, 1.665, 0.272);
+  // 鼻
+  add(new THREE.SphereGeometry(0.032, 12, 10), skin, 0, 1.61, 0.292);
+
+  g.rotation.y = 0.26;
+  return g;
+}
+
+async function loadDemoModel(){
+  if (!(await ensureViewer())) return;   // 3D不可なら代替枠のまま何もしない
+  clearModel();
+  currentModel = buildDemoFigure();
+  scene.add(currentModel);
+  resizeRenderer();
+  fitCameraToObject(currentModel);
+}
+
+async function loadRemoteModel(url){
+  if (!(await ensureViewer())) return;
+  if (!url) { loadDemoModel(); return; }
+  if (!(await loadGLTFLoader())) {
+    $('viewerHint').textContent = '3Dモデルの読み込みに失敗したため、代替表示に切り替えました。';
+    loadDemoModel();
+    return;
+  }
+  const loader = new GLTFLoader();
+  loader.load(url, (gltf) => {
+    clearModel();
+    currentModel = gltf.scene;
+    currentModel.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+    scene.add(currentModel);
+    resizeRenderer();
+    fitCameraToObject(currentModel);
+  }, undefined, () => {
+    $('viewerHint').textContent = '3Dモデルの読み込みに失敗したため、代替表示に切り替えました。';
+    loadDemoModel();
+  });
+}
+
+document.querySelectorAll('[data-bg]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('[data-bg]').forEach(b => b.classList.remove('on'));
+    btn.classList.add('on');
+    const map = { studio:'bg-studio', aqua:'bg-aqua', desk:'bg-desk' };
+    $('stageBg').className = 'stage-bg ' + map[btn.dataset.bg];
+  });
+});
+$('resetViewBtn').addEventListener('click', () => { if (controls) controls.reset(); });
+$('toStep4Btn').addEventListener('click', () => {
+  goStep(4);
+  renderSummary();   // サーバー確定額を取り直してから金額を表示する
+  $('panel4').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+$('redoBtn').addEventListener('click', () => { resetPhoto(); goStep(1); });
+
+/* ============================================================
+   STEP4 : オプション・金額計算・発注
+   ============================================================ */
+function selectedPlan(){
+  const el = document.querySelector('input[name="plan"]:checked');
+  return el ? el.value : 'S';
+}
+function selectedOptions(){
+  const o = [];
+  if ($('optBase').checked)  o.push('base');
+  if ($('optWater').checked) o.push('waterproof');
+  return o;
+}
+/**
+ * ローカル計算（通信できないとき・デモモードのフォールバック）。
+ *
+ * ★2体目以降20%OFFの対象は「本体価格のみ」。オプション代（台座・防水）は割引対象外。
+ *   サーバー(functions/mini-me.js priceOrder)と完全に同じ式にすること。
+ *   ここがズレると「画面表示より高い額が決済される」ことになり、景表法・特商法上そのまま出せない。
+ *   1体あたりの割引額はサーバーと同じく Math.round で丸めてから体数を掛ける。
+ */
+function calc(){
+  const plan = selectedPlan();
+  const unitPlan = PLANS[plan].price;
+  const unitOpt = ($('optBase').checked ? OPT_BASE_PRICE : 0) + ($('optWater').checked ? OPT_WATER_PRICE : 0);
+  const qty = state.qty;
+  const base = unitPlan * qty;
+  const opt = unitOpt * qty;
+  const discountPerFigure = unitPlan - Math.round(unitPlan * (1 - MULTI_DISCOUNT));
+  const discount = qty > 1 ? discountPerFigure * (qty - 1) : 0;
+  const subtotal = base + opt - discount;
+  const shipping = subtotal >= FREE_SHIPPING_THRESHOLD ? 0 : SHIPPING;
+  return { plan, unitPlan, unitOpt, qty, base, opt, discount, subtotal, shipping, total: subtotal + shipping, source: 'local' };
+}
+
+/* ---- サーバー見積（正）------------------------------------------------
+   価格ロジックの二重実装で表示額と請求額がズレる事故を構造的に防ぐため、
+   表示する金額は原則サーバー(/api/mini-me-checkout の {quote:true})が確定した値を使う。
+   通信不可・デモモード時のみ上の calc() にフォールバックする。 */
+let serverQuote = null;   // { key, subtotal, shipping, total, bodyTotal, optionTotal, discountTotal }
+let quoteSeq = 0;
+
+function quoteKey(){
+  return selectedPlan() + '|' + selectedOptions().join(',') + '|' + state.qty;
+}
+
+function currentItems(){
+  return [{ plan: selectedPlan(), options: selectedOptions(), qty: state.qty }];
+}
+
+/** http(s) で配信されているときだけAPIを叩ける（file:// では相対パスが解決できず TypeError になる） */
+function apiReachable(){
+  return location.protocol === 'http:' || location.protocol === 'https:';
+}
+
+async function refreshQuote(){
+  if (state.demo) { serverQuote = null; return; }
+  if (!apiReachable()) { serverQuote = null; return; }
+  const seq = ++quoteSeq;
+  const key = quoteKey();
+  try {
+    const res = await fetch(API_CHECKOUT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ quote: true, items: currentItems() })
+    });
+    if (!res.ok) throw new Error('quote ' + res.status);
+    const q = await res.json();
+    if (seq !== quoteSeq) return;                       // 古いレスポンスは捨てる
+    if (!q || !Number.isFinite(q.total) || !Number.isFinite(q.subtotal)) throw new Error('bad quote');
+    serverQuote = Object.assign({ key }, q);
+    renderSummary({ skipQuote: true });
+  } catch (e) {
+    if (seq !== quoteSeq) return;
+    serverQuote = null;                                 // ローカル計算にフォールバック
+  }
+}
+
+/** 表示に使う金額。サーバー見積が現在の選択と一致していればそれを、なければローカル計算を返す。 */
+function amounts(){
+  const c = calc();
+  const q = serverQuote;
+  if (q && q.key === quoteKey()) {
+    return {
+      plan: c.plan, qty: c.qty,
+      base: q.bodyTotal, opt: q.optionTotal, discount: q.discountTotal,
+      subtotal: q.subtotal, shipping: q.shipping, total: q.total,
+      source: 'server'
+    };
+  }
+  return c;
+}
+
+function renderSummary(opts){
+  const c = amounts();
+  $('sumBaseLabel').textContent = '本体（' + PLANS[c.plan].label + ' × ' + c.qty + '）';
+  $('sumBase').textContent = yen(c.base);
+  $('sumOpt').textContent = yen(c.opt);
+  $('sumDiscRow').hidden = c.discount <= 0;
+  $('sumDisc').textContent = '-' + yen(c.discount);
+  $('sumShip').textContent = c.shipping === 0 ? '無料' : yen(c.shipping);
+  $('sumTotal').textContent = yen(c.total);
+  const rest = FREE_SHIPPING_THRESHOLD - c.subtotal;
+  $('freeNote').textContent = rest > 0 ? ('あと ' + yen(rest) + ' で送料無料') : '送料無料が適用されています';
+  document.querySelectorAll('#planRadios .pick, #optWrap .pick').forEach(l => {
+    const i = l.querySelector('input');
+    l.classList.toggle('checked', !!(i && i.checked));
+  });
+  $('qtyOut').textContent = String(c.qty);
+  if (!(opts && opts.skipQuote)) refreshQuote();
+}
+
+document.querySelectorAll('input[name="plan"]').forEach(r => r.addEventListener('change', () => renderSummary()));
+$('optBase').addEventListener('change', () => renderSummary());
+$('optWater').addEventListener('change', () => renderSummary());
+$('qtyMinus').addEventListener('click', () => { state.qty = Math.max(1, state.qty - 1); renderSummary(); });
+$('qtyPlus').addEventListener('click',  () => { state.qty = Math.min(MAX_QTY, state.qty + 1); renderSummary(); });
+
+const REQ_FIELDS = ['cName','cZip','cAddr','cTel','cMail'];
+function customerValid(){
+  const filled = REQ_FIELDS.every(id => $(id).value.trim().length > 0);
+  const mailOK = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test($('cMail').value.trim());
+  return filled && mailOK;
+}
+function updatePayButton(){
+  const ok = customerValid();
+  $('payBtn').disabled = !ok;
+  $('payHint').textContent = ok
+    ? (state.demo ? 'デモモードのため実際の決済は行われません' : '安全な決済ページ（Stripe）へ移動します')
+    : '必須項目をすべて入力すると決済に進めます';
+}
+REQ_FIELDS.forEach(id => $(id).addEventListener('input', updatePayButton));
+
+function buildOrderPayload(){
+  return {
+    // 金額は送らない。サーバー(priceOrder)が items から確定する。
+    items: currentItems(),
+    customer: {
+      name: $('cName').value.trim(),
+      zip: $('cZip').value.trim(),
+      address: $('cAddr').value.trim(),
+      tel: $('cTel').value.trim(),
+      email: $('cMail').value.trim()
+    },
+    shopCode: $('shopCode').value.trim(),
+    taskId: state.taskId
+  };
+}
+
+$('payBtn').addEventListener('click', async () => {
+  if ($('payBtn').disabled) return;
+  $('payErr').hidden = true;
+  const payload = buildOrderPayload();
+  const c = amounts();
+
+  if (state.demo) {
+    const optLabel = selectedOptions().length
+      ? selectedOptions().map(o => o === 'base' ? '台座' : '防水コーティング').join(' / ')
+      : 'なし';
+    const html =
+      '<div class="done-icon">✓</div>' +
+      '<p style="text-align:center">デモモードのため決済はスキップされました。</p>' +
+      '<div class="recap">' +
+        '<div class="srow"><span class="lbl">サイズ</span><span>' + PLANS[c.plan].label + '</span></div>' +
+        '<div class="srow"><span class="lbl">オプション</span><span>' + optLabel + '</span></div>' +
+        '<div class="srow"><span class="lbl">数量</span><span>' + c.qty + ' 体</span></div>' +
+        '<div class="srow"><span class="lbl">お届け先</span><span>' + esc(payload.customer.name) + ' 様</span></div>' +
+        '<div class="srow"><span class="lbl">住所</span><span>' + esc(payload.customer.zip) + ' ' + esc(payload.customer.address) + '</span></div>' +
+        '<div class="srow"><span class="lbl">メール</span><span>' + esc(payload.customer.email) + '</span></div>' +
+        '<div class="srow"><span class="lbl">紹介店舗コード</span><span>' + (payload.shopCode ? esc(payload.shopCode) : '—') + '</span></div>' +
+        '<div class="srow"><span class="lbl">送料</span><span>' + (c.shipping === 0 ? '無料' : yen(c.shipping)) + '</span></div>' +
+        '<div class="srow total"><span>合計</span><span>' + yen(c.total) + '</span></div>' +
+      '</div>' +
+      '<p style="font-size:12px;opacity:.65;margin-top:12px">本番環境ではこのタイミングで Stripe Checkout に遷移します。</p>';
+    openModal('ご注文内容（デモ）', html);
+    return;
+  }
+
+  $('payBtn').disabled = true;
+  $('payHint').textContent = '決済ページを準備しています…';
+  try {
+    const res = await fetch(API_CHECKOUT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error('checkout ' + res.status);
+    const data = await res.json();
+    if (!data || !data.url) throw new Error('url missing');
+    location.href = data.url;
+  } catch (e) {
+    const el = $('payErr');
+    el.textContent = '決済ページの作成に失敗しました。時間をおいて再度お試しください。';
+    el.hidden = false;
+    updatePayButton();
+  }
+});
+
+function esc(s){
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+/* ============================================================
+   デモモード判定
+   ============================================================ */
+function enableDemo(){
+  state.demo = true;
+  $('demoBadge').classList.add('on');
+  document.body.classList.add('demo');
+  quoteSeq++;                              // 飛行中のサーバー見積応答を必ず捨てる
+  serverQuote = null;                      // デモではサーバー見積を使わない
+  renderSummary({ skipQuote: true });
+  updatePayButton();
+}
+
+async function probeBackend(){
+  const forced = new URLSearchParams(location.search).get('demo');
+  if (forced === '1') { enableDemo(); return; }
+  if (!apiReachable()) { enableDemo(); return; }
+  try {
+    const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = ctl ? setTimeout(() => ctl.abort(), 4000) : null;
+    const res = await fetch(API_GENERATE + '?taskId=__ping__', ctl ? { signal: ctl.signal } : undefined);
+    if (timer) clearTimeout(timer);
+    // 404 / 5xx はエンドポイント未配備とみなしデモへ
+    if (res.status === 404 || res.status >= 500) { enableDemo(); return; }
+    const ct = res.headers.get('content-type') || '';
+    if (!ct.includes('json')) { enableDemo(); return; }
+  } catch (e) {
+    enableDemo();
+  }
+}
+
+/* ============================================================
+   起動
+   ============================================================ */
+/* initViewer() はここでは呼ばない（STEP3 に入る直前に ensureViewer() が一度だけ呼ぶ）。
+   renderSummary は skipQuote:true で描く。デモ判定(probeBackend)より先に
+   /api/mini-me-checkout へPOSTが飛ぶと、?demo=1 でも実APIを1回叩いてしまい、
+   file:// では fetch('/api/...') が TypeError を吐く。 */
+updateGenButton();
+renderSummary({ skipQuote: true });
+updatePayButton();
+goStep(1);
+
+try { await probeBackend(); } catch (e) { enableDemo(); }
+state.probed = true;   // 何があっても必ず立てる（立たないと生成ボタンが永久にdisabledになる）
+updateGenButton();
+renderSummary();   // デモなら refreshQuote は即returnするので通信は発生しない
+</script>
+</body>
+</html>

@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ちいさなじぶん 収支シミュレータ</title>
+<style>
+:root{
+  --ink:#0B2027; --deep:#16323C; --mint:#4ECDC4; --coral:#FF7A6B;
+  --sand:#F7F3E9; --paper:#FFFFFF; --text:#12262C; --text-inv:#E8F1F2;
+  --radius:16px;
+  --line:rgba(18,38,44,.12);
+  --font: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  font-family:var(--font); background:var(--sand); color:var(--text);
+  font-size:15px; line-height:1.6; -webkit-text-size-adjust:100%;
+  overflow-x:hidden;
+}
+.wrap{max-width:760px;margin:0 auto;padding:0 12px 56px;}
+
+/* ---------- header ---------- */
+header{
+  background:var(--ink); color:var(--text-inv);
+  margin:0 -12px 16px; padding:20px 16px 18px;
+  border-bottom-left-radius:var(--radius); border-bottom-right-radius:var(--radius);
+}
+header h1{margin:0;font-size:19px;letter-spacing:.02em;}
+header h1 small{
+  display:inline-block;margin-left:8px;font-size:11px;font-weight:600;
+  color:var(--ink);background:var(--mint);border-radius:999px;padding:2px 8px;vertical-align:2px;
+}
+header p{margin:8px 0 0;font-size:12px;opacity:.78;line-height:1.55;}
+
+/* ---------- presets ---------- */
+.presets{display:flex;gap:8px;margin-bottom:16px;}
+.presets button{
+  flex:1;min-width:0;padding:11px 4px;border:2px solid var(--deep);border-radius:12px;
+  background:var(--paper);color:var(--deep);font-family:var(--font);font-size:13px;font-weight:700;
+  cursor:pointer;transition:.15s;
+}
+.presets button:hover{background:var(--deep);color:var(--text-inv);}
+.presets button.on{background:var(--deep);color:var(--text-inv);}
+
+/* ---------- cards ---------- */
+.card{
+  background:var(--paper);border-radius:var(--radius);padding:14px;margin-bottom:14px;
+  box-shadow:0 1px 3px rgba(11,32,39,.07);
+}
+.card > h2{
+  margin:0 0 10px;font-size:14px;letter-spacing:.04em;color:var(--deep);
+  display:flex;align-items:center;gap:7px;
+}
+.card > h2::before{content:"";width:4px;height:15px;background:var(--mint);border-radius:2px;}
+
+details.card > summary{
+  list-style:none;cursor:pointer;font-size:14px;font-weight:700;color:var(--deep);
+  display:flex;align-items:center;gap:7px;
+}
+details.card > summary::-webkit-details-marker{display:none;}
+details.card > summary::before{content:"";width:4px;height:15px;background:var(--mint);border-radius:2px;}
+details.card > summary::after{content:"＋";margin-left:auto;color:var(--mint);font-weight:700;}
+details.card[open] > summary::after{content:"−";}
+details.card > .body{padding-top:12px;}
+
+/* ---------- fields ---------- */
+.f{margin-bottom:13px;}
+.f:last-child{margin-bottom:0;}
+.f label{display:flex;align-items:baseline;gap:6px;font-size:12.5px;margin-bottom:4px;}
+.f label .nm{flex:1;min-width:0;}
+.f label .vl{font-weight:700;font-variant-numeric:tabular-nums;color:var(--deep);white-space:nowrap;}
+.f .row{display:flex;align-items:center;gap:8px;}
+.f input[type=range]{flex:1;min-width:0;accent-color:var(--mint);height:22px;}
+.f input[type=number]{
+  width:88px;flex:none;padding:5px 7px;border:1px solid var(--line);border-radius:8px;
+  font-family:var(--font);font-size:13px;text-align:right;background:var(--sand);color:var(--text);
+  font-variant-numeric:tabular-nums;
+}
+.f .hint{font-size:11px;opacity:.6;margin-top:3px;line-height:1.45;}
+
+/* ---------- kpi ---------- */
+.kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:9px;margin-bottom:14px;}
+.kpi{background:var(--deep);color:var(--text-inv);border-radius:var(--radius);padding:12px 12px 11px;}
+.kpi .k{font-size:11px;opacity:.72;letter-spacing:.03em;}
+.kpi .v{font-size:19px;font-weight:800;font-variant-numeric:tabular-nums;margin-top:3px;line-height:1.2;word-break:break-all;}
+.kpi .s{font-size:10.5px;opacity:.66;margin-top:2px;}
+.kpi.pos .v{color:var(--mint);}
+.kpi.neg .v{color:var(--coral);}
+
+/* ---------- table ---------- */
+.scroller{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -4px;padding:0 4px;}
+table{border-collapse:collapse;width:100%;font-size:12.5px;}
+th,td{padding:6px 7px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap;}
+th:first-child,td:first-child{text-align:left;}
+thead th{font-size:11px;color:var(--deep);opacity:.8;border-bottom:2px solid var(--line);}
+tr.total td{font-weight:800;border-top:2px solid var(--deep);border-bottom:none;}
+tr.sub td{background:rgba(78,205,196,.09);font-weight:700;}
+td.num{font-variant-numeric:tabular-nums;}
+td.bad{color:var(--coral);font-weight:700;}
+td.good{color:#0f8f84;font-weight:700;}
+
+/* ---------- alert ---------- */
+.alert{
+  border-radius:12px;padding:10px 12px;font-size:12.5px;line-height:1.55;margin-bottom:10px;
+  border-left:4px solid var(--coral);background:rgba(255,122,107,.12);
+}
+.alert.ok{border-left-color:var(--mint);background:rgba(78,205,196,.14);}
+.alert b{color:var(--ink);}
+
+/* ---------- charts ---------- */
+canvas{width:100%;display:block;border-radius:10px;}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:11px;margin-top:8px;opacity:.85;}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:5px;vertical-align:-1px;}
+.stack{display:flex;width:100%;height:26px;border-radius:8px;overflow:hidden;margin:4px 0 8px;}
+.stack div{height:100%;}
+.slist{font-size:11.5px;}
+.slist div{display:flex;align-items:center;gap:6px;padding:2.5px 0;}
+.slist i{width:10px;height:10px;border-radius:3px;flex:none;}
+.slist .n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.slist .v{font-variant-numeric:tabular-nums;font-weight:600;}
+
+.note{font-size:11.5px;opacity:.72;line-height:1.6;margin-top:10px;}
+.note code{background:var(--sand);padding:1px 4px;border-radius:4px;font-size:11px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>ちいさなじぶん 収支シミュレータ<small>v1.1.0</small></h1>
+  <p>写真→AI 3Dモデル→ミニチュアフィギュアD2C の月次PL／損益分岐点／年間推移。
+  計算ロジックは <b>cost-model.md §10</b> と完全一致。数値はすべて推定値であり、実測ではありません。<br>
+  <b>税区分</b>: 売上は税込÷1.1で税抜化、原価パラメータはすべて<b>税抜</b>で入力してください（決済手数料のみ税込総額に課金）。</p>
+</header>
+
+<div class="presets">
+  <button data-p="cons">保守的</button>
+  <button data-p="std" class="on">標準</button>
+  <button data-p="bull">強気</button>
+</div>
+
+<div id="alerts"></div>
+
+<div class="kpis" id="kpis"></div>
+
+<div class="card">
+  <h2>月次PL（税抜）</h2>
+  <div class="scroller"><table id="plTable"></table></div>
+</div>
+
+<div class="card">
+  <h2>プラン別ユニットエコノミクス（1体あたり・税抜）</h2>
+  <div class="scroller"><table id="unitTable"></table></div>
+  <div class="note">粗利は店舗経由比率・オプション付帯率を織り込んだ期待値。店舗バックは本体＋オプションの税抜額に対して課される（送料は対象外）。</div>
+</div>
+
+<div class="card">
+  <h2>原価内訳（BtoC加重平均・1体あたり）</h2>
+  <div class="stack" id="stack"></div>
+  <div class="slist" id="slist"></div>
+</div>
+
+<div class="card">
+  <h2>年間推移（12ヶ月）</h2>
+  <canvas id="chart" height="260"></canvas>
+  <div class="legend">
+    <span><i style="background:#4ECDC4"></i>売上高（税抜）</span>
+    <span><i style="background:#16323C"></i>売上原価＋固定費</span>
+    <span><i style="background:#FF7A6B"></i>営業利益（折線）</span>
+  </div>
+  <div class="note">年間推移では、受注数が月次成長率で伸びるのに合わせ<b>オペレーター人数を必要数に自動追随</b>させています（1人あたり月<span id="capMinLbl">7,200</span>分／不足すれば増員＝固定費増）。</div>
+</div>
+
+<details class="card" open>
+  <summary>① 受注ボリューム・ミックス</summary>
+  <div class="body" id="g_vol"></div>
+</details>
+
+<details class="card">
+  <summary>② 価格設定（税込）</summary>
+  <div class="body" id="g_price"></div>
+</details>
+
+<details class="card">
+  <summary>③ 原価パラメータ</summary>
+  <div class="body" id="g_cost"></div>
+</details>
+
+<details class="card">
+  <summary>④ 固定費・体制</summary>
+  <div class="body" id="g_fix"></div>
+</details>
+
+<div class="card">
+  <h2>この試算の前提と限界</h2>
+  <div class="note">
+  ・<b>修正工数（editMinutes）が本モデル最大の不確実性です。</b>55分は実測ではなく加重平均による推定値であり、Phase 0 での全件実測が必須です。<br>
+  ・造形体積（cm³）はバウンディングボックス比22%からの幾何推定で、実メッシュでは±30%ぶれます。<br>
+  ・造形単価¥260/cm³はDMM.make公開価格¥342/cm³（フルカラーマルチマテリアル）に対し、量産値引き25%を仮定した<b>交渉前の推定</b>です。<br>
+  ・全額返金ケース（推定2〜3%）は原価に含めていません。粗利率で約2ポイントの下振れ要因です。<br>
+  ・損益分岐点は構成比・オプション付帯率を固定したまま受注数のみをスケールさせ、人員を反復計算で追随させた値です。
+  </div>
+</div>
+
+</div>
+
+<script>
+"use strict";
+
+/* =========================================================================
+   パラメータ定義  ※ cost-model.md §1 / §10 と1対1で対応
+   ========================================================================= */
+const SPEC = [
+  // --- ① 受注ボリューム・ミックス ---
+  {g:"vol", k:"orders",        l:"月間受注数（BtoC）",        min:0,  max:600, step:5,    unit:"体"},
+  {g:"vol", k:"mixS",          l:"構成比 S 40mm",             min:0,  max:100, step:1,    unit:"%"},
+  {g:"vol", k:"mixM",          l:"構成比 M 65mm",             min:0,  max:100, step:1,    unit:"%"},
+  {g:"vol", k:"mixL",          l:"構成比 L 100mm",            min:0,  max:100, step:1,    unit:"%", hint:"3つの合計は自動で100%に正規化されます"},
+  {g:"vol", k:"shopRatio",     l:"実店舗経由比率",             min:0,  max:100, step:1,    unit:"%", hint:"税抜売上の15%（可変）をバックとして支払う対象比率"},
+  {g:"vol", k:"attachBase",    l:"台座オプション付帯率",       min:0,  max:100, step:1,    unit:"%"},
+  {g:"vol", k:"attachWater",   l:"防水コーティング付帯率",     min:0,  max:100, step:1,    unit:"%"},
+  {g:"vol", k:"growth",        l:"月次成長率（年間推移用）",   min:-10,max:30,  step:1,    unit:"%/月"},
+
+  // --- ② 価格（税込） ---
+  {g:"price", k:"priceS",       l:"S 40mm 価格",              min:3000, max:20000, step:100, unit:"円"},
+  {g:"price", k:"priceM",       l:"M 65mm 価格",              min:5000, max:30000, step:100, unit:"円"},
+  {g:"price", k:"priceL",       l:"L 100mm 価格",             min:8000, max:50000, step:100, unit:"円"},
+  {g:"price", k:"optBasePrice", l:"台座オプション価格",        min:0,    max:5000,  step:100, unit:"円"},
+  {g:"price", k:"optWaterPrice",l:"防水コーティング価格",      min:0,    max:5000,  step:100, unit:"円"},
+  {g:"price", k:"shipRevenue",  l:"送料収入（S/M・L は無料）", min:0,    max:2000,  step:50,  unit:"円"},
+  {g:"price", k:"taxRate",      l:"消費税率",                  min:0,    max:20,    step:1,   unit:"%"},
+
+  // --- ③ 原価パラメータ ---
+  {g:"cost", k:"editMinutes",       l:"★モデル修正工数（BtoC）",    min:5,  max:180, step:5,   unit:"分/体", hint:"本モデル最大の律速要因。cost-model.md §3"},
+  {g:"cost", k:"hourlyRate",        l:"3DCG作業単価（社保込）",      min:1000,max:6000,step:100, unit:"円/時"},
+  {g:"cost", k:"finishRate",        l:"仕上げ作業単価",              min:1000,max:5000,step:100, unit:"円/時"},
+  {g:"cost", k:"apiCost",           l:"AI 3D生成API（1受注あたり）", min:0,  max:2000,step:10,  unit:"円", hint:"Meshy Pro $20/1,000cr、Image-to-3D 20cr → $0.40/生成 ×平均4回"},
+  {g:"cost", k:"systemCost",        l:"システム原価（1受注あたり）", min:0,  max:1000,step:10,  unit:"円"},
+  {g:"cost", k:"printFixed",        l:"造形 段取り固定費",           min:0,  max:3000,step:50,  unit:"円/個"},
+  {g:"cost", k:"printPerCm3",       l:"造形単価",                    min:50, max:600, step:10,  unit:"円/cm³", hint:"DMM.make フルカラーマルチマテリアル定価 ¥342/cm³"},
+  {g:"cost", k:"volS",              l:"造形体積 S",                  min:0.5,max:6,   step:0.1, unit:"cm³"},
+  {g:"cost", k:"volM",              l:"造形体積 M",                  min:1,  max:20,  step:0.5, unit:"cm³"},
+  {g:"cost", k:"volL",              l:"造形体積 L",                  min:2,  max:50,  step:0.5, unit:"cm³"},
+  {g:"cost", k:"finishMinutes",     l:"仕上げ・検品工数",            min:0,  max:60,  step:1,   unit:"分/体"},
+  {g:"cost", k:"packCost",          l:"梱包資材",                    min:0,  max:2000,step:10,  unit:"円/体"},
+  {g:"cost", k:"shipCost",          l:"配送実費（BtoC）",            min:0,  max:2500,step:50,  unit:"円/体"},
+  {g:"cost", k:"baseOptCost",       l:"台座オプション原価",          min:0,  max:3000,step:10,  unit:"円"},
+  {g:"cost", k:"waterOptCost",      l:"防水コーティング原価",        min:0,  max:3000,step:10,  unit:"円"},
+  {g:"cost", k:"stripeRate",        l:"決済手数料（Stripe）",        min:0,  max:10,  step:0.1, unit:"%"},
+  {g:"cost", k:"shopBackRate",      l:"実店舗バック率（税抜売上）",  min:0,  max:30,  step:1,   unit:"%"},
+  {g:"cost", k:"defectRate",        l:"不良再制作率",                min:0,  max:40,  step:1,   unit:"%"},
+  {g:"cost", k:"reworkEditFactor",  l:"再制作時の修正工数再発生率",  min:0,  max:100, step:5,   unit:"%"},
+
+  // --- ④ 固定費・体制 ---
+  {g:"fix", k:"opsHeadcount",  l:"3Dオペレーター人数",   min:0, max:12,      step:1,     unit:"名"},
+  {g:"fix", k:"opsMinutes",    l:"1名あたり月間実働",     min:2000,max:12000, step:200,   unit:"分", hint:"月160時間×稼働率75%＝120時間＝7,200分"},
+  {g:"fix", k:"salaryOps",     l:"オペレーター人件費",    min:0, max:800000,  step:10000, unit:"円/名"},
+  {g:"fix", k:"salaryOther",   l:"CS・管理人件費",        min:0, max:1500000, step:10000, unit:"円/月"},
+  {g:"fix", k:"adFee",         l:"広告宣伝費",            min:0, max:3000000, step:10000, unit:"円/月"},
+  {g:"fix", k:"sysFee",        l:"システム・SaaS固定費",  min:0, max:500000,  step:5000,  unit:"円/月"},
+  {g:"fix", k:"officeFee",     l:"地代・その他固定費",    min:0, max:1000000, step:10000, unit:"円/月"}
+];
+
+/* =========================================================================
+   プリセット
+   ========================================================================= */
+const COMMON = {
+  priceS:7800, priceM:12800, priceL:19800,
+  optBasePrice:1200, optWaterPrice:1500, shipRevenue:800, taxRate:10,
+  volS:1.5, volM:5.0, volL:13.0,
+  finishMinutes:15, finishRate:2000, packCost:270, shipCost:750,
+  baseOptCost:558, waterOptCost:805,
+  stripeRate:3.6, shopBackRate:15, reworkEditFactor:30,
+  systemCost:80, apiCost:250, printFixed:600,
+  opsMinutes:7200, salaryOps:350000, sysFee:30000, officeFee:100000
+};
+
+const PRESETS = {
+  cons: Object.assign({}, COMMON, {
+    orders:60,  mixS:50, mixM:35, mixL:15, shopRatio:40,
+    attachBase:30, attachWater:15, growth:2,
+    editMinutes:75, hourlyRate:2800,
+    printPerCm3:300, defectRate:15,
+    opsHeadcount:1, salaryOther:150000, adFee:400000
+  }),
+  std: Object.assign({}, COMMON, {
+    orders:150, mixS:40, mixM:40, mixL:20, shopRatio:30,
+    attachBase:40, attachWater:25, growth:5,
+    editMinutes:55, hourlyRate:2500,
+    printPerCm3:260, defectRate:10,
+    opsHeadcount:2, salaryOther:150000, adFee:300000
+  }),
+  bull: Object.assign({}, COMMON, {
+    orders:320, mixS:30, mixM:40, mixL:30, shopRatio:25,
+    attachBase:50, attachWater:35, growth:8,
+    editMinutes:30, hourlyRate:2400,
+    printPerCm3:220, defectRate:7,
+    opsHeadcount:2, salaryOther:250000, adFee:500000
+  })
+};
+
+/* =========================================================================
+   ユーティリティ
+   ========================================================================= */
+const P = {};                       // 現在のパラメータ値
+const yen  = n => (Math.round(n) < 0 ? "▲¥" : "¥") + Math.abs(Math.round(n)).toLocaleString("ja-JP");
+const pct  = n => (isFinite(n) ? (n*100).toFixed(1) : "—") + "%";
+const num  = n => Math.round(n).toLocaleString("ja-JP");
+const man  = n => (n/10000).toFixed(0) + "万";
+const clamp01 = v => Math.max(0, Math.min(1, v));
+
+/* =========================================================================
+   計算コア  ※ cost-model.md §10 と完全一致
+   ========================================================================= */
+
+/** BtoC 1体あたりのユニットエコノミクス（cost-model.md §10-1） */
+function unitBtoC(plan){
+  const T   = 1 + P.taxRate/100;
+  const price = plan==="S" ? P.priceS : plan==="M" ? P.priceM : P.priceL;
+  const vol   = plan==="S" ? P.volS   : plan==="M" ? P.volM   : P.volL;
+
+  const aB = P.attachBase/100, aW = P.attachWater/100;
+
+  // ── 売上 ──
+  const optionIncl = aB*P.optBasePrice + aW*P.optWaterPrice;
+  const shipIncl   = (plan==="L") ? 0 : P.shipRevenue;      // L は送料無料
+  const grossIncl  = price + shipIncl + optionIncl;
+  const netRevenue = grossIncl / T;
+  const backBase   = (price + optionIncl) / T;              // 送料を除いた税抜額
+
+  // ── 原価 ──
+  const c1  = P.apiCost;
+  const c2  = P.systemCost;
+  const c3  = P.editMinutes/60 * P.hourlyRate;
+  const c4  = P.printFixed + P.printPerCm3 * vol;
+  const c5  = P.finishMinutes/60 * P.finishRate;
+  const c6  = aB*P.baseOptCost + aW*P.waterOptCost;
+  const c7  = P.packCost;
+  const c8  = P.shipCost;
+  const c9  = grossIncl * (P.stripeRate/100);
+  const c10 = backBase * (P.shopBackRate/100) * (P.shopRatio/100);
+  const c11 = (c3*(P.reworkEditFactor/100) + c4 + c5 + c6 + c7 + c8) * (P.defectRate/100);
+
+  const cost = c1+c2+c3+c4+c5+c6+c7+c8+c9+c10+c11;
+  return {
+    plan, price, netRevenue, cost, gp:netRevenue-cost,
+    margin: netRevenue>0 ? (netRevenue-cost)/netRevenue : 0,
+    parts:{c1,c2,c3,c4,c5,c6,c7,c8,c9,c10,c11}
+  };
+}
+
+/** 構成比の正規化 */
+function mix(){
+  const s = Math.max(0,P.mixS), m = Math.max(0,P.mixM), l = Math.max(0,P.mixL);
+  const t = s+m+l;
+  if(t<=0) return {S:1/3, M:1/3, L:1/3};
+  return {S:s/t, M:m/t, L:l/t};
+}
+
+/** 固定費（cost-model.md §10-3） */
+function fixedCost(head){
+  return head*P.salaryOps + P.salaryOther + P.adFee + P.sysFee + P.officeFee;
+}
+
+/** 月次PL（cost-model.md §10-3 / §10-4） */
+function monthlyPL(orders, head){
+  const mx = mix();
+  const u = {S:unitBtoC("S"), M:unitBtoC("M"), L:unitBtoC("L")};
+
+  let revenue = 0, cogs = 0;
+  ["S","M","L"].forEach(p=>{
+    const n = orders * mx[p];
+    revenue += n * u[p].netRevenue;
+    cogs    += n * u[p].cost;
+  });
+
+  const gross = revenue - cogs;
+  const fixed = fixedCost(head);
+  const op    = gross - fixed;
+
+  const requiredMinutes = orders*P.editMinutes;
+  const capacityMinutes = head * P.opsMinutes;
+
+  return {
+    orders, totalUnits: orders,
+    revenue, cogs, gross, fixed, op,
+    opMargin: revenue>0 ? op/revenue : 0,
+    grossMargin: revenue>0 ? gross/revenue : 0,
+    requiredMinutes, capacityMinutes,
+    utilization: capacityMinutes>0 ? requiredMinutes/capacityMinutes : Infinity,
+    units:u, mx
+  };
+}
+
+/** 必要人員 */
+function neededHead(orders){
+  if(P.opsMinutes<=0) return 99;
+  return Math.max(1, Math.ceil(orders*P.editMinutes / P.opsMinutes));
+}
+
+/** 損益分岐点（cost-model.md §10-5 反復計算）
+ *  オペレーター1名の限界貢献（1名が捌ける件数 × 1件あたり粗利 − 人件費）が0以下なら、
+ *  増員するほど赤字が拡大するため BEP は数学的に存在しない → reason:"headcount" を返す。 */
+function bep(){
+  const base = monthlyPL(Math.max(P.orders,1), Math.max(P.opsHeadcount,1));
+  const gpPerOrder = base.gross / Math.max(P.orders,1);      // 1件あたり粗利
+  if(gpPerOrder <= 0) return {ok:false, reason:"gp", gpPerOrder};
+
+  const unitsPerHead = P.editMinutes > 0 ? P.opsMinutes / P.editMinutes : Infinity;
+  const headContribution = unitsPerHead * gpPerOrder - P.salaryOps;
+  if(headContribution <= 0){
+    return {ok:false, reason:"headcount", gpPerOrder, unitsPerHead, headContribution};
+  }
+
+  let head = Math.max(P.opsHeadcount, 1);
+  let orders = 0, converged = false;
+  for(let i=0;i<40;i++){
+    orders = Math.ceil(fixedCost(head) / gpPerOrder);
+    const nh = neededHead(orders);
+    if(nh === head){ converged = true; break; }
+    head = nh;
+  }
+  if(!converged) return {ok:false, reason:"headcount", gpPerOrder, unitsPerHead, headContribution};
+
+  const need = orders*P.editMinutes;
+  const cap  = head * P.opsMinutes;
+  return {ok:true, orders, head, util: cap>0 ? need/cap : Infinity, gpPerOrder, unitsPerHead, headContribution};
+}
+
+/* =========================================================================
+   UI 構築
+   ========================================================================= */
+function buildFields(){
+  const groups = {vol:[], price:[], cost:[], fix:[]};
+  SPEC.forEach(sp=>{
+    const dec = String(sp.step).includes(".") ? String(sp.step).split(".")[1].length : 0;
+    const el = document.createElement("div");
+    el.className = "f";
+    el.innerHTML =
+      '<label for="n_'+sp.k+'"><span class="nm">'+sp.l+'</span><span class="vl" id="v_'+sp.k+'"></span></label>'+
+      '<div class="row">'+
+        '<input type="range" id="r_'+sp.k+'" min="'+sp.min+'" max="'+sp.max+'" step="'+sp.step+'">'+
+        '<input type="number" id="n_'+sp.k+'" step="'+sp.step+'">'+
+      '</div>'+
+      (sp.hint ? '<div class="hint">'+sp.hint+'</div>' : '');
+    groups[sp.g].push(el);
+
+    const r = el.querySelector("#r_"+sp.k);
+    const n = el.querySelector("#n_"+sp.k);
+    const sync = (v, from)=>{
+      let x = parseFloat(v);
+      if(!isFinite(x)) x = sp.min;
+      P[sp.k] = x;
+      if(from!=="r") r.value = Math.max(sp.min, Math.min(sp.max, x));
+      if(from!=="n") n.value = dec ? x.toFixed(dec) : x;
+      document.getElementById("v_"+sp.k).textContent =
+        (dec ? x.toFixed(dec) : num(x)) + " " + sp.unit;
+      render();
+    };
+    r.addEventListener("input", e=>sync(e.target.value,"r"));
+    n.addEventListener("input", e=>sync(e.target.value,"n"));
+    el._sync = sync;
+    el._dec  = dec;
+    sp._el = el;
+  });
+  Object.keys(groups).forEach(g=>{
+    const host = document.getElementById("g_"+g);
+    groups[g].forEach(e=>host.appendChild(e));
+  });
+}
+
+function applyPreset(name){
+  const p = PRESETS[name];
+  SPEC.forEach(sp=>{
+    const v = (p[sp.k] !== undefined) ? p[sp.k] : (P[sp.k] !== undefined ? P[sp.k] : sp.min);
+    P[sp.k] = v;
+    const el = sp._el;
+    el.querySelector("#r_"+sp.k).value = Math.max(sp.min, Math.min(sp.max, v));
+    el.querySelector("#n_"+sp.k).value = el._dec ? v.toFixed(el._dec) : v;
+    document.getElementById("v_"+sp.k).textContent =
+      (el._dec ? v.toFixed(el._dec) : num(v)) + " " + sp.unit;
+  });
+  document.querySelectorAll(".presets button").forEach(b=>b.classList.toggle("on", b.dataset.p===name));
+  render();
+}
+
+/* =========================================================================
+   描画
+   ========================================================================= */
+const COST_META = [
+  ["c3","モデル修正工数","#FF7A6B"],
+  ["c4","造形外注費","#16323C"],
+  ["c5","仕上げ・検品","#4ECDC4"],
+  ["c8","配送実費","#7FB2C4"],
+  ["c9","決済手数料","#A8836B"],
+  ["c10","実店舗バック","#C9A227"],
+  ["c11","不良再制作引当","#8E6BAF"],
+  ["c7","梱包資材","#5FA8A0"],
+  ["c6","オプション原価","#2F6D7A"],
+  ["c1","AI生成API","#9BB7A6"],
+  ["c2","システム","#B9C6C9"]
+];
+
+function render(){
+  const head = Math.max(P.opsHeadcount, 0);
+  const pl   = monthlyPL(P.orders, head);
+  const b    = bep();
+  const need = P.orders>0 ? neededHead(P.orders) : 0;
+
+  document.getElementById("capMinLbl").textContent = num(P.opsMinutes);
+
+  /* ---- アラート ---- */
+  const al = [];
+  if(pl.utilization > 1.0001){
+    al.push('<div class="alert"><b>生産キャパ超過（稼働率 '+pct(pl.utilization)+'）。</b>'+
+      '現体制 '+head+'名では月'+num(P.orders)+'体を処理できません。必要人員は<b>'+need+'名</b>。'+
+      'この受注数を捌くには増員するか、修正工数を'+
+      Math.floor((head*P.opsMinutes)/Math.max(P.orders,1))+
+      '分以下に短縮する必要があります。</div>');
+  }
+  if(!b.ok && b.reason === "gp"){
+    al.push('<div class="alert"><b>粗利がマイナスです。</b>いくら売っても赤字が拡大します。価格か原価パラメータを見直してください。</div>');
+  }else if(!b.ok && b.reason === "headcount"){
+    al.push('<div class="alert"><b>損益分岐点が存在しません（増員しても回収できない構造）。</b>'+
+      'オペレーター1名が捌けるのは月<b>'+num(b.unitsPerHead)+'体</b>、そこから生む粗利は '+
+      yen(b.unitsPerHead * b.gpPerOrder)+' で、人件費 '+yen(P.salaryOps)+' を下回ります'+
+      '（1名あたり限界貢献 '+yen(b.headContribution)+'）。'+
+      '<b>この前提では、どれだけ受注を増やしても赤字が拡大するだけです。</b>'+
+      '修正工数の短縮・単価引き上げ・ミックスの上位シフトのいずれかが必須です。</div>');
+  }else if(b.ok && b.orders > P.orders && pl.op < 0){
+    al.push('<div class="alert"><b>現在の受注数は損益分岐点を下回っています。</b>'+
+      'BEP は月<b>'+num(b.orders)+'体</b>（'+b.head+'名体制・稼働率'+pct(b.util)+'）。'+
+      'あと '+num(b.orders - P.orders)+' 体の上積みが必要です。</div>');
+  }
+  if(b.ok && b.util > 0.95){
+    al.push('<div class="alert"><b>損益分岐点における稼働率が '+pct(b.util)+' です。</b>'+
+      'ほぼ100%稼働してようやくトントンという状態で、繁忙期・有給・不良対応の余裕がありません。'+
+      '修正工数の圧縮（cost-model.md §12）が事実上の必須条件です。</div>');
+  }
+  if(pl.units.S.margin < 0.20 && mix().S > 0){
+    al.push('<div class="alert">S 40mm の粗利率が <b>'+pct(pl.units.S.margin)+'</b> しかありません。'+
+      '店舗バックを S に適用しない、価格を上げる、S を廃止して「S＋台座＋防水」セットに一本化する等の見直しを推奨します。</div>');
+  }
+  if(pl.op >= 0 && b.ok && al.length === 0){
+    al.push('<div class="alert ok"><b>営業黒字。</b>稼働率 '+pct(pl.utilization)+'、BEP は月'+num(b.orders)+'体。'+
+      '現在の受注数はBEPを '+num(P.orders - b.orders)+' 体上回っています。</div>');
+  }
+  document.getElementById("alerts").innerHTML = al.join("");
+
+  /* ---- KPI ---- */
+  document.getElementById("kpis").innerHTML = [
+    kpiCard("月次売上高（税抜）", yen(pl.revenue), num(Math.round(pl.totalUnits))+"体／粗利率 "+pct(pl.grossMargin), ""),
+    kpiCard("月次営業利益", yen(pl.op), "営業利益率 "+pct(pl.opMargin), pl.op>=0?"pos":"neg"),
+    kpiCard("損益分岐点",
+      b.ok ? num(b.orders)+" 体/月" : "到達不能",
+      b.ok ? b.head+"名体制・稼働率"+pct(b.util)
+           : (b.reason==="gp" ? "1体あたり粗利がマイナス" : "増員しても人件費を回収できない"),
+      b.ok && b.orders<=P.orders ? "pos" : "neg"),
+    kpiCard("生産稼働率", isFinite(pl.utilization)?pct(pl.utilization):"—", "必要"+need+"名／現在"+head+"名", pl.utilization<=1?"pos":"neg")
+  ].join("");
+
+  /* ---- 月次PL ---- */
+  const mx = pl.mx;
+  const rows = [];
+  rows.push(['<tr><th>項目</th><th>金額</th><th>構成比</th></tr>','head']);
+  const line = (n,v,cls)=>'<tr class="'+(cls||"")+'"><td>'+n+'</td><td class="num">'+yen(v)+'</td><td class="num">'+
+      (pl.revenue>0?pct(v/pl.revenue):"—")+'</td></tr>';
+  let body = "";
+  body += line("売上高（税抜）", pl.revenue, "sub");
+  ["S","M","L"].forEach(p=>{
+    const n = P.orders*mx[p];
+    body += line("　"+p+"（"+num(n)+"体）", n*pl.units[p].netRevenue);
+  });
+  body += line("売上原価", pl.cogs, "sub");
+  body += line("売上総利益（粗利）", pl.gross, "sub");
+  body += line("販管費（固定費）", pl.fixed, "sub");
+  body += line("　オペレーター人件費 "+head+"名", head*P.salaryOps);
+  body += line("　CS・管理人件費", P.salaryOther);
+  body += line("　広告宣伝費", P.adFee);
+  body += line("　システム・SaaS", P.sysFee);
+  body += line("　地代・その他", P.officeFee);
+  body += '<tr class="total"><td>営業利益</td><td class="num '+(pl.op>=0?"good":"bad")+'">'+yen(pl.op)+
+          '</td><td class="num '+(pl.op>=0?"good":"bad")+'">'+pct(pl.opMargin)+'</td></tr>';
+  document.getElementById("plTable").innerHTML =
+    '<thead><tr><th>項目</th><th>金額</th><th>売上比</th></tr></thead><tbody>'+body+'</tbody>';
+
+  /* ---- ユニットエコノミクス ---- */
+  const uRows = ["S","M","L"].map(p=>{
+    const u = pl.units[p], n = P.orders*mx[p];
+    return '<tr><td>'+p+'</td><td class="num">'+num(n)+'</td><td class="num">'+yen(u.price)+
+      '</td><td class="num">'+yen(u.netRevenue)+'</td><td class="num">'+yen(u.cost)+
+      '</td><td class="num">'+yen(u.gp)+'</td><td class="num '+(u.margin>=0.35?"good":u.margin<0.2?"bad":"")+'">'+
+      pct(u.margin)+'</td></tr>';
+  });
+  document.getElementById("unitTable").innerHTML =
+    '<thead><tr><th>プラン</th><th>体数</th><th>税込価格</th><th>税抜売上</th><th>原価</th><th>粗利</th><th>粗利率</th></tr></thead>'+
+    '<tbody>'+uRows.join("")+'</tbody>';
+
+  /* ---- 原価内訳（BtoC加重） ---- */
+  const agg = {};
+  COST_META.forEach(m=>agg[m[0]]=0);
+  ["S","M","L"].forEach(p=>{
+    const u = pl.units[p];
+    COST_META.forEach(m=>{ agg[m[0]] += mx[p] * u.parts[m[0]]; });
+  });
+  const totalCost = COST_META.reduce((s,m)=>s+agg[m[0]],0);
+  const sorted = COST_META.slice().sort((a,b2)=>agg[b2[0]]-agg[a[0]]);
+  document.getElementById("stack").innerHTML = sorted.map(m=>{
+    const w = totalCost>0 ? agg[m[0]]/totalCost*100 : 0;
+    return '<div style="width:'+w.toFixed(2)+'%;background:'+m[2]+'" title="'+m[1]+'"></div>';
+  }).join("");
+  document.getElementById("slist").innerHTML = sorted.filter(m=>agg[m[0]]>0.5).map(m=>
+    '<div><i style="background:'+m[2]+'"></i><span class="n">'+m[1]+'</span>'+
+    '<span class="v">'+yen(agg[m[0]])+'（'+(totalCost>0?(agg[m[0]]/totalCost*100).toFixed(1):"0")+'%）</span></div>'
+  ).join("") + '<div style="border-top:1px solid var(--line);margin-top:5px;padding-top:5px"><i style="background:transparent"></i>'+
+    '<span class="n"><b>原価合計（1体加重平均）</b></span><span class="v"><b>'+yen(totalCost)+'</b></span></div>';
+
+  /* ---- 年間推移 ---- */
+  drawChart(buildYear());
+}
+
+function kpiCard(k,v,s,cls){
+  return '<div class="kpi '+(cls||"")+'"><div class="k">'+k+'</div><div class="v">'+v+'</div><div class="s">'+s+'</div></div>';
+}
+
+function buildYear(){
+  const out = [];
+  for(let m=0;m<12;m++){
+    const orders = P.orders * Math.pow(1 + P.growth/100, m);
+    const head   = Math.max(neededHead(orders), 1);
+    const pl     = monthlyPL(orders, head);
+    out.push({m:m+1, revenue:pl.revenue, cost:pl.cogs+pl.fixed, op:pl.op, head});
+  }
+  return out;
+}
+
+/* =========================================================================
+   Canvas グラフ（外部ライブラリ非依存）
+   ========================================================================= */
+const cv = document.getElementById("chart");
+function drawChart(data){
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = cv.clientWidth || 320;
+  const cssH = 260;
+  cv.width  = Math.round(cssW*dpr);
+  cv.height = Math.round(cssH*dpr);
+  const g = cv.getContext("2d");
+  g.setTransform(dpr,0,0,dpr,0,0);
+  g.clearRect(0,0,cssW,cssH);
+
+  const padL = 44, padR = 10, padT = 12, padB = 26;
+  const W = cssW - padL - padR, H = cssH - padT - padB;
+
+  const maxV = Math.max(1, ...data.map(d=>Math.max(d.revenue, d.cost)));
+  const minOp = Math.min(0, ...data.map(d=>d.op));
+  const hi = maxV * 1.08;
+  const lo = Math.min(0, minOp * 1.2);
+  const span = hi - lo || 1;
+  const y = v => padT + H - (v - lo)/span * H;
+
+  // grid
+  g.font = "10px system-ui, -apple-system, sans-serif";
+  g.textAlign = "right"; g.textBaseline = "middle";
+  const ticks = 5;
+  for(let i=0;i<=ticks;i++){
+    const v = lo + span*i/ticks;
+    const yy = y(v);
+    g.strokeStyle = (Math.abs(v)<span*0.005) ? "rgba(18,38,44,.35)" : "rgba(18,38,44,.10)";
+    g.lineWidth = 1;
+    g.beginPath(); g.moveTo(padL, yy); g.lineTo(padL+W, yy); g.stroke();
+    g.fillStyle = "rgba(18,38,44,.55)";
+    g.fillText(man(v), padL-6, yy);
+  }
+
+  // bars
+  const slot = W / data.length;
+  const bw = Math.max(3, Math.min(14, slot*0.34));
+  data.forEach((d,i)=>{
+    const cx = padL + slot*(i+0.5);
+    const y0 = y(0);
+    g.fillStyle = "#4ECDC4";
+    g.fillRect(cx - bw - 1, Math.min(y(d.revenue), y0), bw, Math.abs(y0 - y(d.revenue)));
+    g.fillStyle = "#16323C";
+    g.fillRect(cx + 1, Math.min(y(d.cost), y0), bw, Math.abs(y0 - y(d.cost)));
+  });
+
+  // op line
+  g.strokeStyle = "#FF7A6B"; g.lineWidth = 2.2;
+  g.beginPath();
+  data.forEach((d,i)=>{
+    const cx = padL + slot*(i+0.5);
+    if(i===0) g.moveTo(cx, y(d.op)); else g.lineTo(cx, y(d.op));
+  });
+  g.stroke();
+  g.fillStyle = "#FF7A6B";
+  data.forEach((d,i)=>{
+    const cx = padL + slot*(i+0.5);
+    g.beginPath(); g.arc(cx, y(d.op), 2.6, 0, Math.PI*2); g.fill();
+  });
+
+  // x labels
+  g.textAlign = "center"; g.textBaseline = "top";
+  g.fillStyle = "rgba(18,38,44,.55)";
+  data.forEach((d,i)=>{
+    if(data.length>8 && i%2===1) return;
+    g.fillText(d.m+"月", padL + slot*(i+0.5), padT+H+6);
+  });
+}
+
+/* =========================================================================
+   起動
+   ========================================================================= */
+buildFields();
+document.querySelectorAll(".presets button").forEach(btn=>{
+  btn.addEventListener("click", ()=>applyPreset(btn.dataset.p));
+});
+applyPreset("std");
+let rt;
+window.addEventListener("resize", ()=>{ clearTimeout(rt); rt = setTimeout(()=>drawChart(buildYear()), 120); });
+</script>
+</body>
+</html>

@@ -314,3 +314,75 @@ exports.interpreterCall = onRequest(
     }
   }
 );
+
+
+// ===== hihaho 素材ライブラリ: /e/{id}/... を Storage からプロキシ配信 =====
+// Hosting rewrite で /e/** を受け、Cloud Storage の hihaho-material/{id}/... を返す。
+// Storage 直リンクだと相対パス（./style.css 等）が解決できないためプロキシしている。
+const admin = require('firebase-admin');
+if (!admin.apps.length) admin.initializeApp();
+
+// このプロジェクトのバケットは .firebasestorage.app 形式。
+// admin.storage().bucket() は FIREBASE_CONFIG 次第で .appspot.com に解決されることがあるため明示する。
+const ASSET_BUCKET = 'cc-dev-ps7.firebasestorage.app';
+
+const SERVE_MIME = {
+  html:'text/html; charset=utf-8', htm:'text/html; charset=utf-8',
+  css:'text/css; charset=utf-8', js:'text/javascript; charset=utf-8', mjs:'text/javascript; charset=utf-8',
+  json:'application/json', txt:'text/plain; charset=utf-8', csv:'text/csv; charset=utf-8',
+  svg:'image/svg+xml', png:'image/png', jpg:'image/jpeg', jpeg:'image/jpeg', gif:'image/gif',
+  webp:'image/webp', avif:'image/avif', ico:'image/x-icon',
+  mp4:'video/mp4', webm:'video/webm', mp3:'audio/mpeg', wav:'audio/wav', ogg:'audio/ogg',
+  woff:'font/woff', woff2:'font/woff2', ttf:'font/ttf', otf:'font/otf',
+  glb:'model/gltf-binary', gltf:'model/gltf+json', bin:'application/octet-stream',
+  usdz:'model/vnd.usdz+zip', hdr:'image/vnd.radiance', wasm:'application/wasm', xml:'application/xml',
+};
+
+exports.assetServe = onRequest({ timeoutSeconds: 30, memory: '256MiB' }, async (req, res) => {
+  try {
+    const m = /^\/e\/([a-z0-9]{4,40})(\/(.*))?$/.exec((req.path || '').split('?')[0]);
+    if (!m) { res.status(404).send('Not Found'); return; }
+
+    const id = m[1];
+    // /e/{id} は相対パスが解決できないので必ずスラッシュ付きへ寄せる
+    if (m[2] === undefined) { res.redirect(301, `/e/${id}/`); return; }
+
+    let sub = decodeURIComponent(m[3] || '');
+    if (sub === '' || sub.endsWith('/')) sub += 'index.html';
+    if (sub.includes('..') || sub.startsWith('/')) { res.status(400).send('Bad Request'); return; }
+
+    const file = admin.storage().bucket(ASSET_BUCKET).file(`hihaho-material/${id}/${sub}`);
+    const [exists] = await file.exists();
+    if (!exists) { res.status(404).send('Not Found'); return; }
+
+    const [meta] = await file.getMetadata();
+    const ext = (sub.match(/\.([A-Za-z0-9]+)$/) || [, ''])[1].toLowerCase();
+    const type = SERVE_MIME[ext] || meta.contentType || 'application/octet-stream';
+
+    res.set('Content-Type', type);
+    res.set('Cache-Control', 'public, max-age=60, s-maxage=60');
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('X-Content-Type-Options', 'nosniff');
+    // iFrame 埋め込み前提なので X-Frame-Options / CSP frame-ancestors は付けない
+
+    if (req.method === 'HEAD') { res.status(200).end(); return; }
+    file.createReadStream()
+      .on('error', (e) => { console.error('assetServe stream error:', e); res.status(500).end(); })
+      .pipe(res);
+  } catch (e) {
+    console.error('assetServe error:', e);
+    res.status(500).send('Internal Error');
+  }
+});
+
+
+// ===== mini-me (TINY ME): 3Dミニチュア受注サービス =====
+// 実装は functions/mini-me.js。ここでは再エクスポートのみ行う。
+// エンドポイントは firebase.json の rewrites 経由:
+//   /api/mini-me-generate → miniMeGenerate
+//   /api/mini-me-checkout → miniMeCheckout
+//   /api/mini-me-webhook  → miniMeWebhook
+const miniMe = require('./mini-me');
+exports.miniMeGenerate = miniMe.miniMeGenerate;
+exports.miniMeCheckout = miniMe.miniMeCheckout;
+exports.miniMeWebhook = miniMe.miniMeWebhook;
