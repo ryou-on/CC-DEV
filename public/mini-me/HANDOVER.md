@@ -73,7 +73,7 @@ mini-me/                     ← 非公開（社内資料。public配下では�
 - [x] 事業計画・原価モデル・収支シミュレータ
 - [x] 営業資料5点・販促物3点・SNS投稿案
 - [x] **Meshy API キー設定・miniMeGenerate デプロイ済み**（2026-07-31。本番はライブモード）
-- [ ] **Stripe キー・webhook 設定**（テストモードから）→  の `STRIPE_ENABLED` を true にする
+- [ ] **Stripe キー・webhook 設定**（テストモードから）→ `functions/mini-me.js` の `STRIPE_ENABLED` を true にする
 - [ ] 実写での GLB 表示品質の確認と修正工数の実測
 - [ ] Stripe 遷移の実地検証（未検証）
 - [ ] 法務レビュー（規約・ポリシーは雛形）
