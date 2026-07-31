@@ -43,12 +43,40 @@ cd "/Users/lobby/Library/Mobile Documents/com~apple~CloudDocs/#git/cc-DEV/functi
 npm install
 npm ci --dry-run   # package.json と package-lock.json が同期していることの確認
 npm test           # priceOrder() の単体テスト
+```
+
+シークレット登録。`functions:secrets:set` は**対話式**なので、他のコマンドと同時に貼らず1本ずつ実行すること（まとめて貼ると次のコマンド文字列がシークレットの値として入力されてしまう）。
+
+```bash
 firebase functions:secrets:set MESHY_API_KEY
+```
+
+> **⚠ `defineSecret()` の落とし穴（2026-07-31 実際に踏んだ）**
+>
+> `defineSecret('X')` は、そのシークレットを使う関数をデプロイするかどうかに関わらず、
+> **Secret Manager に値が存在することをデプロイ時に必ず要求する**。未登録だと
+> `Error: In non-interactive mode but have no value for the secret: X` で
+> **デプロイ全体が失敗する**（`--only functions:miniMeGenerate` に絞っていても落ちる）。
+>
+> そのため `functions/mini-me.js` では以下のようにしている:
+> - `TRIPO_API_KEY` — `defineSecret` せず `process.env` 直読み（Tripo はスタブ実装のため）
+> - `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` — `STRIPE_ENABLED` フラグで囲む（既定 `false`）
+
+**Stripe を有効化する手順**（必ずこの順で）:
+
+```bash
 firebase functions:secrets:set STRIPE_SECRET_KEY
+```
+
+```bash
 firebase functions:secrets:set STRIPE_WEBHOOK_SECRET
 ```
 
-Tripo に切り替える場合のみ追加。
+そのうえで `functions/mini-me.js` の `const STRIPE_ENABLED = false;` を `true` に変更してコミットし、
+`.github/workflows/firebase-functions-deploy.yml` の `DEPLOY_TARGETS` に
+`,functions:miniMeCheckout,functions:miniMeWebhook` を追記する。
+
+**Tripo に切り替える場合**: シークレットを登録したうえで、`mini-me.js` の `defineSecret('TRIPO_API_KEY')` を復活させ、`miniMeGenerate` の `secrets` 配列に足す。
 
 ```bash
 firebase functions:secrets:set TRIPO_API_KEY

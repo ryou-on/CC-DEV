@@ -31,9 +31,31 @@ if (!admin.apps.length) admin.initializeApp();
 // 設定方法は public/mini-me/README.md を参照。
 // defineSecret でバインドすると実行時に process.env にも同名で入る。
 const MESHY_API_KEY = defineSecret('MESHY_API_KEY');
-const TRIPO_API_KEY = defineSecret('TRIPO_API_KEY');
-const STRIPE_SECRET_KEY = defineSecret('STRIPE_SECRET_KEY');
-const STRIPE_WEBHOOK_SECRET = defineSecret('STRIPE_WEBHOOK_SECRET');
+// TRIPO_API_KEY は defineSecret していない。defineSecret すると、その関数を
+// デプロイするかどうかに関わらず Secret Manager への登録が必須になり、
+// 未登録だとデプロイ全体が落ちるため。Tripo は現状スタブなので env 直読みにしている。
+// 切り替えるときは firebase functions:secrets:set TRIPO_API_KEY で登録し、
+// defineSecret を復活させて miniMeGenerate の secrets 配列に足すこと。
+/**
+ * Stripe の有効化フラグ。
+ *
+ * ⚠ defineSecret() は「宣言しただけ」で、デプロイ対象の関数に紐づいているかに関わらず
+ *   Secret Manager 側に値が存在することを要求する。未登録だと
+ *   `Error: In non-interactive mode but have no value for the secret: ...` で
+ *   デプロイ全体が失敗する（miniMeGenerate だけを deploy する場合でも落ちる）。
+ *
+ * そのため既定は false。有効化する手順は必ずこの順で:
+ *   1) firebase functions:secrets:set STRIPE_SECRET_KEY
+ *   2) firebase functions:secrets:set STRIPE_WEBHOOK_SECRET
+ *   3) この定数を true にして commit
+ *   4) firebase deploy --only functions:miniMeCheckout,functions:miniMeWebhook
+ *
+ * false の間、miniMeCheckout / miniMeWebhook はキー未設定として 503 を返し、
+ * クライアント（public/mini-me/index.html）はデモモードにフォールバックする。
+ */
+const STRIPE_ENABLED = false;
+const STRIPE_SECRET_KEY = STRIPE_ENABLED ? defineSecret('STRIPE_SECRET_KEY') : null;
+const STRIPE_WEBHOOK_SECRET = STRIPE_ENABLED ? defineSecret('STRIPE_WEBHOOK_SECRET') : null;
 
 /** secret.value() は未設定時に例外を投げうるので必ずこれ経由で読む。値は絶対に外へ返さない。 */
 function readSecret(param, envName) {
@@ -347,11 +369,11 @@ const tripoProvider = {
   id: 'tripo',
 
   isConfigured() {
-    return !!readSecret(TRIPO_API_KEY, 'TRIPO_API_KEY');
+    return !!readSecret(null, 'TRIPO_API_KEY');
   },
 
   async createTask({ dataUri, mimeType }) {
-    const key = readSecret(TRIPO_API_KEY, 'TRIPO_API_KEY');
+    const key = readSecret(null, 'TRIPO_API_KEY');
 
     // 1) 画像アップロード（要確認: エンドポイント名・フィールド名・レスポンス形状）
     const ext = mimeType === 'image/png' ? 'png' : (mimeType === 'image/webp' ? 'webp' : 'jpeg');
@@ -404,7 +426,7 @@ const tripoProvider = {
   },
 
   async getTask(providerTaskId) {
-    const key = readSecret(TRIPO_API_KEY, 'TRIPO_API_KEY');
+    const key = readSecret(null, 'TRIPO_API_KEY');
     const r = await fetch(`${TRIPO_BASE}/task/${encodeURIComponent(providerTaskId)}`, {
       headers: { Authorization: `Bearer ${key}` },
     });
@@ -449,7 +471,13 @@ function activeProvider() {
 // ---------------------------------------------------------------------------
 exports.miniMeGenerate = onRequest(
   {
-    secrets: [MESHY_API_KEY, TRIPO_API_KEY],
+    // ⚠ ここに列挙したシークレットは Secret Manager に「存在していないとデプロイが失敗する」。
+    //   Tripo は現状スタブ実装で使っていないため、TRIPO_API_KEY は宣言から外している。
+    //   MODEL_PROVIDER=tripo に切り替えるときは、
+    //     1) firebase functions:secrets:set TRIPO_API_KEY で登録
+    //     2) 下の配列に TRIPO_API_KEY を戻す
+    //   の順で行うこと（順序を逆にするとデプロイが落ちる）。
+    secrets: [MESHY_API_KEY],
     cors: false,            // CORS は自前で最小限に制御する
     timeoutSeconds: 120,
     memory: '512MiB',
@@ -742,7 +770,7 @@ function priceOrder(items) {
 
 exports.miniMeCheckout = onRequest(
   {
-    secrets: [STRIPE_SECRET_KEY],
+    secrets: STRIPE_ENABLED ? [STRIPE_SECRET_KEY] : [],
     cors: false,
     timeoutSeconds: 60,
     memory: '256MiB',
@@ -873,7 +901,7 @@ const HANDLED_SESSION_EVENTS = new Set([
 
 exports.miniMeWebhook = onRequest(
   {
-    secrets: [STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET],
+    secrets: STRIPE_ENABLED ? [STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET] : [],
     cors: false,
     timeoutSeconds: 60,
     memory: '256MiB',
