@@ -38,6 +38,20 @@ on:
       - functions/package.json
       - functions/package-lock.json
   workflow_dispatch:
+    inputs:
+      targets:
+        description: "デプロイ対象（カンマ区切り・空なら既定値）"
+        required: false
+        default: ""
+
+# 📌 デプロイ対象の既定値。
+#    関数が宣言しているシークレットが Secret Manager に存在しないとデプロイは失敗する。
+#    現状 MESHY_API_KEY のみ登録済みのため、miniMeGenerate だけを対象にしている。
+#    STRIPE_SECRET_KEY / STRIPE_WEBHOOK_SECRET を登録したら、下の行を
+#    functions:miniMeGenerate,functions:miniMeCheckout,functions:miniMeWebhook
+#    に変更すること。
+env:
+  DEPLOY_TARGETS: functions:miniMeGenerate
 
 jobs:
   deploy_functions:
@@ -65,14 +79,14 @@ jobs:
       - name: Deploy mini-me functions
         env:
           FIREBASE_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_CC_DEV_PS7 }}
+          INPUT_TARGETS: ${{ github.event.inputs.targets }}
         run: |
+          TARGETS="${INPUT_TARGETS:-$DEPLOY_TARGETS}"
+          echo "デプロイ対象: $TARGETS"
           echo "$FIREBASE_SA" > /tmp/sa.json
           export GOOGLE_APPLICATION_CREDENTIALS=/tmp/sa.json
           npm install -g firebase-tools@15.23.0
-          firebase deploy \
-            --only functions:miniMeGenerate,functions:miniMeCheckout,functions:miniMeWebhook \
-            --project cc-dev-ps7 \
-            --non-interactive
+          firebase deploy --only "$TARGETS" --project cc-dev-ps7 --non-interactive
 
       - name: 失敗時のヒント
         if: failure()
