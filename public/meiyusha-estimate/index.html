@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ユーキャン175本 プラン組み合わせシミュレーター（明友社様向け）</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <style>
 :root{
   --bg:#f5f6f8; --card:#ffffff; --text:#1a2233; --sub:#5b6577;
@@ -90,7 +93,8 @@ body.locked>*:not(#gate){display:none}
 
 <header>
   <h1>ユーキャン175本 プラン組み合わせシミュレーター</h1>
-  <span class="ver">明友社様向け v1.2.0</span>
+  <span class="ver">明友社様向け v2.0.0</span>
+  <button id="btnLogout" style="margin-left:auto;padding:4px 10px;border:1px solid var(--border);border-radius:7px;background:none;color:var(--sub);font-size:.7rem;cursor:pointer">ログアウト</button>
 </header>
 <p class="note">制作手法 × 撮影の分け方 × 撮影会場 × 本数の組み合わせを選ぶと、概算費用が動的に連動します。各ボタンには「その選択肢に変えた場合の合計」を表示しています。金額はすべて概算・税別（切替可）です。正式なお見積もりは別紙見積書をご参照ください。</p>
 
@@ -127,19 +131,10 @@ body.locked>*:not(#gate){display:none}
 </ul>
 
 <script>
-// ===== 固定単価（明友社様向け・変更不可） =====
-const C={
-  hours:8, setupH:2, tearH:1,
-  dir:50000, ope:50000, eq:50000, eqCont:0.6,
-  veh:24000, travel:3000, misc:10000, data:50000,
-  mgmt:0.10, ttsInit:0, ttsPer:10000, supFee:40000,
-  fullMin:40, stsMin:10, commonMin:3
-};
-// クール数から割増・予備率を段階的に決定（スケジュール確保コストの反映）
+// ===== 単価は Firestore（サーバー側）で管理。ログイン後に読み込む =====
+let C=null, TIERS=null, VENUES=null;
 function surRes(cools){
-  if(cools<=1)return {sur:0.00,res:0.05};
-  if(cools<=3)return {sur:0.05,res:0.10};
-  if(cools<=6)return {sur:0.10,res:0.12};
+  for(const t of TIERS){if(cools<=t.maxCools)return {sur:t.sur,res:t.res};}
   return {sur:0.15,res:0.15};
 }
 const METHODS=[
@@ -152,12 +147,6 @@ const PRESETS=[
   {name:"梅：短期集中", cools:1, desc:"1クール・連続日程で一括"},
   {name:"竹：3クール",   cools:3, desc:"原稿進捗に合わせ3回に分割"},
   {name:"松：長期分割",  cools:8, desc:"月1ペース等・8クール"}
-];
-const VENUES=[
-  {studio:0,     opeN:1, name:"明友社/ユーキャン会議室", desc:"場所代0円・機材持ち込み"},
-  {studio:300000,opeN:0, name:"品川動画配信スタジオ",   desc:"30万円/8h・オペ込・控え室あり（立ち会い可）"},
-  {studio:100000,opeN:1, name:"秋葉原駅前スタジオ",     desc:"10万円/8h・オペ1名"},
-  {studio:50000, opeN:1, name:"曙橋プライベートスタジオ",desc:"5万円/8h・オペ1名・住居兼（要事前確認）"}
 ];
 let st={method:"sts", cools:3, venue:3, N:175, supN:5, tax:false};
 
@@ -220,6 +209,7 @@ function optBtn(box,{title,desc,amt,sel,disabled,onclick}){
 }
 
 function render(){
+  if(!C)return;   // 単価読み込み前は描画しない
   st.tax=$("pTax").checked;
   st.cools=parseInt($("pCools").value);
   st.N=parseInt($("pN").value);
@@ -289,21 +279,47 @@ function render(){
 }
 
 ["pTax","pCools","pN","pSup"].forEach(id=>$(id).addEventListener("input",render));
-render();
 
-// ===== ログインゲート =====
-const GATE_HASH="454c8ad4780933f6fe78b1682e0f9a8e367c03cc7239e7a85d6d53e793d26b93";
-async function sha256(s){
-  const buf=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(s));
-  return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,"0")).join("");
-}
-function unlock(){document.body.classList.remove("locked");$("gate").remove();}
-if(sessionStorage.getItem("meiyusha-auth")==="1"){unlock();}
+// ===== Firebase 認証 + 単価読み込み =====
+const firebaseConfig={
+  apiKey:"AIzaSyDPlsAhtxbJBihy-EAHck9P7XbuMdzV0ds",
+  authDomain:"cc-dev-ps7.firebaseapp.com",
+  projectId:"cc-dev-ps7",
+  storageBucket:"cc-dev-ps7.firebasestorage.app",
+  messagingSenderId:"1029579090333",
+  appId:"1:1029579090333:web:5a2ea499fec97c497f2774"
+};
+firebase.initializeApp(firebaseConfig);
+const auth=firebase.auth(), db=firebase.firestore();
+const ALLOW=e=>!!e&&(e==="meiyusha@meiyusha-estimate.app"||/@splineglobal\.com$/.test(e)||e==="junpei.omote@gmail.com");
+
 $("gateForm").addEventListener("submit",async e=>{
   e.preventDefault();
-  const h=await sha256($("gateId").value.trim()+":"+$("gatePw").value);
-  if(h===GATE_HASH){sessionStorage.setItem("meiyusha-auth","1");unlock();}
-  else{$("gateErr").textContent="IDまたはパスワードが違います";}
+  $("gateErr").textContent="";
+  const id=$("gateId").value.trim();
+  const email=id.includes("@")?id:id+"@meiyusha-estimate.app";
+  try{await auth.signInWithEmailAndPassword(email,$("gatePw").value);}
+  catch(err){$("gateErr").textContent="IDまたはパスワードが違います";}
+});
+$("btnLogout").onclick=()=>auth.signOut().then(()=>location.reload());
+
+auth.onAuthStateChanged(async u=>{
+  if(!u)return;
+  if(!ALLOW(u.email)){
+    $("gateErr").textContent="このアカウントには閲覧権限がありません";
+    auth.signOut();return;
+  }
+  try{
+    const doc=await db.collection("meiyusha-estimate").doc("config").get();
+    if(!doc.exists)throw new Error("設定が見つかりません");
+    const cfg=JSON.parse(doc.data().json);
+    C=cfg; TIERS=cfg.tiers; VENUES=cfg.venues;
+    document.body.classList.remove("locked");
+    const g=$("gate");if(g)g.remove();
+    render();
+  }catch(err){
+    const el=$("gateErr");if(el)el.textContent="単価設定の読み込みに失敗しました: "+err.message;
+  }
 });
 </script>
 </body>

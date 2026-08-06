@@ -137,6 +137,27 @@ service cloud.firestore {
       allow delete: if isKbEditor();
     }
 
+    // hihaho 素材ライブラリ（iFrame素材・3Dモデルのカタログ）
+    // 読み取りは公開（Chrome拡張がREST APIで一覧取得する）・書き込みは編集者のみ
+    match /hihaho-material/{docId} {
+      allow read: if true;
+      allow create, update: if isKbEditor() &&
+        request.resource.data.title is string && request.resource.data.title.size() <= 200 &&
+        request.resource.data.type in ['html', 'zip', 'glb'] &&
+        request.resource.data.tags is list && request.resource.data.tags.size() <= 20;
+      allow delete: if isKbEditor();
+    }
+
+    // 明友社向け見積もりシミュレーター: 単価設定は許可アカウントのみ読める・書き込みは管理者のみ（Admin/REST経由）
+    match /meiyusha-estimate/{docId} {
+      allow read: if request.auth != null && (
+        request.auth.token.email == 'meiyusha@meiyusha-estimate.app' ||
+        request.auth.token.email.matches('.*@splineglobal[.]com') ||
+        request.auth.token.email == 'junpei.omote@gmail.com'
+      );
+      allow write: if false;
+    }
+
     // その他は全拒否
     match /{document=**} {
       allow read, write: if false;
