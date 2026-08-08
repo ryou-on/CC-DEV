@@ -2,7 +2,7 @@
 
 Amazon.co.jp の商品サムネイルに、購入済み・Kindle Unlimited利用済みの「済」バッジを重ねて表示するChrome拡張。
 
-- バージョン: v0.1.0
+- バージョン: v0.1.1
 - 最終更新: 2026-08-09
 - 配置場所: `extensions/kindle-owned-badge/`（Firebase Hostingへはデプロイされないローカル拡張）
 
@@ -33,6 +33,10 @@ Amazon.co.jp の商品サムネイルに、購入済み・Kindle Unlimited利用
 ```
 extensions/kindle-owned-badge/
 ├── manifest.json            # Manifest V3
+├── icons/                   # 拡張アイコン（赤地に白「済」）
+│   ├── icon16.png
+│   ├── icon48.png
+│   └── icon128.png
 ├── content/
 │   ├── amazon-badge.js      # Amazonページへのバッジ注入
 │   ├── badge.css            # バッジのスタイル
