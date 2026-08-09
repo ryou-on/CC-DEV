@@ -21,4 +21,5 @@ export const db = getFirestore(app)
 export const storage = getStorage(app)
 
 export const OWNER_EMAIL = 'junpei.omote@gmail.com'
-export const ANALYZE_ENDPOINT = 'https://cc-dev-ps7.web.app/api/hondoko-analyze'
+// Hosting rewrite (/api/...) は60秒でタイムアウトするため、解析は関数URLを直接叩く(関数側は300秒)
+export const ANALYZE_ENDPOINT = 'https://asia-northeast1-cc-dev-ps7.cloudfunctions.net/hondokoAnalyze'

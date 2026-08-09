@@ -1,63 +1,53 @@
-import { useRef, useState } from 'react'
-import {
-  addDoc, collection, doc, serverTimestamp, writeBatch,
-} from 'firebase/firestore'
-import { ref as storageRef, uploadString } from 'firebase/storage'
-import { Camera, Check } from 'lucide-react'
-import { auth, db, storage } from '../firebase'
-import type { Book, DiffAction, Shelf } from '../types'
-import { analyzePhoto, resizeImageToBase64 } from '../lib/api'
+import { useMemo, useState } from 'react'
+import { addDoc, collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore'
+import { Check } from 'lucide-react'
+import { auth, db } from '../firebase'
+import type { Book, Shelf } from '../types'
+import type { AnalysisJob } from '../hooks/useAnalysisJobs'
 import { computeDiff, shelfCode } from '../lib/diff'
 import { Modal, Spinner, btnPrimary, btnSecondary, inputCls } from './ui'
 
 type MissingChoice = 'unplaced' | 'sold' | 'keep'
-type Step = 'pick' | 'analyzing' | 'review' | 'applying' | 'done'
 
-export function PhotoDiffModal({
-  shelf,
-  row,
-  booksInRow,
-  allBooks,
+// バックグラウンド解析(useAnalysisJobs)の結果を確認して一括反映するモーダル
+export function DiffReviewModal({
+  job,
   shelves,
+  books,
   onClose,
+  onApplied,
 }: {
-  shelf: Shelf
-  row: number
-  booksInRow: Book[]
-  allBooks: Book[]
+  job: AnalysisJob
   shelves: Shelf[]
+  books: Book[]
   onClose: () => void
+  onApplied: () => void
 }) {
-  const [step, setStep] = useState<Step>('pick')
+  const shelf = shelves.find((s) => s.id === job.shelfId)
+  const booksInRow = useMemo(
+    () => books
+      .filter((b) => b.status === 'owned' && b.shelfId === job.shelfId && b.row === job.row)
+      .sort((a, b) => a.position - b.position),
+    [books, job.shelfId, job.row],
+  )
+  const initialActions = useMemo(
+    () => computeDiff(job.result?.books ?? [], booksInRow, books, shelves),
+    // 開いた時点のデータで差分を確定させる(開いている間の他端末変更では再計算しない)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  )
+  const [actions] = useState(initialActions)
+  const [enabled, setEnabled] = useState<boolean[]>(() => initialActions.map(() => true))
+  const [missingChoices, setMissingChoices] = useState<Record<string, MissingChoice>>(() => {
+    const mc: Record<string, MissingChoice> = {}
+    for (const a of initialActions) if (a.type === 'missing') mc[a.bookId] = 'unplaced'
+    return mc
+  })
+  const [step, setStep] = useState<'review' | 'applying' | 'done'>('review')
   const [error, setError] = useState('')
-  const [note, setNote] = useState('')
-  const [actions, setActions] = useState<DiffAction[]>([])
-  const [enabled, setEnabled] = useState<boolean[]>([])
-  const [missingChoices, setMissingChoices] = useState<Record<string, MissingChoice>>({})
   const [summary, setSummary] = useState('')
-  const base64Ref = useRef<string>('')
-  const fileInput = useRef<HTMLInputElement>(null)
 
-  const handleFile = async (file: File) => {
-    setError('')
-    setStep('analyzing')
-    try {
-      const base64 = await resizeImageToBase64(file)
-      base64Ref.current = base64
-      const result = await analyzePhoto(base64)
-      const diff = computeDiff(result.books, booksInRow, allBooks, shelves)
-      setNote(result.note)
-      setActions(diff)
-      setEnabled(diff.map(() => true))
-      const mc: Record<string, MissingChoice> = {}
-      for (const a of diff) if (a.type === 'missing') mc[a.bookId] = 'unplaced'
-      setMissingChoices(mc)
-      setStep('review')
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '解析に失敗しました')
-      setStep('pick')
-    }
-  }
+  if (!shelf) return null
 
   const apply = async () => {
     setStep('applying')
@@ -72,7 +62,6 @@ export function PhotoDiffModal({
           const existing = booksInRow.find((b) => b.id === a.bookId)
           batch.update(doc(booksCol, a.bookId), {
             position: a.position,
-            // タグが未設定なら AI のタグで補完
             ...(existing && existing.tags.length === 0 && a.detected.tags.length > 0
               ? { tags: a.detected.tags }
               : {}),
@@ -91,7 +80,7 @@ export function PhotoDiffModal({
             memo: '',
             status: 'owned',
             shelfId: shelf.id,
-            row,
+            row: job.row,
             position: a.position,
             confidence: a.detected.confidence,
             source: 'photo',
@@ -103,7 +92,7 @@ export function PhotoDiffModal({
           batch.update(doc(booksCol, a.bookId), {
             status: 'owned',
             shelfId: shelf.id,
-            row,
+            row: job.row,
             position: a.position,
             updatedAt: serverTimestamp(),
           })
@@ -123,26 +112,22 @@ export function PhotoDiffModal({
 
       await batch.commit()
 
-      // 写真を保存(失敗しても本の更新は反映済みなので警告のみ)
-      try {
-        const photoId = `${shelf.id}_${row}_${Date.now()}`
-        const path = `hondoko/photos/${photoId}.jpg`
-        await uploadString(storageRef(storage, path), base64Ref.current, 'base64', {
-          contentType: 'image/jpeg',
-        })
-        await addDoc(collection(db, 'hondoko-photos'), {
-          shelfId: shelf.id,
-          row,
-          storagePath: path,
-          bookCount: kept + added + moved,
-          addedCount: added,
-          removedCount: removed,
-          movedCount: moved,
-          by: auth.currentUser?.email ?? '',
-          createdAt: serverTimestamp(),
-        })
-      } catch (e) {
-        console.warn('photo save failed:', e)
+      if (job.storagePath) {
+        try {
+          await addDoc(collection(db, 'hondoko-photos'), {
+            shelfId: shelf.id,
+            row: job.row,
+            storagePath: job.storagePath,
+            bookCount: kept + added + moved,
+            addedCount: added,
+            removedCount: removed,
+            movedCount: moved,
+            by: auth.currentUser?.email ?? '',
+            createdAt: serverTimestamp(),
+          })
+        } catch (e) {
+          console.warn('photo doc save failed:', e)
+        }
       }
 
       setSummary(`反映しました: 追加 ${added}冊 / 移動 ${moved}冊 / 撤去 ${removed}冊 / 既存 ${kept}冊`)
@@ -162,42 +147,14 @@ export function PhotoDiffModal({
   }
 
   return (
-    <Modal title={`${shelfCode(shelf)}-${row}（${shelf.name}）— 写真で更新`} onClose={onClose} wide>
-      {step === 'pick' && (
-        <div className="text-center py-6 space-y-4">
-          <p className="text-sm text-stone-600 whitespace-pre-line">
-            この段のクローズアップ写真を撮影またはアップロードしてください。{'\n'}
-            背表紙の文字が読める距離・明るさで、1段ずつがおすすめです。
-          </p>
-          {booksInRow.length > 0 && (
-            <p className="text-xs text-stone-400">
-              現在この段には {booksInRow.length} 冊登録されています。写真と比較して差分を提案します。
-            </p>
-          )}
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <input
-            ref={fileInput}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            className="hidden"
-            onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
-          />
-          <button className={btnPrimary + ' inline-flex items-center gap-2'} onClick={() => fileInput.current?.click()}>
-            <Camera size={18} /> 写真を選ぶ / 撮る
-          </button>
-        </div>
-      )}
-
-      {step === 'analyzing' && (
-        <Spinner label={'AIが背表紙を読み取っています…\n(30秒〜2分ほどかかります)'} />
-      )}
-
+    <Modal title={`${shelfCode(shelf)}-${job.row}（${shelf.name}）— 解析結果の確認`} onClose={onClose} wide>
       {step === 'applying' && <Spinner label="反映しています…" />}
 
       {step === 'review' && (
         <div className="space-y-3">
-          {note && <p className="text-xs text-stone-500 bg-stone-50 rounded-lg px-3 py-2">AIメモ: {note}</p>}
+          {job.result?.note && (
+            <p className="text-xs text-stone-500 bg-stone-50 rounded-lg px-3 py-2">AIメモ: {job.result.note}</p>
+          )}
           {error && <p className="text-sm text-red-600">{error}</p>}
           <p className="text-sm text-stone-600">
             チェックした項目だけ反映されます。
@@ -270,7 +227,7 @@ export function PhotoDiffModal({
             )}
           </ul>
           <div className="flex justify-end gap-2 pt-1">
-            <button className={btnSecondary} onClick={() => setStep('pick')}>撮り直す</button>
+            <button className={btnSecondary} onClick={onClose}>あとで確認</button>
             <button className={btnPrimary} onClick={apply} disabled={actions.length === 0}>反映する</button>
           </div>
         </div>
@@ -282,7 +239,7 @@ export function PhotoDiffModal({
             <Check size={26} />
           </div>
           <p className="text-sm text-stone-700">{summary}</p>
-          <button className={btnPrimary} onClick={onClose}>閉じる</button>
+          <button className={btnPrimary} onClick={onApplied}>閉じる</button>
         </div>
       )}
     </Modal>

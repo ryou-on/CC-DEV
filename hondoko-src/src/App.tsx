@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebase/auth'
 import { collection, doc, onSnapshot, query, orderBy } from 'firebase/firestore'
-import { BookOpen, LibraryBig, LogOut, PlusCircle, Search, Settings } from 'lucide-react'
+import { BookOpen, LibraryBig, Loader2, LogOut, PlusCircle, Search, Settings, X } from 'lucide-react'
 import { auth, db, googleProvider, OWNER_EMAIL } from './firebase'
 import type { Book, Shelf, ShelfMap, ShelfPhoto } from './types'
 import { APP_VERSION, RELEASE_NOTES, USAGE_GUIDE } from './version'
+import { useAnalysisJobs } from './hooks/useAnalysisJobs'
+import { shelfCode } from './lib/diff'
+import { DiffReviewModal } from './components/DiffReviewModal'
 import { SearchView } from './components/SearchView'
 import { MapView } from './components/MapView'
 import { AddView } from './components/AddView'
@@ -29,6 +32,8 @@ export default function App() {
   const [showUsage, setShowUsage] = useState(false)
   const [showNotes, setShowNotes] = useState(false)
   const [loginError, setLoginError] = useState('')
+  const { jobs, startJob, dismissJob } = useAnalysisJobs()
+  const [reviewJobId, setReviewJobId] = useState<string | null>(null)
 
   useEffect(() => onAuthStateChanged(auth, (u) => setUser(u)), [])
 
@@ -73,6 +78,16 @@ export default function App() {
     () => books.find((b) => b.id === selectedBookId) ?? null,
     [books, selectedBookId],
   )
+
+  const processingLocations = useMemo(
+    () => new Set(jobs.filter((j) => j.status === 'processing').map((j) => `${j.shelfId}:${j.row}`)),
+    [jobs],
+  )
+  const reviewJob = jobs.find((j) => j.id === reviewJobId) ?? null
+  const jobLabel = (j: { shelfId: string; row: number }) => {
+    const s = shelves.find((x) => x.id === j.shelfId)
+    return s ? `${shelfCode(s)}-${j.row}` : '?'
+  }
 
   const login = async () => {
     setLoginError('')
@@ -147,13 +162,68 @@ export default function App() {
           <SearchView books={books} shelves={shelves} query={searchQuery} setQuery={setSearchQuery} onSelectBook={setSelectedBookId} />
         )}
         {tab === 'map' && (
-          <MapView shelves={shelves} books={books} photos={photos} maps={maps} onSelectBook={setSelectedBookId} />
+          <MapView
+            shelves={shelves}
+            books={books}
+            photos={photos}
+            maps={maps}
+            onSelectBook={setSelectedBookId}
+            onStartPhoto={startJob}
+            processingLocations={processingLocations}
+          />
         )}
         {tab === 'add' && <AddView shelves={shelves} books={books} />}
         {tab === 'settings' && (
           <SettingsView shelves={shelves} books={books} members={members} userEmail={user.email ?? ''} />
         )}
       </main>
+
+      {/* 解析ジョブバー */}
+      {jobs.length > 0 && (
+        <div className="fixed bottom-[64px] inset-x-0 z-40 pointer-events-none pb-[env(safe-area-inset-bottom)]">
+          <div className="max-w-3xl mx-auto px-4 space-y-1.5">
+            {jobs.map((j) => (
+              <div
+                key={j.id}
+                className={`pointer-events-auto flex items-center gap-2.5 rounded-xl shadow-lg border px-3 py-2 text-sm ${
+                  j.status === 'error' ? 'bg-red-50 border-red-200' : 'bg-white border-stone-200'
+                }`}
+              >
+                {j.status === 'processing' && (
+                  <>
+                    <Loader2 size={16} className="text-amber-600 animate-spin shrink-0" />
+                    <span className="text-stone-600 flex-1 truncate">
+                      <b>{jobLabel(j)}</b> の写真を解析中…(閉じてもOK、1〜2分)
+                    </span>
+                  </>
+                )}
+                {j.status === 'ready' && (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
+                    <span className="text-stone-700 flex-1 truncate">
+                      <b>{jobLabel(j)}</b> の解析完了({j.result?.books.length ?? 0}冊検出)
+                    </span>
+                    <button
+                      className="shrink-0 bg-amber-700 hover:bg-amber-800 text-white text-xs font-medium rounded-lg px-3 py-1.5"
+                      onClick={() => setReviewJobId(j.id)}
+                    >
+                      確認する
+                    </button>
+                  </>
+                )}
+                {j.status === 'error' && (
+                  <span className="text-red-700 flex-1 truncate"><b>{jobLabel(j)}</b>: {j.error}</span>
+                )}
+                {j.status !== 'processing' && (
+                  <button className="shrink-0 p-1 text-stone-400 hover:text-stone-600" onClick={() => dismissJob(j.id)}>
+                    <X size={15} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* タブバー */}
       <nav className="fixed bottom-0 inset-x-0 bg-white border-t border-stone-200 z-40 pb-[env(safe-area-inset-bottom)]">
@@ -174,6 +244,15 @@ export default function App() {
       </nav>
 
       {/* モーダル群 */}
+      {reviewJob && reviewJob.status === 'ready' && (
+        <DiffReviewModal
+          job={reviewJob}
+          shelves={shelves}
+          books={books}
+          onClose={() => setReviewJobId(null)}
+          onApplied={() => { dismissJob(reviewJob.id); setReviewJobId(null) }}
+        />
+      )}
       {selectedBook && (
         <BookDetail
           book={selectedBook}

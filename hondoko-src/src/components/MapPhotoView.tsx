@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { deleteDoc, doc, updateDoc } from 'firebase/firestore'
 import { getDownloadURL, ref as storageRef } from 'firebase/storage'
-import { Pencil, Trash2, X } from 'lucide-react'
+import { Camera, Pencil, Trash2, X } from 'lucide-react'
 import { db, storage } from '../firebase'
 import type { Book, MapRegion, Shelf, ShelfMap } from '../types'
 import { shelfCode } from '../lib/diff'
@@ -14,11 +14,15 @@ export function MapPhotoView({
   shelves,
   books,
   onSelectRow,
+  onQuickPhoto,
+  processingLocations,
 }: {
   map: ShelfMap
   shelves: Shelf[]
   books: Book[]
   onSelectRow: (shelfId: string, row: number) => void
+  onQuickPhoto: (shelfId: string, row: number) => void
+  processingLocations: Set<string>
 }) {
   const [url, setUrl] = useState<string | null>(null)
   const [editMode, setEditMode] = useState(false)
@@ -45,6 +49,26 @@ export function MapPhotoView({
     }
     return m
   }, [books])
+
+  // 棚ごとの領域バウンディングボックス上部に棚番号バッジを表示する
+  const shelfBadges = useMemo(() => {
+    const byShelf = new Map<string, { minX: number; maxX: number; minY: number }>()
+    for (const r of map.regions) {
+      const b = byShelf.get(r.shelfId)
+      if (!b) byShelf.set(r.shelfId, { minX: r.x, maxX: r.x + r.w, minY: r.y })
+      else {
+        b.minX = Math.min(b.minX, r.x)
+        b.maxX = Math.max(b.maxX, r.x + r.w)
+        b.minY = Math.min(b.minY, r.y)
+      }
+    }
+    return [...byShelf.entries()]
+      .map(([shelfId, b]) => {
+        const shelf = shelves.find((s) => s.id === shelfId)
+        return shelf ? { shelfId, code: shelfCode(shelf), cx: (b.minX + b.maxX) / 2, y: b.minY } : null
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null)
+  }, [map.regions, shelves])
 
   // ポインタ座標を 0〜1 の正規化座標へ
   const toNorm = (e: { clientX: number; clientY: number }) => {
@@ -155,12 +179,15 @@ export function MapPhotoView({
           {map.regions.map((r) => {
             const shelf = shelves.find((s) => s.id === r.shelfId)
             const count = countByLocation.get(`${r.shelfId}:${r.row}`) || 0
+            const isProcessing = processingLocations.has(`${r.shelfId}:${r.row}`)
             const label = shelf ? `${shelfCode(shelf)}-${r.row}` : '?'
             return (
-              <button
+              <div
                 key={r.id}
-                className={`absolute rounded border-2 transition-colors ${
-                  count > 0
+                className={`absolute rounded border-2 transition-colors cursor-pointer ${
+                  isProcessing
+                    ? 'border-blue-400 bg-blue-400/25 animate-pulse'
+                    : count > 0
                     ? 'border-amber-400 bg-amber-400/25 hover:bg-amber-400/40'
                     : 'border-white/50 bg-black/10 hover:bg-black/20 border-dashed'
                 }`}
@@ -183,9 +210,33 @@ export function MapPhotoView({
                 >
                   {label}{count > 0 ? ` · ${count}` : ''}
                 </span>
-              </button>
+                {!editMode && (
+                  <span
+                    role="button"
+                    title="写真を撮って登録/更新"
+                    className="absolute bottom-0.5 right-0.5 w-5 h-5 rounded-full bg-white/90 text-amber-700 border border-amber-300 flex items-center justify-center shadow hover:bg-amber-100"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      if (!isProcessing) onQuickPhoto(r.shelfId, r.row)
+                    }}
+                  >
+                    <Camera size={11} />
+                  </span>
+                )}
+              </div>
             )
           })}
+
+          {/* 棚番号バッジ */}
+          {shelfBadges.map((b) => (
+            <span
+              key={b.shelfId}
+              className="absolute -translate-x-1/2 w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-red-500/90 text-white text-[11px] sm:text-xs font-bold flex items-center justify-center shadow pointer-events-none"
+              style={{ left: `${b.cx * 100}%`, top: `calc(${b.y * 100}% - 10px)` }}
+            >
+              {b.code}
+            </span>
+          ))}
 
           {draft && (
             <div
