@@ -1,5 +1,5 @@
 import { auth, ANALYZE_ENDPOINT } from '../firebase'
-import type { AnalyzeResult } from '../types'
+import type { AnalyzeResult, MapMatchPayload } from '../types'
 
 // 画像を長辺 maxEdge px 以下の JPEG (base64) に変換
 export async function resizeImageToBase64(file: File, maxEdge = 2400): Promise<string> {
@@ -17,7 +17,7 @@ export async function resizeImageToBase64(file: File, maxEdge = 2400): Promise<s
   return dataUrl.split(',')[1]
 }
 
-export async function analyzePhoto(base64Jpeg: string): Promise<AnalyzeResult> {
+export async function analyzePhoto(base64Jpeg: string, map?: MapMatchPayload): Promise<AnalyzeResult> {
   const user = auth.currentUser
   if (!user) throw new Error('ログインが必要です')
   const idToken = await user.getIdToken()
@@ -27,11 +27,29 @@ export async function analyzePhoto(base64Jpeg: string): Promise<AnalyzeResult> {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${idToken}`,
     },
-    body: JSON.stringify({ image: base64Jpeg, mediaType: 'image/jpeg' }),
+    body: JSON.stringify({ image: base64Jpeg, mediaType: 'image/jpeg', ...(map ? { map } : {}) }),
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) throw new Error(data.error || `解析に失敗しました (${res.status})`)
   return data as AnalyzeResult
+}
+
+// StorageのマップをAI照合用に縮小したbase64にする
+export async function buildMapPayload(
+  mapUrl: string,
+  regions: MapMatchPayload['regions'],
+  maxEdge = 1400,
+): Promise<MapMatchPayload> {
+  const res = await fetch(mapUrl)
+  const blob = await res.blob()
+  const bitmap = await createImageBitmap(blob)
+  const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height))
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.round(bitmap.width * scale)
+  canvas.height = Math.round(bitmap.height * scale)
+  canvas.getContext('2d')!.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+  bitmap.close()
+  return { image: canvas.toDataURL('image/jpeg', 0.8).split(',')[1], regions }
 }
 
 // openBD → Google Books の順で ISBN から書誌情報を取得

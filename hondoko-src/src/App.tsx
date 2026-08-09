@@ -80,14 +80,24 @@ export default function App() {
   )
 
   const processingLocations = useMemo(
-    () => new Set(jobs.filter((j) => j.status === 'processing').map((j) => `${j.shelfId}:${j.row}`)),
+    () => new Set(
+      jobs
+        .filter((j) => j.status === 'processing' && j.target)
+        .map((j) => `${j.target!.shelfId}:${j.target!.row}`),
+    ),
     [jobs],
   )
   const reviewJob = jobs.find((j) => j.id === reviewJobId) ?? null
-  const jobLabel = (j: { shelfId: string; row: number }) => {
-    const s = shelves.find((x) => x.id === j.shelfId)
-    return s ? `${shelfCode(s)}-${j.row}` : '?'
+  const jobLabel = (j: { target: { shelfId: string; row: number } | null }) => {
+    if (!j.target) return '自動判別'
+    const s = shelves.find((x) => x.id === j.target!.shelfId)
+    return s ? `${shelfCode(s)}-${j.target.row}` : '?'
   }
+  // 自動判別に使うマップ(領域数が最多のもの)
+  const matchMap = useMemo(
+    () => maps.filter((m) => m.regions.length > 0).sort((a, b) => b.regions.length - a.regions.length)[0] ?? null,
+    [maps],
+  )
 
   const login = async () => {
     setLoginError('')
@@ -168,7 +178,8 @@ export default function App() {
             photos={photos}
             maps={maps}
             onSelectBook={setSelectedBookId}
-            onStartPhoto={startJob}
+            onStartPhoto={(shelfId, row, file) => startJob(file, { shelfId, row })}
+            onStartAutoPhoto={matchMap ? (file) => startJob(file, null, { map: matchMap, shelves }) : undefined}
             processingLocations={processingLocations}
           />
         )}
@@ -201,7 +212,9 @@ export default function App() {
                   <>
                     <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
                     <span className="text-stone-700 flex-1 truncate">
-                      <b>{jobLabel(j)}</b> の解析完了({j.result?.books.length ?? 0}冊検出)
+                      <b>{jobLabel(j)}</b> の解析完了(
+                      {(j.result?.rows ?? []).reduce((n, r) => n + r.books.length, 0)}冊
+                      {(j.result?.rows.length ?? 0) > 1 ? ` / ${j.result!.rows.length}段` : ''}検出)
                     </span>
                     <button
                       className="shrink-0 bg-amber-700 hover:bg-amber-800 text-white text-xs font-medium rounded-lg px-3 py-1.5"

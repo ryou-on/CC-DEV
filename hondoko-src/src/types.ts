@@ -79,10 +79,21 @@ export interface DetectedBook {
   confidence: 'high' | 'medium' | 'low'
 }
 
-export interface AnalyzeResult {
+// 写真内の1つの段(上から順)。region はマップ照合で判定された領域ラベル(例: "1-3")
+export interface DetectedRow {
+  region: string
   books: DetectedBook[]
+}
+
+export interface AnalyzeResult {
+  rows: DetectedRow[]
   note: string
   usage?: { input_tokens: number; output_tokens: number }
+}
+
+export interface MapMatchPayload {
+  image: string // base64 jpeg (縮小済み)
+  regions: { label: string; x: number; y: number; w: number; h: number }[]
 }
 
 // 差分レビュー用

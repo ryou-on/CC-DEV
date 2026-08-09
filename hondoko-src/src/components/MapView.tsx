@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react'
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
 import { ref as storageRef, uploadString } from 'firebase/storage'
-import { BookOpen, Camera, ChevronLeft, ImagePlus } from 'lucide-react'
+import { BookOpen, Camera, ChevronLeft, ImagePlus, Wand2 } from 'lucide-react'
 import { db, storage } from '../firebase'
 import type { Book, Shelf, ShelfGroup, ShelfMap, ShelfPhoto } from '../types'
 import { resizeImageToBase64 } from '../lib/api'
@@ -28,6 +28,7 @@ export function MapView({
   maps,
   onSelectBook,
   onStartPhoto,
+  onStartAutoPhoto,
   processingLocations,
 }: {
   shelves: Shelf[]
@@ -36,6 +37,7 @@ export function MapView({
   maps: ShelfMap[]
   onSelectBook: (id: string) => void
   onStartPhoto: (shelfId: string, row: number, file: File) => void
+  onStartAutoPhoto?: (file: File) => void // マップ照合による自動判別(領域のあるマップがある場合のみ)
   processingLocations: Set<string> // `${shelfId}:${row}` 解析中の段
 }) {
   const [selected, setSelected] = useState<{ shelfId: string; row: number } | null>(null)
@@ -43,6 +45,7 @@ export function MapView({
   const [uploadingMap, setUploadingMap] = useState(false)
   const mapInput = useRef<HTMLInputElement>(null)
   const photoInput = useRef<HTMLInputElement>(null)
+  const autoInput = useRef<HTMLInputElement>(null)
   const photoTarget = useRef<{ shelfId: string; row: number } | null>(null)
 
   // 「+」ボタン → カメラ/ファイル選択を直接起動
@@ -189,6 +192,33 @@ export function MapView({
   return (
     <div className="space-y-5">
       {photoInputEl}
+
+      {/* 自動判別で追加 */}
+      {onStartAutoPhoto && (
+        <div>
+          <input
+            ref={autoInput}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              if (f) onStartAutoPhoto(f)
+              e.target.value = ''
+            }}
+          />
+          <button
+            className={btnPrimary + ' w-full inline-flex items-center justify-center gap-2 !py-3'}
+            onClick={() => autoInput.current?.click()}
+          >
+            <Wand2 size={17} /> 写真を撮って自動判別で登録
+          </button>
+          <p className="text-xs text-stone-400 mt-1 text-center">
+            どの段か指定不要。マップ写真と照合してAIが場所を判別します(複数段が写っていてもOK)
+          </p>
+        </div>
+      )}
 
       {/* 写真マップ */}
       {maps
