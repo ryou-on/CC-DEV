@@ -71,6 +71,16 @@ function* iterRoots(root) {
   }
 }
 
+// 要素の配下（内側のshadow root含む）に書影<img>があるか。
+// タイトルなどのテキストリンクにバッジを付けないための判定
+function containsImageDeep(rootEl) {
+  if (rootEl.querySelector('img')) return true;
+  for (const el of rootEl.querySelectorAll('*')) {
+    if (el.shadowRoot && containsImageDeep(el.shadowRoot)) return true;
+  }
+  return false;
+}
+
 // 1つのroot（documentまたはshadow root）内をスキャンする
 function scanRoot(root) {
   // 1) ASIN付きリンク（カルーセル・おすすめ枠・Kindleストアのweb components）
@@ -80,8 +90,9 @@ function scanRoot(root) {
     const img = anchor.querySelector('img');
     if (img) {
       attachBadge(img.parentElement, asin);
-    } else if (anchor.offsetWidth >= 50 && anchor.offsetHeight >= 50) {
-      // 書影がさらに内側のshadow root（<bds-book-cover-image>等）にある場合はアンカー自体に付ける
+    } else if (anchor.offsetWidth >= 50 && anchor.offsetHeight >= 50 && containsImageDeep(anchor)) {
+      // 書影がさらに内側のshadow root（<bds-book-cover-image>等）にある場合はアンカー自体に付ける。
+      // 書影を含まないテキストリンク（タイトル等）にはバッジを付けない（サムネイル右肩のみに表示）
       attachBadge(anchor, asin);
     }
   }

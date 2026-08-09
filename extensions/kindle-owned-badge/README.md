@@ -2,7 +2,7 @@
 
 Amazon.co.jp の商品サムネイルに、購入済み・Kindle Unlimited利用済みの「済」バッジを重ねて表示するChrome拡張。
 
-- バージョン: v0.6.0
+- バージョン: v0.6.1
 - 最終更新: 2026-08-09
 - 配置場所: `extensions/kindle-owned-badge/`（Firebase Hostingへはデプロイされないローカル拡張）
 
