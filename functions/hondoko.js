@@ -6,7 +6,7 @@
 const { onRequest } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
 const admin = require('firebase-admin');
-const Anthropic = require('@anthropic-ai/sdk');
+// @anthropic-ai/sdk はデプロイ時のコード解析タイムアウト回避のため遅延読み込み
 
 if (!admin.apps.length) admin.initializeApp();
 
@@ -107,6 +107,7 @@ exports.hondokoAnalyze = onRequest({
     const mt = ['image/jpeg', 'image/png', 'image/webp'].includes(mediaType) ? mediaType : 'image/jpeg';
 
     // --- Claude Vision 解析 ---
+    const Anthropic = require('@anthropic-ai/sdk');
     const client = new Anthropic({ apiKey: anthropicApiKey.value() });
     const response = await client.messages.create({
       model: 'claude-opus-5',
