@@ -158,6 +158,32 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // hondoko (本ドコ？): 蔵書管理 — 家族メンバーのみ読み書き可
+    // メンバー = オーナー(junpei) + hondoko-config/members の emails リスト
+    function isHondokoOwner() {
+      return request.auth != null && request.auth.token.email == 'junpei.omote@gmail.com';
+    }
+    function isHondokoMember() {
+      return request.auth != null && (
+        isHondokoOwner() ||
+        (exists(/databases/$(database)/documents/hondoko-config/members) &&
+         request.auth.token.email in get(/databases/$(database)/documents/hondoko-config/members).data.emails)
+      );
+    }
+    match /hondoko-config/{docId} {
+      allow read: if isHondokoMember();
+      allow write: if isHondokoOwner();
+    }
+    match /hondoko-shelves/{docId} {
+      allow read, write: if isHondokoMember();
+    }
+    match /hondoko-books/{docId} {
+      allow read, write: if isHondokoMember();
+    }
+    match /hondoko-photos/{docId} {
+      allow read, write: if isHondokoMember();
+    }
+
     // その他は全拒否
     match /{document=**} {
       allow read, write: if false;

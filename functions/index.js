@@ -386,3 +386,8 @@ const miniMe = require('./mini-me');
 exports.miniMeGenerate = miniMe.miniMeGenerate;
 exports.miniMeCheckout = miniMe.miniMeCheckout;
 exports.miniMeWebhook = miniMe.miniMeWebhook;
+
+// ===== hondoko (本ドコ？): 蔵書管理 =====
+// 実装は functions/hondoko.js。エンドポイント: /api/hondoko-analyze
+const hondoko = require('./hondoko');
+exports.hondokoAnalyze = hondoko.hondokoAnalyze;

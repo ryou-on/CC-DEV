@@ -14,6 +14,26 @@ service firebase.storage {
                    && request.resource.contentType.matches('image/.*');
     }
 
+    // hihaho 素材ライブラリ: 読み取り公開（配信はFunctions経由だがサムネ等の直参照も許可）
+    // 書き込みは編集者アカウントのみ・1ファイル30MBまで
+    match /hihaho-material/{allPaths=**} {
+      allow read: if true;
+      allow write: if request.auth != null
+                   && (request.auth.token.email.matches('.*@splineglobal[.]com')
+                       || request.auth.token.email == 'junpei.omote@gmail.com')
+                   && (request.resource == null || request.resource.size < 30 * 1024 * 1024);
+    }
+
+    // hondoko (本ドコ？): 棚写真 — 認証ユーザーのみ(メンバー判定はFirestore側で担保)
+    // 書き込みは画像のみ・10MBまで
+    match /hondoko/photos/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+                   && (request.resource == null ||
+                       (request.resource.size < 10 * 1024 * 1024
+                        && request.resource.contentType.matches('image/.*')));
+    }
+
     // その他は全拒否
     match /{allPaths=**} {
       allow read, write: if false;
