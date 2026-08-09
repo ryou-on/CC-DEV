@@ -130,6 +130,35 @@ async function collectFromInstantOrderUpdate() {
   await chrome.storage.local.set({ kuHistoryItems: history });
 }
 
+// Kindle Auto Capturer等がページlocalStorageに残したキャプチャ記録（kobCapturedLog）を回収する。
+// 本来の書き込み先は read.amazon.co.jp（library-sync.jsが回収）だが、
+// 一括バックフィル等で www.amazon.co.jp 側に書かれた記録もここで回収できるようにする
+async function harvestCapturedLogHere() {
+  let log;
+  try {
+    log = JSON.parse(localStorage.getItem('kobCapturedLog') || '[]');
+  } catch (e) {
+    localStorage.removeItem('kobCapturedLog');
+    return;
+  }
+  if (!Array.isArray(log) || !log.length) return;
+
+  const { capturedItems } = await chrome.storage.local.get(['capturedItems']);
+  const items = capturedItems || {};
+  let added = 0;
+  for (const entry of log) {
+    if (!entry || !/^[A-Z0-9]{10}$/.test(entry.asin || '')) continue;
+    if (entry.asin in items) continue;
+    items[entry.asin] = { title: entry.title || '', ts: entry.ts || Date.now() };
+    added++;
+  }
+  if (added) {
+    await chrome.storage.local.set({ capturedItems: items });
+    console.log('[Kindle Owned Badge] キャプチャ記録を' + added + '冊取り込みました');
+  }
+  localStorage.removeItem('kobCapturedLog');
+}
+
 // 動的追加への追従:
 // - MutationObserver: 通常DOMの変化（検索結果の絞り込み等）
 // - setInterval: shadow root内の変化はObserverでは拾えないため定期再スキャン
@@ -154,6 +183,9 @@ chrome.storage.local.get(['ownedItems', 'kuHistoryItems', 'capturedItems']).then
   // バナーは初期HTMLに含まれるが、念のため少し遅らせて再チェック
   collectFromInstantOrderUpdate();
   setTimeout(collectFromInstantOrderUpdate, 2500);
+  // キャプチャ記録の回収（www.amazon.co.jp側に書かれたもの）
+  harvestCapturedLogHere();
+  setInterval(harvestCapturedLogHere, 5000);
 });
 
 // 同期・履歴収集が走ったら即座にバッジを反映

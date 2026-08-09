@@ -2,7 +2,7 @@
 
 Amazon.co.jp の商品サムネイルに、購入済み・Kindle Unlimited利用済みの「済」バッジを重ねて表示するChrome拡張。
 
-- バージョン: v0.4.0
+- バージョン: v0.5.0
 - 最終更新: 2026-08-09
 - 配置場所: `extensions/kindle-owned-badge/`（Firebase Hostingへはデプロイされないローカル拡張）
 
@@ -11,7 +11,7 @@ Amazon.co.jp の商品サムネイルに、購入済み・Kindle Unlimited利用
 1. **ライブラリ同期** — Web版Kindle（read.amazon.co.jp）のライブラリAPI `/kindle-library/search` を全ページ分たどり、所有ASINと入手種別（購入 / Kindle Unlimited等）を `chrome.storage.local` に保存
    - 注意: このAPIで取れるKindle Unlimitedは**現在借りている本のみ**。返却済みKU本の一覧を取得できるAPI・ページはAmazonに存在しない（ku-central・注文履歴・コンテンツと端末の管理いずれも不可）
 2. **利用履歴の収集** — 商品詳細ページの「Kindle Unlimitedで〇月〇日に利用しました」バナー（`#booksInstantOrderUpdate`）を検出し、返却済みKU本・購入済み本を `kuHistoryItems` として蓄積。一度商品ページを開いた本は以後どのページでもバッジ表示される（ライブラリ同期とマージ、同期側優先）
-3. **キャプチャ連携** — Kindle Auto Capturer（v5.11.0以降、`~/Downloads/kindle-capturer-*`・CC-DEV管理外）がキャプチャ完了時に read.amazon.co.jp のページlocalStorage（`kobCapturedLog`）へ `{asin, title, ts}` を記録。本拡張の library-sync.js が5秒間隔で回収して `capturedItems` に永続化する（拡張ID不要のlocalStorageブリッジ方式なので、両マシンでそのまま動く）
+3. **キャプチャ連携** — Kindle Auto Capturer（v5.31.0以降、`~/Downloads/kindle-capturer-v5.2.4-ultimate/`・CC-DEV管理外）がキャプチャ完了時に read.amazon.co.jp のページlocalStorage（`kobCapturedLog`）へ `{asin, title, ts}` を記録。本拡張が5秒間隔で回収して `capturedItems` に永続化する（拡張ID不要のlocalStorageブリッジ方式なので、両マシンでそのまま動く）。回収は read.amazon.co.jp（library-sync.js）と www.amazon.co.jp（amazon-badge.js）の両方で行う — 後者は過去キャプチャPDFの一括バックフィル（ファイル名→Amazon検索でASIN解決→localStorage注入）の受け口
 4. **バッジ表示** — Amazon.co.jp の各ページで商品リンク（`/dp/ASIN` 等）や `data-asin` 属性からASINを抽出し、所有リストに含まれていればサムネイル右上にバッジを重ねる
    - 🔴 赤「済」= 購入済み
    - 🟦 ティール「済」= Kindle Unlimited / コミックUnlimited / Prime Reading で利用済み
