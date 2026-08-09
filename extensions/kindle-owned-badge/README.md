@@ -2,7 +2,7 @@
 
 Amazon.co.jp の商品サムネイルに、購入済み・Kindle Unlimited利用済みの「済」バッジを重ねて表示するChrome拡張。
 
-- バージョン: v0.1.1
+- バージョン: v0.2.0
 - 最終更新: 2026-08-09
 - 配置場所: `extensions/kindle-owned-badge/`（Firebase Hostingへはデプロイされないローカル拡張）
 
@@ -13,7 +13,9 @@ Amazon.co.jp の商品サムネイルに、購入済み・Kindle Unlimited利用
    - 🔴 赤「済」= 購入済み
    - 🟦 ティール「済」= Kindle Unlimited / コミックUnlimited / Prime Reading で利用済み
 
-検索結果・カルーセル（おすすめ枠）・商品詳細ページに対応。遅延ロードされる要素も MutationObserver で追従する。
+検索結果・カルーセル（おすすめ枠）・商品詳細ページ・Kindleストア本棚ページ（`/kindle-dbs/hz/bookshelf`）に対応。
+
+KindleストアページはShadow DOM（web components）で構築されているため、shadow rootを再帰的にたどってスキャンする。CSSはshadow root内へ届かないためバッジのスタイルは全てインライン指定。書影が `<bds-book-cover-image>` などさらに内側のshadow rootにある場合はアンカー要素自体にバッジを付ける。動的追加へは MutationObserver（通常DOM）＋3秒間隔の定期再スキャン（shadow DOM）で追従する。
 
 ## インストール手順
 
@@ -38,8 +40,7 @@ extensions/kindle-owned-badge/
 │   ├── icon48.png
 │   └── icon128.png
 ├── content/
-│   ├── amazon-badge.js      # Amazonページへのバッジ注入
-│   ├── badge.css            # バッジのスタイル
+│   ├── amazon-badge.js      # Amazonページへのバッジ注入（Shadow DOM対応・スタイルはインライン）
 │   └── library-sync.js      # Web版KindleライブラリAPIの同期
 ├── popup/
 │   ├── popup.html           # ポップアップUI（同期状況・手動同期・デバッグコピー）
