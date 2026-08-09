@@ -1,8 +1,8 @@
-// read.amazon.co.jp（Web版Kindle）のライブラリAPIから所有ASIN一覧を同期する
+// read.amazon.co.jp 用 content script。
+// ライブラリ同期の実体は background.js（service worker）に移行済みで、
+// ここでは ①ページを開いたときの自動同期トリガー ②Kindle Auto Capturer の
+// キャプチャ記録（kobCapturedLog）の回収 のみを行う。
 'use strict';
-
-const SYNC_MIN_INTERVAL_MS = 10 * 60 * 1000; // 自動同期の最短間隔: 10分
-let syncing = false;
 
 // 画面右下に進捗トーストを表示する
 function showToast(message) {
@@ -21,64 +21,6 @@ function showToast(message) {
   toast.textContent = message;
   clearTimeout(showToast.hideTimer);
   showToast.hideTimer = setTimeout(() => toast.remove(), 5000);
-}
-
-// ライブラリAPIを全ページ分たどって { asin: originType } を集める
-async function fetchAllLibraryItems() {
-  const items = {};
-  let paginationToken = null;
-
-  for (let page = 0; page < 400; page++) {
-    const url = new URL('/kindle-library/search', location.origin);
-    url.searchParams.set('libraryType', 'BOOKS');
-    url.searchParams.set('sortType', 'acquisition_desc');
-    url.searchParams.set('querySize', '50');
-    if (paginationToken) url.searchParams.set('paginationToken', paginationToken);
-
-    const res = await fetch(url.toString(), { credentials: 'include' });
-    if (!res.ok) throw new Error(`ライブラリAPIエラー: HTTP ${res.status}`);
-    const data = await res.json();
-
-    for (const item of data.itemsList || []) {
-      if (!item.asin) continue;
-      if (item.originType === 'SAMPLE') continue; // サンプルは所有扱いにしない
-      items[item.asin] = item.originType || 'PURCHASE';
-    }
-
-    paginationToken = data.paginationToken || null;
-    if (!paginationToken) break;
-    showToast(`Kindleライブラリを同期中… ${Object.keys(items).length}冊`);
-  }
-  return items;
-}
-
-async function syncLibrary(force) {
-  if (syncing) return { status: 'busy' };
-
-  const { lastSyncAt } = await chrome.storage.local.get(['lastSyncAt']);
-  if (!force && lastSyncAt && Date.now() - lastSyncAt < SYNC_MIN_INTERVAL_MS) {
-    return { status: 'skipped' };
-  }
-
-  syncing = true;
-  showToast('Kindleライブラリを同期中…');
-  try {
-    const items = await fetchAllLibraryItems();
-    await chrome.storage.local.set({
-      ownedItems: items,
-      lastSyncAt: Date.now(),
-      lastSyncError: null
-    });
-    const count = Object.keys(items).length;
-    showToast(`同期完了: ${count}冊`);
-    return { status: 'ok', count };
-  } catch (e) {
-    await chrome.storage.local.set({ lastSyncError: String(e) });
-    showToast('同期失敗: ' + (e.message || e));
-    return { status: 'error', message: String(e) };
-  } finally {
-    syncing = false;
-  }
 }
 
 // Kindle Auto Capturer がページlocalStorageに残したキャプチャ記録（kobCapturedLog）を回収する。
@@ -112,13 +54,11 @@ async function harvestCapturedLog() {
 harvestCapturedLog();
 setInterval(harvestCapturedLog, 5000); // キャプチャ中のセッションでも随時回収
 
-// ポップアップからの手動同期指示を受け付ける
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (msg && msg.type === 'SYNC_LIBRARY') {
-    syncLibrary(true).then(sendResponse);
-    return true; // 非同期応答
-  }
-});
-
-// ページを開いたら自動同期（?kob_sync=1 付きなら間隔制限を無視して強制同期）
-syncLibrary(new URLSearchParams(location.search).has('kob_sync'));
+// ページを開いたら自動同期を依頼（10分間隔制限つき。?kob_sync=1 なら強制）
+chrome.runtime.sendMessage({
+  type: 'SYNC_LIBRARY',
+  force: new URLSearchParams(location.search).has('kob_sync')
+}).then((result) => {
+  if (result && result.status === 'ok') showToast(`ライブラリ同期完了: ${result.count}冊`);
+  else if (result && result.status === 'error') showToast('同期失敗: ' + result.message);
+}).catch(() => {});

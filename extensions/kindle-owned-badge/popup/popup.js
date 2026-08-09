@@ -34,27 +34,23 @@ async function refreshStats() {
 }
 
 document.getElementById('syncBtn').addEventListener('click', async () => {
-  setStatus('同期を開始します…');
-  // 既にWeb版Kindleのタブが開いていればそこで同期、なければ新しいタブを開く
-  const tabs = await chrome.tabs.query({ url: 'https://read.amazon.co.jp/*' });
-  if (tabs.length > 0) {
-    try {
-      const result = await chrome.tabs.sendMessage(tabs[0].id, { type: 'SYNC_LIBRARY' });
-      if (result && result.status === 'ok') {
-        setStatus(`同期完了: ${result.count}冊`);
-      } else if (result && result.status === 'error') {
-        setStatus('同期失敗: ' + result.message, true);
-      } else {
-        setStatus('同期中です…');
-      }
-    } catch (_e) {
-      // content script 未読込のタブだった場合は開き直す
-      chrome.tabs.create({ url: READER_URL });
-      setStatus('Web版Kindleを開いて同期しています…');
+  setStatus('同期中…');
+  // 同期はbackground(service worker)が直接APIを叩く（タブを開く必要なし）
+  try {
+    const result = await chrome.runtime.sendMessage({ type: 'SYNC_LIBRARY', force: true });
+    if (result && result.status === 'ok') {
+      setStatus(`同期完了: ${result.count}冊`);
+    } else if (result && result.status === 'busy') {
+      setStatus('同期中です…');
+    } else if (result && result.status === 'error') {
+      setStatus('同期失敗: ' + result.message, true);
+      // 未ログイン時だけWeb版Kindleを開いてログインしてもらう
+      if (/ログイン/.test(result.message)) chrome.tabs.create({ url: READER_URL });
+    } else {
+      setStatus('');
     }
-  } else {
-    chrome.tabs.create({ url: READER_URL });
-    setStatus('Web版Kindleを開いて同期しています…');
+  } catch (e) {
+    setStatus('同期失敗: ' + (e.message || e), true);
   }
 });
 
@@ -77,8 +73,12 @@ document.getElementById('debugBtn').addEventListener('click', async () => {
 });
 
 // 同期の進行に合わせて表示を更新
-chrome.storage.onChanged.addListener((_changes, area) => {
-  if (area === 'local') refreshStats();
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local') return;
+  if (changes.syncProgress && changes.syncProgress.newValue && changes.syncProgress.newValue.running) {
+    setStatus(`同期中… ${changes.syncProgress.newValue.count || 0}冊`);
+  }
+  refreshStats();
 });
 
 refreshStats();
