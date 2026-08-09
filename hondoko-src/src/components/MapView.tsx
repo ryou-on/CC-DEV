@@ -1,33 +1,45 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
-import { BookOpen, Camera, ChevronLeft } from 'lucide-react'
-import { db } from '../firebase'
-import type { Book, Shelf, ShelfGroup, ShelfPhoto } from '../types'
+import { ref as storageRef, uploadString } from 'firebase/storage'
+import { BookOpen, Camera, ChevronLeft, ImagePlus } from 'lucide-react'
+import { db, storage } from '../firebase'
+import type { Book, Shelf, ShelfGroup, ShelfMap, ShelfPhoto } from '../types'
+import { resizeImageToBase64 } from '../lib/api'
+import { shelfCode } from '../lib/diff'
 import { PhotoDiffModal } from './PhotoDiffModal'
-import { btnPrimary } from './ui'
+import { MapPhotoView } from './MapPhotoView'
+import { btnPrimary, btnSecondary } from './ui'
 
 const GROUP_ORDER: ShelfGroup[] = ['メイン', 'サブ', '別室']
 
-const DEFAULT_SHELVES: { name: string; group: ShelfGroup; rows: number }[] = [
-  ...Array.from({ length: 6 }, (_, i) => ({ name: `IKEA-${i + 1}`, group: 'メイン' as ShelfGroup, rows: 7 })),
-  ...Array.from({ length: 3 }, (_, i) => ({ name: `サブ-${i + 1}`, group: 'サブ' as ShelfGroup, rows: 6 })),
-  { name: '別室-1', group: '別室' as ShelfGroup, rows: 6 },
+const DEFAULT_SHELVES: { name: string; code: string; group: ShelfGroup; rows: number }[] = [
+  ...Array.from({ length: 6 }, (_, i) => ({
+    name: `IKEA-${i + 1}`, code: String(i + 1), group: 'メイン' as ShelfGroup, rows: 7,
+  })),
+  ...Array.from({ length: 3 }, (_, i) => ({
+    name: `サブ-${i + 1}`, code: String(i + 7), group: 'サブ' as ShelfGroup, rows: 6,
+  })),
+  { name: '別室-1', code: '10', group: '別室' as ShelfGroup, rows: 6 },
 ]
 
 export function MapView({
   shelves,
   books,
   photos,
+  maps,
   onSelectBook,
 }: {
   shelves: Shelf[]
   books: Book[]
   photos: ShelfPhoto[]
+  maps: ShelfMap[]
   onSelectBook: (id: string) => void
 }) {
   const [selected, setSelected] = useState<{ shelfId: string; row: number } | null>(null)
   const [photoModal, setPhotoModal] = useState(false)
   const [seeding, setSeeding] = useState(false)
+  const [uploadingMap, setUploadingMap] = useState(false)
+  const mapInput = useRef<HTMLInputElement>(null)
 
   const countByLocation = useMemo(() => {
     const m = new Map<string, number>()
@@ -50,6 +62,27 @@ export function MapView({
       })
     }
     setSeeding(false)
+  }
+
+  const addMap = async (file: File) => {
+    const name = prompt('マップの名前(例: メインの壁)', 'メインの壁')
+    if (!name) return
+    setUploadingMap(true)
+    try {
+      const base64 = await resizeImageToBase64(file, 2000)
+      const path = `hondoko/maps/${Date.now()}.jpg`
+      await uploadString(storageRef(storage, path), base64, 'base64', { contentType: 'image/jpeg' })
+      await addDoc(collection(db, 'hondoko-maps'), {
+        name,
+        storagePath: path,
+        regions: [],
+        order: maps.length,
+        createdAt: serverTimestamp(),
+      })
+    } catch (e) {
+      alert('アップロードに失敗しました: ' + (e instanceof Error ? e.message : e))
+    }
+    setUploadingMap(false)
   }
 
   if (shelves.length === 0) {
@@ -82,8 +115,11 @@ export function MapView({
           <button onClick={() => setSelected(null)} className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-500">
             <ChevronLeft size={20} />
           </button>
-          <h2 className="font-bold text-stone-800">{shelf.name} — {selected.row}段目</h2>
-          <span className="text-sm text-stone-400">{booksInRow.length}冊</span>
+          <h2 className="font-bold text-stone-800">
+            {shelfCode(shelf)}-{selected.row}
+            <span className="text-sm font-normal text-stone-400 ml-2">{shelf.name} {selected.row}段目</span>
+          </h2>
+          <span className="text-sm text-stone-400 ml-auto">{booksInRow.length}冊</span>
         </div>
 
         <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
@@ -127,9 +163,45 @@ export function MapView({
     )
   }
 
-  // ---- 棚一覧ビュー ----
+  // ---- マップ一覧ビュー ----
   return (
     <div className="space-y-5">
+      {/* 写真マップ */}
+      {maps
+        .slice()
+        .sort((a, b) => a.order - b.order)
+        .map((m) => (
+          <MapPhotoView
+            key={m.id}
+            map={m}
+            shelves={shelves}
+            books={books}
+            onSelectRow={(shelfId, row) => setSelected({ shelfId, row })}
+          />
+        ))}
+
+      <div>
+        <input
+          ref={mapInput}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={(e) => e.target.files?.[0] && addMap(e.target.files[0])}
+        />
+        <button
+          className={btnSecondary + ' w-full inline-flex items-center justify-center gap-2'}
+          onClick={() => mapInput.current?.click()}
+          disabled={uploadingMap}
+        >
+          <ImagePlus size={16} />
+          {uploadingMap ? 'アップロード中…' : '本棚の写真からマップを追加'}
+        </button>
+        <p className="text-xs text-stone-400 mt-1 text-center">
+          壁全体の写真を追加 → 「領域編集」で段の範囲を囲んで棚-段を割り当てられます
+        </p>
+      </div>
+
+      {/* グリッド(一覧) */}
       {GROUP_ORDER.map((group) => {
         const groupShelves = shelves.filter((s) => s.group === group).sort((a, b) => a.order - b.order)
         if (groupShelves.length === 0) return null
@@ -145,7 +217,9 @@ export function MapView({
                 return (
                   <div key={shelf.id} className="bg-white rounded-xl border border-stone-200 p-3">
                     <div className="flex items-baseline justify-between mb-2">
-                      <span className="font-bold text-sm text-stone-800">{shelf.name}</span>
+                      <span className="font-bold text-sm text-stone-800">
+                        <span className="text-amber-700">{shelfCode(shelf)}</span> {shelf.name}
+                      </span>
                       <span className="text-xs text-stone-400">{shelfTotal}冊</span>
                     </div>
                     <div className="space-y-1">
@@ -159,7 +233,7 @@ export function MapView({
                               : 'bg-stone-50 border-stone-200 text-stone-400 hover:bg-stone-100'
                           }`}
                         >
-                          <span>{i + 1}段</span>
+                          <span>{shelfCode(shelf)}-{i + 1}</span>
                           <span className="font-medium">{count > 0 ? `${count}冊` : '—'}</span>
                         </button>
                       ))}

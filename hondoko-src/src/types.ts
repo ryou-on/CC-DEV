@@ -5,10 +5,31 @@ export type ShelfGroup = 'メイン' | 'サブ' | '別室'
 export interface Shelf {
   id: string
   name: string
+  code?: string // 棚番号(「1-3」表記の「1」部分)。未設定なら order+1
   group: ShelfGroup
   rows: number
   order: number
   note?: string
+}
+
+// マップ写真上の領域(座標は画像に対する 0〜1 の正規化値)
+export interface MapRegion {
+  id: string
+  shelfId: string
+  row: number
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+export interface ShelfMap {
+  id: string
+  name: string
+  storagePath: string
+  regions: MapRegion[]
+  order: number
+  createdAt: Timestamp | null
 }
 
 export type BookStatus = 'owned' | 'sold' | 'unplaced'

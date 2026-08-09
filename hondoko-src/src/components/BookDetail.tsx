@@ -3,7 +3,7 @@ import { deleteDoc, doc, serverTimestamp, updateDoc } from 'firebase/firestore'
 import { MapPin, Pencil, Trash2 } from 'lucide-react'
 import { db } from '../firebase'
 import type { Book, Shelf } from '../types'
-import { locationLabel } from '../lib/diff'
+import { locationLabel, locationLabelLong } from '../lib/diff'
 import { Modal, Tag, btnSecondary } from './ui'
 import { BookForm, KIND_LABEL } from './BookForm'
 
@@ -61,7 +61,7 @@ export function BookDetail({
       <div className="space-y-4">
         <div className="flex items-center gap-2 text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
           <MapPin size={18} className="shrink-0" />
-          <span className="font-bold">{locationLabel(book, shelves)}</span>
+          <span className="font-bold">{locationLabelLong(book, shelves)}</span>
         </div>
 
         <dl className="text-sm space-y-1.5">

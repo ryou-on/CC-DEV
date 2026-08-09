@@ -3,7 +3,7 @@ import { onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebas
 import { collection, doc, onSnapshot, query, orderBy } from 'firebase/firestore'
 import { BookOpen, LibraryBig, LogOut, PlusCircle, Search, Settings } from 'lucide-react'
 import { auth, db, googleProvider, OWNER_EMAIL } from './firebase'
-import type { Book, Shelf, ShelfPhoto } from './types'
+import type { Book, Shelf, ShelfMap, ShelfPhoto } from './types'
 import { APP_VERSION, RELEASE_NOTES, USAGE_GUIDE } from './version'
 import { SearchView } from './components/SearchView'
 import { MapView } from './components/MapView'
@@ -22,6 +22,7 @@ export default function App() {
   const [shelves, setShelves] = useState<Shelf[]>([])
   const [books, setBooks] = useState<Book[]>([])
   const [photos, setPhotos] = useState<ShelfPhoto[]>([])
+  const [maps, setMaps] = useState<ShelfMap[]>([])
   const [tab, setTab] = useState<Tab>('search')
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null)
@@ -52,7 +53,7 @@ export default function App() {
 
   // データ購読
   useEffect(() => {
-    if (memberState !== 'ok') { setShelves([]); setBooks([]); setPhotos([]); return }
+    if (memberState !== 'ok') { setShelves([]); setBooks([]); setPhotos([]); setMaps([]); return }
     const unsub1 = onSnapshot(query(collection(db, 'hondoko-shelves'), orderBy('order')), (snap) => {
       setShelves(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Shelf))
     })
@@ -62,7 +63,10 @@ export default function App() {
     const unsub3 = onSnapshot(collection(db, 'hondoko-photos'), (snap) => {
       setPhotos(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ShelfPhoto))
     })
-    return () => { unsub1(); unsub2(); unsub3() }
+    const unsub4 = onSnapshot(collection(db, 'hondoko-maps'), (snap) => {
+      setMaps(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ShelfMap))
+    })
+    return () => { unsub1(); unsub2(); unsub3(); unsub4() }
   }, [memberState])
 
   const selectedBook = useMemo(
@@ -143,7 +147,7 @@ export default function App() {
           <SearchView books={books} shelves={shelves} query={searchQuery} setQuery={setSearchQuery} onSelectBook={setSelectedBookId} />
         )}
         {tab === 'map' && (
-          <MapView shelves={shelves} books={books} photos={photos} onSelectBook={setSelectedBookId} />
+          <MapView shelves={shelves} books={books} photos={photos} maps={maps} onSelectBook={setSelectedBookId} />
         )}
         {tab === 'add' && <AddView shelves={shelves} books={books} />}
         {tab === 'settings' && (

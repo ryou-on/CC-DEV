@@ -1,11 +1,24 @@
 import type { Book, DetectedBook, DiffAction, Shelf } from '../types'
 import { titleMatches, normalize } from './text'
 
+export function shelfCode(shelf: Shelf): string {
+  return shelf.code || String(shelf.order + 1)
+}
+
+// 「棚番号-段数」形式(例: 1-3)
 export function locationLabel(book: Pick<Book, 'shelfId' | 'row' | 'status'>, shelves: Shelf[]): string {
   if (book.status === 'sold') return '売却済み'
   if (!book.shelfId || book.row == null) return '未配置'
   const shelf = shelves.find((s) => s.id === book.shelfId)
-  return shelf ? `${shelf.name} ${book.row}段目` : '不明な棚'
+  return shelf ? `${shelfCode(shelf)}-${book.row}` : '不明な棚'
+}
+
+// 詳細表示用の長い形式(例: 1-3(IKEA-1 3段目))
+export function locationLabelLong(book: Pick<Book, 'shelfId' | 'row' | 'status'>, shelves: Shelf[]): string {
+  if (book.status === 'sold') return '売却済み'
+  if (!book.shelfId || book.row == null) return '未配置'
+  const shelf = shelves.find((s) => s.id === book.shelfId)
+  return shelf ? `${shelfCode(shelf)}-${book.row}（${shelf.name} ${book.row}段目）` : '不明な棚'
 }
 
 function sameBook(d: DetectedBook, b: Book): boolean {

@@ -28,6 +28,7 @@ export function SettingsView({
     if (!name) return
     await addDoc(collection(db, 'hondoko-shelves'), {
       name,
+      code: String(shelves.length + 1),
       group: 'サブ' as ShelfGroup,
       rows: 6,
       order: shelves.length,
@@ -74,7 +75,7 @@ export function SettingsView({
 
       <section className="bg-white rounded-xl border border-stone-200 p-4">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="font-bold text-sm text-stone-700">棚の管理</h2>
+          <h2 className="font-bold text-sm text-stone-700">棚の管理 <span className="font-normal text-xs text-stone-400">(番号・名前・グループ・段数)</span></h2>
           <button className={btnSecondary + ' !py-1.5 !px-3 text-xs inline-flex items-center gap-1'} onClick={addShelf}>
             <Plus size={14} /> 棚を追加
           </button>
@@ -83,7 +84,13 @@ export function SettingsView({
           {shelves.map((s) => (
             <li key={s.id} className="flex items-center gap-2">
               <input
-                className={inputCls + ' !w-32'}
+                className={inputCls + ' !w-14 text-center'}
+                title="棚番号(場所表記「番号-段」に使用)"
+                defaultValue={s.code ?? String(s.order + 1)}
+                onBlur={(e) => e.target.value !== (s.code ?? '') && updateShelf(s, { code: e.target.value.trim() })}
+              />
+              <input
+                className={inputCls + ' !w-28'}
                 defaultValue={s.name}
                 onBlur={(e) => e.target.value !== s.name && updateShelf(s, { name: e.target.value })}
               />

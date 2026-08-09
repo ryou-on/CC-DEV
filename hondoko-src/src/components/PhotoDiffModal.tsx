@@ -7,7 +7,7 @@ import { Camera, Check } from 'lucide-react'
 import { auth, db, storage } from '../firebase'
 import type { Book, DiffAction, Shelf } from '../types'
 import { analyzePhoto, resizeImageToBase64 } from '../lib/api'
-import { computeDiff } from '../lib/diff'
+import { computeDiff, shelfCode } from '../lib/diff'
 import { Modal, Spinner, btnPrimary, btnSecondary, inputCls } from './ui'
 
 type MissingChoice = 'unplaced' | 'sold' | 'keep'
@@ -162,7 +162,7 @@ export function PhotoDiffModal({
   }
 
   return (
-    <Modal title={`${shelf.name} ${row}段目 — 写真で更新`} onClose={onClose} wide>
+    <Modal title={`${shelfCode(shelf)}-${row}（${shelf.name}）— 写真で更新`} onClose={onClose} wide>
       {step === 'pick' && (
         <div className="text-center py-6 space-y-4">
           <p className="text-sm text-stone-600 whitespace-pre-line">
