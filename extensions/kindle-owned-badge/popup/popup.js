@@ -11,16 +11,18 @@ function setStatus(text, isError) {
 }
 
 async function refreshStats() {
-  const { ownedItems, lastSyncAt, lastSyncError } =
-    await chrome.storage.local.get(['ownedItems', 'lastSyncAt', 'lastSyncError']);
+  const { ownedItems, kuHistoryItems, lastSyncAt, lastSyncError } =
+    await chrome.storage.local.get(['ownedItems', 'kuHistoryItems', 'lastSyncAt', 'lastSyncError']);
 
-  const items = ownedItems || {};
-  const types = Object.values(items);
+  // ライブラリ同期と商品ページ収集履歴をマージ（同期側優先、バッジ表示と同じロジック）
+  const merged = Object.assign({}, kuHistoryItems || {}, ownedItems || {});
+  const types = Object.values(merged);
   const rentalCount = types.filter((t) => RENTAL_TYPES.has(t)).length;
 
   document.getElementById('totalCount').textContent = types.length;
   document.getElementById('purchaseCount').textContent = types.length - rentalCount;
   document.getElementById('rentalCount').textContent = rentalCount;
+  document.getElementById('historyCount').textContent = Object.keys(kuHistoryItems || {}).length;
   document.getElementById('lastSync').textContent = lastSyncAt
     ? new Date(lastSyncAt).toLocaleString('ja-JP')
     : '未同期';
@@ -55,13 +57,15 @@ document.getElementById('syncBtn').addEventListener('click', async () => {
 
 // デバッグ用: 状態一式をクリップボードへコピー
 document.getElementById('debugBtn').addEventListener('click', async () => {
-  const data = await chrome.storage.local.get(['ownedItems', 'lastSyncAt', 'lastSyncError']);
+  const data = await chrome.storage.local.get(['ownedItems', 'kuHistoryItems', 'lastSyncAt', 'lastSyncError']);
   const debugInfo = {
     version: chrome.runtime.getManifest().version,
-    totalCount: Object.keys(data.ownedItems || {}).length,
+    syncedCount: Object.keys(data.ownedItems || {}).length,
+    kuHistoryCount: Object.keys(data.kuHistoryItems || {}).length,
     lastSyncAt: data.lastSyncAt ? new Date(data.lastSyncAt).toISOString() : null,
     lastSyncError: data.lastSyncError || null,
-    sampleAsins: Object.entries(data.ownedItems || {}).slice(0, 5)
+    sampleAsins: Object.entries(data.ownedItems || {}).slice(0, 5),
+    sampleKuHistory: Object.entries(data.kuHistoryItems || {}).slice(0, 5)
   };
   await navigator.clipboard.writeText(JSON.stringify(debugInfo, null, 2));
   setStatus('デバッグ情報をコピーしました');

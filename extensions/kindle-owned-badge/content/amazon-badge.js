@@ -3,8 +3,13 @@
 // shadow root を再帰的にたどってスキャンする。CSSはshadow root内に届かないので全てインラインで指定する。
 'use strict';
 
-// 所有ASIN → originType のマップ（chrome.storage から読み込み）
+// 所有ASIN → originType のマップ（ライブラリ同期 + 商品ページから収集した履歴のマージ）
 let ownedMap = {};
+
+// ライブラリ同期が優先（履歴でKU利用→その後購入した場合はPURCHASEで上書き）
+function rebuildOwnedMap(data) {
+  ownedMap = Object.assign({}, data.kuHistoryItems || {}, data.ownedItems || {});
+}
 
 // 商品リンクからASINを抜き出す正規表現
 const ASIN_REGEX = /\/(?:dp|gp\/product|gp\/aw\/d)\/([A-Z0-9]{10})(?=[/?&%]|$)/;
@@ -90,6 +95,28 @@ function scanAll() {
   }
 }
 
+// 商品ページの「Kindle Unlimitedで〇月〇日に利用しました」バナー（#booksInstantOrderUpdate）から
+// 利用履歴を収集する。返却済みKU本の一覧を取れるAPIが存在しないため、
+// 商品ページを開いたタイミングで記録して以後のバッジ表示に使う。
+async function collectFromInstantOrderUpdate() {
+  const banner = document.querySelector('#booksInstantOrderUpdate');
+  if (!banner) return;
+  const asin = extractAsin(location.pathname) || extractAsin(location.href);
+  if (!asin) return;
+
+  const text = banner.textContent || '';
+  let originType = null;
+  if (/Kindle Unlimitedで.*利用しました/.test(text)) originType = 'KINDLE_UNLIMITED';
+  else if (/購入(?:しました|済み)|お買い上げ/.test(text)) originType = 'PURCHASE';
+  if (!originType) return;
+
+  const { kuHistoryItems } = await chrome.storage.local.get(['kuHistoryItems']);
+  const history = kuHistoryItems || {};
+  if (history[asin] === originType) return;
+  history[asin] = originType;
+  await chrome.storage.local.set({ kuHistoryItems: history });
+}
+
 // 動的追加への追従:
 // - MutationObserver: 通常DOMの変化（検索結果の絞り込み等）
 // - setInterval: shadow root内の変化はObserverでは拾えないため定期再スキャン
@@ -104,19 +131,25 @@ const observer = new MutationObserver(() => {
   }, 600);
 });
 
-chrome.storage.local.get(['ownedItems']).then(({ ownedItems }) => {
-  ownedMap = ownedItems || {};
+chrome.storage.local.get(['ownedItems', 'kuHistoryItems']).then((data) => {
+  rebuildOwnedMap(data);
   scanAll();
   observer.observe(document.body, { childList: true, subtree: true });
   setInterval(() => {
     if (!document.hidden) scanAll();
   }, 3000);
+  // バナーは初期HTMLに含まれるが、念のため少し遅らせて再チェック
+  collectFromInstantOrderUpdate();
+  setTimeout(collectFromInstantOrderUpdate, 2500);
 });
 
-// 同期が走ったら即座にバッジを反映
+// 同期・履歴収集が走ったら即座にバッジを反映
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === 'local' && changes.ownedItems) {
-    ownedMap = changes.ownedItems.newValue || {};
-    scanAll();
+  if (area !== 'local') return;
+  if (changes.ownedItems || changes.kuHistoryItems) {
+    chrome.storage.local.get(['ownedItems', 'kuHistoryItems']).then((data) => {
+      rebuildOwnedMap(data);
+      scanAll();
+    });
   }
 });
