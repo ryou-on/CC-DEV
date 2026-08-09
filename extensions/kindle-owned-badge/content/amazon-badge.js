@@ -6,9 +6,13 @@
 // 所有ASIN → originType のマップ（ライブラリ同期 + 商品ページから収集した履歴のマージ）
 let ownedMap = {};
 
-// ライブラリ同期が優先（履歴でKU利用→その後購入した場合はPURCHASEで上書き）
+// ライブラリ同期が履歴収集より優先（履歴でKU利用→その後購入した場合はPURCHASEで上書き）。
+// キャプチャ済み（Kindle Auto Capturer連携）は「アーカイブ確保済み」の意味で最優先表示
 function rebuildOwnedMap(data) {
   ownedMap = Object.assign({}, data.kuHistoryItems || {}, data.ownedItems || {});
+  for (const asin of Object.keys(data.capturedItems || {})) {
+    ownedMap[asin] = 'CAPTURED';
+  }
 }
 
 // 商品リンクからASINを抜き出す正規表現
@@ -33,11 +37,20 @@ function extractAsin(url) {
 
 function createBadge(originType) {
   const badge = document.createElement('span');
-  const isRental = RENTAL_TYPES.has(originType);
   badge.className = 'kob-badge';
   badge.textContent = '済';
-  badge.title = isRental ? 'Kindle Unlimitedで利用済み' : '購入済み';
-  badge.style.cssText = BADGE_BASE_STYLE + ';background:' + (isRental ? '#007185' : '#cc0c39');
+  let background;
+  if (originType === 'CAPTURED') {
+    badge.title = 'キャプチャ済み';
+    background = '#6d28d9';
+  } else if (RENTAL_TYPES.has(originType)) {
+    badge.title = 'Kindle Unlimitedで利用済み';
+    background = '#007185';
+  } else {
+    badge.title = '購入済み';
+    background = '#cc0c39';
+  }
+  badge.style.cssText = BADGE_BASE_STYLE + ';background:' + background;
   return badge;
 }
 
@@ -131,7 +144,7 @@ const observer = new MutationObserver(() => {
   }, 600);
 });
 
-chrome.storage.local.get(['ownedItems', 'kuHistoryItems']).then((data) => {
+chrome.storage.local.get(['ownedItems', 'kuHistoryItems', 'capturedItems']).then((data) => {
   rebuildOwnedMap(data);
   scanAll();
   observer.observe(document.body, { childList: true, subtree: true });
@@ -146,8 +159,8 @@ chrome.storage.local.get(['ownedItems', 'kuHistoryItems']).then((data) => {
 // 同期・履歴収集が走ったら即座にバッジを反映
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local') return;
-  if (changes.ownedItems || changes.kuHistoryItems) {
-    chrome.storage.local.get(['ownedItems', 'kuHistoryItems']).then((data) => {
+  if (changes.ownedItems || changes.kuHistoryItems || changes.capturedItems) {
+    chrome.storage.local.get(['ownedItems', 'kuHistoryItems', 'capturedItems']).then((data) => {
       rebuildOwnedMap(data);
       scanAll();
     });

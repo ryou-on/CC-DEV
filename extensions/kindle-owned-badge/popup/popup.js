@@ -11,17 +11,20 @@ function setStatus(text, isError) {
 }
 
 async function refreshStats() {
-  const { ownedItems, kuHistoryItems, lastSyncAt, lastSyncError } =
-    await chrome.storage.local.get(['ownedItems', 'kuHistoryItems', 'lastSyncAt', 'lastSyncError']);
+  const { ownedItems, kuHistoryItems, capturedItems, lastSyncAt, lastSyncError } =
+    await chrome.storage.local.get(['ownedItems', 'kuHistoryItems', 'capturedItems', 'lastSyncAt', 'lastSyncError']);
 
   // ライブラリ同期と商品ページ収集履歴をマージ（同期側優先、バッジ表示と同じロジック）
   const merged = Object.assign({}, kuHistoryItems || {}, ownedItems || {});
   const types = Object.values(merged);
   const rentalCount = types.filter((t) => RENTAL_TYPES.has(t)).length;
+  const captured = capturedItems || {};
+  const totalCount = Object.keys(Object.assign({}, merged, captured)).length;
 
-  document.getElementById('totalCount').textContent = types.length;
+  document.getElementById('totalCount').textContent = totalCount;
   document.getElementById('purchaseCount').textContent = types.length - rentalCount;
   document.getElementById('rentalCount').textContent = rentalCount;
+  document.getElementById('capturedCount').textContent = Object.keys(captured).length;
   document.getElementById('historyCount').textContent = Object.keys(kuHistoryItems || {}).length;
   document.getElementById('lastSync').textContent = lastSyncAt
     ? new Date(lastSyncAt).toLocaleString('ja-JP')
@@ -57,11 +60,13 @@ document.getElementById('syncBtn').addEventListener('click', async () => {
 
 // デバッグ用: 状態一式をクリップボードへコピー
 document.getElementById('debugBtn').addEventListener('click', async () => {
-  const data = await chrome.storage.local.get(['ownedItems', 'kuHistoryItems', 'lastSyncAt', 'lastSyncError']);
+  const data = await chrome.storage.local.get(['ownedItems', 'kuHistoryItems', 'capturedItems', 'lastSyncAt', 'lastSyncError']);
   const debugInfo = {
     version: chrome.runtime.getManifest().version,
     syncedCount: Object.keys(data.ownedItems || {}).length,
     kuHistoryCount: Object.keys(data.kuHistoryItems || {}).length,
+    capturedCount: Object.keys(data.capturedItems || {}).length,
+    sampleCaptured: Object.entries(data.capturedItems || {}).slice(0, 5),
     lastSyncAt: data.lastSyncAt ? new Date(data.lastSyncAt).toISOString() : null,
     lastSyncError: data.lastSyncError || null,
     sampleAsins: Object.entries(data.ownedItems || {}).slice(0, 5),

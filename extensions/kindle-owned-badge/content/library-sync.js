@@ -81,6 +81,37 @@ async function syncLibrary(force) {
   }
 }
 
+// Kindle Auto Capturer がページlocalStorageに残したキャプチャ記録（kobCapturedLog）を回収する。
+// 回収後はlocalStorage側を消し、chrome.storage の capturedItems に永続化する
+async function harvestCapturedLog() {
+  let log;
+  try {
+    log = JSON.parse(localStorage.getItem('kobCapturedLog') || '[]');
+  } catch (e) {
+    localStorage.removeItem('kobCapturedLog');
+    return;
+  }
+  if (!Array.isArray(log) || !log.length) return;
+
+  const { capturedItems } = await chrome.storage.local.get(['capturedItems']);
+  const items = capturedItems || {};
+  let added = 0;
+  for (const entry of log) {
+    if (!entry || !/^[A-Z0-9]{10}$/.test(entry.asin || '')) continue;
+    if (entry.asin in items) continue;
+    items[entry.asin] = { title: entry.title || '', ts: entry.ts || Date.now() };
+    added++;
+  }
+  if (added) {
+    await chrome.storage.local.set({ capturedItems: items });
+    showToast(`キャプチャ記録を${added}冊取り込みました`);
+  }
+  localStorage.removeItem('kobCapturedLog');
+}
+
+harvestCapturedLog();
+setInterval(harvestCapturedLog, 5000); // キャプチャ中のセッションでも随時回収
+
 // ポップアップからの手動同期指示を受け付ける
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg && msg.type === 'SYNC_LIBRARY') {
