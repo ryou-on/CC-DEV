@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ユーキャン175本 見積もりシミュレーター（社内版）</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<style>
+:root{
+  --bg:#f5f6f8; --card:#ffffff; --text:#1a2233; --sub:#5b6577;
+  --border:#dde1e8; --accent:#2563eb; --accent-bg:#eff4ff;
+  --full:#b45309; --tts:#047857; --hl:#fef3c7; --spline:#1faa4b;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#12151c; --card:#1c2029; --text:#e8ebf2; --sub:#9aa3b5;
+    --border:#333a48; --accent:#5b8def; --accent-bg:#1e2a44;
+    --full:#f59e0b; --tts:#34d399; --hl:#3a3320; --spline:#2ec96b;
+  }
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"Hiragino Sans","Noto Sans JP",sans-serif;background:var(--bg);color:var(--text);line-height:1.55}
+.app{padding:0 16px 16px}
+#banner{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  background:var(--card);border-bottom:2px solid var(--accent);padding:10px 16px;margin:0 -16px 14px}
+#banner .plan{font-size:.95rem;font-weight:700}
+#banner .plan small{display:block;font-size:.68rem;color:var(--sub);font-weight:400}
+#banner .total{font-size:1.35rem;font-weight:800;color:var(--accent);font-variant-numeric:tabular-nums;margin-left:auto}
+#banner .total small{font-size:.68rem;color:var(--sub);font-weight:400;display:block;text-align:right}
+#banner button{padding:8px 14px;border:none;border-radius:7px;background:var(--spline);color:#fff;font-size:.8rem;font-weight:600;cursor:pointer}
+header{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px}
+h1{font-size:1.1rem}
+.ver{font-size:.72rem;color:var(--sub);border:1px solid var(--border);border-radius:10px;padding:1px 8px}
+.note{font-size:.75rem;color:var(--sub);margin-bottom:14px}
+.wrap{display:grid;grid-template-columns:minmax(300px,380px) 1fr;gap:14px}
+@media(max-width:860px){.wrap{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px}
+.card h2{font-size:.85rem;margin-bottom:10px;color:var(--accent)}
+.row{margin-bottom:10px}
+.row label{display:flex;justify-content:space-between;font-size:.78rem;color:var(--sub);margin-bottom:2px}
+.row label b{color:var(--text);font-variant-numeric:tabular-nums}
+input[type=range]{width:100%;accent-color:var(--accent)}
+input[type=number],input[type=text],input[type=date],select,textarea{padding:3px 6px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:.8rem;font-family:inherit}
+select{max-width:100%}
+textarea{width:100%;resize:vertical}
+.inline{display:flex;align-items:center;gap:8px;font-size:.78rem;color:var(--sub);flex-wrap:wrap}
+.ptable{width:100%;border-collapse:collapse;font-size:.75rem}
+.ptable th,.ptable td{border:1px solid var(--border);padding:4px 6px;text-align:center}
+.ptable input[type=number]{width:60px}
+.pmatrix{display:grid;grid-template-columns:auto 1fr 1fr 1fr;gap:6px;align-items:stretch;margin-bottom:6px}
+.pmatrix .rowlab{display:flex;align-items:center;font-size:.72rem;font-weight:600;color:var(--sub);padding-right:4px}
+.pmatrix .collab{font-size:.7rem;color:var(--sub);text-align:center;padding:2px 0}
+.combo{border:1px solid var(--border);border-radius:8px;padding:8px 10px;cursor:pointer;background:var(--card);text-align:left;font-family:inherit;color:var(--text)}
+.combo:hover{border-color:var(--accent)}
+.combo.sel{border-color:var(--accent);background:var(--accent-bg);box-shadow:0 0 0 1px var(--accent)}
+.combo:disabled{opacity:.35;cursor:default;text-align:center;color:var(--sub)}
+.combo.span{grid-column:2/5}
+.combo .tag{font-size:.66rem;font-weight:600}
+.combo .tag.full{color:var(--full)}
+.combo .tag.tts{color:var(--tts)}
+.combo .period{font-size:.7rem;color:var(--sub)}
+.combo .amt{font-size:1rem;font-weight:700;font-variant-numeric:tabular-nums;margin-top:1px}
+.combo .per{font-size:.66rem;color:var(--sub)}
+.detail{width:100%;border-collapse:collapse;font-size:.78rem}
+.detail th,.detail td{border-bottom:1px solid var(--border);padding:5px 6px;text-align:left}
+.detail td:last-child{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.detail tr.total td{font-weight:700;font-size:.9rem;border-top:2px solid var(--accent);background:var(--hl)}
+.detail tr.sub td{color:var(--sub)}
+button.copy{margin-top:10px;padding:7px 14px;border:none;border-radius:7px;background:var(--accent);color:#fff;font-size:.8rem;cursor:pointer}
+button.copy:active{opacity:.8}
+.assume{font-size:.72rem;color:var(--sub);margin-top:8px}
+.qinfo label{display:block;font-size:.72rem;color:var(--sub);margin:6px 0 2px}
+/* ===== 社内ログインゲート ===== */
+#authGate{position:fixed;inset:0;z-index:200;background:var(--bg);display:flex;align-items:center;justify-content:center}
+#authGate .box{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:28px 32px;width:340px;text-align:center}
+#authGate h2{font-size:1rem;margin-bottom:6px}
+#authGate .sub2{font-size:.72rem;color:var(--sub);margin-bottom:18px}
+#authGate button{padding:10px 20px;border:none;border-radius:7px;background:var(--accent);color:#fff;font-size:.85rem;font-weight:700;cursor:pointer}
+#authGate .err{color:#d64545;font-size:.72rem;margin-top:10px;min-height:1em}
+body.locked>*:not(#authGate){display:none !important}
+.qinfo input[type=text],.qinfo input[type=date]{width:100%}
+#sheetOverlay{display:none;position:fixed;inset:0;z-index:50;background:rgba(20,24,32,.55);overflow:auto;padding:24px 8px}
+body.preview #sheetOverlay{display:block}
+#sheetBar{max-width:760px;margin:0 auto 10px;display:flex;gap:10px;justify-content:flex-end}
+#sheetBar button{padding:8px 16px;border:none;border-radius:7px;font-size:.8rem;font-weight:600;cursor:pointer}
+#btnPrint{background:var(--spline);color:#fff}
+#btnClose{background:#666;color:#fff}
+.sheetpage{max-width:760px;margin:0 auto 24px;background:#fff;color:#1a2233;padding:48px 52px;font-size:12px;line-height:1.6;box-shadow:0 4px 24px rgba(0,0,0,.3)}
+.sheetpage .logo{text-align:right;font-size:30px;font-weight:800;letter-spacing:3px;color:#1faa4b;font-family:Verdana,"Hiragino Sans",sans-serif}
+.sheetpage .corp{text-align:right;font-size:10px;color:#444;margin-top:2px}
+.sheetpage .corp a{color:#1a4fa0;text-decoration:underline}
+.sheetpage h3{text-align:center;font-size:15px;font-weight:600;margin:26px 0 20px;letter-spacing:2px}
+.sheetpage .client{font-size:12px;margin-bottom:18px}
+.sheetpage .client .to{font-size:14px;font-weight:600;margin-top:6px}
+.sheetpage .meta{text-align:right;font-size:11px;color:#444;margin-top:-40px;margin-bottom:18px}
+.sheetpage .plan{text-align:center;font-size:15px;font-weight:700;margin:14px 0 8px}
+.sheetpage .lead{font-size:11px;font-weight:600;color:#1a3a7a;margin-top:12px}
+.sheetpage .leadval{font-size:11px;margin-bottom:2px;white-space:pre-wrap}
+.sheetpage .grand{font-size:16px;font-weight:800;margin:4px 0 14px}
+.sheetpage table.q{width:100%;border-collapse:collapse;font-size:11px;margin-top:6px}
+.sheetpage table.q th,.sheetpage table.q td{border:1px solid #333;padding:5px 7px}
+.sheetpage table.q th{background:#f0f2f5;font-weight:600;text-align:left}
+.sheetpage table.q td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.sheetpage table.q td.c{text-align:center}
+.sheetpage table.q tr.sum td{font-weight:600}
+.sheetpage table.q tr.grandrow td{font-weight:800;background:#f0f2f5}
+.sheetpage .bikoh{font-size:11px;font-weight:600;margin:18px 0 4px}
+.sheetpage .bikobox{border:1px solid #333;min-height:70px;padding:8px;font-size:10.5px;white-space:pre-wrap}
+@media print{
+  body{background:#fff}
+  .app,#banner,#sheetBar{display:none !important}
+  #sheetOverlay{display:block !important;position:static;background:none;padding:0;overflow:visible}
+  .sheetpage{box-shadow:none;max-width:none;margin:0;padding:20px 10px;page-break-after:always}
+  .sheetpage:last-child{page-break-after:auto}
+}
+</style>
+</head>
+<body class="locked">
+<div id="authGate">
+  <div class="box">
+    <h2>見積もりシミュレーター（社内版）</h2>
+    <div class="sub2">スプライングローバル社内専用 — Googleアカウントでログインしてください</div>
+    <button id="btnGoogleLogin">Googleでログイン</button>
+    <div class="err" id="authErr"></div>
+  </div>
+</div>
+<div id="banner">
+  <div class="plan"><small>選択中のプラン</small><span id="bPlan"></span></div>
+  <div class="total"><small id="bTaxNote"></small><span id="bTotal"></span></div>
+  <button id="btnSheet">見積書プレビュー / PDF出力</button>
+  <button id="btnSheetAll" style="background:var(--accent)">全プラン一括見積書</button>
+</div>
+
+<div class="app">
+<header>
+  <h1>ユーキャン175本 見積もりシミュレーター</h1>
+  <span class="ver">v4.3.0 社内版</span>
+</header>
+<p class="note">明友社向け撮影・音声パート見積もり用。金額はすべて税別・推定値（見積書出力は税込表記）。8h拘束/日・設営撤収は連日借り上げ時クール初日/最終日のみ発生するモデル。</p>
+
+<div class="wrap">
+<div>
+  <div class="card">
+    <h2>共通パラメータ</h2>
+    <div class="row"><label>動画本数 <b id="vN"></b></label><input type="range" id="pN" min="10" max="400" step="5" value="175"></div>
+    <div class="row"><label>1日の拘束時間（時間） <b id="vHours"></b></label><input type="range" id="pHours" min="4" max="12" step="0.5" value="8"></div>
+    <div class="row inline">設営 <input type="number" id="pSetupH" value="2" min="0" step="0.5" style="width:60px">h ／ 撤収 <input type="number" id="pTearH" value="1" min="0" step="0.5" style="width:60px">h（クール初日/最終日のみ）</div>
+    <div class="row"><label>ディレクター日額（表・撮影日に常駐 円/日） <b id="vDir"></b></label><input type="range" id="pDir" min="0" max="120000" step="5000" value="50000"></div>
+    <div class="row inline">オペレーター人数 <select id="pOpeN"><option value="0">0名（オペ込みスタジオ等）</option><option value="1" selected>1名</option><option value="2">2名</option><option value="3">3名</option></select></div>
+    <div class="row"><label>オペレーター単価（円/人日） <b id="vOpe"></b></label><input type="range" id="pOpe" min="30000" max="120000" step="5000" value="50000"></div>
+    <div class="row"><label>機材費（設営撤収込・初日満額 円/日） <b id="vEq"></b></label><input type="range" id="pEq" min="0" max="100000" step="5000" value="50000"></div>
+    <div class="row inline">機材費 連日2日目以降の係数 <input type="number" id="pEqCont" value="0.6" min="0" max="1" step="0.05" style="width:64px">（クール初日は満額、連日2日目以降は×係数で割引）</div>
+    <div class="row inline">スタジオ・場所代/日
+      <select id="pStudio">
+        <option value="0" selected>明友社/ユーキャン会議室（0円・機材持ち込み）</option>
+        <option value="50000">曙橋プライベートスタジオ（50,000円/8h・住居兼）</option>
+        <option value="100000">秋葉原駅前スタジオ（100,000円/8h）</option>
+        <option value="300000">品川動画配信スタジオ（300,000円/8h・オペ1名込・控え室あり）</option>
+      </select>
+    </div>
+    <p class="assume" style="margin:2px 0 10px">※ スタジオ撮影時は<b>機材費・車両費を自動で0円</b>（交通費は計上）。曙橋・秋葉原はアシスタント（オペレーター）1名必要 → 自動で1名以上に。品川はオペレーター込み → 自動で0名に。<b>曙橋は住居兼プライベートスタジオのため、ユーキャン様のお立ち会いや講師によっては受け入れがたい可能性あり</b>（見積書にも自動で注記）。</p>
+    <div class="row"><label>車両費（機材運搬・往復 円/日） <b id="vVeh"></b></label><input type="range" id="pVeh" min="0" max="60000" step="1000" value="24000"></div>
+    <div class="row"><label>交通費（往復 円/人日・ディレクター＋オペ分） <b id="vTravel"></b></label><input type="range" id="pTravel" min="0" max="20000" step="500" value="3000"></div>
+    <div class="row"><label>雑費（弁当等 円/日） <b id="vMisc"></b></label><input type="range" id="pMisc" min="0" max="50000" step="1000" value="10000"></div>
+    <div class="row"><label>データ整理・納品 一式（円） <b id="vData"></b></label><input type="range" id="pData" min="0" max="200000" step="10000" value="50000"></div>
+    <div class="row"><label>プロジェクト管理費率（%） <b id="vMgmt"></b></label><input type="range" id="pMgmt" min="0" max="20" step="1" value="10"></div>
+    <div class="row"><label>ボリュームディスカウント（%） <b id="vDisc"></b></label><input type="range" id="pDisc" min="0" max="30" step="1" value="0"></div>
+    <div class="row inline"><label style="display:flex;gap:6px;align-items:center"><input type="checkbox" id="pTax"> シミュレーター表示を税込（10%）にする</label></div>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h2>パターン1：フルスペック</h2>
+    <div class="row"><label>1本あたり撮影時間（分） <b id="vFullMin"></b></label><input type="range" id="pFullMin" min="15" max="90" step="5" value="40"></div>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h2>パターン2：STS活用（シラビズ）</h2>
+    <div class="row"><label>OP/ED撮影時間/本（分） <b id="vOpMin"></b></label><input type="range" id="pOpMin" min="1" max="30" step="1" value="10"></div>
+    <div class="row"><label>STS初期設定・講師ボイス学習 一式（円） <b id="vTtsInit"></b></label><input type="range" id="pTtsInit" min="0" max="1000000" step="50000" value="0"></div>
+    <div class="row"><label>STSシステム貸与料/本（円） <b id="vTtsPer"></b></label><input type="range" id="pTtsPer" min="0" max="30000" step="500" value="10000"></div>
+    <div class="row"><label>STSサポート回数（フルSTS用・2h/回） <b id="vSupN"></b></label><input type="range" id="pSupN" min="0" max="30" step="1" value="5"></div>
+    <div class="row"><label>STSサポート単価（円/回・2h） <b id="vSupFee"></b></label><input type="range" id="pSupFee" min="0" max="100000" step="5000" value="40000"></div>
+    <p class="assume">※ 講師本人の声で音声生成（Slide-to-Speech）。音声変換作業は明友社側・SpringGlobalはシステム貸与。STSでは撮影部分のみ稼働。フルSTSは撮影なしのため撮影費用0円＋サポート費（4万円/2h）を計上。</p>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h2>期間パターン（松竹梅）</h2>
+    <table class="ptable">
+      <tr><th></th><th>クール数</th><th>単価割増%</th><th>予備率%</th></tr>
+      <tr><td>梅：短期集中</td><td><input type="number" id="c0" value="1" min="1"></td><td><input type="number" id="s0" value="0" min="0"></td><td><input type="number" id="r0" value="5" min="0"></td></tr>
+      <tr><td>竹：3クール</td><td><input type="number" id="c1" value="3" min="1"></td><td><input type="number" id="s1" value="5" min="0"></td><td><input type="number" id="r1" value="10" min="0"></td></tr>
+      <tr><td>松：長期分割</td><td><input type="number" id="c2" value="8" min="1"></td><td><input type="number" id="s2" value="15" min="0"></td><td><input type="number" id="r2" value="15" min="0"></td></tr>
+    </table>
+    <p class="assume">クール＝連日借り上げの単位。設営/撤収は各クールの初日・最終日のみ。単価割増はディレクター・オペレーター・機材費に適用（車両費・交通費・雑費は実費のため対象外）。予備率はリテイク分を撮影時間に上乗せ。フルSTSは撮影がないため期間パターンの影響なし。</p>
+  </div>
+
+  <div class="card qinfo" style="margin-top:14px">
+    <h2>見積書情報（PDF出力用）</h2>
+    <label>宛先 会社名</label><input type="text" id="qCompany" value="株式会社明友社">
+    <label>宛先 担当者名（空欄可）</label><input type="text" id="qPerson" value="">
+    <label>発行日</label><input type="date" id="qDate">
+    <label>見積番号（空欄可）</label><input type="text" id="qNo" value="">
+    <label>備考（見積書の備考欄に印字）</label>
+    <textarea id="qBiko" rows="6">・本見積もりは撮影・音声制作パートのみ（編集・アニメーション加工・音声同期は含みません）
+・ナレーター・講師の手配および出演費用は含みません
+・原稿差し替え・講師都合等による再撮影は本見積もりの対象外です（発生時は別途お見積もり）
+・成果物の権利譲渡・二次利用（改訂版・他講座への流用等）の条件は別途ご相談
+・見積有効期限：発行日より30日</textarea>
+  </div>
+</div>
+
+<div>
+  <div class="card">
+    <h2>17案プリセット（クリックで設定・他のボタンで動的に切替）</h2>
+    <div class="pmatrix" id="pmatrix"></div>
+    <p class="assume">フルスペックの各行はクリックでスタジオも自動切替（機材費・車両費・オペレーター人数のルール適用）。「STS＋OP/ED共通化」はOP/ED撮影3分/本、「STS活用」は10分/本に自動設定。「フルSTS」は撮影なし（期間パターン不問）でSTS貸与料＋サポート費のみ。</p>
+  </div>
+
+  <div class="card" style="margin-top:14px">
+    <h2 id="detailTitle">内訳</h2>
+    <table class="detail" id="detailTable"></table>
+    <button class="copy" id="btnCopy">内訳をテキストでコピー</button>
+    <p class="assume" id="assumeLine"></p>
+  </div>
+</div>
+</div>
+</div>
+
+<!-- ===== 見積書シート ===== -->
+<div id="sheetOverlay">
+  <div id="sheetBar">
+    <button id="btnPrint">印刷 / PDF保存</button>
+    <button id="btnClose">閉じる</button>
+  </div>
+  <div id="sheetHolder"></div>
+</div>
+
+<script>
+const PERIODS=[
+  {key:0,name:"梅：短期集中"},
+  {key:1,name:"竹：3クール"},
+  {key:2,name:"松：長期分割"}
+];
+const PATROWS=[
+  {key:"full",   label:"フルスペック",     tag:"full"},
+  {key:"tts",    label:"STS活用",          tag:"tts", opMin:10},
+  {key:"common", label:"STS＋OP/ED共通化", tag:"tts", opMin:3, only:[1]},
+  {key:"fullsts",label:"フルSTS（撮影なし）",tag:"tts", span:true}
+];
+// 撮影会場バリエーション（フルスペック用）
+const VENUES=[
+  {studio:0,     label:"会議室",  full:"明友社/ユーキャン会議室（0円・機材持ち込み）", opeN:null},
+  {studio:300000,label:"品川",    full:"品川動画配信スタジオ（300,000円/8h・オペ1名込・控え室あり）", opeN:0},
+  {studio:100000,label:"秋葉原",  full:"秋葉原駅前スタジオ（100,000円/8h）", opeN:1},
+  {studio:50000, label:"曙橋",    full:"曙橋プライベートスタジオ（50,000円/8h・住居兼）", opeN:1}
+];
+// スタジオ固有の注記（見積書の前提条件に自動付記）
+const STUDIO_CAUTION={
+  50000:"※曙橋スタジオは住居兼プライベートスタジオです。お立ち会いや出演者のご意向によっては適さない場合がありますので、事前のご確認をお願いいたします。",
+  300000:"※品川スタジオは控え室を完備しており、貴社・ユーキャン様のお立ち会いにも対応可能です（撮影モニターあり）。"
+};
+// UIプリセット表の行構成: フルスペック×4会場 + STS3行（STS系の収録は曙橋を標準とする）
+const UI_ROWS=[
+  ...VENUES.map(v=>({ri:0,venue:v,label:"フルスペック（"+v.label+"）"})),
+  {ri:1,venue:VENUES[3],label:PATROWS[1].label+"（曙橋収録）"},
+  {ri:2,venue:VENUES[3],label:PATROWS[2].label+"（曙橋収録）",only:[1]},
+  {ri:3,venue:null,label:PATROWS[3].label,span:true}
+];
+let selected={row:1,period:1};   // 初期: STS活用 × 竹
+
+const $=id=>document.getElementById(id);
+const num=id=>parseFloat($(id).value)||0;
+const yen=v=>Math.round(v).toLocaleString("ja-JP")+"円";
+
+function params(){
+  return {
+    N:num("pN"), hours:num("pHours"), setupH:num("pSetupH"), tearH:num("pTearH"),
+    dir:num("pDir"), opeN:num("pOpeN"), ope:num("pOpe"), eq:num("pEq"), eqCont:num("pEqCont"),
+    studio:num("pStudio"),
+    veh:num("pVeh"), travel:num("pTravel"), misc:num("pMisc"), data:num("pData"),
+    supN:num("pSupN"), supFee:num("pSupFee"),
+    mgmt:num("pMgmt")/100, disc:num("pDisc")/100, tax:$("pTax").checked,
+    fullMin:num("pFullMin"), opMin:num("pOpMin"),
+    ttsInit:num("pTtsInit"), ttsPer:num("pTtsPer"),
+    periods:[0,1,2].map(i=>({cools:num("c"+i),sur:num("s"+i)/100,res:num("r"+i)/100}))
+  };
+}
+
+function calc(p,rowIdx,periodIdx,venue){
+  const row=PATROWS[rowIdx], pr=p.periods[periodIdx];
+  const isSts=row.tag==="tts";
+  const noShoot=row.key==="fullsts";
+  const vStudio=venue?venue.studio:p.studio;
+  const vOpeN=venue&&venue.opeN!==null&&venue.opeN!==undefined?venue.opeN:p.opeN;
+
+  let days=0,cools=0,shootMin=0;
+  if(!noShoot){
+    const minPer=row.key==="full"?p.fullMin:(row.key==="common"?3:p.opMin);
+    shootMin=p.N*minPer*(1+pr.res);
+    const dayMin=p.hours*60;
+    const lossPerCool=(p.setupH+p.tearH)*60;
+    days=Math.ceil((shootMin+lossPerCool)/dayMin);
+    cools=Math.min(pr.cools,days);
+    days=Math.ceil((shootMin+cools*lossPerCool)/dayMin);
+    cools=Math.min(cools,days);
+  }
+
+  const inStudio=vStudio>0;
+  const eqEff=inStudio?0:p.eq;      // スタジオ撮影は機材費不要
+  const vehEff=inStudio?0:p.veh;    // スタジオ撮影は車両費不要（交通費は計上）
+  const people=1+vOpeN;             // ディレクター＋オペレーター
+
+  const dirDay=Math.round(p.dir*(1+pr.sur));
+  const opeDay=Math.round(p.ope*(1+pr.sur));
+  const eqDay=Math.round(eqEff*(1+pr.sur));
+  const director=days*dirDay;
+  const staff=days*vOpeN*opeDay;
+  // 機材費は設営撤収込み: クール初日は満額、連日2日目以降は×係数
+  const eqContDays=Math.max(0,days-cools);
+  const equip=Math.round(eqDay*(cools+p.eqCont*eqContDays));
+  const studio=days*vStudio;
+  const vehicle=days*vehEff;
+  const travel=days*people*p.travel;
+  const misc=days*p.misc;
+  const tts=isSts?p.ttsInit+p.ttsPer*p.N:0;
+  const support=noShoot?p.supN*p.supFee:0;
+  const data=noShoot?0:p.data;      // フルSTSは収録データがないため納品費なし
+  const subtotal=director+staff+equip+studio+vehicle+travel+misc+tts+support+data;
+  const mgmt=Math.round(subtotal*p.mgmt);
+  const discAmt=Math.round((subtotal+mgmt)*p.disc);
+  const pretax=subtotal+mgmt-discAmt;
+  const taxAmt=Math.round(pretax*0.1);
+  const grand=pretax+taxAmt;
+  const dispTotal=p.tax?grand:pretax;
+  return {isSts,noShoot,days,cools,shootMin,people,opeN:vOpeN,studioRate:vStudio,
+    dirDay,opeDay,eqDay,eqContDays,
+    director,staff,equip,studio,vehicle,travel,misc,tts,support,data,
+    subtotal,mgmt,discAmt,pretax,taxAmt,grand,dispTotal};
+}
+
+function planName(rowIdx,periodIdx,venue){
+  const row=PATROWS[rowIdx];
+  const base=row.key==="fullsts"?row.label:row.label+" × "+PERIODS[periodIdx].name;
+  return venue?base+"（"+venue.label+"）":base;
+}
+
+function comboHTML(row,r,p){
+  return `<div class="tag ${row.tag}">${row.label}</div>
+    <div class="period">${r.noShoot?"撮影なし・期間パターン不問":"撮影"+r.days+"日・"+r.cools+"クール"}</div>
+    <div class="amt">${yen(r.dispTotal)}</div>
+    <div class="per">${yen(r.dispTotal/p.N)}/本 ${p.tax?"(税込)":"(税別)"}</div>`;
+}
+
+function render(){
+  const p=params();
+  $("vN").textContent=p.N+"本"; $("vHours").textContent=p.hours+"h";
+  $("vDir").textContent=yen(p.dir);
+  $("vOpe").textContent=yen(p.ope); $("vEq").textContent=yen(p.eq);
+  $("vVeh").textContent=yen(p.veh);
+  $("vTravel").textContent=yen(p.travel)+"（"+(1+p.opeN)+"名分/日 "+yen(p.travel*(1+p.opeN))+"）";
+  $("vMisc").textContent=yen(p.misc); $("vData").textContent=yen(p.data);
+  $("vSupN").textContent=p.supN+"回"; $("vSupFee").textContent=yen(p.supFee);
+  $("vMgmt").textContent=Math.round(p.mgmt*100)+"%"; $("vDisc").textContent=Math.round(p.disc*100)+"%";
+  $("vFullMin").textContent=p.fullMin+"分"; $("vOpMin").textContent=p.opMin+"分";
+  $("vTtsInit").textContent=yen(p.ttsInit); $("vTtsPer").textContent=yen(p.ttsPer);
+
+  const box=$("pmatrix");
+  box.innerHTML='<div></div>'+PERIODS.map(pd=>`<div class="collab">${pd.name}</div>`).join("");
+  UI_ROWS.forEach(row=>{
+    const patrow=PATROWS[row.ri];
+    box.insertAdjacentHTML("beforeend",`<div class="rowlab">${row.label}</div>`);
+    if(patrow.span){
+      const r=calc(p,row.ri,0,null);
+      const b=document.createElement("button");
+      b.className="combo span"+(selected.row===row.ri?" sel":"");
+      b.innerHTML=comboHTML(patrow,r,p);
+      b.onclick=()=>applyPreset(row,0);
+      box.appendChild(b);
+      return;
+    }
+    PERIODS.forEach((pd,pi)=>{
+      if(row.only&&!row.only.includes(pi)){
+        box.insertAdjacentHTML("beforeend",`<button class="combo" disabled>—</button>`);return;
+      }
+      const r=calc(p,row.ri,pi,row.venue);
+      const b=document.createElement("button");
+      // フルスペック行はスタジオ選択が一致している場合のみ選択表示
+      const isSel=selected.row===row.ri&&selected.period===pi&&(!row.venue||p.studio===row.venue.studio);
+      b.className="combo"+(isSel?" sel":"");
+      b.innerHTML=comboHTML(patrow,r,p);
+      b.onclick=()=>applyPreset(row,pi);
+      box.appendChild(b);
+    });
+  });
+
+  const curVenue=PATROWS[selected.row].key==="full"?VENUES.find(v=>v.studio===p.studio):null;
+  const r=calc(p,selected.row,selected.period);
+  $("bPlan").textContent=planName(selected.row,selected.period,curVenue)+(r.noShoot?"":"（撮影"+r.days+"日）");
+  $("bTotal").textContent=yen(r.dispTotal);
+  $("bTaxNote").textContent=(p.tax?"税込":"税別")+"・"+p.N+"本一式";
+
+  renderDetail(p,r,curVenue);
+}
+
+function applyPreset(row,pi){
+  selected={row:row.ri,period:pi};
+  const patrow=PATROWS[row.ri];
+  if(patrow.opMin)$("pOpMin").value=patrow.opMin;
+  if(row.venue){                                    // フルスペック行はスタジオも切替
+    $("pStudio").value=String(row.venue.studio);
+    if(row.venue.studio===300000)$("pOpeN").value="0";
+    else if(num("pOpeN")<1)$("pOpeN").value="1";
+  }
+  render();
+}
+
+function quoteLines(p,r){
+  const lines=[];
+  const add=(name,qty,unit,unitPrice,amount)=>lines.push({name,qty,unit,unitPrice,amount});
+  if(!r.noShoot){
+    add("撮影ディレクション費",r.days,"日",r.dirDay,r.director);
+    if(r.opeN>0)add("撮影オペレーター費（"+r.opeN+"名体制）",r.days*r.opeN,"人日",r.opeDay,r.staff);
+    if(r.equip>0){
+      const eqFirst=r.cools*r.eqDay;
+      add("撮影機材一式（設営撤収込・クール初日）",r.cools,"日",r.eqDay,eqFirst);
+      if(r.eqContDays>0)add("撮影機材一式（連日2日目以降 ×"+p.eqCont+"）",r.eqContDays,"日",Math.round(r.eqDay*p.eqCont),r.equip-eqFirst);
+    }
+    if(r.studio>0)add("スタジオ利用料（機材・設営込み）",r.days,"日",r.studioRate,r.studio);
+    if(r.vehicle>0)add("車両費（機材運搬）",r.days,"日",p.veh,r.vehicle);
+    if(r.travel>0)add("交通費",r.days*r.people,"人日",p.travel,r.travel);
+    add("雑費（消耗品等）",r.days,"日",p.misc,r.misc);
+  }
+  if(r.isSts){
+    if(p.ttsInit>0)add("STS初期設定・講師ボイス学習",1,"式",p.ttsInit,p.ttsInit);
+    add("STS音声生成システム貸与料（シラビズ）",p.N,"本",p.ttsPer,p.ttsPer*p.N);
+  }
+  if(r.support>0)add("STS導入・運用サポート（2時間/回）",p.supN,"回",p.supFee,r.support);
+  if(r.data>0)add("収録データ整理・納品",1,"式",p.data,r.data);
+  add("プロジェクト管理費",1,"式",r.mgmt,r.mgmt);
+  if(r.discAmt>0)add("ボリュームディスカウント（"+p.N+"本一括発注）",1,"式",-r.discAmt,-r.discAmt);
+  return lines;
+}
+
+function renderDetail(p,r,curVenue){
+  $("detailTitle").textContent="内訳 — "+planName(selected.row,selected.period,curVenue);
+  const pr=p.periods[selected.period];
+  const rows=[];
+  if(!r.noShoot){
+    rows.push([`ディレクター費（表 × ${r.days}日 × ${yen(r.dirDay)}）`,r.director]);
+    if(p.opeN>0)rows.push([`オペレーター費（${p.opeN}名 × ${r.days}日 × ${yen(r.opeDay)}）`,r.staff]);
+    if(r.equip>0)rows.push([`機材費（初日${r.cools}日×${yen(r.eqDay)}＋連日${r.eqContDays}日×${p.eqCont}・設営撤収込）`,r.equip]);
+    if(r.studio>0)rows.push([`スタジオ代（${r.days}日 × ${yen(p.studio)}・機材/車両費0円）`,r.studio]);
+    if(r.vehicle>0)rows.push([`車両費（機材運搬 ${r.days}日 × ${yen(p.veh)}）`,r.vehicle]);
+    if(r.travel>0)rows.push([`交通費（${r.people}名 × ${r.days}日 × ${yen(p.travel)}）`,r.travel]);
+    rows.push([`雑費（${r.days}日 × ${yen(p.misc)}）`,r.misc]);
+  }
+  if(r.isSts){
+    if(p.ttsInit>0)rows.push(["STS初期設定・講師ボイス学習 一式",p.ttsInit]);
+    rows.push([`STSシステム貸与料（${p.N}本 × ${yen(p.ttsPer)}・変換作業は明友社側）`,p.ttsPer*p.N]);
+  }
+  if(r.support>0)rows.push([`STSサポート費（${p.supN}回 × 2h × ${yen(p.supFee)}）`,r.support]);
+  if(r.data>0)rows.push(["データ整理・納品 一式",r.data]);
+  rows.push(["小計",r.subtotal,"sub"]);
+  rows.push([`プロジェクト管理費（${Math.round(p.mgmt*100)}%）`,r.mgmt]);
+  if(r.discAmt>0)rows.push([`ボリュームディスカウント（-${Math.round(p.disc*100)}%）`,-r.discAmt]);
+  rows.push(["合計 "+(p.tax?"(税込)":"(税別)"),r.dispTotal,"total"]);
+
+  $("detailTable").innerHTML=rows.map(([label,v,cls])=>
+    `<tr class="${cls||""}"><td>${label}</td><td>${yen(v)}</td></tr>`).join("");
+  $("assumeLine").textContent=r.noShoot
+    ? `前提: ${p.N}本 × 約5分を全編STSで音声生成（撮影なし）。サポート${p.supN}回（2h/回）。変換作業は明友社側。1本あたり ${yen(r.dispTotal/p.N)}。`
+    : `前提: ${p.N}本 × ${PATROWS[selected.row].key==="full"?"1本"+p.fullMin+"分":"OP/ED "+(PATROWS[selected.row].key==="common"?3:p.opMin)+"分/本"} × 予備${Math.round(pr.res*100)}% = 撮影${Math.round(r.shootMin)}分。`+
+      `${p.hours}h拘束/日、設営${p.setupH}h+撤収${p.tearH}h × ${r.cools}クール → ${r.days}日。単価割増${Math.round(pr.sur*100)}%。1本あたり ${yen(r.dispTotal/p.N)}。`;
+
+  $("btnCopy").onclick=()=>{
+    const text=[`【${planName(selected.row,selected.period,curVenue)}】${p.N}本一式見積もり（推定）`,
+      ...rows.map(([label,v])=>`${label}: ${yen(v)}`),
+      $("assumeLine").textContent].join("\n");
+    navigator.clipboard.writeText(text).then(()=>{
+      $("btnCopy").textContent="コピーしました";
+      setTimeout(()=>$("btnCopy").textContent="内訳をテキストでコピー",1500);
+    });
+  };
+}
+
+// ===== 見積書シート =====
+const esc=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+
+function sheetHTML(p,ri,pi,venue){
+  const r=calc(p,ri,pi,venue);
+  const fmt=v=>Math.round(v).toLocaleString("ja-JP");
+  const company=esc($("qCompany").value||"　　　　　　");
+  const person=esc($("qPerson").value.trim());
+  const d=$("qDate").value?new Date($("qDate").value):new Date();
+  const dateStr=`${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
+  const no=esc($("qNo").value.trim());
+  const studioLabel=esc(venue?venue.full:$("pStudio").selectedOptions[0].textContent);
+  const assume=r.noShoot
+    ? `講義動画 ${p.N}本（1本約5分）の音声制作一式（撮影なし・全編STS生成）\n`+
+      `本編音声はSTS（シラビズ・講師本人の声で生成）、音声変換作業は貴社にて実施（システム貸与）\n`+
+      `導入・運用サポート ${p.supN}回（2時間/回）を含む`
+    : `講義動画 ${p.N}本（1本約5分）の撮影・音声制作パート一式\n`+
+      `撮影 ${r.days}日（${p.hours}h拘束/日・設営${p.setupH}h/撤収${p.tearH}h・${r.cools}クール分割）／ 撮影場所: ${studioLabel}`+
+      (r.isSts?`\n本編音声はSTS（シラビズ・講師本人の声で生成）、音声変換作業は貴社にて実施（システム貸与）`:"")+
+      (STUDIO_CAUTION[r.studioRate]?`\n${STUDIO_CAUTION[r.studioRate]}`:"");
+  const lines=quoteLines(p,r);
+  return `<div class="sheetpage">
+    <div class="logo">SPLINE</div>
+    <div class="corp">スプライングローバル株式会社<br>東京都千代田区神田淡路町1-2-1 武蔵野ビル2階<br>050-3623-2915<br><a href="mailto:sales@splineglobal.com">sales@splineglobal.com</a><br>https://www.splineglobal.com/</div>
+    <h3>御見積書／提案書</h3>
+    <div class="client">
+      <div class="to">${company}　御中</div>
+      ${person?`<div>${person}　様</div>`:""}
+    </div>
+    <div class="meta">発行日: ${dateStr}${no?`　見積番号: ${no}`:""}</div>
+    <div class="plan">プラン: ${planName(ri,pi,venue)}</div>
+    <div class="lead">前提条件</div>
+    <div class="leadval">${esc(assume)}</div>
+    <div class="lead">合計金額（税込み）</div>
+    <div class="grand">￥${fmt(r.grand)}（税込）</div>
+    <table class="q">
+      <thead><tr><th>適用</th><th style="width:52px">数量</th><th style="width:46px">単位</th><th style="width:92px">単価</th><th style="width:104px">金額</th></tr></thead>
+      <tbody>
+      ${lines.map(l=>`<tr><td>${esc(l.name)}</td><td class="n">${l.qty.toLocaleString("ja-JP")}</td><td class="c">${l.unit}</td><td class="n">${fmt(l.unitPrice)}</td><td class="n">${fmt(l.amount)}</td></tr>`).join("")}
+      <tr class="sum"><td colspan="4">小計（税別）</td><td class="n">${fmt(r.pretax)}</td></tr>
+      <tr class="sum"><td colspan="4">消費税（10%）</td><td class="n">${fmt(r.taxAmt)}</td></tr>
+      <tr class="grandrow"><td colspan="4">合計（税込）</td><td class="n">￥${fmt(r.grand)}</td></tr>
+      </tbody>
+    </table>
+    <div class="bikoh">備考</div>
+    <div class="bikobox">${esc($("qBiko").value)}</div>
+  </div>`;
+}
+
+// 全17案: フルスペック 4会場×梅竹松=12 / STS 梅竹松+共通化竹（曙橋収録）+フルSTS=5
+const BULK=[];
+VENUES.forEach(v=>PERIODS.forEach((pd,pi)=>BULK.push({ri:0,pi,venue:v})));
+[[1,0],[1,1],[1,2],[2,1]].forEach(([ri,pi])=>BULK.push({ri,pi,venue:VENUES[3]}));
+BULK.push({ri:3,pi:0,venue:null});
+
+function compareHTML(p){
+  const fmt=v=>Math.round(v).toLocaleString("ja-JP");
+  const company=esc($("qCompany").value||"　　　　　　");
+  const d=$("qDate").value?new Date($("qDate").value):new Date();
+  const dateStr=`${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`;
+  const rows=BULK.map(({ri,pi,venue},idx)=>{
+    const r=calc(p,ri,pi,venue);
+    const venueLabel=venue?venue.label:(r.noShoot?"—":esc($("pStudio").selectedOptions[0].textContent.split("（")[0]));
+    return `<tr><td>${idx+1}. ${planName(ri,pi)}</td><td class="c">${venueLabel}</td><td class="c">${r.noShoot?"—":r.days+"日"}</td><td class="n">${fmt(r.pretax)}</td><td class="n">${fmt(r.grand)}</td><td class="n">${fmt(r.grand/p.N)}</td></tr>`;
+  }).join("");
+  return `<div class="sheetpage">
+    <div class="logo">SPLINE</div>
+    <div class="corp">スプライングローバル株式会社<br>東京都千代田区神田淡路町1-2-1 武蔵野ビル2階<br>050-3623-2915<br><a href="mailto:sales@splineglobal.com">sales@splineglobal.com</a><br>https://www.splineglobal.com/</div>
+    <h3>御見積 全プラン比較表</h3>
+    <div class="client"><div class="to">${company}　御中</div></div>
+    <div class="meta">発行日: ${dateStr}</div>
+    <table class="q" style="font-size:10px">
+      <thead><tr><th>プラン</th><th style="width:52px">会場</th><th style="width:52px">撮影日数</th><th style="width:92px">合計（税別）</th><th style="width:92px">合計（税込）</th><th style="width:80px">1本あたり（税込）</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    <div class="bikoh">備考</div>
+    <div class="bikobox">・講義動画 ${p.N}本（1本約5分）の撮影・音声制作パート一式の比較です。各プランの内訳は次ページ以降の見積書をご参照ください。
+・「STS」はシラビズ（Slide-to-Speech）＝スライド原稿から講師本人の声で本編音声を生成する方式です（音声変換作業は貴社にて実施・システム貸与）。
+・「フルSTS」は撮影を行わず全編をSTS音声＋スライドで構成するプランです。
+・品川スタジオは控え室を完備しており、お立ち会いにも対応可能です（撮影モニターあり）。
+・曙橋スタジオは住居兼プライベートスタジオです。お立ち会いや出演者のご意向によっては適さない場合がありますので、事前のご確認をお願いいたします。</div>
+  </div>`;
+}
+
+function buildSingle(){
+  const p=params();
+  $("sheetHolder").innerHTML=sheetHTML(p,selected.row,selected.period,null);
+}
+function buildAll(){
+  const p=params();
+  $("sheetHolder").innerHTML=compareHTML(p)+BULK.map(({ri,pi,venue})=>sheetHTML(p,ri,pi,venue)).join("");
+}
+
+let sheetMode="single";
+$("btnSheet").onclick=()=>{sheetMode="single";buildSingle();document.body.classList.add("preview");};
+$("btnSheetAll").onclick=()=>{sheetMode="all";buildAll();document.body.classList.add("preview");};
+$("btnClose").onclick=()=>document.body.classList.remove("preview");
+$("btnPrint").onclick=()=>{sheetMode==="all"?buildAll():buildSingle();window.print();};
+
+// スタジオ選択に応じたオペレーター人数の自動調整
+$("pStudio").addEventListener("change",()=>{
+  const v=num("pStudio");
+  if(v===300000){$("pOpeN").value="0";}                       // 品川: オペ込み
+  else if(num("pOpeN")<1){$("pOpeN").value="1";}               // 曙橋/秋葉原はアシスタント1名必要・会議室も1名に復帰
+  render();
+});
+
+(function init(){
+  const t=new Date();
+  $("qDate").value=`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,"0")}-${String(t.getDate()).padStart(2,"0")}`;
+  document.querySelectorAll(".app input,.app select,.app textarea").forEach(el=>el.addEventListener("input",render));
+  applyPreset(UI_ROWS[4],1);   // 初期選択: STS活用（曙橋収録）× 竹
+})();
+
+// ===== 社内認証（hihaho-kb-internal と同方式） =====
+firebase.initializeApp({
+  apiKey:"AIzaSyDPlsAhtxbJBihy-EAHck9P7XbuMdzV0ds",
+  authDomain:"cc-dev-ps7.firebaseapp.com",
+  projectId:"cc-dev-ps7",
+  storageBucket:"cc-dev-ps7.firebasestorage.app",
+  messagingSenderId:"1029579090333",
+  appId:"1:1029579090333:web:5a2ea499fec97c497f2774"
+});
+const _auth=firebase.auth();
+const _ALLOW=e=>!!e&&(/@splineglobal\.com$/.test(e)||e==="junpei.omote@gmail.com");
+$("btnGoogleLogin").onclick=async()=>{
+  try{await _auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());}
+  catch(e){$("authErr").textContent="ログイン失敗: "+e.message;}
+};
+_auth.onAuthStateChanged(u=>{
+  if(!u)return;
+  if(!_ALLOW(u.email)){
+    $("authErr").textContent=u.email+" には閲覧権限がありません";
+    _auth.signOut();return;
+  }
+  document.body.classList.remove("locked");
+  const g=$("authGate");if(g)g.remove();
+});
+</script>
+</body>
+</html>
