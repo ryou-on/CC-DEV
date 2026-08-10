@@ -1,6 +1,14 @@
-export const APP_VERSION = 'v1.3.0'
+export const APP_VERSION = 'v1.4.0'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: 'v1.4.0',
+    date: '2026-08-10',
+    changes: [
+      '書影(カバー画像)を表示 — 本を開くと自動取得(openBD/Google Books)、一覧にもサムネイル表示',
+      '著者名・出版社をタップで検索できるように(「著者:名前」「出版社:名前」の検索構文も追加)',
+    ],
+  },
   {
     version: 'v1.3.0',
     date: '2026-08-10',
@@ -72,7 +80,10 @@ export const USAGE_GUIDE = `【本ドコ？の使い方】
 
 ■ 探す
 「検索」タブでタイトル・著者・出版社・#タグを横断検索。
-本を開くと「どの棚のどの段にあるか」と関連書籍が表示されます。
+「著者:池上彰」「出版社:講談社」のようにフィールド指定もできます。
+本を開くと「どの棚のどの段にあるか」と関連書籍が表示され、
+著者・出版社・タグをタップするとそのまま検索できます。
+書影は本を開いたときに自動取得されます(ISBN登録があるほど正確)。
 
 ■ その他の登録方法
 ・ISBNバーコードをカメラでスキャン(openBD/Google Booksから書誌取得)

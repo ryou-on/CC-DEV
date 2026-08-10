@@ -273,7 +273,7 @@ export default function App() {
           shelves={shelves}
           onClose={() => setSelectedBookId(null)}
           onSelectBook={setSelectedBookId}
-          onSearchTag={(t) => { setSearchQuery(`#${t}`); setTab('search') }}
+          onSearch={(q) => { setSearchQuery(q); setTab('search') }}
         />
       )}
       {showUsage && (

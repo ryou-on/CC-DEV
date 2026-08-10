@@ -59,6 +59,29 @@ export interface IsbnInfo {
   publisher: string
 }
 
+// 書影URLを取得: openBD(ISBN) → Google Books(ISBN or タイトル+著者)
+export async function lookupCover(book: { isbn: string; title: string; author: string }): Promise<string | null> {
+  const isbn = book.isbn.replace(/[^0-9Xx]/g, '')
+  if (isbn.length === 10 || isbn.length === 13) {
+    try {
+      const res = await fetch(`https://api.openbd.jp/v1/get?isbn=${isbn}`)
+      const arr = await res.json()
+      const cover = arr?.[0]?.summary?.cover
+      if (cover) return cover
+    } catch { /* fallthrough */ }
+  }
+  try {
+    const q = isbn
+      ? `isbn:${isbn}`
+      : `intitle:${JSON.stringify(book.title)}${book.author ? `+inauthor:${JSON.stringify(book.author.split(/[、,]/)[0])}` : ''}`
+    const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=1&country=JP`)
+    const data = await res.json()
+    const thumb = data?.items?.[0]?.volumeInfo?.imageLinks?.thumbnail
+    if (thumb) return String(thumb).replace(/^http:/, 'https:')
+  } catch { /* ignore */ }
+  return null
+}
+
 export async function lookupIsbn(isbn: string): Promise<IsbnInfo | null> {
   const clean = isbn.replace(/[^0-9Xx]/g, '')
   if (clean.length !== 10 && clean.length !== 13) return null

@@ -52,6 +52,8 @@ export interface Book {
   confidence: 'high' | 'medium' | 'low'
   memo: string
   source: BookSource
+  // 書影URL。undefined=未取得, ''=取得を試みたが見つからず
+  coverUrl?: string
   createdAt: Timestamp | null
   updatedAt: Timestamp | null
 }

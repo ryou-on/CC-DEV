@@ -29,21 +29,36 @@ export function SearchView({
 
   const results = useMemo(() => {
     const q = query.trim()
-    const isTagQuery = q.startsWith('#')
-    const nq = normalize(isTagQuery ? q.slice(1) : q)
+    // フィールド指定検索: #タグ / 著者:名前 / 出版社:名前
+    let field: 'all' | 'tag' | 'author' | 'publisher' = 'all'
+    let term = q
+    if (q.startsWith('#')) { field = 'tag'; term = q.slice(1) }
+    else {
+      const m = /^(著者|author)[:：](.*)$/i.exec(q) || /^(出版社|publisher|pub)[:：](.*)$/i.exec(q)
+      if (m) {
+        field = /^(著者|author)$/i.test(m[1]) ? 'author' : 'publisher'
+        term = m[2]
+      }
+    }
+    const nq = normalize(term)
     let list = books
     if (!includeSold) list = list.filter((b) => b.status !== 'sold')
     if (shelfFilter) list = list.filter((b) => b.shelfId === shelfFilter)
     if (nq) {
       list = list.filter((b) => {
-        if (isTagQuery) return b.tags.some((t) => normalize(t).includes(nq))
-        return (
-          normalize(b.title).includes(nq) ||
-          normalize(b.author).includes(nq) ||
-          normalize(b.publisher).includes(nq) ||
-          b.tags.some((t) => normalize(t).includes(nq)) ||
-          b.isbn.includes(q)
-        )
+        switch (field) {
+          case 'tag': return b.tags.some((t) => normalize(t).includes(nq))
+          case 'author': return normalize(b.author).includes(nq)
+          case 'publisher': return normalize(b.publisher).includes(nq)
+          default:
+            return (
+              normalize(b.title).includes(nq) ||
+              normalize(b.author).includes(nq) ||
+              normalize(b.publisher).includes(nq) ||
+              b.tags.some((t) => normalize(t).includes(nq)) ||
+              b.isbn.includes(q)
+            )
+        }
       })
     }
     return list.slice(0, 300)
@@ -55,7 +70,7 @@ export function SearchView({
         <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
         <input
           className={inputCls + ' pl-10 py-2.5'}
-          placeholder="タイトル・著者・出版社・#タグ で検索"
+          placeholder="タイトル・#タグ・著者:名前・出版社:名前 で検索"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -92,18 +107,27 @@ export function SearchView({
         {results.map((b) => (
           <li key={b.id}>
             <button
-              className="w-full text-left px-4 py-3 hover:bg-amber-50/50 transition-colors"
+              className="w-full text-left px-4 py-2.5 hover:bg-amber-50/50 transition-colors flex items-center gap-3"
               onClick={() => onSelectBook(b.id)}
             >
-              <div className="flex items-baseline justify-between gap-2">
-                <span className={`font-medium ${b.status === 'sold' ? 'text-stone-400 line-through' : 'text-stone-800'}`}>
-                  {b.title}{b.volume ? ` (${b.volume})` : ''}
-                </span>
-                <span className="text-xs text-amber-700 shrink-0 font-medium">{locationLabel(b, shelves)}</span>
+              <div className="w-8 h-11 shrink-0 rounded-sm overflow-hidden bg-stone-100 flex items-center justify-center">
+                {b.coverUrl ? (
+                  <img src={b.coverUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
+                ) : (
+                  <span className="text-stone-300 text-[9px]">📕</span>
+                )}
               </div>
-              <div className="text-xs text-stone-400 mt-0.5 flex flex-wrap gap-x-2">
-                <span>{b.author || '著者不明'}</span>
-                {b.tags.slice(0, 4).map((t) => <span key={t} className="text-amber-600">#{t}</span>)}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className={`font-medium truncate ${b.status === 'sold' ? 'text-stone-400 line-through' : 'text-stone-800'}`}>
+                    {b.title}{b.volume ? ` (${b.volume})` : ''}
+                  </span>
+                  <span className="text-xs text-amber-700 shrink-0 font-medium">{locationLabel(b, shelves)}</span>
+                </div>
+                <div className="text-xs text-stone-400 mt-0.5 flex flex-wrap gap-x-2">
+                  <span>{b.author || '著者不明'}</span>
+                  {b.tags.slice(0, 4).map((t) => <span key={t} className="text-amber-600">#{t}</span>)}
+                </div>
               </div>
             </button>
           </li>
