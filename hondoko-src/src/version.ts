@@ -1,6 +1,13 @@
-export const APP_VERSION = 'v1.8.2'
+export const APP_VERSION = 'v1.8.3'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: 'v1.8.3',
+    date: '2026-08-11',
+    changes: [
+      '書影の自動取得にAmazonをフォールバック追加(openBD → Google Books → Amazon の順、ISBNから取得)',
+    ],
+  },
   {
     version: 'v1.8.2',
     date: '2026-08-11',

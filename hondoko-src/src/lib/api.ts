@@ -100,6 +100,35 @@ export interface PriceInfo {
   coverUrl?: string
 }
 
+// ISBN-13 → ISBN-10 変換(978プレフィックスのみ可)
+function isbn13to10(isbn13: string): string | null {
+  if (!/^978\d{10}$/.test(isbn13)) return null
+  const core = isbn13.slice(3, 12)
+  let sum = 0
+  for (let i = 0; i < 9; i++) sum += (10 - i) * Number(core[i])
+  const r = (11 - (sum % 11)) % 11
+  return core + (r === 10 ? 'X' : String(r))
+}
+
+// AmazonのISBN-10ベース書影URL(非公式・キー不要。画像が無い本は1x1画像が返る)
+function amazonCoverUrl(isbn: string): string | null {
+  const clean = isbn.replace(/[^0-9Xx]/g, '')
+  const isbn10 =
+    clean.length === 10 ? clean.toUpperCase() : clean.length === 13 ? isbn13to10(clean) : null
+  return isbn10 ? `https://images-fe.ssl-images-amazon.com/images/P/${isbn10}.09.LZZZZZZZ.jpg` : null
+}
+
+// 画像URLが実在する(1x1プレースホルダでない)ことを確認
+function probeImage(url: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const img = new Image()
+    const timer = window.setTimeout(() => resolve(false), 8000)
+    img.onload = () => { window.clearTimeout(timer); resolve(img.naturalWidth > 1 && img.naturalHeight > 1) }
+    img.onerror = () => { window.clearTimeout(timer); resolve(false) }
+    img.src = url
+  })
+}
+
 // 定価+書影+ISBNをまとめて取得(openBDは1リクエストで両方取れる)
 export interface BookInfo {
   price: number | null
@@ -151,6 +180,12 @@ export async function lookupBookInfo(book: { isbn: string; title: string; author
         }
       }
     } catch { /* ignore */ }
+  }
+
+  // 最終フォールバック: Amazonの書影(openBD/Google Booksで見つからなかった場合)
+  if (coverUrl == null) {
+    const az = amazonCoverUrl(isbn || foundIsbn || '')
+    if (az && (await probeImage(az))) coverUrl = az
   }
 
   return { price, coverUrl, isbn: foundIsbn }
