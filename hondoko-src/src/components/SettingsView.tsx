@@ -7,6 +7,7 @@ import { db, OWNER_EMAIL } from '../firebase'
 import type { Book, Shelf, ShelfGroup, SharingConfig, SharingMode } from '../types'
 import { APP_VERSION } from '../version'
 import { changeShelfRows, MAX_ROWS } from '../lib/shelfOps'
+import { lookupBookInfo } from '../lib/api'
 import { btnSecondary, inputCls } from './ui'
 
 const genKey = () => Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6)
@@ -78,10 +79,48 @@ export function SettingsView({
   }
 
   const inStock = books.filter((b) => b.status !== 'sold')
-  const purchaseTotal = inStock.reduce((s, b) => s + (b.purchasePrice ?? 0), 0)
-  const purchaseCount = inStock.filter((b) => b.purchasePrice != null).length
+  const listTotal = inStock.reduce((s, b) => s + (b.listPrice ?? 0), 0)
+  const listCount = inStock.filter((b) => b.listPrice != null).length
+  // 購入合計: 手入力を優先し、未入力の本は定価で補完
+  const purchaseTotal = inStock.reduce((s, b) => s + (b.purchasePrice ?? b.listPrice ?? 0), 0)
+  const purchaseCount = inStock.filter((b) => b.purchasePrice != null || b.listPrice != null).length
   const resaleTotal = inStock.reduce((s, b) => s + (b.resalePrice ?? 0), 0)
   const resaleCount = inStock.filter((b) => b.resalePrice != null).length
+
+  // 定価・書影の一括自動取得(未取得の本のみ)
+  const [bulk, setBulk] = useState<{ done: number; total: number; price: number; cover: number } | null>(null)
+  const bulkFetchPrices = async () => {
+    const targets = books.filter(
+      (b) => b.title && (b.listPrice === undefined || b.coverUrl === undefined),
+    )
+    if (targets.length === 0) { alert('未取得の本はありません'); return }
+    // 1回の実行上限(Google Books のレート制限対策)
+    const LIMIT = 120
+    const run = targets.slice(0, LIMIT)
+    setBulk({ done: 0, total: run.length, price: 0, cover: 0 })
+    let priceHit = 0
+    let coverHit = 0
+    for (let i = 0; i < run.length; i++) {
+      const b = run[i]
+      try {
+        const info = await lookupBookInfo(b)
+        await updateDoc(doc(db, 'hondoko-books', b.id), {
+          ...(b.listPrice === undefined ? { listPrice: info.price } : {}),
+          ...(b.coverUrl === undefined ? { coverUrl: info.coverUrl ?? '' } : {}),
+          ...(info.isbn && !b.isbn ? { isbn: info.isbn } : {}),
+        })
+        if (b.listPrice === undefined && info.price != null) priceHit++
+        if (b.coverUrl === undefined && info.coverUrl) coverHit++
+      } catch { /* 個別失敗はスキップ */ }
+      setBulk({ done: i + 1, total: run.length, price: priceHit, cover: coverHit })
+      // ISBNなし本はGoogle Booksを叩くため少し待つ
+      if (!b.isbn) await new Promise((r) => setTimeout(r, 350))
+    }
+    setBulk(null)
+    alert(`${run.length}冊を処理: 定価${priceHit}冊 / 書影${coverHit}冊を取得しました` +
+      (targets.length > LIMIT ? `\n(残り${targets.length - LIMIT}冊はもう一度実行してください)` : '') +
+      '\n取得できなかった書影は、本の詳細から「写真から登録」「URLで登録」で追加できます')
+  }
   const stats = {
     owned: books.filter((b) => b.status === 'owned').length,
     unplaced: books.filter((b) => b.status === 'unplaced').length,
@@ -97,17 +136,28 @@ export function SettingsView({
           <div><p className="text-2xl font-bold text-stone-500">{stats.unplaced}</p><p className="text-xs text-stone-400">未配置</p></div>
           <div><p className="text-2xl font-bold text-stone-400">{stats.sold}</p><p className="text-xs text-stone-400">売却済み</p></div>
         </div>
-        <div className="grid grid-cols-2 text-center mt-3 pt-3 border-t border-stone-100">
+        <div className="grid grid-cols-3 text-center mt-3 pt-3 border-t border-stone-100">
           <div>
-            <p className="text-lg font-bold text-stone-700">{purchaseTotal.toLocaleString('ja-JP')}円</p>
-            <p className="text-xs text-stone-400">購入合計(入力済み{purchaseCount}冊)</p>
+            <p className="text-base font-bold text-stone-700">{listTotal.toLocaleString('ja-JP')}円</p>
+            <p className="text-[11px] text-stone-400">定価合計(取得済み{listCount}冊)</p>
           </div>
           <div>
-            <p className="text-lg font-bold text-stone-700">{resaleTotal.toLocaleString('ja-JP')}円</p>
-            <p className="text-xs text-stone-400">リセール想定合計(入力済み{resaleCount}冊)</p>
+            <p className="text-base font-bold text-stone-700">{purchaseTotal.toLocaleString('ja-JP')}円</p>
+            <p className="text-[11px] text-stone-400">購入合計({purchaseCount}冊・未入力は定価補完)</p>
+          </div>
+          <div>
+            <p className="text-base font-bold text-stone-700">{resaleTotal.toLocaleString('ja-JP')}円</p>
+            <p className="text-[11px] text-stone-400">リセール想定({resaleCount}冊)</p>
           </div>
         </div>
-        <p className="text-[10px] text-stone-300 mt-2">価格は各本の詳細画面で入力できます(メルカリ相場リンク付き)</p>
+        <div className="mt-3 flex items-center gap-2">
+          <button className={btnSecondary + ' !py-1.5 !px-3 text-xs'} onClick={bulkFetchPrices} disabled={!!bulk}>
+            {bulk
+              ? `取得中… ${bulk.done}/${bulk.total}(定価${bulk.price}/書影${bulk.cover})`
+              : '定価・書影を一括自動取得'}
+          </button>
+          <p className="text-[10px] text-stone-300">openBD/Google Booksから取得。取得できない書影は本の詳細から写真/URLで登録可</p>
+        </div>
       </section>
 
       {isOwner && (

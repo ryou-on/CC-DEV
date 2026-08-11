@@ -36,6 +36,7 @@ export default function App() {
   const [role, setRole] = useState<Role>('checking')
   const [members, setMembers] = useState<string[]>([])
   const [sharing, setSharing] = useState<SharingConfig | null>(null)
+  const [sharingLoaded, setSharingLoaded] = useState(false)
   const [comments, setComments] = useState<BookComment[]>([])
   const [shelves, setShelves] = useState<Shelf[]>([])
   const [books, setBooks] = useState<Book[]>([])
@@ -52,19 +53,27 @@ export default function App() {
 
   useEffect(() => onAuthStateChanged(auth, (u) => setUser(u)), [])
 
-  // 公開設定の購読(ログイン済みなら誰でも読める)
+  // 公開設定の購読(未ログインでも読める — link/公開モードの判定に必要)
   useEffect(() => {
-    if (!user) { setSharing(null); return }
     return onSnapshot(
       doc(db, 'hondoko-config', 'sharing'),
-      (snap) => setSharing(snap.exists() ? (snap.data() as SharingConfig) : null),
-      () => setSharing(null),
+      (snap) => {
+        setSharing(snap.exists() ? (snap.data() as SharingConfig) : null)
+        setSharingLoaded(true)
+      },
+      () => { setSharing(null); setSharingLoaded(true) },
     )
-  }, [user])
+  }, [])
 
   // ロール判定: メンバー → member、そうでなければ公開設定に応じて viewer / denied
+  // 未ログインでも link(キー一致)/公開 なら viewer として閲覧できる
   useEffect(() => {
-    if (!user) { setRole('checking'); setMembers([]); return }
+    if (user === undefined) { setRole('checking'); setMembers([]); return }
+    if (user === null) {
+      setMembers([])
+      setRole(sharingLoaded ? resolveViewerRole('', sharing) : 'checking')
+      return
+    }
     const email = user.email ?? ''
     const unsub = onSnapshot(
       doc(db, 'hondoko-config', 'members'),
@@ -81,7 +90,7 @@ export default function App() {
       },
     )
     return unsub
-  }, [user, sharing])
+  }, [user, sharing, sharingLoaded])
 
   // データ購読
   useEffect(() => {
@@ -140,9 +149,12 @@ export default function App() {
   }
 
   // ---- 画面分岐 ----
-  if (user === undefined) return <div className="min-h-dvh flex items-center justify-center bg-stone-100"><Spinner /></div>
+  if (user === undefined || role === 'checking') {
+    return <div className="min-h-dvh flex items-center justify-center bg-stone-100"><Spinner /></div>
+  }
 
-  if (!user) {
+  // 未ログイン: link/公開モードで閲覧できる場合を除きログイン画面へ
+  if (!user && role !== 'viewer') {
     return (
       <div className="min-h-dvh flex flex-col items-center justify-center bg-stone-100 px-6 text-center">
         <LibraryBig size={56} className="text-amber-700 mb-4" />
@@ -155,11 +167,7 @@ export default function App() {
     )
   }
 
-  if (role === 'checking') {
-    return <div className="min-h-dvh flex items-center justify-center bg-stone-100"><Spinner label="確認中…" /></div>
-  }
-
-  if (role === 'denied') {
+  if (user && role === 'denied') {
     return (
       <div className="min-h-dvh flex flex-col items-center justify-center bg-stone-100 px-6 text-center">
         <p className="text-stone-700 font-medium mb-2">このアカウントは閲覧が許可されていません</p>
@@ -198,10 +206,18 @@ export default function App() {
             <span className="text-[10px] bg-amber-700 text-amber-100 rounded-full px-2 py-0.5">閲覧モード</span>
           )}
           <div className="ml-auto flex items-center gap-3">
-            <span className="text-xs text-amber-200/80 hidden sm:block">{user.email}</span>
-            <button className="p-1.5 rounded hover:bg-amber-800" onClick={() => signOut(auth)} title="ログアウト">
-              <LogOut size={17} />
-            </button>
+            {user ? (
+              <>
+                <span className="text-xs text-amber-200/80 hidden sm:block">{user.email}</span>
+                <button className="p-1.5 rounded hover:bg-amber-800" onClick={() => signOut(auth)} title="ログアウト">
+                  <LogOut size={17} />
+                </button>
+              </>
+            ) : (
+              <button className="text-xs bg-amber-700 hover:bg-amber-600 rounded-lg px-3 py-1.5" onClick={login}>
+                ログイン
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -230,7 +246,7 @@ export default function App() {
             shelves={shelves}
             books={books}
             members={members}
-            userEmail={user.email ?? ''}
+            userEmail={user?.email ?? ''}
             sharing={sharing}
           />
         )}
@@ -320,9 +336,11 @@ export default function App() {
           shelves={shelves}
           comments={comments.filter((c) => c.bookId === selectedBook.id)}
           readOnly={readOnly}
-          canComment={role === 'member' || (role === 'viewer' && !!sharing?.allowComments)}
-          currentUser={{ email: user.email ?? '', name: user.displayName ?? user.email ?? '' }}
-          isOwner={user.email === OWNER_EMAIL}
+          canComment={role === 'member' || (role === 'viewer' && !!sharing?.allowComments && !!user)}
+          needsLoginToComment={role === 'viewer' && !!sharing?.allowComments && !user}
+          onLogin={login}
+          currentUser={{ email: user?.email ?? '', name: user?.displayName ?? user?.email ?? 'ゲスト' }}
+          isOwner={user?.email === OWNER_EMAIL}
           onClose={() => setSelectedBookId(null)}
           onSelectBook={setSelectedBookId}
           onSearch={(q) => { setSearchQuery(q); setTab('search') }}

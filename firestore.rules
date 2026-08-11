@@ -175,13 +175,14 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/hondoko-config/sharing).data;
     }
     function isHondokoViewer() {
-      return request.auth != null &&
-        exists(/databases/$(database)/documents/hondoko-config/sharing) && (
-          hondokoSharing().mode == 'public' ||
-          hondokoSharing().mode == 'link' ||
-          (hondokoSharing().mode == 'viewers' &&
-           request.auth.token.email in hondokoSharing().viewers)
-        );
+      // link/public はログイン不要で閲覧可。viewers はログイン+リスト登録が必要
+      return exists(/databases/$(database)/documents/hondoko-config/sharing) && (
+        hondokoSharing().mode == 'public' ||
+        hondokoSharing().mode == 'link' ||
+        (request.auth != null &&
+         hondokoSharing().mode == 'viewers' &&
+         request.auth.token.email in hondokoSharing().viewers)
+      );
     }
     function canHondokoRead() {
       return isHondokoMember() || isHondokoViewer();
@@ -191,8 +192,9 @@ service cloud.firestore {
       allow write: if isHondokoOwner();
     }
     match /hondoko-config/sharing {
-      // ゲスト判定のためログイン済みなら誰でも読める(メールアドレス一覧を含むため注意して運用)
-      allow read: if request.auth != null;
+      // ゲスト判定のため誰でも読める(link/publicの未ログイン閲覧に必要。
+      // viewers のメールアドレス一覧を含むため注意して運用)
+      allow read: if true;
       allow write: if isHondokoOwner();
     }
     match /hondoko-shelves/{docId} {

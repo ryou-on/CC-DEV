@@ -1,6 +1,17 @@
-export const APP_VERSION = 'v1.7.0'
+export const APP_VERSION = 'v1.8.0'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: 'v1.8.0',
+    date: '2026-08-11',
+    changes: [
+      '「リンクを知っている人」「公開」モードはGoogleログイン不要で閲覧できるように(コメント投稿のみログイン必要)',
+      '定価・書影の自動取得(openBD/Google Books) — 本を開いたとき自動付与、設定から一括取得も可能',
+      '書影が取得できない本は「写真から登録」「URLで登録」で手動追加可能に',
+      '蔵書統計に定価合計・購入合計(未入力は定価で補完)を追加',
+      '取得時にISBNも自動補完',
+    ],
+  },
   {
     version: 'v1.7.0',
     date: '2026-08-11',

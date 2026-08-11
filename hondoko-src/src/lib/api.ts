@@ -79,6 +79,126 @@ export interface IsbnInfo {
   publisher: string
 }
 
+// openBDのonixから定価(円)を取り出す
+function openBdPrice(item: unknown): number | null {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const prices = (item as any)?.onix?.ProductSupply?.SupplyDetail?.Price
+    if (Array.isArray(prices)) {
+      for (const p of prices) {
+        const n = parseInt(p?.PriceAmount, 10)
+        if (Number.isFinite(n) && n > 0) return n
+      }
+    }
+  } catch { /* ignore */ }
+  return null
+}
+
+export interface PriceInfo {
+  price: number | null
+  isbn?: string // Google Booksから逆引きできた場合(ISBN未登録本の補完用)
+  coverUrl?: string
+}
+
+// 定価+書影+ISBNをまとめて取得(openBDは1リクエストで両方取れる)
+export interface BookInfo {
+  price: number | null
+  coverUrl: string | null
+  isbn?: string
+}
+
+export async function lookupBookInfo(book: { isbn: string; title: string; author: string }): Promise<BookInfo> {
+  const isbn = book.isbn.replace(/[^0-9Xx]/g, '')
+  let price: number | null = null
+  let coverUrl: string | null = null
+  let foundIsbn: string | undefined
+
+  if (isbn.length === 10 || isbn.length === 13) {
+    try {
+      const res = await fetch(`https://api.openbd.jp/v1/get?isbn=${isbn}`)
+      const arr = await res.json()
+      price = openBdPrice(arr?.[0])
+      coverUrl = arr?.[0]?.summary?.cover || null
+    } catch { /* fallthrough */ }
+  }
+
+  if (price == null || coverUrl == null) {
+    try {
+      const q = isbn
+        ? `isbn:${isbn}`
+        : `intitle:${JSON.stringify(book.title)}${book.author ? `+inauthor:${JSON.stringify(book.author.split(/[、,]/)[0])}` : ''}`
+      const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=1&country=JP`)
+      const data = await res.json()
+      const item = data?.items?.[0]
+      if (item) {
+        const amount = item.saleInfo?.listPrice?.amount
+        if (price == null && typeof amount === 'number' && amount > 0) price = Math.round(amount)
+        const thumb = item.volumeInfo?.imageLinks?.thumbnail
+        if (coverUrl == null && thumb) coverUrl = String(thumb).replace(/^http:/, 'https:')
+        if (!isbn) {
+          foundIsbn = (item.volumeInfo?.industryIdentifiers ?? []).find(
+            (x: { type: string }) => x.type === 'ISBN_13' || x.type === 'ISBN_10',
+          )?.identifier
+          // 逆引きしたISBNでopenBDをもう一度(日本の書籍は書影・定価の精度が上がる)
+          if (foundIsbn && (price == null || coverUrl == null)) {
+            try {
+              const r2 = await fetch(`https://api.openbd.jp/v1/get?isbn=${foundIsbn}`)
+              const a2 = await r2.json()
+              if (price == null) price = openBdPrice(a2?.[0])
+              if (coverUrl == null) coverUrl = a2?.[0]?.summary?.cover || null
+            } catch { /* ignore */ }
+          }
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
+  return { price, coverUrl, isbn: foundIsbn }
+}
+
+// 定価を取得: openBD(ISBN) → Google Books(ISBN or タイトル+著者)
+// Google Booksの結果からISBN・書影も拾えたら返す(補完用)
+export async function lookupPrice(book: { isbn: string; title: string; author: string }): Promise<PriceInfo> {
+  const isbn = book.isbn.replace(/[^0-9Xx]/g, '')
+  if (isbn.length === 10 || isbn.length === 13) {
+    try {
+      const res = await fetch(`https://api.openbd.jp/v1/get?isbn=${isbn}`)
+      const arr = await res.json()
+      const price = openBdPrice(arr?.[0])
+      if (price != null) return { price }
+    } catch { /* fallthrough */ }
+  }
+  try {
+    const q = isbn
+      ? `isbn:${isbn}`
+      : `intitle:${JSON.stringify(book.title)}${book.author ? `+inauthor:${JSON.stringify(book.author.split(/[、,]/)[0])}` : ''}`
+    const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=1&country=JP`)
+    const data = await res.json()
+    const item = data?.items?.[0]
+    if (!item) return { price: null }
+    const amount = item.saleInfo?.listPrice?.amount
+    const foundIsbn = (item.volumeInfo?.industryIdentifiers ?? []).find(
+      (x: { type: string }) => x.type === 'ISBN_13' || x.type === 'ISBN_10',
+    )?.identifier
+    const thumb = item.volumeInfo?.imageLinks?.thumbnail
+    // Google Booksで見つかったISBNがあれば openBD でもう一度定価を引く
+    let price: number | null = typeof amount === 'number' && amount > 0 ? Math.round(amount) : null
+    if (price == null && foundIsbn && !isbn) {
+      try {
+        const r2 = await fetch(`https://api.openbd.jp/v1/get?isbn=${foundIsbn}`)
+        const a2 = await r2.json()
+        price = openBdPrice(a2?.[0])
+      } catch { /* ignore */ }
+    }
+    return {
+      price,
+      isbn: !isbn && foundIsbn ? String(foundIsbn) : undefined,
+      coverUrl: thumb ? String(thumb).replace(/^http:/, 'https:') : undefined,
+    }
+  } catch { /* ignore */ }
+  return { price: null }
+}
+
 // 書影URLを取得: openBD(ISBN) → Google Books(ISBN or タイトル+著者)
 export async function lookupCover(book: { isbn: string; title: string; author: string }): Promise<string | null> {
   const isbn = book.isbn.replace(/[^0-9Xx]/g, '')

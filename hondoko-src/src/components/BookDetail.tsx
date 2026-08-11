@@ -2,12 +2,13 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   addDoc, collection, deleteDoc, doc, serverTimestamp, updateDoc,
 } from 'firebase/firestore'
+import { getDownloadURL, ref as storageRef, uploadString } from 'firebase/storage'
 import {
-  Building2, ExternalLink, MapPin, Pencil, RefreshCw, Send, Star, Trash2, User, X,
+  Building2, Camera, ExternalLink, Link2, MapPin, Pencil, RefreshCw, Send, Star, Trash2, User, X,
 } from 'lucide-react'
-import { db } from '../firebase'
+import { db, storage } from '../firebase'
 import type { Book, BookComment, Shelf } from '../types'
-import { lookupCover } from '../lib/api'
+import { lookupBookInfo, resizeImageToBase64 } from '../lib/api'
 import { locationLabel, locationLabelLong } from '../lib/diff'
 import { Modal, Tag, btnSecondary, inputCls } from './ui'
 import { BookForm, KIND_LABEL } from './BookForm'
@@ -21,6 +22,8 @@ export function BookDetail({
   comments,
   readOnly,
   canComment,
+  needsLoginToComment,
+  onLogin,
   currentUser,
   isOwner,
   onClose,
@@ -33,6 +36,8 @@ export function BookDetail({
   comments: BookComment[]
   readOnly: boolean
   canComment: boolean
+  needsLoginToComment?: boolean
+  onLogin?: () => void
   currentUser: { email: string; name: string }
   isOwner: boolean
   onClose: () => void
@@ -50,15 +55,21 @@ export function BookDetail({
   const patch = (data: Record<string, unknown>) =>
     updateDoc(bookRef, { ...data, updatedAt: serverTimestamp() })
 
-  // 書影の遅延取得
+  // 書影+定価の遅延自動取得(メンバーが開いたときに1回だけ試行しキャッシュ)
   useEffect(() => {
-    if (book.coverUrl !== undefined) return
+    if (book.coverUrl !== undefined && book.listPrice !== undefined) return
     if (fetchedFor.current === book.id) return
     if (!book.title || readOnly) return
     fetchedFor.current = book.id
     setCoverLoading(true)
-    lookupCover(book)
-      .then((url) => updateDoc(bookRef, { coverUrl: url ?? '' }))
+    lookupBookInfo(book)
+      .then((info) =>
+        updateDoc(bookRef, {
+          ...(book.coverUrl === undefined ? { coverUrl: info.coverUrl ?? '' } : {}),
+          ...(book.listPrice === undefined ? { listPrice: info.price } : {}),
+          ...(info.isbn && !book.isbn ? { isbn: info.isbn } : {}),
+        }),
+      )
       .catch(() => {})
       .finally(() => setCoverLoading(false))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -67,11 +78,39 @@ export function BookDetail({
   const refetchCover = async () => {
     setCoverLoading(true)
     try {
-      const url = await lookupCover(book)
-      await updateDoc(bookRef, { coverUrl: url ?? '' })
+      const info = await lookupBookInfo(book)
+      await updateDoc(bookRef, {
+        coverUrl: info.coverUrl ?? '',
+        ...(book.listPrice == null ? { listPrice: info.price } : {}),
+        ...(info.isbn && !book.isbn ? { isbn: info.isbn } : {}),
+      })
     } finally {
       setCoverLoading(false)
     }
+  }
+
+  // 手動登録: 表紙を撮影/画像を選択してStorageへ
+  const coverFileInput = useRef<HTMLInputElement>(null)
+  const uploadCover = async (file: File) => {
+    setCoverLoading(true)
+    try {
+      const base64 = await resizeImageToBase64(file, 600)
+      const path = `hondoko/covers/${book.id}_${Date.now()}.jpg`
+      await uploadString(storageRef(storage, path), base64, 'base64', { contentType: 'image/jpeg' })
+      const url = await getDownloadURL(storageRef(storage, path))
+      await updateDoc(bookRef, { coverUrl: url })
+    } catch (e) {
+      alert('アップロードに失敗しました: ' + (e instanceof Error ? e.message : e))
+    }
+    setCoverLoading(false)
+  }
+
+  // 手動登録: 画像URLを直接指定
+  const setCoverByUrl = async () => {
+    const url = prompt('書影の画像URLを貼り付けてください(https://…)', book.coverUrl || '')
+    if (url == null) return
+    if (url !== '' && !/^https:\/\//.test(url)) { alert('httpsのURLを指定してください'); return }
+    await updateDoc(bookRef, { coverUrl: url })
   }
 
   const related = useMemo(() => {
@@ -169,13 +208,37 @@ export function BookDetail({
               )}
             </div>
             {!readOnly && (
-              <button
-                className="w-full mt-1 text-[10px] text-stone-400 hover:text-amber-700 inline-flex items-center justify-center gap-0.5"
-                onClick={refetchCover}
-                disabled={coverLoading}
-              >
-                <RefreshCw size={10} className={coverLoading ? 'animate-spin' : ''} /> 書影を再取得
-              </button>
+              <div className="mt-1 space-y-0.5">
+                <input
+                  ref={coverFileInput}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadCover(f); e.target.value = '' }}
+                />
+                <button
+                  className="w-full text-[10px] text-stone-400 hover:text-amber-700 inline-flex items-center justify-center gap-0.5"
+                  onClick={refetchCover}
+                  disabled={coverLoading}
+                >
+                  <RefreshCw size={10} className={coverLoading ? 'animate-spin' : ''} /> 自動取得
+                </button>
+                <button
+                  className="w-full text-[10px] text-stone-400 hover:text-amber-700 inline-flex items-center justify-center gap-0.5"
+                  onClick={() => coverFileInput.current?.click()}
+                  disabled={coverLoading}
+                >
+                  <Camera size={10} /> 写真から登録
+                </button>
+                <button
+                  className="w-full text-[10px] text-stone-400 hover:text-amber-700 inline-flex items-center justify-center gap-0.5"
+                  onClick={setCoverByUrl}
+                  disabled={coverLoading}
+                >
+                  <Link2 size={10} /> URLで登録
+                </button>
+              </div>
             )}
           </div>
 
@@ -234,6 +297,9 @@ export function BookDetail({
               {book.isbn && (
                 <div className="flex gap-2"><dt className="w-14 text-stone-400 shrink-0">ISBN</dt><dd className="text-stone-800">{book.isbn}</dd></div>
               )}
+              {book.listPrice != null && (
+                <div className="flex gap-2"><dt className="w-14 text-stone-400 shrink-0">定価</dt><dd className="text-stone-800">{yen(book.listPrice)} <span className="text-[10px] text-stone-400">(自動取得)</span></dd></div>
+              )}
               {book.memo && (
                 <div className="flex gap-2"><dt className="w-14 text-stone-400 shrink-0">メモ</dt><dd className="text-stone-800 whitespace-pre-wrap">{book.memo}</dd></div>
               )}
@@ -257,12 +323,12 @@ export function BookDetail({
         {!readOnly && (
           <div className="grid grid-cols-2 gap-3 bg-stone-50 rounded-xl border border-stone-200 p-3">
             <div>
-              <label className="text-xs font-medium text-stone-500">購入価格(円)</label>
+              <label className="text-xs font-medium text-stone-500">購入価格(円)<span className="font-normal">未入力なら定価で集計</span></label>
               <input
                 className={inputCls}
                 type="number"
                 inputMode="numeric"
-                placeholder="例: 1650"
+                placeholder={book.listPrice != null ? `未入力(定価 ${book.listPrice}円で集計)` : '例: 1650'}
                 defaultValue={book.purchasePrice ?? ''}
                 onBlur={(e) => {
                   const v = e.target.value === '' ? null : Number(e.target.value)
@@ -368,6 +434,11 @@ export function BookDetail({
             ))}
             {sortedComments.length === 0 && <li className="text-xs text-stone-400">まだコメントはありません</li>}
           </ul>
+          {needsLoginToComment && (
+            <button className="text-xs text-amber-700 underline" onClick={onLogin}>
+              コメントするにはGoogleログイン
+            </button>
+          )}
           {canComment && (
             <div className="flex gap-1.5">
               <input
