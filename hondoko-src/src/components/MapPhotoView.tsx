@@ -19,6 +19,7 @@ export function MapPhotoView({
   onQuickPhoto,
   processingLocations,
   latestPhotos,
+  readOnly = false,
 }: {
   map: ShelfMap
   shelves: Shelf[]
@@ -27,6 +28,7 @@ export function MapPhotoView({
   onQuickPhoto: (shelfId: string, row: number) => void
   processingLocations: Set<string>
   latestPhotos: Map<string, string> // 場所キー(`shelfId:row`) → 最新写真のstoragePath
+  readOnly?: boolean
 }) {
   const [url, setUrl] = useState<string | null>(null)
   const [editMode, setEditMode] = useState(false)
@@ -216,14 +218,16 @@ export function MapPhotoView({
               </button>
             </>
           )}
-          <button
-            className={`text-xs px-2.5 py-1 rounded-lg border inline-flex items-center gap-1 ${
-              editMode ? 'bg-amber-700 text-white border-amber-700' : 'border-stone-300 text-stone-500 hover:bg-stone-50'
-            }`}
-            onClick={() => setEditMode(!editMode)}
-          >
-            {editMode ? <><X size={12} />完了</> : <><Pencil size={12} />領域編集</>}
-          </button>
+          {!readOnly && (
+            <button
+              className={`text-xs px-2.5 py-1 rounded-lg border inline-flex items-center gap-1 ${
+                editMode ? 'bg-amber-700 text-white border-amber-700' : 'border-stone-300 text-stone-500 hover:bg-stone-50'
+              }`}
+              onClick={() => setEditMode(!editMode)}
+            >
+              {editMode ? <><X size={12} />完了</> : <><Pencil size={12} />領域編集</>}
+            </button>
+          )}
         </div>
       </div>
 
@@ -282,7 +286,7 @@ export function MapPhotoView({
                 >
                   {label}{count > 0 ? ` · ${count}` : ''}
                 </span>
-                {!editMode && (
+                {!editMode && !readOnly && (
                   <span
                     role="button"
                     title="写真を撮って登録/更新"

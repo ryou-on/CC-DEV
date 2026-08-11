@@ -20,6 +20,7 @@ export function SearchView({
 }) {
   const [shelfFilter, setShelfFilter] = useState('')
   const [includeSold, setIncludeSold] = useState(false)
+  const [unreadOnly, setUnreadOnly] = useState(false)
 
   const popularTags = useMemo(() => {
     const count = new Map<string, number>()
@@ -43,6 +44,7 @@ export function SearchView({
     const nq = normalize(term)
     let list = books
     if (!includeSold) list = list.filter((b) => b.status !== 'sold')
+    if (unreadOnly) list = list.filter((b) => b.readStatus !== 'read')
     if (shelfFilter) list = list.filter((b) => b.shelfId === shelfFilter)
     if (nq) {
       list = list.filter((b) => {
@@ -62,7 +64,7 @@ export function SearchView({
       })
     }
     return list.slice(0, 300)
-  }, [books, query, shelfFilter, includeSold])
+  }, [books, query, shelfFilter, includeSold, unreadOnly])
 
   return (
     <div className="space-y-3">
@@ -100,6 +102,10 @@ export function SearchView({
           <input type="checkbox" checked={includeSold} onChange={(e) => setIncludeSold(e.target.checked)} />
           売却済みも表示
         </label>
+        <label className="flex items-center gap-1.5 text-stone-600">
+          <input type="checkbox" checked={unreadOnly} onChange={(e) => setUnreadOnly(e.target.checked)} />
+          未読のみ
+        </label>
         <span className="ml-auto text-stone-400">{results.length}冊</span>
       </div>
 
@@ -124,8 +130,10 @@ export function SearchView({
                   </span>
                   <span className="text-xs text-amber-700 shrink-0 font-medium">{locationLabel(b, shelves)}</span>
                 </div>
-                <div className="text-xs text-stone-400 mt-0.5 flex flex-wrap gap-x-2">
+                <div className="text-xs text-stone-400 mt-0.5 flex flex-wrap gap-x-2 items-center">
                   <span>{b.author || '著者不明'}</span>
+                  {b.readStatus === 'read' && <span className="text-green-600">✓読了</span>}
+                  {(b.rating ?? 0) > 0 && <span className="text-amber-500">{'★'.repeat(b.rating!)}</span>}
                   {b.tags.slice(0, 4).map((t) => <span key={t} className="text-amber-600">#{t}</span>)}
                 </div>
               </div>

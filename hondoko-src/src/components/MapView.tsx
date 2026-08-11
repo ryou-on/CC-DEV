@@ -52,6 +52,7 @@ export function MapView({
   onStartPhoto,
   onStartAutoPhoto,
   processingLocations,
+  readOnly = false,
 }: {
   shelves: Shelf[]
   books: Book[]
@@ -61,6 +62,7 @@ export function MapView({
   onStartPhoto: (shelfId: string, row: number, file: File) => void
   onStartAutoPhoto?: (file: File) => void // マップ照合による自動判別(領域のあるマップがある場合のみ)
   processingLocations: Set<string> // `${shelfId}:${row}` 解析中の段
+  readOnly?: boolean // ゲスト閲覧モード
 }) {
   const [selected, setSelected] = useState<{ shelfId: string; row: number } | null>(null)
   const [seeding, setSeeding] = useState(false)
@@ -145,7 +147,7 @@ export function MapView({
   }
 
   useEffect(() => {
-    if (!selected) return
+    if (!selected || readOnly) return
     const handler = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return
@@ -261,9 +263,11 @@ export function MapView({
       <div className="text-center py-16 space-y-4">
         <BookOpen size={40} className="mx-auto text-stone-300" />
         <p className="text-sm text-stone-500">まだ棚が登録されていません</p>
-        <button className={btnPrimary} onClick={seedShelves} disabled={seeding}>
-          {seeding ? '作成中…' : '標準の棚構成を作成する'}
-        </button>
+        {!readOnly && (
+          <button className={btnPrimary} onClick={seedShelves} disabled={seeding}>
+            {seeding ? '作成中…' : '標準の棚構成を作成する'}
+          </button>
+        )}
       </div>
     )
   }
@@ -301,16 +305,18 @@ export function MapView({
               ? `最終更新: ${lastPhoto.createdAt.toDate().toLocaleDateString('ja-JP')}`
               : 'まだ写真登録がありません'}
           </div>
-          <button
-            className={btnPrimary + ' inline-flex items-center gap-1.5'}
-            onClick={() => openPicker(shelf.id, selected.row)}
-            disabled={isProcessing}
-          >
-            <Camera size={16} /> {isProcessing ? '解析中…' : '写真で更新'}
-          </button>
+          {!readOnly && (
+            <button
+              className={btnPrimary + ' inline-flex items-center gap-1.5'}
+              onClick={() => openPicker(shelf.id, selected.row)}
+              disabled={isProcessing}
+            >
+              <Camera size={16} /> {isProcessing ? '解析中…' : '写真で更新'}
+            </button>
+          )}
         </div>
 
-        {booksInRow.length > 0 && (
+        {booksInRow.length > 0 && !readOnly && (
           <div className="flex items-center gap-2 flex-wrap bg-white rounded-xl border border-stone-200 px-3 py-2">
             <label className="flex items-center gap-1.5 text-xs text-stone-600 cursor-pointer">
               <input
@@ -365,16 +371,18 @@ export function MapView({
                     }
                   }}
                 >
-                  <input
-                    type="checkbox"
-                    checked={isSel}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={() => {
-                      toggleSelect(b.id)
-                      lastClickIdx.current = i
-                      setFocusIdx(i)
-                    }}
-                  />
+                  {!readOnly && (
+                    <input
+                      type="checkbox"
+                      checked={isSel}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={() => {
+                        toggleSelect(b.id)
+                        lastClickIdx.current = i
+                        setFocusIdx(i)
+                      }}
+                    />
+                  )}
                   <div className="min-w-0 flex-1">
                     <span className="text-sm font-medium text-stone-800 block truncate">
                       {b.title}{b.volume ? ` (${b.volume})` : ''}
@@ -451,29 +459,32 @@ export function MapView({
             onQuickPhoto={openPicker}
             processingLocations={processingLocations}
             latestPhotos={latestPhotoByLocation}
+            readOnly={readOnly}
           />
         ))}
 
-      <div>
-        <input
-          ref={mapInput}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={(e) => e.target.files?.[0] && addMap(e.target.files[0])}
-        />
-        <button
-          className={btnSecondary + ' w-full inline-flex items-center justify-center gap-2'}
-          onClick={() => mapInput.current?.click()}
-          disabled={uploadingMap}
-        >
-          <ImagePlus size={16} />
-          {uploadingMap ? 'アップロード中…' : '本棚の写真からマップを追加'}
-        </button>
-        <p className="text-xs text-stone-400 mt-1 text-center">
-          壁全体の写真を追加 → 「領域編集」で段の範囲を囲んで棚-段を割り当てられます
-        </p>
-      </div>
+      {!readOnly && (
+        <div>
+          <input
+            ref={mapInput}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => e.target.files?.[0] && addMap(e.target.files[0])}
+          />
+          <button
+            className={btnSecondary + ' w-full inline-flex items-center justify-center gap-2'}
+            onClick={() => mapInput.current?.click()}
+            disabled={uploadingMap}
+          >
+            <ImagePlus size={16} />
+            {uploadingMap ? 'アップロード中…' : '本棚の写真からマップを追加'}
+          </button>
+          <p className="text-xs text-stone-400 mt-1 text-center">
+            壁全体の写真を追加 → 「領域編集」で段の範囲を囲んで棚-段を割り当てられます
+          </p>
+        </div>
+      )}
 
       {/* グリッド(一覧) */}
       {GROUP_ORDER.map((group) => {
@@ -498,19 +509,21 @@ export function MapView({
                         {shelf.name}
                       </span>
                       <span className="text-xs text-stone-400 shrink-0">{shelfTotal}冊</span>
-                      <select
-                        title="段数を変更"
-                        className="shrink-0 text-[11px] text-stone-500 border border-stone-200 rounded px-1 py-0.5 bg-white"
-                        value={shelf.rows}
-                        onChange={async (e) => {
-                          const r = await changeShelfRows(shelf, Number(e.target.value), books)
-                          if (!r.ok && r.message) alert(r.message)
-                        }}
-                      >
-                        {Array.from({ length: MAX_ROWS }, (_, n) => n + 1).map((n) => (
-                          <option key={n} value={n}>{n}段</option>
-                        ))}
-                      </select>
+                      {!readOnly && (
+                        <select
+                          title="段数を変更"
+                          className="shrink-0 text-[11px] text-stone-500 border border-stone-200 rounded px-1 py-0.5 bg-white"
+                          value={shelf.rows}
+                          onChange={async (e) => {
+                            const r = await changeShelfRows(shelf, Number(e.target.value), books)
+                            if (!r.ok && r.message) alert(r.message)
+                          }}
+                        >
+                          {Array.from({ length: MAX_ROWS }, (_, n) => n + 1).map((n) => (
+                            <option key={n} value={n}>{n}段</option>
+                          ))}
+                        </select>
+                      )}
                     </div>
                     <div className="space-y-1">
                       {total.map((count, i) => {
@@ -528,18 +541,20 @@ export function MapView({
                               <span>{shelfCode(shelf)}-{i + 1}</span>
                               <span className="font-medium">{count > 0 ? `${count}冊` : '—'}</span>
                             </button>
-                            <button
-                              title="写真を撮って登録/更新"
-                              onClick={() => openPicker(shelf.id, i + 1)}
-                              disabled={isProcessing}
-                              className={`shrink-0 w-6 h-6 rounded flex items-center justify-center border text-stone-500 ${
-                                isProcessing
-                                  ? 'bg-amber-100 border-amber-300 animate-pulse'
-                                  : 'bg-white border-stone-200 hover:bg-amber-50 hover:text-amber-700'
-                              }`}
-                            >
-                              <Camera size={13} />
-                            </button>
+                            {!readOnly && (
+                              <button
+                                title="写真を撮って登録/更新"
+                                onClick={() => openPicker(shelf.id, i + 1)}
+                                disabled={isProcessing}
+                                className={`shrink-0 w-6 h-6 rounded flex items-center justify-center border text-stone-500 ${
+                                  isProcessing
+                                    ? 'bg-amber-100 border-amber-300 animate-pulse'
+                                    : 'bg-white border-stone-200 hover:bg-amber-50 hover:text-amber-700'
+                                }`}
+                              >
+                                <Camera size={13} />
+                              </button>
+                            )}
                           </div>
                         )
                       })}

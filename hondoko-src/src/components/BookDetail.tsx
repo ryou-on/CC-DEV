@@ -1,17 +1,28 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { deleteDoc, doc, serverTimestamp, updateDoc } from 'firebase/firestore'
-import { Building2, MapPin, Pencil, RefreshCw, Trash2, User } from 'lucide-react'
+import {
+  addDoc, collection, deleteDoc, doc, serverTimestamp, updateDoc,
+} from 'firebase/firestore'
+import {
+  Building2, ExternalLink, MapPin, Pencil, RefreshCw, Send, Star, Trash2, User, X,
+} from 'lucide-react'
 import { db } from '../firebase'
-import type { Book, Shelf } from '../types'
+import type { Book, BookComment, Shelf } from '../types'
 import { lookupCover } from '../lib/api'
 import { locationLabel, locationLabelLong } from '../lib/diff'
-import { Modal, Tag, btnSecondary } from './ui'
+import { Modal, Tag, btnSecondary, inputCls } from './ui'
 import { BookForm, KIND_LABEL } from './BookForm'
+
+const yen = (n: number) => n.toLocaleString('ja-JP') + '円'
 
 export function BookDetail({
   book,
   books,
   shelves,
+  comments,
+  readOnly,
+  canComment,
+  currentUser,
+  isOwner,
   onClose,
   onSelectBook,
   onSearch,
@@ -19,32 +30,45 @@ export function BookDetail({
   book: Book
   books: Book[]
   shelves: Shelf[]
+  comments: BookComment[]
+  readOnly: boolean
+  canComment: boolean
+  currentUser: { email: string; name: string }
+  isOwner: boolean
   onClose: () => void
   onSelectBook: (id: string) => void
   onSearch: (query: string) => void
 }) {
   const [editing, setEditing] = useState(false)
   const [coverLoading, setCoverLoading] = useState(false)
+  const [tagInput, setTagInput] = useState('')
+  const [commentText, setCommentText] = useState('')
+  const [posting, setPosting] = useState(false)
   const fetchedFor = useRef<string | null>(null)
 
-  // 書影の遅延取得(未取得の本を開いたときに1回だけ試行し、結果をキャッシュ)
+  const bookRef = doc(db, 'hondoko-books', book.id)
+  const patch = (data: Record<string, unknown>) =>
+    updateDoc(bookRef, { ...data, updatedAt: serverTimestamp() })
+
+  // 書影の遅延取得
   useEffect(() => {
     if (book.coverUrl !== undefined) return
     if (fetchedFor.current === book.id) return
-    if (!book.title) return
+    if (!book.title || readOnly) return
     fetchedFor.current = book.id
     setCoverLoading(true)
     lookupCover(book)
-      .then((url) => updateDoc(doc(db, 'hondoko-books', book.id), { coverUrl: url ?? '' }))
+      .then((url) => updateDoc(bookRef, { coverUrl: url ?? '' }))
       .catch(() => {})
       .finally(() => setCoverLoading(false))
-  }, [book])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [book, readOnly])
 
   const refetchCover = async () => {
     setCoverLoading(true)
     try {
       const url = await lookupCover(book)
-      await updateDoc(doc(db, 'hondoko-books', book.id), { coverUrl: url ?? '' })
+      await updateDoc(bookRef, { coverUrl: url ?? '' })
     } finally {
       setCoverLoading(false)
     }
@@ -64,18 +88,49 @@ export function BookDetail({
     return scored.slice(0, 8).map((x) => x.b)
   }, [book, books])
 
+  const sortedComments = useMemo(
+    () => comments.slice().sort((a, b) => (a.createdAt?.toMillis() ?? 0) - (b.createdAt?.toMillis() ?? 0)),
+    [comments],
+  )
+
   const setStatus = async (status: Book['status']) => {
-    await updateDoc(doc(db, 'hondoko-books', book.id), {
-      status,
-      ...(status !== 'owned' ? { shelfId: null, row: null } : {}),
-      updatedAt: serverTimestamp(),
-    })
+    await patch({ status, ...(status !== 'owned' ? { shelfId: null, row: null } : {}) })
   }
 
   const remove = async () => {
     if (!confirm(`「${book.title}」を削除しますか？(取り消せません)`)) return
-    await deleteDoc(doc(db, 'hondoko-books', book.id))
+    await deleteDoc(bookRef)
     onClose()
+  }
+
+  const addTag = async () => {
+    const t = tagInput.replace(/^#/, '').trim()
+    if (!t || book.tags.includes(t)) { setTagInput(''); return }
+    await patch({ tags: [...book.tags, t] })
+    setTagInput('')
+  }
+
+  const removeTag = async (t: string) => {
+    await patch({ tags: book.tags.filter((x) => x !== t) })
+  }
+
+  const postComment = async () => {
+    const text = commentText.trim()
+    if (!text) return
+    setPosting(true)
+    try {
+      await addDoc(collection(db, 'hondoko-comments'), {
+        bookId: book.id,
+        text,
+        by: currentUser.email,
+        byName: currentUser.name,
+        createdAt: serverTimestamp(),
+      })
+      setCommentText('')
+    } catch (e) {
+      alert('コメントの投稿に失敗しました: ' + (e instanceof Error ? e.message : e))
+    }
+    setPosting(false)
   }
 
   const searchChip = (icon: React.ReactNode, label: string, query: string) => (
@@ -93,6 +148,10 @@ export function BookDetail({
   }
 
   const authors = book.author.split(/[、,]/).map((a) => a.trim()).filter(Boolean)
+  const amazonUrl = `https://www.amazon.co.jp/s?k=${encodeURIComponent(book.isbn || `${book.title} ${book.author}`)}`
+  const mercariUrl = `https://jp.mercari.com/search?keyword=${encodeURIComponent(`${book.title} ${book.author}`.trim())}&status=on_sale`
+  const rating = book.rating ?? 0
+  const isRead = book.readStatus === 'read'
 
   return (
     <Modal title={book.title + (book.volume ? ` (${book.volume})` : '')} onClose={onClose}>
@@ -100,7 +159,7 @@ export function BookDetail({
         <div className="flex gap-4">
           {/* 書影 */}
           <div className="w-24 shrink-0">
-            <div className="w-24 h-34 min-h-32 rounded-md overflow-hidden bg-stone-100 border border-stone-200 flex items-center justify-center">
+            <div className="w-24 min-h-32 rounded-md overflow-hidden bg-stone-100 border border-stone-200 flex items-center justify-center">
               {book.coverUrl ? (
                 <img src={book.coverUrl} alt={book.title} className="w-full h-full object-cover" />
               ) : (
@@ -109,19 +168,51 @@ export function BookDetail({
                 </span>
               )}
             </div>
-            <button
-              className="w-full mt-1 text-[10px] text-stone-400 hover:text-amber-700 inline-flex items-center justify-center gap-0.5"
-              onClick={refetchCover}
-              disabled={coverLoading}
-            >
-              <RefreshCw size={10} className={coverLoading ? 'animate-spin' : ''} /> 書影を再取得
-            </button>
+            {!readOnly && (
+              <button
+                className="w-full mt-1 text-[10px] text-stone-400 hover:text-amber-700 inline-flex items-center justify-center gap-0.5"
+                onClick={refetchCover}
+                disabled={coverLoading}
+              >
+                <RefreshCw size={10} className={coverLoading ? 'animate-spin' : ''} /> 書影を再取得
+              </button>
+            )}
           </div>
 
           <div className="min-w-0 flex-1 space-y-3">
             <div className="flex items-center gap-2 text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
               <MapPin size={16} className="shrink-0" />
               <span className="font-bold text-sm">{locationLabelLong(book, shelves)}</span>
+            </div>
+
+            {/* 既読・評価 */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <button
+                disabled={readOnly}
+                onClick={() => patch({ readStatus: isRead ? 'unread' : 'read' })}
+                className={`text-xs px-2.5 py-1 rounded-full border font-medium ${
+                  isRead
+                    ? 'bg-green-100 text-green-800 border-green-300'
+                    : 'bg-stone-100 text-stone-500 border-stone-300'
+                } ${readOnly ? 'cursor-default' : 'hover:opacity-80'}`}
+              >
+                {isRead ? '✓ 読了' : '未読'}
+              </button>
+              <div className="flex items-center gap-0.5">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    disabled={readOnly}
+                    onClick={() => patch({ rating: rating === n ? 0 : n })}
+                    className={readOnly ? 'cursor-default' : 'hover:scale-110 transition-transform'}
+                  >
+                    <Star
+                      size={18}
+                      className={n <= rating ? 'text-amber-500 fill-amber-400' : 'text-stone-300'}
+                    />
+                  </button>
+                ))}
+              </div>
             </div>
 
             <dl className="text-sm space-y-1.5">
@@ -147,32 +238,157 @@ export function BookDetail({
                 <div className="flex gap-2"><dt className="w-14 text-stone-400 shrink-0">メモ</dt><dd className="text-stone-800 whitespace-pre-wrap">{book.memo}</dd></div>
               )}
             </dl>
+
+            {/* 外部リンク */}
+            <div className="flex flex-wrap gap-2 text-xs">
+              <a href={amazonUrl} target="_blank" rel="noopener noreferrer"
+                 className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-stone-300 text-stone-600 hover:bg-stone-50">
+                <ExternalLink size={11} /> Amazonで見る(レビュー)
+              </a>
+              <a href={mercariUrl} target="_blank" rel="noopener noreferrer"
+                 className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-stone-300 text-stone-600 hover:bg-stone-50">
+                <ExternalLink size={11} /> メルカリ相場を見る
+              </a>
+            </div>
           </div>
         </div>
 
-        {book.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {book.tags.map((t) => (
-              <Tag key={t} label={t} onClick={() => { onClose(); onSearch(`#${t}`) }} />
-            ))}
+        {/* 価格(メンバーのみ) */}
+        {!readOnly && (
+          <div className="grid grid-cols-2 gap-3 bg-stone-50 rounded-xl border border-stone-200 p-3">
+            <div>
+              <label className="text-xs font-medium text-stone-500">購入価格(円)</label>
+              <input
+                className={inputCls}
+                type="number"
+                inputMode="numeric"
+                placeholder="例: 1650"
+                defaultValue={book.purchasePrice ?? ''}
+                onBlur={(e) => {
+                  const v = e.target.value === '' ? null : Number(e.target.value)
+                  if (v !== (book.purchasePrice ?? null)) patch({ purchasePrice: v })
+                }}
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-stone-500">想定売値(円)<span className="font-normal">メルカリ相場を参考に</span></label>
+              <input
+                className={inputCls}
+                type="number"
+                inputMode="numeric"
+                placeholder="例: 800"
+                defaultValue={book.resalePrice ?? ''}
+                onBlur={(e) => {
+                  const v = e.target.value === '' ? null : Number(e.target.value)
+                  if (v !== (book.resalePrice ?? null)) patch({ resalePrice: v })
+                }}
+              />
+            </div>
+            {(book.purchasePrice != null || book.resalePrice != null) && (
+              <p className="col-span-2 text-[11px] text-stone-400">
+                {book.purchasePrice != null && `購入 ${yen(book.purchasePrice)}`}
+                {book.purchasePrice != null && book.resalePrice != null && ' / '}
+                {book.resalePrice != null && `想定売値 ${yen(book.resalePrice)}`}
+              </p>
+            )}
           </div>
         )}
 
-        <div className="flex flex-wrap gap-2">
-          <button className={btnSecondary} onClick={() => setEditing(true)}>
-            <span className="inline-flex items-center gap-1.5"><Pencil size={14} />編集</span>
-          </button>
-          {book.status !== 'unplaced' && (
-            <button className={btnSecondary} onClick={() => setStatus('unplaced')}>未配置にする</button>
+        {/* タグ(メンバーはその場で追加・削除可) */}
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap gap-1.5 items-center">
+            {book.tags.map((t) => (
+              <span key={t} className="inline-flex items-center">
+                <Tag label={t} onClick={() => { onClose(); onSearch(`#${t}`) }} />
+                {!readOnly && (
+                  <button className="ml-0.5 text-stone-300 hover:text-red-500" onClick={() => removeTag(t)} title="タグを削除">
+                    <X size={12} />
+                  </button>
+                )}
+              </span>
+            ))}
+            {book.tags.length === 0 && <span className="text-xs text-stone-400">タグなし</span>}
+          </div>
+          {!readOnly && (
+            <div className="flex gap-1.5">
+              <input
+                className={inputCls + ' !py-1.5 text-xs'}
+                placeholder="タグを追加(Enter)"
+                value={tagInput}
+                onChange={(e) => setTagInput(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addTag()}
+              />
+              <button className={btnSecondary + ' !py-1.5 !px-3 text-xs shrink-0'} onClick={addTag} disabled={!tagInput.trim()}>
+                追加
+              </button>
+            </div>
           )}
-          {book.status !== 'sold' && (
-            <button className={btnSecondary} onClick={() => setStatus('sold')}>売却済みにする</button>
-          )}
-          <button className="text-red-600 border border-red-200 hover:bg-red-50 font-medium rounded-lg px-4 py-2 text-sm" onClick={remove}>
-            <span className="inline-flex items-center gap-1.5"><Trash2 size={14} />削除</span>
-          </button>
         </div>
 
+        {/* 操作(メンバーのみ) */}
+        {!readOnly && (
+          <div className="flex flex-wrap gap-2">
+            <button className={btnSecondary} onClick={() => setEditing(true)}>
+              <span className="inline-flex items-center gap-1.5"><Pencil size={14} />編集</span>
+            </button>
+            {book.status !== 'unplaced' && (
+              <button className={btnSecondary} onClick={() => setStatus('unplaced')}>未配置にする</button>
+            )}
+            {book.status !== 'sold' && (
+              <button className={btnSecondary} onClick={() => setStatus('sold')}>売却済みにする</button>
+            )}
+            <button className="text-red-600 border border-red-200 hover:bg-red-50 font-medium rounded-lg px-4 py-2 text-sm" onClick={remove}>
+              <span className="inline-flex items-center gap-1.5"><Trash2 size={14} />削除</span>
+            </button>
+          </div>
+        )}
+
+        {/* コメント */}
+        <div>
+          <h3 className="text-sm font-bold text-stone-600 mb-2">コメント {sortedComments.length > 0 && `(${sortedComments.length})`}</h3>
+          <ul className="space-y-2 mb-2">
+            {sortedComments.map((c) => (
+              <li key={c.id} className="bg-stone-50 rounded-lg px-3 py-2 text-sm">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-xs font-bold text-stone-600">{c.byName || c.by}</span>
+                  <span className="text-[10px] text-stone-400">
+                    {c.createdAt ? c.createdAt.toDate().toLocaleString('ja-JP', { dateStyle: 'short', timeStyle: 'short' }) : ''}
+                  </span>
+                  {(isOwner || c.by === currentUser.email) && (
+                    <button
+                      className="ml-auto text-stone-300 hover:text-red-500"
+                      onClick={() => deleteDoc(doc(db, 'hondoko-comments', c.id))}
+                    >
+                      <X size={13} />
+                    </button>
+                  )}
+                </div>
+                <p className="text-stone-700 whitespace-pre-wrap mt-0.5">{c.text}</p>
+              </li>
+            ))}
+            {sortedComments.length === 0 && <li className="text-xs text-stone-400">まだコメントはありません</li>}
+          </ul>
+          {canComment && (
+            <div className="flex gap-1.5">
+              <input
+                className={inputCls + ' text-sm'}
+                placeholder="コメントを書く…"
+                value={commentText}
+                onChange={(e) => setCommentText(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && !e.nativeEvent.isComposing && postComment()}
+              />
+              <button
+                className="shrink-0 bg-amber-700 hover:bg-amber-800 text-white rounded-lg px-3 disabled:opacity-40"
+                onClick={postComment}
+                disabled={posting || !commentText.trim()}
+              >
+                <Send size={15} />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* 関連書籍 */}
         {related.length > 0 && (
           <div>
             <h3 className="text-sm font-bold text-stone-600 mb-2">関連書籍</h3>

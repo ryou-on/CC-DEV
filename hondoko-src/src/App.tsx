@@ -3,7 +3,7 @@ import { onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebas
 import { collection, doc, onSnapshot, query, orderBy } from 'firebase/firestore'
 import { BookOpen, LibraryBig, Loader2, LogOut, PlusCircle, Search, Settings, X } from 'lucide-react'
 import { auth, db, googleProvider, OWNER_EMAIL } from './firebase'
-import type { Book, Shelf, ShelfMap, ShelfPhoto } from './types'
+import type { Book, BookComment, Shelf, SharingConfig, ShelfMap, ShelfPhoto } from './types'
 import { APP_VERSION, RELEASE_NOTES, USAGE_GUIDE } from './version'
 import { useAnalysisJobs } from './hooks/useAnalysisJobs'
 import { shelfCode } from './lib/diff'
@@ -16,12 +16,27 @@ import { BookDetail } from './components/BookDetail'
 import { Modal, Spinner, btnPrimary } from './components/ui'
 
 type Tab = 'search' | 'map' | 'add' | 'settings'
-type MemberState = 'checking' | 'ok' | 'denied'
+// member=編集可 / viewer=閲覧のみ(公開設定によるゲスト) / denied=不可
+type Role = 'checking' | 'member' | 'viewer' | 'denied'
+
+// 非メンバーの閲覧可否を公開設定から判定
+function resolveViewerRole(email: string, sharing: SharingConfig | null): Role {
+  if (!sharing || sharing.mode === 'private') return 'denied'
+  if (sharing.mode === 'public') return 'viewer'
+  if (sharing.mode === 'viewers') return sharing.viewers?.includes(email) ? 'viewer' : 'denied'
+  if (sharing.mode === 'link') {
+    const k = new URLSearchParams(location.search).get('k')
+    return k && k === sharing.linkKey ? 'viewer' : 'denied'
+  }
+  return 'denied'
+}
 
 export default function App() {
   const [user, setUser] = useState<User | null | undefined>(undefined)
-  const [memberState, setMemberState] = useState<MemberState>('checking')
+  const [role, setRole] = useState<Role>('checking')
   const [members, setMembers] = useState<string[]>([])
+  const [sharing, setSharing] = useState<SharingConfig | null>(null)
+  const [comments, setComments] = useState<BookComment[]>([])
   const [shelves, setShelves] = useState<Shelf[]>([])
   const [books, setBooks] = useState<Book[]>([])
   const [photos, setPhotos] = useState<ShelfPhoto[]>([])
@@ -37,28 +52,41 @@ export default function App() {
 
   useEffect(() => onAuthStateChanged(auth, (u) => setUser(u)), [])
 
-  // メンバー判定: members ドキュメントの購読を試みる(拒否されたら非メンバー)
+  // 公開設定の購読(ログイン済みなら誰でも読める)
   useEffect(() => {
-    if (!user) { setMemberState('checking'); setMembers([]); return }
+    if (!user) { setSharing(null); return }
+    return onSnapshot(
+      doc(db, 'hondoko-config', 'sharing'),
+      (snap) => setSharing(snap.exists() ? (snap.data() as SharingConfig) : null),
+      () => setSharing(null),
+    )
+  }, [user])
+
+  // ロール判定: メンバー → member、そうでなければ公開設定に応じて viewer / denied
+  useEffect(() => {
+    if (!user) { setRole('checking'); setMembers([]); return }
     const email = user.email ?? ''
     const unsub = onSnapshot(
       doc(db, 'hondoko-config', 'members'),
       (snap) => {
         const emails: string[] = (snap.exists() && snap.data().emails) || []
         setMembers(emails)
-        setMemberState(email === OWNER_EMAIL || emails.includes(email) ? 'ok' : 'denied')
+        if (email === OWNER_EMAIL || emails.includes(email)) setRole('member')
+        else setRole(resolveViewerRole(email, sharing))
       },
       () => {
-        // permission-denied: メンバーでない(オーナーはルール上必ず読める)
-        setMemberState(email === OWNER_EMAIL ? 'ok' : 'denied')
+        // permission-denied: メンバーでない
+        if (email === OWNER_EMAIL) setRole('member')
+        else setRole(resolveViewerRole(email, sharing))
       },
     )
     return unsub
-  }, [user])
+  }, [user, sharing])
 
   // データ購読
   useEffect(() => {
-    if (memberState !== 'ok') { setShelves([]); setBooks([]); setPhotos([]); setMaps([]); return }
+    const canRead = role === 'member' || role === 'viewer'
+    if (!canRead) { setShelves([]); setBooks([]); setPhotos([]); setMaps([]); setComments([]); return }
     const unsub1 = onSnapshot(query(collection(db, 'hondoko-shelves'), orderBy('order')), (snap) => {
       setShelves(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Shelf))
     })
@@ -71,8 +99,11 @@ export default function App() {
     const unsub4 = onSnapshot(collection(db, 'hondoko-maps'), (snap) => {
       setMaps(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as ShelfMap))
     })
-    return () => { unsub1(); unsub2(); unsub3(); unsub4() }
-  }, [memberState])
+    const unsub5 = onSnapshot(collection(db, 'hondoko-comments'), (snap) => {
+      setComments(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as BookComment))
+    })
+    return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5() }
+  }, [role])
 
   const selectedBook = useMemo(
     () => books.find((b) => b.id === selectedBookId) ?? null,
@@ -124,26 +155,32 @@ export default function App() {
     )
   }
 
-  if (memberState === 'checking') {
+  if (role === 'checking') {
     return <div className="min-h-dvh flex items-center justify-center bg-stone-100"><Spinner label="確認中…" /></div>
   }
 
-  if (memberState === 'denied') {
+  if (role === 'denied') {
     return (
       <div className="min-h-dvh flex flex-col items-center justify-center bg-stone-100 px-6 text-center">
-        <p className="text-stone-700 font-medium mb-2">このアカウントは利用が許可されていません</p>
-        <p className="text-sm text-stone-500 mb-6">{user.email}<br />家族のオーナーにメンバー追加を依頼してください</p>
+        <p className="text-stone-700 font-medium mb-2">このアカウントは閲覧が許可されていません</p>
+        <p className="text-sm text-stone-500 mb-6">{user.email}<br />オーナーにメンバー追加または公開設定の変更を依頼してください</p>
         <button className={btnPrimary} onClick={() => signOut(auth)}>別のアカウントでログイン</button>
       </div>
     )
   }
 
-  const TABS: { key: Tab; label: string; icon: typeof Search }[] = [
-    { key: 'search', label: '検索', icon: Search },
-    { key: 'map', label: 'マップ', icon: BookOpen },
-    { key: 'add', label: '追加', icon: PlusCircle },
-    { key: 'settings', label: '設定', icon: Settings },
-  ]
+  const readOnly = role === 'viewer'
+  const TABS: { key: Tab; label: string; icon: typeof Search }[] = readOnly
+    ? [
+        { key: 'search', label: '検索', icon: Search },
+        { key: 'map', label: 'マップ', icon: BookOpen },
+      ]
+    : [
+        { key: 'search', label: '検索', icon: Search },
+        { key: 'map', label: 'マップ', icon: BookOpen },
+        { key: 'add', label: '追加', icon: PlusCircle },
+        { key: 'settings', label: '設定', icon: Settings },
+      ]
 
   return (
     <div className="min-h-dvh bg-stone-100 flex flex-col">
@@ -157,6 +194,9 @@ export default function App() {
           <button className="text-[11px] text-amber-200/90 hover:text-white mt-0.5" onClick={() => setShowNotes(true)} title="リリースノート">
             {APP_VERSION}
           </button>
+          {readOnly && (
+            <span className="text-[10px] bg-amber-700 text-amber-100 rounded-full px-2 py-0.5">閲覧モード</span>
+          )}
           <div className="ml-auto flex items-center gap-3">
             <span className="text-xs text-amber-200/80 hidden sm:block">{user.email}</span>
             <button className="p-1.5 rounded hover:bg-amber-800" onClick={() => signOut(auth)} title="ログアウト">
@@ -179,13 +219,20 @@ export default function App() {
             maps={maps}
             onSelectBook={setSelectedBookId}
             onStartPhoto={(shelfId, row, file) => startJob(file, { shelfId, row })}
-            onStartAutoPhoto={matchMap ? (file) => startJob(file, null, { map: matchMap, shelves }) : undefined}
+            onStartAutoPhoto={!readOnly && matchMap ? (file) => startJob(file, null, { map: matchMap, shelves }) : undefined}
             processingLocations={processingLocations}
+            readOnly={readOnly}
           />
         )}
-        {tab === 'add' && <AddView shelves={shelves} books={books} />}
-        {tab === 'settings' && (
-          <SettingsView shelves={shelves} books={books} members={members} userEmail={user.email ?? ''} />
+        {tab === 'add' && !readOnly && <AddView shelves={shelves} books={books} />}
+        {tab === 'settings' && !readOnly && (
+          <SettingsView
+            shelves={shelves}
+            books={books}
+            members={members}
+            userEmail={user.email ?? ''}
+            sharing={sharing}
+          />
         )}
       </main>
 
@@ -271,6 +318,11 @@ export default function App() {
           book={selectedBook}
           books={books}
           shelves={shelves}
+          comments={comments.filter((c) => c.bookId === selectedBook.id)}
+          readOnly={readOnly}
+          canComment={role === 'member' || (role === 'viewer' && !!sharing?.allowComments)}
+          currentUser={{ email: user.email ?? '', name: user.displayName ?? user.email ?? '' }}
+          isOwner={user.email === OWNER_EMAIL}
           onClose={() => setSelectedBookId(null)}
           onSelectBook={setSelectedBookId}
           onSearch={(q) => { setSearchQuery(q); setTab('search') }}

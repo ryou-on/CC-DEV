@@ -158,8 +158,9 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // hondoko (本ドコ？): 蔵書管理 — 家族メンバーのみ読み書き可
-    // メンバー = オーナー(junpei) + hondoko-config/members の emails リスト
+    // hondoko (本ドコ？): 蔵書管理
+    // 編集 = メンバー(オーナー + hondoko-config/members)のみ
+    // 閲覧 = メンバー + 公開設定(hondoko-config/sharing)に応じたビューワー
     function isHondokoOwner() {
       return request.auth != null && request.auth.token.email == 'junpei.omote@gmail.com';
     }
@@ -170,21 +171,58 @@ service cloud.firestore {
          request.auth.token.email in get(/databases/$(database)/documents/hondoko-config/members).data.emails)
       );
     }
-    match /hondoko-config/{docId} {
+    function hondokoSharing() {
+      return get(/databases/$(database)/documents/hondoko-config/sharing).data;
+    }
+    function isHondokoViewer() {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/hondoko-config/sharing) && (
+          hondokoSharing().mode == 'public' ||
+          hondokoSharing().mode == 'link' ||
+          (hondokoSharing().mode == 'viewers' &&
+           request.auth.token.email in hondokoSharing().viewers)
+        );
+    }
+    function canHondokoRead() {
+      return isHondokoMember() || isHondokoViewer();
+    }
+    match /hondoko-config/members {
       allow read: if isHondokoMember();
       allow write: if isHondokoOwner();
     }
+    match /hondoko-config/sharing {
+      // ゲスト判定のためログイン済みなら誰でも読める(メールアドレス一覧を含むため注意して運用)
+      allow read: if request.auth != null;
+      allow write: if isHondokoOwner();
+    }
     match /hondoko-shelves/{docId} {
-      allow read, write: if isHondokoMember();
+      allow read: if canHondokoRead();
+      allow write: if isHondokoMember();
     }
     match /hondoko-books/{docId} {
-      allow read, write: if isHondokoMember();
+      allow read: if canHondokoRead();
+      allow write: if isHondokoMember();
     }
     match /hondoko-photos/{docId} {
-      allow read, write: if isHondokoMember();
+      allow read: if canHondokoRead();
+      allow write: if isHondokoMember();
     }
     match /hondoko-maps/{docId} {
-      allow read, write: if isHondokoMember();
+      allow read: if canHondokoRead();
+      allow write: if isHondokoMember();
+    }
+    match /hondoko-comments/{docId} {
+      allow read: if canHondokoRead();
+      allow create: if request.auth != null
+        && request.resource.data.by == request.auth.token.email
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 2000
+        && (isHondokoMember() ||
+            (isHondokoViewer() && hondokoSharing().allowComments == true));
+      allow update: if false;
+      allow delete: if isHondokoOwner() ||
+        (request.auth != null && resource.data.by == request.auth.token.email);
     }
 
     // その他は全拒否

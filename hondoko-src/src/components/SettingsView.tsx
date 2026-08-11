@@ -2,27 +2,47 @@ import { useState } from 'react'
 import {
   addDoc, collection, deleteDoc, doc, serverTimestamp, setDoc, updateDoc,
 } from 'firebase/firestore'
-import { Plus, Trash2 } from 'lucide-react'
+import { Copy, Plus, Trash2 } from 'lucide-react'
 import { db, OWNER_EMAIL } from '../firebase'
-import type { Book, Shelf, ShelfGroup } from '../types'
+import type { Book, Shelf, ShelfGroup, SharingConfig, SharingMode } from '../types'
 import { APP_VERSION } from '../version'
 import { changeShelfRows, MAX_ROWS } from '../lib/shelfOps'
 import { btnSecondary, inputCls } from './ui'
+
+const genKey = () => Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6)
+
+const MODE_LABEL: Record<SharingMode, { label: string; desc: string }> = {
+  private: { label: 'メンバーのみ', desc: '家族メンバーだけが閲覧・編集できます(標準)' },
+  viewers: { label: '特定の人のみ', desc: '下のリストに追加したGoogleアカウントが閲覧できます(編集不可)' },
+  link: { label: 'リンクを知っている人', desc: '共有リンクを知っている人がGoogleログイン後に閲覧できます' },
+  public: { label: '公開', desc: 'URLを知っていれば誰でも(Googleログイン後に)閲覧できます' },
+}
 
 export function SettingsView({
   shelves,
   books,
   members,
   userEmail,
+  sharing,
 }: {
   shelves: Shelf[]
   books: Book[]
   members: string[]
   userEmail: string
+  sharing: SharingConfig | null
 }) {
   const isOwner = userEmail === OWNER_EMAIL
   const [newMember, setNewMember] = useState('')
+  const [newViewer, setNewViewer] = useState('')
   const [busy, setBusy] = useState(false)
+
+  const share: SharingConfig = sharing ?? { mode: 'private', viewers: [], allowComments: false, linkKey: genKey() }
+
+  const saveSharing = async (patch: Partial<SharingConfig>) => {
+    await setDoc(doc(db, 'hondoko-config', 'sharing'), { ...share, ...patch }, { merge: false })
+  }
+
+  const shareUrl = `${location.origin}/hondoko/` + (share.mode === 'link' ? `?k=${share.linkKey}` : '')
 
   const addShelf = async () => {
     const name = prompt('棚の名前(例: IKEA-7)')
@@ -57,6 +77,11 @@ export function SettingsView({
     setBusy(false)
   }
 
+  const inStock = books.filter((b) => b.status !== 'sold')
+  const purchaseTotal = inStock.reduce((s, b) => s + (b.purchasePrice ?? 0), 0)
+  const purchaseCount = inStock.filter((b) => b.purchasePrice != null).length
+  const resaleTotal = inStock.reduce((s, b) => s + (b.resalePrice ?? 0), 0)
+  const resaleCount = inStock.filter((b) => b.resalePrice != null).length
   const stats = {
     owned: books.filter((b) => b.status === 'owned').length,
     unplaced: books.filter((b) => b.status === 'unplaced').length,
@@ -72,7 +97,89 @@ export function SettingsView({
           <div><p className="text-2xl font-bold text-stone-500">{stats.unplaced}</p><p className="text-xs text-stone-400">未配置</p></div>
           <div><p className="text-2xl font-bold text-stone-400">{stats.sold}</p><p className="text-xs text-stone-400">売却済み</p></div>
         </div>
+        <div className="grid grid-cols-2 text-center mt-3 pt-3 border-t border-stone-100">
+          <div>
+            <p className="text-lg font-bold text-stone-700">{purchaseTotal.toLocaleString('ja-JP')}円</p>
+            <p className="text-xs text-stone-400">購入合計(入力済み{purchaseCount}冊)</p>
+          </div>
+          <div>
+            <p className="text-lg font-bold text-stone-700">{resaleTotal.toLocaleString('ja-JP')}円</p>
+            <p className="text-xs text-stone-400">リセール想定合計(入力済み{resaleCount}冊)</p>
+          </div>
+        </div>
+        <p className="text-[10px] text-stone-300 mt-2">価格は各本の詳細画面で入力できます(メルカリ相場リンク付き)</p>
       </section>
+
+      {isOwner && (
+        <section className="bg-white rounded-xl border border-stone-200 p-4">
+          <h2 className="font-bold text-sm text-stone-700 mb-2">公開設定(ゲスト閲覧)</h2>
+          <div className="space-y-2">
+            {(Object.keys(MODE_LABEL) as SharingMode[]).map((m) => (
+              <label key={m} className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="sharing-mode"
+                  className="mt-1"
+                  checked={share.mode === m}
+                  onChange={() => saveSharing({ mode: m })}
+                />
+                <span>
+                  <span className="text-sm font-medium text-stone-800">{MODE_LABEL[m].label}</span>
+                  <span className="block text-xs text-stone-400">{MODE_LABEL[m].desc}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+
+          {share.mode === 'viewers' && (
+            <div className="mt-3 pl-6">
+              <ul className="space-y-1 mb-2">
+                {share.viewers.map((v) => (
+                  <li key={v} className="text-sm text-stone-700 flex items-center gap-2">
+                    {v}
+                    <button className="text-stone-400 hover:text-red-600"
+                      onClick={() => saveSharing({ viewers: share.viewers.filter((x) => x !== v) })}>
+                      <Trash2 size={13} />
+                    </button>
+                  </li>
+                ))}
+                {share.viewers.length === 0 && <li className="text-xs text-stone-400">まだ誰も追加されていません</li>}
+              </ul>
+              <div className="flex gap-2">
+                <input className={inputCls} placeholder="guest@gmail.com" value={newViewer}
+                  onChange={(e) => setNewViewer(e.target.value)} />
+                <button className={btnSecondary} disabled={!newViewer.includes('@')}
+                  onClick={() => { saveSharing({ viewers: [...share.viewers, newViewer.trim()] }); setNewViewer('') }}>
+                  追加
+                </button>
+              </div>
+            </div>
+          )}
+
+          {share.mode !== 'private' && (
+            <div className="mt-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <input readOnly className={inputCls + ' text-xs !py-1.5 flex-1'} value={shareUrl} onFocus={(e) => e.target.select()} />
+                <button className={btnSecondary + ' !py-1.5 !px-2.5'} title="コピー"
+                  onClick={() => navigator.clipboard?.writeText(shareUrl)}>
+                  <Copy size={14} />
+                </button>
+              </div>
+              {share.mode === 'link' && (
+                <button className="text-xs text-stone-400 hover:text-amber-700"
+                  onClick={() => { if (confirm('リンクキーを再生成しますか？(古いリンクは無効になります)')) saveSharing({ linkKey: genKey() }) }}>
+                  リンクキーを再生成
+                </button>
+              )}
+              <label className="flex items-center gap-2 text-sm text-stone-700">
+                <input type="checkbox" checked={share.allowComments}
+                  onChange={(e) => saveSharing({ allowComments: e.target.checked })} />
+                ゲストのコメント投稿を許可する
+              </label>
+            </div>
+          )}
+        </section>
+      )}
 
       <section className="bg-white rounded-xl border border-stone-200 p-4">
         <div className="flex items-center justify-between mb-3">
