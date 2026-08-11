@@ -1,11 +1,12 @@
-import { useMemo, useRef, useState } from 'react'
-import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { addDoc, collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore'
 import { ref as storageRef, uploadString } from 'firebase/storage'
-import { BookOpen, Camera, ChevronLeft, ImagePlus, Wand2 } from 'lucide-react'
+import { Archive, BookOpen, Camera, ChevronLeft, ImagePlus, Trash2, Wand2 } from 'lucide-react'
 import { db, storage } from '../firebase'
 import type { Book, Shelf, ShelfGroup, ShelfMap, ShelfPhoto } from '../types'
 import { resizeImageToBase64 } from '../lib/api'
 import { shelfCode } from '../lib/diff'
+import { changeShelfRows, MAX_ROWS } from '../lib/shelfOps'
 import { MapPhotoView } from './MapPhotoView'
 import { btnPrimary, btnSecondary } from './ui'
 
@@ -53,6 +54,111 @@ export function MapView({
     photoTarget.current = { shelfId, row }
     photoInput.current?.click()
   }
+
+  // ---- 段ビューの選択・ショートカット(Gmail準拠: J/K移動 X選択 #削除 Eアーカイブ) ----
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [focusIdx, setFocusIdx] = useState(0)
+  const lastClickIdx = useRef<number | null>(null)
+
+  const currentRowBooks = useMemo(() => {
+    if (!selected) return []
+    return books
+      .filter((b) => b.status === 'owned' && b.shelfId === selected.shelfId && b.row === selected.row)
+      .sort((a, b) => a.position - b.position)
+  }, [books, selected])
+
+  useEffect(() => {
+    // 段を移動したら選択状態をリセット
+    setSelectedIds(new Set())
+    setFocusIdx(0)
+    lastClickIdx.current = null
+  }, [selected?.shelfId, selected?.row])
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const rangeSelect = (toIdx: number) => {
+    const from = lastClickIdx.current ?? focusIdx
+    const [a, b] = from <= toIdx ? [from, toIdx] : [toIdx, from]
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      for (let i = a; i <= b; i++) {
+        const bk = currentRowBooks[i]
+        if (bk) next.add(bk.id)
+      }
+      return next
+    })
+  }
+
+  const bulkTargets = (): string[] => {
+    if (selectedIds.size > 0) return [...selectedIds]
+    const focused = currentRowBooks[focusIdx]
+    return focused ? [focused.id] : []
+  }
+
+  const bulkDelete = async (ids: string[]) => {
+    if (ids.length === 0) return
+    if (!confirm(`${ids.length}冊を完全に削除しますか？(誤登録の削除用。取り消せません)`)) return
+    const batch = writeBatch(db)
+    ids.forEach((id) => batch.delete(doc(db, 'hondoko-books', id)))
+    await batch.commit()
+    setSelectedIds(new Set())
+  }
+
+  const bulkUnplace = async (ids: string[]) => {
+    if (ids.length === 0) return
+    const batch = writeBatch(db)
+    ids.forEach((id) =>
+      batch.update(doc(db, 'hondoko-books', id), {
+        status: 'unplaced', shelfId: null, row: null, updatedAt: serverTimestamp(),
+      }),
+    )
+    await batch.commit()
+    setSelectedIds(new Set())
+  }
+
+  useEffect(() => {
+    if (!selected) return
+    const handler = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return
+      if (document.querySelector('[data-modal-overlay]')) return // モーダル表示中は無効
+      const n = currentRowBooks.length
+      if (n === 0) return
+      const move = (d: number) => {
+        e.preventDefault()
+        const next = Math.min(n - 1, Math.max(0, focusIdx + d))
+        setFocusIdx(next)
+        document.getElementById(`rowbook-${next}`)?.scrollIntoView({ block: 'nearest' })
+      }
+      switch (e.key) {
+        case 'j': case 'J': case 'ArrowDown': move(1); break
+        case 'k': case 'K': case 'ArrowUp': move(-1); break
+        case 'x': case 'X': {
+          const bk = currentRowBooks[focusIdx]
+          if (bk) { toggleSelect(bk.id); lastClickIdx.current = focusIdx }
+          break
+        }
+        case '#': e.preventDefault(); bulkDelete(bulkTargets()); break
+        case 'e': case 'E': bulkUnplace(bulkTargets()); break
+        case 'Enter': case 'o': case 'O': {
+          const bk = currentRowBooks[focusIdx]
+          if (bk) onSelectBook(bk.id)
+          break
+        }
+        case 'Escape': setSelectedIds(new Set()); break
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected, currentRowBooks, focusIdx, selectedIds])
 
   const countByLocation = useMemo(() => {
     const m = new Map<string, number>()
@@ -131,9 +237,7 @@ export function MapView({
   if (selected) {
     const shelf = shelves.find((s) => s.id === selected.shelfId)
     if (!shelf) { setSelected(null); return null }
-    const booksInRow = books
-      .filter((b) => b.status === 'owned' && b.shelfId === shelf.id && b.row === selected.row)
-      .sort((a, b) => a.position - b.position)
+    const booksInRow = currentRowBooks
     const rowPhotos = photos
       .filter((p) => p.shelfId === shelf.id && p.row === selected.row)
       .sort((a, b) => (b.createdAt?.toMillis() ?? 0) - (a.createdAt?.toMillis() ?? 0))
@@ -169,15 +273,81 @@ export function MapView({
           </button>
         </div>
 
+        {booksInRow.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap bg-white rounded-xl border border-stone-200 px-3 py-2">
+            <label className="flex items-center gap-1.5 text-xs text-stone-600 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={selectedIds.size === booksInRow.length && booksInRow.length > 0}
+                onChange={(e) =>
+                  setSelectedIds(e.target.checked ? new Set(booksInRow.map((b) => b.id)) : new Set())
+                }
+              />
+              全選択
+            </label>
+            <span className="text-xs text-stone-400">{selectedIds.size > 0 ? `選択中 ${selectedIds.size}冊` : ''}</span>
+            {selectedIds.size > 0 && (
+              <div className="flex items-center gap-1.5 ml-auto">
+                <button
+                  className="text-xs px-2.5 py-1.5 rounded-lg border border-stone-300 text-stone-600 hover:bg-stone-50 inline-flex items-center gap-1"
+                  onClick={() => bulkUnplace([...selectedIds])}
+                >
+                  <Archive size={12} /> 未配置にする
+                </button>
+                <button
+                  className="text-xs px-2.5 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 inline-flex items-center gap-1"
+                  onClick={() => bulkDelete([...selectedIds])}
+                >
+                  <Trash2 size={12} /> 削除
+                </button>
+              </div>
+            )}
+            <span className="hidden sm:block w-full text-[10px] text-stone-300 pt-0.5">
+              ショートカット: J/K 移動 · X 選択 · Shift+クリック 範囲選択 · # 削除 · E 未配置 · Enter 開く · Esc 解除
+            </span>
+          </div>
+        )}
+
         <ul className="divide-y divide-stone-100 bg-white rounded-xl border border-stone-200 overflow-hidden">
-          {booksInRow.map((b) => (
-            <li key={b.id}>
-              <button className="w-full text-left px-4 py-2.5 hover:bg-amber-50/50" onClick={() => onSelectBook(b.id)}>
-                <span className="text-sm font-medium text-stone-800">{b.title}{b.volume ? ` (${b.volume})` : ''}</span>
-                <span className="block text-xs text-stone-400">{b.author || '著者不明'}</span>
-              </button>
-            </li>
-          ))}
+          {booksInRow.map((b, i) => {
+            const isSel = selectedIds.has(b.id)
+            const isFocus = i === focusIdx
+            return (
+              <li key={b.id} id={`rowbook-${i}`}>
+                <div
+                  className={`flex items-center gap-2.5 px-3 py-2.5 cursor-pointer transition-colors ${
+                    isSel ? 'bg-amber-100/60' : 'hover:bg-amber-50/50'
+                  } ${isFocus ? 'ring-2 ring-inset ring-amber-400' : ''}`}
+                  onClick={(e) => {
+                    setFocusIdx(i)
+                    if (e.shiftKey) {
+                      rangeSelect(i)
+                      lastClickIdx.current = i
+                    } else {
+                      onSelectBook(b.id)
+                    }
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isSel}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={() => {
+                      toggleSelect(b.id)
+                      lastClickIdx.current = i
+                      setFocusIdx(i)
+                    }}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <span className="text-sm font-medium text-stone-800 block truncate">
+                      {b.title}{b.volume ? ` (${b.volume})` : ''}
+                    </span>
+                    <span className="block text-xs text-stone-400 truncate">{b.author || '著者不明'}</span>
+                  </div>
+                </div>
+              </li>
+            )
+          })}
           {booksInRow.length === 0 && (
             <li className="px-4 py-8 text-center text-sm text-stone-400">
               この段はまだ空です。「写真で更新」から一括登録できます
@@ -272,14 +442,27 @@ export function MapView({
                 const shelfTotal = total.reduce((a, b) => a + b, 0)
                 return (
                   <div key={shelf.id} className="bg-white rounded-xl border border-stone-200 p-3">
-                    <div className="flex items-baseline justify-between mb-2">
-                      <span className="font-bold text-sm text-stone-800">
+                    <div className="flex items-center justify-between mb-2 gap-1">
+                      <span className="font-bold text-sm text-stone-800 truncate">
                         <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-amber-700 text-white text-[11px] mr-1.5 align-middle">
                           {shelfCode(shelf)}
                         </span>
                         {shelf.name}
                       </span>
-                      <span className="text-xs text-stone-400">{shelfTotal}冊</span>
+                      <span className="text-xs text-stone-400 shrink-0">{shelfTotal}冊</span>
+                      <select
+                        title="段数を変更"
+                        className="shrink-0 text-[11px] text-stone-500 border border-stone-200 rounded px-1 py-0.5 bg-white"
+                        value={shelf.rows}
+                        onChange={async (e) => {
+                          const r = await changeShelfRows(shelf, Number(e.target.value), books)
+                          if (!r.ok && r.message) alert(r.message)
+                        }}
+                      >
+                        {Array.from({ length: MAX_ROWS }, (_, n) => n + 1).map((n) => (
+                          <option key={n} value={n}>{n}段</option>
+                        ))}
+                      </select>
                     </div>
                     <div className="space-y-1">
                       {total.map((count, i) => {

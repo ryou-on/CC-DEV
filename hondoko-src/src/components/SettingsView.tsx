@@ -6,6 +6,7 @@ import { Plus, Trash2 } from 'lucide-react'
 import { db, OWNER_EMAIL } from '../firebase'
 import type { Book, Shelf, ShelfGroup } from '../types'
 import { APP_VERSION } from '../version'
+import { changeShelfRows, MAX_ROWS } from '../lib/shelfOps'
 import { btnSecondary, inputCls } from './ui'
 
 export function SettingsView({
@@ -106,9 +107,12 @@ export function SettingsView({
               <select
                 className={inputCls + ' !w-20'}
                 value={s.rows}
-                onChange={(e) => updateShelf(s, { rows: Number(e.target.value) })}
+                onChange={async (e) => {
+                  const r = await changeShelfRows(s, Number(e.target.value), books)
+                  if (!r.ok && r.message) alert(r.message)
+                }}
               >
-                {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+                {Array.from({ length: MAX_ROWS }, (_, i) => i + 1).map((n) => (
                   <option key={n} value={n}>{n}段</option>
                 ))}
               </select>
