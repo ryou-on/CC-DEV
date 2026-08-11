@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { addDoc, collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore'
 import { Check, Wand2 } from 'lucide-react'
 import { auth, db } from '../firebase'
 import type { Book, DiffAction, Shelf } from '../types'
 import type { AnalysisJob } from '../hooks/useAnalysisJobs'
 import { computeDiff, shelfCode } from '../lib/diff'
+import { getPhotoUrl } from '../lib/photoUrl'
 import { Modal, Spinner, btnPrimary, btnSecondary, inputCls } from './ui'
 
 type MissingChoice = 'unplaced' | 'sold' | 'keep'
@@ -37,6 +38,19 @@ export function DiffReviewModal({
   const rows = useMemo(() => job.result?.rows ?? [], [job.result])
   // 開いた時点のデータで差分を確定させる
   const [booksSnapshot] = useState(books)
+
+  // 解析に使った写真(確認しながら反映できるように上部に表示)
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null)
+  const [photoExpanded, setPhotoExpanded] = useState(false)
+  useEffect(() => {
+    if (!job.storagePath) return
+    let ok = true
+    getPhotoUrl(job.storagePath).then((u) => ok && setPhotoUrl(u)).catch(() => {})
+    return () => { ok = false }
+  }, [job.storagePath])
+
+  // セクション(段)単位の反映オン/オフ
+  const [sectionEnabled, setSectionEnabled] = useState<boolean[]>(() => rows.map(() => true))
 
   const [assignments, setAssignments] = useState<Assignment[]>(() =>
     rows.map((r, i) => {
@@ -94,15 +108,16 @@ export function DiffReviewModal({
   }
 
   const apply = async () => {
-    // 同じ場所への二重割り当てを防ぐ
+    // 同じ場所への二重割り当てを防ぐ(反映対象のセクションのみ)
     const seen = new Set<string>()
-    for (const a of assignments) {
-      if (!a) continue
+    for (let i = 0; i < assignments.length; i++) {
+      const a = assignments[i]
+      if (!a || !sectionEnabled[i]) continue
       const k = `${a.shelfId}:${a.row}`
       if (seen.has(k)) { setError('同じ段に複数の写真セクションが割り当てられています'); return }
       seen.add(k)
     }
-    if (!assignments.some(Boolean)) { setError('少なくとも1つの段を割り当ててください'); return }
+    if (!assignments.some((a, i) => a && sectionEnabled[i])) { setError('反映する段がありません'); return }
 
     setStep('applying')
     try {
@@ -113,7 +128,7 @@ export function DiffReviewModal({
 
       sections.forEach((sec, si) => {
         const a = assignments[si]
-        if (!a) return
+        if (!a || !sectionEnabled[si]) return
         let sAdd = 0, sRm = 0, sMv = 0, sKeep = 0
         sec.actions.forEach((act, ai) => {
           if (!isEnabled(si, ai)) return
@@ -215,6 +230,16 @@ export function DiffReviewModal({
 
       {step === 'review' && (
         <div className="space-y-4">
+          {photoUrl && (
+            <button className="w-full block" onClick={() => setPhotoExpanded(!photoExpanded)} title="タップで拡大/縮小">
+              <img
+                src={photoUrl}
+                alt="解析した写真"
+                className={`w-full ${photoExpanded ? 'max-h-[60dvh] object-contain' : 'max-h-40 object-cover'} rounded-xl border border-stone-200 transition-all`}
+              />
+              <span className="block text-[10px] text-stone-400 mt-0.5">解析した写真(タップで{photoExpanded ? '縮小' : '拡大'})</span>
+            </button>
+          )}
           {job.result?.note && (
             <p className="text-xs text-stone-500 bg-stone-50 rounded-lg px-3 py-2">AIメモ: {job.result.note}</p>
           )}
@@ -230,12 +255,20 @@ export function DiffReviewModal({
             const shelf = a ? shelves.find((s) => s.id === a.shelfId) : null
             const sec = sections[si]
             return (
-              <div key={si} className="border border-stone-200 rounded-xl overflow-hidden">
+              <div key={si} className={`border rounded-xl overflow-hidden ${sectionEnabled[si] ? 'border-stone-200' : 'border-stone-200 opacity-50'}`}>
                 <div className="bg-stone-50 px-3 py-2 flex flex-wrap items-center gap-2 border-b border-stone-200">
-                  <span className="text-sm font-bold text-stone-700">
+                  <label className="flex items-center gap-1.5 text-sm font-bold text-stone-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={sectionEnabled[si]}
+                      onChange={(e) =>
+                        setSectionEnabled((prev) => prev.map((v, j) => (j === si ? e.target.checked : v)))
+                      }
+                    />
                     写真内の段{rows.length > 1 ? ` ${si + 1}(上から)` : ''}
-                    <span className="font-normal text-stone-400 ml-1">{row.books.length}冊検出</span>
-                  </span>
+                    <span className="font-normal text-stone-400">{row.books.length}冊検出</span>
+                  </label>
+                  {!sectionEnabled[si] && <span className="text-[11px] text-stone-400">この段は反映されません</span>}
                   {autoMatched[si] && (
                     <span className="inline-flex items-center gap-1 text-[11px] bg-blue-100 text-blue-700 rounded-full px-2 py-0.5">
                       <Wand2 size={11} /> 自動判別

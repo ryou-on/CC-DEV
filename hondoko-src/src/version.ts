@@ -1,6 +1,15 @@
-export const APP_VERSION = 'v1.5.1'
+export const APP_VERSION = 'v1.6.0'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: 'v1.6.0',
+    date: '2026-08-11',
+    changes: [
+      'マップの領域編集に「AIで段を検出」を追加 — 候補をタップするだけで割り当て(ドラッグ不要、手動修正も可)',
+      '解析結果の確認画面に撮影した写真を表示(タップで拡大)、写真を見ながら反映内容を確認可能に',
+      '確認画面で段(セクション)単位の反映オン/オフが可能に',
+    ],
+  },
   {
     version: 'v1.5.1',
     date: '2026-08-11',

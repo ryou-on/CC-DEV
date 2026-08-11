@@ -121,7 +121,7 @@ exports.hondokoAnalyze = onRequest({
     }
 
     // --- 入力 ---
-    const { image, mediaType, map } = req.body || {};
+    const { image, mediaType, map, mode } = req.body || {};
     if (!image || typeof image !== 'string') {
       res.status(400).json({ error: 'image (base64) が必要です' }); return;
     }
@@ -129,6 +129,70 @@ exports.hondokoAnalyze = onRequest({
       res.status(413).json({ error: '画像が大きすぎます。クライアント側でリサイズしてください' }); return;
     }
     const mt = ['image/jpeg', 'image/png', 'image/webp'].includes(mediaType) ? mediaType : 'image/jpeg';
+
+    // --- モード: マップ写真から段の矩形を自動検出 ---
+    if (mode === 'detect_regions') {
+      const Anthropic = require('@anthropic-ai/sdk');
+      const client = new Anthropic({ apiKey: anthropicApiKey.value() });
+      const t0 = Date.now();
+      const response = await client.messages.create({
+        model: 'claude-opus-5',
+        max_tokens: 8000,
+        system: `本棚の写真から「段」(棚板で区切られた本を置く区画)を検出します。
+- 各段のバウンディングボックスを、画像の幅・高さに対する 0〜1 の正規化座標 {x, y, w, h} で返す(x,yは左上)。
+- 本棚ユニット(縦の列)ごとに左の列から右の列へ、各列内は上の段から下の段の順に並べる。
+- 本が置かれていない空の段も含める。棚以外(壁、床、天井、家電)は含めない。
+- 装飾品だけの段も棚の段として含める。
+- ボックスは段の内側(本が並ぶ空間)にぴったり合わせる。`,
+        output_config: {
+          format: {
+            type: 'json_schema',
+            schema: {
+              type: 'object',
+              properties: {
+                boxes: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      x: { type: 'number' }, y: { type: 'number' },
+                      w: { type: 'number' }, h: { type: 'number' },
+                    },
+                    required: ['x', 'y', 'w', 'h'],
+                    additionalProperties: false,
+                  },
+                },
+              },
+              required: ['boxes'],
+              additionalProperties: false,
+            },
+          },
+        },
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: mt, data: image } },
+            { type: 'text', text: 'この本棚の写真からすべての段のバウンディングボックスを検出してください。' },
+          ],
+        }],
+      });
+      console.log(`hondokoAnalyze(detect): ${Math.round((Date.now() - t0) / 1000)}s, out=${response.usage.output_tokens}tok`);
+      if (response.stop_reason === 'refusal') {
+        res.status(422).json({ error: '解析が拒否されました' }); return;
+      }
+      const textBlock = response.content.find((b) => b.type === 'text');
+      let parsedBoxes;
+      try {
+        parsedBoxes = JSON.parse(textBlock.text);
+      } catch (e) {
+        res.status(500).json({ error: '検出結果の形式が不正でした' }); return;
+      }
+      const boxes = (parsedBoxes.boxes || []).filter((b) =>
+        [b.x, b.y, b.w, b.h].every((v) => typeof v === 'number' && v >= 0 && v <= 1) && b.w > 0.01 && b.h > 0.01
+      );
+      res.status(200).json({ boxes });
+      return;
+    }
 
     const content = [
       { type: 'image', source: { type: 'base64', media_type: mt, data: image } },

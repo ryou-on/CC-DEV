@@ -54,8 +54,31 @@ export interface Book {
   source: BookSource
   // 書影URL。undefined=未取得, ''=取得を試みたが見つからず
   coverUrl?: string
+  // 既読管理・評価・価格(v1.7〜)
+  readStatus?: 'unread' | 'read'
+  rating?: number // 0=未評価, 1〜5
+  purchasePrice?: number | null // 購入価格(円)
+  resalePrice?: number | null // 想定売値(円)
   createdAt: Timestamp | null
   updatedAt: Timestamp | null
+}
+
+// 公開設定 (hondoko-config/sharing)
+export type SharingMode = 'private' | 'viewers' | 'link' | 'public'
+export interface SharingConfig {
+  mode: SharingMode
+  viewers: string[] // mode=viewers のとき閲覧を許可するGoogleアカウント
+  allowComments: boolean
+  linkKey: string // mode=link のときURLに付けるキー(?k=)
+}
+
+export interface BookComment {
+  id: string
+  bookId: string
+  text: string
+  by: string // メールアドレス
+  byName: string
+  createdAt: Timestamp | null
 }
 
 export interface ShelfPhoto {

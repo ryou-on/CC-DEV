@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { deleteDoc, doc, updateDoc } from 'firebase/firestore'
 import { getDownloadURL, ref as storageRef } from 'firebase/storage'
-import { Camera, Pencil, Trash2, X } from 'lucide-react'
+import { Camera, Pencil, Trash2, Wand2, X } from 'lucide-react'
 import { db, storage } from '../firebase'
 import type { Book, MapRegion, Shelf, ShelfMap } from '../types'
 import { shelfCode } from '../lib/diff'
+import { detectRegions, imageUrlToBase64 } from '../lib/api'
 import { getPhotoUrl } from '../lib/photoUrl'
 import { Modal, Spinner, btnPrimary, btnSecondary, inputCls } from './ui'
 
@@ -34,6 +35,33 @@ export function MapPhotoView({
   const [loadError, setLoadError] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const dragStart = useRef<{ x: number; y: number } | null>(null)
+
+  // AI検出した段の候補(青点線)。タップで割り当て
+  const [candidates, setCandidates] = useState<DraftRect[]>([])
+  const [detecting, setDetecting] = useState(false)
+  const pendingCandidateIdx = useRef<number | null>(null)
+
+  const runDetect = async () => {
+    if (!url) return
+    setDetecting(true)
+    try {
+      const base64 = await imageUrlToBase64(url, 1600)
+      const boxes = await detectRegions(base64)
+      // 既存領域と大きく重なる候補は除外
+      const overlaps = (a: DraftRect, b: { x: number; y: number; w: number; h: number }) => {
+        const ix = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x))
+        const iy = Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y))
+        const inter = ix * iy
+        return inter / Math.min(a.w * a.h, b.w * b.h) > 0.5
+      }
+      const fresh = boxes.filter((c) => !map.regions.some((r) => overlaps(c, r)))
+      setCandidates(fresh)
+      if (fresh.length === 0) alert('新しい段は検出されませんでした(既存の領域と重複)')
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '検出に失敗しました')
+    }
+    setDetecting(false)
+  }
 
   // ホバー中の段の写真プレビュー(マウス環境のみ)
   const [hoverPreview, setHoverPreview] = useState<{ key: string; label: string; url: string | null } | null>(null)
@@ -145,6 +173,11 @@ export function MapPhotoView({
     await updateDoc(doc(db, 'hondoko-maps', map.id), {
       regions: [...map.regions, region],
     })
+    if (pendingCandidateIdx.current != null) {
+      const idx = pendingCandidateIdx.current
+      setCandidates((prev) => prev.filter((_, i) => i !== idx))
+      pendingCandidateIdx.current = null
+    }
     setAssignRect(null)
   }
 
@@ -170,9 +203,18 @@ export function MapPhotoView({
         <h3 className="font-bold text-sm text-stone-700">{map.name}</h3>
         <div className="flex items-center gap-1">
           {editMode && (
-            <button className="p-1.5 text-stone-400 hover:text-red-600" onClick={removeMap} title="マップを削除">
-              <Trash2 size={15} />
-            </button>
+            <>
+              <button
+                className="text-xs px-2.5 py-1 rounded-lg border border-blue-300 text-blue-700 bg-blue-50 hover:bg-blue-100 inline-flex items-center gap-1 disabled:opacity-50"
+                onClick={runDetect}
+                disabled={detecting}
+              >
+                <Wand2 size={12} /> {detecting ? 'AI検出中…(30秒前後)' : 'AIで段を検出'}
+              </button>
+              <button className="p-1.5 text-stone-400 hover:text-red-600" onClick={removeMap} title="マップを削除">
+                <Trash2 size={15} />
+              </button>
+            </>
           )}
           <button
             className={`text-xs px-2.5 py-1 rounded-lg border inline-flex items-center gap-1 ${
@@ -187,7 +229,7 @@ export function MapPhotoView({
 
       {editMode && (
         <p className="text-xs text-amber-800 bg-amber-50 px-3 py-1.5">
-          写真上をドラッグして段の範囲を囲み、棚と段を割り当ててください。領域タップで削除できます。
+          「AIで段を検出」→ 青い候補をタップで割り当てが簡単です。手動の場合はドラッグで範囲を囲んでください。既存領域はタップで削除。
         </p>
       )}
 
@@ -282,6 +324,30 @@ export function MapPhotoView({
             </span>
           ))}
 
+          {/* AI検出候補(編集モードのみ、タップで割り当て) */}
+          {editMode && candidates.map((c, i) => (
+            <button
+              key={`cand-${i}`}
+              className="absolute rounded border-2 border-dashed border-blue-500 bg-blue-400/15 hover:bg-blue-400/30"
+              style={{
+                left: `${c.x * 100}%`,
+                top: `${c.y * 100}%`,
+                width: `${c.w * 100}%`,
+                height: `${c.h * 100}%`,
+              }}
+              onClick={(e) => {
+                e.stopPropagation()
+                pendingCandidateIdx.current = i
+                setAssignRect(c)
+              }}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <span className="absolute top-0.5 left-0.5 text-[10px] font-bold px-1 py-px rounded bg-blue-600 text-white">
+                候補
+              </span>
+            </button>
+          ))}
+
           {draft && (
             <div
               className="absolute border-2 border-blue-400 bg-blue-400/20 rounded pointer-events-none"
@@ -301,7 +367,7 @@ export function MapPhotoView({
           shelves={shelves}
           existing={map.regions}
           onSave={saveRegion}
-          onClose={() => setAssignRect(null)}
+          onClose={() => { pendingCandidateIdx.current = null; setAssignRect(null) }}
         />
       )}
     </div>
