@@ -4,7 +4,7 @@ import {
 } from 'firebase/firestore'
 import { getDownloadURL, ref as storageRef, uploadString } from 'firebase/storage'
 import {
-  Building2, Camera, ExternalLink, Link2, MapPin, Pencil, RefreshCw, Send, Star, Trash2, User, X,
+  Building2, Camera, ClipboardPaste, ExternalLink, Link2, MapPin, Pencil, RefreshCw, Send, Star, Trash2, User, X,
 } from 'lucide-react'
 import { db, storage } from '../firebase'
 import type { Book, BookComment, Shelf } from '../types'
@@ -104,6 +104,39 @@ export function BookDetail({
     }
     setCoverLoading(false)
   }
+
+  // 手動登録: クリップボードの画像をペースト
+  const pasteCover = async () => {
+    try {
+      const items = await navigator.clipboard.read()
+      for (const item of items) {
+        const type = item.types.find((t) => t.startsWith('image/'))
+        if (type) {
+          const blob = await item.getType(type)
+          await uploadCover(new File([blob], 'pasted-cover', { type }))
+          return
+        }
+      }
+      alert('クリップボードに画像がありません。画像をコピーしてから押してください')
+    } catch {
+      alert('ペーストできませんでした。ブラウザで許可するか、この画面で Cmd+V(Ctrl+V)でも登録できます')
+    }
+  }
+
+  // Cmd/Ctrl+V の直接ペーストにも対応(メンバーのみ)
+  useEffect(() => {
+    if (readOnly) return
+    const handler = (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement | null
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return
+      const item = [...(e.clipboardData?.items ?? [])].find((i) => i.type.startsWith('image/'))
+      const f = item?.getAsFile()
+      if (f) { e.preventDefault(); uploadCover(f) }
+    }
+    document.addEventListener('paste', handler)
+    return () => document.removeEventListener('paste', handler)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [readOnly, book.id])
 
   // 手動登録: 画像URLを直接指定
   const setCoverByUrl = async () => {
@@ -213,7 +246,6 @@ export function BookDetail({
                   ref={coverFileInput}
                   type="file"
                   accept="image/*"
-                  capture="environment"
                   className="hidden"
                   onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadCover(f); e.target.value = '' }}
                 />
@@ -229,7 +261,15 @@ export function BookDetail({
                   onClick={() => coverFileInput.current?.click()}
                   disabled={coverLoading}
                 >
-                  <Camera size={10} /> 写真から登録
+                  <Camera size={10} /> 画像をアップロード
+                </button>
+                <button
+                  className="w-full text-[10px] text-stone-400 hover:text-amber-700 inline-flex items-center justify-center gap-0.5"
+                  onClick={pasteCover}
+                  disabled={coverLoading}
+                  title="コピーした画像を登録(Cmd+Vでも可)"
+                >
+                  <ClipboardPaste size={10} /> ペーストで登録
                 </button>
                 <button
                   className="w-full text-[10px] text-stone-400 hover:text-amber-700 inline-flex items-center justify-center gap-0.5"

@@ -224,6 +224,20 @@ export default function App() {
 
       {/* メイン */}
       <main className="flex-1 max-w-3xl w-full mx-auto px-4 py-4 pb-24">
+        {/* 閲覧モード: 蔵書ラインアップ(総登録冊数のみ) */}
+        {readOnly && (
+          <button
+            onClick={() => setTab('search')}
+            className="w-full mb-4 bg-white rounded-xl border border-amber-200 px-4 py-3 flex items-center justify-between hover:bg-amber-50 transition-colors shadow-sm"
+          >
+            <span className="font-bold text-stone-800 inline-flex items-center gap-2">
+              <LibraryBig size={18} className="text-amber-700" /> 蔵書はこちら
+            </span>
+            <span className="text-sm text-amber-700 font-bold">
+              全 {books.filter((b) => b.status !== 'sold').length.toLocaleString('ja-JP')} 冊
+            </span>
+          </button>
+        )}
         {tab === 'search' && (
           <SearchView books={books} shelves={shelves} query={searchQuery} setQuery={setSearchQuery} onSelectBook={setSelectedBookId} />
         )}

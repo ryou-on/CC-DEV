@@ -1,6 +1,14 @@
-export const APP_VERSION = 'v1.8.0'
+export const APP_VERSION = 'v1.8.1'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: 'v1.8.1',
+    date: '2026-08-11',
+    changes: [
+      '閲覧モードの上部に「蔵書はこちら — 全◯◯冊」を表示(総登録冊数、タップで一覧へ)',
+      '書影登録に「画像をアップロード」(カメラ/ライブラリ選択)と「ペーストで登録」(Cmd+V対応)を追加',
+    ],
+  },
   {
     version: 'v1.8.0',
     date: '2026-08-11',
