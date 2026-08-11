@@ -92,6 +92,132 @@ const ANALYZE_SYSTEM = `あなたは日本の蔵書管理アシスタントで�
 - 1枚目のクローズアップ写真がマップ写真のどの段に対応するかを、本の並び・色・特徴的な背表紙・棚の構造から照合する。
 - 対応すると判断できた段は region にそのラベルを入れる。自信がなければ空文字にする(推測で埋めない)。`;
 
+// ===== Amazon PA-API v5: 書影・価格の取得(アソシエイトアカウント利用) =====
+// シークレット: AMAZON_PAAPI_ACCESS_KEY / AMAZON_PAAPI_SECRET_KEY / AMAZON_PAAPI_PARTNER_TAG
+const paapiAccessKey = defineSecret('AMAZON_PAAPI_ACCESS_KEY');
+const paapiSecretKey = defineSecret('AMAZON_PAAPI_SECRET_KEY');
+const paapiPartnerTag = defineSecret('AMAZON_PAAPI_PARTNER_TAG');
+
+function hmac(key, msg) {
+  const crypto = require('crypto');
+  return crypto.createHmac('sha256', key).update(msg, 'utf8').digest();
+}
+function sha256hex(msg) {
+  const crypto = require('crypto');
+  return crypto.createHash('sha256').update(msg, 'utf8').digest('hex');
+}
+
+// PA-API v5 リクエスト(AWS SigV4署名)
+async function paapiRequest(operation, payload, creds) {
+  const host = 'webservices.amazon.co.jp';
+  const region = 'us-west-2';
+  const service = 'ProductAdvertisingAPI';
+  const target = `com.amazon.paapi5.v1.ProductAdvertisingAPIv1.${operation}`;
+  const path = `/paapi5/${operation.toLowerCase()}`;
+  const body = JSON.stringify(payload);
+  const amzDate = new Date().toISOString().replace(/[:-]|\.\d{3}/g, '');
+  const dateStamp = amzDate.slice(0, 8);
+  const canonicalHeaders =
+    'content-encoding:amz-1.0\n' +
+    'content-type:application/json; charset=utf-8\n' +
+    `host:${host}\n` +
+    `x-amz-date:${amzDate}\n` +
+    `x-amz-target:${target}\n`;
+  const signedHeaders = 'content-encoding;content-type;host;x-amz-date;x-amz-target';
+  const canonicalRequest = `POST\n${path}\n\n${canonicalHeaders}\n${signedHeaders}\n${sha256hex(body)}`;
+  const scope = `${dateStamp}/${region}/${service}/aws4_request`;
+  const stringToSign = `AWS4-HMAC-SHA256\n${amzDate}\n${scope}\n${sha256hex(canonicalRequest)}`;
+  let k = hmac('AWS4' + creds.secretKey, dateStamp);
+  k = hmac(k, region);
+  k = hmac(k, service);
+  k = hmac(k, 'aws4_request');
+  const crypto = require('crypto');
+  const signature = crypto.createHmac('sha256', k).update(stringToSign, 'utf8').digest('hex');
+  const res = await fetch(`https://${host}${path}`, {
+    method: 'POST',
+    headers: {
+      'content-encoding': 'amz-1.0',
+      'content-type': 'application/json; charset=utf-8',
+      'x-amz-date': amzDate,
+      'x-amz-target': target,
+      Authorization: `AWS4-HMAC-SHA256 Credential=${creds.accessKey}/${scope}, SignedHeaders=${signedHeaders}, Signature=${signature}`,
+    },
+    body,
+  });
+  return { status: res.status, data: await res.json().catch(() => ({})) };
+}
+
+function pickPaapiItem(item) {
+  if (!item) return null;
+  const image = item.Images?.Primary?.Large?.URL || item.Images?.Primary?.Medium?.URL || null;
+  const priceRaw = item.ItemInfo?.ProductInfo == null ? null : null; // 定価はListPrice系が安定しないためOffers優先
+  const offer = item.Offers?.Listings?.[0]?.Price?.Amount;
+  const price = typeof offer === 'number' && offer > 0 ? Math.round(offer) : priceRaw;
+  return { coverUrl: image, price };
+}
+
+exports.hondokoAmazon = onRequest({
+  cors: true,
+  timeoutSeconds: 30,
+  memory: '256MiB',
+  secrets: [paapiAccessKey, paapiSecretKey, paapiPartnerTag],
+}, async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  if (req.method !== 'POST') { res.status(405).json({ error: 'POST only' }); return; }
+
+  try {
+    const authHeader = req.headers.authorization || '';
+    const idToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (!idToken) { res.status(401).json({ error: '認証が必要です' }); return; }
+    let decoded;
+    try {
+      decoded = await admin.auth().verifyIdToken(idToken);
+    } catch (e) {
+      res.status(401).json({ error: 'トークンが無効です' }); return;
+    }
+    if (!(await isMember(decoded.email))) {
+      res.status(403).json({ error: 'このアプリの利用が許可されていません' }); return;
+    }
+
+    const { isbn, title, author } = req.body || {};
+    const creds = { accessKey: paapiAccessKey.value(), secretKey: paapiSecretKey.value() };
+    const partnerTag = paapiPartnerTag.value();
+    const common = {
+      PartnerTag: partnerTag,
+      PartnerType: 'Associates',
+      Marketplace: 'www.amazon.co.jp',
+      Resources: ['Images.Primary.Large', 'ItemInfo.Title', 'Offers.Listings.Price'],
+    };
+
+    // ISBN-10があればASINとしてGetItems、なければタイトルでSearchItems
+    let result = null;
+    const isbn10 = typeof isbn === 'string' && /^[0-9]{9}[0-9Xx]$/.test(isbn) ? isbn.toUpperCase() : null;
+    if (isbn10) {
+      const r = await paapiRequest('GetItems', { ...common, ItemIds: [isbn10] }, creds);
+      if (r.status === 429) { res.status(429).json({ error: 'PA-APIのレート制限です。時間を置いてください' }); return; }
+      result = pickPaapiItem(r.data?.ItemsResult?.Items?.[0]);
+    }
+    if ((!result || !result.coverUrl) && title) {
+      const r = await paapiRequest('SearchItems', {
+        ...common,
+        Keywords: `${title} ${author || ''}`.trim(),
+        SearchIndex: 'Books',
+        ItemCount: 1,
+      }, creds);
+      if (r.status === 429) { res.status(429).json({ error: 'PA-APIのレート制限です。時間を置いてください' }); return; }
+      result = pickPaapiItem(r.data?.SearchResult?.Items?.[0]) || result;
+    }
+
+    res.status(200).json(result || { coverUrl: null, price: null });
+  } catch (err) {
+    console.error('hondokoAmazon error:', err);
+    res.status(500).json({ error: 'Amazon検索中にエラーが発生しました' });
+  }
+});
+
 exports.hondokoAnalyze = onRequest({
   cors: true,
   timeoutSeconds: 540,

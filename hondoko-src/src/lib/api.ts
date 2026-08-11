@@ -1,4 +1,4 @@
-import { auth, ANALYZE_ENDPOINT } from '../firebase'
+import { auth, AMAZON_ENDPOINT, ANALYZE_ENDPOINT } from '../firebase'
 import type { AnalyzeResult, MapMatchPayload } from '../types'
 
 // 画像を長辺 maxEdge px 以下の JPEG (base64) に変換
@@ -129,11 +129,40 @@ function probeImage(url: string): Promise<boolean> {
   })
 }
 
+// Amazon PA-API(Cloud Functions経由、アソシエイト設定済みのとき有効)
+// 未デプロイ・未設定・レート制限などは null を返して静かにスキップ
+let paapiDisabledUntil = 0
+async function lookupAmazonPaapi(book: { isbn: string; title: string; author: string }): Promise<{ coverUrl: string | null; price: number | null } | null> {
+  if (Date.now() < paapiDisabledUntil) return null
+  const user = auth.currentUser
+  if (!user) return null
+  try {
+    const clean = book.isbn.replace(/[^0-9Xx]/g, '')
+    const isbn10 = clean.length === 10 ? clean.toUpperCase() : clean.length === 13 ? isbn13to10(clean) : null
+    const idToken = await user.getIdToken()
+    const res = await fetch(AMAZON_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+      body: JSON.stringify({ isbn: isbn10, title: book.title, author: book.author }),
+    })
+    if (res.status === 429) { paapiDisabledUntil = Date.now() + 60_000; return null }
+    if (!res.ok) {
+      // 関数未デプロイ(404)や未設定(500)は10分間スキップ
+      paapiDisabledUntil = Date.now() + 10 * 60_000
+      return null
+    }
+    return await res.json()
+  } catch {
+    return null
+  }
+}
+
 // 定価+書影+ISBNをまとめて取得(openBDは1リクエストで両方取れる)
 export interface BookInfo {
   price: number | null
   coverUrl: string | null
   isbn?: string
+  usedPaapi?: boolean // PA-APIを使った場合(一括処理のレート調整用)
 }
 
 export async function lookupBookInfo(book: { isbn: string; title: string; author: string }): Promise<BookInfo> {
@@ -182,13 +211,24 @@ export async function lookupBookInfo(book: { isbn: string; title: string; author
     } catch { /* ignore */ }
   }
 
-  // 最終フォールバック: Amazonの書影(openBD/Google Booksで見つからなかった場合)
+  // フォールバック3: Amazonの書影画像URL(ISBNベース、キー不要)
   if (coverUrl == null) {
     const az = amazonCoverUrl(isbn || foundIsbn || '')
     if (az && (await probeImage(az))) coverUrl = az
   }
 
-  return { price, coverUrl, isbn: foundIsbn }
+  // フォールバック4: Amazon PA-API(アソシエイト設定済みのとき。ISBNなし本にも効く)
+  let usedPaapi = false
+  if (coverUrl == null || price == null) {
+    const az = await lookupAmazonPaapi({ ...book, isbn: isbn || foundIsbn || '' })
+    if (az) {
+      usedPaapi = true
+      if (coverUrl == null && az.coverUrl) coverUrl = az.coverUrl
+      if (price == null && az.price != null) price = az.price
+    }
+  }
+
+  return { price, coverUrl, isbn: foundIsbn, usedPaapi }
 }
 
 // 定価を取得: openBD(ISBN) → Google Books(ISBN or タイトル+著者)

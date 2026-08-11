@@ -90,8 +90,9 @@ export function SettingsView({
   // 定価・書影の一括自動取得(未取得の本のみ)
   const [bulk, setBulk] = useState<{ done: number; total: number; price: number; cover: number } | null>(null)
   const bulkFetchPrices = async () => {
+    // 未取得(undefined)に加え、過去に見つからなかった本(coverUrl==='' / listPrice===null)も再試行する
     const targets = books.filter(
-      (b) => b.title && (b.listPrice === undefined || b.coverUrl === undefined),
+      (b) => b.title && (b.listPrice == null || b.coverUrl === undefined || b.coverUrl === ''),
     )
     if (targets.length === 0) { alert('未取得の本はありません'); return }
     // 1回の実行上限(Google Books のレート制限対策)
@@ -102,19 +103,22 @@ export function SettingsView({
     let coverHit = 0
     for (let i = 0; i < run.length; i++) {
       const b = run[i]
+      let usedPaapi = false
       try {
         const info = await lookupBookInfo(b)
+        usedPaapi = !!info.usedPaapi
         await updateDoc(doc(db, 'hondoko-books', b.id), {
-          ...(b.listPrice === undefined ? { listPrice: info.price } : {}),
-          ...(b.coverUrl === undefined ? { coverUrl: info.coverUrl ?? '' } : {}),
+          ...(b.listPrice == null ? { listPrice: info.price } : {}),
+          ...(!b.coverUrl ? { coverUrl: info.coverUrl ?? '' } : {}),
           ...(info.isbn && !b.isbn ? { isbn: info.isbn } : {}),
         })
-        if (b.listPrice === undefined && info.price != null) priceHit++
-        if (b.coverUrl === undefined && info.coverUrl) coverHit++
+        if (b.listPrice == null && info.price != null) priceHit++
+        if (!b.coverUrl && info.coverUrl) coverHit++
       } catch { /* 個別失敗はスキップ */ }
       setBulk({ done: i + 1, total: run.length, price: priceHit, cover: coverHit })
-      // ISBNなし本はGoogle Booksを叩くため少し待つ
-      if (!b.isbn) await new Promise((r) => setTimeout(r, 350))
+      // レート調整: PA-API利用時は1秒強、ISBNなし本(Google Books)は0.35秒待つ
+      if (usedPaapi) await new Promise((r) => setTimeout(r, 1200))
+      else if (!b.isbn) await new Promise((r) => setTimeout(r, 350))
     }
     setBulk(null)
     alert(`${run.length}冊を処理: 定価${priceHit}冊 / 書影${coverHit}冊を取得しました` +

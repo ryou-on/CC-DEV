@@ -391,3 +391,4 @@ exports.miniMeWebhook = miniMe.miniMeWebhook;
 // 実装は functions/hondoko.js。エンドポイント: /api/hondoko-analyze
 const hondoko = require('./hondoko');
 exports.hondokoAnalyze = hondoko.hondokoAnalyze;
+exports.hondokoAmazon = hondoko.hondokoAmazon;

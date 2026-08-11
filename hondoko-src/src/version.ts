@@ -1,6 +1,14 @@
-export const APP_VERSION = 'v1.8.3'
+export const APP_VERSION = 'v1.9.0'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: 'v1.9.0',
+    date: '2026-08-11',
+    changes: [
+      '一括取得が「過去に見つからなかった本」も再試行するように修正(書影が付かない問題の主因)',
+      'Amazon PA-API対応(アソシエイト) — 設定済みなら書影・価格の最終フォールバックとして自動利用',
+    ],
+  },
   {
     version: 'v1.8.3',
     date: '2026-08-11',
