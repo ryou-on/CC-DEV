@@ -5,6 +5,7 @@ import { Camera, Pencil, Trash2, X } from 'lucide-react'
 import { db, storage } from '../firebase'
 import type { Book, MapRegion, Shelf, ShelfMap } from '../types'
 import { shelfCode } from '../lib/diff'
+import { getPhotoUrl } from '../lib/photoUrl'
 import { Modal, Spinner, btnPrimary, btnSecondary, inputCls } from './ui'
 
 interface DraftRect { x: number; y: number; w: number; h: number }
@@ -16,6 +17,7 @@ export function MapPhotoView({
   onSelectRow,
   onQuickPhoto,
   processingLocations,
+  latestPhotos,
 }: {
   map: ShelfMap
   shelves: Shelf[]
@@ -23,6 +25,7 @@ export function MapPhotoView({
   onSelectRow: (shelfId: string, row: number) => void
   onQuickPhoto: (shelfId: string, row: number) => void
   processingLocations: Set<string>
+  latestPhotos: Map<string, string> // 場所キー(`shelfId:row`) → 最新写真のstoragePath
 }) {
   const [url, setUrl] = useState<string | null>(null)
   const [editMode, setEditMode] = useState(false)
@@ -31,6 +34,31 @@ export function MapPhotoView({
   const [loadError, setLoadError] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const dragStart = useRef<{ x: number; y: number } | null>(null)
+
+  // ホバー中の段の写真プレビュー(マウス環境のみ)
+  const [hoverPreview, setHoverPreview] = useState<{ key: string; label: string; url: string | null } | null>(null)
+  const hoverTimer = useRef<number | undefined>(undefined)
+
+  const startHover = (r: MapRegion, label: string) => {
+    if (!window.matchMedia('(hover: hover)').matches) return
+    const key = `${r.shelfId}:${r.row}`
+    const path = latestPhotos.get(key)
+    if (!path) return
+    window.clearTimeout(hoverTimer.current)
+    hoverTimer.current = window.setTimeout(async () => {
+      setHoverPreview({ key, label, url: null })
+      try {
+        const u = await getPhotoUrl(path)
+        setHoverPreview((cur) => (cur?.key === key ? { key, label, url: u } : cur))
+      } catch {
+        setHoverPreview((cur) => (cur?.key === key ? null : cur))
+      }
+    }, 250)
+  }
+  const endHover = () => {
+    window.clearTimeout(hoverTimer.current)
+    setHoverPreview(null)
+  }
 
   useEffect(() => {
     let alive = true
@@ -202,6 +230,8 @@ export function MapPhotoView({
                   if (editMode) removeRegion(r)
                   else onSelectRow(r.shelfId, r.row)
                 }}
+                onMouseEnter={() => !editMode && startHover(r, label)}
+                onMouseLeave={endHover}
               >
                 <span
                   className={`absolute top-0.5 left-0.5 text-[10px] sm:text-xs font-bold px-1 py-px rounded leading-tight ${
@@ -226,6 +256,20 @@ export function MapPhotoView({
               </div>
             )
           })}
+
+          {/* ホバー中の段の写真プレビュー */}
+          {hoverPreview && (
+            <div className="absolute inset-x-2 top-2 z-10 pointer-events-none">
+              <div className="bg-white/95 rounded-xl shadow-xl border border-stone-200 p-2">
+                <p className="text-xs font-bold text-stone-600 mb-1">{hoverPreview.label} の登録写真</p>
+                {hoverPreview.url ? (
+                  <img src={hoverPreview.url} alt="" className="w-full max-h-72 object-contain rounded-lg" />
+                ) : (
+                  <p className="text-xs text-stone-400 py-6 text-center">読み込み中…</p>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* 棚番号バッジ */}
           {shelfBadges.map((b) => (

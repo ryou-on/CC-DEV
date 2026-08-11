@@ -1,6 +1,14 @@
-export const APP_VERSION = 'v1.5.0'
+export const APP_VERSION = 'v1.5.1'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: 'v1.5.1',
+    date: '2026-08-11',
+    changes: [
+      '段ビューの上部に登録済みの背表紙写真を表示(クリックで拡大)',
+      'マップ写真の領域にマウスオーバーで、その段の登録写真を拡大プレビュー(PC)',
+    ],
+  },
   {
     version: 'v1.5.0',
     date: '2026-08-11',

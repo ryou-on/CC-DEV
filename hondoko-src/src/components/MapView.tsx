@@ -7,10 +7,31 @@ import type { Book, Shelf, ShelfGroup, ShelfMap, ShelfPhoto } from '../types'
 import { resizeImageToBase64 } from '../lib/api'
 import { shelfCode } from '../lib/diff'
 import { changeShelfRows, MAX_ROWS } from '../lib/shelfOps'
+import { getPhotoUrl } from '../lib/photoUrl'
 import { MapPhotoView } from './MapPhotoView'
 import { btnPrimary, btnSecondary } from './ui'
 
 const GROUP_ORDER: ShelfGroup[] = ['メイン', 'サブ', '別室']
+
+// 段に登録された最新写真(クリックで拡大)
+function ShelfRowPhoto({ storagePath, onZoom }: { storagePath: string; onZoom: (url: string) => void }) {
+  const [url, setUrl] = useState<string | null>(null)
+  useEffect(() => {
+    let ok = true
+    getPhotoUrl(storagePath).then((u) => ok && setUrl(u)).catch(() => {})
+    return () => { ok = false }
+  }, [storagePath])
+  if (!url) return null
+  return (
+    <button className="w-full block" onClick={() => onZoom(url)} title="クリックで拡大">
+      <img
+        src={url}
+        alt="この段の登録写真"
+        className="w-full max-h-56 object-cover object-center rounded-xl border border-stone-200 shadow-sm"
+      />
+    </button>
+  )
+}
 
 const DEFAULT_SHELVES: { name: string; code: string; group: ShelfGroup; rows: number }[] = [
   ...Array.from({ length: 6 }, (_, i) => ({
@@ -170,6 +191,20 @@ export function MapView({
     return m
   }, [books])
 
+  // 段ごとの最新写真(場所キー → storagePath)
+  const latestPhotoByLocation = useMemo(() => {
+    const tmp = new Map<string, { path: string; t: number }>()
+    for (const p of photos) {
+      const key = `${p.shelfId}:${p.row}`
+      const t = p.createdAt?.toMillis() ?? 0
+      const cur = tmp.get(key)
+      if (!cur || t > cur.t) tmp.set(key, { path: p.storagePath, t })
+    }
+    return new Map([...tmp.entries()].map(([k, v]) => [k, v.path]))
+  }, [photos])
+
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null)
+
   const seedShelves = async () => {
     if (!confirm('標準の棚構成(メインIKEA×6・サブ×3・別室×1)を作成しますか？\nあとから設定タブで編集できます')) return
     setSeeding(true)
@@ -257,6 +292,8 @@ export function MapView({
           </h2>
           <span className="text-sm text-stone-400 ml-auto">{booksInRow.length}冊</span>
         </div>
+
+        {lastPhoto && <ShelfRowPhoto storagePath={lastPhoto.storagePath} onZoom={setLightboxUrl} />}
 
         <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
           <div className="text-xs text-stone-500">
@@ -354,6 +391,16 @@ export function MapView({
             </li>
           )}
         </ul>
+
+        {lightboxUrl && (
+          <div
+            data-modal-overlay
+            className="fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-3 cursor-zoom-out"
+            onClick={() => setLightboxUrl(null)}
+          >
+            <img src={lightboxUrl} alt="拡大写真" className="max-w-full max-h-full rounded-lg shadow-2xl" />
+          </div>
+        )}
       </div>
     )
   }
@@ -403,6 +450,7 @@ export function MapView({
             onSelectRow={(shelfId, row) => setSelected({ shelfId, row })}
             onQuickPhoto={openPicker}
             processingLocations={processingLocations}
+            latestPhotos={latestPhotoByLocation}
           />
         ))}
 
