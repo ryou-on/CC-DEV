@@ -469,7 +469,6 @@ export function rectifyImage(bitmap: ImageBitmap, maxEdge: number): HTMLCanvasEl
   // 推定座標(縮小) → 実処理座標(リサイズ後)へスケール
   const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height))
   const bw = Math.round(bitmap.width * scale)
-  const bh = Math.round(bitmap.height * scale)
   const sIn = bw / ew // 縮小座標→実座標
   const Sin: M3 = [1 / sIn, 0, 0, 0, 1 / sIn, 0, 0, 0, 1] // 実→縮小
   const Sout: M3 = [sIn, 0, 0, 0, sIn, 0, 0, 0, 1] // 縮小→実
