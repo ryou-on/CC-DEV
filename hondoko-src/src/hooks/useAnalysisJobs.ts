@@ -32,7 +32,8 @@ export function useAnalysisJobs() {
       setJobs((prev) => [...prev, { id, target, status: 'processing', startedAt: Date.now() }])
       ;(async () => {
         try {
-          const base64 = await resizeImageToBase64(file)
+          // 傾き自動補正付きでリサイズ(スマホ撮影の水平出し)
+          const base64 = await resizeImageToBase64(file, 2400, true)
           const pathKey = target ? `${target.shelfId}_${target.row}` : 'auto'
           const path = `hondoko/photos/${pathKey}_${Date.now()}.jpg`
 

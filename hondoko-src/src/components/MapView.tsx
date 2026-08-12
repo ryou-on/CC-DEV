@@ -225,7 +225,7 @@ export function MapView({
     if (!name) return
     setUploadingMap(true)
     try {
-      const base64 = await resizeImageToBase64(file, 2000)
+      const base64 = await resizeImageToBase64(file, 2000, true)
       const path = `hondoko/maps/${Date.now()}.jpg`
       await uploadString(storageRef(storage, path), base64, 'base64', { contentType: 'image/jpeg' })
       await addDoc(collection(db, 'hondoko-maps'), {
@@ -247,7 +247,6 @@ export function MapView({
       ref={photoInput}
       type="file"
       accept="image/*"
-      capture="environment"
       className="hidden"
       onChange={(e) => {
         const f = e.target.files?.[0]
@@ -425,7 +424,6 @@ export function MapView({
             ref={autoInput}
             type="file"
             accept="image/*"
-            capture="environment"
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0]

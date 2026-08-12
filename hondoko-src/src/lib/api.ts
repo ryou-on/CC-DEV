@@ -1,8 +1,61 @@
 import { auth, AMAZON_ENDPOINT, ANALYZE_ENDPOINT } from '../firebase'
 import type { AnalyzeResult, MapMatchPayload } from '../types'
 
-// 画像を長辺 maxEdge px 以下の JPEG (base64) に変換
-export async function resizeImageToBase64(file: File, maxEdge = 2400): Promise<string> {
+// 縮小画像のエッジ方向から傾き角(ラジアン)を推定する。
+// 本棚写真は棚板(水平線)と背表紙(垂直線)が支配的なので、
+// 軸からのずれのヒストグラムのピークを傾きとみなす。補正対象は±10°まで。
+function estimateTiltRad(bitmap: ImageBitmap): number {
+  const targetW = 480
+  const sc = Math.min(1, targetW / bitmap.width)
+  const w = Math.max(32, Math.round(bitmap.width * sc))
+  const h = Math.max(32, Math.round(bitmap.height * sc))
+  const cv = document.createElement('canvas')
+  cv.width = w
+  cv.height = h
+  const ctx = cv.getContext('2d', { willReadFrequently: true })!
+  ctx.drawImage(bitmap, 0, 0, w, h)
+  const { data } = ctx.getImageData(0, 0, w, h)
+  const gray = new Float32Array(w * h)
+  for (let i = 0; i < w * h; i++) {
+    gray[i] = data[i * 4] * 0.299 + data[i * 4 + 1] * 0.587 + data[i * 4 + 2] * 0.114
+  }
+  const BIN = 0.25 // ヒストグラムの刻み(度)
+  const RANGE = 12 // 探索範囲 ±12°
+  const bins = new Float32Array(Math.round((RANGE * 2) / BIN) + 1)
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x
+      const gx =
+        gray[i + 1 - w] + 2 * gray[i + 1] + gray[i + 1 + w] -
+        (gray[i - 1 - w] + 2 * gray[i - 1] + gray[i - 1 + w])
+      const gy =
+        gray[i + w - 1] + 2 * gray[i + w] + gray[i + w + 1] -
+        (gray[i - w - 1] + 2 * gray[i - w] + gray[i - w + 1])
+      const mag2 = gx * gx + gy * gy
+      if (mag2 < 2500) continue // 弱いエッジは無視
+      const deg = (Math.atan2(gy, gx) * 180) / Math.PI
+      let tilt = ((deg % 90) + 90) % 90 // 0..90 (水平・垂直どちらの軸ずれも同じ値になる)
+      if (tilt > 45) tilt -= 90 // -45..45
+      if (Math.abs(tilt) > RANGE) continue
+      bins[Math.round((tilt + RANGE) / BIN)] += Math.sqrt(mag2)
+    }
+  }
+  let best = 0
+  let bestV = 0
+  for (let i = 1; i < bins.length - 1; i++) {
+    const v = bins[i - 1] + bins[i] + bins[i + 1]
+    if (v > bestV) { bestV = v; best = i }
+  }
+  const total = bins.reduce((a, b) => a + b, 0)
+  if (total === 0 || bestV < total * 0.1) return 0 // 支配的な向きがなければ補正しない
+  const angleDeg = best * BIN - RANGE
+  if (Math.abs(angleDeg) < 0.4 || Math.abs(angleDeg) > 10) return 0
+  return (angleDeg * Math.PI) / 180
+}
+
+// 画像を長辺 maxEdge px 以下の JPEG (base64) に変換。
+// straighten=true で傾きを自動補正(回転で生じる余白は少しズームして切り落とす)
+export async function resizeImageToBase64(file: File, maxEdge = 2400, straighten = false): Promise<string> {
   const bitmap = await createImageBitmap(file)
   const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height))
   const w = Math.round(bitmap.width * scale)
@@ -11,7 +64,22 @@ export async function resizeImageToBase64(file: File, maxEdge = 2400): Promise<s
   canvas.width = w
   canvas.height = h
   const ctx = canvas.getContext('2d')!
-  ctx.drawImage(bitmap, 0, 0, w, h)
+  let angle = 0
+  if (straighten) {
+    try { angle = estimateTiltRad(bitmap) } catch { angle = 0 }
+  }
+  if (angle !== 0) {
+    const s = Math.abs(Math.sin(angle))
+    const c = Math.abs(Math.cos(angle))
+    // 回転後も枠内を埋める最大の同アスペクト矩形に合わせてズーム
+    const k = Math.min(w / (w * c + h * s), h / (w * s + h * c))
+    const z = 1 / k
+    ctx.translate(w / 2, h / 2)
+    ctx.rotate(-angle)
+    ctx.drawImage(bitmap, (-w * z) / 2, (-h * z) / 2, w * z, h * z)
+  } else {
+    ctx.drawImage(bitmap, 0, 0, w, h)
+  }
   bitmap.close()
   const dataUrl = canvas.toDataURL('image/jpeg', 0.85)
   return dataUrl.split(',')[1]

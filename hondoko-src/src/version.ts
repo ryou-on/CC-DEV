@@ -1,6 +1,14 @@
-export const APP_VERSION = 'v1.9.0'
+export const APP_VERSION = 'v1.10.0'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: 'v1.10.0',
+    date: '2026-08-12',
+    changes: [
+      '棚写真の選択時にカメラロール(フォトライブラリ)からも選べるように(カメラ強制を解除)',
+      '撮影写真の傾きを自動補正(棚板・背表紙のエッジから水平垂直を推定、±10°まで)',
+    ],
+  },
   {
     version: 'v1.9.0',
     date: '2026-08-11',
