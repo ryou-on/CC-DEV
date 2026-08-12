@@ -13,7 +13,7 @@ const cropBtn = document.getElementById('cropBtn');
 // 拡張本体（撮影側 background.js）が旧バージョンのまま動き続け、
 // 「修正したはずの問題が直らない」事故になる。編集画面（このファイル）の
 // バージョンと、実際にロードされている拡張本体のバージョンを比較して警告する
-const VIEWER_VERSION = '5.29.0';
+const VIEWER_VERSION = '5.31.0';
 try {
   const loaded = chrome.runtime.getManifest().version;
   if (loaded !== VIEWER_VERSION) {
@@ -165,6 +165,8 @@ chrome.storage.local.get(['capMeta', 'capturedImages', 'config', 'importedFlags'
 
   setupReplaceInsert();
   await renderAll();
+  // 「撮影後に自動でPDF保存」オプション: 余白カット・自動重複削除が済んだこの時点で保存する
+  await maybeAutoSave();
 });
 
 // ===== ページ画像の差し替え・追加 =====
@@ -1326,11 +1328,30 @@ function drawCard(card, img, useCrop) {
   }
   const mx = Math.round(dw * mf.x);
   const my = Math.round(dh * mf.y);
-  cv.width = dw + mx * 2;
-  cv.height = dh + my * 2;
+  let W0 = dw + mx * 2, H0 = dh + my * 2;
+  let offX = mx, offY = my;
+  // 文章（リフロー）本の短冊化対策（v5.30.4）: リーダーが狭い1段組で表示するため
+  // 本文列が細長くなる。書籍の一般的な縦横比に整えるため、表紙の比率
+  // （bookAspect = 表紙の幅/高さ）に合わせて左右（必要なら上下）へ白余白を足す。
+  // 内容は拡大縮小せず・切り取らず、白を足すだけ。全ページ同比率に揃い短冊が消える。
+  if (useCrop && bookConfig.resolvedType === 'text' && !card._manualRect && !card._imported) {
+    const targetWH = Math.max(0.5, Math.min(0.9, bookAspect || 0.71)); // 表紙比率（文庫≒0.71）
+    const curWH = W0 / H0;
+    if (curWH < targetWH - 0.005) {        // 細すぎ→左右に白を足す（短冊の解消）
+      const fw = Math.round(H0 * targetWH);
+      offX += Math.round((fw - W0) / 2);
+      W0 = fw;
+    } else if (curWH > targetWH + 0.005) { // 横広すぎ→上下に白を足す（横長図版ページ等）
+      const fh = Math.round(W0 / targetWH);
+      offY += Math.round((fh - H0) / 2);
+      H0 = fh;
+    }
+  }
+  cv.width = W0;
+  cv.height = H0;
   const ctx = cv.getContext('2d');
-  if (mx || my) { ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, cv.width, cv.height); }
-  ctx.drawImage(img, r.x, r.y, r.w, r.h, mx, my, dw, dh);
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.drawImage(img, r.x, r.y, r.w, r.h, offX, offY, dw, dh);
 }
 
 // 余白カットのON/OFFトグル（削除・並び順・選択を保持したまま再描画）
@@ -1381,19 +1402,40 @@ function meanAbsDiff(a, b) {
   return s / a.length;
 }
 
-// 連続する重複ページを1枚残して削除（Undo対応）
+// 平均明度の差を打ち消してから比較する（終端の評価パネルのフェード写り込みで
+// 全体がわずかに明るい/暗いだけのコピーを同一と判定するため）
+function normAbsDiff(a, ma, b, mb) {
+  const off = ma - mb;
+  let s = 0;
+  for (let i = 0; i < a.length; i++) s += Math.abs(a[i] - (b[i] + off));
+  return s / a.length;
+}
+
+// 重複ページを1枚残して削除（Undo対応）。
+// 「直前と同一」だけでなく「直近4枚の残存ページと同一」も削除対象にする。
+// 終端でリーダーが最後の見開きを行き来すると A,B,A,B… と交互に保存され、
+// 隣接比較では1件もヒットしないため（v5.29.4）。
+// ※副作用: 本編中で「全く同じページ」が4枚以内に再登場する演出も畳まれる。
+//   件数を表示しCtrl+Zで戻せるので、意図した繰り返しなら取り消して個別に削除する
 function runDedup(auto) {
   const cards = Array.from(container.querySelectorAll('.page-card'));
   if (cards.length < 2) { if (!auto) info.innerText = "重複判定できるページがありません"; return 0; }
+  const sigMean = (s) => { let t = 0; for (let i = 0; i < s.length; i++) t += s[i]; return t / s.length; };
   const removed = [];
-  let lastSig = cardSignature(cards[0]);
-  for (let i = 1; i < cards.length; i++) {
+  const kept = []; // 残存ページの署名（比較窓は末尾4枚）
+  for (let i = 0; i < cards.length; i++) {
     const sig = cardSignature(cards[i]);
-    if (meanAbsDiff(sig, lastSig) < DEDUP_DIFF) {
-      removed.push({ node: cards[i], idx: i }); // 直前と同一→削除対象
-    } else {
-      lastSig = sig; // 内容が変わったので基準を更新
+    const mean = sigMean(sig);
+    let dup = false;
+    for (let k = kept.length - 1; k >= 0 && k >= kept.length - 4; k--) {
+      const p = kept[k];
+      if (meanAbsDiff(sig, p.sig) < DEDUP_DIFF || normAbsDiff(sig, mean, p.sig, p.mean) < DEDUP_DIFF) {
+        dup = true;
+        break;
+      }
     }
+    if (dup) removed.push({ node: cards[i], idx: i });
+    else kept.push({ sig, mean });
   }
   if (!removed.length) { if (!auto) info.innerText = "重複ページはありませんでした"; return 0; }
   pushUndo(); // Ctrl+Z / ↩ で戻せる
@@ -1746,26 +1788,44 @@ document.getElementById('trimBtn').onclick = () => {
 
 // ===== 保存フロー =====
 // タイトルは撮影時にKindleのページ情報から取得済み（bookConfig.title）。手修正可能。
-document.getElementById('saveBtn').onclick = () => {
+// 雑誌タイプは著者名を使わない（欄も表示しない・ファイル名にも含めない）
+document.getElementById('saveBtn').onclick = async () => {
   if (!container.children.length) { alert("ページがありません"); return; }
   const modal = document.getElementById('aiModal');
   document.getElementById('coverPreview').src = firstBase64;
   const titleInput = document.getElementById('aiTitle');
   titleInput.value = bookConfig.title || '';
   document.getElementById('aiAuthor').value = bookConfig.author || '';
+  document.getElementById('aiAuthorWrap').style.display =
+    bookConfig.resolvedType === 'magazine' ? 'none' : 'flex';
+  // 保存先フォルダと「毎回選ぶ」の前回設定を復元
+  try {
+    const d = await new Promise(r => chrome.storage.local.get(['setting_saveDir', 'setting_saveAsDialog'], r));
+    document.getElementById('aiFolder').value = d.setting_saveDir || '';
+    document.getElementById('aiSaveAs').checked = !!d.setting_saveAsDialog;
+  } catch (e) {}
   modal.style.display = 'flex';
   titleInput.focus();
   titleInput.select();
 };
-
-document.getElementById('aiConfirmBtn').onclick = async () => {
-  const title = document.getElementById('aiTitle').value.trim() || "Book";
-  const author = document.getElementById('aiAuthor').value.trim(); // 空なら書籍名のみ
+document.getElementById('aiCloseBtn').onclick = () => {
   document.getElementById('aiModal').style.display = 'none';
+};
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const m = document.getElementById('aiModal');
+    if (m.style.display === 'flex') m.style.display = 'none';
+  }
+});
 
+// PDFを生成して保存する。folder はダウンロードフォルダ内のサブフォルダ（空=直下）。
+// useSaveAs=true でOSの保存ダイアログを開く（保存先を自由に選べる）。
+// chrome.downloads が使えない場合は従来のダウンロード保存にフォールバック。
+// 戻り値: 保存した相対パス（ダウンロードフォルダ基準）
+async function generateAndSavePdf(title, author, folder, useSaveAs) {
   const cvs = container.querySelectorAll('canvas');
-  if (!cvs.length) { alert("ページがありません"); return; }
-  if (!jsPDF) { alert("jsPDFが読み込めていないためPDF保存できません"); return; }
+  if (!cvs.length) throw new Error("ページがありません");
+  if (!jsPDF) throw new Error("jsPDFが読み込めていないためPDF保存できません");
 
   pWrap.style.display = 'block';
   let pdf = null;
@@ -1780,7 +1840,68 @@ document.getElementById('aiConfirmBtn').onclick = async () => {
   }
   const base = author ? `${author}_${title}` : title; // 著者名なしなら「書籍名.pdf」
   const fname = base.replace(/[\\/:*?"<>|]/g, "_").slice(0, 120) + ".pdf";
-  pdf.save(fname);
+  // サブフォルダはダウンロードフォルダ内のみ指定可能（Chromeの仕様）。
+  // パス区切り以外の危険文字と先頭/末尾のスラッシュ・空白を除去する
+  const dir = String(folder || '').trim()
+    .replace(/[\\:*?"<>|]/g, "_")
+    .replace(/^[\/\s]+|[\/\s]+$/g, "");
+  const relPath = dir ? dir + "/" + fname : fname;
+  let saved = false;
+  try {
+    if (chrome.downloads && chrome.downloads.download) {
+      // blob URL だと filename が無視されUUID名になるため、background の
+      // onDeterminingFilename に希望名を登録してから発行する（登録完了を待つ）
+      try { await chrome.runtime.sendMessage({ action: "queueDownloadName", name: relPath }); } catch (e) {}
+      const url = URL.createObjectURL(pdf.output('blob'));
+      await chrome.downloads.download({ url, filename: relPath, saveAs: !!useSaveAs, conflictAction: 'uniquify' });
+      setTimeout(() => URL.revokeObjectURL(url), 60000); // ダウンロード完了を待ってから解放
+      saved = true;
+    }
+  } catch (e) {
+    console.error("downloads APIでの保存に失敗（従来方式で再試行）:", e);
+  }
+  if (!saved) pdf.save(fname); // フォールバック: ダウンロード直下
   pWrap.style.display = 'none';
   pBar.style.width = '0%';
+  return saved ? relPath : fname;
+}
+
+document.getElementById('aiConfirmBtn').onclick = async () => {
+  const title = document.getElementById('aiTitle').value.trim() || "Book";
+  const author = bookConfig.resolvedType === 'magazine'
+    ? "" // 雑誌は著者名を使わない
+    : document.getElementById('aiAuthor').value.trim(); // 空なら書籍名のみ
+  const folder = document.getElementById('aiFolder').value;
+  const useSaveAs = document.getElementById('aiSaveAs').checked;
+  document.getElementById('aiModal').style.display = 'none';
+  // 保存先設定は次回以降も使うので記憶する
+  try { await new Promise(r => chrome.storage.local.set({ setting_saveDir: folder.trim(), setting_saveAsDialog: useSaveAs }, r)); } catch (e) {}
+  try {
+    const where = await generateAndSavePdf(title, author, folder, useSaveAs);
+    info.innerText = "保存しました → ダウンロード/" + where;
+  } catch (e) {
+    alert(String((e && e.message) || e));
+    pWrap.style.display = 'none';
+  }
 };
+
+// ===== 全自動保存（撮影→余白カット→PDF保存） =====
+// ポップアップの「撮影後に自動でPDF保存」がONのとき、編集画面の初回表示
+// （余白カット・自動重複削除の完了後）にそのままPDFを保存する。
+// 同じ撮影データ（capturedAtで識別）は一度だけ保存し、開き直しでは二重保存しない
+async function maybeAutoSave() {
+  if (!bookConfig.autoSave || !bookConfig.capturedAt) return;
+  try {
+    const d = await new Promise(r => chrome.storage.local.get(['autoSavedAt', 'setting_saveDir'], r));
+    if (d.autoSavedAt === bookConfig.capturedAt) return; // この撮影は自動保存済み
+    const title = bookConfig.title || 'Book';
+    const author = bookConfig.resolvedType === 'magazine' ? '' : (bookConfig.author || '');
+    info.innerText = "自動保存中…";
+    const where = await generateAndSavePdf(title, author, d.setting_saveDir || '', false);
+    await new Promise(r => chrome.storage.local.set({ autoSavedAt: bookConfig.capturedAt }, r));
+    info.innerText = "自動保存しました → ダウンロード/" + where + "（この画面で修正して再保存もできます）";
+  } catch (e) {
+    console.error("自動保存に失敗:", e);
+    info.innerText = "自動保存に失敗しました（「保存」から手動保存してください）: " + String((e && e.message) || e);
+  }
+}

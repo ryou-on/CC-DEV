@@ -1,1 +1,1 @@
-console.log("Kindle Auto Capturer v5.29.0 Ready");
+console.log("Kindle Auto Capturer v5.31.0 Ready");

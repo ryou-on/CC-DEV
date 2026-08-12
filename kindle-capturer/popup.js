@@ -3,6 +3,10 @@ const startBtn = document.getElementById('startBtn');
 const stopBtn = document.getElementById('stopBtn');
 const statusDiv = document.getElementById('status');
 const maxPagesInput = document.getElementById('maxPages');
+const autoSaveInput = document.getElementById('autoSave');
+
+// 「撮影後に自動でPDF保存」の前回設定を復元（チェック状態は記憶される）
+chrome.storage.local.get(['setting_autoSave'], (d) => { autoSaveInput.checked = !!d.setting_autoSave; });
 const openGuideBtn = document.getElementById('openGuideBtn');
 const closeGuideBtn = document.getElementById('closeGuideBtn');
 const guideUI = document.getElementById('guideUI');
@@ -11,20 +15,33 @@ const guideUI = document.getElementById('guideUI');
 openGuideBtn.onclick = () => { guideUI.style.display = 'block'; };
 closeGuideBtn.onclick = () => { guideUI.style.display = 'none'; };
 
-// Kindle解析（現在のページ数を推定して枚数に反映）
+// Kindle解析（総ページ数を推定して枚数に反映）。
+// 確実な情報源（ページスライダーの最大値・「位置No. N/M」）だけを使う。
+// 表紙の号数表記（例「6/20-27」）を総ページ数と誤読しないよう、
+// 素の「数字/数字」テキストは根拠に使わない（既定値100のままにする）。
 chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
   if (tabs[0] && tabs[0].url && tabs[0].url.includes("read.amazon.co.jp")) {
     chrome.scripting.executeScript({
-      target: {tabId: tabs[0].id},
+      target: {tabId: tabs[0].id, allFrames: true},
       func: () => {
-        const txt = document.body.innerText;
-        const pageMatch = txt.match(/(\d+)\s*\/\s*(\d+)/);
-        const locMatch = txt.match(/位置No\.\s*(\d+)\s*\/\s*(\d+)/);
-        if (pageMatch) return pageMatch[2];
-        if (locMatch) return Math.ceil(locMatch[2] / 20); 
-        return null;
+        // ① ページスライダー（input[type=range]）の最大値が最も確実
+        for (const s of document.querySelectorAll('input[type="range"]')) {
+          const m = parseInt(s.max, 10);
+          if (m > 1) return m + 1; // 0始まりのことがあるので+1
+        }
+        // ② リフロー本の「位置No. N/M」→ 20位置≒1ページ換算
+        const txt = document.body ? document.body.innerText : '';
+        const loc = txt.match(/位置No\.\s*[\d,]+\s*\/\s*([\d,]+)/);
+        if (loc) return Math.ceil(parseInt(loc[1].replace(/,/g, ''), 10) / 20);
+        // ③ 「N / M ページ」と明示されている場合のみ採用（日付誤読を防ぐ）
+        const pg = txt.match(/(\d+)\s*\/\s*(\d+)\s*ページ/);
+        if (pg) return parseInt(pg[2], 10);
+        return null; // 確証なし → 既定値のまま（雑誌でも余裕を持って撮り終端で自動停止）
       }
-    }).then(res => { if (res && res[0] && res[0].result) maxPagesInput.value = res[0].result; });
+    }).then(res => {
+      const vals = (res || []).map(r => r && r.result).filter(v => v && v > 1);
+      if (vals.length) maxPagesInput.value = Math.max.apply(null, vals);
+    }).catch(() => {});
   }
 });
 
@@ -45,12 +62,14 @@ startBtn.onclick = async () => {
   }
   const maxPages = Math.max(1, parseInt(maxPagesInput.value, 10) || 1);
   const interval = Math.max(1, parseFloat(document.getElementById('interval').value) || 4.5) * 1000;
+  chrome.storage.local.set({ setting_autoSave: autoSaveInput.checked });
   chrome.runtime.sendMessage({
     action: "start", tabId: tab.id, windowId: tab.windowId,
     maxPages,
     interval,
     direction: document.querySelector('input[name="dir"]:checked').value,
-    bookType: document.querySelector('input[name="btype"]:checked').value
+    bookType: document.querySelector('input[name="btype"]:checked').value,
+    autoSave: autoSaveInput.checked
   });
   updateUI({ isRunning: true, countdown: 10, current: 0, total: maxPages });
 };

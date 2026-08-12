@@ -3,6 +3,11 @@ let isRunning = false; let isPaused = false; let countdown = 0;
 let currentTabId = null; let currentWindowId = null; let currentConfig = null; let currentCount = 0;
 let savedCount = 0; // ストレージへ保存済みの枚数（画像はメモリに溜めず1枚ずつ保存する）
 
+// 次に発行するPDFダウンロードの希望ファイル名（サブフォルダ込みの相対パス）。
+// blob URL を chrome.downloads でDLすると filename 指定が無視され blob のUUIDが
+// ファイル名になる事象があるため、onDeterminingFilename で確実に名前を上書きする
+let pendingDownloadName = null;
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "start") {
     isRunning = true; isPaused = false; savedCount = 0;
@@ -13,8 +18,27 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   else if (request.action === "getStatus") {
     sendResponse({ isRunning, isPaused, countdown, current: currentCount, total: currentConfig ? currentConfig.maxPages : 0 });
     return true;
+  } else if (request.action === "queueDownloadName") {
+    // 編集画面が保存直前に希望ファイル名を登録する（download() 呼び出しの直前）
+    pendingDownloadName = request.name || null;
+    sendResponse({ ok: true });
+    return true;
   }
 });
+
+// 自拡張が発行した blob ダウンロードのときだけ、登録済みの希望ファイル名を採用する。
+// （chrome.downloads の filename 指定が blob URL で無視され UUID 名になる事象への対策）
+if (chrome.downloads && chrome.downloads.onDeterminingFilename) {
+  chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
+    if (pendingDownloadName && /^blob:chrome-extension:\/\//.test(item.url || "")) {
+      const name = pendingDownloadName;
+      pendingDownloadName = null;
+      suggest({ filename: name, conflictAction: "uniquify" });
+    } else {
+      suggest(); // その他のダウンロードは既定のまま
+    }
+  });
+}
 
 // dataURL を 32x32 グレースケール署名に変換（Service Worker では OffscreenCanvas を使用）
 const SIG_W = 32, SIG_H = 32;
@@ -37,6 +61,35 @@ function meanAbsDiff(a, b) {
   let s = 0;
   for (let i = 0; i < a.length; i++) s += Math.abs(a[i] - b[i]);
   return s / a.length;
+}
+// 平均明度の差を打ち消してから比較する（終端で評価パネルのフェードが写り込み、
+// 全体がわずかに明るい/暗いだけの「焼き直し」を同一とみなすため）。
+function normAbsDiff(a, b) {
+  let ma = 0, mb = 0;
+  for (let i = 0; i < a.length; i++) { ma += a[i]; mb += b[i]; }
+  const off = (ma - mb) / a.length;
+  let s = 0;
+  for (let i = 0; i < a.length; i++) s += Math.abs(a[i] - (b[i] + off));
+  return s / a.length;
+}
+// 現在の署名が「直近に保存したページの焼き直し（明度差含む）」かを判定する。
+// 明度正規化で緩めに照合する（フェード写り込みを吸収）。
+function resemblesRecent(sig, recentSigs) {
+  if (!sig) return false;
+  for (const rs of recentSigs) if (normAbsDiff(sig, rs) < 8) return true;
+  return false;
+}
+// 署名から「ほぼ無地のページ」（白紙・黒紙・単色ページ）かを判定する。
+// 中央値から離れたセルが8%以下なら無地とみなす。白紙の連続は画像では
+// 区別できないためページ番号での救済が必要だが、内容のあるページが
+// 画素同一で連続することは実書籍ではあり得ない＝救済の対象外にする
+function isNearBlankSig(sig) {
+  if (!sig) return false;
+  const s = Array.from(sig).sort((a, b) => a - b);
+  const med = s[s.length >> 1];
+  let far = 0;
+  for (let i = 0; i < sig.length; i++) if (Math.abs(sig[i] - med) > 12) far++;
+  return far <= sig.length * 0.08;
 }
 
 // 撮影の瞬間だけページ送りボタン（›）を透明化する。
@@ -83,7 +136,7 @@ async function setNavHidden(hidden) {
               ".kw-button-next, .kw-button-previous, .kg-next-button, .kg-prev-button," +
               " [class*='chevron' i], [aria-label*='ページ'] button, [aria-label*='Page'] button," +
               " #kindleReader_header, #kindleReader_footer," + // 旧リーダーのヘッダー/フッター
-              " #capturer-progress," + // 進捗ピルも撮影の瞬間だけ隠す（写り込み防止）
+              " #capturer-progress, #capturer-notice, #capturer-overflow," + // 進捗ピル・通知バナー・はみ出し表示も撮影の瞬間だけ隠す（写り込み防止）
               " [" + MARK + "]" +
               " { opacity: 0 !important; }";
             document.documentElement.appendChild(st);
@@ -311,33 +364,142 @@ async function fetchBookMeta() {
   return { title, author };
 }
 
-// 著者名を「開いているタブのタブ名」から推定する。
-// Amazonの商品ページ等はタブ名が「書名｜著者名｜…」形式のため、
-// 撮影中の本のタイトルを含むタブを探して著者部分を取り出す（tabs権限を利用）。
-async function fetchAuthorFromTabs(title) {
-  if (!title) return "";
+// リーダー/商品ページのURLから ASIN（10桁英数）を取り出す。
+// 通常リーダー: read.amazon.co.jp/?asin=XXXX ／ マンガ: read.amazon.co.jp/manga/XXXX
+// 商品ページ: amazon.co.jp/dp/XXXX ・ /gp/product/XXXX にも対応
+function extractAsin(url) {
+  if (!url) return "";
+  const m = url.match(/[?&]asin=([A-Z0-9]{10})/i)
+    || url.match(/\/manga\/([A-Z0-9]{10})/i)
+    || url.match(/\/(?:dp|gp\/product|kp\/[^/]+)\/([A-Z0-9]{10})/i)
+    || url.match(/read\.amazon\.[a-z.]+\/([A-Z0-9]{10})(?=[/?#]|$)/i);
+  return m ? m[1].toUpperCase() : "";
+}
+
+// 現在撮影中の本の ASIN を得る（リーダータブのURLから）
+async function getReaderAsin() {
   try {
-    // 巻数・空白を除いた基準文字列（例:「すみ香る君へ２」→「すみ香る君へ」）
-    const base = title.replace(/[\s　]*[0-9０-９]+[\s　]*$/, '').replace(/[\s　]+/g, '');
-    if (base.length < 2) return "";
-    const NG = /amazon|kindle|マンガ|コミック|電子書籍|ストア|\.co\.jp|楽天|honto|読み放題/i;
+    const tab = await chrome.tabs.get(currentTabId);
+    return extractAsin(tab.url || "");
+  } catch (e) { return ""; }
+}
+
+// キャプチャ完了をリーダーページのlocalStorage（kobCapturedLog）に記録する。
+// Kindle Owned Badge拡張（CC-DEV/extensions/kindle-owned-badge）が read.amazon.co.jp 上で
+// この記録を回収し、Amazonの商品サムネイルに「キャプチャ済み」バッジ（紫）を表示する
+async function recordCaptureForBadge() {
+  try {
+    const asin = (currentConfig && currentConfig.asin) || await getReaderAsin();
+    if (!asin) return;
+    await chrome.scripting.executeScript({
+      target: { tabId: currentTabId },
+      args: [asin, (currentConfig && currentConfig.title) || ''],
+      func: (asin, title) => {
+        try {
+          const log = JSON.parse(localStorage.getItem('kobCapturedLog') || '[]');
+          if (!log.some(e => e && e.asin === asin)) {
+            log.push({ asin, title, ts: Date.now() });
+            localStorage.setItem('kobCapturedLog', JSON.stringify(log));
+          }
+        } catch (e) {}
+      }
+    });
+    console.log('[Badge連携] キャプチャ記録:', asin);
+  } catch (e) { console.error('[Badge連携] 記録失敗（撮影完了には影響なし）:', e); }
+}
+
+// Amazon商品ページのタブ名から著者名を取り出す。
+// 実際の形式: 「Amazon.co.jp: <書名> (レーベル) eBook : <著者>: Kindleストア」
+// 「… eBook : <著者>: 本」「… eBook : <著者>」（末尾区分なし）もある。
+// 「eBook :」以降を著者とみなし、末尾の「: Kindleストア/本」を除去する
+function authorFromAmazonTitle(t) {
+  if (!t) return "";
+  const m = t.match(/eBook\s*[:：]\s*(.+)$/);
+  if (!m) return "";
+  let a = m[1]
+    .replace(/[:：]\s*(Kindle\s*ストア|Kindle\s*Store|本)\s*$/i, "") // 末尾の区分を除去
+    .replace(/[:：]\s*$/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return (a.length >= 2 && a.length <= 40) ? a : "";
+}
+
+// 著者名を「開いているタブのタブ名」から推定する（tabs権限を利用）。
+// ①ASINが一致するAmazon商品タブを最優先（確実）②無ければ書名を含む
+// Amazon商品タブから推定。タブ名は「… eBook : <著者>: Kindleストア」形式
+async function fetchAuthorFromTabs(title, asin) {
+  try {
     const tabs = await chrome.tabs.query({});
-    for (const t of tabs) {
-      // Amazon系のタブに限定（他サイトのタブ名との偶然一致による誤検出を防ぐ）
-      if (!t.url || !/amazon\.(co\.jp|com)/.test(t.url)) continue;
-      const tt = t.title || '';
-      if (!tt.replace(/[\s　]+/g, '').includes(base)) continue;
-      const parts = tt.split(/[｜|]/).map(s => s.trim()).filter(Boolean);
-      if (parts.length < 2) continue;
-      // タイトルを含むセグメントの「次」を著者候補とする
-      for (let i = 0; i < parts.length - 1; i++) {
-        if (parts[i].replace(/[\s　]+/g, '').includes(base)) {
-          const cand = parts[i + 1];
-          if (cand && cand.length >= 2 && cand.length <= 40 && !NG.test(cand)) return cand;
-        }
+    // ① ASIN一致のAmazon商品タブ（最も確実）
+    if (asin) {
+      for (const t of tabs) {
+        if (!t.url || !/amazon\.(co\.jp|com)/.test(t.url)) continue;
+        if (extractAsin(t.url) !== asin) continue;
+        const a = authorFromAmazonTitle(t.title || "");
+        if (a) { console.log("[著者取得] タブ(ASIN一致):", a); return a; }
+      }
+    }
+    // ② 書名を含むAmazon商品タブ
+    const base = (title || "").replace(/[\s　]*[0-9０-９]+[\s　]*$/, '').replace(/[\s　]+/g, '');
+    if (base.length >= 2) {
+      for (const t of tabs) {
+        if (!t.url || !/amazon\.(co\.jp|com)/.test(t.url)) continue;
+        const tt = t.title || '';
+        if (!tt.replace(/[\s　]+/g, '').includes(base)) continue;
+        const a = authorFromAmazonTitle(tt);
+        if (a) { console.log("[著者取得] タブ(書名一致):", a); return a; }
       }
     }
   } catch (e) {}
+  return "";
+}
+
+// 著者名をKindleライブラリから取得する（最も確実な取得元）。
+// ASINで書籍を特定し、①ライブラリの検索API（read.amazon.co.jp のホスト権限で
+// cookie 付き）②開いているライブラリタブのDOM（id="author-<asin>"）の順に試す。
+async function fetchAuthorFromLibrary(asin, title) {
+  const okName = (a) => a && a.length >= 2 && a.length <= 40;
+  // ① ライブラリ検索API
+  try {
+    const q = encodeURIComponent(asin || (title || "").slice(0, 50));
+    if (q) {
+      const res = await fetch("https://read.amazon.co.jp/kindle-library/search?query=" + q +
+        "&libraryType=BOOKS&sortType=recency&querySize=20", { credentials: "include" });
+      if (res.ok) {
+        const j = await res.json();
+        const items = (j && (j.itemsList || j.items || j.libraryItems)) || [];
+        const hit = (asin && items.find(it => it && it.asin === asin)) || items[0];
+        // authors の形は本により異なる: ["鶴川かきお:"] / ["名前"] / [{name:"名前"}] / "名前"
+        let raw = hit && (hit.authors || hit.author);
+        let a = "";
+        if (Array.isArray(raw)) raw = raw[0];
+        if (raw && typeof raw === "object") raw = raw.name || raw.author || "";
+        a = String(raw || "").split(/[:：]/)[0].replace(/\s+/g, " ").trim();
+        if (okName(a)) { console.log("[著者取得] ライブラリAPI:", a); return a; }
+      }
+    }
+  } catch (e) {}
+  // ② 開いているライブラリタブのDOM
+  if (asin) {
+    try {
+      const tabs = await chrome.tabs.query({ url: "https://read.amazon.co.jp/kindle-library*" });
+      for (const t of tabs) {
+        try {
+          const r = await chrome.scripting.executeScript({
+            target: { tabId: t.id },
+            args: [asin],
+            func: (as) => {
+              const el = document.getElementById("author-" + as) ||
+                document.querySelector('[id^="author"][id*="' + as + '"]');
+              return el ? el.textContent.replace(/\s+/g, " ").trim() : "";
+            }
+          });
+          const a = r && r[0] && r[0].result;
+          if (okName(a)) { console.log("[著者取得] ライブラリタブDOM:", a); return a; }
+        } catch (e) {}
+      }
+    } catch (e) {}
+  }
   return "";
 }
 
@@ -379,7 +541,12 @@ async function startCaptureWorkflow() {
   // --- 本のタイトル・著者名をページ情報から取得（UIを隠す前に実行） ---
   const meta = await fetchBookMeta();
   currentConfig.title = meta.title;
-  currentConfig.author = meta.author || await fetchAuthorFromTabs(meta.title);
+  const asin = await getReaderAsin();
+  currentConfig.asin = asin;
+  currentConfig.author = meta.author
+    || await fetchAuthorFromLibrary(asin, meta.title)
+    || await fetchAuthorFromTabs(meta.title, asin);
+  console.log("[著者取得] 結果:", currentConfig.author || "(取得できず)", "asin=" + (asin || "なし"));
 
   // --- 本のタイプ判定（「自動」選択時のみ。固定レイアウトの白黒/カラー判定はviewer側で行う） ---
   if (!currentConfig.bookType || currentConfig.bookType === 'auto') {
@@ -454,6 +621,10 @@ async function startCaptureWorkflow() {
 
   let failStreak = 0;
   let lastSig = null;   // 直前に保存したページの署名
+  let lastPiCur = null; // 直前に保存したときのリーダーのページ表示（113/349 の 113）
+  let recentSigs = [];  // 直近に保存したページの署名（最大8。終端バウンス検知用）
+  let maxSeenCur = null; // これまでに到達した最大のページ表示
+  let noNewPageStreak = 0; // ページ表示が新しい位置へ進んでいない連続回数（終端の画像非依存検知）
   let dupStreak = 0;    // 同一ページが連続した回数
   let dirSwitched = false; // 開き方向の自動修正を行ったか（1回だけ）
   for (let i = 0; i < currentConfig.maxPages; i++) {
@@ -533,9 +704,52 @@ async function startCaptureWorkflow() {
       failStreak = 0;
 
       // --- 重複検知 & 完了判定 ---
+      // リーダー自身のページ表記（113/349等）を先に読む（進捗ピルと判定の両方に使う）
+      let pi = null;
+      try { pi = await readPageIndicator(); } catch (e) {}
       let sig = null;
       try { sig = await getSignature(dataUrl); } catch (e) { sig = null; }
-      if (sig && lastSig && meanAbsDiff(sig, lastSig) < DUP_DIFF) {
+      let looksSame = sig && lastSig && meanAbsDiff(sig, lastSig) < DUP_DIFF;
+
+      // 終端検知（画像非依存の停止・v5.29.4→v5.30.4で厳格化）:
+      // 終端では評価パネルのフェード等が写り込んで毎回画像がわずかに変わるため、
+      // 「ページ表示が既到達の最大位置を超えない」ことを終端の目安にしていた。
+      // ただし雑誌等ではリーダーのページ表示が正しく進まない本があり、
+      // 内容は毎回“新しいページ”なのに途中停止していた（週刊東洋経済で9枚で停止）。
+      // → ページ表示が止まる ＋ 画像が直近ページの焼き直し（明度正規化で照合）の
+      //   両方が揃ったときだけカウントする。新しい内容が続く限りリセットされる。
+      if (pi) {
+        const advancedMax = (maxSeenCur == null || pi.cur > maxSeenCur);
+        if (advancedMax || !resemblesRecent(sig, recentSigs)) noNewPageStreak = 0;
+        else noNewPageStreak++;
+        if (noNewPageStreak >= 5) {
+          showCaptureNotice("ページ表示が進まず同じ画面が続いたため、本の終端と判断して停止しました（" +
+            savedCount + "枚保存）。リーダーの表示は " + pi.cur + "/" + pi.max + " ページ。");
+          break;
+        }
+        console.log("[終端検知] cur=" + pi.cur + "/" + pi.max + " max=" + maxSeenCur +
+          " advanced=" + advancedMax + " noNewStreak=" + noNewPageStreak);
+      }
+      // 終端バウンス検知（v5.29.3）: 本の終端でリーダーが最後の2見開きを行き来すると、
+      // 画面がA→B→A→B…と交互に変わるため「直前と同じ」比較だけでは終端を検知できず、
+      // 同じ見開きを何度も保存してしまう。ページ表示が既到達範囲から先へ進んでいない
+      // 場合に限り、直近8枚の署名とも比較する（本編中の「同じ絵の繰り返しページ」は
+      // ページ表示が進んでいるので誤検知しない）
+      if (!looksSame && sig && pi && maxSeenCur != null && pi.cur <= maxSeenCur) {
+        for (const rs of recentSigs) {
+          if (meanAbsDiff(sig, rs) < DUP_DIFF) { looksSame = true; break; }
+        }
+      }
+      // 画像がほぼ同じでも、リーダーのページ表示が進んでいれば「新しいページ」として保存する。
+      // 白紙（扉裏など）が連続する区間は画像だけでは区別できず、「同一画面×3＝終端」の
+      // 誤判定で途中停止していた（v5.29.0でページ番号を隠すようになり、写り込みで
+      // 偶然区別できていたケースも無くなった）。ページ表示が読めない本では従来どおり画像で判定。
+      // ※この救済は「ほぼ無地のページ」に限定する（v5.29.2）。固定レイアウトの見開き表示では
+      //   画面は2ページ単位でしか変わらないのにページ番号が1ずつ進むことがあり、
+      //   内容のある同一画面まで保存すると全見開きが2重になる。内容ページが画素同一で
+      //   連続することは実書籍ではあり得ないため、それは「画面が進んでいない」として扱う
+      const advanced = pi && lastPiCur != null && pi.cur !== lastPiCur && isNearBlankSig(sig);
+      if (looksSame && !advanced) {
         // 直前と同じページ = ページ送りが効いていない
         dupStreak++;
         // 撮影の序盤（1〜2枚目）でページが進まない場合は、
@@ -551,7 +765,12 @@ async function startCaptureWorkflow() {
           showCaptureNotice("ページが進まないため、開き方向を「" + dirName + "」に自動修正して続行します。");
           await updateProgressOverlay("↔ 開き方向を「" + dirName + "」に自動修正");
         } else if (dupStreak >= 3) {
-          break; // 3回連続で同じ→終端とみなし自動停止
+          // 3回連続で同じ→終端とみなし自動停止。
+          // 途中停止か正常終了かをユーザーが切り分けられるよう、理由と位置を明示する
+          let posTxt = "";
+          if (pi) posTxt = "リーダーの表示は " + pi.cur + "/" + pi.max + " ページ。";
+          showCaptureNotice("同じ画面が3回続いたため、本の終端と判断して停止しました（" + savedCount + "枚保存）。" + posTxt);
+          break;
         } else {
           chrome.action.setBadgeText({text: "END?"});
           chrome.action.setBadgeBackgroundColor({color: "#f59e0b"});
@@ -560,7 +779,15 @@ async function startCaptureWorkflow() {
         i--;
       } else {
         dupStreak = 0;
-        if (sig) lastSig = sig;
+        if (sig) {
+          lastSig = sig;
+          recentSigs.push(sig);
+          if (recentSigs.length > 8) recentSigs.shift();
+        }
+        if (pi) {
+          lastPiCur = pi.cur;
+          if (maxSeenCur == null || pi.cur > maxSeenCur) maxSeenCur = pi.cur;
+        }
         // 撮り溜めずに1枚ずつ即ストレージへ保存する。
         // 全ページをメモリに抱えると、ページ数の多い本（200ページ超）で
         // Service Worker がメモリ不足で落ち、保存もエラー通知も行われない
@@ -583,10 +810,9 @@ async function startCaptureWorkflow() {
         chrome.runtime.sendMessage({action: "updateProgress", isRunning, isPaused, countdown: 0, current: currentCount, total: currentConfig.maxPages}).catch(()=>{});
       }
 
-      // 進捗表示: リーダー自身のページ表記（33/136等）を読み取り、
+      // 進捗表示: 冒頭で読んだリーダーのページ表記を再利用し、
       // 撮影枚数と残りページの目安を画面右下のピルに表示する
       try {
-        const pi = await readPageIndicator();
         let ptxt = "📷 " + currentCount + "枚";
         if (pi) {
           ptxt += "｜" + pi.cur + "/" + pi.max;
@@ -687,13 +913,16 @@ async function startCaptureWorkflow() {
           currentConfig.title = m.title;
           if (!currentConfig.author) currentConfig.author = m.author;
         }
-        if (!currentConfig.author) currentConfig.author = await fetchAuthorFromTabs(currentConfig.title);
+        const asin2 = currentConfig.asin || await getReaderAsin();
+        if (!currentConfig.author) currentConfig.author = await fetchAuthorFromLibrary(asin2, currentConfig.title);
+        if (!currentConfig.author) currentConfig.author = await fetchAuthorFromTabs(currentConfig.title, asin2);
       } catch (e) {
         console.error("タイトル/著者の取得に失敗（保存は続行）:", e);
       }
       const res = await finalizeCaptureStorage(savedCount, currentConfig);
       if (res.ok) {
         endedOk = true;
+        await recordCaptureForBadge(); // Kindle Owned Badge連携（失敗しても撮影完了は妨げない）
         chrome.tabs.create({ url: 'viewer.html' });
       } else {
         chrome.action.setBadgeText({ text: "ERR" });
