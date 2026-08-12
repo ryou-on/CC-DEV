@@ -1,6 +1,15 @@
-export const APP_VERSION = 'v1.10.0'
+export const APP_VERSION = 'v1.11.0'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: 'v1.11.0',
+    date: '2026-08-12',
+    changes: [
+      '台形(パースペクティブ)補正を追加 — 斜めから撮った棚写真を消失点推定で正面視に矩形化',
+      '回転補正と統合(台形補正が有効なときは水平出しも同時に行われます)',
+      '推定が不安定な写真は自動的に無補正へフォールバック(誤補正防止)',
+    ],
+  },
   {
     version: 'v1.10.0',
     date: '2026-08-12',

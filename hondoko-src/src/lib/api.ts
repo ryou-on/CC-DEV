@@ -1,5 +1,6 @@
 import { auth, AMAZON_ENDPOINT, ANALYZE_ENDPOINT } from '../firebase'
 import type { AnalyzeResult, MapMatchPayload } from '../types'
+import { rectifyImage } from './rectify'
 
 // 縮小画像のエッジ方向から傾き角(ラジアン)を推定する。
 // 本棚写真は棚板(水平線)と背表紙(垂直線)が支配的なので、
@@ -54,9 +55,19 @@ function estimateTiltRad(bitmap: ImageBitmap): number {
 }
 
 // 画像を長辺 maxEdge px 以下の JPEG (base64) に変換。
-// straighten=true で傾きを自動補正(回転で生じる余白は少しズームして切り落とす)
+// straighten=true でまず台形(パースペクティブ)補正を試み、
+// 推定できない場合は傾き(回転)のみ自動補正する
 export async function resizeImageToBase64(file: File, maxEdge = 2400, straighten = false): Promise<string> {
   const bitmap = await createImageBitmap(file)
+  if (straighten) {
+    try {
+      const rectified = rectifyImage(bitmap, maxEdge)
+      if (rectified) {
+        bitmap.close()
+        return rectified.toDataURL('image/jpeg', 0.85).split(',')[1]
+      }
+    } catch { /* 失敗時は従来の回転補正へ */ }
+  }
   const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height))
   const w = Math.round(bitmap.width * scale)
   const h = Math.round(bitmap.height * scale)
