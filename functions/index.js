@@ -258,6 +258,16 @@ exports.interpreterCall = onRequest(
         body.glossary.slice(0, 2000);
     }
 
+    // VAD調整（クライアント指定があれば範囲内にクランプして採用）
+    const vad = body.vad || {};
+    const silenceDefault = direction === 'ja2en' ? 500 : 350;
+    const silenceMs = Number.isFinite(Number(vad.silence_ms))
+      ? Math.min(1500, Math.max(200, Number(vad.silence_ms)))
+      : silenceDefault;
+    const threshold = Number.isFinite(Number(vad.threshold))
+      ? Math.min(0.9, Math.max(0.1, Number(vad.threshold)))
+      : 0.45;
+
     const session = {
       type: 'realtime',
       model,
@@ -270,10 +280,9 @@ exports.interpreterCall = onRequest(
           },
           turn_detection: {
             type: 'server_vad',
-            threshold: 0.45,
+            threshold,
             prefix_padding_ms: 250,
-            // JA→ENはプッシュ・トゥ・トークで話し終えてから離すため長めに待つ
-            silence_duration_ms: direction === 'ja2en' ? 500 : 350,
+            silence_duration_ms: silenceMs,
             create_response: true,
             interrupt_response: false,
           },

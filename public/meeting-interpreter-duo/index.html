@@ -41,7 +41,7 @@
   <div class="flex flex-wrap justify-between items-center gap-3 mb-5">
     <h1 class="text-2xl lg:text-3xl font-bold">
       <span onclick="openHowTo()" style="cursor:pointer;" title="使い方を見る">🎧 Meeting Interpreter Duo</span>
-      <span onclick="openReleaseNotes()" style="cursor:pointer;font-size:12px;color:#c9a84c;font-weight:400;margin-left:8px;opacity:0.85;" title="リリースノート">v0.1.0</span>
+      <span onclick="openReleaseNotes()" style="cursor:pointer;font-size:12px;color:#c9a84c;font-weight:400;margin-left:8px;opacity:0.85;" title="リリースノート">v0.2.0</span>
       <span style="font-weight:400;font-size:13px;color:rgba(255,255,255,0.55);margin-left:10px;">双方向リアルタイム会議通訳</span>
     </h1>
     <div class="flex items-center gap-2">
@@ -58,6 +58,13 @@
         <option value="gpt-realtime">gpt-realtime（高品質）</option>
         <option value="gpt-realtime-mini">gpt-realtime-mini（低コスト）</option>
       </select>
+      <label class="text-xs font-semibold text-gray-400 mt-3 block">話し終わり判定（無音時間）</label>
+      <select id="silenceMode" class="w-full rounded-xl p-2.5 mt-1 text-sm">
+        <option value="">自動（聞く350ms / 話す500ms）</option>
+        <option value="300">速い（300ms・テンポ重視）</option>
+        <option value="800">ゆっくり（800ms・区切り重視）</option>
+        <option value="1200">じっくり（1200ms・長文向き）</option>
+      </select>
       <button id="refreshButton" class="w-full mt-3 text-xs px-3 py-2 rounded-lg border border-white/20 hover:bg-white/10">🔄 デバイス一覧を更新</button>
     </div>
     <div>
@@ -72,7 +79,7 @@
     <div class="panel rounded-2xl p-4 border-t-4 !border-t-blue-500">
       <div class="flex justify-between items-center mb-3">
         <h2 class="font-bold text-blue-300">🎧 相手の英語 → 日本語（常時）</h2>
-        <div class="text-xs"><span id="dotA" class="inline-block w-2.5 h-2.5 rounded-full bg-gray-500"></span> <span id="statusA" class="text-gray-400">未接続</span></div>
+        <div class="text-xs"><span id="dotA" class="inline-block w-2.5 h-2.5 rounded-full bg-gray-500"></span> <span id="statusA" class="text-gray-400">未接続</span><span id="timerA" class="text-gray-500 ml-1 font-mono"></span></div>
       </div>
       <div class="grid grid-cols-2 gap-3 mb-3">
         <div>
@@ -101,6 +108,7 @@
           <div class="h-2 rounded-full bg-black/40 overflow-hidden"><div id="levelBarA" class="meter h-full bg-blue-500" style="width:0%"></div></div>
         </div>
       </div>
+      <div id="warnA" class="hidden mb-2 text-xs rounded-lg px-3 py-2"></div>
       <button id="startA" class="w-full bg-blue-600 hover:bg-blue-500 text-white rounded-xl p-3 font-bold">通訳を開始（聞く）</button>
     </div>
 
@@ -108,7 +116,7 @@
     <div class="panel rounded-2xl p-4 border-t-4 !border-t-green-500">
       <div class="flex justify-between items-center mb-3">
         <h2 class="font-bold text-green-300">🎤 自分の日本語 → 英語（押して話す）</h2>
-        <div class="text-xs"><span id="dotB" class="inline-block w-2.5 h-2.5 rounded-full bg-gray-500"></span> <span id="statusB" class="text-gray-400">未接続</span></div>
+        <div class="text-xs"><span id="dotB" class="inline-block w-2.5 h-2.5 rounded-full bg-gray-500"></span> <span id="statusB" class="text-gray-400">未接続</span><span id="timerB" class="text-gray-500 ml-1 font-mono"></span></div>
       </div>
       <div class="grid grid-cols-2 gap-3 mb-3">
         <div>
@@ -134,12 +142,16 @@
           <label class="flex items-center gap-2 mt-2 text-xs text-gray-400 cursor-pointer">
             <input type="checkbox" id="monitorB" /> 自分の訳もイヤホンで聞く（モニター）
           </label>
+          <label class="flex items-center gap-2 mt-1 text-xs text-gray-400 cursor-pointer">
+            <input type="checkbox" id="pttToggle" /> クリック切替モード（押しっぱなし不要）
+          </label>
         </div>
         <div>
           <div class="flex justify-between text-[11px] text-gray-500 mb-1"><span>入力レベル</span><span id="levelTextB">0%</span></div>
           <div class="h-2 rounded-full bg-black/40 overflow-hidden"><div id="levelBarB" class="meter h-full bg-green-500" style="width:0%"></div></div>
         </div>
       </div>
+      <div id="warnB" class="hidden mb-2 text-xs rounded-lg px-3 py-2"></div>
       <button id="startB" class="w-full bg-green-700 hover:bg-green-600 text-white rounded-xl p-3 font-bold">接続する（話す準備）</button>
       <button id="pttButton" class="ptt-btn w-full mt-2 bg-gray-700 text-white rounded-xl p-4 font-bold text-lg opacity-40 cursor-not-allowed" disabled>
         🎙 押している間だけ日本語で話す<span class="block text-[11px] font-normal opacity-70">（Spaceキー長押しでもOK）</span>
@@ -184,9 +196,19 @@
 "use strict";
 
 /* ================= version / meta ================= */
-var APP_VERSION = 'v0.1.0';
+var APP_VERSION = 'v0.2.0';
 
 var RELEASE_NOTES = [
+  { ver: 'v0.2.0', date: '2026-08-12', changes: [
+    '接続が切れたとき自動で再接続（最大3回）',
+    '通訳中は画面スリープを防止（Wake Lock）',
+    '通訳ログを自動保存し、リロード後も復元',
+    '相手の英語を話している途中から薄字でリアルタイム表示',
+    '接続経過時間の表示',
+    'デバイス誤設定の事前チェック（音声ループ防止・Meetへ届かない設定の警告）',
+    '押しっぱなし不要の「クリック切替モード」を追加',
+    '「話し終わり判定（無音時間）」を調整可能に'
+  ]},
   { ver: 'v0.1.0', date: '2026-07-16', changes: [
     '初回リリース：英語→日本語（常時）と日本語→英語（プッシュ・トゥ・トーク）の双方向通訳',
     '方向ごとの入出力デバイス選択・声の選択',
@@ -202,15 +224,16 @@ var HOW_TO_USE = [
   { heading: '② 聞く（相手の英語→日本語）', text: '左パネルで入力に BlackHole 2ch、出力に自分のイヤホンを選び「通訳を開始」。相手の英語が日本語音声と字幕になります。' },
   { heading: '③ 話す（自分の日本語→英語）', text: '右パネルで入力に自分のマイク、出力に BlackHole 16ch を選び「接続する」。緑のボタンを押している間だけ日本語を話すと、英語音声がGoogle Meetへ流れます（MeetのマイクをBlackHole 16chに設定）。' },
   { heading: '④ 用語辞書', text: 'hihaho・xAPI など訳してほしくない固有名詞を1行1語で登録すると、両方向の通訳に適用されます（次回接続時から有効）。' },
-  { heading: '⑤ ログ保存', text: '会議後に「💾 保存」でMarkdownの議事ログをダウンロードできます。' },
+  { heading: '⑤ ログ保存', text: '会議後に「💾 保存」でMarkdownの議事ログをダウンロードできます。ログは自動保存され、リロードしても消えません（「クリア」で削除）。' },
+  { heading: '⑥ 便利機能', text: '接続が切れても自動で再接続します。通訳中は画面スリープしません。訳の区切りが早すぎる/遅すぎるときは「話し終わり判定」を調整してください。長く話すときは「クリック切替モード」が便利です。' },
   { heading: '⚠️ 注意', text: '会議参加者へAI通訳の利用を伝えてください。OpenAI APIの従量課金が発生します（gpt-realtime-miniで大幅節約可）。' }
 ];
 
 /* ================= state ================= */
 var els = {};
-['model','glossary','refreshButton','copyDebugButton','setupGuideButton',
- 'inputA','outputA','voiceA','startA','dotA','statusA','levelBarA','levelTextA',
- 'inputB','outputB','voiceB','startB','dotB','statusB','levelBarB','levelTextB','pttButton','monitorB',
+['model','glossary','refreshButton','copyDebugButton','setupGuideButton','silenceMode',
+ 'inputA','outputA','voiceA','startA','dotA','statusA','levelBarA','levelTextA','timerA','warnA',
+ 'inputB','outputB','voiceB','startB','dotB','statusB','levelBarB','levelTextB','timerB','warnB','pttButton','monitorB','pttToggle',
  'transcript','emptyMessage','copyTranscriptButton','downloadTranscriptButton','clearTranscriptButton',
  'audioA','audioB','audioBMonitor'
 ].forEach(function(id){ els[id] = document.getElementById(id); });
@@ -232,7 +255,8 @@ function makeSession(key) {
     running: false, pc: null, dc: null, stream: null, track: null,
     audioContext: null, animationFrame: null,
     seenItemIds: {}, lastInputText: '',
-    streamingEl: null
+    streamingEl: null, pendingInput: {},
+    startedAt: null, userStopped: false, reconnecting: false, reconnectAttempts: 0
   };
 }
 var sessions = { A: makeSession('A'), B: makeSession('B') };
@@ -245,6 +269,8 @@ function loadSettings() {
   els.voiceA.value = localStorage.getItem('duo_voiceA') || 'marin';
   els.voiceB.value = localStorage.getItem('duo_voiceB') || 'cedar';
   els.monitorB.checked = localStorage.getItem('duo_monitorB') === '1';
+  els.silenceMode.value = localStorage.getItem('duo_silenceMode') || '';
+  els.pttToggle.checked = localStorage.getItem('duo_pttToggle') === '1';
 }
 function saveSettings() {
   localStorage.setItem('duo_glossary', els.glossary.value);
@@ -252,11 +278,13 @@ function saveSettings() {
   localStorage.setItem('duo_voiceA', els.voiceA.value);
   localStorage.setItem('duo_voiceB', els.voiceB.value);
   localStorage.setItem('duo_monitorB', els.monitorB.checked ? '1' : '0');
+  localStorage.setItem('duo_silenceMode', els.silenceMode.value);
+  localStorage.setItem('duo_pttToggle', els.pttToggle.checked ? '1' : '0');
   ['inputA','outputA','inputB','outputB'].forEach(function(id){
     if (els[id].value) localStorage.setItem('duo_dev_' + id, els[id].value);
   });
 }
-['glossary','model','voiceA','voiceB','inputA','outputA','inputB','outputB'].forEach(function(id){
+['glossary','model','voiceA','voiceB','inputA','outputA','inputB','outputB','silenceMode'].forEach(function(id){
   els[id].addEventListener('change', saveSettings);
 });
 els.monitorB.addEventListener('change', function(){
@@ -358,33 +386,72 @@ function timeString() {
   return new Date().toTimeString().slice(0, 8);
 }
 
-function appendTranscript(role, text, streaming) {
+function renderItem(item) {
   if (els.emptyMessage) { els.emptyMessage.remove(); els.emptyMessage = null; }
-  var style = ROLE_STYLE[role];
+  var style = ROLE_STYLE[item.role] || ROLE_STYLE['EN'];
   var wrapper = document.createElement('div');
   wrapper.className = 'mb-2 ' + style.text;
   var badge = document.createElement('span');
   badge.className = 'mr-2 inline-block rounded px-1.5 py-0.5 text-[11px] font-bold align-middle ' + style.badge;
-  badge.textContent = role;
+  badge.textContent = item.role;
   var content = document.createElement('span');
-  content.textContent = text;
+  content.textContent = item.text;
   wrapper.append(badge, content);
   els.transcript.append(wrapper);
   els.transcript.scrollTop = els.transcript.scrollHeight;
-
-  var item = { time: timeString(), role: role, text: text };
-  transcriptItems.push(item);
   return { wrapper: wrapper, content: content, item: item };
+}
+
+function appendTranscript(role, text) {
+  var handle = renderItem({ time: timeString(), role: role, text: text });
+  transcriptItems.push(handle.item);
+  saveTranscript();
+  return handle;
+}
+
+function saveTranscript() {
+  try { localStorage.setItem('duo_transcript', JSON.stringify(transcriptItems.slice(-500))); } catch (e) {}
+}
+
+function restoreTranscript() {
+  try {
+    var saved = JSON.parse(localStorage.getItem('duo_transcript') || '[]');
+    if (!Array.isArray(saved) || !saved.length) return;
+    saved.forEach(function(item){ renderItem(item); transcriptItems.push(item); });
+    addLog('前回の通訳ログを復元', saved.length + '件');
+  } catch (e) { addLog('ログ復元エラー', e.message); }
 }
 
 function appendDelta(s, role, delta) {
   if (!s.streamingEl) {
-    s.streamingEl = appendTranscript(role, delta, true);
+    s.streamingEl = appendTranscript(role, delta);
     return;
   }
   s.streamingEl.content.textContent += delta;
   s.streamingEl.item.text += delta;
   els.transcript.scrollTop = els.transcript.scrollHeight;
+}
+
+/* 相手の発話中テキスト（薄字のリアルタイム表示） */
+function updatePendingInput(s, itemId, delta) {
+  var p = s.pendingInput[itemId];
+  if (!p) {
+    if (els.emptyMessage) { els.emptyMessage.remove(); els.emptyMessage = null; }
+    var el = document.createElement('div');
+    el.className = 'mb-2 text-gray-500 italic opacity-70';
+    els.transcript.append(el);
+    p = s.pendingInput[itemId] = { el: el, text: '' };
+  }
+  p.text += delta;
+  p.el.textContent = '… ' + p.text;
+  els.transcript.scrollTop = els.transcript.scrollHeight;
+}
+function removePendingInput(s, itemId) {
+  var p = itemId && s.pendingInput[itemId];
+  if (p) { p.el.remove(); delete s.pendingInput[itemId]; }
+}
+function clearPendingInputs(s) {
+  Object.keys(s.pendingInput).forEach(function(id){ removePendingInput(s, id); });
 }
 
 /* ================= realtime events ================= */
@@ -398,8 +465,13 @@ function handleEvent(s, event) {
       break;
     case 'response.output_audio_transcript.done':
       s.streamingEl = null;
+      saveTranscript();
+      break;
+    case 'conversation.item.input_audio_transcription.delta':
+      if (event.delta && event.item_id) updatePendingInput(s, event.item_id, event.delta);
       break;
     case 'conversation.item.input_audio_transcription.completed':
+      removePendingInput(s, event.item_id);
       if (!event.transcript || !event.transcript.trim()) break;
       // 重複除去: item_id 済み or 直前と同一テキストはスキップ
       if (event.item_id) {
@@ -416,10 +488,88 @@ function handleEvent(s, event) {
   }
 }
 
-/* ================= connect / disconnect ================= */
-async function startSession(s) {
-  if (s.running) return;
+/* ================= device sanity check ================= */
+function labelOf(select) {
+  var o = select.selectedOptions[0];
+  return o ? o.text.toLowerCase() : '';
+}
+function checkDevices(s) {
+  var warnEl = els['warn' + s.key];
+  var msgs = [];
+  if (s.key === 'A') {
+    if (labelOf(els.outputA).includes('blackhole')) {
+      warnEl.className = 'mb-2 text-xs rounded-lg px-3 py-2 bg-red-900/60 text-red-200';
+      warnEl.textContent = '⛔ 出力にBlackHoleが選ばれています。音声ループが発生するため接続を中止しました。イヤホン/ヘッドフォンを選んでください。';
+      return false;
+    }
+    if (!labelOf(els.inputA).includes('blackhole')) {
+      msgs.push('⚠️ 入力がBlackHole 2chではありません。Meetの相手音声を拾えない可能性があります。');
+    }
+  } else {
+    if (labelOf(els.inputB).includes('blackhole')) {
+      msgs.push('⚠️ 入力にBlackHoleが選ばれています。通常は自分のマイクを選びます。');
+    }
+    if (!labelOf(els.outputB).includes('blackhole')) {
+      msgs.push('⚠️ 出力がBlackHole 16chではないため、英語音声はMeetへ届きません（モニター確認のみ）。');
+    }
+  }
+  if (msgs.length) {
+    warnEl.className = 'mb-2 text-xs rounded-lg px-3 py-2 bg-yellow-900/50 text-yellow-200';
+    warnEl.innerHTML = msgs.join('<br>');
+  } else {
+    warnEl.className = 'hidden mb-2 text-xs rounded-lg px-3 py-2';
+  }
+  return true;
+}
+
+/* ================= wake lock（通訳中の画面スリープ防止） ================= */
+var wakeLock = null;
+async function updateWakeLock() {
+  var need = sessions.A.running || sessions.B.running;
   try {
+    if (need && !wakeLock && 'wakeLock' in navigator) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', function(){ wakeLock = null; });
+      addLog('WakeLock取得');
+    } else if (!need && wakeLock) {
+      wakeLock.release();
+      wakeLock = null;
+      addLog('WakeLock解放');
+    }
+  } catch (e) { addLog('WakeLockエラー', e.message); }
+}
+document.addEventListener('visibilitychange', function(){
+  if (document.visibilityState === 'visible') updateWakeLock();
+});
+
+/* ================= auto reconnect ================= */
+function scheduleReconnect(s) {
+  if (s.userStopped || s.reconnecting) return;
+  if (s.reconnectAttempts >= 3) {
+    setStatus(s, '再接続失敗（手動で再開してください）', false, true);
+    addLog('再接続を断念', s.direction);
+    return;
+  }
+  s.reconnecting = true;
+  s.reconnectAttempts++;
+  var attempt = s.reconnectAttempts;
+  setStatus(s, '再接続中... (' + attempt + '/3)', false, true);
+  addLog('自動再接続', { direction: s.direction, attempt: attempt });
+  setTimeout(function(){
+    s.reconnecting = false;
+    if (s.userStopped) return;
+    stopSession(s, false, true);
+    startSession(s, true);
+  }, 1000 * attempt);
+}
+
+/* ================= connect / disconnect ================= */
+async function startSession(s, isReconnect) {
+  if (s.running) return;
+  if (!checkDevices(s)) return;
+  try {
+    s.userStopped = false;
+    if (!isReconnect) s.reconnectAttempts = 0;
     setStatus(s, '接続中...', false, false);
     addLog('接続開始', s.direction);
     saveSettings();
@@ -474,8 +624,11 @@ async function startSession(s) {
     s.dc = dc;
     dc.addEventListener('open', function(){
       s.running = true;
+      s.reconnectAttempts = 0;
+      if (!s.startedAt) s.startedAt = Date.now();
       updateButtons(s);
       setStatus(s, s.key === 'A' ? '通訳中（聞く）' : '接続済み（押して話す）', true, false);
+      updateWakeLock();
       addLog('Realtime API接続完了', s.direction);
     });
     dc.addEventListener('message', function(m){
@@ -484,9 +637,17 @@ async function startSession(s) {
     dc.addEventListener('close', function(){ addLog('データチャンネル終了', s.direction); });
 
     pc.addEventListener('connectionstatechange', function(){
+      if (pc !== s.pc) return;
       addLog('WebRTC状態(' + s.direction + ')', pc.connectionState);
-      if (['failed','disconnected'].includes(pc.connectionState)) {
-        setStatus(s, pc.connectionState, false, true);
+      if (pc.connectionState === 'failed') {
+        setStatus(s, 'failed', false, true);
+        scheduleReconnect(s);
+      } else if (pc.connectionState === 'disconnected') {
+        setStatus(s, 'disconnected', false, true);
+        // 一時的な切断は自然復帰を3秒待ってから再接続
+        setTimeout(function(){
+          if (pc === s.pc && pc.connectionState === 'disconnected') scheduleReconnect(s);
+        }, 3000);
       }
     });
 
@@ -501,7 +662,8 @@ async function startSession(s) {
         direction: s.direction,
         model: els.model.value,
         voice: els['voice' + s.key].value,
-        glossary: els.glossary.value
+        glossary: els.glossary.value,
+        vad: els.silenceMode.value ? { silence_ms: Number(els.silenceMode.value) } : undefined
       })
     });
     if (!response.ok) throw new Error(await response.text());
@@ -514,8 +676,9 @@ async function startSession(s) {
   }
 }
 
-function stopSession(s, updateStatus) {
+function stopSession(s, updateStatus, forReconnect) {
   if (updateStatus === undefined) updateStatus = true;
+  if (!forReconnect) s.userStopped = true;
   if (s.dc) s.dc.close();
   if (s.pc) s.pc.close();
   if (s.stream) s.stream.getTracks().forEach(function(t){ t.stop(); });
@@ -526,10 +689,28 @@ function stopSession(s, updateStatus) {
   s.pc = null; s.dc = null; s.stream = null; s.track = null;
   s.running = false; s.streamingEl = null;
   s.seenItemIds = {}; s.lastInputText = '';
+  clearPendingInputs(s);
+  if (!forReconnect) s.startedAt = null;
+  if (s.key === 'B' && pttPressed) pttUp();
   updateButtons(s);
+  updateWakeLock();
   if (updateStatus) setStatus(s, '停止', false, false);
   addLog('セッション停止', s.direction);
 }
+
+/* 経過時間表示 */
+setInterval(function(){
+  ['A','B'].forEach(function(k){
+    var s = sessions[k];
+    var el = els['timer' + k];
+    if (s.running && s.startedAt) {
+      var sec = Math.floor((Date.now() - s.startedAt) / 1000);
+      el.textContent = Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
+    } else {
+      el.textContent = '';
+    }
+  });
+}, 1000);
 
 function updateButtons(s) {
   var running = s.running;
@@ -551,12 +732,24 @@ function updateButtons(s) {
 
 /* ================= push-to-talk ================= */
 var pttPressed = false;
+function updatePttLabel() {
+  var toggle = els.pttToggle.checked;
+  if (pttPressed) {
+    els.pttButton.innerHTML = '🔴 通訳中 — 日本語で話してください<span class="block text-[11px] font-normal opacity-70">' +
+      (toggle ? 'もう一度クリック（またはSpace）で停止' : '離すと停止') + '</span>';
+  } else if (toggle) {
+    els.pttButton.innerHTML = '🎙 クリックで話し始める<span class="block text-[11px] font-normal opacity-70">（Spaceキーでも切替）</span>';
+  } else {
+    els.pttButton.innerHTML = '🎙 押している間だけ日本語で話す<span class="block text-[11px] font-normal opacity-70">（Spaceキー長押しでもOK）</span>';
+  }
+}
 function pttDown() {
   var s = sessions.B;
   if (!s.running || !s.track || pttPressed) return;
   pttPressed = true;
   s.track.enabled = true;
   els.pttButton.classList.add('ptt-active');
+  updatePttLabel();
   addLog('PTT開始');
 }
 function pttUp() {
@@ -565,21 +758,34 @@ function pttUp() {
   pttPressed = false;
   if (s.track) s.track.enabled = false;
   els.pttButton.classList.remove('ptt-active');
+  updatePttLabel();
   addLog('PTT終了');
 }
-els.pttButton.addEventListener('pointerdown', function(e){ e.preventDefault(); pttDown(); });
-window.addEventListener('pointerup', pttUp);
-els.pttButton.addEventListener('pointerleave', pttUp);
+els.pttButton.addEventListener('pointerdown', function(e){
+  e.preventDefault();
+  if (els.pttToggle.checked) { pttPressed ? pttUp() : pttDown(); }
+  else pttDown();
+});
+window.addEventListener('pointerup', function(){ if (!els.pttToggle.checked) pttUp(); });
+els.pttButton.addEventListener('pointerleave', function(){ if (!els.pttToggle.checked) pttUp(); });
+els.pttToggle.addEventListener('change', function(){
+  if (pttPressed) pttUp();
+  updatePttLabel();
+  saveSettings();
+});
 
 document.addEventListener('keydown', function(e){
   if (e.key === 'Escape') { closeModal(); return; }
   if (e.code === 'Space' && !e.repeat && !['TEXTAREA','INPUT','SELECT'].includes(document.activeElement.tagName)) {
-    e.preventDefault(); pttDown();
+    e.preventDefault();
+    if (els.pttToggle.checked) { pttPressed ? pttUp() : pttDown(); }
+    else pttDown();
   }
 });
 document.addEventListener('keyup', function(e){
   if (e.code === 'Space' && !['TEXTAREA','INPUT','SELECT'].includes(document.activeElement.tagName)) {
-    e.preventDefault(); pttUp();
+    e.preventDefault();
+    if (!els.pttToggle.checked) pttUp();
   }
 });
 
@@ -606,7 +812,9 @@ els.downloadTranscriptButton.addEventListener('click', function(){
 });
 els.clearTranscriptButton.addEventListener('click', function(){
   transcriptItems = [];
+  localStorage.removeItem('duo_transcript');
   sessions.A.streamingEl = null; sessions.B.streamingEl = null;
+  clearPendingInputs(sessions.A); clearPendingInputs(sessions.B);
   els.transcript.innerHTML = '<div id="emptyMessage" class="text-center text-gray-500 mt-24">通訳を開始するとここへ表示されます</div>';
   els.emptyMessage = document.getElementById('emptyMessage');
 });
@@ -688,12 +896,16 @@ window.addEventListener('beforeunload', function(){
 });
 
 loadSettings();
+updatePttLabel();
+restoreTranscript();
 refreshDevices();
 
-// 初回起動時は使い方を表示
-if (!localStorage.getItem('duo_seen_' + APP_VERSION)) {
-  localStorage.setItem('duo_seen_' + APP_VERSION, '1');
-  openHowTo();
+// 初回起動は使い方、バージョンアップ後の初回はリリースノートを表示
+var seenKey = 'duo_seen_' + APP_VERSION;
+if (!localStorage.getItem(seenKey)) {
+  var isUpgrade = Object.keys(localStorage).some(function(k){ return k.indexOf('duo_seen_') === 0; });
+  localStorage.setItem(seenKey, '1');
+  isUpgrade ? openReleaseNotes() : openHowTo();
 }
 </script>
 </body>

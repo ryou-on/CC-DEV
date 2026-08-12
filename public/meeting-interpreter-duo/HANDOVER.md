@@ -1,9 +1,17 @@
 # HANDOVER.md - Meeting Interpreter Duo
 
 ## 基本情報
-- バージョン: v0.1.0
+- バージョン: v0.2.0
 - フェーズ: Phase 1（MVP・実会議での検証前）
-- 最終更新: 2026-07-16
+- 最終更新: 2026-08-12
+
+## v0.2.0 での追加
+- WebRTC自動再接続（failed即時 / disconnected3秒待ち、最大3回・ユーザー停止時は無効）
+- Wake Lockによる画面スリープ防止
+- 通訳ログのlocalStorage自動保存・起動時復元（最大500件、クリアで削除）
+- 相手の発話中テキストの薄字リアルタイム表示（input_audio_transcription.delta）
+- 接続経過時間表示・デバイス誤設定の事前チェック（Aの出力にBlackHole=接続ブロック）
+- PTTクリック切替モード・話し終わり判定（無音ms）調整（Function側でクランプ検証）
 
 ## 経緯
 - ChatGPTで開発された `public/meeting-interpreter/`（EN→JA字幕のみ・v0.2.0）の後継として新規作成
