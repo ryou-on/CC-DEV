@@ -13,7 +13,7 @@ const cropBtn = document.getElementById('cropBtn');
 // 拡張本体（撮影側 background.js）が旧バージョンのまま動き続け、
 // 「修正したはずの問題が直らない」事故になる。編集画面（このファイル）の
 // バージョンと、実際にロードされている拡張本体のバージョンを比較して警告する
-const VIEWER_VERSION = '5.31.0';
+const VIEWER_VERSION = '5.32.0';
 try {
   const loaded = chrome.runtime.getManifest().version;
   if (loaded !== VIEWER_VERSION) {

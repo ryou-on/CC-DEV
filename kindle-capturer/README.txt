@@ -1,4 +1,4 @@
-Kindle Auto Capturer v5.31.0 Ultimate
+Kindle Auto Capturer v5.32.0 Ultimate
 ========================================
 
 Kindle Cloud Reader（read.amazon.co.jp）のページを自動でキャプチャし、
