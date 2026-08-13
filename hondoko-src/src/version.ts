@@ -1,6 +1,13 @@
-export const APP_VERSION = 'v1.13.0'
+export const APP_VERSION = 'v1.13.1'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: 'v1.13.1',
+    date: '2026-08-12',
+    changes: [
+      '検索に「書影あり」「書影なし」フィルタを追加(書影未登録の本の洗い出しに便利)',
+    ],
+  },
   {
     version: 'v1.13.0',
     date: '2026-08-12',

@@ -38,6 +38,7 @@ export function SearchView({
   const [shelfFilter, setShelfFilter] = useState('')
   const [includeSold, setIncludeSold] = useState(false)
   const [unreadOnly, setUnreadOnly] = useState(false)
+  const [coverFilter, setCoverFilter] = useState<'all' | 'with' | 'without'>('all')
   const [sort, setSort] = useState<SortKey>('created_desc')
 
   const popularTags = useMemo(() => {
@@ -63,6 +64,8 @@ export function SearchView({
     let list = books
     if (!includeSold) list = list.filter((b) => b.status !== 'sold')
     if (unreadOnly) list = list.filter((b) => b.readStatus !== 'read')
+    if (coverFilter === 'with') list = list.filter((b) => !!b.coverUrl)
+    if (coverFilter === 'without') list = list.filter((b) => !b.coverUrl)
     if (shelfFilter) list = list.filter((b) => b.shelfId === shelfFilter)
     if (nq) {
       list = list.filter((b) => {
@@ -82,7 +85,7 @@ export function SearchView({
       })
     }
     return list
-  }, [books, query, shelfFilter, includeSold, unreadOnly])
+  }, [books, query, shelfFilter, includeSold, unreadOnly, coverFilter])
 
   // ソート
   const sorted = useMemo(() => {
@@ -166,6 +169,22 @@ export function SearchView({
         <label className="flex items-center gap-1.5 text-stone-600">
           <input type="checkbox" checked={unreadOnly} onChange={(e) => setUnreadOnly(e.target.checked)} />
           未読のみ
+        </label>
+        <label className="flex items-center gap-1.5 text-stone-600">
+          <input
+            type="checkbox"
+            checked={coverFilter === 'with'}
+            onChange={(e) => setCoverFilter(e.target.checked ? 'with' : 'all')}
+          />
+          書影あり
+        </label>
+        <label className="flex items-center gap-1.5 text-stone-600">
+          <input
+            type="checkbox"
+            checked={coverFilter === 'without'}
+            onChange={(e) => setCoverFilter(e.target.checked ? 'without' : 'all')}
+          />
+          書影なし
         </label>
         <span className="ml-auto text-stone-400">
           {filtered.length.toLocaleString('ja-JP')}冊
