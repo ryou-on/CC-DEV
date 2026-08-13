@@ -4,7 +4,7 @@ import {
 } from 'firebase/firestore'
 import { getDownloadURL, ref as storageRef, uploadString } from 'firebase/storage'
 import {
-  Building2, Camera, ClipboardPaste, ExternalLink, Link2, MapPin, Pencil, RefreshCw, Send, Star, Trash2, User, X,
+  Building2, Camera, ChevronRight, ClipboardPaste, ExternalLink, Link2, MapPin, Pencil, RefreshCw, Send, Star, Trash2, User, X,
 } from 'lucide-react'
 import { db, storage } from '../firebase'
 import type { Book, BookComment, Shelf } from '../types'
@@ -33,6 +33,7 @@ export function BookDetail({
   onClose,
   onSelectBook,
   onSearch,
+  onGoToLocation,
 }: {
   book: Book
   books: Book[]
@@ -47,6 +48,7 @@ export function BookDetail({
   onClose: () => void
   onSelectBook: (id: string) => void
   onSearch: (query: string) => void
+  onGoToLocation?: (shelfId: string, row: number) => void
 }) {
   const [editing, setEditing] = useState(false)
   const [coverLoading, setCoverLoading] = useState(false)
@@ -288,10 +290,22 @@ export function BookDetail({
           </div>
 
           <div className="min-w-0 flex-1 space-y-3">
-            <div className="flex items-center gap-2 text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-              <MapPin size={16} className="shrink-0" />
-              <span className="font-bold text-sm">{locationLabelLong(book, shelves)}</span>
-            </div>
+            {onGoToLocation && book.shelfId && book.row != null ? (
+              <button
+                className="w-full flex items-center gap-2 text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 hover:bg-amber-100 transition-colors text-left"
+                onClick={() => onGoToLocation(book.shelfId!, book.row!)}
+                title="この段のページへ移動"
+              >
+                <MapPin size={16} className="shrink-0" />
+                <span className="font-bold text-sm">{locationLabelLong(book, shelves)}</span>
+                <ChevronRight size={16} className="ml-auto shrink-0 text-amber-500" />
+              </button>
+            ) : (
+              <div className="flex items-center gap-2 text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                <MapPin size={16} className="shrink-0" />
+                <span className="font-bold text-sm">{locationLabelLong(book, shelves)}</span>
+              </div>
+            )}
 
             {/* 既読・評価 */}
             <div className="flex items-center gap-3 flex-wrap">

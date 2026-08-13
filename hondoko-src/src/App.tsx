@@ -43,6 +43,7 @@ export default function App() {
   const [photos, setPhotos] = useState<ShelfPhoto[]>([])
   const [maps, setMaps] = useState<ShelfMap[]>([])
   const [tab, setTab] = useState<Tab>('search')
+  const [mapFocus, setMapFocus] = useState<{ shelfId: string; row: number } | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedBookId, setSelectedBookId] = useState<string | null>(null)
   const [showUsage, setShowUsage] = useState(false)
@@ -259,6 +260,8 @@ export default function App() {
             onStartAutoPhoto={!readOnly && matchMap ? (file) => startJob(file, null, { map: matchMap, shelves }) : undefined}
             processingLocations={processingLocations}
             readOnly={readOnly}
+            focus={mapFocus}
+            onFocusHandled={() => setMapFocus(null)}
           />
         )}
         {tab === 'add' && !readOnly && (
@@ -371,6 +374,11 @@ export default function App() {
           onClose={() => setSelectedBookId(null)}
           onSelectBook={setSelectedBookId}
           onSearch={(q) => { setSearchQuery(q); setTab('search') }}
+          onGoToLocation={(shelfId, row) => {
+            setSelectedBookId(null)
+            setMapFocus({ shelfId, row })
+            setTab('map')
+          }}
         />
       )}
       {showUsage && (

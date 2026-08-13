@@ -54,6 +54,8 @@ export function MapView({
   onStartAutoPhoto,
   processingLocations,
   readOnly = false,
+  focus,
+  onFocusHandled,
 }: {
   shelves: Shelf[]
   books: Book[]
@@ -65,9 +67,19 @@ export function MapView({
   onStartAutoPhoto?: (file: File) => void // マップ照合による自動判別(領域のあるマップがある場合のみ)
   processingLocations: Set<string> // `${shelfId}:${row}` 解析中の段
   readOnly?: boolean // ゲスト閲覧モード
+  focus?: { shelfId: string; row: number } | null // 外部からの段指定(本の詳細の場所クリック)
+  onFocusHandled?: () => void
 }) {
   const [selected, setSelected] = useState<{ shelfId: string; row: number } | null>(null)
   const [seeding, setSeeding] = useState(false)
+
+  useEffect(() => {
+    if (focus) {
+      setSelected(focus)
+      onFocusHandled?.()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus])
   const [uploadingMap, setUploadingMap] = useState(false)
   const mapInput = useRef<HTMLInputElement>(null)
   const photoInput = useRef<HTMLInputElement>(null)
