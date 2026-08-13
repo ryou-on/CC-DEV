@@ -1,8 +1,11 @@
 import { useState } from 'react'
 import { addDoc, collection, doc, serverTimestamp, updateDoc } from 'firebase/firestore'
+import { X } from 'lucide-react'
 import { db } from '../firebase'
 import type { Book, BookKind, BookStatus, Shelf } from '../types'
 import { Modal, inputCls, btnPrimary, btnSecondary } from './ui'
+
+const splitAuthors = (s: string) => s.split(/[、,;/／]/).map((a) => a.trim()).filter(Boolean)
 
 const KIND_LABEL: Record<BookKind, string> = {
   book: '書籍',
@@ -24,7 +27,8 @@ export function BookForm({
 }) {
   const base = book ?? initial ?? {}
   const [title, setTitle] = useState(base.title ?? '')
-  const [author, setAuthor] = useState(base.author ?? '')
+  const [authors, setAuthors] = useState<string[]>(splitAuthors(base.author ?? ''))
+  const [authorInput, setAuthorInput] = useState('')
   const [publisher, setPublisher] = useState(base.publisher ?? '')
   const [volume, setVolume] = useState(base.volume ?? '')
   const [isbn, setIsbn] = useState(base.isbn ?? '')
@@ -39,6 +43,17 @@ export function BookForm({
 
   const selectedShelf = shelves.find((s) => s.id === shelfId)
 
+  // 入力中のテキストも取り込んで著者リストを確定(重複除去)
+  const commitAuthorInput = (list: string[], input: string) => {
+    const merged = [...list, ...splitAuthors(input)]
+    return merged.filter((a, i) => merged.indexOf(a) === i)
+  }
+  const addAuthor = () => {
+    if (!authorInput.trim()) return
+    setAuthors((prev) => commitAuthorInput(prev, authorInput))
+    setAuthorInput('')
+  }
+
   const save = async () => {
     if (!title.trim()) { setError('タイトルは必須です'); return }
     setSaving(true)
@@ -46,7 +61,7 @@ export function BookForm({
     const tags = tagsText.split(/[\s,、]+/).map((t) => t.replace(/^#/, '').trim()).filter(Boolean)
     const data = {
       title: title.trim(),
-      author: author.trim(),
+      author: commitAuthorInput(authors, authorInput).join('、'),
       publisher: publisher.trim(),
       volume: volume.trim(),
       isbn: isbn.trim(),
@@ -84,15 +99,46 @@ export function BookForm({
           <label className="text-xs font-medium text-stone-500">タイトル *</label>
           <input className={inputCls} value={title} onChange={(e) => setTitle(e.target.value)} />
         </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs font-medium text-stone-500">著者</label>
-            <input className={inputCls} value={author} onChange={(e) => setAuthor(e.target.value)} />
+        <div>
+          <label className="text-xs font-medium text-stone-500">著者(複数可)</label>
+          {authors.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-1 mb-1.5">
+              {authors.map((a) => (
+                <span
+                  key={a}
+                  className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-sky-50 text-sky-800 border border-sky-200"
+                >
+                  {a}
+                  <button
+                    onClick={() => setAuthors((prev) => prev.filter((x) => x !== a))}
+                    className="text-sky-400 hover:text-sky-700"
+                    title="削除"
+                  >
+                    <X size={12} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <div className="flex gap-2">
+            <input
+              className={inputCls}
+              value={authorInput}
+              onChange={(e) => setAuthorInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); addAuthor() }
+              }}
+              onBlur={addAuthor}
+              placeholder={authors.length > 0 ? '著者を追加…' : '著者名(「、」区切りで複数可)'}
+            />
+            <button className={btnSecondary} onClick={addAuthor} disabled={!authorInput.trim()}>
+              追加
+            </button>
           </div>
-          <div>
-            <label className="text-xs font-medium text-stone-500">出版社</label>
-            <input className={inputCls} value={publisher} onChange={(e) => setPublisher(e.target.value)} />
-          </div>
+        </div>
+        <div>
+          <label className="text-xs font-medium text-stone-500">出版社</label>
+          <input className={inputCls} value={publisher} onChange={(e) => setPublisher(e.target.value)} />
         </div>
         <div className="grid grid-cols-3 gap-3">
           <div>

@@ -1,6 +1,14 @@
-export const APP_VERSION = 'v1.14.0'
+export const APP_VERSION = 'v1.14.1'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: 'v1.14.1',
+    date: '2026-08-13',
+    changes: [
+      '本の編集フォームで著者を複数設定できるように(チップ式で追加・削除。「、」区切り入力もOK)',
+      '著者の詳細表示・検索は従来どおり1人ずつクリック検索できます',
+    ],
+  },
   {
     version: 'v1.14.0',
     date: '2026-08-12',

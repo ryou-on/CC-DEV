@@ -224,7 +224,7 @@ export function BookDetail({
     return <BookForm book={book} shelves={shelves} onClose={() => setEditing(false)} />
   }
 
-  const authors = book.author.split(/[、,]/).map((a) => a.trim()).filter(Boolean)
+  const authors = book.author.split(/[、,;/／]/).map((a) => a.trim()).filter(Boolean)
   const amazonUrl = `https://www.amazon.co.jp/s?k=${encodeURIComponent(book.isbn || `${book.title} ${book.author}`)}`
   const mercariUrl = `https://jp.mercari.com/search?keyword=${encodeURIComponent(`${book.title} ${book.author}`.trim())}&status=on_sale`
   const rating = book.rating ?? 0
