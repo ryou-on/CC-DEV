@@ -68,6 +68,8 @@ export function DiffReviewModal({
   )
 
   // セクションごとの差分(先のセクションで一致した本は後のセクションの照合から除外)
+  // 追加モードでは「写真に見当たらない本」の判定をせず、追記位置も末尾にする
+  const isAppend = job.mode === 'append'
   const sections = useMemo(() => {
     const used = new Set<string>()
     return rows.map((row, i) => {
@@ -77,13 +79,21 @@ export function DiffReviewModal({
         .filter((b) => b.status === 'owned' && b.shelfId === a.shelfId && b.row === a.row && !used.has(b.id))
         .sort((x, y) => x.position - y.position)
       const avail = booksSnapshot.filter((b) => !used.has(b.id))
-      const actions = computeDiff(row.books, booksInRow, avail, shelves)
+      let actions = computeDiff(row.books, booksInRow, avail, shelves)
+      if (isAppend) {
+        const basePos = booksInRow.reduce((m, b) => Math.max(m, b.position), -1) + 1
+        actions = actions
+          .filter((act) => act.type !== 'missing')
+          .map((act) =>
+            act.type === 'add' || act.type === 'move' ? { ...act, position: basePos + act.position } : act,
+          )
+      }
       for (const act of actions) {
         if (act.type === 'keep' || act.type === 'move') used.add(act.bookId)
       }
       return { actions, booksInRow }
     })
-  }, [rows, assignments, booksSnapshot, shelves])
+  }, [rows, assignments, booksSnapshot, shelves, isAppend])
 
   // チェック状態(既定: 有効)と「見当たらない本」の扱い(既定: 未配置)
   const [disabledSet, setDisabledSet] = useState<Set<string>>(new Set())
@@ -93,7 +103,10 @@ export function DiffReviewModal({
   const [summary, setSummary] = useState('')
 
   const actKey = (si: number, ai: number) => `${si}:${ai}`
-  const isEnabled = (si: number, ai: number) => !disabledSet.has(actKey(si, ai))
+  // 既定のチェック状態: 追加モードの「既に登録済み」は既定でオフ(重複防止)
+  const defaultEnabled = (act: DiffAction) => !(isAppend && act.type === 'keep')
+  const isEnabled = (si: number, ai: number, act: DiffAction) =>
+    disabledSet.has(actKey(si, ai)) ? !defaultEnabled(act) : defaultEnabled(act)
   const toggle = (si: number, ai: number) =>
     setDisabledSet((prev) => {
       const next = new Set(prev)
@@ -131,8 +144,9 @@ export function DiffReviewModal({
         if (!a || !sectionEnabled[si]) return
         let sAdd = 0, sRm = 0, sMv = 0, sKeep = 0
         sec.actions.forEach((act, ai) => {
-          if (!isEnabled(si, ai)) return
+          if (!isEnabled(si, ai, act)) return
           if (act.type === 'keep') {
+            if (isAppend) return // 追加モードでは既存本に触らない
             const existing = sec.booksInRow.find((b) => b.id === act.bookId)
             batch.update(doc(booksCol, act.bookId), {
               position: act.position,
@@ -217,12 +231,15 @@ export function DiffReviewModal({
     }
   }
 
+  const suffix = isAppend ? '本の追加の確認' : '解析結果の確認'
   const title = job.target
     ? (() => {
         const s = shelves.find((x) => x.id === job.target!.shelfId)
-        return s ? `${shelfCode(s)}-${job.target!.row}（${s.name}）— 解析結果の確認` : '解析結果の確認'
+        return s ? `${shelfCode(s)}-${job.target!.row}（${s.name}）— ${suffix}` : suffix
       })()
-    : '解析結果の確認(自動判別)'
+    : isAppend
+    ? `${suffix}(棚・段を選択)`
+    : `${suffix}(自動判別)`
 
   return (
     <Modal title={title} onClose={onClose} wide>
@@ -309,18 +326,18 @@ export function DiffReviewModal({
                       <li
                         key={ai}
                         className={`flex items-start gap-2.5 rounded-lg border px-3 py-2 text-sm ${
-                          !isEnabled(si, ai) ? 'opacity-40 border-stone-200' :
+                          !isEnabled(si, ai, act) ? 'opacity-40 border-stone-200' :
                           act.type === 'add' ? 'border-green-200 bg-green-50' :
                           act.type === 'move' ? 'border-blue-200 bg-blue-50' :
                           act.type === 'missing' ? 'border-red-200 bg-red-50' :
                           'border-stone-200 bg-white'
                         }`}
                       >
-                        <input type="checkbox" className="mt-1" checked={isEnabled(si, ai)} onChange={() => toggle(si, ai)} />
+                        <input type="checkbox" className="mt-1" checked={isEnabled(si, ai, act)} onChange={() => toggle(si, ai)} />
                         <div className="min-w-0 flex-1">
                           {act.type === 'keep' && (
                             <>
-                              <span className="text-xs font-bold text-stone-400">既存</span>
+                              <span className="text-xs font-bold text-stone-400">{isAppend ? '既に登録済み(チェックすると位置更新)' : '既存'}</span>
                               <p className="text-stone-700 truncate">{act.detected.title}{act.detected.volume ? ` (${act.detected.volume})` : ''}</p>
                             </>
                           )}

@@ -128,10 +128,11 @@ export default function App() {
     [jobs],
   )
   const reviewJob = jobs.find((j) => j.id === reviewJobId) ?? null
-  const jobLabel = (j: { target: { shelfId: string; row: number } | null }) => {
-    if (!j.target) return '自動判別'
+  const jobLabel = (j: { target: { shelfId: string; row: number } | null; mode: 'diff' | 'append' }) => {
+    const suffix = j.mode === 'append' ? '(追加)' : ''
+    if (!j.target) return (j.mode === 'append' ? '本の追加' : '自動判別')
     const s = shelves.find((x) => x.id === j.target!.shelfId)
-    return s ? `${shelfCode(s)}-${j.target.row}` : '?'
+    return (s ? `${shelfCode(s)}-${j.target.row}` : '?') + suffix
   }
   // 自動判別に使うマップ(領域数が最多のもの)
   const matchMap = useMemo(
@@ -254,12 +255,19 @@ export default function App() {
             maps={maps}
             onSelectBook={setSelectedBookId}
             onStartPhoto={(shelfId, row, file) => startJob(file, { shelfId, row })}
+            onStartAppendPhoto={(shelfId, row, file) => startJob(file, { shelfId, row }, undefined, 'append')}
             onStartAutoPhoto={!readOnly && matchMap ? (file) => startJob(file, null, { map: matchMap, shelves }) : undefined}
             processingLocations={processingLocations}
             readOnly={readOnly}
           />
         )}
-        {tab === 'add' && !readOnly && <AddView shelves={shelves} books={books} />}
+        {tab === 'add' && !readOnly && (
+          <AddView
+            shelves={shelves}
+            books={books}
+            onStartAppendPhoto={(file) => startJob(file, null, undefined, 'append')}
+          />
+        )}
         {tab === 'settings' && !readOnly && (
           <SettingsView
             shelves={shelves}

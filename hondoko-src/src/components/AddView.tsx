@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
-import { Barcode, FileSpreadsheet, PenLine } from 'lucide-react'
+import { Barcode, Camera, FileSpreadsheet, PenLine } from 'lucide-react'
 import { db } from '../firebase'
 import type { Book, BookKind, BookStatus, Shelf } from '../types'
 import { lookupIsbn } from '../lib/api'
@@ -12,12 +12,21 @@ declare global {
   interface Window { BarcodeDetector?: new (opts?: { formats: string[] }) => { detect(source: CanvasImageSource): Promise<{ rawValue: string }[]> } }
 }
 
-export function AddView({ shelves, books }: { shelves: Shelf[]; books: Book[] }) {
+export function AddView({
+  shelves,
+  books,
+  onStartAppendPhoto,
+}: {
+  shelves: Shelf[]
+  books: Book[]
+  onStartAppendPhoto: (file: File) => void
+}) {
   const [manualOpen, setManualOpen] = useState(false)
   const [isbnOpen, setIsbnOpen] = useState(false)
   const [csvMsg, setCsvMsg] = useState('')
   const [importing, setImporting] = useState(false)
   const csvInput = useRef<HTMLInputElement>(null)
+  const appendInput = useRef<HTMLInputElement>(null)
 
   const exportCsv = () => {
     const esc = (s: string) => (/[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s)
@@ -89,6 +98,30 @@ export function AddView({ shelves, books }: { shelves: Shelf[]; books: Book[] })
       <p className="text-sm text-stone-500">
         棚写真からの一括登録は「マップ」タブ → 棚の段 → 「写真で更新」から。ここでは1冊ずつ・CSVで登録できます。
       </p>
+
+      <button
+        className="w-full bg-white rounded-xl border border-amber-300 p-4 text-left hover:bg-amber-50/50 flex items-center gap-3"
+        onClick={() => appendInput.current?.click()}
+      >
+        <Camera size={22} className="text-amber-700 shrink-0" />
+        <div>
+          <p className="font-bold text-sm text-stone-800">本の写真から追加(AI)</p>
+          <p className="text-xs text-stone-400">
+            買い足した本を撮影(表紙/背表紙、複数冊OK)→ AIが書誌を抽出 → 棚・段を選んで追記。既存の本には影響しません
+          </p>
+        </div>
+      </button>
+      <input
+        ref={appendInput}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0]
+          if (f) onStartAppendPhoto(f)
+          e.target.value = ''
+        }}
+      />
 
       <button
         className="w-full bg-white rounded-xl border border-stone-200 p-4 text-left hover:bg-amber-50/50 flex items-center gap-3"

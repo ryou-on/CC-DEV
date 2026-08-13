@@ -9,6 +9,8 @@ export interface AnalysisJob {
   id: string
   // 対象を指定して撮った場合(カメラ+ボタン)。自動判別の場合は null
   target: { shelfId: string; row: number } | null
+  // diff: 段の写真から差分更新(既存) / append: 撮った本を追記のみ(見当たらない判定なし)
+  mode: 'diff' | 'append'
   status: 'processing' | 'ready' | 'error'
   result?: AnalyzeResult
   storagePath?: string
@@ -26,10 +28,16 @@ export function useAnalysisJobs() {
 
   // target あり: その段(と、写真に複数段写っていれば続きの段)として解析
   // target なし: mapCtx のマップ写真と照合して自動判別
+  // mode 'append': 差分検知せず追記のみ(買い足した本の写真など)
   const startJob = useCallback(
-    (file: File, target: { shelfId: string; row: number } | null, mapCtx?: { map: ShelfMap; shelves: Shelf[] }) => {
+    (
+      file: File,
+      target: { shelfId: string; row: number } | null,
+      mapCtx?: { map: ShelfMap; shelves: Shelf[] },
+      mode: 'diff' | 'append' = 'diff',
+    ) => {
       const id = `job_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
-      setJobs((prev) => [...prev, { id, target, status: 'processing', startedAt: Date.now() }])
+      setJobs((prev) => [...prev, { id, target, mode, status: 'processing', startedAt: Date.now() }])
       ;(async () => {
         try {
           // 傾き自動補正付きでリサイズ(スマホ撮影の水平出し)

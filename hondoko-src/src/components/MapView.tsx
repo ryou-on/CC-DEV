@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { addDoc, collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore'
 import { ref as storageRef, uploadString } from 'firebase/storage'
-import { Archive, BookOpen, Camera, ChevronLeft, ImagePlus, Trash2, Wand2 } from 'lucide-react'
+import { Archive, BookOpen, BookPlus, Camera, ChevronLeft, ImagePlus, Trash2, Wand2 } from 'lucide-react'
 import { db, storage } from '../firebase'
 import type { Book, Shelf, ShelfGroup, ShelfMap, ShelfPhoto } from '../types'
 import { resizeImageToBase64 } from '../lib/api'
@@ -50,6 +50,7 @@ export function MapView({
   maps,
   onSelectBook,
   onStartPhoto,
+  onStartAppendPhoto,
   onStartAutoPhoto,
   processingLocations,
   readOnly = false,
@@ -60,6 +61,7 @@ export function MapView({
   maps: ShelfMap[]
   onSelectBook: (id: string) => void
   onStartPhoto: (shelfId: string, row: number, file: File) => void
+  onStartAppendPhoto: (shelfId: string, row: number, file: File) => void // 追加モード(差分なし追記)
   onStartAutoPhoto?: (file: File) => void // マップ照合による自動判別(領域のあるマップがある場合のみ)
   processingLocations: Set<string> // `${shelfId}:${row}` 解析中の段
   readOnly?: boolean // ゲスト閲覧モード
@@ -71,10 +73,12 @@ export function MapView({
   const photoInput = useRef<HTMLInputElement>(null)
   const autoInput = useRef<HTMLInputElement>(null)
   const photoTarget = useRef<{ shelfId: string; row: number } | null>(null)
+  const photoMode = useRef<'diff' | 'append'>('diff')
 
   // 「+」ボタン → カメラ/ファイル選択を直接起動
-  const openPicker = (shelfId: string, row: number) => {
+  const openPicker = (shelfId: string, row: number, mode: 'diff' | 'append' = 'diff') => {
     photoTarget.current = { shelfId, row }
+    photoMode.current = mode
     photoInput.current?.click()
   }
 
@@ -251,7 +255,10 @@ export function MapView({
       onChange={(e) => {
         const f = e.target.files?.[0]
         const t = photoTarget.current
-        if (f && t) onStartPhoto(t.shelfId, t.row, f)
+        if (f && t) {
+          if (photoMode.current === 'append') onStartAppendPhoto(t.shelfId, t.row, f)
+          else onStartPhoto(t.shelfId, t.row, f)
+        }
         e.target.value = ''
       }}
     />
@@ -305,13 +312,23 @@ export function MapView({
               : 'まだ写真登録がありません'}
           </div>
           {!readOnly && (
-            <button
-              className={btnPrimary + ' inline-flex items-center gap-1.5'}
-              onClick={() => openPicker(shelf.id, selected.row)}
-              disabled={isProcessing}
-            >
-              <Camera size={16} /> {isProcessing ? '解析中…' : '写真で更新'}
-            </button>
+            <div className="flex gap-2">
+              <button
+                className={btnSecondary + ' inline-flex items-center gap-1.5'}
+                onClick={() => openPicker(shelf.id, selected.row, 'append')}
+                disabled={isProcessing}
+                title="買い足した本などを撮影してこの段に追記(既存の本はそのまま)"
+              >
+                <BookPlus size={16} /> 本を追加
+              </button>
+              <button
+                className={btnPrimary + ' inline-flex items-center gap-1.5'}
+                onClick={() => openPicker(shelf.id, selected.row)}
+                disabled={isProcessing}
+              >
+                <Camera size={16} /> {isProcessing ? '解析中…' : '写真で更新'}
+              </button>
+            </div>
           )}
         </div>
 
