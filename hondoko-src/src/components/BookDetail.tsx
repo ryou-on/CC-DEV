@@ -14,6 +14,10 @@ import { Modal, Tag, btnSecondary, inputCls } from './ui'
 import { BookForm, KIND_LABEL } from './BookForm'
 
 const yen = (n: number) => n.toLocaleString('ja-JP') + '円'
+const formatPubDate = (d: string) =>
+  d.length >= 8 ? `${d.slice(0, 4)}年${+d.slice(4, 6)}月${+d.slice(6, 8)}日`
+  : d.length >= 6 ? `${d.slice(0, 4)}年${+d.slice(4, 6)}月`
+  : `${d.slice(0, 4)}年`
 
 export function BookDetail({
   book,
@@ -57,7 +61,7 @@ export function BookDetail({
 
   // 書影+定価の遅延自動取得(メンバーが開いたときに1回だけ試行しキャッシュ)
   useEffect(() => {
-    if (book.coverUrl !== undefined && book.listPrice !== undefined) return
+    if (book.coverUrl !== undefined && book.listPrice !== undefined && book.pubDate !== undefined) return
     if (fetchedFor.current === book.id) return
     if (!book.title || readOnly) return
     fetchedFor.current = book.id
@@ -67,6 +71,7 @@ export function BookDetail({
         updateDoc(bookRef, {
           ...(book.coverUrl === undefined ? { coverUrl: info.coverUrl ?? '' } : {}),
           ...(book.listPrice === undefined ? { listPrice: info.price } : {}),
+          ...(book.pubDate === undefined ? { pubDate: info.pubDate ?? '' } : {}),
           ...(info.isbn && !book.isbn ? { isbn: info.isbn } : {}),
         }),
       )
@@ -339,6 +344,9 @@ export function BookDetail({
               )}
               {book.listPrice != null && (
                 <div className="flex gap-2"><dt className="w-14 text-stone-400 shrink-0">定価</dt><dd className="text-stone-800">{yen(book.listPrice)} <span className="text-[10px] text-stone-400">(自動取得)</span></dd></div>
+              )}
+              {!!book.pubDate && (
+                <div className="flex gap-2"><dt className="w-14 text-stone-400 shrink-0">出版</dt><dd className="text-stone-800">{formatPubDate(book.pubDate)}</dd></div>
               )}
               {book.memo && (
                 <div className="flex gap-2"><dt className="w-14 text-stone-400 shrink-0">メモ</dt><dd className="text-stone-800 whitespace-pre-wrap">{book.memo}</dd></div>

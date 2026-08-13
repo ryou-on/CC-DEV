@@ -241,13 +241,22 @@ export interface BookInfo {
   price: number | null
   coverUrl: string | null
   isbn?: string
+  pubDate?: string // 'YYYYMMDD' など。取得できなければ ''
   usedPaapi?: boolean // PA-APIを使った場合(一括処理のレート調整用)
+}
+
+// 出版日文字列を数字だけの 'YYYYMMDD' 形式へ正規化
+function normPubDate(s: unknown): string {
+  if (typeof s !== 'string') return ''
+  const digits = s.replace(/[^0-9]/g, '')
+  return digits.length >= 4 ? digits.slice(0, 8) : ''
 }
 
 export async function lookupBookInfo(book: { isbn: string; title: string; author: string }): Promise<BookInfo> {
   const isbn = book.isbn.replace(/[^0-9Xx]/g, '')
   let price: number | null = null
   let coverUrl: string | null = null
+  let pubDate = ''
   let foundIsbn: string | undefined
 
   if (isbn.length === 10 || isbn.length === 13) {
@@ -256,10 +265,11 @@ export async function lookupBookInfo(book: { isbn: string; title: string; author
       const arr = await res.json()
       price = openBdPrice(arr?.[0])
       coverUrl = arr?.[0]?.summary?.cover || null
+      pubDate = normPubDate(arr?.[0]?.summary?.pubdate)
     } catch { /* fallthrough */ }
   }
 
-  if (price == null || coverUrl == null) {
+  if (price == null || coverUrl == null || !pubDate) {
     try {
       const q = isbn
         ? `isbn:${isbn}`
@@ -272,17 +282,19 @@ export async function lookupBookInfo(book: { isbn: string; title: string; author
         if (price == null && typeof amount === 'number' && amount > 0) price = Math.round(amount)
         const thumb = item.volumeInfo?.imageLinks?.thumbnail
         if (coverUrl == null && thumb) coverUrl = String(thumb).replace(/^http:/, 'https:')
+        if (!pubDate) pubDate = normPubDate(item.volumeInfo?.publishedDate)
         if (!isbn) {
           foundIsbn = (item.volumeInfo?.industryIdentifiers ?? []).find(
             (x: { type: string }) => x.type === 'ISBN_13' || x.type === 'ISBN_10',
           )?.identifier
           // 逆引きしたISBNでopenBDをもう一度(日本の書籍は書影・定価の精度が上がる)
-          if (foundIsbn && (price == null || coverUrl == null)) {
+          if (foundIsbn && (price == null || coverUrl == null || !pubDate)) {
             try {
               const r2 = await fetch(`https://api.openbd.jp/v1/get?isbn=${foundIsbn}`)
               const a2 = await r2.json()
               if (price == null) price = openBdPrice(a2?.[0])
               if (coverUrl == null) coverUrl = a2?.[0]?.summary?.cover || null
+              if (!pubDate) pubDate = normPubDate(a2?.[0]?.summary?.pubdate)
             } catch { /* ignore */ }
           }
         }
@@ -307,7 +319,7 @@ export async function lookupBookInfo(book: { isbn: string; title: string; author
     }
   }
 
-  return { price, coverUrl, isbn: foundIsbn, usedPaapi }
+  return { price, coverUrl, isbn: foundIsbn, pubDate, usedPaapi }
 }
 
 // 定価を取得: openBD(ISBN) → Google Books(ISBN or タイトル+著者)

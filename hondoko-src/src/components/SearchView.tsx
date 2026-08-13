@@ -5,6 +5,23 @@ import { normalize } from '../lib/text'
 import { locationLabel } from '../lib/diff'
 import { Tag, inputCls } from './ui'
 
+type SortKey =
+  | 'created_desc' | 'created_asc'
+  | 'title' | 'author'
+  | 'pub_desc' | 'pub_asc'
+  | 'rating_desc' | 'location'
+
+const SORT_LABEL: Record<SortKey, string> = {
+  created_desc: '登録が新しい順',
+  created_asc: '登録が古い順',
+  title: 'タイトル順',
+  author: '著者順',
+  pub_desc: '出版が新しい順',
+  pub_asc: '出版が古い順',
+  rating_desc: '評価が高い順',
+  location: '場所順(棚-段)',
+}
+
 export function SearchView({
   books,
   shelves,
@@ -21,6 +38,7 @@ export function SearchView({
   const [shelfFilter, setShelfFilter] = useState('')
   const [includeSold, setIncludeSold] = useState(false)
   const [unreadOnly, setUnreadOnly] = useState(false)
+  const [sort, setSort] = useState<SortKey>('created_desc')
 
   const popularTags = useMemo(() => {
     const count = new Map<string, number>()
@@ -66,8 +84,43 @@ export function SearchView({
     return list
   }, [books, query, shelfFilter, includeSold, unreadOnly])
 
+  // ソート
+  const sorted = useMemo(() => {
+    const list = filtered.slice()
+    const created = (b: Book) => b.createdAt?.toMillis() ?? 0
+    const jp = (a: string, b: string) => normalize(a).localeCompare(normalize(b), 'ja')
+    // 出版日: 桁を8桁に揃えて比較(欠損は常に末尾へ)
+    const pub = (b: Book) => (b.pubDate ? b.pubDate.padEnd(8, '0') : '')
+    const shelfOrder = new Map(shelves.map((s, i) => [s.id, i]))
+    switch (sort) {
+      case 'created_desc': list.sort((a, b) => created(b) - created(a)); break
+      case 'created_asc': list.sort((a, b) => created(a) - created(b)); break
+      case 'title': list.sort((a, b) => jp(a.title, b.title)); break
+      case 'author': list.sort((a, b) => jp(a.author || '￿', b.author || '￿') || jp(a.title, b.title)); break
+      case 'pub_desc': list.sort((a, b) => (pub(b) || '0').localeCompare(pub(a) || '0') || jp(a.title, b.title)); break
+      case 'pub_asc':
+        list.sort((a, b) => {
+          const pa = pub(a); const pb = pub(b)
+          if (!pa && !pb) return jp(a.title, b.title)
+          if (!pa) return 1
+          if (!pb) return -1
+          return pa.localeCompare(pb) || jp(a.title, b.title)
+        })
+        break
+      case 'rating_desc': list.sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0) || jp(a.title, b.title)); break
+      case 'location':
+        list.sort((a, b) => {
+          const oa = a.status === 'owned' && a.shelfId ? (shelfOrder.get(a.shelfId) ?? 999) : 1000
+          const ob = b.status === 'owned' && b.shelfId ? (shelfOrder.get(b.shelfId) ?? 999) : 1000
+          return oa - ob || (a.row ?? 999) - (b.row ?? 999) || a.position - b.position
+        })
+        break
+    }
+    return list
+  }, [filtered, sort, shelves])
+
   // 描画は300件まで(件数表示は絞り込み後の総数)
-  const results = useMemo(() => filtered.slice(0, 300), [filtered])
+  const results = useMemo(() => sorted.slice(0, 300), [sorted])
 
   return (
     <div className="space-y-3">
@@ -99,6 +152,11 @@ export function SearchView({
           <option value="">すべての棚</option>
           {shelves.map((s) => (
             <option key={s.id} value={s.id}>{s.group}: {s.name}</option>
+          ))}
+        </select>
+        <select className={inputCls + ' !w-auto'} value={sort} onChange={(e) => setSort(e.target.value as SortKey)} title="並び順">
+          {(Object.keys(SORT_LABEL) as SortKey[]).map((k) => (
+            <option key={k} value={k}>{SORT_LABEL[k]}</option>
           ))}
         </select>
         <label className="flex items-center gap-1.5 text-stone-600">
@@ -138,6 +196,9 @@ export function SearchView({
                 </div>
                 <div className="text-xs text-stone-400 mt-0.5 flex flex-wrap gap-x-2 items-center">
                   <span>{b.author || '著者不明'}</span>
+                  {(sort === 'pub_desc' || sort === 'pub_asc') && b.pubDate && (
+                    <span className="text-stone-500">{b.pubDate.slice(0, 4)}年</span>
+                  )}
                   {b.readStatus === 'read' && <span className="text-green-600">✓読了</span>}
                   {(b.rating ?? 0) > 0 && <span className="text-amber-500">{'★'.repeat(b.rating!)}</span>}
                   {b.tags.slice(0, 4).map((t) => <span key={t} className="text-amber-600">#{t}</span>)}

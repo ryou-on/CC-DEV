@@ -61,6 +61,8 @@ export interface Book {
   resalePrice?: number | null // 想定売値(円)
   // 定価(円)。undefined=未取得, null=取得を試みたが見つからず(自動取得: openBD/Google Books)
   listPrice?: number | null
+  // 出版日 'YYYYMMDD'/'YYYYMM'/'YYYY'。undefined=未取得, ''=見つからず(自動取得)
+  pubDate?: string
   createdAt: Timestamp | null
   updatedAt: Timestamp | null
 }

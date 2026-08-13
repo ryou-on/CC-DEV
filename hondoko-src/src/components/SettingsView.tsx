@@ -92,7 +92,7 @@ export function SettingsView({
   const bulkFetchPrices = async () => {
     // 未取得(undefined)に加え、過去に見つからなかった本(coverUrl==='' / listPrice===null)も再試行する
     const targets = books.filter(
-      (b) => b.title && (b.listPrice == null || b.coverUrl === undefined || b.coverUrl === ''),
+      (b) => b.title && (b.listPrice == null || b.coverUrl === undefined || b.coverUrl === '' || b.pubDate === undefined),
     )
     if (targets.length === 0) { alert('未取得の本はありません'); return }
     // 1回の実行上限(Google Books のレート制限対策)
@@ -110,6 +110,7 @@ export function SettingsView({
         await updateDoc(doc(db, 'hondoko-books', b.id), {
           ...(b.listPrice == null ? { listPrice: info.price } : {}),
           ...(!b.coverUrl ? { coverUrl: info.coverUrl ?? '' } : {}),
+          ...(b.pubDate === undefined || (!b.pubDate && info.pubDate) ? { pubDate: info.pubDate ?? '' } : {}),
           ...(info.isbn && !b.isbn ? { isbn: info.isbn } : {}),
         })
         if (b.listPrice == null && info.price != null) priceHit++

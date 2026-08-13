@@ -1,6 +1,14 @@
-export const APP_VERSION = 'v1.12.1'
+export const APP_VERSION = 'v1.13.0'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: 'v1.13.0',
+    date: '2026-08-12',
+    changes: [
+      '検索にソートを追加(登録が新しい/古い順・タイトル順・著者順・出版が新しい/古い順・評価順・場所順)',
+      '出版日を自動取得対象に追加(openBD/Google Books。詳細を開いたとき/一括取得で付与、詳細に出版日を表示)',
+    ],
+  },
   {
     version: 'v1.12.1',
     date: '2026-08-12',
