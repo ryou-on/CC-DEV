@@ -1,6 +1,13 @@
-export const APP_VERSION = 'v1.14.1'
+export const APP_VERSION = 'v1.14.2'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: 'v1.14.2',
+    date: '2026-08-13',
+    changes: [
+      '段ビュー(棚の本一覧)にも書影サムネイルを表示',
+    ],
+  },
   {
     version: 'v1.14.1',
     date: '2026-08-13',

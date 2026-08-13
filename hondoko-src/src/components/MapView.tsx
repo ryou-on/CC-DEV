@@ -399,6 +399,13 @@ export function MapView({
                       }}
                     />
                   )}
+                  <div className="w-8 h-12 shrink-0 rounded-sm overflow-hidden bg-stone-100 border border-stone-200 flex items-center justify-center">
+                    {b.coverUrl ? (
+                      <img src={b.coverUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
+                    ) : (
+                      <span className="text-[8px] text-stone-300">なし</span>
+                    )}
+                  </div>
                   <div className="min-w-0 flex-1">
                     <span className="text-sm font-medium text-stone-800 block truncate">
                       {b.title}{b.volume ? ` (${b.volume})` : ''}
