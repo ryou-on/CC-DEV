@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
-import { Search } from 'lucide-react'
+import { GalleryHorizontalEnd, LayoutGrid, List, Search } from 'lucide-react'
 import type { Book, Shelf } from '../types'
 import { normalize } from '../lib/text'
 import { locationLabel } from '../lib/diff'
+import { FlipViewer } from './FlipViewer'
 import { Tag, inputCls } from './ui'
 
 type SortKey =
@@ -40,6 +41,8 @@ export function SearchView({
   const [unreadOnly, setUnreadOnly] = useState(false)
   const [coverFilter, setCoverFilter] = useState<'all' | 'with' | 'without'>('all')
   const [sort, setSort] = useState<SortKey>('created_desc')
+  const [view, setView] = useState<'list' | 'grid'>('list')
+  const [flipIndex, setFlipIndex] = useState<number | null>(null)
 
   const popularTags = useMemo(() => {
     const count = new Map<string, number>()
@@ -190,8 +193,71 @@ export function SearchView({
           {filtered.length.toLocaleString('ja-JP')}冊
           {filtered.length > results.length && `(先頭${results.length}件を表示)`}
         </span>
+        <div className="flex items-center rounded-lg border border-stone-300 overflow-hidden">
+          <button
+            className={`px-2 py-1.5 ${view === 'list' ? 'bg-amber-700 text-white' : 'bg-white text-stone-500 hover:bg-stone-50'}`}
+            onClick={() => setView('list')}
+            title="リスト表示"
+          >
+            <List size={15} />
+          </button>
+          <button
+            className={`px-2 py-1.5 ${view === 'grid' ? 'bg-amber-700 text-white' : 'bg-white text-stone-500 hover:bg-stone-50'}`}
+            onClick={() => setView('grid')}
+            title="書影一覧(グリッド)"
+          >
+            <LayoutGrid size={15} />
+          </button>
+          <button
+            className="px-2 py-1.5 bg-white text-stone-500 hover:bg-stone-50 border-l border-stone-300"
+            onClick={() => setFlipIndex(0)}
+            title="書影をパラパラめくる"
+            disabled={sorted.length === 0}
+          >
+            <GalleryHorizontalEnd size={15} />
+          </button>
+        </div>
       </div>
 
+      {view === 'grid' && (
+        <div>
+          <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-6 gap-2">
+            {results.map((b, i) => (
+              <button
+                key={b.id}
+                onClick={() => onSelectBook(b.id)}
+                onDoubleClick={() => setFlipIndex(i)}
+                className="relative aspect-[2/3] bg-stone-100 rounded-md overflow-hidden border border-stone-200 hover:ring-2 hover:ring-amber-400 transition-shadow"
+                title={`${b.title} — ${b.author || '著者不明'}`}
+              >
+                {b.coverUrl ? (
+                  <img src={b.coverUrl} alt={b.title} className="w-full h-full object-cover" loading="lazy" />
+                ) : (
+                  <span className="absolute inset-0 flex items-center justify-center p-1.5 text-[10px] text-stone-600 text-center leading-tight bg-gradient-to-br from-stone-100 to-stone-300 font-medium">
+                    {b.title}
+                  </span>
+                )}
+                {b.status === 'sold' && (
+                  <span className="absolute top-1 left-1 text-[9px] bg-stone-800/80 text-white px-1 rounded">売却</span>
+                )}
+                <span className="absolute bottom-0 inset-x-0 text-[9px] bg-black/55 text-amber-200 px-1 py-0.5 truncate text-left">
+                  {locationLabel(b, shelves)}
+                </span>
+              </button>
+            ))}
+          </div>
+          {results.length === 0 && (
+            <p className="py-10 text-center text-sm text-stone-400">該当する本がありません</p>
+          )}
+          {filtered.length > results.length && (
+            <p className="py-3 text-center text-xs text-stone-400">
+              表示は{results.length}件まで。絞り込むと残り{(filtered.length - results.length).toLocaleString('ja-JP')}冊も表示できます
+            </p>
+          )}
+        </div>
+      )}
+
+      {view === 'list' && (
       <ul className="divide-y divide-stone-100 bg-white rounded-xl border border-stone-200 overflow-hidden">
         {results.map((b) => (
           <li key={b.id}>
@@ -237,6 +303,17 @@ export function SearchView({
           </li>
         )}
       </ul>
+      )}
+
+      {flipIndex != null && sorted.length > 0 && (
+        <FlipViewer
+          books={sorted}
+          shelves={shelves}
+          startIndex={flipIndex}
+          onClose={() => setFlipIndex(null)}
+          onSelectBook={onSelectBook}
+        />
+      )}
     </div>
   )
 }

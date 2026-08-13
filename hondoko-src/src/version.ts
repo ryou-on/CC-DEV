@@ -1,6 +1,14 @@
-export const APP_VERSION = 'v1.13.1'
+export const APP_VERSION = 'v1.14.0'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: 'v1.14.0',
+    date: '2026-08-12',
+    changes: [
+      '書影パラパラビューを追加(全画面でスワイプ/矢印キー/自動再生。検索の絞り込み・ソート順で再生)',
+      '書影グリッド一覧を追加(検索のリスト⇄グリッド切替。書影なしの本はタイトルカードで表示)',
+    ],
+  },
   {
     version: 'v1.13.1',
     date: '2026-08-12',
