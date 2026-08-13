@@ -28,7 +28,7 @@ export function SearchView({
     return [...count.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([t]) => t)
   }, [books])
 
-  const results = useMemo(() => {
+  const filtered = useMemo(() => {
     const q = query.trim()
     // フィールド指定検索: #タグ / 著者:名前 / 出版社:名前
     let field: 'all' | 'tag' | 'author' | 'publisher' = 'all'
@@ -63,8 +63,11 @@ export function SearchView({
         }
       })
     }
-    return list.slice(0, 300)
+    return list
   }, [books, query, shelfFilter, includeSold, unreadOnly])
+
+  // 描画は300件まで(件数表示は絞り込み後の総数)
+  const results = useMemo(() => filtered.slice(0, 300), [filtered])
 
   return (
     <div className="space-y-3">
@@ -106,7 +109,10 @@ export function SearchView({
           <input type="checkbox" checked={unreadOnly} onChange={(e) => setUnreadOnly(e.target.checked)} />
           未読のみ
         </label>
-        <span className="ml-auto text-stone-400">{results.length}冊</span>
+        <span className="ml-auto text-stone-400">
+          {filtered.length.toLocaleString('ja-JP')}冊
+          {filtered.length > results.length && `(先頭${results.length}件を表示)`}
+        </span>
       </div>
 
       <ul className="divide-y divide-stone-100 bg-white rounded-xl border border-stone-200 overflow-hidden">
@@ -140,6 +146,11 @@ export function SearchView({
             </button>
           </li>
         ))}
+        {filtered.length > results.length && (
+          <li className="px-4 py-3 text-center text-xs text-stone-400 bg-stone-50">
+            表示は{results.length}件まで。検索やタグ・棚フィルタで絞り込むと残り{(filtered.length - results.length).toLocaleString('ja-JP')}冊も表示できます
+          </li>
+        )}
         {results.length === 0 && (
           <li className="px-4 py-10 text-center text-sm text-stone-400">
             {books.length === 0 ? 'まだ本が登録されていません。「マップ」から棚写真で登録しましょう' : '該当する本がありません'}

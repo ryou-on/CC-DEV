@@ -1,6 +1,14 @@
-export const APP_VERSION = 'v1.12.0'
+export const APP_VERSION = 'v1.12.1'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: 'v1.12.1',
+    date: '2026-08-12',
+    changes: [
+      '検索の冊数表示を修正(表示上限300件で切った後の件数ではなく、絞り込み後の総数を表示)',
+      'リストが300件で打ち切られた場合は注記を表示',
+    ],
+  },
   {
     version: 'v1.12.0',
     date: '2026-08-12',
