@@ -13,7 +13,7 @@ const cropBtn = document.getElementById('cropBtn');
 // 拡張本体（撮影側 background.js）が旧バージョンのまま動き続け、
 // 「修正したはずの問題が直らない」事故になる。編集画面（このファイル）の
 // バージョンと、実際にロードされている拡張本体のバージョンを比較して警告する
-const VIEWER_VERSION = '5.32.0';
+const VIEWER_VERSION = '5.32.1';
 try {
   const loaded = chrome.runtime.getManifest().version;
   if (loaded !== VIEWER_VERSION) {
@@ -998,11 +998,31 @@ function buildCardsForImage(img, imgIdx, cap) {
       // 図版などが境界を跨いでいる: 分割せず1ページに収める
       cropPieces = [{ ...crop }];
     }
-    bandPieces = cropPieces.map(p => {
-      const left = (p.x === crop.x) ? band.x : p.x;                              // 外端だけ余白まで広げる
-      const right = (p.x + p.w === crop.x + crop.w) ? band.x + band.w : p.x + p.w;
-      return { x: left, y: band.y, w: right - left, h: band.h };
-    });
+    if (cropPieces.length === 2) {
+      // 見開き2分割は左右ページの幅を必ず揃える（v5.32.1・全タイプ共通）。
+      // 谷（ノド）が中央からズレていても、境界から遠い側の幅に合わせて
+      // 短い側を帯の内側（余白）まで外側に広げる。
+      // 奇数・偶数ページで出力サイズが変わり見開き表示で崩れる事故への対策
+      const geo = [...cropPieces].sort((p, q) => p.x - q.x);
+      const gb = Math.round((geo[1].x + geo[0].x + geo[0].w) / 2); // 共有余白帯の中心
+      const half = Math.max(gb - crop.x, crop.x + crop.w - gb);
+      const eL = Math.max(band.x, gb - half);
+      const eR = Math.min(band.x + band.w, gb + half);
+      const pL = { x: eL, y: crop.y, w: gb - eL, h: crop.h };
+      const pR = { x: gb, y: crop.y, w: eR - gb, h: crop.h };
+      cropPieces = bookConfig.direction === 'rtl' ? [pR, pL] : [pL, pR];
+      bandPieces = cropPieces.map(p => {
+        const left = (p.x === eL) ? Math.min(band.x, eL) : p.x;
+        const right = (p.x + p.w === eR) ? Math.max(band.x + band.w, eR) : p.x + p.w;
+        return { x: left, y: band.y, w: right - left, h: band.h };
+      });
+    } else {
+      bandPieces = cropPieces.map(p => {
+        const left = (p.x === crop.x) ? band.x : p.x;                              // 外端だけ余白まで広げる
+        const right = (p.x + p.w === crop.x + crop.w) ? band.x + band.w : p.x + p.w;
+        return { x: left, y: band.y, w: right - left, h: band.h };
+      });
+    }
   } else {
     const doSplit = decideSplit(crop, bookConfig);
     if (doSplit) {
@@ -1062,10 +1082,10 @@ function buildCardsForImage(img, imgIdx, cap) {
         // 図版などがノドを跨いでいる見開き: 分割せず1ページに収める
         cropPieces = [{ ...crop }];
       } else {
-        if (isFixedType) {
-          // 固定レイアウトは左右ページを必ず同じ幅にする。ノドが厳密に中央で
-          // なくても、境界から遠い側に合わせて短い側を帯の内側（白マージン）
-          // まで外側に広げる（偶数・奇数ページでカットサイズが違う事故への対策）
+        // 左右ページを必ず同じ幅にする（v5.32.1で固定レイアウト限定→全タイプに拡大）。
+        // ノドが厳密に中央でなくても、境界から遠い側に合わせて短い側を帯の内側
+        // （白マージン）まで外側に広げる（偶数・奇数ページでカットサイズが違う事故への対策）
+        {
           const half = Math.max(b - eL, eR - b);
           eL = Math.max(band.x, b - half);
           eR = Math.min(band.x + band.w, b + half);
