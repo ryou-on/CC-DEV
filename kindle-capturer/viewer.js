@@ -13,7 +13,7 @@ const cropBtn = document.getElementById('cropBtn');
 // 拡張本体（撮影側 background.js）が旧バージョンのまま動き続け、
 // 「修正したはずの問題が直らない」事故になる。編集画面（このファイル）の
 // バージョンと、実際にロードされている拡張本体のバージョンを比較して警告する
-const VIEWER_VERSION = '5.32.1';
+const VIEWER_VERSION = '5.32.2';
 try {
   const loaded = chrome.runtime.getManifest().version;
   if (loaded !== VIEWER_VERSION) {
@@ -362,6 +362,9 @@ async function renderAll() {
     buildCardsForImage(img, i, caps[i]);
     await new Promise(r => setTimeout(r, 0));
   }
+
+  // パス3: 見開き2分割ページの出力寸法を全編で統一（v5.32.2）
+  await unifySplitPages(caps);
   reindex();
   updateLayout();
   setFocus(0);
@@ -495,6 +498,61 @@ function normalizeRects(caps) {
     grown++;
   }
   if (fixed || grown) console.log("サイズ補正: 継承" + fixed + "枚 / 拡張" + grown + "枚");
+}
+
+// 見開き2分割で生成した左右ページの出力寸法を全編で統一する（v5.32.2）。
+// キャプチャごとに内容検出枠の幅・高さが微妙に違うため、同一キャプチャ内の
+// 左右均等化だけではページ間でサイズがばらつき、PDFの見開き表示で崩れる。
+// ノド位置（_gx）を基準に、幅は80パーセンタイル・高さは中央値へ全ページを
+// 合わせる（内容は拡大縮小せず枠を広げる方向が基本。帯の外へは出さず、
+// ノドを跨いで反対ページに食い込むこともしない）
+async function unifySplitPages(caps) {
+  const cards = Array.from(container.querySelectorAll('.page-card'))
+    .filter(c => !c._imported && !c._manualRect && c._cropRect && c._cropRect._half);
+  if (cards.length < 6) return;
+  const pick = (arr, q) => {
+    const s = [...arr].sort((a, b) => a - b);
+    return s[Math.min(s.length - 1, Math.floor(s.length * q))];
+  };
+  const mw = Math.round(pick(cards.map(c => c._cropRect.w), 0.8));
+  const mh = Math.round(pick(cards.map(c => c._cropRect.h), 0.5));
+  const byImg = new Map();
+  let adjusted = 0;
+  for (const c of cards) {
+    const cap = caps[c._imgIdx];
+    if (!cap) continue;
+    const band = cap.band, r = c._cropRect;
+    // 幅: ノド側の辺を固定し、外側の辺を目標幅へ（帯の端でクランプ。
+    // ノドを跨がないよう、足りない場合のみそのキャプチャだけ幅が狭くなる）
+    let nx, nw;
+    if (r._half === 'L') {
+      nx = Math.max(band.x, r._gx - mw);
+      nw = r._gx - nx;
+    } else {
+      nx = r._gx;
+      nw = Math.min(mw, band.x + band.w - nx);
+    }
+    // 高さ: 内容の中心を保ちつつ目標高さへ（帯の上下でクランプ）
+    let nh = Math.min(mh, band.h);
+    let ny = Math.round(r.y + r.h / 2 - nh / 2);
+    ny = Math.max(band.y, Math.min(ny, band.y + band.h - nh));
+    if (r.x === nx && r.y === ny && r.w === nw && r.h === nh) continue;
+    c._cropRect = { x: nx, y: ny, w: nw, h: nh, _half: r._half, _gx: r._gx };
+    if (!byImg.has(c._imgIdx)) byImg.set(c._imgIdx, []);
+    byImg.get(c._imgIdx).push(c);
+    adjusted++;
+  }
+  if (!adjusted) return;
+  const img = new Image();
+  let done = 0;
+  for (const [idx, cs] of byImg) {
+    info.innerText = "寸法統一: " + (++done) + "/" + byImg.size;
+    img.src = rawImages[idx];
+    try { await img.decode(); } catch (e) { continue; }
+    cs.forEach(c => drawCard(c, img, cropEnabled));
+    await new Promise(r => setTimeout(r, 0));
+  }
+  console.log("見開きページ寸法を統一: " + mw + "x" + mh + " に " + adjusted + "/" + cards.length + " 枚を調整");
 }
 
 // ===== 余白自動クロップ =====
@@ -1008,8 +1066,8 @@ function buildCardsForImage(img, imgIdx, cap) {
       const half = Math.max(gb - crop.x, crop.x + crop.w - gb);
       const eL = Math.max(band.x, gb - half);
       const eR = Math.min(band.x + band.w, gb + half);
-      const pL = { x: eL, y: crop.y, w: gb - eL, h: crop.h };
-      const pR = { x: gb, y: crop.y, w: eR - gb, h: crop.h };
+      const pL = { x: eL, y: crop.y, w: gb - eL, h: crop.h, _half: 'L', _gx: gb };
+      const pR = { x: gb, y: crop.y, w: eR - gb, h: crop.h, _half: 'R', _gx: gb };
       cropPieces = bookConfig.direction === 'rtl' ? [pR, pL] : [pL, pR];
       bandPieces = cropPieces.map(p => {
         const left = (p.x === eL) ? Math.min(band.x, eL) : p.x;
@@ -1090,8 +1148,8 @@ function buildCardsForImage(img, imgIdx, cap) {
           eL = Math.max(band.x, b - half);
           eR = Math.min(band.x + band.w, b + half);
         }
-        const pL = { x: eL, y: crop.y, w: b - eL, h: crop.h };
-        const pR = { x: b, y: crop.y, w: eR - b, h: crop.h };
+        const pL = { x: eL, y: crop.y, w: b - eL, h: crop.h, _half: 'L', _gx: b };
+        const pR = { x: b, y: crop.y, w: eR - b, h: crop.h, _half: 'R', _gx: b };
         cropPieces = bookConfig.direction === 'rtl' ? [pR, pL] : [pL, pR];
       }
       bandPieces = cropPieces.map(p => {
