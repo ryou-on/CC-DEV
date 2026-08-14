@@ -44,11 +44,24 @@ export function SearchView({
   const [view, setView] = useState<'list' | 'grid'>('list')
   const [flipIndex, setFlipIndex] = useState<number | null>(null)
 
-  const popularTags = useMemo(() => {
+  const [showAllTags, setShowAllTags] = useState(false)
+  const [tagSort, setTagSort] = useState<'count' | 'name'>('count')
+
+  const allTags = useMemo(() => {
     const count = new Map<string, number>()
     for (const b of books) for (const t of b.tags) count.set(t, (count.get(t) || 0) + 1)
-    return [...count.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([t]) => t)
+    return [...count.entries()].sort((a, b) => b[1] - a[1])
   }, [books])
+
+  const popularTags = useMemo(() => allTags.slice(0, 12).map(([t]) => t), [allTags])
+
+  const sortedTags = useMemo(
+    () =>
+      tagSort === 'count'
+        ? allTags
+        : allTags.slice().sort((a, b) => normalize(a[0]).localeCompare(normalize(b[0]), 'ja')),
+    [allTags, tagSort],
+  )
 
   const filtered = useMemo(() => {
     const q = query.trim()
@@ -141,8 +154,8 @@ export function SearchView({
       </div>
 
       {popularTags.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
-          {popularTags.map((t) => (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {!showAllTags && popularTags.map((t) => (
             <Tag
               key={t}
               label={t}
@@ -150,6 +163,50 @@ export function SearchView({
               onClick={() => setQuery(query === `#${t}` ? '' : `#${t}`)}
             />
           ))}
+          <button
+            className="text-xs text-amber-700 hover:text-amber-900 underline underline-offset-2 whitespace-nowrap"
+            onClick={() => setShowAllTags(!showAllTags)}
+          >
+            {showAllTags ? '閉じる' : `タグ一覧(${allTags.length})`}
+          </button>
+        </div>
+      )}
+
+      {showAllTags && (
+        <div className="bg-white rounded-xl border border-stone-200 p-3 space-y-2.5">
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-stone-400">並び順:</span>
+            {(['count', 'name'] as const).map((k) => (
+              <button
+                key={k}
+                onClick={() => setTagSort(k)}
+                className={`px-2 py-0.5 rounded-full border ${
+                  tagSort === k
+                    ? 'bg-amber-700 text-white border-amber-700'
+                    : 'bg-white text-stone-500 border-stone-300 hover:bg-stone-50'
+                }`}
+              >
+                {k === 'count' ? '冊数順' : '名前順'}
+              </button>
+            ))}
+            <span className="ml-auto text-stone-400">{allTags.length}タグ</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5 max-h-72 overflow-y-auto">
+            {sortedTags.map(([t, n]) => (
+              <button
+                key={t}
+                onClick={() => setQuery(query === `#${t}` ? '' : `#${t}`)}
+                className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full border transition-colors ${
+                  query === `#${t}`
+                    ? 'bg-amber-700 text-white border-amber-700'
+                    : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
+                }`}
+              >
+                #{t}
+                <span className={query === `#${t}` ? 'text-amber-200' : 'text-amber-500'}>{n}</span>
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
