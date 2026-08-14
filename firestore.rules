@@ -227,6 +227,15 @@ service cloud.firestore {
         (request.auth != null && resource.data.by == request.auth.token.email);
     }
 
+    // outreach-crm: ワークスペースコードを知っている端末間でリード/成約データを共有
+    // outreach-crm/{workspaceCode} 単一ドキュメントに leads 配列を保持
+    match /outreach-crm/{workspaceCode} {
+      allow read: if true;
+      allow write: if request.resource.data.keys().hasOnly(['leads','updatedAt'])
+                   && request.resource.data.leads is list
+                   && request.resource.data.leads.size() <= 20000;
+    }
+
     // その他は全拒否
     match /{document=**} {
       allow read, write: if false;
