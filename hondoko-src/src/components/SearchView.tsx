@@ -195,26 +195,26 @@ export function SearchView({
         </span>
         <div className="flex items-center rounded-lg border border-stone-300 overflow-hidden">
           <button
-            className={`px-2 py-1.5 ${view === 'list' ? 'bg-amber-700 text-white' : 'bg-white text-stone-500 hover:bg-stone-50'}`}
+            className={`px-2 py-1.5 inline-flex items-center gap-1 ${view === 'list' ? 'bg-amber-700 text-white' : 'bg-white text-stone-500 hover:bg-stone-50'}`}
             onClick={() => setView('list')}
             title="リスト表示"
           >
-            <List size={15} />
+            <List size={15} /><span className="text-[11px] hidden sm:inline">リスト</span>
           </button>
           <button
-            className={`px-2 py-1.5 ${view === 'grid' ? 'bg-amber-700 text-white' : 'bg-white text-stone-500 hover:bg-stone-50'}`}
+            className={`px-2 py-1.5 inline-flex items-center gap-1 ${view === 'grid' ? 'bg-amber-700 text-white' : 'bg-white text-stone-500 hover:bg-stone-50'}`}
             onClick={() => setView('grid')}
             title="書影一覧(グリッド)"
           >
-            <LayoutGrid size={15} />
+            <LayoutGrid size={15} /><span className="text-[11px] hidden sm:inline">書影</span>
           </button>
           <button
-            className="px-2 py-1.5 bg-white text-stone-500 hover:bg-stone-50 border-l border-stone-300"
+            className="px-2 py-1.5 inline-flex items-center gap-1 bg-white text-stone-500 hover:bg-stone-50 border-l border-stone-300"
             onClick={() => setFlipIndex(0)}
-            title="書影をパラパラめくる"
+            title="書影を1冊ずつ全画面でめくって眺めるモード"
             disabled={sorted.length === 0}
           >
-            <GalleryHorizontalEnd size={15} />
+            <GalleryHorizontalEnd size={15} /><span className="text-[11px]">パラパラ</span>
           </button>
         </div>
       </div>

@@ -145,6 +145,9 @@ export function FlipViewer({
             ))}
           </p>
         )}
+        <p className="mt-2 text-[11px] text-white/40">
+          スワイプ / ←→ でめくる · ▶で自動再生 · 書影タップで詳細 · Escで閉じる
+        </p>
       </div>
 
       <style>{`
