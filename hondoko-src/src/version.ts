@@ -1,6 +1,13 @@
-export const APP_VERSION = 'v1.16.0'
+export const APP_VERSION = 'v1.16.1'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: 'v1.16.1',
+    date: '2026-08-14',
+    changes: [
+      'タグを手動追加したとき、タイトル・著者・出版社・タグに同じキーワードを含む他の本を検出して一括タグ付けを提案(確認してから適用)',
+    ],
+  },
   {
     version: 'v1.16.0',
     date: '2026-08-13',

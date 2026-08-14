@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  addDoc, collection, deleteDoc, doc, serverTimestamp, updateDoc,
+  addDoc, collection, deleteDoc, doc, serverTimestamp, updateDoc, writeBatch,
 } from 'firebase/firestore'
 import { getDownloadURL, ref as storageRef, uploadString } from 'firebase/storage'
 import {
@@ -9,6 +9,7 @@ import {
 import { db, storage } from '../firebase'
 import type { Book, BookComment, Shelf, ShelfPhoto } from '../types'
 import { lookupBookInfo, resizeImageToBase64 } from '../lib/api'
+import { normalize } from '../lib/text'
 import { getPhotoUrl } from '../lib/photoUrl'
 import { locationLabel, locationLabelLong } from '../lib/diff'
 import { Modal, Tag, btnSecondary, inputCls } from './ui'
@@ -215,9 +216,38 @@ export function BookDetail({
 
   const addTag = async () => {
     const t = tagInput.replace(/^#/, '').trim()
-    if (!t || book.tags.includes(t)) { setTagInput(''); return }
-    await patch({ tags: [...book.tags, t] })
+    if (!t) { setTagInput(''); return }
+    if (!book.tags.includes(t)) await patch({ tags: [...book.tags, t] })
     setTagInput('')
+
+    // 同じキーワードに合致する他の本にも一括適用を提案
+    const nt = normalize(t)
+    const matches = books.filter(
+      (b) =>
+        b.id !== book.id &&
+        !b.tags.includes(t) &&
+        (normalize(b.title).includes(nt) ||
+          (b.author && normalize(b.author).includes(nt)) ||
+          (b.publisher && normalize(b.publisher).includes(nt)) ||
+          b.tags.some((x) => normalize(x).includes(nt))),
+    )
+    if (matches.length === 0) return
+    const preview = matches.slice(0, 8).map((b) => `・${b.title}`).join('\n')
+    const ok = confirm(
+      `タイトル・著者・出版社・タグに「${t}」を含む本が他に${matches.length}冊あります。まとめてタグを追加しますか？\n\n${preview}` +
+        (matches.length > 8 ? `\n…ほか${matches.length - 8}冊` : ''),
+    )
+    if (!ok) return
+    // Firestoreのバッチ上限(500)に収める
+    const targets = matches.slice(0, 450)
+    const batch = writeBatch(db)
+    for (const b of targets) {
+      batch.update(doc(db, 'hondoko-books', b.id), { tags: [...b.tags, t], updatedAt: serverTimestamp() })
+    }
+    await batch.commit()
+    if (matches.length > targets.length) {
+      alert(`${targets.length}冊に追加しました(残り${matches.length - targets.length}冊はもう一度実行してください)`)
+    }
   }
 
   const removeTag = async (t: string) => {
