@@ -1,6 +1,14 @@
-export const APP_VERSION = 'v1.17.0'
+export const APP_VERSION = 'v1.17.1'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: 'v1.17.1',
+    date: '2026-08-14',
+    changes: [
+      '複数段を1枚で撮った写真は、その段だけを切り出して表示(段ビュー・本の詳細)。初回表示時にAIが段の枠を検出してキャッシュ',
+      '別々の棚にまたがる写真や検出が合わない場合は従来どおり全体表示',
+    ],
+  },
   {
     version: 'v1.17.0',
     date: '2026-08-14',

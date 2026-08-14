@@ -10,7 +10,7 @@ import { db, storage } from '../firebase'
 import type { Book, BookComment, Shelf, ShelfPhoto } from '../types'
 import { imageUrlToBase64, locateBook, lookupBookInfo, resizeImageToBase64 } from '../lib/api'
 import { normalize } from '../lib/text'
-import { getPhotoUrl } from '../lib/photoUrl'
+import { resolveRowPhoto, type RowPhotoResult } from '../lib/rowPhoto'
 import { locationLabel, locationLabelLong } from '../lib/diff'
 import { Modal, Tag, btnSecondary, inputCls } from './ui'
 import { BookForm, KIND_LABEL } from './BookForm'
@@ -65,26 +65,20 @@ export function BookDetail({
   const patch = (data: Record<string, unknown>) =>
     updateDoc(bookRef, { ...data, updatedAt: serverTimestamp() })
 
-  // この本がある段の最新登録写真(背表紙の現物確認用)
-  const shelfPhotoPath = useMemo(() => {
-    if (!book.shelfId || book.row == null) return null
-    let best: { path: string; t: number } | null = null
-    for (const p of photos) {
-      if (p.shelfId !== book.shelfId || p.row !== book.row) continue
-      const t = p.createdAt?.toMillis() ?? 0
-      if (!best || t > best.t) best = { path: p.storagePath, t }
-    }
-    return best?.path ?? null
-  }, [photos, book.shelfId, book.row])
-  const [shelfPhotoUrl, setShelfPhotoUrl] = useState<string | null>(null)
+  // この本がある段の最新登録写真(背表紙の現物確認用)。複数段写真はその段だけに切り出して表示
+  const [rowPhoto, setRowPhoto] = useState<RowPhotoResult | null>(null)
   const [photoZoom, setPhotoZoom] = useState(false)
   useEffect(() => {
     let ok = true
-    setShelfPhotoUrl(null)
-    setPhotoZoom(false)
-    if (shelfPhotoPath) getPhotoUrl(shelfPhotoPath).then((u) => ok && setShelfPhotoUrl(u)).catch(() => {})
+    if (!book.shelfId || book.row == null) { setRowPhoto(null); return }
+    resolveRowPhoto(photos, book.shelfId, book.row, !readOnly)
+      .then((r) => ok && setRowPhoto(r))
+      .catch(() => {})
     return () => { ok = false }
-  }, [shelfPhotoPath])
+  }, [photos, book.shelfId, book.row, readOnly])
+  useEffect(() => { setPhotoZoom(false) }, [book.id])
+  const shelfPhotoPath = rowPhoto?.storagePath ?? null
+  const shelfPhotoUrl = rowPhoto?.url ?? null
 
   // 拡大表示時に、この本の背表紙位置をAIで特定してハイライト(結果はキャッシュ)
   const [spineBox, setSpineBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
@@ -105,7 +99,8 @@ export function BookDetail({
     setLocateState('locating')
     ;(async () => {
       try {
-        const b64 = await imageUrlToBase64(shelfPhotoUrl, 1600)
+        // 位置は常に元写真(全体)に対して特定する(切り出し表示時は描画側で座標変換)
+        const b64 = await imageUrlToBase64(rowPhoto?.fullUrl ?? shelfPhotoUrl, 1600)
         const box = await locateBook(b64, book)
         if (cancel) return
         setSpineBox(box)
@@ -664,18 +659,26 @@ export function BookDetail({
         >
           <div className="relative max-w-full max-h-full">
             <img src={shelfPhotoUrl} alt="段の登録写真(拡大)" className="max-w-full max-h-[88dvh] rounded-lg shadow-2xl" />
-            {spineBox && (
-              <div
-                className="absolute border-[3px] border-red-500 rounded-sm pointer-events-none"
-                style={{
-                  left: `${spineBox.x * 100}%`,
-                  top: `${spineBox.y * 100}%`,
-                  width: `${spineBox.w * 100}%`,
-                  height: `${spineBox.h * 100}%`,
-                  boxShadow: '0 0 0 9999px rgba(0,0,0,0.45)',
-                }}
-              />
-            )}
+            {(() => {
+              // 切り出し表示時は、元写真基準のspineBoxを切り出し枠基準へ変換
+              const c = rowPhoto?.cropBox
+              const d = spineBox && c
+                ? { x: (spineBox.x - c.x) / c.w, y: (spineBox.y - c.y) / c.h, w: spineBox.w / c.w, h: spineBox.h / c.h }
+                : spineBox
+              if (!d || d.x + d.w < 0 || d.x > 1 || d.y + d.h < 0 || d.y > 1) return null
+              return (
+                <div
+                  className="absolute border-[3px] border-red-500 rounded-sm pointer-events-none"
+                  style={{
+                    left: `${Math.max(0, d.x) * 100}%`,
+                    top: `${Math.max(0, d.y) * 100}%`,
+                    width: `${Math.min(1, d.w) * 100}%`,
+                    height: `${Math.min(1, d.h) * 100}%`,
+                    boxShadow: '0 0 0 9999px rgba(0,0,0,0.45)',
+                  }}
+                />
+              )
+            })()}
             <p className="absolute bottom-1.5 inset-x-0 text-center text-xs text-white/80 drop-shadow">
               {locateState === 'locating' && 'AIがこの本の背表紙を探しています…'}
               {locateState === 'done' && `「${book.title}」の位置をハイライト中`}

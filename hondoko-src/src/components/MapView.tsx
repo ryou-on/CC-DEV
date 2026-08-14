@@ -7,20 +7,34 @@ import type { Book, Shelf, ShelfGroup, ShelfMap, ShelfPhoto } from '../types'
 import { resizeImageToBase64 } from '../lib/api'
 import { shelfCode } from '../lib/diff'
 import { changeShelfRows, MAX_ROWS } from '../lib/shelfOps'
-import { getPhotoUrl } from '../lib/photoUrl'
+import { resolveRowPhoto } from '../lib/rowPhoto'
 import { MapPhotoView } from './MapPhotoView'
 import { btnPrimary, btnSecondary } from './ui'
 
 const GROUP_ORDER: ShelfGroup[] = ['メイン', 'サブ', '別室']
 
-// 段に登録された最新写真(クリックで拡大)
-function ShelfRowPhoto({ storagePath, onZoom }: { storagePath: string; onZoom: (url: string) => void }) {
+// 段に登録された最新写真(クリックで拡大)。複数段が写っている写真はこの段だけに切り出す
+function ShelfRowPhoto({
+  photos,
+  shelfId,
+  row,
+  allowDetect,
+  onZoom,
+}: {
+  photos: ShelfPhoto[]
+  shelfId: string
+  row: number
+  allowDetect: boolean
+  onZoom: (url: string) => void
+}) {
   const [url, setUrl] = useState<string | null>(null)
   useEffect(() => {
     let ok = true
-    getPhotoUrl(storagePath).then((u) => ok && setUrl(u)).catch(() => {})
+    resolveRowPhoto(photos, shelfId, row, allowDetect)
+      .then((r) => ok && setUrl(r?.url ?? null))
+      .catch(() => {})
     return () => { ok = false }
-  }, [storagePath])
+  }, [photos, shelfId, row, allowDetect])
   if (!url) return null
   return (
     <button className="w-full block" onClick={() => onZoom(url)} title="クリックで拡大">
@@ -315,7 +329,15 @@ export function MapView({
           <span className="text-sm text-stone-400 ml-auto">{booksInRow.length}冊</span>
         </div>
 
-        {lastPhoto && <ShelfRowPhoto storagePath={lastPhoto.storagePath} onZoom={setLightboxUrl} />}
+        {lastPhoto && (
+          <ShelfRowPhoto
+            photos={photos}
+            shelfId={shelf.id}
+            row={selected.row}
+            allowDetect={!readOnly}
+            onZoom={setLightboxUrl}
+          />
+        )}
 
         <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
           <div className="text-xs text-stone-500">

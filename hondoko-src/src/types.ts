@@ -93,6 +93,9 @@ export interface ShelfPhoto {
   shelfId: string
   row: number
   storagePath: string
+  // 複数段が1枚に写っている写真の、この段の切り出し枠(AI検出・正規化座標)。
+  // undefined=未検出, null=検出したが対応付け不能(全体表示)
+  cropBox?: { x: number; y: number; w: number; h: number } | null
   bookCount: number
   addedCount: number
   removedCount: number
