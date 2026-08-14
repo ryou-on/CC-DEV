@@ -93,7 +93,7 @@ export function BookForm({
   }
 
   return (
-    <Modal title={book ? '本を編集' : '本を追加'} onClose={onClose}>
+    <Modal title={book ? '本を編集' : '本を追加'} onClose={onClose} closeOnOverlay={false}>
       <div className="space-y-3">
         <div>
           <label className="text-xs font-medium text-stone-500">タイトル *</label>

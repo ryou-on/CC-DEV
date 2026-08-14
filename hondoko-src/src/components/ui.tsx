@@ -6,17 +6,19 @@ export function Modal({
   onClose,
   children,
   wide,
+  closeOnOverlay = true,
 }: {
   title: ReactNode
   onClose: () => void
   children: ReactNode
   wide?: boolean
+  closeOnOverlay?: boolean // falseなら背景クリックで閉じない(編集フォームなどの誤操作防止)
 }) {
   return (
     <div
       data-modal-overlay
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4"
-      onClick={onClose}
+      onClick={closeOnOverlay ? onClose : undefined}
     >
       <div
         className={`bg-white w-full ${wide ? 'sm:max-w-2xl' : 'sm:max-w-lg'} max-h-[92dvh] sm:max-h-[85dvh] rounded-t-2xl sm:rounded-2xl shadow-xl flex flex-col`}

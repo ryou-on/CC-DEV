@@ -364,6 +364,7 @@ export default function App() {
           book={selectedBook}
           books={books}
           shelves={shelves}
+          photos={photos}
           comments={comments.filter((c) => c.bookId === selectedBook.id)}
           readOnly={readOnly}
           canComment={role === 'member' || (role === 'viewer' && !!sharing?.allowComments && !!user)}

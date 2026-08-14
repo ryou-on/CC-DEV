@@ -153,7 +153,7 @@ export function SearchView({
         </div>
       )}
 
-      <div className="flex items-center gap-3 text-sm">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
         <select className={inputCls + ' !w-auto'} value={shelfFilter} onChange={(e) => setShelfFilter(e.target.value)}>
           <option value="">すべての棚</option>
           {shelves.map((s) => (
@@ -165,15 +165,15 @@ export function SearchView({
             <option key={k} value={k}>{SORT_LABEL[k]}</option>
           ))}
         </select>
-        <label className="flex items-center gap-1.5 text-stone-600">
+        <label className="flex items-center gap-1.5 text-stone-600 whitespace-nowrap">
           <input type="checkbox" checked={includeSold} onChange={(e) => setIncludeSold(e.target.checked)} />
           売却済みも表示
         </label>
-        <label className="flex items-center gap-1.5 text-stone-600">
+        <label className="flex items-center gap-1.5 text-stone-600 whitespace-nowrap">
           <input type="checkbox" checked={unreadOnly} onChange={(e) => setUnreadOnly(e.target.checked)} />
           未読のみ
         </label>
-        <label className="flex items-center gap-1.5 text-stone-600">
+        <label className="flex items-center gap-1.5 text-stone-600 whitespace-nowrap">
           <input
             type="checkbox"
             checked={coverFilter === 'with'}
@@ -181,7 +181,7 @@ export function SearchView({
           />
           書影あり
         </label>
-        <label className="flex items-center gap-1.5 text-stone-600">
+        <label className="flex items-center gap-1.5 text-stone-600 whitespace-nowrap">
           <input
             type="checkbox"
             checked={coverFilter === 'without'}
@@ -189,11 +189,11 @@ export function SearchView({
           />
           書影なし
         </label>
-        <span className="ml-auto text-stone-400">
+        <span className="ml-auto text-stone-400 whitespace-nowrap">
           {filtered.length.toLocaleString('ja-JP')}冊
           {filtered.length > results.length && `(先頭${results.length}件を表示)`}
         </span>
-        <div className="flex items-center rounded-lg border border-stone-300 overflow-hidden">
+        <div className="flex items-center rounded-lg border border-stone-300 overflow-hidden shrink-0">
           <button
             className={`px-2 py-1.5 inline-flex items-center gap-1 ${view === 'list' ? 'bg-amber-700 text-white' : 'bg-white text-stone-500 hover:bg-stone-50'}`}
             onClick={() => setView('list')}

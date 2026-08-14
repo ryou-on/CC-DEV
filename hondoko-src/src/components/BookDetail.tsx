@@ -7,8 +7,9 @@ import {
   Building2, Camera, ChevronRight, ClipboardPaste, ExternalLink, Link2, MapPin, Pencil, RefreshCw, Send, Star, Trash2, User, X,
 } from 'lucide-react'
 import { db, storage } from '../firebase'
-import type { Book, BookComment, Shelf } from '../types'
+import type { Book, BookComment, Shelf, ShelfPhoto } from '../types'
 import { lookupBookInfo, resizeImageToBase64 } from '../lib/api'
+import { getPhotoUrl } from '../lib/photoUrl'
 import { locationLabel, locationLabelLong } from '../lib/diff'
 import { Modal, Tag, btnSecondary, inputCls } from './ui'
 import { BookForm, KIND_LABEL } from './BookForm'
@@ -23,6 +24,7 @@ export function BookDetail({
   book,
   books,
   shelves,
+  photos = [],
   comments,
   readOnly,
   canComment,
@@ -38,6 +40,7 @@ export function BookDetail({
   book: Book
   books: Book[]
   shelves: Shelf[]
+  photos?: ShelfPhoto[]
   comments: BookComment[]
   readOnly: boolean
   canComment: boolean
@@ -60,6 +63,27 @@ export function BookDetail({
   const bookRef = doc(db, 'hondoko-books', book.id)
   const patch = (data: Record<string, unknown>) =>
     updateDoc(bookRef, { ...data, updatedAt: serverTimestamp() })
+
+  // この本がある段の最新登録写真(背表紙の現物確認用)
+  const shelfPhotoPath = useMemo(() => {
+    if (!book.shelfId || book.row == null) return null
+    let best: { path: string; t: number } | null = null
+    for (const p of photos) {
+      if (p.shelfId !== book.shelfId || p.row !== book.row) continue
+      const t = p.createdAt?.toMillis() ?? 0
+      if (!best || t > best.t) best = { path: p.storagePath, t }
+    }
+    return best?.path ?? null
+  }, [photos, book.shelfId, book.row])
+  const [shelfPhotoUrl, setShelfPhotoUrl] = useState<string | null>(null)
+  const [photoZoom, setPhotoZoom] = useState(false)
+  useEffect(() => {
+    let ok = true
+    setShelfPhotoUrl(null)
+    setPhotoZoom(false)
+    if (shelfPhotoPath) getPhotoUrl(shelfPhotoPath).then((u) => ok && setShelfPhotoUrl(u)).catch(() => {})
+    return () => { ok = false }
+  }, [shelfPhotoPath])
 
   // 書影+定価+著者の遅延自動取得(メンバーが開いたときに1回だけ試行しキャッシュ)
   useEffect(() => {
@@ -314,6 +338,20 @@ export function BookDetail({
               </div>
             )}
 
+            {/* 段の登録写真(背表紙の現物でタイトルを確認できる) */}
+            {shelfPhotoUrl && (
+              <button className="w-full block text-left" onClick={() => setPhotoZoom(true)}>
+                <img
+                  src={shelfPhotoUrl}
+                  alt="この段の登録写真"
+                  className="w-full max-h-28 object-cover object-center rounded-lg border border-stone-200"
+                />
+                <span className="block text-[10px] text-stone-400 mt-0.5">
+                  この段の登録写真 — タップで拡大して背表紙を確認
+                </span>
+              </button>
+            )}
+
             {/* 既読・評価 */}
             <div className="flex items-center gap-3 flex-wrap">
               <button
@@ -555,6 +593,15 @@ export function BookDetail({
           </div>
         )}
       </div>
+      {photoZoom && shelfPhotoUrl && (
+        <div
+          data-modal-overlay
+          className="fixed inset-0 z-[60] bg-black/85 flex items-center justify-center p-3 cursor-zoom-out"
+          onClick={(e) => { e.stopPropagation(); setPhotoZoom(false) }}
+        >
+          <img src={shelfPhotoUrl} alt="段の登録写真(拡大)" className="max-w-full max-h-full rounded-lg shadow-2xl" />
+        </div>
+      )}
     </Modal>
   )
 }

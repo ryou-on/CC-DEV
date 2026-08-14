@@ -1,6 +1,15 @@
-export const APP_VERSION = 'v1.15.0'
+export const APP_VERSION = 'v1.15.1'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: 'v1.15.1',
+    date: '2026-08-13',
+    changes: [
+      '本の詳細に「この段の登録写真」を表示 — タップで拡大して背表紙の現物からタイトルを確認できます',
+      '検索のフィルタ行を折り返し表示にしてパラパラボタンの見切れを解消',
+      '編集フォームは背景クリックでは閉じないように(キャンセル/保存/✕のみ)',
+    ],
+  },
   {
     version: 'v1.15.0',
     date: '2026-08-13',
