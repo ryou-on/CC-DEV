@@ -1,4 +1,5 @@
-import { auth, AMAZON_ENDPOINT, ANALYZE_ENDPOINT } from '../firebase'
+import { getDownloadURL, ref as storageRef, uploadString } from 'firebase/storage'
+import { auth, storage, AMAZON_ENDPOINT, ANALYZE_ENDPOINT, COVER_ENDPOINT } from '../firebase'
 import type { AnalyzeResult, MapMatchPayload } from '../types'
 import { rectifyImage } from './rectify'
 
@@ -242,6 +243,8 @@ export interface BookInfo {
   coverUrl: string | null
   isbn?: string
   pubDate?: string // 'YYYYMMDD' など。取得できなければ ''
+  author?: string // 取得できた著者(著者未登録の本のバックフィル用)
+  publisher?: string // 取得できた出版社(同上)
   usedPaapi?: boolean // PA-APIを使った場合(一括処理のレート調整用)
 }
 
@@ -252,66 +255,263 @@ function normPubDate(s: unknown): string {
   return digits.length >= 4 ? digits.slice(0, 8) : ''
 }
 
+// ---- openBD: ISBNから書誌一式(定価・書影・出版日・著者・出版社) ----
+interface OpenBdInfo {
+  price: number | null
+  coverUrl: string | null
+  pubDate: string
+  author: string
+  publisher: string
+}
+
+function cleanOpenBdAuthor(s: string): string {
+  return s
+    .replace(/\/(著|訳|編|編著|監修|監訳|原作|イラスト|絵|文|画)/g, '')
+    .replace(/\s*[,,]\s*/g, '、')
+    .trim()
+}
+
+async function openBdGet(isbn: string): Promise<OpenBdInfo | null> {
+  try {
+    const res = await fetch(`https://api.openbd.jp/v1/get?isbn=${isbn}`)
+    const arr = await res.json()
+    const item = arr?.[0]
+    if (!item) return null
+    const s = item.summary || {}
+    return {
+      price: openBdPrice(item),
+      coverUrl: s.cover || null,
+      pubDate: normPubDate(s.pubdate),
+      author: cleanOpenBdAuthor(String(s.author || '')),
+      publisher: String(s.publisher || '').trim(),
+    }
+  } catch {
+    return null
+  }
+}
+
+// ---- 国立国会図書館(NDL)サーチ: タイトルからISBN・著者・出版社・定価を解決(CORS対応) ----
+function normTitle(s: string): string {
+  return s
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[\s　・::;;,、。..〜~\-ー―‐!!??()()[\]「」『』【】=&&]/g, '')
+}
+
+// "四角, 大輔, 1970-" → "四角大輔"(生没年と区切りカンマを除去)
+// 欧文名 "Spezzano, Chuck" は "Chuck Spezzano" に並べ替え
+function cleanNdlCreator(s: string): string {
+  const t = s.replace(/,\s*\d{3,4}-?(\d{3,4})?\.?\s*$/, '').trim()
+  const m = /^([A-Za-z'’. -]+),\s*([A-Za-z'’. -]+)$/.exec(t)
+  if (m) return `${m[2].trim()} ${m[1].trim()}`
+  return t.replace(/,\s*/g, '')
+}
+
+// "2022.9" / "2022.10.5" → "20229"ではなく"202209" 形式へ
+function ndlDate(s: string): string {
+  const m = /^(\d{4})(?:\.(\d{1,2}))?(?:\.(\d{1,2}))?/.exec(s.trim())
+  if (!m) return ''
+  return m[1] + (m[2] ? m[2].padStart(2, '0') : '') + (m[3] ? m[3].padStart(2, '0') : '')
+}
+
+interface NdlItem {
+  title: string
+  author: string
+  publisher: string
+  isbn: string
+  price: number | null
+  pubDate: string
+}
+
+const DC_NS = 'http://purl.org/dc/elements/1.1/'
+const DCNDL_NS = 'http://ndl.go.jp/dcndl/terms/'
+const DCTERMS_NS = 'http://purl.org/dc/terms/'
+
+let ndlLastCall = 0
+async function ndlLookup(book: { title: string; author: string }): Promise<NdlItem | null> {
+  if (!book.title) return null
+  // 一括取得時の連続アクセスを軽く抑制
+  const wait = ndlLastCall + 400 - Date.now()
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait))
+  ndlLastCall = Date.now()
+  try {
+    const params = new URLSearchParams({ title: book.title, cnt: '10' })
+    const res = await fetch(`https://ndlsearch.ndl.go.jp/api/opensearch?${params.toString()}`)
+    if (!res.ok) return null
+    const doc = new DOMParser().parseFromString(await res.text(), 'text/xml')
+    const nq = normTitle(book.title)
+    if (!nq) return null
+    const na = book.author ? normTitle(book.author.split(/[、,]/)[0]) : ''
+
+    let best: { item: NdlItem; score: number } | null = null
+    for (const el of Array.from(doc.getElementsByTagName('item'))) {
+      const text = (ns: string, tag: string) =>
+        Array.from(el.getElementsByTagNameNS(ns, tag)).map((n) => n.textContent?.trim() || '')
+      const title = text(DC_NS, 'title')[0] || ''
+      const nt = normTitle(title)
+      if (!nt) continue
+      let score = 0
+      if (nt === nq) score = 100
+      else if (nt.startsWith(nq) || nq.startsWith(nt)) score = 70
+      else if (nt.includes(nq) || nq.includes(nt)) score = 50
+      else continue
+
+      const author = text(DC_NS, 'creator').map(cleanNdlCreator).filter(Boolean)
+        .filter((a, i, arr) => arr.indexOf(a) === i).join('、')
+      if (na && author && normTitle(author).includes(na)) score += 15
+      const isbn = Array.from(el.getElementsByTagNameNS(DC_NS, 'identifier'))
+        .filter((n) => (n.getAttribute('xsi:type') || '').includes('ISBN'))
+        .map((n) => (n.textContent || '').replace(/[^0-9Xx]/g, ''))
+        .find((v) => v.length === 10 || v.length === 13) || ''
+      if (isbn) score += 5
+
+      const priceText = text(DCNDL_NS, 'price')[0] || ''
+      const priceNum = parseInt(priceText.replace(/[^0-9]/g, ''), 10)
+      const item: NdlItem = {
+        title,
+        author,
+        publisher: text(DC_NS, 'publisher')[0] || '',
+        isbn,
+        price: Number.isFinite(priceNum) && priceNum > 0 ? priceNum : null,
+        pubDate: ndlDate(text(DCTERMS_NS, 'issued')[0] || ''),
+      }
+      if (!best || score > best.score) best = { item, score }
+    }
+    return best && best.score >= 50 ? best.item : null
+  } catch {
+    return null
+  }
+}
+
+// ---- Google Books(レート制限429を検知したら10分間スキップ) ----
+let gbDisabledUntil = 0
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function gbQuery(q: string): Promise<any | null> {
+  if (Date.now() < gbDisabledUntil) return null
+  try {
+    const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=1&country=JP`)
+    if (res.status === 429) { gbDisabledUntil = Date.now() + 10 * 60_000; return null }
+    if (!res.ok) return null
+    const data = await res.json()
+    return data?.items?.[0] ?? null
+  } catch {
+    return null
+  }
+}
+
+// ISBN-10 → ISBN-13 変換
+function isbn10to13(isbn10: string): string | null {
+  if (!/^\d{9}[\dXx]$/.test(isbn10)) return null
+  const core = '978' + isbn10.slice(0, 9)
+  let sum = 0
+  for (let i = 0; i < 12; i++) sum += Number(core[i]) * (i % 2 === 0 ? 1 : 3)
+  return core + String((10 - (sum % 10)) % 10)
+}
+
+// NDLの書影サムネイル(Refererチェックがあるため関数プロキシ経由)。
+// 取得できたらStorageへ保存して永続URLを返す
+async function fetchNdlCover(isbn: string): Promise<string | null> {
+  const user = auth.currentUser
+  if (!user) return null
+  const clean = isbn.replace(/[^0-9Xx]/g, '')
+  const isbn13 = clean.length === 13 ? clean : clean.length === 10 ? isbn10to13(clean) : null
+  if (!isbn13) return null
+  try {
+    const idToken = await user.getIdToken()
+    const res = await fetch(COVER_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+      body: JSON.stringify({ isbn: isbn13 }),
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    if (!data?.base64) return null
+    const path = `hondoko/covers/ndl-${isbn13}.jpg`
+    await uploadString(storageRef(storage, path), data.base64, 'base64', {
+      contentType: data.contentType || 'image/jpeg',
+    })
+    return await getDownloadURL(storageRef(storage, path))
+  } catch {
+    return null
+  }
+}
+
 export async function lookupBookInfo(book: { isbn: string; title: string; author: string }): Promise<BookInfo> {
   const isbn = book.isbn.replace(/[^0-9Xx]/g, '')
   let price: number | null = null
   let coverUrl: string | null = null
   let pubDate = ''
+  let author = ''
+  let publisher = ''
   let foundIsbn: string | undefined
 
-  if (isbn.length === 10 || isbn.length === 13) {
-    try {
-      const res = await fetch(`https://api.openbd.jp/v1/get?isbn=${isbn}`)
-      const arr = await res.json()
-      price = openBdPrice(arr?.[0])
-      coverUrl = arr?.[0]?.summary?.cover || null
-      pubDate = normPubDate(arr?.[0]?.summary?.pubdate)
-    } catch { /* fallthrough */ }
+  const applyOpenBd = (o: OpenBdInfo | null) => {
+    if (!o) return
+    if (price == null) price = o.price
+    if (coverUrl == null) coverUrl = o.coverUrl
+    if (!pubDate) pubDate = o.pubDate
+    if (!author) author = o.author
+    if (!publisher) publisher = o.publisher
   }
 
-  if (price == null || coverUrl == null || !pubDate) {
-    try {
-      const q = isbn
-        ? `isbn:${isbn}`
-        : `intitle:${JSON.stringify(book.title)}${book.author ? `+inauthor:${JSON.stringify(book.author.split(/[、,]/)[0])}` : ''}`
-      const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=1&country=JP`)
-      const data = await res.json()
-      const item = data?.items?.[0]
-      if (item) {
-        const amount = item.saleInfo?.listPrice?.amount
-        if (price == null && typeof amount === 'number' && amount > 0) price = Math.round(amount)
-        const thumb = item.volumeInfo?.imageLinks?.thumbnail
-        if (coverUrl == null && thumb) coverUrl = String(thumb).replace(/^http:/, 'https:')
-        if (!pubDate) pubDate = normPubDate(item.volumeInfo?.publishedDate)
-        if (!isbn) {
-          foundIsbn = (item.volumeInfo?.industryIdentifiers ?? []).find(
-            (x: { type: string }) => x.type === 'ISBN_13' || x.type === 'ISBN_10',
-          )?.identifier
-          // 逆引きしたISBNでopenBDをもう一度(日本の書籍は書影・定価の精度が上がる)
-          if (foundIsbn && (price == null || coverUrl == null || !pubDate)) {
-            try {
-              const r2 = await fetch(`https://api.openbd.jp/v1/get?isbn=${foundIsbn}`)
-              const a2 = await r2.json()
-              if (price == null) price = openBdPrice(a2?.[0])
-              if (coverUrl == null) coverUrl = a2?.[0]?.summary?.cover || null
-              if (!pubDate) pubDate = normPubDate(a2?.[0]?.summary?.pubdate)
-            } catch { /* ignore */ }
-          }
+  // 1) ISBNがあれば openBD(定価・書影・著者・出版社が一度に取れる)
+  if (isbn.length === 10 || isbn.length === 13) {
+    applyOpenBd(await openBdGet(isbn))
+  } else {
+    // 2) ISBN不明 → NDLサーチでタイトルから解決(著者・出版社・定価・ISBNまで取れる)
+    const nd = await ndlLookup(book)
+    if (nd) {
+      foundIsbn = nd.isbn || undefined
+      if (!author) author = nd.author
+      if (!publisher) publisher = nd.publisher
+      if (price == null) price = nd.price
+      if (!pubDate) pubDate = nd.pubDate
+      if (foundIsbn) applyOpenBd(await openBdGet(foundIsbn))
+    }
+  }
+
+  // 3) まだ穴があれば Google Books(429中は自動スキップ)
+  if (price == null || coverUrl == null || !pubDate || (!isbn && !foundIsbn)) {
+    const effIsbn = isbn || foundIsbn
+    const q = effIsbn
+      ? `isbn:${effIsbn}`
+      : `intitle:${JSON.stringify(book.title)}${book.author ? `+inauthor:${JSON.stringify(book.author.split(/[、,]/)[0])}` : ''}`
+    const item = await gbQuery(q)
+    if (item) {
+      const amount = item.saleInfo?.listPrice?.amount
+      if (price == null && typeof amount === 'number' && amount > 0) price = Math.round(amount)
+      const thumb = item.volumeInfo?.imageLinks?.thumbnail
+      if (coverUrl == null && thumb) coverUrl = String(thumb).replace(/^http:/, 'https:')
+      if (!pubDate) pubDate = normPubDate(item.volumeInfo?.publishedDate)
+      if (!author && Array.isArray(item.volumeInfo?.authors)) author = item.volumeInfo.authors.join('、')
+      if (!publisher && item.volumeInfo?.publisher) publisher = String(item.volumeInfo.publisher).trim()
+      if (!isbn && !foundIsbn) {
+        const id = (item.volumeInfo?.industryIdentifiers ?? []).find(
+          (x: { type: string }) => x.type === 'ISBN_13' || x.type === 'ISBN_10',
+        )?.identifier
+        if (id) {
+          foundIsbn = String(id).replace(/[^0-9Xx]/g, '')
+          applyOpenBd(await openBdGet(foundIsbn))
         }
       }
-    } catch { /* ignore */ }
+    }
   }
 
-  // フォールバック3: Amazonの書影画像URL(ISBNベース、キー不要)
+  const effIsbn = isbn || foundIsbn || ''
+
+  // 4) 書影フォールバック: Amazonの画像URL(キー不要) → NDLサムネイル(関数プロキシ)
   if (coverUrl == null) {
-    const az = amazonCoverUrl(isbn || foundIsbn || '')
+    const az = amazonCoverUrl(effIsbn)
     if (az && (await probeImage(az))) coverUrl = az
   }
+  if (coverUrl == null && effIsbn) {
+    coverUrl = await fetchNdlCover(effIsbn)
+  }
 
-  // フォールバック4: Amazon PA-API(アソシエイト設定済みのとき。ISBNなし本にも効く)
+  // 5) Amazon PA-API(アソシエイト設定済みのとき。ISBNなし本にも効く)
   let usedPaapi = false
   if (coverUrl == null || price == null) {
-    const az = await lookupAmazonPaapi({ ...book, isbn: isbn || foundIsbn || '' })
+    const az = await lookupAmazonPaapi({ ...book, isbn: effIsbn })
     if (az) {
       usedPaapi = true
       if (coverUrl == null && az.coverUrl) coverUrl = az.coverUrl
@@ -319,73 +519,15 @@ export async function lookupBookInfo(book: { isbn: string; title: string; author
     }
   }
 
-  return { price, coverUrl, isbn: foundIsbn, pubDate, usedPaapi }
-}
-
-// 定価を取得: openBD(ISBN) → Google Books(ISBN or タイトル+著者)
-// Google Booksの結果からISBN・書影も拾えたら返す(補完用)
-export async function lookupPrice(book: { isbn: string; title: string; author: string }): Promise<PriceInfo> {
-  const isbn = book.isbn.replace(/[^0-9Xx]/g, '')
-  if (isbn.length === 10 || isbn.length === 13) {
-    try {
-      const res = await fetch(`https://api.openbd.jp/v1/get?isbn=${isbn}`)
-      const arr = await res.json()
-      const price = openBdPrice(arr?.[0])
-      if (price != null) return { price }
-    } catch { /* fallthrough */ }
+  return {
+    price,
+    coverUrl,
+    isbn: foundIsbn,
+    pubDate,
+    author: author || undefined,
+    publisher: publisher || undefined,
+    usedPaapi,
   }
-  try {
-    const q = isbn
-      ? `isbn:${isbn}`
-      : `intitle:${JSON.stringify(book.title)}${book.author ? `+inauthor:${JSON.stringify(book.author.split(/[、,]/)[0])}` : ''}`
-    const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=1&country=JP`)
-    const data = await res.json()
-    const item = data?.items?.[0]
-    if (!item) return { price: null }
-    const amount = item.saleInfo?.listPrice?.amount
-    const foundIsbn = (item.volumeInfo?.industryIdentifiers ?? []).find(
-      (x: { type: string }) => x.type === 'ISBN_13' || x.type === 'ISBN_10',
-    )?.identifier
-    const thumb = item.volumeInfo?.imageLinks?.thumbnail
-    // Google Booksで見つかったISBNがあれば openBD でもう一度定価を引く
-    let price: number | null = typeof amount === 'number' && amount > 0 ? Math.round(amount) : null
-    if (price == null && foundIsbn && !isbn) {
-      try {
-        const r2 = await fetch(`https://api.openbd.jp/v1/get?isbn=${foundIsbn}`)
-        const a2 = await r2.json()
-        price = openBdPrice(a2?.[0])
-      } catch { /* ignore */ }
-    }
-    return {
-      price,
-      isbn: !isbn && foundIsbn ? String(foundIsbn) : undefined,
-      coverUrl: thumb ? String(thumb).replace(/^http:/, 'https:') : undefined,
-    }
-  } catch { /* ignore */ }
-  return { price: null }
-}
-
-// 書影URLを取得: openBD(ISBN) → Google Books(ISBN or タイトル+著者)
-export async function lookupCover(book: { isbn: string; title: string; author: string }): Promise<string | null> {
-  const isbn = book.isbn.replace(/[^0-9Xx]/g, '')
-  if (isbn.length === 10 || isbn.length === 13) {
-    try {
-      const res = await fetch(`https://api.openbd.jp/v1/get?isbn=${isbn}`)
-      const arr = await res.json()
-      const cover = arr?.[0]?.summary?.cover
-      if (cover) return cover
-    } catch { /* fallthrough */ }
-  }
-  try {
-    const q = isbn
-      ? `isbn:${isbn}`
-      : `intitle:${JSON.stringify(book.title)}${book.author ? `+inauthor:${JSON.stringify(book.author.split(/[、,]/)[0])}` : ''}`
-    const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=1&country=JP`)
-    const data = await res.json()
-    const thumb = data?.items?.[0]?.volumeInfo?.imageLinks?.thumbnail
-    if (thumb) return String(thumb).replace(/^http:/, 'https:')
-  } catch { /* ignore */ }
-  return null
 }
 
 export async function lookupIsbn(isbn: string): Promise<IsbnInfo | null> {
@@ -403,17 +545,35 @@ export async function lookupIsbn(isbn: string): Promise<IsbnInfo | null> {
       }
     }
   } catch { /* fallthrough */ }
+  // NDLサーチ(ISBN指定)
   try {
-    const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=isbn:${clean}`)
-    const data = await res.json()
-    const v = data?.items?.[0]?.volumeInfo
-    if (v?.title) {
-      return {
-        title: v.title,
-        author: (v.authors || []).join('、'),
-        publisher: v.publisher || '',
+    const res = await fetch(`https://ndlsearch.ndl.go.jp/api/opensearch?isbn=${clean}&cnt=1`)
+    if (res.ok) {
+      const doc = new DOMParser().parseFromString(await res.text(), 'text/xml')
+      const el = doc.getElementsByTagName('item')[0]
+      if (el) {
+        const title = el.getElementsByTagNameNS(DC_NS, 'title')[0]?.textContent?.trim() || ''
+        if (title) {
+          return {
+            title,
+            author: Array.from(el.getElementsByTagNameNS(DC_NS, 'creator'))
+              .map((n) => cleanNdlCreator(n.textContent || '')).filter(Boolean)
+              .filter((a, i, arr) => arr.indexOf(a) === i).join('、'),
+            publisher: el.getElementsByTagNameNS(DC_NS, 'publisher')[0]?.textContent?.trim() || '',
+          }
+        }
       }
     }
   } catch { /* ignore */ }
+  // Google Books(429中は自動スキップ)
+  const item = await gbQuery(`isbn:${clean}`)
+  const v = item?.volumeInfo
+  if (v?.title) {
+    return {
+      title: v.title,
+      author: (v.authors || []).join('、'),
+      publisher: v.publisher || '',
+    }
+  }
   return null
 }

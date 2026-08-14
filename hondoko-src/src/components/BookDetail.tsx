@@ -61,9 +61,12 @@ export function BookDetail({
   const patch = (data: Record<string, unknown>) =>
     updateDoc(bookRef, { ...data, updatedAt: serverTimestamp() })
 
-  // 書影+定価の遅延自動取得(メンバーが開いたときに1回だけ試行しキャッシュ)
+  // 書影+定価+著者の遅延自動取得(メンバーが開いたときに1回だけ試行しキャッシュ)
   useEffect(() => {
-    if (book.coverUrl !== undefined && book.listPrice !== undefined && book.pubDate !== undefined) return
+    if (
+      book.coverUrl !== undefined && book.listPrice !== undefined && book.pubDate !== undefined &&
+      book.author
+    ) return
     if (fetchedFor.current === book.id) return
     if (!book.title || readOnly) return
     fetchedFor.current = book.id
@@ -75,6 +78,8 @@ export function BookDetail({
           ...(book.listPrice === undefined ? { listPrice: info.price } : {}),
           ...(book.pubDate === undefined ? { pubDate: info.pubDate ?? '' } : {}),
           ...(info.isbn && !book.isbn ? { isbn: info.isbn } : {}),
+          ...(info.author && !book.author ? { author: info.author } : {}),
+          ...(info.publisher && !book.publisher ? { publisher: info.publisher } : {}),
         }),
       )
       .catch(() => {})
@@ -90,6 +95,8 @@ export function BookDetail({
         coverUrl: info.coverUrl ?? '',
         ...(book.listPrice == null ? { listPrice: info.price } : {}),
         ...(info.isbn && !book.isbn ? { isbn: info.isbn } : {}),
+        ...(info.author && !book.author ? { author: info.author } : {}),
+        ...(info.publisher && !book.publisher ? { publisher: info.publisher } : {}),
       })
     } finally {
       setCoverLoading(false)

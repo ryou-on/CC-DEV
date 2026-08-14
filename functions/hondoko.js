@@ -219,6 +219,58 @@ exports.hondokoAmazon = onRequest({
   }
 });
 
+// NDLサーチの書影サムネイルプロキシ。
+// ndlsearch.ndl.go.jp/thumbnail/ はRefererチェックがありブラウザから直接参照できないため、
+// サーバー側で取得してbase64で返す(クライアントがStorageへ保存して永続化する)
+exports.hondokoCover = onRequest({
+  cors: true,
+  timeoutSeconds: 20,
+  memory: '256MiB',
+}, async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  if (req.method !== 'POST') { res.status(405).json({ error: 'POST only' }); return; }
+
+  try {
+    const authHeader = req.headers.authorization || '';
+    const idToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (!idToken) { res.status(401).json({ error: '認証が必要です' }); return; }
+    let decoded;
+    try {
+      decoded = await admin.auth().verifyIdToken(idToken);
+    } catch (e) {
+      res.status(401).json({ error: 'トークンが無効です' }); return;
+    }
+    if (!(await isMember(decoded.email))) {
+      res.status(403).json({ error: 'このアプリの利用が許可されていません' }); return;
+    }
+
+    const isbn = String((req.body || {}).isbn || '').replace(/[^0-9]/g, '');
+    if (isbn.length !== 13) { res.status(400).json({ error: 'ISBN-13が必要です' }); return; }
+
+    const r = await fetch(`https://ndlsearch.ndl.go.jp/thumbnail/${isbn}.jpg`, {
+      headers: {
+        Referer: 'https://ndlsearch.ndl.go.jp/',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+        Accept: 'image/avif,image/webp,image/*,*/*;q=0.8',
+      },
+    });
+    if (!r.ok) { res.status(404).json({ base64: null }); return; }
+    const buf = Buffer.from(await r.arrayBuffer());
+    // 1x1などのプレースホルダを除外
+    if (buf.length < 500) { res.status(404).json({ base64: null }); return; }
+    res.status(200).json({
+      base64: buf.toString('base64'),
+      contentType: r.headers.get('content-type') || 'image/jpeg',
+    });
+  } catch (err) {
+    console.error('hondokoCover error:', err);
+    res.status(500).json({ error: '書影取得中にエラーが発生しました' });
+  }
+});
+
 exports.hondokoAnalyze = onRequest({
   cors: true,
   timeoutSeconds: 540,

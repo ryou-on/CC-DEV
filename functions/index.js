@@ -401,3 +401,4 @@ exports.miniMeWebhook = miniMe.miniMeWebhook;
 const hondoko = require('./hondoko');
 exports.hondokoAnalyze = hondoko.hondokoAnalyze;
 exports.hondokoAmazon = hondoko.hondokoAmazon;
+exports.hondokoCover = hondoko.hondokoCover;

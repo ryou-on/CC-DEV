@@ -87,20 +87,21 @@ export function SettingsView({
   const resaleTotal = inStock.reduce((s, b) => s + (b.resalePrice ?? 0), 0)
   const resaleCount = inStock.filter((b) => b.resalePrice != null).length
 
-  // 定価・書影の一括自動取得(未取得の本のみ)
-  const [bulk, setBulk] = useState<{ done: number; total: number; price: number; cover: number } | null>(null)
+  // 定価・書影・著者の一括自動取得(未取得の本のみ)
+  const [bulk, setBulk] = useState<{ done: number; total: number; price: number; cover: number; author: number } | null>(null)
   const bulkFetchPrices = async () => {
-    // 未取得(undefined)に加え、過去に見つからなかった本(coverUrl==='' / listPrice===null)も再試行する
+    // 未取得(undefined)に加え、過去に見つからなかった本(coverUrl==='' / listPrice===null)や著者未登録も再試行する
     const targets = books.filter(
-      (b) => b.title && (b.listPrice == null || b.coverUrl === undefined || b.coverUrl === '' || b.pubDate === undefined),
+      (b) => b.title && (b.listPrice == null || b.coverUrl === undefined || b.coverUrl === '' || b.pubDate === undefined || !b.author),
     )
     if (targets.length === 0) { alert('未取得の本はありません'); return }
-    // 1回の実行上限(Google Books のレート制限対策)
+    // 1回の実行上限(外部APIのレート制限対策)
     const LIMIT = 120
     const run = targets.slice(0, LIMIT)
-    setBulk({ done: 0, total: run.length, price: 0, cover: 0 })
+    setBulk({ done: 0, total: run.length, price: 0, cover: 0, author: 0 })
     let priceHit = 0
     let coverHit = 0
+    let authorHit = 0
     for (let i = 0; i < run.length; i++) {
       const b = run[i]
       let usedPaapi = false
@@ -112,17 +113,20 @@ export function SettingsView({
           ...(!b.coverUrl ? { coverUrl: info.coverUrl ?? '' } : {}),
           ...(b.pubDate === undefined || (!b.pubDate && info.pubDate) ? { pubDate: info.pubDate ?? '' } : {}),
           ...(info.isbn && !b.isbn ? { isbn: info.isbn } : {}),
+          ...(info.author && !b.author ? { author: info.author } : {}),
+          ...(info.publisher && !b.publisher ? { publisher: info.publisher } : {}),
         })
         if (b.listPrice == null && info.price != null) priceHit++
         if (!b.coverUrl && info.coverUrl) coverHit++
+        if (!b.author && info.author) authorHit++
       } catch { /* 個別失敗はスキップ */ }
-      setBulk({ done: i + 1, total: run.length, price: priceHit, cover: coverHit })
-      // レート調整: PA-API利用時は1秒強、ISBNなし本(Google Books)は0.35秒待つ
+      setBulk({ done: i + 1, total: run.length, price: priceHit, cover: coverHit, author: authorHit })
+      // レート調整: PA-API利用時は1秒強、ISBNなし本(NDL/Google Books)は0.35秒待つ
       if (usedPaapi) await new Promise((r) => setTimeout(r, 1200))
       else if (!b.isbn) await new Promise((r) => setTimeout(r, 350))
     }
     setBulk(null)
-    alert(`${run.length}冊を処理: 定価${priceHit}冊 / 書影${coverHit}冊を取得しました` +
+    alert(`${run.length}冊を処理: 定価${priceHit}冊 / 書影${coverHit}冊 / 著者${authorHit}冊を取得しました` +
       (targets.length > LIMIT ? `\n(残り${targets.length - LIMIT}冊はもう一度実行してください)` : '') +
       '\n取得できなかった書影は、本の詳細から「写真から登録」「URLで登録」で追加できます')
   }
@@ -158,10 +162,10 @@ export function SettingsView({
         <div className="mt-3 flex items-center gap-2">
           <button className={btnSecondary + ' !py-1.5 !px-3 text-xs'} onClick={bulkFetchPrices} disabled={!!bulk}>
             {bulk
-              ? `取得中… ${bulk.done}/${bulk.total}(定価${bulk.price}/書影${bulk.cover})`
-              : '定価・書影を一括自動取得'}
+              ? `取得中… ${bulk.done}/${bulk.total}(定価${bulk.price}/書影${bulk.cover}/著者${bulk.author})`
+              : '定価・書影・著者を一括自動取得'}
           </button>
-          <p className="text-[10px] text-stone-300">openBD/Google Booksから取得。取得できない書影は本の詳細から写真/URLで登録可</p>
+          <p className="text-[10px] text-stone-300">openBD/国会図書館サーチ/Google Booksから取得。取得できない書影は本の詳細から写真/URLで登録可</p>
         </div>
       </section>
 

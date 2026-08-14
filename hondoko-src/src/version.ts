@@ -1,6 +1,17 @@
-export const APP_VERSION = 'v1.14.4'
+export const APP_VERSION = 'v1.15.0'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: 'v1.15.0',
+    date: '2026-08-13',
+    changes: [
+      '著者名の自動取得に対応 — 著者未登録の本は詳細を開いたとき/一括取得で自動補完(出版社も)',
+      '書誌取得を国立国会図書館サーチ中心に刷新。Google Booksのレート制限(429)が失敗の主因だったため、NDL→openBD→Google Booksの順に変更',
+      '書影のフォールバックにNDLサムネイルを追加(Amazon画像で見つからない本もカバー)',
+      'Google Booksがレート制限中は10分間自動スキップして他のソースで取得',
+      'バーコード登録(ISBN読取)もNDLフォールバック対応',
+    ],
+  },
   {
     version: 'v1.14.4',
     date: '2026-08-13',
