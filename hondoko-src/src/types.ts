@@ -63,6 +63,9 @@ export interface Book {
   listPrice?: number | null
   // 出版日 'YYYYMMDD'/'YYYYMM'/'YYYY'。undefined=未取得, ''=見つからず(自動取得)
   pubDate?: string
+  // 段写真内の背表紙位置(AI特定・正規化座標)。spineBoxPath=特定に使った写真のパス
+  spineBox?: { x: number; y: number; w: number; h: number } | null
+  spineBoxPath?: string
   createdAt: Timestamp | null
   updatedAt: Timestamp | null
 }

@@ -1,6 +1,14 @@
-export const APP_VERSION = 'v1.16.1'
+export const APP_VERSION = 'v1.17.0'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: 'v1.17.0',
+    date: '2026-08-14',
+    changes: [
+      '段写真の拡大表示で、その本の背表紙をAIが特定して赤枠ハイライト+周囲を暗転(スポットライト)',
+      '特定結果は本ごとに保存され、2回目以降は即座に表示(写真を更新したら再特定)',
+    ],
+  },
   {
     version: 'v1.16.1',
     date: '2026-08-14',

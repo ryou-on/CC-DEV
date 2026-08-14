@@ -138,6 +138,31 @@ export async function buildMapPayload(
 }
 
 // マップ写真から段の矩形をAI検出する
+// 段写真から特定の本の背表紙位置をAIで特定(正規化座標)。見つからなければnull
+export async function locateBook(
+  base64Jpeg: string,
+  book: { title: string; author: string; volume?: string },
+): Promise<{ x: number; y: number; w: number; h: number } | null> {
+  const user = auth.currentUser
+  if (!user) throw new Error('ログインが必要です')
+  const idToken = await user.getIdToken()
+  const res = await fetch(ANALYZE_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+    body: JSON.stringify({
+      mode: 'locate_book',
+      image: base64Jpeg,
+      mediaType: 'image/jpeg',
+      title: book.title,
+      author: book.author,
+      volume: book.volume || '',
+    }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || `位置の特定に失敗しました (${res.status})`)
+  return data.found ? data.box : null
+}
+
 export async function detectRegions(base64Jpeg: string): Promise<{ x: number; y: number; w: number; h: number }[]> {
   const user = auth.currentUser
   if (!user) throw new Error('ログインが必要です')

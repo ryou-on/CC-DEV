@@ -373,6 +373,73 @@ exports.hondokoAnalyze = onRequest({
       return;
     }
 
+    // --- モード: 段写真から特定の本の背表紙位置を特定 ---
+    if (mode === 'locate_book') {
+      const { title, author, volume } = req.body || {};
+      if (!title || typeof title !== 'string') {
+        res.status(400).json({ error: 'title が必要です' }); return;
+      }
+      const Anthropic = require('@anthropic-ai/sdk');
+      const client = new Anthropic({ apiKey: anthropicApiKey.value() });
+      const t0 = Date.now();
+      const response = await client.messages.create({
+        model: 'claude-sonnet-5',
+        max_tokens: 2000,
+        system: `本棚の段の写真から、指定された本の背表紙の位置を特定します。
+- 見つかった場合は found=true とし、その背表紙のバウンディングボックスを画像の幅・高さに対する 0〜1 の正規化座標 {x, y, w, h} で返す(x,yは左上)。
+- ボックスはその1冊の背表紙にぴったり合わせる(隣の本を含めない)。
+- タイトルの表記ゆれ(OCR誤読・略記)がありうるので、近い表記の本も同一とみなしてよい。
+- 確実に見つからない場合は found=false を返す(推測で別の本を囲まない)。`,
+        output_config: {
+          format: {
+            type: 'json_schema',
+            schema: {
+              type: 'object',
+              properties: {
+                found: { type: 'boolean' },
+                box: {
+                  type: 'object',
+                  properties: {
+                    x: { type: 'number' }, y: { type: 'number' },
+                    w: { type: 'number' }, h: { type: 'number' },
+                  },
+                  required: ['x', 'y', 'w', 'h'],
+                  additionalProperties: false,
+                },
+              },
+              required: ['found', 'box'],
+              additionalProperties: false,
+            },
+          },
+        },
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'base64', media_type: mt, data: image } },
+            {
+              type: 'text',
+              text: `この段の写真から次の本の背表紙を探してください。\nタイトル: ${title}${volume ? `\n巻数: ${volume}` : ''}${author ? `\n著者: ${author}` : ''}`,
+            },
+          ],
+        }],
+      });
+      console.log(`hondokoAnalyze(locate): ${Math.round((Date.now() - t0) / 1000)}s, out=${response.usage.output_tokens}tok`);
+      if (response.stop_reason === 'refusal') {
+        res.status(422).json({ error: '解析が拒否されました' }); return;
+      }
+      const textBlock = response.content.find((b) => b.type === 'text');
+      let parsed;
+      try {
+        parsed = JSON.parse(textBlock.text);
+      } catch (e) {
+        res.status(500).json({ error: '結果の形式が不正でした' }); return;
+      }
+      const b = parsed.box || {};
+      const valid = [b.x, b.y, b.w, b.h].every((v) => typeof v === 'number' && v >= 0 && v <= 1) && b.w > 0.005 && b.h > 0.01;
+      res.status(200).json(parsed.found && valid ? { found: true, box: b } : { found: false, box: null });
+      return;
+    }
+
     const content = [
       { type: 'image', source: { type: 'base64', media_type: mt, data: image } },
     ];

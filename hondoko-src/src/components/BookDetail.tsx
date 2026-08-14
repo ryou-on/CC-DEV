@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import { db, storage } from '../firebase'
 import type { Book, BookComment, Shelf, ShelfPhoto } from '../types'
-import { lookupBookInfo, resizeImageToBase64 } from '../lib/api'
+import { imageUrlToBase64, locateBook, lookupBookInfo, resizeImageToBase64 } from '../lib/api'
 import { normalize } from '../lib/text'
 import { getPhotoUrl } from '../lib/photoUrl'
 import { locationLabel, locationLabelLong } from '../lib/diff'
@@ -85,6 +85,39 @@ export function BookDetail({
     if (shelfPhotoPath) getPhotoUrl(shelfPhotoPath).then((u) => ok && setShelfPhotoUrl(u)).catch(() => {})
     return () => { ok = false }
   }, [shelfPhotoPath])
+
+  // 拡大表示時に、この本の背表紙位置をAIで特定してハイライト(結果はキャッシュ)
+  const [spineBox, setSpineBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
+  const [locateState, setLocateState] = useState<'idle' | 'locating' | 'done' | 'notfound' | 'error'>('idle')
+  const locatedFor = useRef<string | null>(null)
+  useEffect(() => { setSpineBox(null); setLocateState('idle'); locatedFor.current = null }, [book.id])
+  useEffect(() => {
+    if (!photoZoom || !shelfPhotoUrl || !shelfPhotoPath) return
+    // キャッシュ済み(同じ写真に対する特定結果)ならそれを使う
+    if (book.spineBoxPath === shelfPhotoPath && book.spineBox !== undefined) {
+      setSpineBox(book.spineBox)
+      setLocateState(book.spineBox ? 'done' : 'notfound')
+      return
+    }
+    if (readOnly || locateState !== 'idle' || locatedFor.current === shelfPhotoPath) return
+    locatedFor.current = shelfPhotoPath
+    let cancel = false
+    setLocateState('locating')
+    ;(async () => {
+      try {
+        const b64 = await imageUrlToBase64(shelfPhotoUrl, 1600)
+        const box = await locateBook(b64, book)
+        if (cancel) return
+        setSpineBox(box)
+        setLocateState(box ? 'done' : 'notfound')
+        updateDoc(bookRef, { spineBox: box, spineBoxPath: shelfPhotoPath }).catch(() => {})
+      } catch {
+        if (!cancel) setLocateState('error')
+      }
+    })()
+    return () => { cancel = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [photoZoom, shelfPhotoUrl, shelfPhotoPath, readOnly])
 
   // 書影+定価+著者の遅延自動取得(メンバーが開いたときに1回だけ試行しキャッシュ)
   useEffect(() => {
@@ -629,7 +662,27 @@ export function BookDetail({
           className="fixed inset-0 z-[60] bg-black/85 flex items-center justify-center p-3 cursor-zoom-out"
           onClick={(e) => { e.stopPropagation(); setPhotoZoom(false) }}
         >
-          <img src={shelfPhotoUrl} alt="段の登録写真(拡大)" className="max-w-full max-h-full rounded-lg shadow-2xl" />
+          <div className="relative max-w-full max-h-full">
+            <img src={shelfPhotoUrl} alt="段の登録写真(拡大)" className="max-w-full max-h-[88dvh] rounded-lg shadow-2xl" />
+            {spineBox && (
+              <div
+                className="absolute border-[3px] border-red-500 rounded-sm pointer-events-none"
+                style={{
+                  left: `${spineBox.x * 100}%`,
+                  top: `${spineBox.y * 100}%`,
+                  width: `${spineBox.w * 100}%`,
+                  height: `${spineBox.h * 100}%`,
+                  boxShadow: '0 0 0 9999px rgba(0,0,0,0.45)',
+                }}
+              />
+            )}
+            <p className="absolute bottom-1.5 inset-x-0 text-center text-xs text-white/80 drop-shadow">
+              {locateState === 'locating' && 'AIがこの本の背表紙を探しています…'}
+              {locateState === 'done' && `「${book.title}」の位置をハイライト中`}
+              {locateState === 'notfound' && 'この写真からは背表紙を特定できませんでした'}
+              {locateState === 'error' && '背表紙の特定に失敗しました'}
+            </p>
+          </div>
         </div>
       )}
     </Modal>
