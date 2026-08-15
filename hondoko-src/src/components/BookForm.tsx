@@ -5,7 +5,16 @@ import { db } from '../firebase'
 import type { Book, BookKind, BookStatus, Shelf } from '../types'
 import { Modal, inputCls, btnPrimary, btnSecondary } from './ui'
 
-const splitAuthors = (s: string) => s.split(/[、,;/／]/).map((a) => a.trim()).filter(Boolean)
+// 著者文字列を個人単位に分割。
+// 「株式会社竹尾 (著), 織咲 誠 (著), 原研哉＋日本デザインセンター (著)」のような
+// Amazon/書誌サイトからの雑なコピペでも (著)(編)(訳)等の役割注記を除去して切り分ける
+const AUTHOR_ROLE = '著|共著|編著|編集|編|訳|共訳|監訳|翻訳|監修|監|イラスト|絵|文|画|写真|撮影|原作|原案|解説|校注'
+const splitAuthors = (s: string) =>
+  s
+    .replace(new RegExp(`[((]\\s*(${AUTHOR_ROLE})(\\s*[・,、/]\\s*(${AUTHOR_ROLE}))*\\s*[))]`, 'g'), ',')
+    .split(/[、,,;;/／]/)
+    .map((a) => a.trim().replace(new RegExp(`[\\s/／]+(${AUTHOR_ROLE})$`), '').trim())
+    .filter(Boolean)
 
 const KIND_LABEL: Record<BookKind, string> = {
   book: '書籍',

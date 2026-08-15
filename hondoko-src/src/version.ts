@@ -1,6 +1,13 @@
-export const APP_VERSION = 'v1.17.1'
+export const APP_VERSION = 'v1.17.2'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: 'v1.17.2',
+    date: '2026-08-15',
+    changes: [
+      '著者入力の解析を強化 —「株式会社竹尾 (著), 織咲 誠 (著)」のようなAmazon等からの雑なコピペでも、(著)(編)(訳)などの役割注記を除去して1人ずつ切り分け',
+    ],
+  },
   {
     version: 'v1.17.1',
     date: '2026-08-14',
