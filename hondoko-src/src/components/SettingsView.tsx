@@ -7,7 +7,7 @@ import { db, OWNER_EMAIL } from '../firebase'
 import type { Book, Shelf, ShelfGroup, SharingConfig, SharingMode } from '../types'
 import { APP_VERSION } from '../version'
 import { changeShelfRows, MAX_ROWS } from '../lib/shelfOps'
-import { lookupBookInfo } from '../lib/api'
+import { isSearchableTitle, lookupBookInfo } from '../lib/api'
 import { btnSecondary, inputCls } from './ui'
 
 const genKey = () => Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6)
@@ -102,9 +102,16 @@ export function SettingsView({
     let priceHit = 0
     let coverHit = 0
     let authorHit = 0
+    let unsearchable = 0
     for (let i = 0; i < run.length; i++) {
       const b = run[i]
       let usedPaapi = false
+      // ISBNなしでタイトルが判読不能などの本は検索しようがないのでスキップ(サマリーで通知)
+      if (!b.isbn && !isSearchableTitle(b.title)) {
+        unsearchable++
+        setBulk({ done: i + 1, total: run.length, price: priceHit, cover: coverHit, author: authorHit })
+        continue
+      }
       try {
         const info = await lookupBookInfo(b)
         usedPaapi = !!info.usedPaapi
@@ -127,6 +134,7 @@ export function SettingsView({
     }
     setBulk(null)
     alert(`${run.length}冊を処理: 定価${priceHit}冊 / 書影${coverHit}冊 / 著者${authorHit}冊を取得しました` +
+      (unsearchable > 0 ? `\nタイトルが「判読不能」等で検索できない本: ${unsearchable}冊(編集でタイトルを直すと取得できます。段写真の拡大で背表紙を確認できます)` : '') +
       (targets.length > LIMIT ? `\n(残り${targets.length - LIMIT}冊はもう一度実行してください)` : '') +
       '\n取得できなかった書影は、本の詳細から「写真から登録」「URLで登録」で追加できます')
   }

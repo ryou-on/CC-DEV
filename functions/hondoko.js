@@ -219,6 +219,50 @@ exports.hondokoAmazon = onRequest({
   }
 });
 
+// NDLサーチ(opensearch)のプロキシ。
+// NDLのAPIはCORSヘッダの付与が不安定でブラウザから直接叩くと失敗することがあるため、
+// サーバー側で取得してXMLを返す
+exports.hondokoNdl = onRequest({
+  cors: true,
+  timeoutSeconds: 20,
+  memory: '256MiB',
+}, async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+  if (req.method !== 'POST') { res.status(405).json({ error: 'POST only' }); return; }
+
+  try {
+    const authHeader = req.headers.authorization || '';
+    const idToken = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (!idToken) { res.status(401).json({ error: '認証が必要です' }); return; }
+    let decoded;
+    try {
+      decoded = await admin.auth().verifyIdToken(idToken);
+    } catch (e) {
+      res.status(401).json({ error: 'トークンが無効です' }); return;
+    }
+    if (!(await isMember(decoded.email))) {
+      res.status(403).json({ error: 'このアプリの利用が許可されていません' }); return;
+    }
+
+    const raw = (req.body || {}).params || {};
+    const params = new URLSearchParams();
+    for (const key of ['title', 'creator', 'isbn', 'any', 'cnt']) {
+      if (typeof raw[key] === 'string' && raw[key]) params.set(key, String(raw[key]).slice(0, 200));
+    }
+    if (!params.toString()) { res.status(400).json({ error: '検索条件が必要です' }); return; }
+
+    const r = await fetch(`https://ndlsearch.ndl.go.jp/api/opensearch?${params.toString()}`);
+    if (!r.ok) { res.status(502).json({ error: `NDL応答エラー (${r.status})` }); return; }
+    res.status(200).json({ xml: await r.text() });
+  } catch (err) {
+    console.error('hondokoNdl error:', err);
+    res.status(500).json({ error: 'NDL検索中にエラーが発生しました' });
+  }
+});
+
 // NDLサーチの書影サムネイルプロキシ。
 // ndlsearch.ndl.go.jp/thumbnail/ はRefererチェックがありブラウザから直接参照できないため、
 // サーバー側で取得してbase64で返す(クライアントがStorageへ保存して永続化する)

@@ -402,3 +402,4 @@ const hondoko = require('./hondoko');
 exports.hondokoAnalyze = hondoko.hondokoAnalyze;
 exports.hondokoAmazon = hondoko.hondokoAmazon;
 exports.hondokoCover = hondoko.hondokoCover;
+exports.hondokoNdl = hondoko.hondokoNdl;

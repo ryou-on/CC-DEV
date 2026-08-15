@@ -1,5 +1,5 @@
 import { getDownloadURL, ref as storageRef, uploadString } from 'firebase/storage'
-import { auth, storage, AMAZON_ENDPOINT, ANALYZE_ENDPOINT, COVER_ENDPOINT } from '../firebase'
+import { auth, storage, AMAZON_ENDPOINT, ANALYZE_ENDPOINT, COVER_ENDPOINT, NDL_ENDPOINT } from '../firebase'
 import type { AnalyzeResult, MapMatchPayload } from '../types'
 import { rectifyImage } from './rectify'
 
@@ -316,6 +316,37 @@ async function openBdGet(isbn: string): Promise<OpenBdInfo | null> {
 }
 
 // ---- 国立国会図書館(NDL)サーチ: タイトルからISBN・著者・出版社・定価を解決(CORS対応) ----
+
+// 検索クエリ用にタイトルを掃除(OCR注記・カッコ内・号数などを除去)
+export function cleanTitleForSearch(title: string): string {
+  return title
+    .replace(/[((【[][^))】\]]*[))】\]]/g, ' ')
+    .replace(/(誌名|タイトル|書名)?一?部?判読不能/g, ' ')
+    .replace(/\d{4}年\d{1,2}月号?/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+// 自動取得に使えるタイトルか(掃除後に実質2文字以上残るか)
+export function isSearchableTitle(title: string): boolean {
+  return cleanTitleForSearch(title).length >= 2
+}
+
+// bigram Dice係数(OCRの表記ゆれ対策の類似度)
+function bigrams(s: string): Set<string> {
+  const r = new Set<string>()
+  for (let i = 0; i < s.length - 1; i++) r.add(s.slice(i, i + 2))
+  return r
+}
+function diceSim(a: string, b: string): number {
+  const A = bigrams(a)
+  const B = bigrams(b)
+  if (!A.size || !B.size) return 0
+  let hit = 0
+  for (const g of A) if (B.has(g)) hit++
+  return (2 * hit) / (A.size + B.size)
+}
+
 function normTitle(s: string): string {
   return s
     .normalize('NFKC')
@@ -353,56 +384,111 @@ const DCNDL_NS = 'http://ndl.go.jp/dcndl/terms/'
 const DCTERMS_NS = 'http://purl.org/dc/terms/'
 
 let ndlLastCall = 0
-async function ndlLookup(book: { title: string; author: string }): Promise<NdlItem | null> {
-  if (!book.title) return null
-  // 一括取得時の連続アクセスを軽く抑制
+async function ndlThrottle() {
   const wait = ndlLastCall + 400 - Date.now()
   if (wait > 0) await new Promise((r) => setTimeout(r, wait))
   ndlLastCall = Date.now()
+}
+
+// itemノード → NdlItem
+function parseNdlItem(el: Element): NdlItem {
+  const text = (ns: string, tag: string) =>
+    Array.from(el.getElementsByTagNameNS(ns, tag)).map((n) => n.textContent?.trim() || '')
+  const priceText = text(DCNDL_NS, 'price')[0] || ''
+  const priceNum = parseInt(priceText.replace(/[^0-9]/g, ''), 10)
+  return {
+    title: text(DC_NS, 'title')[0] || '',
+    author: text(DC_NS, 'creator').map(cleanNdlCreator).filter(Boolean)
+      .filter((a, i, arr) => arr.indexOf(a) === i).join('、'),
+    publisher: text(DC_NS, 'publisher')[0] || '',
+    isbn: Array.from(el.getElementsByTagNameNS(DC_NS, 'identifier'))
+      .filter((n) => (n.getAttribute('xsi:type') || '').includes('ISBN'))
+      .map((n) => (n.textContent || '').replace(/[^0-9Xx]/g, ''))
+      .find((v) => v.length === 10 || v.length === 13) || '',
+    price: Number.isFinite(priceNum) && priceNum > 0 ? priceNum : null,
+    pubDate: ndlDate(text(DCTERMS_NS, 'issued')[0] || ''),
+  }
+}
+
+async function ndlFetchItems(params: Record<string, string>): Promise<Element[]> {
+  await ndlThrottle()
+  let xml: string | null = null
+  // 直接アクセスを試す(NDLのCORSヘッダは不安定: 通ることも弾かれることもある)
   try {
-    const params = new URLSearchParams({ title: book.title, cnt: '10' })
-    const res = await fetch(`https://ndlsearch.ndl.go.jp/api/opensearch?${params.toString()}`)
-    if (!res.ok) return null
-    const doc = new DOMParser().parseFromString(await res.text(), 'text/xml')
-    const nq = normTitle(book.title)
-    if (!nq) return null
-    const na = book.author ? normTitle(book.author.split(/[、,]/)[0]) : ''
-
-    let best: { item: NdlItem; score: number } | null = null
-    for (const el of Array.from(doc.getElementsByTagName('item'))) {
-      const text = (ns: string, tag: string) =>
-        Array.from(el.getElementsByTagNameNS(ns, tag)).map((n) => n.textContent?.trim() || '')
-      const title = text(DC_NS, 'title')[0] || ''
-      const nt = normTitle(title)
-      if (!nt) continue
-      let score = 0
-      if (nt === nq) score = 100
-      else if (nt.startsWith(nq) || nq.startsWith(nt)) score = 70
-      else if (nt.includes(nq) || nq.includes(nt)) score = 50
-      else continue
-
-      const author = text(DC_NS, 'creator').map(cleanNdlCreator).filter(Boolean)
-        .filter((a, i, arr) => arr.indexOf(a) === i).join('、')
-      if (na && author && normTitle(author).includes(na)) score += 15
-      const isbn = Array.from(el.getElementsByTagNameNS(DC_NS, 'identifier'))
-        .filter((n) => (n.getAttribute('xsi:type') || '').includes('ISBN'))
-        .map((n) => (n.textContent || '').replace(/[^0-9Xx]/g, ''))
-        .find((v) => v.length === 10 || v.length === 13) || ''
-      if (isbn) score += 5
-
-      const priceText = text(DCNDL_NS, 'price')[0] || ''
-      const priceNum = parseInt(priceText.replace(/[^0-9]/g, ''), 10)
-      const item: NdlItem = {
-        title,
-        author,
-        publisher: text(DC_NS, 'publisher')[0] || '',
-        isbn,
-        price: Number.isFinite(priceNum) && priceNum > 0 ? priceNum : null,
-        pubDate: ndlDate(text(DCTERMS_NS, 'issued')[0] || ''),
-      }
-      if (!best || score > best.score) best = { item, score }
+    const res = await fetch(`https://ndlsearch.ndl.go.jp/api/opensearch?${new URLSearchParams(params).toString()}`)
+    if (res.ok) xml = await res.text()
+  } catch { /* CORSブロック等 → プロキシへ */ }
+  // Cloud Function経由のフォールバック
+  if (xml == null) {
+    const user = auth.currentUser
+    if (!user) return []
+    try {
+      const idToken = await user.getIdToken()
+      const res = await fetch(NDL_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ params }),
+      })
+      if (!res.ok) return []
+      const data = await res.json()
+      if (typeof data?.xml !== 'string') return []
+      xml = data.xml
+    } catch {
+      return []
     }
-    return best && best.score >= 50 ? best.item : null
+  }
+  if (xml == null) return []
+  const doc = new DOMParser().parseFromString(xml, 'text/xml')
+  return Array.from(doc.getElementsByTagName('item'))
+}
+
+// ISBNからNDLの書誌を1件取得
+async function ndlLookupByIsbn(isbn: string): Promise<NdlItem | null> {
+  try {
+    const items = await ndlFetchItems({ isbn, cnt: '1' })
+    return items.length ? parseNdlItem(items[0]) : null
+  } catch {
+    return null
+  }
+}
+
+async function ndlLookup(book: { title: string; author: string }): Promise<NdlItem | null> {
+  const cleaned = cleanTitleForSearch(book.title)
+  if (cleaned.length < 2) return null
+  const nq = normTitle(cleaned)
+  if (!nq) return null
+  const na = book.author ? normTitle(cleanTitleForSearch(book.author).split(/[、,]/)[0]) : ''
+
+  // クエリ候補: 掃除済みタイトル → だめなら先頭セグメント(サブタイトル前)
+  const queries = [cleaned]
+  const head = cleaned.split(/[\s::—―〜~]/)[0]
+  if (head.length >= 3 && head !== cleaned) queries.push(head)
+
+  try {
+    for (const q of queries) {
+      const items = await ndlFetchItems({ title: q, cnt: '10' })
+      let best: { item: NdlItem; score: number } | null = null
+      for (const el of items) {
+        const item = parseNdlItem(el)
+        const nt = normTitle(item.title)
+        if (!nt) continue
+        let score = 0
+        if (nt === nq) score = 100
+        else if (nt.startsWith(nq) || nq.startsWith(nt)) score = 70
+        else if (nt.includes(nq) || nq.includes(nt)) score = 50
+        else {
+          // OCRの表記ゆれ対策: bigram類似度で救済
+          const d = diceSim(nt, nq)
+          if (d >= 0.6) score = Math.round(35 + d * 30)
+          else continue
+        }
+        if (na && item.author && normTitle(item.author).includes(na)) score += 15
+        if (item.isbn) score += 5
+        if (!best || score > best.score) best = { item, score }
+      }
+      if (best && best.score >= 50) return best.item
+    }
+    return null
   } catch {
     return null
   }
@@ -479,18 +565,27 @@ export async function lookupBookInfo(book: { isbn: string; title: string; author
     if (!publisher) publisher = o.publisher
   }
 
+  const applyNdl = (nd: NdlItem | null) => {
+    if (!nd) return
+    if (!author) author = nd.author
+    if (!publisher) publisher = nd.publisher
+    if (price == null) price = nd.price
+    if (!pubDate) pubDate = nd.pubDate
+  }
+
   // 1) ISBNがあれば openBD(定価・書影・著者・出版社が一度に取れる)
   if (isbn.length === 10 || isbn.length === 13) {
     applyOpenBd(await openBdGet(isbn))
+    // openBDに欠けがあればNDL(ISBN指定)で補完
+    if (price == null || !pubDate || !author || !publisher) {
+      applyNdl(await ndlLookupByIsbn(isbn))
+    }
   } else {
     // 2) ISBN不明 → NDLサーチでタイトルから解決(著者・出版社・定価・ISBNまで取れる)
     const nd = await ndlLookup(book)
     if (nd) {
       foundIsbn = nd.isbn || undefined
-      if (!author) author = nd.author
-      if (!publisher) publisher = nd.publisher
-      if (price == null) price = nd.price
-      if (!pubDate) pubDate = nd.pubDate
+      applyNdl(nd)
       if (foundIsbn) applyOpenBd(await openBdGet(foundIsbn))
     }
   }
@@ -498,10 +593,11 @@ export async function lookupBookInfo(book: { isbn: string; title: string; author
   // 3) まだ穴があれば Google Books(429中は自動スキップ)
   if (price == null || coverUrl == null || !pubDate || (!isbn && !foundIsbn)) {
     const effIsbn = isbn || foundIsbn
+    const cleanedTitle = cleanTitleForSearch(book.title)
     const q = effIsbn
       ? `isbn:${effIsbn}`
-      : `intitle:${JSON.stringify(book.title)}${book.author ? `+inauthor:${JSON.stringify(book.author.split(/[、,]/)[0])}` : ''}`
-    const item = await gbQuery(q)
+      : `intitle:${JSON.stringify(cleanedTitle || book.title)}${book.author ? `+inauthor:${JSON.stringify(book.author.split(/[、,]/)[0])}` : ''}`
+    const item = effIsbn || cleanedTitle.length >= 2 ? await gbQuery(q) : null
     if (item) {
       const amount = item.saleInfo?.listPrice?.amount
       if (price == null && typeof amount === 'number' && amount > 0) price = Math.round(amount)

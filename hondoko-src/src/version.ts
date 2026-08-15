@@ -1,6 +1,16 @@
-export const APP_VERSION = 'v1.17.2'
+export const APP_VERSION = 'v1.17.3'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: 'v1.17.3',
+    date: '2026-08-15',
+    changes: [
+      '一括取得の成功率を大幅改善 — NDL検索がCORS起因でほぼ失敗していた問題をプロキシ経由で解消',
+      'ISBNあり本もopenBDに欠けがあればNDLで補完(著者・定価・出版日)',
+      '「(誌名判読不能)」等のノイズを除去してから検索、表記ゆれは類似度でマッチ',
+      '検索不能なタイトルの本は一括取得のサマリーで冊数を通知(編集で修正を促す)',
+    ],
+  },
   {
     version: 'v1.17.2',
     date: '2026-08-15',
