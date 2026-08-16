@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebase/auth'
 import { collection, doc, onSnapshot, query, orderBy } from 'firebase/firestore'
-import { BookOpen, LibraryBig, Loader2, LogOut, PlusCircle, RefreshCw, Search, Settings, X } from 'lucide-react'
+import { BookOpen, LibraryBig, Loader2, LogOut, PlusCircle, RefreshCw, Search, Settings, Sparkles, X } from 'lucide-react'
 import { auth, db, googleProvider, OWNER_EMAIL } from './firebase'
 import type { Book, BookComment, BookReview, Shelf, SharingConfig, ShelfMap, ShelfPhoto } from './types'
 import { APP_VERSION, RELEASE_NOTES, USAGE_GUIDE } from './version'
@@ -122,6 +122,17 @@ export default function App() {
   // 本日の1冊: その日の初回起動時に日替わりのオススメを表示(日付から決定的に選ぶので家族全員同じ本)
   const [dailyBook, setDailyBook] = useState<Book | null>(null)
   const dailyChecked = useRef(false)
+  const computeDailyBook = (list: Book[]): Book | null => {
+    const d = new Date()
+    const key = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
+    const owned = list.filter((b) => b.status !== 'sold')
+    const withCover = owned.filter((b) => b.coverUrl)
+    const pool = (withCover.length >= 10 ? withCover : owned).slice().sort((a, b) => a.id.localeCompare(b.id))
+    if (pool.length === 0) return null
+    let h = 7
+    for (const c of key) h = (h * 31 + c.charCodeAt(0)) >>> 0
+    return pool[h % pool.length]
+  }
   useEffect(() => {
     if (dailyChecked.current) return
     if ((role !== 'member' && role !== 'viewer') || books.length === 0) return
@@ -132,13 +143,7 @@ export default function App() {
       if (localStorage.getItem('hondoko-daily-shown') === key) return
       localStorage.setItem('hondoko-daily-shown', key)
     } catch { return }
-    const owned = books.filter((b) => b.status !== 'sold')
-    const withCover = owned.filter((b) => b.coverUrl)
-    const pool = (withCover.length >= 10 ? withCover : owned).slice().sort((a, b) => a.id.localeCompare(b.id))
-    if (pool.length === 0) return
-    let h = 7
-    for (const c of key) h = (h * 31 + c.charCodeAt(0)) >>> 0
-    setDailyBook(pool[h % pool.length])
+    setDailyBook(computeDailyBook(books))
   }, [role, books])
 
   const selectedBook = useMemo(
@@ -234,6 +239,15 @@ export default function App() {
             <span className="text-[10px] bg-amber-700 text-amber-100 rounded-full px-2 py-0.5">閲覧モード</span>
           )}
           <div className="ml-auto flex items-center gap-3">
+            {(role === 'member' || role === 'viewer') && books.length > 0 && (
+              <button
+                className="p-1.5 rounded hover:bg-amber-800"
+                onClick={() => setDailyBook(computeDailyBook(books))}
+                title="本日の1冊を表示"
+              >
+                <Sparkles size={17} />
+              </button>
+            )}
             {user ? (
               <>
                 <span className="text-xs text-amber-200/80 hidden sm:block">{user.email}</span>

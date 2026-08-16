@@ -1,6 +1,13 @@
-export const APP_VERSION = 'v1.21.0'
+export const APP_VERSION = 'v1.21.1'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: 'v1.21.1',
+    date: '2026-08-17',
+    changes: [
+      'ヘッダーに✨ボタンを追加 — いつでも「本日の1冊」を再表示できます',
+    ],
+  },
   {
     version: 'v1.21.0',
     date: '2026-08-17',
