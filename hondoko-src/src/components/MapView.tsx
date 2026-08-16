@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { addDoc, collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore'
 import { ref as storageRef, uploadString } from 'firebase/storage'
-import { Archive, BookOpen, BookPlus, Camera, ChevronLeft, ImagePlus, Inbox, Trash2, Wand2 } from 'lucide-react'
+import { Archive, BookOpen, BookPlus, Camera, ChevronLeft, ChevronRight, ImagePlus, Inbox, Trash2, Wand2 } from 'lucide-react'
 import { db, storage } from '../firebase'
 import type { Book, Shelf, ShelfGroup, ShelfMap, ShelfPhoto } from '../types'
 import { resizeImageToBase64 } from '../lib/api'
@@ -110,6 +110,10 @@ export function MapView({
     if (photoInput.current) photoInput.current.multiple = false
     photoInput.current?.click()
   }
+
+  // マップカルーセル(複数マップを左右スワイプで切替)
+  const [mapIdx, setMapIdx] = useState(0)
+  const swipeStart = useRef<{ x: number; y: number } | null>(null)
 
   // 未配置ボックス(棚未定の本の置き場)
   const [showBox, setShowBox] = useState(false)
@@ -604,23 +608,82 @@ export function MapView({
         <span className="text-sm font-bold text-amber-700 shrink-0">{boxBooks.length}冊</span>
       </button>
 
-      {/* 写真マップ(複数登録可) */}
-      {maps
-        .slice()
-        .sort((a, b) => a.order - b.order)
-        .map((m) => (
-          <MapPhotoView
-            key={m.id}
-            map={m}
-            shelves={shelves}
-            books={books}
-            onSelectRow={(shelfId, row) => setSelected({ shelfId, row })}
-            onQuickPhoto={openPicker}
-            processingLocations={processingLocations}
-            latestPhotos={latestPhotoByLocation}
-            readOnly={readOnly}
-          />
-        ))}
+      {/* 写真マップ(複数登録可・左右スワイプで切替) */}
+      {(() => {
+        const sortedMaps = maps.slice().sort((a, b) => a.order - b.order)
+        if (sortedMaps.length === 0) return null
+        const idx = Math.min(mapIdx, sortedMaps.length - 1)
+        const step = (d: number) =>
+          setMapIdx((idx + d + sortedMaps.length) % sortedMaps.length)
+        const m = sortedMaps[idx]
+        return (
+          <div className="space-y-2">
+            {sortedMaps.length > 1 && (
+              <div className="flex items-center gap-1.5">
+                <button
+                  className="p-1.5 rounded-lg text-stone-400 hover:bg-stone-100 hover:text-stone-600 shrink-0"
+                  onClick={() => step(-1)}
+                  title="前のマップ"
+                >
+                  <ChevronLeft size={18} />
+                </button>
+                <div className="flex items-center gap-1.5 overflow-x-auto flex-1">
+                  {sortedMaps.map((mm, i) => (
+                    <button
+                      key={mm.id}
+                      onClick={() => setMapIdx(i)}
+                      className={`text-xs px-2.5 py-1 rounded-full border whitespace-nowrap ${
+                        i === idx
+                          ? 'bg-amber-700 text-white border-amber-700'
+                          : 'bg-white text-stone-500 border-stone-300 hover:bg-stone-50'
+                      }`}
+                    >
+                      {mm.name}
+                    </button>
+                  ))}
+                </div>
+                <span className="text-[11px] text-stone-400 tabular-nums shrink-0">{idx + 1}/{sortedMaps.length}</span>
+                <button
+                  className="p-1.5 rounded-lg text-stone-400 hover:bg-stone-100 hover:text-stone-600 shrink-0"
+                  onClick={() => step(1)}
+                  title="次のマップ"
+                >
+                  <ChevronRight size={18} />
+                </button>
+              </div>
+            )}
+            <div
+              onPointerDown={(e) => {
+                if (sortedMaps.length > 1) swipeStart.current = { x: e.clientX, y: e.clientY }
+              }}
+              onPointerUp={(e) => {
+                const s = swipeStart.current
+                swipeStart.current = null
+                if (!s || sortedMaps.length <= 1) return
+                const dx = e.clientX - s.x
+                const dy = e.clientY - s.y
+                // 横方向のはっきりしたスワイプのみ(縦スクロールやタップは無視)
+                if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 2) step(dx < 0 ? 1 : -1)
+              }}
+            >
+              <MapPhotoView
+                key={m.id}
+                map={m}
+                shelves={shelves}
+                books={books}
+                onSelectRow={(shelfId, row) => setSelected({ shelfId, row })}
+                onQuickPhoto={openPicker}
+                processingLocations={processingLocations}
+                latestPhotos={latestPhotoByLocation}
+                readOnly={readOnly}
+              />
+            </div>
+            {sortedMaps.length > 1 && (
+              <p className="text-[10px] text-stone-300 text-center">写真を左右にスワイプでマップを切替</p>
+            )}
+          </div>
+        )
+      })()}
 
       {!readOnly && (
         <div>

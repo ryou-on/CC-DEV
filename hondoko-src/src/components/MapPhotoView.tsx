@@ -140,6 +140,7 @@ export function MapPhotoView({
   const onPointerDown = (e: React.PointerEvent) => {
     if (!editMode) return
     e.preventDefault()
+    e.stopPropagation() // 親のスワイプ(マップ切替)に領域ドラッグを拾わせない
     ;(e.target as Element).setPointerCapture?.(e.pointerId)
     dragStart.current = toNorm(e)
     setDraft(null)

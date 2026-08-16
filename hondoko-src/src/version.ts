@@ -1,6 +1,14 @@
-export const APP_VERSION = 'v1.19.3'
+export const APP_VERSION = 'v1.20.0'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: 'v1.20.0',
+    date: '2026-08-17',
+    changes: [
+      'マップ写真をカルーセル表示に変更 — 複数のマップを左右スワイプ(または名前タブ・矢印)で切替',
+      '領域編集中のドラッグはスワイプと干渉しません',
+    ],
+  },
   {
     version: 'v1.19.3',
     date: '2026-08-16',
