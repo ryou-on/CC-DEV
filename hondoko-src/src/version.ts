@@ -1,6 +1,14 @@
-export const APP_VERSION = 'v1.19.0'
+export const APP_VERSION = 'v1.19.1'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: 'v1.19.1',
+    date: '2026-08-16',
+    changes: [
+      'マップ写真を複数枚まとめて追加できるように(ファイル選択で複数選択可、自動命名)',
+      'マップ名の変更(領域編集モードの✏️ボタン)',
+    ],
+  },
   {
     version: 'v1.19.0',
     date: '2026-08-16',

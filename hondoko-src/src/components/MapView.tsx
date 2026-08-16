@@ -267,21 +267,28 @@ export function MapView({
     setSeeding(false)
   }
 
-  const addMap = async (file: File) => {
-    const name = prompt('マップの名前(例: メインの壁)', 'メインの壁')
-    if (!name) return
+  const addMaps = async (files: File[]) => {
+    if (files.length === 0) return
+    // 1枚なら名前を聞く。複数枚は自動命名(あとからマップの✏️で変更可)
+    let singleName: string | null = null
+    if (files.length === 1) {
+      singleName = prompt('マップの名前(例: メインの壁)', maps.length === 0 ? 'メインの壁' : `マップ${maps.length + 1}`)
+      if (!singleName) return
+    }
     setUploadingMap(true)
     try {
-      const base64 = await resizeImageToBase64(file, 2000, true)
-      const path = `hondoko/maps/${Date.now()}.jpg`
-      await uploadString(storageRef(storage, path), base64, 'base64', { contentType: 'image/jpeg' })
-      await addDoc(collection(db, 'hondoko-maps'), {
-        name,
-        storagePath: path,
-        regions: [],
-        order: maps.length,
-        createdAt: serverTimestamp(),
-      })
+      for (let i = 0; i < files.length; i++) {
+        const base64 = await resizeImageToBase64(files[i], 2000, true)
+        const path = `hondoko/maps/${Date.now()}_${i}.jpg`
+        await uploadString(storageRef(storage, path), base64, 'base64', { contentType: 'image/jpeg' })
+        await addDoc(collection(db, 'hondoko-maps'), {
+          name: singleName ?? `マップ${maps.length + i + 1}`,
+          storagePath: path,
+          regions: [],
+          order: maps.length + i,
+          createdAt: serverTimestamp(),
+        })
+      }
     } catch (e) {
       alert('アップロードに失敗しました: ' + (e instanceof Error ? e.message : e))
     }
@@ -595,7 +602,7 @@ export function MapView({
         <span className="text-sm font-bold text-amber-700 shrink-0">{boxBooks.length}冊</span>
       </button>
 
-      {/* 写真マップ */}
+      {/* 写真マップ(複数登録可) */}
       {maps
         .slice()
         .sort((a, b) => a.order - b.order)
@@ -619,8 +626,12 @@ export function MapView({
             ref={mapInput}
             type="file"
             accept="image/*"
+            multiple
             className="hidden"
-            onChange={(e) => e.target.files?.[0] && addMap(e.target.files[0])}
+            onChange={(e) => {
+              addMaps(Array.from(e.target.files ?? []))
+              e.target.value = ''
+            }}
           />
           <button
             className={btnSecondary + ' w-full inline-flex items-center justify-center gap-2'}
@@ -628,10 +639,10 @@ export function MapView({
             disabled={uploadingMap}
           >
             <ImagePlus size={16} />
-            {uploadingMap ? 'アップロード中…' : '本棚の写真からマップを追加'}
+            {uploadingMap ? 'アップロード中…' : `本棚の写真からマップを追加(複数選択可)${maps.length > 0 ? ` — 現在${maps.length}枚` : ''}`}
           </button>
           <p className="text-xs text-stone-400 mt-1 text-center">
-            壁全体の写真を追加 → 「領域編集」で段の範囲を囲んで棚-段を割り当てられます
+            壁ごと・部屋ごとに何枚でも登録できます。「領域編集」で段の範囲を囲んで棚-段を割り当て(✏️で名前変更)
           </p>
         </div>
       )}

@@ -197,6 +197,12 @@ export function MapPhotoView({
     await deleteDoc(doc(db, 'hondoko-maps', map.id))
   }
 
+  const renameMap = async () => {
+    const name = prompt('マップの名前', map.name)
+    if (!name || name === map.name) return
+    await updateDoc(doc(db, 'hondoko-maps', map.id), { name })
+  }
+
   if (loadError) return null
 
   return (
@@ -212,6 +218,9 @@ export function MapPhotoView({
                 disabled={detecting}
               >
                 <Wand2 size={12} /> {detecting ? 'AI検出中…(30秒前後)' : 'AIで段を検出'}
+              </button>
+              <button className="p-1.5 text-stone-400 hover:text-amber-700" onClick={renameMap} title="マップ名を変更">
+                <Pencil size={15} />
               </button>
               <button className="p-1.5 text-stone-400 hover:text-red-600" onClick={removeMap} title="マップを削除">
                 <Trash2 size={15} />
