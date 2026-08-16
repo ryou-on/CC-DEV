@@ -167,13 +167,14 @@
   <div class="sep"></div>
   <button id="btnBookmark" title="このページにしおりを挟む/外す（m）">🔖</button>
   <button id="btnBmPanel" title="しおり一覧">📑</button>
+  <button id="btnScrap" title="表示中のページをスクラップに保存 — Kindleライブラリで一覧できます（c）">✂</button>
   <div class="spacer"></div>
   <button id="btnZoomOut" title="縮小">−</button>
   <button id="btnZoomReset" title="ズームリセット">100%</button>
   <button id="btnZoomIn" title="拡大">＋</button>
   <button id="btnFullscreen" title="フルスクリーン">⛶</button>
   <button id="btnDebug" title="デバッグログをコピー">🐛</button>
-  <span id="version">v0.4.0</span>
+  <span id="version">v0.5.0</span>
 </div>
 
 <div id="stage">
@@ -639,6 +640,7 @@ document.addEventListener('keydown', function (e) {
     case 'o': $('btnOffset').click(); break;
     case 'a': $('btnAuto').click(); break;
     case 'm': toggleBookmark(); break;
+    case 'c': scrapCurrent(); break;
   }
 });
 
@@ -716,6 +718,50 @@ $('autoSecInput').value = state.autoSec;
   const url = params.get('url');
   if (url) loadPdf(url, url.split('/').pop());
 })();
+
+// ================= スクラップ（v0.5.0） =================
+// 表示中のページを画像としてKindleライブラリ共有のIndexedDBへ保存する。
+// スキーマはライブラリ側（/kindle-library/）と同一に保つこと
+function openLibDB() {
+  return new Promise(function (res, rej) {
+    const rq = indexedDB.open('kindle-library', 2);
+    rq.onupgradeneeded = function () {
+      const db = rq.result;
+      if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
+      if (!db.objectStoreNames.contains('thumbs')) db.createObjectStore('thumbs');
+      if (!db.objectStoreNames.contains('books')) db.createObjectStore('books', { keyPath: 'key' });
+      if (!db.objectStoreNames.contains('scraps')) db.createObjectStore('scraps', { keyPath: 'id', autoIncrement: true });
+    };
+    rq.onsuccess = function () { res(rq.result); };
+    rq.onerror = function () { rej(rq.error); };
+  });
+}
+
+async function scrapCurrent() {
+  if (!state.pdfDoc) { showToast('先にPDFを開いてください'); return; }
+  const pages = spreadOf(state.currentPage);
+  try {
+    const db = await openLibDB();
+    for (const p of pages) {
+      const page = await state.pdfDoc.getPage(p);
+      const vp1 = page.getViewport({ scale: 1 });
+      const vp = page.getViewport({ scale: Math.min(2, 1400 / vp1.height) });
+      const cv = document.createElement('canvas');
+      cv.width = Math.floor(vp.width); cv.height = Math.floor(vp.height);
+      await page.render({ canvasContext: cv.getContext('2d'), viewport: vp, intent: 'print' }).promise;
+      const rec = { docName: state.docName, page: p, dataUrl: cv.toDataURL('image/jpeg', 0.85), createdAt: Date.now() };
+      await new Promise(function (res, rej) {
+        const rq = db.transaction('scraps', 'readwrite').objectStore('scraps').add(rec);
+        rq.onsuccess = res; rq.onerror = function () { rej(rq.error); };
+      });
+    }
+    showToast('✂ P.' + pages.join('-') + ' をスクラップしました（Kindleライブラリで見られます）');
+  } catch (err) {
+    console.error('scrap error:', err.message || err);
+    showToast('スクラップに失敗しました: ' + (err.message || err));
+  }
+}
+$('btnScrap').onclick = scrapCurrent;
 
 // Kindleライブラリ連携（v0.4.0）: 同一オリジンのopenerからFileをpostMessageで
 // 受け取って開く。openerには起動完了を通知する（ライブラリ側はこれを待って送信）
