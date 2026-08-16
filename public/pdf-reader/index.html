@@ -174,7 +174,7 @@
   <button id="btnZoomIn" title="拡大">＋</button>
   <button id="btnFullscreen" title="フルスクリーン">⛶</button>
   <button id="btnDebug" title="デバッグログをコピー">🐛</button>
-  <span id="version">v0.5.0</span>
+  <span id="version">v0.5.1</span>
 </div>
 
 <div id="stage">
@@ -641,6 +641,10 @@ document.addEventListener('keydown', function (e) {
     case 'a': $('btnAuto').click(); break;
     case 'm': toggleBookmark(); break;
     case 'c': scrapCurrent(); break;
+    case 'Escape':
+      // iframe埋め込み時はホスト（Kindleライブラリ）にクローズを依頼
+      if (window.parent !== window) window.parent.postMessage({ type: 'pdfreader-close' }, location.origin);
+      break;
   }
 });
 
@@ -769,9 +773,11 @@ window.addEventListener('message', function (e) {
   if (e.origin !== location.origin) return;
   if (e.data && e.data.type === 'open-file' && e.data.file) loadFile(e.data.file);
 });
-if (window.opener) {
-  try { window.opener.postMessage({ type: 'pdfreader-ready' }, location.origin); } catch (e) {}
-}
+// v0.5.1: 別タブ（opener）だけでなく、iframe埋め込み（parent）にも準備完了を通知する
+(function () {
+  var host = window.opener || (window.parent !== window ? window.parent : null);
+  if (host) { try { host.postMessage({ type: 'pdfreader-ready' }, location.origin); } catch (e) {} }
+})();
 
 // Service Worker登録（PWAオフライン対応）
 if ('serviceWorker' in navigator && location.protocol === 'https:') {

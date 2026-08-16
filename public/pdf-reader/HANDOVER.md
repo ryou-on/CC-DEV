@@ -1,7 +1,7 @@
 # HANDOVER.md - PDF Reader（右開き対応軽量PDFリーダー）
 
 ## 基本情報
-- バージョン: v0.5.0
+- バージョン: v0.5.1
 - フェーズ: Phase 1（MVP）
 - 最終更新: 2026-08-17
 
@@ -28,8 +28,9 @@ public/pdf-reader/
 - **±1P（見開き組み合わせ調整）**: 表紙単独（1 / 2-3 / 4-5…）⇄ 1P目からペア（1-2 / 3-4…）をワンタップで切替
 - 単ページ / 見開き切替、ズーム（25%〜500%）、フルスクリーン
 - 開き方: ファイル選択・ドラッグ＆ドロップ・`?url=` パラメータ（同一オリジン）
-- **Kindleライブラリ連携（v0.4.0）**: 同一オリジンのopener（/kindle-library/）から
-  postMessageでFileを受け取って開く（起動時に `pdfreader-ready` をopenerへ通知）
+- **Kindleライブラリ連携（v0.4.0/v0.5.1）**: 同一オリジンのopenerまたは親フレーム
+  （iframe埋め込み）からpostMessageでFileを受け取って開く（起動時に `pdfreader-ready`
+  を通知、埋め込み時のEscは `pdfreader-close` をホストへ送る）
 - **スクラップ（v0.5.0）**: ✂ボタン（ショートカット c）で表示中の見開きを画像化し、
   Kindleライブラリ共有のIndexedDB（DB 'kindle-library' / store 'scraps'）へ保存。
   スキーマ定義は両アプリで同一に保つこと

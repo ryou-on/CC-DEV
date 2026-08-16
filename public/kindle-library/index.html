@@ -110,6 +110,13 @@
 
   #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: rgba(41,37,36,0.92); color: #fff; font-size: 13px; padding: 10px 20px; border-radius: 9999px; opacity: 0; transition: opacity 0.25s; pointer-events: none; z-index: 6000; max-width: 90vw; }
   #toast.show { opacity: 1; }
+
+  /* 内蔵リーダー（pdf-readerをiframeで全画面表示） */
+  #readerOverlay { display: none; position: fixed; inset: 0; z-index: 4000; background: #1c1917; }
+  #readerOverlay.open { display: block; }
+  #readerFrame { width: 100%; height: 100%; border: 0; }
+  #readerClose { position: absolute; right: 16px; bottom: 16px; z-index: 4001; padding: 10px 18px; border-radius: 9999px; border: none; background: var(--accent); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 16px rgba(0,0,0,0.4); }
+  #readerClose:hover { background: #92400e; }
 </style>
 </head>
 <body>
@@ -117,7 +124,7 @@
   <div class="hrow">
     <h1>
       <span class="app-name" onclick="openHowTo()" title="使い方を見る">📚 Kindleライブラリ</span>
-      <span class="ver" onclick="openReleaseNotes()" title="リリースノート">v0.3.0</span>
+      <span class="ver" onclick="openReleaseNotes()" title="リリースノート">v0.4.0</span>
       <span class="subtitle">kindle-capturerでスキャンした本のプレビュー</span>
     </h1>
     <div class="spacer"></div>
@@ -183,13 +190,24 @@
   </div>
 </div>
 
+<!-- 内蔵リーダー（pdf-readerを同一の仕組み=postMessage連携のままiframeで内蔵） -->
+<div id="readerOverlay">
+  <iframe id="readerFrame" title="PDF Reader" allow="fullscreen" allowfullscreen></iframe>
+  <button id="readerClose">✕ ライブラリへ戻る</button>
+</div>
+
 <div id="toast"></div>
 
 <script>
 'use strict';
-var APP_VERSION = 'v0.3.0';
+var APP_VERSION = 'v0.4.0';
 
 var RELEASE_NOTES = [
+  { ver: 'v0.4.0', date: '2026-08-17', changes: [
+    'PDF Readerをライブラリに内蔵 — 表紙クリックでその場で全画面リーダーが開くように（タブ移動なし）',
+    '「✕ ライブラリへ戻る」ボタンまたはEscキーでライブラリに戻れます',
+    '機能は従来どおりPDF Readerそのまま（右開き見開き・±1P・ズーム・しおり・自動めくり・✂スクラップ・位置記憶）'
+  ]},
   { ver: 'v0.3.0', date: '2026-08-17', changes: [
     '蔵書をデータとして記録 — 起動のたびにフォルダを開かなくても一覧・評価・スクラップを見られるように（フォルダ接続は本を開く/再スキャン時のみ）',
     '本・マンガ・雑誌の分類とフィルタ（表紙の✎ボタンで変更）',
@@ -213,7 +231,7 @@ var HOW_TO_USE = [
   { heading: '① フォルダを選択（初回のみ）', text: 'kindle-capturerで保存したPDFが入ったフォルダ（例: ダウンロード/kindle本PDF）を選ぶと蔵書として記録されます。2回目からは記録済みの蔵書がすぐ表示されます。本を開く・再スキャンするときだけ「再接続」で許可を取り直します（ブラウザの仕様）。' },
   { heading: '② 分類とグルーピング', text: '追加時にファイル名から 本/マンガ/雑誌・シリーズ名・巻数を自動判定します。間違っていたら表紙の✎ボタンで修正してください。同じシリーズ（雑誌の各号、マンガの1巻2巻3巻…）は1枚のグループカードにまとまり、クリックで中身を一覧できます。' },
   { heading: '③ 評価とお気に入り', text: '各カードの★で5段階評価（同じ★をもう一度押すと解除）、表紙右上の♥でお気に入り登録。「♥ お気に入り」チップで絞り込めます。' },
-  { heading: '④ プレビューとしおり', text: '表紙クリックでPDF Readerが新しいタブで開きます。右開き見開き・±1P・ズーム・自動めくりに対応し、読んだ位置は自動記憶。しおりは🔖ボタン（一覧は📑、しおりページのPDF書き出しも可能）。' },
+  { heading: '④ プレビューとしおり', text: '表紙クリックでPDF Readerがその場で全画面表示されます（右下の「✕ ライブラリへ戻る」またはEscで戻る）。右開き見開き・±1P・ズーム・自動めくりに対応し、読んだ位置は自動記憶。しおりは🔖ボタン（一覧は📑、しおりページのPDF書き出しも可能）。' },
   { heading: '⑤ スクラップ', text: 'PDF Readerで気に入ったページを✂ボタン（ショートカット c）で保存すると、ライブラリの「✂ スクラップ」に貯まります。クリックで拡大、画像として保存も可能です。' },
   { heading: '⚠️ 利用上の注意', text: 'スキャンしたPDF・スクラップ画像の取り扱いは私的使用（個人利用）の範囲にとどめてください。データはすべてこのブラウザ内に保存され、サーバーには送信されません。' }
 ];
@@ -262,7 +280,11 @@ function openReleaseNotes() {
 function closeModal() { document.getElementById('info-modal').classList.remove('open'); }
 function closeModalOnOverlay(e) { if (e.target === document.getElementById('info-modal')) closeModal(); }
 document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') { closeModal(); document.getElementById('lightbox').classList.remove('open'); }
+  if (e.key === 'Escape') {
+    closeModal();
+    document.getElementById('lightbox').classList.remove('open');
+    if (document.getElementById('readerOverlay').classList.contains('open')) closeReader();
+  }
 });
 
 // 新バージョン初回起動時にリリースノートを自動表示
@@ -824,8 +846,10 @@ function openLightbox(s) {
   document.getElementById('lightbox').classList.add('open');
 }
 
-// ===== PDF Reader 連携 =====
-var pendingOpen = null; // { win, book }
+// ===== PDF Reader 連携（v0.4.0: iframeで内蔵） =====
+// pdf-reader を全画面iframeで開き、準備完了通知（pdfreader-ready）を受けてから
+// File を postMessage で渡す。仕組み（同一オリジンpostMessage）は別タブ版と同じ
+var pendingOpen = null; // 開こうとしている蔵書レコード
 
 function openInReader(b) {
   if (b.missing) { toast('ファイルが見つかりません（移動または削除された可能性）'); return; }
@@ -834,22 +858,34 @@ function openInReader(b) {
     toast('ファイルが見つかりません。再スキャンしてください');
     return;
   }
-  var win = window.open('../pdf-reader/?from=library', '_blank');
-  if (!win) { alert('ポップアップがブロックされました。このサイトのポップアップを許可してください。'); return; }
-  pendingOpen = { win: win, book: b };
+  pendingOpen = b;
+  $('readerOverlay').classList.add('open');
+  // 毎回読み直してリーダーの状態をリセット（前の本・パネルを持ち越さない）
+  $('readerFrame').src = '../pdf-reader/?from=library&embed=1';
 }
+
+function closeReader() {
+  $('readerOverlay').classList.remove('open');
+  $('readerFrame').src = 'about:blank'; // PDFデータのメモリを解放
+  pendingOpen = null;
+}
+$('readerClose').onclick = closeReader;
 
 window.addEventListener('message', function(e) {
   if (e.origin !== location.origin) return;
-  if (e.data && e.data.type === 'pdfreader-ready' && pendingOpen) {
-    var po = pendingOpen;
+  if (!e.data) return;
+  if (e.data.type === 'pdfreader-ready' && pendingOpen) {
+    var b = pendingOpen;
     pendingOpen = null;
-    fileMap.get(po.book.key).getFile().then(function(f) {
-      po.win.postMessage({ type: 'open-file', file: f }, location.origin);
+    fileMap.get(b.key).getFile().then(function(f) {
+      $('readerFrame').contentWindow.postMessage({ type: 'open-file', file: f }, location.origin);
     }).catch(function(err) {
       console.error('PDF Reader連携失敗:', err.message);
       toast('ファイルを読み込めませんでした: ' + err.message);
+      closeReader();
     });
+  } else if (e.data.type === 'pdfreader-close') {
+    closeReader(); // リーダー内でEscが押された
   }
 });
 
