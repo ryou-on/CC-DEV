@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebase/auth'
 import { collection, doc, onSnapshot, query, orderBy } from 'firebase/firestore'
-import { BookOpen, LibraryBig, Loader2, LogOut, PlusCircle, Search, Settings, X } from 'lucide-react'
+import { BookOpen, LibraryBig, Loader2, LogOut, PlusCircle, RefreshCw, Search, Settings, X } from 'lucide-react'
 import { auth, db, googleProvider, OWNER_EMAIL } from './firebase'
 import type { Book, BookComment, Shelf, SharingConfig, ShelfMap, ShelfPhoto } from './types'
 import { APP_VERSION, RELEASE_NOTES, USAGE_GUIDE } from './version'
@@ -391,6 +391,25 @@ export default function App() {
       {showNotes && (
         <Modal title="リリースノート" onClose={() => setShowNotes(false)}>
           <div className="space-y-4">
+            <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+              <p className="text-xs text-stone-600">
+                現在のバージョン: <b>{APP_VERSION}</b>
+                <span className="block text-[10px] text-stone-400 mt-0.5">
+                  ホーム画面に登録したアプリはここから更新できます
+                </span>
+              </p>
+              <button
+                className="shrink-0 inline-flex items-center gap-1.5 text-xs font-medium bg-amber-700 hover:bg-amber-800 text-white rounded-lg px-3 py-2"
+                onClick={() => {
+                  // キャッシュされたindex.htmlを確実に取り直す(?k=等の既存パラメータは維持)
+                  const url = new URL(window.location.href)
+                  url.searchParams.set('u', String(Date.now()))
+                  window.location.replace(url.toString())
+                }}
+              >
+                <RefreshCw size={13} /> 最新版に更新
+              </button>
+            </div>
             {RELEASE_NOTES.map((n) => (
               <div key={n.version}>
                 <h3 className="font-bold text-sm text-stone-800">{n.version} <span className="text-xs text-stone-400 font-normal">({n.date})</span></h3>

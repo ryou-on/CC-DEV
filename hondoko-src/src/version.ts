@@ -1,6 +1,13 @@
-export const APP_VERSION = 'v1.19.2'
+export const APP_VERSION = 'v1.19.3'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: 'v1.19.3',
+    date: '2026-08-16',
+    changes: [
+      'リリースノートに「最新版に更新」ボタンを追加(ホーム画面に登録したWebアプリでもバージョンアップできるように)',
+    ],
+  },
   {
     version: 'v1.19.2',
     date: '2026-08-16',
