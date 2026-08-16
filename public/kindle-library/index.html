@@ -111,12 +111,38 @@
   #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: rgba(41,37,36,0.92); color: #fff; font-size: 13px; padding: 10px 20px; border-radius: 9999px; opacity: 0; transition: opacity 0.25s; pointer-events: none; z-index: 6000; max-width: 90vw; }
   #toast.show { opacity: 1; }
 
-  /* 内蔵リーダー（pdf-readerをiframeで全画面表示） */
-  #readerOverlay { display: none; position: fixed; inset: 0; z-index: 4000; background: #1c1917; }
-  #readerOverlay.open { display: block; }
-  #readerFrame { width: 100%; height: 100%; border: 0; }
-  #readerClose { position: absolute; right: 16px; bottom: 16px; z-index: 4001; padding: 10px 18px; border-radius: 9999px; border: none; background: var(--accent); color: #fff; font-size: 13px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 16px rgba(0,0,0,0.4); }
-  #readerClose:hover { background: #92400e; }
+  /* 内蔵ブックリーダー（pdf-reader v0.5.1のコードを統合・ダークテーマ） */
+  #reader { display: none; position: fixed; inset: 0; z-index: 4000; background: #1a1d2e; color: #e8eaf6; flex-direction: column; }
+  #reader.open { display: flex; }
+  #rdToolbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 6px 10px; background: #252945; border-bottom: 1px solid #333a5c; z-index: 10; }
+  #rdToolbar button { background: #333a5c; color: #e8eaf6; border: none; border-radius: 6px; padding: 6px 10px; font-size: 13px; cursor: pointer; white-space: nowrap; min-height: 32px; }
+  #rdToolbar button:hover { background: #3f4870; }
+  #rdToolbar button.active { background: #536dfe; }
+  #rdToolbar button:disabled { opacity: .4; cursor: default; }
+  #reader .sep { width: 1px; height: 22px; background: #3f4870; margin: 0 2px; }
+  #pageInfo { display: flex; align-items: center; gap: 4px; font-size: 13px; color: #9fa8da; }
+  #pageInput, #autoSecInput { width: 3.2em; text-align: center; background: #1a1d2e; color: #e8eaf6; border: 1px solid #3f4870; border-radius: 6px; padding: 5px 2px; font-size: 13px; }
+  #autoSecWrap { display: flex; align-items: center; gap: 3px; font-size: 13px; color: #9fa8da; }
+  #rdTitle { font-size: 12px; color: #9fa8da; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 28vw; }
+  #bmPanel { position: fixed; top: 52px; right: 10px; z-index: 4010; width: 240px; max-height: 60vh; display: none; flex-direction: column; background: #252945; border: 1px solid #3f4870; border-radius: 10px; box-shadow: 0 8px 32px rgba(0,0,0,.5); overflow: hidden; }
+  #bmPanel.open { display: flex; }
+  #bmHeader { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px; font-size: 14px; font-weight: 600; border-bottom: 1px solid #3f4870; }
+  #bmHeader button { background: none; border: none; color: #9fa8da; font-size: 14px; cursor: pointer; }
+  #bmList { overflow-y: auto; flex: 1; }
+  #bmList .bmEmpty { padding: 16px 12px; font-size: 12px; color: #9fa8da; line-height: 1.6; }
+  .bmItem { display: flex; align-items: center; justify-content: space-between; padding: 9px 12px; font-size: 13px; cursor: pointer; border-bottom: 1px solid #2c3252; }
+  .bmItem:hover { background: #2c3252; }
+  .bmItem .bmDel { background: none; border: none; color: #9fa8da; cursor: pointer; font-size: 13px; padding: 2px 6px; }
+  .bmItem .bmDel:hover { color: #ff8a80; }
+  #btnBmDownload { margin: 10px; padding: 10px; border: none; border-radius: 8px; background: #536dfe; color: #fff; font-size: 13px; cursor: pointer; }
+  #btnBmDownload:disabled { opacity: .4; cursor: default; }
+  #rdStage { flex: 1; overflow: auto; position: relative; display: flex; align-items: safe center; justify-content: safe center; }
+  #spreadBox { display: flex; gap: 0; padding: 12px; margin: auto; }
+  #spreadBox.rtl { flex-direction: row-reverse; }
+  #spreadBox canvas { display: block; background: #fff; box-shadow: 0 4px 24px rgba(0,0,0,.5); }
+  #rdLoading { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; z-index: 5; color: #9fa8da; font-size: 14px; gap: 10px; background: rgba(26,29,46,.6); }
+  .spinner { width: 22px; height: 22px; border-radius: 50%; border: 3px solid #3f4870; border-top-color: #536dfe; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
@@ -124,12 +150,13 @@
   <div class="hrow">
     <h1>
       <span class="app-name" onclick="openHowTo()" title="使い方を見る">📚 Kindleライブラリ</span>
-      <span class="ver" onclick="openReleaseNotes()" title="リリースノート">v0.4.0</span>
+      <span class="ver" onclick="openReleaseNotes()" title="リリースノート">v0.5.0</span>
       <span class="subtitle">kindle-capturerでスキャンした本のプレビュー</span>
     </h1>
     <div class="spacer"></div>
     <span id="connPill" class="conn" style="display:none;"></span>
     <button id="rescanBtn" class="btn" style="display:none;">再スキャン</button>
+    <button id="thumbBtn" class="btn" style="display:none;" title="表紙が未取得の本のサムネイルを再生成">表紙再取得</button>
     <button id="folderBtn" class="btn" style="display:none;">フォルダ変更</button>
     <button class="btn ghost" onclick="copyLogs(this)" title="デバッグログをコピー">🐛</button>
   </div>
@@ -151,6 +178,7 @@
     <label style="font-size:12px; color:var(--sub); display:flex; align-items:center; gap:5px; cursor:pointer;">
       <input type="checkbox" id="groupToggle" checked style="accent-color:var(--accent);">グループ表示
     </label>
+    <button id="bulkGroupBtn" class="btn" title="検索・フィルタで表示中の本を、まとめて同じシリーズに設定">表示中をグループ化</button>
   </div>
 </header>
 
@@ -190,19 +218,56 @@
   </div>
 </div>
 
-<!-- 内蔵リーダー（pdf-readerを同一の仕組み=postMessage連携のままiframeで内蔵） -->
-<div id="readerOverlay">
-  <iframe id="readerFrame" title="PDF Reader" allow="fullscreen" allowfullscreen></iframe>
-  <button id="readerClose">✕ ライブラリへ戻る</button>
+<!-- 内蔵ブックリーダー（pdf-readerの仕組みを統合。表紙クリックで直接読み込み・表示） -->
+<div id="reader">
+  <div id="rdToolbar">
+    <button id="rdBack" title="ライブラリへ戻る（Esc）">← ライブラリ</button>
+    <div class="sep"></div>
+    <button id="btnPrev" title="前へ">◀</button>
+    <span id="pageInfo"><input id="pageInput" inputmode="numeric"><span id="pageTotal">/ -</span></span>
+    <button id="btnNext" title="次へ">▶</button>
+    <div class="sep"></div>
+    <button id="btnSpread" title="見開き / 単ページ切り替え（s）">見開き</button>
+    <button id="btnBinding" title="綴じ方向の切り替え（b）">右開き</button>
+    <button id="btnOffset" title="見開きの組み合わせを1ページずらす（o）">±1P</button>
+    <div class="sep"></div>
+    <button id="btnAuto" title="自動めくり 開始/停止（a）">▶ 自動</button>
+    <span id="autoSecWrap"><input id="autoSecInput" inputmode="decimal" title="自動めくりの間隔（秒）">秒</span>
+    <div class="sep"></div>
+    <button id="btnBookmark" title="このページにしおりを挟む/外す（m）">🔖</button>
+    <button id="btnBmPanel" title="しおり一覧">📑</button>
+    <button id="btnScrap" title="表示中のページをスクラップに保存（c）">✂</button>
+    <div class="spacer"></div>
+    <span id="rdTitle"></span>
+    <button id="btnZoomOut" title="縮小">−</button>
+    <button id="btnZoomReset" title="ズームリセット">100%</button>
+    <button id="btnZoomIn" title="拡大">＋</button>
+    <button id="btnFullscreen" title="フルスクリーン">⛶</button>
+  </div>
+  <div id="rdStage">
+    <div id="spreadBox" class="rtl"></div>
+    <div id="rdLoading"><div class="spinner"></div><span>読み込み中...</span></div>
+  </div>
+  <div id="bmPanel">
+    <div id="bmHeader"><span>🔖 しおり</span><button id="bmClose" title="閉じる">✕</button></div>
+    <div id="bmList"></div>
+    <button id="btnBmDownload">⬇ しおりページをPDFで保存</button>
+  </div>
 </div>
 
 <div id="toast"></div>
 
 <script>
 'use strict';
-var APP_VERSION = 'v0.4.0';
+var APP_VERSION = 'v0.5.0';
 
 var RELEASE_NOTES = [
+  { ver: 'v0.5.0', date: '2026-08-17', changes: [
+    'ブックリーダーをライブラリに完全統合 — 表紙クリックで直接読み込み・表示（本が表示されない問題を修正）',
+    '手動グルーピング — 「表示中をグループ化」ボタンで検索結果をまとめて同じシリーズに設定、グループ画面から「シリーズ名を変更」、✎編集ではシリーズ名の入力候補を表示',
+    '表紙の再取得 — 失敗時に自動で最大3回再試行。「表紙再取得」ボタンと✎内「表紙を再生成」も追加',
+    '自動判定の強化 — 「2024年版」等の年版シリーズ、「出版社_タイトル」形式に対応'
+  ]},
   { ver: 'v0.4.0', date: '2026-08-17', changes: [
     'PDF Readerをライブラリに内蔵 — 表紙クリックでその場で全画面リーダーが開くように（タブ移動なし）',
     '「✕ ライブラリへ戻る」ボタンまたはEscキーでライブラリに戻れます',
@@ -229,7 +294,7 @@ var RELEASE_NOTES = [
 
 var HOW_TO_USE = [
   { heading: '① フォルダを選択（初回のみ）', text: 'kindle-capturerで保存したPDFが入ったフォルダ（例: ダウンロード/kindle本PDF）を選ぶと蔵書として記録されます。2回目からは記録済みの蔵書がすぐ表示されます。本を開く・再スキャンするときだけ「再接続」で許可を取り直します（ブラウザの仕様）。' },
-  { heading: '② 分類とグルーピング', text: '追加時にファイル名から 本/マンガ/雑誌・シリーズ名・巻数を自動判定します。間違っていたら表紙の✎ボタンで修正してください。同じシリーズ（雑誌の各号、マンガの1巻2巻3巻…）は1枚のグループカードにまとまり、クリックで中身を一覧できます。' },
+  { heading: '② 分類とグルーピング', text: '追加時にファイル名から 本/マンガ/雑誌・シリーズ名・巻数を自動判定します。同じシリーズは1枚のグループカードにまとまり、クリックで中身を一覧できます。自動判定が甘いときは手動で: 検索で対象を絞って「表示中をグループ化」でまとめて設定、グループ画面の「✎ シリーズ名を変更」で改名・解除、各カードの✎で個別修正（シリーズ名は入力候補が出ます）。' },
   { heading: '③ 評価とお気に入り', text: '各カードの★で5段階評価（同じ★をもう一度押すと解除）、表紙右上の♥でお気に入り登録。「♥ お気に入り」チップで絞り込めます。' },
   { heading: '④ プレビューとしおり', text: '表紙クリックでPDF Readerがその場で全画面表示されます（右下の「✕ ライブラリへ戻る」またはEscで戻る）。右開き見開き・±1P・ズーム・自動めくりに対応し、読んだ位置は自動記憶。しおりは🔖ボタン（一覧は📑、しおりページのPDF書き出しも可能）。' },
   { heading: '⑤ スクラップ', text: 'PDF Readerで気に入ったページを✂ボタン（ショートカット c）で保存すると、ライブラリの「✂ スクラップ」に貯まります。クリックで拡大、画像として保存も可能です。' },
@@ -360,19 +425,31 @@ function classify(rawTitle) {
   var author = '';
   var m = title.match(/^(.*\S)[ 　]*[-—－][ 　]*([^-—－]{1,30})$/);
   if (m) { title = m[1]; author = m[2]; }
+  // 「著者名_タイトル」形式（kindle-capturerの一部保存形式）
+  if (!author) {
+    var um = title.match(/^([^_]{2,25})_(.{2,})$/);
+    if (um) { author = um[1]; title = um[2]; }
+  }
+  // 末尾の（出版社名）を除去してから判定
+  var core = title.replace(/[ 　]*[（(][^（()）]{2,25}[)）][ 　]*$/, '');
+  // 年版シリーズ: 「日経業界地図 2024年版」→ シリーズ+巻(年)
+  var ym = core.match(/^(.*?)[ 　]*(\d{4})年版/);
+  if (ym && ym[1].trim()) {
+    return { type: 'book', series: ym[1].trim(), volume: parseInt(ym[2], 10), author: author };
+  }
 
   // 雑誌: 「2026年8月号」「Vol.12」「No.34」「週刊/月刊」など
   if (/\d{4}年[ 　]*\d{1,2}月([ 　]*\d{1,2}日)?号?|週刊|月刊|季刊|増刊/.test(rawTitle)) {
-    var series = title
+    var series = core
       .replace(/[ 　]*\d{4}年[ 　]*\d{1,2}月.*$/, '')
       .replace(/[ 　]*(vol|no|№)\.?[ 　]*\d+.*$/i, '')
       .replace(/[ 　]*\[?雑誌\]?[ 　]*$/, '')
       .trim();
-    return { type: 'magazine', series: series || title, volume: null, author: author };
+    return { type: 'magazine', series: series || core, volume: null, author: author };
   }
 
   // 巻数: 「第3巻」「3巻」「（3）」「(3)」「Vol.3」「 3」
-  var vm = title.match(/^(.*?)[ 　]*(?:第[ 　]*(\d{1,3})[ 　]*巻|(\d{1,3})[ 　]*巻|[（(](\d{1,3})[)）]|[Vv]ol\.?[ 　]*(\d{1,3})|[ 　](\d{1,3}))$/);
+  var vm = core.match(/^(.*?)[ 　]*(?:第[ 　]*(\d{1,3})[ 　]*巻|(\d{1,3})[ 　]*巻|[（(](\d{1,3})[)）]|[Vv]ol\.?[ 　]*(\d{1,3})|[ 　](\d{1,3}))$/);
   if (vm && vm[1].trim()) {
     var vol = parseInt(vm[2] || vm[3] || vm[4] || vm[5] || vm[6], 10);
     if (vol >= 1 && vol <= 999) {
@@ -484,8 +561,19 @@ async function scan() {
 
 // ===== サムネイル =====
 function queueThumbs() {
-  thumbQueue = books.filter(function(b) { return !b.thumb && !b.missing && fileMap.has(b.key); });
+  thumbQueue = books.filter(function(b) {
+    return !b.thumb && !b.missing && fileMap.has(b.key) && (b._thumbTries || 0) < 3;
+  });
   pumpThumbs();
+}
+// 表紙が取れていない本を接続確認のうえ再取得（リトライ回数もリセット）
+async function refreshThumbs() {
+  if (!connected) { await reconnect(); if (!connected) return; }
+  var targets = books.filter(function(b) { return !b.thumb && !b.missing; });
+  if (!targets.length) { toast('表紙が未取得の本はありません'); return; }
+  targets.forEach(function(b) { b._thumbTries = 0; });
+  toast(targets.length + '冊の表紙を再取得します…');
+  queueThumbs();
 }
 function pumpThumbs() {
   while (thumbBusy < 2 && thumbQueue.length) {
@@ -515,7 +603,14 @@ async function makeThumb(b) {
     doc.destroy();
     await idbPut('books', b);
     render();
-  } catch (e) { console.warn('サムネイル失敗:', b.key, e.message); }
+  } catch (e) {
+    // iCloud未ダウンロード等の一時失敗に備えて最大3回まで再試行キューに残す
+    b._thumbTries = (b._thumbTries || 0) + 1;
+    console.warn('サムネイル失敗(' + b._thumbTries + '回目):', b.key, e.message);
+    if (b._thumbTries < 3) {
+      setTimeout(function() { thumbQueue.push(b); pumpThumbs(); }, 1500 * b._thumbTries);
+    }
+  }
 }
 
 // ===== 表示 =====
@@ -599,7 +694,12 @@ function coverEl(b) {
   var cover = document.createElement('div');
   cover.className = 'cover';
   if (b.thumb) { var im = document.createElement('img'); im.src = b.thumb; cover.appendChild(im); }
-  else cover.textContent = '📖';
+  else {
+    var ph = document.createElement('div');
+    ph.style.cssText = 'text-align:center;';
+    ph.innerHTML = '📖<div style="font-size:9px; margin-top:4px;">表紙未取得<br>（✎から再生成）</div>';
+    cover.appendChild(ph);
+  }
   var badge = document.createElement('span');
   badge.className = 'badge';
   badge.textContent = TYPE_LABEL[b.type] || b.type;
@@ -685,6 +785,24 @@ function openGroup(series, type) {
   document.getElementById('modal-title').textContent = (TYPE_LABEL[type] || '') + ' ' + series;
   var body = document.getElementById('modal-body');
   body.innerHTML = '';
+  var renameBtn = document.createElement('button');
+  renameBtn.className = 'btn';
+  renameBtn.textContent = '✎ シリーズ名を変更';
+  renameBtn.style.marginBottom = '12px';
+  renameBtn.onclick = async function() {
+    var nv = prompt('新しいシリーズ名（空にするとグループ解除）', series);
+    if (nv === null) return;
+    nv = nv.trim();
+    var members = books.filter(function(b) { return b.series === series && b.type === type; });
+    for (var i = 0; i < members.length; i++) {
+      members[i].series = nv;
+      await idbPut('books', members[i]);
+    }
+    closeModal();
+    render();
+    toast(nv ? 'シリーズ名を「' + nv + '」に変更しました' : 'グループを解除しました');
+  };
+  body.appendChild(renameBtn);
   var grid = document.createElement('div');
   grid.className = 'grid';
   grid.style.gridTemplateColumns = 'repeat(auto-fill, minmax(130px, 1fr))';
@@ -730,6 +848,16 @@ function openEdit(b) {
   seriesIn.type = 'text';
   seriesIn.value = b.series || '';
   seriesIn.placeholder = '同じシリーズ名でグループ化されます';
+  seriesIn.setAttribute('list', 'seriesList');
+  var dl = document.getElementById('seriesList') || document.createElement('datalist');
+  dl.id = 'seriesList';
+  dl.innerHTML = '';
+  Array.from(new Set(books.map(function(x) { return x.series; }).filter(Boolean))).sort().forEach(function(sv) {
+    var op = document.createElement('option');
+    op.value = sv;
+    dl.appendChild(op);
+  });
+  document.body.appendChild(dl);
   body.appendChild(row('シリーズ', seriesIn));
 
   var volIn = document.createElement('input');
@@ -768,6 +896,17 @@ function openEdit(b) {
 
   var actions = document.createElement('div');
   actions.className = 'form-actions';
+  if (!b.thumb && fileMap.has(b.key)) {
+    var thumbBtn2 = document.createElement('button');
+    thumbBtn2.className = 'btn';
+    thumbBtn2.textContent = '🖼 表紙を再生成';
+    thumbBtn2.onclick = function() {
+      b._thumbTries = 0;
+      makeThumb(b).then(function() { toast(b.thumb ? '表紙を再生成しました' : '表紙の生成に失敗しました（🐛でログ確認）'); });
+      closeModal();
+    };
+    actions.appendChild(thumbBtn2);
+  }
   var delBtn = document.createElement('button');
   delBtn.className = 'btn';
   delBtn.textContent = '蔵書から削除';
@@ -799,6 +938,78 @@ function openEdit(b) {
     toast('保存しました');
   };
   actions.append(delBtn, cancel, save);
+  body.appendChild(actions);
+  document.getElementById('info-modal').classList.add('open');
+}
+
+// ===== 表示中をまとめてグループ化（手動グルーピング） =====
+// 検索で対象を絞り込んでから押すと、表示中の全冊に同じシリーズ名・種類を設定する
+function commonPrefix(titles) {
+  if (!titles.length) return '';
+  var pre = titles[0];
+  for (var i = 1; i < titles.length; i++) {
+    while (pre && titles[i].indexOf(pre) !== 0) pre = pre.slice(0, -1);
+  }
+  return pre.replace(/[ 　_\-–—(（\d]+$/, '').trim();
+}
+function openBulkGroup() {
+  if (view === 'scrap') { toast('本の一覧（すべて/本/マンガ/雑誌）で使ってください'); return; }
+  var list = filteredBooks();
+  if (list.length < 2) { toast('検索やフィルタで2冊以上に絞ってから実行してください'); return; }
+  document.getElementById('modal-title').textContent = '🗂 表示中の' + list.length + '冊をグループ化';
+  var body = document.getElementById('modal-body');
+  body.innerHTML = '';
+
+  var note = document.createElement('p');
+  note.style.cssText = 'font-size:12px; color:var(--sub); margin:0 0 12px;';
+  note.textContent = '表示中: ' + list.slice(0, 5).map(function(b) { return b.title; }).join(' / ') + (list.length > 5 ? ' …' : '');
+  body.appendChild(note);
+
+  function row(labelText, el) {
+    var r = document.createElement('div');
+    r.className = 'form-row';
+    var l = document.createElement('label');
+    l.textContent = labelText;
+    r.append(l, el);
+    return r;
+  }
+  var seriesIn = document.createElement('input');
+  seriesIn.type = 'text';
+  seriesIn.value = $('search').value.trim() || commonPrefix(list.map(function(b) { return b.title; }));
+  seriesIn.placeholder = 'シリーズ名';
+  seriesIn.setAttribute('list', 'seriesList');
+  body.appendChild(row('シリーズ', seriesIn));
+
+  var typeSel = document.createElement('select');
+  [['', '（種類は変更しない）'], ['book','📖 本'],['manga','📚 マンガ'],['magazine','📰 雑誌']].forEach(function(t) {
+    var op = document.createElement('option');
+    op.value = t[0]; op.textContent = t[1];
+    typeSel.appendChild(op);
+  });
+  body.appendChild(row('種類', typeSel));
+
+  var actions = document.createElement('div');
+  actions.className = 'form-actions';
+  var cancel = document.createElement('button');
+  cancel.className = 'btn';
+  cancel.textContent = 'キャンセル';
+  cancel.onclick = closeModal;
+  var apply = document.createElement('button');
+  apply.className = 'btn primary';
+  apply.textContent = list.length + '冊に適用';
+  apply.onclick = async function() {
+    var sv = seriesIn.value.trim();
+    if (!sv) { toast('シリーズ名を入力してください'); return; }
+    for (var i = 0; i < list.length; i++) {
+      list[i].series = sv;
+      if (typeSel.value) list[i].type = typeSel.value;
+      await idbPut('books', list[i]);
+    }
+    closeModal();
+    render();
+    toast(list.length + '冊を「' + sv + '」にグループ化しました');
+  };
+  actions.append(cancel, apply);
   body.appendChild(actions);
   document.getElementById('info-modal').classList.add('open');
 }
@@ -846,53 +1057,466 @@ function openLightbox(s) {
   document.getElementById('lightbox').classList.add('open');
 }
 
-// ===== PDF Reader 連携（v0.4.0: iframeで内蔵） =====
-// pdf-reader を全画面iframeで開き、準備完了通知（pdfreader-ready）を受けてから
-// File を postMessage で渡す。仕組み（同一オリジンpostMessage）は別タブ版と同じ
-var pendingOpen = null; // 開こうとしている蔵書レコード
+// ===== 内蔵ブックリーダー（v0.5.0: pdf-readerのコードを統合） =====
+// iframe/postMessage連携を廃止し、リーダー本体をこのファイルに統合。
+// 表紙クリック → File取得 → loadPdf() を直接呼ぶ。
+// localStorageのキーは単体pdf-readerと共通（読書位置・しおりを引き継ぐ）
+var state = {
+  pdfDoc: null, currentPage: 1, spreadMode: true, rtl: true,
+  offset: 0, zoom: 1, docKey: null, autoOn: false, autoSec: 5,
+  bookmarks: new Set(), pdfBytes: null, docName: 'document'
+};
+var renderToken = 0;
+var rdStage = $('rdStage'), spreadBox = $('spreadBox');
+var showToast = toast;
 
-function openInReader(b) {
+function readerOpen() { return $('reader').classList.contains('open'); }
+
+async function openInReader(b) {
   if (b.missing) { toast('ファイルが見つかりません（移動または削除された可能性）'); return; }
   if (!fileMap.has(b.key)) {
     if (!connected) { toast('フォルダ未接続です。右上の「未接続」をクリックして再接続してください'); return; }
     toast('ファイルが見つかりません。再スキャンしてください');
     return;
   }
-  pendingOpen = b;
-  $('readerOverlay').classList.add('open');
-  // 毎回読み直してリーダーの状態をリセット（前の本・パネルを持ち越さない）
-  $('readerFrame').src = '../pdf-reader/?from=library&embed=1';
+  $('reader').classList.add('open');
+  document.body.style.overflow = 'hidden';
+  try {
+    var f = await fileMap.get(b.key).getFile();
+    await loadPdf(await f.arrayBuffer(), f.name);
+  } catch (err) {
+    console.error('openInReader:', err.message || err);
+    toast('読み込みに失敗しました: ' + (err.message || err));
+    closeReader();
+  }
 }
 
 function closeReader() {
-  $('readerOverlay').classList.remove('open');
-  $('readerFrame').src = 'about:blank'; // PDFデータのメモリを解放
-  pendingOpen = null;
+  stopAuto();
+  savePrefs();
+  if (state.pdfDoc) { try { state.pdfDoc.destroy(); } catch (e) {} }
+  state.pdfDoc = null;
+  state.pdfBytes = null;
+  spreadBox.innerHTML = '';
+  $('bmPanel').classList.remove('open');
+  $('reader').classList.remove('open');
+  document.body.style.overflow = '';
 }
-$('readerClose').onclick = closeReader;
+$('rdBack').onclick = closeReader;
 
-window.addEventListener('message', function(e) {
-  if (e.origin !== location.origin) return;
-  if (!e.data) return;
-  if (e.data.type === 'pdfreader-ready' && pendingOpen) {
-    var b = pendingOpen;
-    pendingOpen = null;
-    fileMap.get(b.key).getFile().then(function(f) {
-      $('readerFrame').contentWindow.postMessage({ type: 'open-file', file: f }, location.origin);
-    }).catch(function(err) {
-      console.error('PDF Reader連携失敗:', err.message);
-      toast('ファイルを読み込めませんでした: ' + err.message);
-      closeReader();
-    });
-  } else if (e.data.type === 'pdfreader-close') {
-    closeReader(); // リーダー内でEscが押された
+// ---- 設定の保存 / 復元（単体pdf-readerとキー共通） ----
+function savePrefs() {
+  try {
+    localStorage.setItem('pdfreader_prefs', JSON.stringify({
+      spreadMode: state.spreadMode, rtl: state.rtl, autoSec: state.autoSec,
+    }));
+    if (state.docKey) {
+      var docs = JSON.parse(localStorage.getItem('pdfreader_docs') || '{}');
+      docs[state.docKey] = { page: state.currentPage, offset: state.offset, bookmarks: Array.from(state.bookmarks) };
+      var keys = Object.keys(docs);
+      if (keys.length > 50) delete docs[keys[0]];
+      localStorage.setItem('pdfreader_docs', JSON.stringify(docs));
+    }
+  } catch (e) {}
+}
+function loadPrefs() {
+  try {
+    var p = JSON.parse(localStorage.getItem('pdfreader_prefs') || '{}');
+    if (typeof p.spreadMode === 'boolean') state.spreadMode = p.spreadMode;
+    if (typeof p.rtl === 'boolean') state.rtl = p.rtl;
+    if (typeof p.autoSec === 'number' && p.autoSec >= 0.5) state.autoSec = p.autoSec;
+  } catch (e) {}
+}
+function loadDocPrefs() {
+  try {
+    var docs = JSON.parse(localStorage.getItem('pdfreader_docs') || '{}');
+    var d = docs[state.docKey];
+    if (d) {
+      state.offset = d.offset || 0;
+      state.currentPage = Math.min(d.page || 1, state.pdfDoc.numPages);
+      state.bookmarks = new Set(d.bookmarks || []);
+      return true;
+    }
+  } catch (e) {}
+  return false;
+}
+
+// ---- 見開きペア計算 ----
+function spreadOf(page) {
+  if (!state.pdfDoc) return [page];
+  var n = state.pdfDoc.numPages;
+  if (!state.spreadMode) return [page];
+  var first;
+  if (state.offset === 0) {
+    if (page === 1) return [1];
+    first = (page % 2 === 0) ? page : page - 1;
+  } else {
+    first = (page % 2 === 1) ? page : page - 1;
+  }
+  if (first < 1) first = 1;
+  var pages = [first];
+  if (first + 1 <= n && !(state.offset === 0 && first === 1)) pages.push(first + 1);
+  return pages;
+}
+function goNext() {
+  if (!state.pdfDoc) return false;
+  var cur = spreadOf(state.currentPage);
+  var next = cur[cur.length - 1] + 1;
+  if (next > state.pdfDoc.numPages) return false;
+  state.currentPage = next; renderView();
+  if (state.autoOn) startAuto();
+  return true;
+}
+function goPrev() {
+  if (!state.pdfDoc) return false;
+  var cur = spreadOf(state.currentPage);
+  var prev = cur[0] - 1;
+  if (prev < 1) return false;
+  state.currentPage = prev; renderView();
+  if (state.autoOn) startAuto();
+  return true;
+}
+
+// ---- 自動めくり ----
+var autoTimer = null;
+function startAuto() {
+  clearInterval(autoTimer);
+  autoTimer = setInterval(autoTick, state.autoSec * 1000);
+  state.autoOn = true;
+  updateAutoButton();
+}
+function stopAuto() {
+  clearInterval(autoTimer);
+  autoTimer = null;
+  state.autoOn = false;
+  updateAutoButton();
+}
+function autoTick() {
+  if (!goNext()) { stopAuto(); showToast('最終ページのため自動めくりを停止しました'); }
+}
+function updateAutoButton() {
+  $('btnAuto').textContent = state.autoOn ? '⏸ 自動' : '▶ 自動';
+  $('btnAuto').classList.toggle('active', state.autoOn);
+}
+
+// ---- しおり ----
+function currentSpreadBookmarked() {
+  var pages = spreadOf(state.currentPage);
+  return pages.every(function (p) { return state.bookmarks.has(p); });
+}
+function toggleBookmark() {
+  if (!state.pdfDoc) { showToast('先にPDFを開いてください'); return; }
+  var pages = spreadOf(state.currentPage);
+  if (currentSpreadBookmarked()) {
+    pages.forEach(function (p) { state.bookmarks.delete(p); });
+    showToast('しおりを外しました（P.' + pages.join('-') + '）');
+  } else {
+    pages.forEach(function (p) { state.bookmarks.add(p); });
+    showToast('しおりを挟みました（P.' + pages.join('-') + '）');
+  }
+  savePrefs();
+  updateRdToolbar(spreadOf(state.currentPage));
+  renderBmList();
+}
+function renderBmList() {
+  var list = $('bmList');
+  var pages = Array.from(state.bookmarks).sort(function (a, b) { return a - b; });
+  $('btnBmDownload').disabled = pages.length === 0;
+  if (!pages.length) {
+    list.innerHTML = '<div class="bmEmpty">しおりはまだありません。<br>🔖ボタン（またはmキー）で現在のページに挟めます。</div>';
+    return;
+  }
+  list.innerHTML = '';
+  pages.forEach(function (p) {
+    var item = document.createElement('div');
+    item.className = 'bmItem';
+    var label = document.createElement('span');
+    label.textContent = 'P.' + p;
+    var del = document.createElement('button');
+    del.className = 'bmDel';
+    del.textContent = '✕';
+    del.title = 'このしおりを削除';
+    del.onclick = function (e) {
+      e.stopPropagation();
+      state.bookmarks.delete(p);
+      savePrefs();
+      updateRdToolbar(spreadOf(state.currentPage));
+      renderBmList();
+    };
+    item.appendChild(label);
+    item.appendChild(del);
+    item.onclick = function () { state.currentPage = p; renderView(); };
+    list.appendChild(item);
+  });
+}
+
+// しおりページだけを1つのPDFにまとめてダウンロード（pdf-libは初回使用時に遅延ロード）
+var PDFLIB_URL = 'https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js';
+function ensurePdfLib() {
+  if (window.PDFLib) return Promise.resolve();
+  return new Promise(function (resolve, reject) {
+    var sc = document.createElement('script');
+    sc.src = PDFLIB_URL;
+    sc.onload = resolve;
+    sc.onerror = function () { reject(new Error('pdf-lib の読み込みに失敗しました（オフライン？）')); };
+    document.head.appendChild(sc);
+  });
+}
+async function downloadBookmarkedPages() {
+  var pages = Array.from(state.bookmarks).sort(function (a, b) { return a - b; });
+  if (!pages.length) { showToast('しおりがありません'); return; }
+  if (!state.pdfBytes) { showToast('元のPDFデータがありません。開き直してください'); return; }
+  $('rdLoading').style.display = 'flex';
+  try {
+    await ensurePdfLib();
+    var src = await PDFLib.PDFDocument.load(state.pdfBytes, { ignoreEncryption: true });
+    var out = await PDFLib.PDFDocument.create();
+    var copied = await out.copyPages(src, pages.map(function (p) { return p - 1; }));
+    copied.forEach(function (pg) { out.addPage(pg); });
+    var bytes = await out.save();
+    var blob = new Blob([bytes], { type: 'application/pdf' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = state.docName + '_しおり' + pages.length + 'P.pdf';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 10000);
+    showToast(pages.length + 'ページをPDFで保存しました');
+  } catch (err) {
+    console.error('bookmark export error:', err.message || err);
+    showToast('保存に失敗しました: ' + (err.message || err));
+  } finally {
+    $('rdLoading').style.display = 'none';
+  }
+}
+
+// ---- スクラップ（このページ内で直接IndexedDBへ保存） ----
+async function scrapCurrent() {
+  if (!state.pdfDoc) { showToast('先にPDFを開いてください'); return; }
+  var pages = spreadOf(state.currentPage);
+  try {
+    for (var i = 0; i < pages.length; i++) {
+      var pg = await state.pdfDoc.getPage(pages[i]);
+      var vp1 = pg.getViewport({ scale: 1 });
+      var vp = pg.getViewport({ scale: Math.min(2, 1400 / vp1.height) });
+      var cv = document.createElement('canvas');
+      cv.width = Math.floor(vp.width); cv.height = Math.floor(vp.height);
+      await pg.render({ canvasContext: cv.getContext('2d'), viewport: vp, intent: 'print' }).promise;
+      await idbPut('scraps', { docName: state.docName, page: pages[i], dataUrl: cv.toDataURL('image/jpeg', 0.85), createdAt: Date.now() });
+    }
+    showToast('✂ P.' + pages.join('-') + ' をスクラップしました');
+  } catch (err) {
+    console.error('scrap error:', err.message || err);
+    showToast('スクラップに失敗しました: ' + (err.message || err));
+  }
+}
+
+// ---- 描画 ----
+async function renderView() {
+  if (!state.pdfDoc) return;
+  var token = ++renderToken;
+  var pages = spreadOf(state.currentPage);
+  state.currentPage = pages[0];
+  try {
+    var pdfPages = await Promise.all(pages.map(function (p) { return state.pdfDoc.getPage(p); }));
+    if (token !== renderToken) return;
+    var pad = 24;
+    var availW = rdStage.clientWidth - pad;
+    var availH = rdStage.clientHeight - pad;
+    var vps = pdfPages.map(function (pg) { return pg.getViewport({ scale: 1 }); });
+    var totalW = vps.reduce(function (sm, v) { return sm + v.width; }, 0);
+    var maxH = Math.max.apply(null, vps.map(function (v) { return v.height; }));
+    var fitScale = Math.min(availW / totalW, availH / maxH);
+    var scale = fitScale * state.zoom;
+    var dpr = Math.min(window.devicePixelRatio || 1, 3);
+    var canvases = [];
+    for (var i = 0; i < pdfPages.length; i++) {
+      var vp = pdfPages[i].getViewport({ scale: scale * dpr });
+      var canvas = document.createElement('canvas');
+      canvas.width = Math.floor(vp.width);
+      canvas.height = Math.floor(vp.height);
+      canvas.style.width = Math.floor(vp.width / dpr) + 'px';
+      canvas.style.height = Math.floor(vp.height / dpr) + 'px';
+      // intent:'print' でrAF非依存の描画にする（バックグラウンドでも完了する）
+      await pdfPages[i].render({ canvasContext: canvas.getContext('2d'), viewport: vp, intent: 'print' }).promise;
+      if (token !== renderToken) return;
+      canvases.push(canvas);
+    }
+    spreadBox.classList.toggle('rtl', state.rtl);
+    spreadBox.innerHTML = '';
+    canvases.forEach(function (c) { spreadBox.appendChild(c); });
+    updateRdToolbar(pages);
+    savePrefs();
+  } catch (err) {
+    console.error('render error:', err.message || err);
+    showToast('描画エラー: ' + (err.message || err));
+  }
+}
+
+function updateRdToolbar(pages) {
+  var n = state.pdfDoc ? state.pdfDoc.numPages : 0;
+  $('pageInput').value = pages ? pages.join('-') : '';
+  $('pageTotal').textContent = '/ ' + (n || '-');
+  $('btnSpread').textContent = state.spreadMode ? '見開き' : '単ページ';
+  $('btnSpread').classList.toggle('active', state.spreadMode);
+  $('btnBinding').textContent = state.rtl ? '右開き' : '左開き';
+  $('btnBinding').classList.toggle('active', state.rtl);
+  $('btnOffset').classList.toggle('active', state.offset === 1);
+  $('btnOffset').disabled = !state.spreadMode;
+  $('btnZoomReset').textContent = Math.round(state.zoom * 100) + '%';
+  var cur = pages || [state.currentPage];
+  $('btnPrev').disabled = !state.pdfDoc || cur[0] <= 1;
+  $('btnNext').disabled = !state.pdfDoc || cur[cur.length - 1] >= n;
+  $('btnBookmark').classList.toggle('active', !!state.pdfDoc && currentSpreadBookmarked());
+}
+
+// ---- PDF読み込み ----
+async function loadPdf(data, name) {
+  $('rdLoading').style.display = 'flex';
+  try {
+    state.pdfBytes = data.slice(0);  // pdf.jsに渡すとバッファが移譲されるためコピーを保持
+    var doc = await pdfjsLib.getDocument({ data: data }).promise;
+    state.pdfDoc = doc;
+    state.currentPage = 1;
+    state.zoom = 1;
+    stopAuto();
+    state.bookmarks = new Set();
+    state.docName = (name || 'document').replace(/\.pdf$/i, '');
+    state.docKey = (name || 'unknown') + ':' + doc.numPages;
+    loadDocPrefs();
+    $('rdTitle').textContent = state.docName;
+    console.log('reader loaded:', name, doc.numPages + 'p');
+    renderBmList();
+    await renderView();
+  } catch (err) {
+    console.error('load error:', err.message || err);
+    showToast('PDFを開けませんでした: ' + (err.message || err));
+    closeReader();
+  } finally {
+    $('rdLoading').style.display = 'none';
+  }
+}
+
+// ---- リーダーUIイベント ----
+$('btnPrev').onclick = goPrev;
+$('btnNext').onclick = goNext;
+$('btnSpread').onclick = function () { state.spreadMode = !state.spreadMode; renderView(); };
+$('btnBinding').onclick = function () { state.rtl = !state.rtl; renderView(); };
+$('btnOffset').onclick = function () {
+  state.offset = state.offset === 0 ? 1 : 0;
+  showToast(state.offset === 1 ? '1P目からペア（1-2, 3-4…）' : '1P目は単独表示（表紙）＋ 2-3, 4-5…');
+  renderView();
+};
+$('btnAuto').onclick = function () {
+  if (state.autoOn) { stopAuto(); showToast('自動めくりを停止しました'); }
+  else {
+    if (!state.pdfDoc) { showToast('先にPDFを開いてください'); return; }
+    startAuto();
+    showToast(state.autoSec + '秒ごとに自動めくりします');
+  }
+};
+$('autoSecInput').onchange = function () {
+  var v = parseFloat(this.value);
+  if (v >= 0.5 && v <= 600) {
+    state.autoSec = v;
+    savePrefs();
+    if (state.autoOn) { startAuto(); showToast(v + '秒間隔に変更しました'); }
+  } else {
+    showToast('0.5〜600秒で指定してください');
+  }
+  this.value = state.autoSec;
+};
+$('autoSecInput').onfocus = function () { this.select(); };
+$('btnBookmark').onclick = toggleBookmark;
+$('btnBmPanel').onclick = function () {
+  $('bmPanel').classList.toggle('open');
+  if ($('bmPanel').classList.contains('open')) renderBmList();
+};
+$('bmClose').onclick = function () { $('bmPanel').classList.remove('open'); };
+$('btnBmDownload').onclick = downloadBookmarkedPages;
+$('btnScrap').onclick = scrapCurrent;
+$('btnZoomIn').onclick = function () { state.zoom = Math.min(state.zoom * 1.25, 5); renderView(); };
+$('btnZoomOut').onclick = function () { state.zoom = Math.max(state.zoom / 1.25, 0.25); renderView(); };
+$('btnZoomReset').onclick = function () { state.zoom = 1; renderView(); };
+$('btnFullscreen').onclick = function () {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else document.documentElement.requestFullscreen().catch(function () {
+    showToast('フルスクリーンは利用できません');
+  });
+};
+$('pageInput').onchange = function () {
+  var v = parseInt(this.value, 10);
+  if (state.pdfDoc && v >= 1 && v <= state.pdfDoc.numPages) {
+    state.currentPage = v; renderView();
+  } else { updateRdToolbar(spreadOf(state.currentPage)); }
+};
+$('pageInput').onfocus = function () { this.select(); };
+
+// キーボード（リーダー表示中のみ。矢印は綴じ方向に追従: 右開きなら←が「次」）
+document.addEventListener('keydown', function (e) {
+  if (!readerOpen()) return;
+  if (e.target.tagName === 'INPUT') return;
+  switch (e.key) {
+    case 'ArrowLeft':  state.rtl ? goNext() : goPrev(); break;
+    case 'ArrowRight': state.rtl ? goPrev() : goNext(); break;
+    case ' ': e.shiftKey ? goPrev() : goNext(); e.preventDefault(); break;
+    case 'ArrowUp': case 'PageUp': goPrev(); break;
+    case 'ArrowDown': case 'PageDown': goNext(); break;
+    case 'Home': if (state.pdfDoc) { state.currentPage = 1; renderView(); } break;
+    case 'End': if (state.pdfDoc) { state.currentPage = state.pdfDoc.numPages; renderView(); } break;
+    case 's': $('btnSpread').click(); break;
+    case 'b': $('btnBinding').click(); break;
+    case 'o': $('btnOffset').click(); break;
+    case 'a': $('btnAuto').click(); break;
+    case 'm': toggleBookmark(); break;
+    case 'c': scrapCurrent(); break;
   }
 });
+
+// クリックゾーン：左右30%で前後移動（綴じ方向に追従）
+rdStage.addEventListener('click', function (e) {
+  if (!state.pdfDoc || state.zoom > 1) return;
+  var rect = rdStage.getBoundingClientRect();
+  var x = (e.clientX - rect.left) / rect.width;
+  if (x < 0.3) state.rtl ? goNext() : goPrev();
+  else if (x > 0.7) state.rtl ? goPrev() : goNext();
+});
+
+// スワイプ：紙の本と同じ方向（右開きなら右スワイプで次のページ）
+(function () {
+  var sx = 0, sy = 0, tracking = false;
+  rdStage.addEventListener('touchstart', function (e) {
+    if (e.touches.length !== 1) { tracking = false; return; }
+    sx = e.touches[0].clientX; sy = e.touches[0].clientY; tracking = true;
+  }, { passive: true });
+  rdStage.addEventListener('touchend', function (e) {
+    if (!tracking || state.zoom > 1) return;
+    tracking = false;
+    var dx = e.changedTouches[0].clientX - sx;
+    var dy = e.changedTouches[0].clientY - sy;
+    if (Math.abs(dx) < 50 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+    if (dx > 0) state.rtl ? goNext() : goPrev();
+    else state.rtl ? goPrev() : goNext();
+  }, { passive: true });
+})();
+
+// リサイズで再フィット（デバウンス）
+var rdResizeTimer = null;
+window.addEventListener('resize', function () {
+  if (!readerOpen()) return;
+  clearTimeout(rdResizeTimer);
+  rdResizeTimer = setTimeout(renderView, 150);
+});
+
+loadPrefs();
 
 // ===== イベント =====
 $('heroBtn').onclick = pickFolder;
 $('folderBtn').onclick = pickFolder;
 $('rescanBtn').onclick = scan;
+$('thumbBtn').onclick = refreshThumbs;
+$('bulkGroupBtn').onclick = openBulkGroup;
 $('search').oninput = render;
 $('sortSel').onchange = render;
 $('groupToggle').onchange = render;
@@ -909,7 +1533,7 @@ function showLibrary() {
   $('hero').style.display = 'none';
   $('library').style.display = 'block';
   $('filterRow').style.display = '';
-  ['rescanBtn', 'folderBtn'].forEach(function(id) { $(id).style.display = ''; });
+  ['rescanBtn', 'thumbBtn', 'folderBtn'].forEach(function(id) { $(id).style.display = ''; });
   updateConnPill();
 }
 
