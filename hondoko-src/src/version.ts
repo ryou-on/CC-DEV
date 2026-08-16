@@ -1,6 +1,14 @@
-export const APP_VERSION = 'v1.17.3'
+export const APP_VERSION = 'v1.18.0'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: 'v1.18.0',
+    date: '2026-08-16',
+    changes: [
+      '購入日を記録できるように(詳細画面で直接入力、編集フォームにも項目追加。既存の本は空欄=不明でOK)',
+      '詳細画面に登録日を表示',
+    ],
+  },
   {
     version: 'v1.17.3',
     date: '2026-08-15',

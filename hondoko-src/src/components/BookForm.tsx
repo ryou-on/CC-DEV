@@ -44,6 +44,7 @@ export function BookForm({
   const [kind, setKind] = useState<BookKind>(base.kind ?? 'book')
   const [tagsText, setTagsText] = useState((base.tags ?? []).join(' '))
   const [memo, setMemo] = useState(base.memo ?? '')
+  const [purchaseDate, setPurchaseDate] = useState(base.purchaseDate ?? '')
   const [status, setStatus] = useState<BookStatus>(base.status ?? 'owned')
   const [shelfId, setShelfId] = useState<string>(base.shelfId ?? '')
   const [row, setRow] = useState<number>(base.row ?? 1)
@@ -77,6 +78,7 @@ export function BookForm({
       kind,
       tags,
       memo: memo.trim(),
+      purchaseDate,
       status,
       shelfId: status === 'owned' && shelfId ? shelfId : null,
       row: status === 'owned' && shelfId ? row : null,
@@ -199,6 +201,12 @@ export function BookForm({
               </select>
             </div>
           )}
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs font-medium text-stone-500">購入日(不明なら空欄)</label>
+            <input type="date" className={inputCls} value={purchaseDate} onChange={(e) => setPurchaseDate(e.target.value)} />
+          </div>
         </div>
         <div>
           <label className="text-xs font-medium text-stone-500">メモ</label>

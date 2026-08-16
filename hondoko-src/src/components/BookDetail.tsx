@@ -465,6 +465,27 @@ export function BookDetail({
               {!!book.pubDate && (
                 <div className="flex gap-2"><dt className="w-14 text-stone-400 shrink-0">出版</dt><dd className="text-stone-800">{formatPubDate(book.pubDate)}</dd></div>
               )}
+              <div className="flex gap-2 items-center">
+                <dt className="w-14 text-stone-400 shrink-0">購入日</dt>
+                <dd className="text-stone-800">
+                  {readOnly ? (
+                    book.purchaseDate ? new Date(book.purchaseDate + 'T00:00:00').toLocaleDateString('ja-JP') : '不明'
+                  ) : (
+                    <input
+                      type="date"
+                      className="border border-stone-200 rounded-md px-1.5 py-0.5 text-sm text-stone-700 bg-white"
+                      value={book.purchaseDate ?? ''}
+                      onChange={(e) => patch({ purchaseDate: e.target.value })}
+                    />
+                  )}
+                </dd>
+              </div>
+              {book.createdAt && (
+                <div className="flex gap-2">
+                  <dt className="w-14 text-stone-400 shrink-0">登録日</dt>
+                  <dd className="text-stone-800">{book.createdAt.toDate().toLocaleDateString('ja-JP')}</dd>
+                </div>
+              )}
               {book.memo && (
                 <div className="flex gap-2"><dt className="w-14 text-stone-400 shrink-0">メモ</dt><dd className="text-stone-800 whitespace-pre-wrap">{book.memo}</dd></div>
               )}
