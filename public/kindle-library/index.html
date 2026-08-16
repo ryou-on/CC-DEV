@@ -53,21 +53,6 @@
   .book .title { font-size: 12px; font-weight: 700; margin: 8px 2px 2px; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; min-height: 2.8em; }
   .book .meta { font-size: 10px; color: var(--sub); margin: 0 2px; }
 
-  /* リーダー */
-  #reader { position: fixed; inset: 0; background: #1c1917; z-index: 1000; display: none; flex-direction: column; }
-  #reader.open { display: flex; }
-  .rbar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; color: #e7e5e4; background: rgba(28,25,23,0.95); flex-wrap: wrap; }
-  .rbar .rtitle { font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40vw; }
-  .rbar .rpage { font-size: 12px; color: #a8a29e; }
-  .rbtn { padding: 6px 12px; border-radius: 9999px; border: 1px solid #44403c; background: #292524; color: #e7e5e4; font-size: 11px; font-weight: 700; cursor: pointer; }
-  .rbtn.on { background: var(--accent); border-color: var(--accent); }
-  #stage { flex: 1; display: flex; align-items: center; justify-content: center; gap: 0; overflow: hidden; position: relative; }
-  #stage canvas { max-width: 100%; max-height: 100%; }
-  .nav-zone { position: absolute; top: 0; bottom: 60px; width: 28%; cursor: pointer; }
-  .nav-zone.left { left: 0; } .nav-zone.right { right: 0; }
-  .rslider-wrap { padding: 10px 20px 16px; display: flex; align-items: center; gap: 12px; color: #a8a29e; font-size: 11px; }
-  .rslider-wrap input { flex: 1; accent-color: var(--accent-mid); }
-
   /* モーダル（app-header-meta パターン・ライト配色） */
   .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 9999; align-items: center; justify-content: center; }
   .modal-overlay.open { display: flex; }
@@ -89,7 +74,7 @@
 <header>
   <h1>
     <span class="app-name" onclick="openHowTo()" title="使い方を見る">📚 Kindleライブラリ</span>
-    <span class="ver" onclick="openReleaseNotes()" title="リリースノート">v0.1.0</span>
+    <span class="ver" onclick="openReleaseNotes()" title="リリースノート">v0.2.0</span>
     <span class="subtitle">kindle-capturerでスキャンした本のプレビュー</span>
   </h1>
   <div class="spacer"></div>
@@ -118,26 +103,6 @@
   </div>
 </main>
 
-<!-- リーダー -->
-<div id="reader">
-  <div class="rbar">
-    <button class="rbtn" onclick="closeReader()">← ライブラリ</button>
-    <span class="rtitle" id="rtitle"></span>
-    <span class="rpage" id="rpage"></span>
-    <div class="spacer"></div>
-    <button class="rbtn" id="spreadBtn" onclick="toggleSpread()">見開き: OFF</button>
-    <button class="rbtn" id="dirBtn" onclick="toggleDir()">右開き</button>
-  </div>
-  <div id="stage">
-    <div class="nav-zone left" onclick="navClick('left')" title="ページ送り"></div>
-    <div class="nav-zone right" onclick="navClick('right')" title="ページ送り"></div>
-  </div>
-  <div class="rslider-wrap">
-    <span id="sliderLabel"></span>
-    <input type="range" id="pageSlider" min="1" value="1">
-  </div>
-</div>
-
 <!-- 情報モーダル -->
 <div id="info-modal" class="modal-overlay" onclick="closeModalOnOverlay(event)">
   <div class="modal-box">
@@ -151,9 +116,13 @@
 
 <script>
 'use strict';
-var APP_VERSION = 'v0.1.0';
+var APP_VERSION = 'v0.2.0';
 
 var RELEASE_NOTES = [
+  { ver: 'v0.2.0', date: '2026-08-17', changes: [
+    'プレビューをPDF Readerと統合 — 表紙クリックでPDF Reader（右開き見開き・±1P調整・しおり・自動めくり対応）が新しいタブで開くように',
+    '読んだ位置はPDF Reader側でファイルごとに自動記憶されます'
+  ]},
   { ver: 'v0.1.0', date: '2026-08-16', changes: [
     '初回リリース',
     'ローカルフォルダのPDFを表紙つきグリッドで一覧表示（アップロードなし・ブラウザ内で完結）',
@@ -165,7 +134,7 @@ var RELEASE_NOTES = [
 var HOW_TO_USE = [
   { heading: '① フォルダを選択', text: 'kindle-capturerで保存したPDFが入ったフォルダ（例: ダウンロード/kindle本PDF）を選びます。次回からは「再接続」を押すだけで同じフォルダを開けます。' },
   { heading: '② ライブラリを見る', text: '表紙サムネイルは自動生成され、ブラウザ内にキャッシュされます。上部の検索ボックスと並び替えで目的の本を探せます。' },
-  { heading: '③ プレビュー', text: '表紙をクリックするとリーダーが開きます。画面の左右クリック・矢印キー・下部スライダーでページ移動。「見開き」で2ページ表示、「右開き/左開き」でページ送りの向きを切り替えます（マンガ・雑誌は右開き）。' },
+  { heading: '③ プレビュー', text: '表紙をクリックするとPDF Readerが新しいタブで開きます。右開き見開き・±1P調整・ズーム・しおり・自動めくりなどPDF Readerの全機能が使え、読んだ位置はファイルごとに自動記憶されます。' },
   { heading: '⚠️ 利用上の注意', text: 'このアプリはスキャンしたPDFを本人が閲覧するためのものです。ファイルは選択したフォルダからブラウザ内で直接読み取られ、サーバーには一切送信されません。PDFの取り扱いは私的使用（個人利用）の範囲にとどめてください。' }
 ];
 
@@ -366,7 +335,7 @@ function render() {
     meta.className = 'meta';
     meta.textContent = (it.pages ? it.pages + 'p・' : '') + fmtSize(it.size) + '・' + fmtDate(it.mtime);
     card.append(cover, title, meta);
-    card.onclick = function() { openReader(it); };
+    card.onclick = function() { openInReader(it); };
     grid.appendChild(card);
   });
 }
@@ -405,114 +374,37 @@ async function makeThumb(it) {
   } catch (e) { console.warn('サムネイル失敗:', it.name, e.message); }
 }
 
-// ===== リーダー =====
-var reader = { doc: null, item: null, page: 1, spread: false, rtl: true, rendering: false, pending: null };
+// ===== PDF Reader 連携（v0.2.0） =====
+// 表紙クリックで同一オリジンの PDF Reader（/pdf-reader/）を新しいタブで開き、
+// 準備完了通知（pdfreader-ready）を受けてから File を postMessage で渡す。
+// しおり・±1P・自動めくり等はすべて PDF Reader 側の機能を利用する
+var pendingOpen = null; // { win, item }
 
-async function openReader(it) {
-  $('reader').classList.add('open');
-  $('rtitle').textContent = it.title;
-  $('rpage').textContent = '読込中…';
-  reader.item = it; reader.page = 1;
-  try {
-    var f = await it.handle.getFile();
-    reader.doc = await pdfjsLib.getDocument({ data: await f.arrayBuffer() }).promise;
-    it.pages = reader.doc.numPages;
-    $('pageSlider').min = 1;
-    $('pageSlider').max = reader.doc.numPages;
-    $('pageSlider').value = 1;
-    renderPage();
-  } catch (e) {
-    console.error('openReader:', e.message);
-    $('rpage').textContent = '読み込みに失敗しました';
-  }
-}
-function closeReader() {
-  $('reader').classList.remove('open');
-  if (reader.doc) { reader.doc.destroy(); reader.doc = null; }
-  var stage = $('stage');
-  Array.from(stage.querySelectorAll('canvas')).forEach(function(c) { c.remove(); });
-  render();
-}
-
-// 見開き時のページ組: 表紙は単独、以降 [2,3][4,5]…
-function spreadPair(p) {
-  if (p <= 1) return [1];
-  var lo = (p % 2 === 0) ? p : p - 1;
-  var pair = [lo];
-  if (lo + 1 <= reader.doc.numPages) pair.push(lo + 1);
-  return pair;
-}
-
-async function renderPage() {
-  if (!reader.doc) return;
-  if (reader.rendering) { reader.pending = true; return; }
-  reader.rendering = true;
-  try {
-    var stage = $('stage');
-    var nums = reader.spread ? spreadPair(reader.page) : [reader.page];
-    // 右開きは若いページ番号が右
-    var order = (reader.spread && reader.rtl) ? nums.slice().reverse() : nums;
-    var availW = stage.clientWidth - 20, availH = stage.clientHeight - 20;
-    var perW = availW / order.length;
-    var canvases = [];
-    for (var i = 0; i < order.length; i++) {
-      var page = await reader.doc.getPage(order[i]);
-      var vp = page.getViewport({ scale: 1 });
-      var scale = Math.min(perW / vp.width, availH / vp.height) * (window.devicePixelRatio || 1);
-      var v2 = page.getViewport({ scale: scale });
-      var cv = document.createElement('canvas');
-      cv.width = Math.round(v2.width); cv.height = Math.round(v2.height);
-      cv.style.width = Math.round(v2.width / (window.devicePixelRatio || 1)) + 'px';
-      await page.render({ canvasContext: cv.getContext('2d'), viewport: v2, intent: 'print' }).promise;
-      canvases.push(cv);
-    }
-    Array.from(stage.querySelectorAll('canvas')).forEach(function(c) { c.remove(); });
-    canvases.forEach(function(c) { stage.insertBefore(c, stage.querySelector('.nav-zone.right')); });
-    $('rpage').textContent = nums.join('-') + ' / ' + reader.doc.numPages;
-    $('pageSlider').value = reader.page;
-    $('sliderLabel').textContent = reader.page + 'p';
-  } catch (e) { console.error('renderPage:', e.message); }
-  reader.rendering = false;
-  if (reader.pending) { reader.pending = false; renderPage(); }
-}
-
-function stepPage(delta) {
-  if (!reader.doc) return;
-  var step = reader.spread ? 2 : 1;
-  var next = reader.page + delta * step;
-  next = Math.max(1, Math.min(reader.doc.numPages, next));
-  if (next !== reader.page) { reader.page = next; renderPage(); }
-}
-// クリックゾーン: 実際の読書と同じく、右開きは左クリック=進む
-function navClick(side) {
-  var forward = reader.rtl ? (side === 'left') : (side === 'right');
-  stepPage(forward ? 1 : -1);
-}
-function toggleSpread() {
-  reader.spread = !reader.spread;
-  $('spreadBtn').textContent = '見開き: ' + (reader.spread ? 'ON' : 'OFF');
-  $('spreadBtn').classList.toggle('on', reader.spread);
-  renderPage();
-}
-function toggleDir() {
-  reader.rtl = !reader.rtl;
-  $('dirBtn').textContent = reader.rtl ? '右開き' : '左開き';
-  renderPage();
-}
-
-$('pageSlider').oninput = function() { reader.page = parseInt(this.value, 10); renderPage(); };
-window.addEventListener('resize', function() { if ($('reader').classList.contains('open')) renderPage(); });
-
-document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') {
-    if (document.getElementById('info-modal').classList.contains('open')) closeModal();
-    else if ($('reader').classList.contains('open')) closeReader();
+function openInReader(it) {
+  var win = window.open('../pdf-reader/?from=library', '_blank');
+  if (!win) {
+    alert('ポップアップがブロックされました。このサイトのポップアップを許可してください。');
     return;
   }
-  if (!$('reader').classList.contains('open')) return;
-  // 矢印はクリックゾーンと同じ向きの解釈（右開きは←=進む）
-  if (e.key === 'ArrowLeft') navClick('left');
-  else if (e.key === 'ArrowRight') navClick('right');
+  pendingOpen = { win: win, item: it };
+}
+
+window.addEventListener('message', function(e) {
+  if (e.origin !== location.origin) return;
+  if (e.data && e.data.type === 'pdfreader-ready' && pendingOpen) {
+    var po = pendingOpen;
+    pendingOpen = null;
+    po.item.handle.getFile().then(function(f) {
+      po.win.postMessage({ type: 'open-file', file: f }, location.origin);
+    }).catch(function(err) {
+      console.error('PDF Reader連携失敗:', err.message);
+      alert('ファイルを読み込めませんでした: ' + err.message);
+    });
+  }
+});
+
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeModal();
 });
 
 // ===== イベント =====
