@@ -9,6 +9,9 @@ import { getPhotoUrl } from '../lib/photoUrl'
 import { Modal, Spinner, btnPrimary, btnSecondary, inputCls } from './ui'
 
 type MissingChoice = 'unplaced' | 'sold' | 'keep'
+
+// 「未配置ボックス」への割り当てを表すセンチネル(棚未定のまま登録)
+export const BOX_ID = '__box__'
 type Assignment = { shelfId: string; row: number } | null
 
 // 「1-3」形式のラベルから棚と段を引く
@@ -59,7 +62,8 @@ export function DiffReviewModal({
         const row = job.target!.row + i
         return shelf && row <= shelf.rows ? { shelfId: shelf.id, row } : null
       }
-      return parseRegionLabel(r.region, shelves)
+      // 追加モードで割り当て先が不明なら未配置ボックスを既定にする(あとで棚を決められる)
+      return parseRegionLabel(r.region, shelves) ?? (job.mode === 'append' ? { shelfId: BOX_ID, row: 0 } : null)
     }),
   )
   const autoMatched = useMemo(
@@ -80,6 +84,16 @@ export function DiffReviewModal({
         .sort((x, y) => x.position - y.position)
       const avail = booksSnapshot.filter((b) => !used.has(b.id))
       let actions = computeDiff(row.books, booksInRow, avail, shelves)
+      if (a.shelfId === BOX_ID) {
+        // 未配置ボックス行き: 既存本の移動はさせない(登録済みは「既に登録済み」扱い)
+        actions = actions
+          .filter((act) => act.type !== 'missing')
+          .map((act) =>
+            act.type === 'move'
+              ? ({ type: 'keep', bookId: act.bookId, detected: act.detected, position: act.position } as DiffAction)
+              : act,
+          )
+      }
       if (isAppend) {
         const basePos = booksInRow.reduce((m, b) => Math.max(m, b.position), -1) + 1
         actions = actions
@@ -121,11 +135,11 @@ export function DiffReviewModal({
   }
 
   const apply = async () => {
-    // 同じ場所への二重割り当てを防ぐ(反映対象のセクションのみ)
+    // 同じ場所への二重割り当てを防ぐ(反映対象のセクションのみ。未配置ボックスは複数可)
     const seen = new Set<string>()
     for (let i = 0; i < assignments.length; i++) {
       const a = assignments[i]
-      if (!a || !sectionEnabled[i]) continue
+      if (!a || !sectionEnabled[i] || a.shelfId === BOX_ID) continue
       const k = `${a.shelfId}:${a.row}`
       if (seen.has(k)) { setError('同じ段に複数の写真セクションが割り当てられています'); return }
       seen.add(k)
@@ -142,11 +156,12 @@ export function DiffReviewModal({
       sections.forEach((sec, si) => {
         const a = assignments[si]
         if (!a || !sectionEnabled[si]) return
+        const isBox = a.shelfId === BOX_ID
         let sAdd = 0, sRm = 0, sMv = 0, sKeep = 0
         sec.actions.forEach((act, ai) => {
           if (!isEnabled(si, ai, act)) return
           if (act.type === 'keep') {
-            if (isAppend) return // 追加モードでは既存本に触らない
+            if (isAppend || isBox) return // 追加モード/ボックス行きでは既存本に触らない
             const existing = sec.booksInRow.find((b) => b.id === act.bookId)
             batch.update(doc(booksCol, act.bookId), {
               position: act.position,
@@ -166,9 +181,9 @@ export function DiffReviewModal({
               kind: act.detected.kind,
               tags: act.detected.tags,
               memo: '',
-              status: 'owned',
-              shelfId: a.shelfId,
-              row: a.row,
+              status: isBox ? 'unplaced' : 'owned',
+              shelfId: isBox ? null : a.shelfId,
+              row: isBox ? null : a.row,
               position: act.position,
               confidence: act.detected.confidence,
               source: 'photo',
@@ -177,6 +192,7 @@ export function DiffReviewModal({
             })
             sAdd++
           } else if (act.type === 'move') {
+            if (isBox) return // ボックス行きで既存本を動かすことはない
             batch.update(doc(booksCol, act.bookId), {
               status: 'owned',
               shelfId: a.shelfId,
@@ -186,6 +202,7 @@ export function DiffReviewModal({
             })
             sMv++
           } else if (act.type === 'missing') {
+            if (isBox) return
             const choice = missingChoices[act.bookId] ?? 'unplaced'
             if (choice === 'keep') return
             batch.update(doc(booksCol, act.bookId), {
@@ -198,7 +215,7 @@ export function DiffReviewModal({
           }
         })
         added += sAdd; moved += sMv; removed += sRm; kept += sKeep
-        photoDocs.push({ shelfId: a.shelfId, row: a.row, count: sKeep + sAdd + sMv, add: sAdd, rm: sRm, mv: sMv })
+        if (!isBox) photoDocs.push({ shelfId: a.shelfId, row: a.row, count: sKeep + sAdd + sMv, add: sAdd, rm: sRm, mv: sMv })
       })
 
       await batch.commit()
@@ -297,10 +314,11 @@ export function DiffReviewModal({
                       value={a?.shelfId ?? ''}
                       onChange={(e) => {
                         const sid = e.target.value
-                        setAssignment(si, sid ? { shelfId: sid, row: 1 } : null)
+                        setAssignment(si, sid ? { shelfId: sid, row: sid === BOX_ID ? 0 : 1 } : null)
                       }}
                     >
                       <option value="">割り当てない</option>
+                      <option value={BOX_ID}>📦 未配置ボックス(棚未定)</option>
                       {shelves.map((s) => (
                         <option key={s.id} value={s.id}>{shelfCode(s)}: {s.name}</option>
                       ))}
@@ -308,12 +326,16 @@ export function DiffReviewModal({
                     <select
                       className={inputCls + ' !w-auto !py-1 text-xs'}
                       value={a?.row ?? 1}
-                      disabled={!a}
+                      disabled={!a || a.shelfId === BOX_ID}
                       onChange={(e) => a && setAssignment(si, { shelfId: a.shelfId, row: Number(e.target.value) })}
                     >
-                      {Array.from({ length: shelf?.rows ?? 1 }, (_, r) => r + 1).map((r) => (
-                        <option key={r} value={r}>{r}段目</option>
-                      ))}
+                      {a?.shelfId === BOX_ID ? (
+                        <option value={0}>—</option>
+                      ) : (
+                        Array.from({ length: shelf?.rows ?? 1 }, (_, r) => r + 1).map((r) => (
+                          <option key={r} value={r}>{r}段目</option>
+                        ))
+                      )}
                     </select>
                   </div>
                 </div>

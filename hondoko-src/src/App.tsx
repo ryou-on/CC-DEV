@@ -258,6 +258,7 @@ export default function App() {
             onStartPhoto={(shelfId, row, file) => startJob(file, { shelfId, row })}
             onStartAppendPhoto={(shelfId, row, file) => startJob(file, { shelfId, row }, undefined, 'append')}
             onStartAutoPhoto={!readOnly && matchMap ? (file) => startJob(file, null, { map: matchMap, shelves }) : undefined}
+            onStartBoxPhoto={!readOnly ? (file) => startJob(file, null, undefined, 'append') : undefined}
             processingLocations={processingLocations}
             readOnly={readOnly}
             focus={mapFocus}

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { addDoc, collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore'
 import { ref as storageRef, uploadString } from 'firebase/storage'
-import { Archive, BookOpen, BookPlus, Camera, ChevronLeft, ImagePlus, Trash2, Wand2 } from 'lucide-react'
+import { Archive, BookOpen, BookPlus, Camera, ChevronLeft, ImagePlus, Inbox, Trash2, Wand2 } from 'lucide-react'
 import { db, storage } from '../firebase'
 import type { Book, Shelf, ShelfGroup, ShelfMap, ShelfPhoto } from '../types'
 import { resizeImageToBase64 } from '../lib/api'
@@ -66,6 +66,7 @@ export function MapView({
   onStartPhoto,
   onStartAppendPhoto,
   onStartAutoPhoto,
+  onStartBoxPhoto,
   processingLocations,
   readOnly = false,
   focus,
@@ -79,6 +80,7 @@ export function MapView({
   onStartPhoto: (shelfId: string, row: number, file: File) => void
   onStartAppendPhoto: (shelfId: string, row: number, file: File) => void // 追加モード(差分なし追記)
   onStartAutoPhoto?: (file: File) => void // マップ照合による自動判別(領域のあるマップがある場合のみ)
+  onStartBoxPhoto?: (file: File) => void // 未配置ボックスへの写真登録(棚未定)
   processingLocations: Set<string> // `${shelfId}:${row}` 解析中の段
   readOnly?: boolean // ゲスト閲覧モード
   focus?: { shelfId: string; row: number } | null // 外部からの段指定(本の詳細の場所クリック)
@@ -99,12 +101,27 @@ export function MapView({
   const photoInput = useRef<HTMLInputElement>(null)
   const autoInput = useRef<HTMLInputElement>(null)
   const photoTarget = useRef<{ shelfId: string; row: number } | null>(null)
-  const photoMode = useRef<'diff' | 'append'>('diff')
+  const photoMode = useRef<'diff' | 'append' | 'box'>('diff')
 
   // 「+」ボタン → カメラ/ファイル選択を直接起動
   const openPicker = (shelfId: string, row: number, mode: 'diff' | 'append' = 'diff') => {
     photoTarget.current = { shelfId, row }
     photoMode.current = mode
+    photoInput.current?.click()
+  }
+
+  // 未配置ボックス(棚未定の本の置き場)
+  const [showBox, setShowBox] = useState(false)
+  const boxBooks = useMemo(
+    () =>
+      books
+        .filter((b) => b.status === 'unplaced')
+        .sort((a, b) => (b.createdAt?.toMillis() ?? 0) - (a.createdAt?.toMillis() ?? 0)),
+    [books],
+  )
+  const openBoxPicker = () => {
+    photoTarget.current = null
+    photoMode.current = 'box'
     photoInput.current?.click()
   }
 
@@ -281,7 +298,9 @@ export function MapView({
       onChange={(e) => {
         const f = e.target.files?.[0]
         const t = photoTarget.current
-        if (f && t) {
+        if (f && photoMode.current === 'box') {
+          onStartBoxPhoto?.(f)
+        } else if (f && t) {
           if (photoMode.current === 'append') onStartAppendPhoto(t.shelfId, t.row, f)
           else onStartPhoto(t.shelfId, t.row, f)
         }
@@ -305,6 +324,68 @@ export function MapView({
   }
 
   // ---- 段の詳細ビュー ----
+  // ---- 未配置ボックスビュー ----
+  if (showBox) {
+    return (
+      <div className="space-y-3">
+        {photoInputEl}
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowBox(false)} className="p-1.5 rounded-lg hover:bg-stone-100 text-stone-500">
+            <ChevronLeft size={20} />
+          </button>
+          <h2 className="font-bold text-stone-800 inline-flex items-center gap-1.5">
+            <Inbox size={18} className="text-amber-700" /> 未配置ボックス
+            <span className="text-sm font-normal text-stone-400">棚が決まっていない本</span>
+          </h2>
+          <span className="text-sm text-stone-400 ml-auto">{boxBooks.length}冊</span>
+        </div>
+
+        <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 gap-3">
+          <p className="text-xs text-stone-500">
+            買ってきた本を撮影してここに溜めておけます。棚の写真を撮り直す(または「写真で更新」する)と、
+            写っている本は自動でその段へ移動します — 書影・既読・評価などのデータはそのまま引き継がれます。
+            手動で移動する場合は本を開いて「編集」から棚と段を選んでください。
+          </p>
+          {!readOnly && onStartBoxPhoto && (
+            <button className={btnPrimary + ' inline-flex items-center gap-1.5 shrink-0'} onClick={openBoxPicker}>
+              <Camera size={15} /> 写真で本を追加
+            </button>
+          )}
+        </div>
+
+        <ul className="divide-y divide-stone-100 bg-white rounded-xl border border-stone-200 overflow-hidden">
+          {boxBooks.map((b) => (
+            <li key={b.id}>
+              <div
+                className="flex items-center gap-2.5 px-3 py-2.5 cursor-pointer hover:bg-amber-50/50 transition-colors"
+                onClick={() => onSelectBook(b.id)}
+              >
+                <div className="w-8 h-12 shrink-0 rounded-sm overflow-hidden bg-stone-100 border border-stone-200 flex items-center justify-center">
+                  {b.coverUrl ? (
+                    <img src={b.coverUrl} alt="" className="w-full h-full object-cover" loading="lazy" />
+                  ) : (
+                    <span className="text-[8px] text-stone-300">なし</span>
+                  )}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <span className="text-sm font-medium text-stone-800 block truncate">
+                    {b.title}{b.volume ? ` (${b.volume})` : ''}
+                  </span>
+                  <span className="block text-xs text-stone-400 truncate">{b.author || '著者不明'}</span>
+                </div>
+              </div>
+            </li>
+          ))}
+          {boxBooks.length === 0 && (
+            <li className="px-4 py-8 text-center text-sm text-stone-400">
+              ボックスは空です。「写真で本を追加」で棚未定の本を登録できます
+            </li>
+          )}
+        </ul>
+      </div>
+    )
+  }
+
   if (selected) {
     const shelf = shelves.find((s) => s.id === selected.shelfId)
     if (!shelf) { setSelected(null); return null }
@@ -500,6 +581,19 @@ export function MapView({
           </p>
         </div>
       )}
+
+      {/* 未配置ボックス */}
+      <button
+        className="w-full flex items-center gap-3 bg-white rounded-xl border border-dashed border-amber-300 px-4 py-3 hover:bg-amber-50 transition-colors text-left"
+        onClick={() => setShowBox(true)}
+      >
+        <Inbox size={20} className="text-amber-700 shrink-0" />
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-bold text-stone-800">未配置ボックス</span>
+          <span className="block text-xs text-stone-400">棚が決まっていない本の置き場。棚写真の更新で自動配置されます</span>
+        </span>
+        <span className="text-sm font-bold text-amber-700 shrink-0">{boxBooks.length}冊</span>
+      </button>
 
       {/* 写真マップ */}
       {maps

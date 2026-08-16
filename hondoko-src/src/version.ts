@@ -1,6 +1,15 @@
-export const APP_VERSION = 'v1.18.0'
+export const APP_VERSION = 'v1.19.0'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: 'v1.19.0',
+    date: '2026-08-16',
+    changes: [
+      'マップに「未配置ボックス」を追加 — 買ってきた本を撮影して棚未定のまま溜めておける置き場',
+      'ボックスの本は棚写真の再撮影/「写真で更新」で自動的にその段へ移動(書影・既読・評価・タグ等のデータは保持)',
+      '写真登録の割り当て先に「📦 未配置ボックス」を選択可能に。「本の写真から追加」は割り当て未定ならボックスが既定',
+    ],
+  },
   {
     version: 'v1.18.0',
     date: '2026-08-16',
