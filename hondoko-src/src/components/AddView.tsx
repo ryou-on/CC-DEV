@@ -107,7 +107,7 @@ export function AddView({
         <div>
           <p className="font-bold text-sm text-stone-800">本の写真から追加(AI)</p>
           <p className="text-xs text-stone-400">
-            買い足した本を撮影(表紙/背表紙、複数冊OK)→ AIが書誌を抽出 → 棚・段を選んで追記。既存の本には影響しません
+            買い足した本を撮影(表紙/背表紙、複数冊OK・写真は複数枚選択可)→ AIが書誌を抽出 → 棚・段を選んで追記。既存の本には影響しません
           </p>
         </div>
       </button>
@@ -115,10 +115,11 @@ export function AddView({
         ref={appendInput}
         type="file"
         accept="image/*"
+        multiple
         className="hidden"
         onChange={(e) => {
-          const f = e.target.files?.[0]
-          if (f) onStartAppendPhoto(f)
+          // 複数選択時は1枚ずつ解析ジョブを起動(下部バーで個別に確認・反映)
+          for (const f of Array.from(e.target.files ?? [])) onStartAppendPhoto(f)
           e.target.value = ''
         }}
       />

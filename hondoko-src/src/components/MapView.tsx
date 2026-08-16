@@ -107,6 +107,7 @@ export function MapView({
   const openPicker = (shelfId: string, row: number, mode: 'diff' | 'append' = 'diff') => {
     photoTarget.current = { shelfId, row }
     photoMode.current = mode
+    if (photoInput.current) photoInput.current.multiple = false
     photoInput.current?.click()
   }
 
@@ -122,6 +123,7 @@ export function MapView({
   const openBoxPicker = () => {
     photoTarget.current = null
     photoMode.current = 'box'
+    if (photoInput.current) photoInput.current.multiple = true // ボックス行きは複数枚OK
     photoInput.current?.click()
   }
 
@@ -303,13 +305,13 @@ export function MapView({
       accept="image/*"
       className="hidden"
       onChange={(e) => {
-        const f = e.target.files?.[0]
+        const files = Array.from(e.target.files ?? [])
         const t = photoTarget.current
-        if (f && photoMode.current === 'box') {
-          onStartBoxPhoto?.(f)
-        } else if (f && t) {
-          if (photoMode.current === 'append') onStartAppendPhoto(t.shelfId, t.row, f)
-          else onStartPhoto(t.shelfId, t.row, f)
+        if (photoMode.current === 'box') {
+          for (const f of files) onStartBoxPhoto?.(f) // 1枚ずつ解析ジョブ
+        } else if (files[0] && t) {
+          if (photoMode.current === 'append') onStartAppendPhoto(t.shelfId, t.row, files[0])
+          else onStartPhoto(t.shelfId, t.row, files[0])
         }
         e.target.value = ''
       }}

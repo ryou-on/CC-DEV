@@ -1,6 +1,13 @@
-export const APP_VERSION = 'v1.19.1'
+export const APP_VERSION = 'v1.19.2'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: 'v1.19.2',
+    date: '2026-08-16',
+    changes: [
+      '「本の写真から追加(AI)」と未配置ボックスの写真追加で、写真を複数枚まとめて選択できるように(1枚ずつ並列解析、下部バーから個別に反映)',
+    ],
+  },
   {
     version: 'v1.19.1',
     date: '2026-08-16',
