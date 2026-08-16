@@ -1,6 +1,15 @@
-export const APP_VERSION = 'v1.20.0'
+export const APP_VERSION = 'v1.21.0'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: 'v1.21.0',
+    date: '2026-08-17',
+    changes: [
+      '「本日の1冊」— その日の初回起動時に日替わりのオススメ本を表示(家族全員同じ本が選ばれます)',
+      '★評価とメモがユーザーごとに記録できるように。お互いの評価・メモは詳細の「みんなの評価・メモ」で見られます',
+      '(検索の評価ソートは従来どおりオーナーの評価を使用)',
+    ],
+  },
   {
     version: 'v1.20.0',
     date: '2026-08-17',

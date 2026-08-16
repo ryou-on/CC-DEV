@@ -80,6 +80,17 @@ export interface SharingConfig {
   linkKey: string // mode=link のときURLに付けるキー(?k=)
 }
 
+// ユーザーごとの評価・メモ (hondoko-reviews/{bookId}_{email})
+export interface BookReview {
+  id: string
+  bookId: string
+  by: string // メールアドレス
+  byName: string
+  rating: number // 0=未評価, 1〜5
+  memo: string
+  updatedAt: Timestamp | null
+}
+
 export interface BookComment {
   id: string
   bookId: string

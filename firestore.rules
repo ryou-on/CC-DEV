@@ -213,6 +213,21 @@ service cloud.firestore {
       allow read: if canHondokoRead();
       allow write: if isHondokoMember();
     }
+    // ユーザーごとの評価・メモ(相互に閲覧可、書き込みは本人のみ)
+    match /hondoko-reviews/{docId} {
+      allow read: if canHondokoRead();
+      allow create, update: if request.auth != null
+        && request.resource.data.by == request.auth.token.email
+        && request.resource.data.rating is int
+        && request.resource.data.rating >= 0
+        && request.resource.data.rating <= 5
+        && request.resource.data.memo is string
+        && request.resource.data.memo.size() <= 2000
+        && (isHondokoMember() ||
+            (isHondokoViewer() && hondokoSharing().allowComments == true));
+      allow delete: if isHondokoOwner() ||
+        (request.auth != null && resource.data.by == request.auth.token.email);
+    }
     match /hondoko-comments/{docId} {
       allow read: if canHondokoRead();
       allow create: if request.auth != null

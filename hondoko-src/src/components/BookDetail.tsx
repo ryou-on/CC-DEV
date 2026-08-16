@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  addDoc, collection, deleteDoc, doc, serverTimestamp, updateDoc, writeBatch,
+  addDoc, collection, deleteDoc, doc, serverTimestamp, setDoc, updateDoc, writeBatch,
 } from 'firebase/firestore'
 import { getDownloadURL, ref as storageRef, uploadString } from 'firebase/storage'
 import {
   Building2, Camera, ChevronRight, ClipboardPaste, ExternalLink, Link2, MapPin, Pencil, RefreshCw, Send, Star, Trash2, User, X,
 } from 'lucide-react'
 import { db, storage } from '../firebase'
-import type { Book, BookComment, Shelf, ShelfPhoto } from '../types'
+import type { Book, BookComment, BookReview, Shelf, ShelfPhoto } from '../types'
 import { imageUrlToBase64, locateBook, lookupBookInfo, resizeImageToBase64 } from '../lib/api'
 import { normalize } from '../lib/text'
 import { resolveRowPhoto, type RowPhotoResult } from '../lib/rowPhoto'
@@ -27,6 +27,7 @@ export function BookDetail({
   shelves,
   photos = [],
   comments,
+  reviews = [],
   readOnly,
   canComment,
   needsLoginToComment,
@@ -43,6 +44,7 @@ export function BookDetail({
   shelves: Shelf[]
   photos?: ShelfPhoto[]
   comments: BookComment[]
+  reviews?: BookReview[]
   readOnly: boolean
   canComment: boolean
   needsLoginToComment?: boolean
@@ -64,6 +66,29 @@ export function BookDetail({
   const bookRef = doc(db, 'hondoko-books', book.id)
   const patch = (data: Record<string, unknown>) =>
     updateDoc(bookRef, { ...data, updatedAt: serverTimestamp() })
+
+  // ユーザーごとの評価・メモ(共有時は相互に見られる)
+  const canReview = canComment
+  const myReview = reviews.find((r) => r.by === currentUser.email) ?? null
+  const otherReviews = reviews.filter((r) => r.by !== currentUser.email && ((r.rating ?? 0) > 0 || r.memo))
+  const myRating = myReview ? myReview.rating : isOwner ? (book.rating ?? 0) : 0
+  const [memoDraft, setMemoDraft] = useState('')
+  useEffect(() => {
+    setMemoDraft(myReview?.memo ?? '')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [book.id, myReview?.id])
+  const saveReview = async (data: { rating?: number; memo?: string }) => {
+    if (!canReview || !currentUser.email) return
+    const id = `${book.id}_${currentUser.email.replace(/[^a-zA-Z0-9]/g, '_')}`
+    await setDoc(doc(db, 'hondoko-reviews', id), {
+      bookId: book.id,
+      by: currentUser.email,
+      byName: currentUser.name,
+      rating: Math.round(data.rating ?? myRating),
+      memo: data.memo ?? myReview?.memo ?? '',
+      updatedAt: serverTimestamp(),
+    })
+  }
 
   // この本がある段の最新登録写真(背表紙の現物確認用)。複数段写真はその段だけに切り出して表示
   const [rowPhoto, setRowPhoto] = useState<RowPhotoResult | null>(null)
@@ -318,7 +343,6 @@ export function BookDetail({
   const authors = book.author.split(/[、,;/／]/).map((a) => a.trim()).filter(Boolean)
   const amazonUrl = `https://www.amazon.co.jp/s?k=${encodeURIComponent(book.isbn || `${book.title} ${book.author}`)}`
   const mercariUrl = `https://jp.mercari.com/search?keyword=${encodeURIComponent(`${book.title} ${book.author}`.trim())}&status=on_sale`
-  const rating = book.rating ?? 0
   const isRead = book.readStatus === 'read'
 
   return (
@@ -427,16 +451,21 @@ export function BookDetail({
                 {[1, 2, 3, 4, 5].map((n) => (
                   <button
                     key={n}
-                    disabled={readOnly}
-                    onClick={() => patch({ rating: rating === n ? 0 : n })}
-                    className={readOnly ? 'cursor-default' : 'hover:scale-110 transition-transform'}
+                    disabled={!canReview}
+                    onClick={() => {
+                      const next = myRating === n ? 0 : n
+                      saveReview({ rating: next })
+                      if (isOwner) patch({ rating: next }) // 検索のソート用にオーナー評価は本にも保持
+                    }}
+                    className={!canReview ? 'cursor-default' : 'hover:scale-110 transition-transform'}
                   >
                     <Star
                       size={18}
-                      className={n <= rating ? 'text-amber-500 fill-amber-400' : 'text-stone-300'}
+                      className={n <= myRating ? 'text-amber-500 fill-amber-400' : 'text-stone-300'}
                     />
                   </button>
                 ))}
+                <span className="text-[10px] text-stone-400 ml-1">自分の評価</span>
               </div>
             </div>
 
@@ -592,6 +621,52 @@ export function BookDetail({
             <button className="text-red-600 border border-red-200 hover:bg-red-50 font-medium rounded-lg px-4 py-2 text-sm" onClick={remove}>
               <span className="inline-flex items-center gap-1.5"><Trash2 size={14} />削除</span>
             </button>
+          </div>
+        )}
+
+        {/* みんなの評価・メモ(ユーザーごと) */}
+        {(otherReviews.length > 0 || canReview) && (
+          <div>
+            <h3 className="text-sm font-bold text-stone-600 mb-2">みんなの評価・メモ</h3>
+            <div className="space-y-2">
+              {otherReviews.map((r) => (
+                <div key={r.id} className="bg-stone-50 rounded-lg px-3 py-2">
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="font-bold text-stone-600">{r.byName || r.by}</span>
+                    {r.rating > 0 && (
+                      <span className="flex items-center gap-px">
+                        {Array.from({ length: 5 }, (_, i) => (
+                          <Star key={i} size={11} className={i < r.rating ? 'text-amber-500 fill-amber-400' : 'text-stone-300'} />
+                        ))}
+                      </span>
+                    )}
+                    {r.updatedAt && <span className="text-stone-300 ml-auto">{r.updatedAt.toDate().toLocaleDateString('ja-JP')}</span>}
+                  </div>
+                  {r.memo && <p className="text-sm text-stone-700 mt-1 whitespace-pre-wrap">{r.memo}</p>}
+                </div>
+              ))}
+              {canReview && (
+                <div className="bg-amber-50/60 border border-amber-100 rounded-lg px-3 py-2">
+                  <p className="text-[11px] text-stone-400 mb-1">自分のメモ(★と合わせてメンバーに公開されます)</p>
+                  <div className="flex items-end gap-2">
+                    <textarea
+                      className="flex-1 border border-stone-200 rounded-lg px-2.5 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      rows={2}
+                      value={memoDraft}
+                      onChange={(e) => setMemoDraft(e.target.value)}
+                      placeholder="感想や覚え書きを残す…"
+                    />
+                    <button
+                      className={btnSecondary + ' !py-1.5 !px-3 text-xs shrink-0'}
+                      disabled={memoDraft === (myReview?.memo ?? '')}
+                      onClick={() => saveReview({ memo: memoDraft.slice(0, 2000) })}
+                    >
+                      保存
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
 

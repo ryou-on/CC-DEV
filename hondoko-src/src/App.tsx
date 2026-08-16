@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebase/auth'
 import { collection, doc, onSnapshot, query, orderBy } from 'firebase/firestore'
 import { BookOpen, LibraryBig, Loader2, LogOut, PlusCircle, RefreshCw, Search, Settings, X } from 'lucide-react'
 import { auth, db, googleProvider, OWNER_EMAIL } from './firebase'
-import type { Book, BookComment, Shelf, SharingConfig, ShelfMap, ShelfPhoto } from './types'
+import type { Book, BookComment, BookReview, Shelf, SharingConfig, ShelfMap, ShelfPhoto } from './types'
 import { APP_VERSION, RELEASE_NOTES, USAGE_GUIDE } from './version'
 import { useAnalysisJobs } from './hooks/useAnalysisJobs'
 import { shelfCode } from './lib/diff'
@@ -38,6 +38,7 @@ export default function App() {
   const [sharing, setSharing] = useState<SharingConfig | null>(null)
   const [sharingLoaded, setSharingLoaded] = useState(false)
   const [comments, setComments] = useState<BookComment[]>([])
+  const [reviews, setReviews] = useState<BookReview[]>([])
   const [shelves, setShelves] = useState<Shelf[]>([])
   const [books, setBooks] = useState<Book[]>([])
   const [photos, setPhotos] = useState<ShelfPhoto[]>([])
@@ -96,7 +97,7 @@ export default function App() {
   // データ購読
   useEffect(() => {
     const canRead = role === 'member' || role === 'viewer'
-    if (!canRead) { setShelves([]); setBooks([]); setPhotos([]); setMaps([]); setComments([]); return }
+    if (!canRead) { setShelves([]); setBooks([]); setPhotos([]); setMaps([]); setComments([]); setReviews([]); return }
     const unsub1 = onSnapshot(query(collection(db, 'hondoko-shelves'), orderBy('order')), (snap) => {
       setShelves(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Shelf))
     })
@@ -112,8 +113,33 @@ export default function App() {
     const unsub5 = onSnapshot(collection(db, 'hondoko-comments'), (snap) => {
       setComments(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as BookComment))
     })
-    return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5() }
+    const unsub6 = onSnapshot(collection(db, 'hondoko-reviews'), (snap) => {
+      setReviews(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as BookReview))
+    })
+    return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); unsub6() }
   }, [role])
+
+  // 本日の1冊: その日の初回起動時に日替わりのオススメを表示(日付から決定的に選ぶので家族全員同じ本)
+  const [dailyBook, setDailyBook] = useState<Book | null>(null)
+  const dailyChecked = useRef(false)
+  useEffect(() => {
+    if (dailyChecked.current) return
+    if ((role !== 'member' && role !== 'viewer') || books.length === 0) return
+    dailyChecked.current = true
+    const d = new Date()
+    const key = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
+    try {
+      if (localStorage.getItem('hondoko-daily-shown') === key) return
+      localStorage.setItem('hondoko-daily-shown', key)
+    } catch { return }
+    const owned = books.filter((b) => b.status !== 'sold')
+    const withCover = owned.filter((b) => b.coverUrl)
+    const pool = (withCover.length >= 10 ? withCover : owned).slice().sort((a, b) => a.id.localeCompare(b.id))
+    if (pool.length === 0) return
+    let h = 7
+    for (const c of key) h = (h * 31 + c.charCodeAt(0)) >>> 0
+    setDailyBook(pool[h % pool.length])
+  }, [role, books])
 
   const selectedBook = useMemo(
     () => books.find((b) => b.id === selectedBookId) ?? null,
@@ -367,6 +393,7 @@ export default function App() {
           shelves={shelves}
           photos={photos}
           comments={comments.filter((c) => c.bookId === selectedBook.id)}
+          reviews={reviews.filter((r) => r.bookId === selectedBook.id)}
           readOnly={readOnly}
           canComment={role === 'member' || (role === 'viewer' && !!sharing?.allowComments && !!user)}
           needsLoginToComment={role === 'viewer' && !!sharing?.allowComments && !user}
@@ -382,6 +409,42 @@ export default function App() {
             setTab('map')
           }}
         />
+      )}
+      {dailyBook && !selectedBookId && (
+        <Modal title="📖 本日の1冊" onClose={() => setDailyBook(null)}>
+          <div className="space-y-3 text-center">
+            {dailyBook.coverUrl ? (
+              <img
+                src={dailyBook.coverUrl}
+                alt={dailyBook.title}
+                className="mx-auto max-h-60 rounded-lg shadow-lg border border-stone-200"
+              />
+            ) : (
+              <div className="mx-auto w-36 h-52 rounded-lg shadow-lg bg-gradient-to-br from-stone-100 to-stone-300 flex items-center justify-center p-3 text-stone-600 font-bold text-sm leading-snug">
+                {dailyBook.title}
+              </div>
+            )}
+            <div>
+              <p className="font-bold text-stone-800">{dailyBook.title}{dailyBook.volume ? ` (${dailyBook.volume})` : ''}</p>
+              <p className="text-sm text-stone-500 mt-0.5">
+                {dailyBook.author || '著者不明'} — <span className="text-amber-700 font-medium">{
+                  dailyBook.status === 'owned' && dailyBook.shelfId
+                    ? (() => { const s = shelves.find((x) => x.id === dailyBook.shelfId); return s ? `${shelfCode(s)}-${dailyBook.row}` : '不明' })()
+                    : '未配置'
+                }</span>
+              </p>
+            </div>
+            <p className="text-xs text-stone-400">今日はこの1冊を手に取ってみませんか？</p>
+            <div className="flex justify-center gap-2 pt-1">
+              <button className="bg-white border border-stone-300 hover:bg-stone-50 text-stone-700 font-medium rounded-lg px-4 py-2 text-sm" onClick={() => setDailyBook(null)}>
+                閉じる
+              </button>
+              <button className={btnPrimary} onClick={() => { setSelectedBookId(dailyBook.id); setDailyBook(null) }}>
+                詳細を見る
+              </button>
+            </div>
+          </div>
+        </Modal>
       )}
       {showUsage && (
         <Modal title="使い方" onClose={() => setShowUsage(false)}>
