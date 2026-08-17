@@ -1,7 +1,7 @@
 # HANDOVER.md - Kindleライブラリ (kindle-library)
 
 ## 基本情報
-- バージョン: v0.6.0
+- バージョン: v0.6.1
 - フェーズ: Phase 1（MVP）
 - 最終更新: 2026-08-17
 
