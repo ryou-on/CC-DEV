@@ -150,7 +150,7 @@
   <div class="hrow">
     <h1>
       <span class="app-name" onclick="openHowTo()" title="使い方を見る">📚 Kindleライブラリ</span>
-      <span class="ver" onclick="openReleaseNotes()" title="リリースノート">v0.5.0</span>
+      <span class="ver" onclick="openReleaseNotes()" title="リリースノート">v0.6.0</span>
       <span class="subtitle">kindle-capturerでスキャンした本のプレビュー</span>
     </h1>
     <div class="spacer"></div>
@@ -158,6 +158,7 @@
     <button id="rescanBtn" class="btn" style="display:none;">再スキャン</button>
     <button id="thumbBtn" class="btn" style="display:none;" title="表紙が未取得の本のサムネイルを再生成">表紙再取得</button>
     <button id="folderBtn" class="btn" style="display:none;">フォルダ変更</button>
+    <button id="langBtn" class="btn" title="Switch language">EN</button>
     <button class="btn ghost" onclick="copyLogs(this)" title="デバッグログをコピー">🐛</button>
   </div>
   <div class="hrow" id="filterRow" style="display:none;">
@@ -259,9 +260,176 @@
 
 <script>
 'use strict';
-var APP_VERSION = 'v0.5.0';
+var APP_VERSION = 'v0.6.0';
+
+// ===== 多言語対応（v0.6.0） =====
+var LANG = 'ja';
+try { if (localStorage.getItem('kl_lang') === 'en') LANG = 'en'; } catch (e) {}
+var I18N = {
+  ja: {
+    subtitle: 'kindle-capturerでスキャンした本のプレビュー',
+    searchPh: 'タイトル・シリーズで検索…',
+    sortNew: '新しい順', sortOld: '古い順', sortName: '名前順', sortRating: '評価順',
+    groupToggle: 'グループ表示', rescan: '再スキャン', thumbBtn: '表紙再取得',
+    folderBtn: 'フォルダ変更', bulkGroup: '表示中をグループ化',
+    chipAll: 'すべて', chipBook: '📖 本', chipManga: '📚 マンガ', chipMag: '📰 雑誌',
+    chipFav: '♥ お気に入り', chipScrap: '✂ スクラップ',
+    connOk: function(n) { return '🟢 ' + n + ' に接続中'; },
+    connNg: '🟡 未接続（クリックで再接続）',
+    heroTitle: 'スキャン本のフォルダを選択',
+    heroText: 'kindle-capturerで保存したPDFのフォルダ（例: ダウンロード/kindle本PDF）を選ぶと、表紙つきの蔵書ライブラリとして記録します。<br>ファイルはこのブラウザ内でのみ読み取られ、どこにもアップロードされません。',
+    heroBtn: 'フォルダを選択',
+    unsupTitle: 'このブラウザは未対応です',
+    unsupText: 'フォルダ読み取り（File System Access API）に対応した Chrome / Edge（デスクトップ版）でお使いください。',
+    scanning: 'スキャン中…',
+    stats: function(n, total) { return n + '冊を表示（蔵書 ' + total + '冊）'; },
+    statsEmpty: '蔵書がありません。フォルダを接続して再スキャンしてください。',
+    statsScraps: function(n) { return n + '件のスクラップ'; },
+    scrapEmpty: 'スクラップはまだありません。リーダーの ✂ ボタンで保存できます。',
+    typeBook: '📖 本', typeManga: '📚 マンガ', typeMag: '📰 雑誌',
+    vol: function(n) { return n + '巻'; },
+    count: function(n) { return n + '冊'; },
+    missing: 'ファイル未検出', noCover: '表紙未取得<br>（✎から再生成）',
+    editTitle: '✎ 蔵書の編集', lblTitle: 'タイトル', lblType: '種類', lblSeries: 'シリーズ',
+    lblVol: '巻', lblRating: '評価', favLabel: 'お気に入りに登録',
+    seriesPh: '同じシリーズ名でグループ化されます', volPh: '巻数（任意）',
+    regenCover: '🖼 表紙を再生成', delFromLib: '蔵書から削除',
+    cancel: 'キャンセル', save: '保存', saved: '保存しました',
+    delConfirm: function(t2) { return '「' + t2 + '」を蔵書リストから削除しますか？（PDFファイル自体は削除されません）'; },
+    delDone: '蔵書から削除しました（ファイルは残っています）',
+    renameSeries: '✎ シリーズ名を変更',
+    renamePrompt: '新しいシリーズ名（空にするとグループ解除）',
+    renameDone: function(n) { return 'シリーズ名を「' + n + '」に変更しました'; },
+    ungrouped: 'グループを解除しました',
+    bulkTitle: function(n) { return '🗂 表示中の' + n + '冊をグループ化'; },
+    bulkApply: function(n) { return n + '冊に適用'; },
+    bulkDone: function(n, sv) { return n + '冊を「' + sv + '」にグループ化しました'; },
+    bulkNeed2: '検索やフィルタで2冊以上に絞ってから実行してください',
+    bulkNoScrap: '本の一覧（すべて/本/マンガ/雑誌）で使ってください',
+    bulkNoName: 'シリーズ名を入力してください',
+    typeKeep: '（種類は変更しない）',
+    added: function(n) { return n + '冊を蔵書に追加しました'; },
+    noMissingThumbs: '表紙が未取得の本はありません',
+    refreshingThumbs: function(n) { return n + '冊の表紙を再取得します…'; },
+    notConnected: 'フォルダ未接続です。右上の「未接続」をクリックして再接続してください',
+    fileGone: 'ファイルが見つかりません（移動または削除された可能性）',
+    fileGoneRescan: 'ファイルが見つかりません。再スキャンしてください',
+    imgSave: '⬇ 画像を保存', close: '閉じる', del: '🗑 削除',
+    scrapDeleted: 'スクラップを削除しました',
+    readerBack: '← ライブラリ', spread: '見開き', single: '単ページ',
+    rtl: '右開き', ltr: '左開き', autoOn: '⏸ 自動', autoOff: '▶ 自動', sec: '秒',
+    bmTitle: '🔖 しおり', bmDl: '⬇ しおりページをPDFで保存',
+    bmEmpty: 'しおりはまだありません。<br>🔖ボタン（またはmキー）で現在のページに挟めます。',
+    loading: '読み込み中...',
+    howtoTitle: '📚 Kindleライブラリ の使い方', releaseTitle: 'リリースノート'
+  },
+  en: {
+    subtitle: 'Preview library for books scanned with kindle-capturer',
+    searchPh: 'Search title or series…',
+    sortNew: 'Newest', sortOld: 'Oldest', sortName: 'Name', sortRating: 'Rating',
+    groupToggle: 'Group view', rescan: 'Rescan', thumbBtn: 'Refresh covers',
+    folderBtn: 'Change folder', bulkGroup: 'Group visible',
+    chipAll: 'All', chipBook: '📖 Books', chipManga: '📚 Manga', chipMag: '📰 Magazines',
+    chipFav: '♥ Favorites', chipScrap: '✂ Scraps',
+    connOk: function(n) { return '🟢 Connected to ' + n; },
+    connNg: '🟡 Not connected (click to reconnect)',
+    heroTitle: 'Select your scanned-books folder',
+    heroText: 'Choose the folder with PDFs saved by kindle-capturer (e.g. Downloads/kindle本PDF) to build a cover-art library.<br>Files are read only inside this browser and never uploaded anywhere.',
+    heroBtn: 'Select folder',
+    unsupTitle: 'This browser is not supported',
+    unsupText: 'Please use desktop Chrome / Edge, which support the File System Access API.',
+    scanning: 'Scanning…',
+    stats: function(n, total) { return 'Showing ' + n + ' of ' + total + ' books'; },
+    statsEmpty: 'No books yet. Connect a folder and rescan.',
+    statsScraps: function(n) { return n + ' scraps'; },
+    scrapEmpty: 'No scraps yet. Save pages with the ✂ button in the reader.',
+    typeBook: '📖 Book', typeManga: '📚 Manga', typeMag: '📰 Magazine',
+    vol: function(n) { return 'Vol.' + n; },
+    count: function(n) { return n + ' vols'; },
+    missing: 'File not found', noCover: 'No cover<br>(regenerate via ✎)',
+    editTitle: '✎ Edit book', lblTitle: 'Title', lblType: 'Type', lblSeries: 'Series',
+    lblVol: 'Volume', lblRating: 'Rating', favLabel: 'Add to favorites',
+    seriesPh: 'Books with the same series name are grouped', volPh: 'Volume (optional)',
+    regenCover: '🖼 Regenerate cover', delFromLib: 'Remove from library',
+    cancel: 'Cancel', save: 'Save', saved: 'Saved',
+    delConfirm: function(t2) { return 'Remove "' + t2 + '" from the library list? (The PDF file itself is not deleted)'; },
+    delDone: 'Removed from library (the file is kept)',
+    renameSeries: '✎ Rename series',
+    renamePrompt: 'New series name (leave empty to ungroup)',
+    renameDone: function(n) { return 'Series renamed to "' + n + '"'; },
+    ungrouped: 'Group removed',
+    bulkTitle: function(n) { return '🗂 Group the ' + n + ' visible books'; },
+    bulkApply: function(n) { return 'Apply to ' + n + ' books'; },
+    bulkDone: function(n, sv) { return 'Grouped ' + n + ' books as "' + sv + '"'; },
+    bulkNeed2: 'Narrow down to 2+ books with search/filters first',
+    bulkNoScrap: 'Use this in the book views (All/Books/Manga/Magazines)',
+    bulkNoName: 'Enter a series name',
+    typeKeep: '(keep current type)',
+    added: function(n) { return 'Added ' + n + ' books to the library'; },
+    noMissingThumbs: 'No books are missing covers',
+    refreshingThumbs: function(n) { return 'Regenerating covers for ' + n + ' books…'; },
+    notConnected: 'Folder not connected. Click "Not connected" at the top right to reconnect',
+    fileGone: 'File not found (it may have been moved or deleted)',
+    fileGoneRescan: 'File not found. Please rescan',
+    imgSave: '⬇ Save image', close: 'Close', del: '🗑 Delete',
+    scrapDeleted: 'Scrap deleted',
+    readerBack: '← Library', spread: 'Spread', single: 'Single',
+    rtl: 'R-to-L', ltr: 'L-to-R', autoOn: '⏸ Auto', autoOff: '▶ Auto', sec: 's',
+    bmTitle: '🔖 Bookmarks', bmDl: '⬇ Save bookmarked pages as PDF',
+    bmEmpty: 'No bookmarks yet.<br>Use the 🔖 button (or m key) to bookmark the current page.',
+    loading: 'Loading...',
+    howtoTitle: '📚 How to use Kindle Library', releaseTitle: 'Release Notes'
+  }
+};
+Object.assign(I18N.ja, {
+  bmAdd: function(p) { return 'しおりを挟みました（P.' + p + '）'; },
+  bmRm: function(p) { return 'しおりを外しました（P.' + p + '）'; },
+  bmNone: 'しおりがありません',
+  bmSaved: function(n) { return n + 'ページをPDFで保存しました'; },
+  scrapOk: function(p) { return '✂ P.' + p + ' をスクラップしました'; },
+  autoGo: function(v) { return v + '秒ごとに自動めくりします'; },
+  autoStopT: '自動めくりを停止しました',
+  autoEndT: '最終ページのため自動めくりを停止しました',
+  secRange: '0.5〜600秒で指定してください',
+  secSet: function(v) { return v + '秒間隔に変更しました'; },
+  openFirst: '先にPDFを開いてください',
+  offsetPair: '1P目からペア（1-2, 3-4…）',
+  offsetSolo: '1P目は単独表示（表紙）＋ 2-3, 4-5…',
+  revealBtn: '📁 ファイルの場所をコピー',
+  revealPrompt: 'スキャンフォルダの絶対パスを一度だけ設定してください（例: ~/Downloads/kindle本PDF）。コピーしたパスは Finder の ⌘⇧G で開けます。',
+  revealDone: 'ファイルパスをコピーしました。Finderで ⌘⇧G（フォルダへ移動）を押して貼り付けてください',
+  revealManual: 'このパスをコピーしてください'
+});
+Object.assign(I18N.en, {
+  bmAdd: function(p) { return 'Bookmarked P.' + p; },
+  bmRm: function(p) { return 'Removed bookmark P.' + p; },
+  bmNone: 'No bookmarks',
+  bmSaved: function(n) { return 'Saved ' + n + ' pages as PDF'; },
+  scrapOk: function(p) { return '✂ Scrapped P.' + p; },
+  autoGo: function(v) { return 'Auto page-turn every ' + v + 's'; },
+  autoStopT: 'Auto page-turn stopped',
+  autoEndT: 'Reached the last page — auto page-turn stopped',
+  secRange: 'Enter 0.5–600 seconds',
+  secSet: function(v) { return 'Interval set to ' + v + 's'; },
+  openFirst: 'Open a PDF first',
+  offsetPair: 'Pair from page 1 (1-2, 3-4…)',
+  offsetSolo: 'Page 1 alone (cover) + 2-3, 4-5…',
+  revealBtn: '📁 Copy file location',
+  revealPrompt: 'Set the absolute path of your scan folder once (e.g. ~/Downloads/kindle本PDF). Use the copied path with ⌘⇧G in Finder.',
+  revealDone: 'File path copied. In Finder press ⌘⇧G (Go to Folder) and paste it',
+  revealManual: 'Copy this path'
+});
+function t(k) {
+  var v = I18N[LANG][k];
+  return (v !== undefined) ? v : I18N.ja[k];
+}
 
 var RELEASE_NOTES = [
+  { ver: 'v0.6.0', date: '2026-08-17', changes: [
+    '日本語/英語の切り替えに対応 — ヘッダーの「EN / 日本語」ボタンでUI全体（一覧・リーダー・編集画面・使い方）を切替。設定は保存されます',
+    'Added Japanese/English language switch — the EN / 日本語 button in the header switches the entire UI; your choice is remembered',
+    '✎編集に「📁 ファイルの場所をコピー」を追加 — コピーしたパスをFinderの ⌘⇧G に貼り付けると元のPDFにたどり着けます（初回にフォルダの絶対パスを設定・Shift+クリックで再設定）'
+  ]},
   { ver: 'v0.5.0', date: '2026-08-17', changes: [
     'ブックリーダーをライブラリに完全統合 — 表紙クリックで直接読み込み・表示（本が表示されない問題を修正）',
     '手動グルーピング — 「表示中をグループ化」ボタンで検索結果をまとめて同じシリーズに設定、グループ画面から「シリーズ名を変更」、✎編集ではシリーズ名の入力候補を表示',
@@ -292,13 +460,22 @@ var RELEASE_NOTES = [
   ]}
 ];
 
-var HOW_TO_USE = [
+var HOW_TO_JA = [
   { heading: '① フォルダを選択（初回のみ）', text: 'kindle-capturerで保存したPDFが入ったフォルダ（例: ダウンロード/kindle本PDF）を選ぶと蔵書として記録されます。2回目からは記録済みの蔵書がすぐ表示されます。本を開く・再スキャンするときだけ「再接続」で許可を取り直します（ブラウザの仕様）。' },
   { heading: '② 分類とグルーピング', text: '追加時にファイル名から 本/マンガ/雑誌・シリーズ名・巻数を自動判定します。同じシリーズは1枚のグループカードにまとまり、クリックで中身を一覧できます。自動判定が甘いときは手動で: 検索で対象を絞って「表示中をグループ化」でまとめて設定、グループ画面の「✎ シリーズ名を変更」で改名・解除、各カードの✎で個別修正（シリーズ名は入力候補が出ます）。' },
   { heading: '③ 評価とお気に入り', text: '各カードの★で5段階評価（同じ★をもう一度押すと解除）、表紙右上の♥でお気に入り登録。「♥ お気に入り」チップで絞り込めます。' },
   { heading: '④ プレビューとしおり', text: '表紙クリックでPDF Readerがその場で全画面表示されます（右下の「✕ ライブラリへ戻る」またはEscで戻る）。右開き見開き・±1P・ズーム・自動めくりに対応し、読んだ位置は自動記憶。しおりは🔖ボタン（一覧は📑、しおりページのPDF書き出しも可能）。' },
   { heading: '⑤ スクラップ', text: 'PDF Readerで気に入ったページを✂ボタン（ショートカット c）で保存すると、ライブラリの「✂ スクラップ」に貯まります。クリックで拡大、画像として保存も可能です。' },
   { heading: '⚠️ 利用上の注意', text: 'スキャンしたPDF・スクラップ画像の取り扱いは私的使用（個人利用）の範囲にとどめてください。データはすべてこのブラウザ内に保存され、サーバーには送信されません。' }
+];
+
+var HOW_TO_EN = [
+  { heading: '1. Select a folder (first time only)', text: 'Choose the folder with PDFs saved by kindle-capturer (e.g. Downloads/kindle本PDF) to register them as your library. From the second launch the saved library appears instantly; you only need to "reconnect" (a browser requirement) when opening a book or rescanning.' },
+  { heading: '2. Types and grouping', text: 'Type (Book/Manga/Magazine), series and volume are auto-detected from filenames. Books in the same series (magazine issues, manga vol.1/2/3…) are stacked into one group card. When detection is off, fix it manually: narrow with search then "Group visible", rename/ungroup via "✎ Rename series" in the group view, or edit each book via its ✎ button (with series suggestions).' },
+  { heading: '3. Ratings and favorites', text: 'Rate with ★ (click the same star again to clear) and mark favorites with ♥ on the cover. Filter with the "♥ Favorites" chip.' },
+  { heading: '4. Reading and bookmarks', text: 'Click a cover to open the built-in reader (back with "← Library" or Esc). Right-to-left spreads, ±1P adjustment, zoom, and auto page-turn are supported; your position is remembered per book. Bookmark with 🔖 (list via 📑, export bookmarked pages as PDF).' },
+  { heading: '5. Scraps', text: 'Save favorite pages with the ✂ button (shortcut c) in the reader; they collect under the "✂ Scraps" chip. Click to enlarge or save as an image.' },
+  { heading: '⚠️ Notice', text: 'Keep scanned PDFs and scrap images within personal use permitted by copyright law. All data stays in this browser and is never sent to a server.' }
 ];
 
 // ===== デバッグログ収集 =====
@@ -328,14 +505,14 @@ function toast(msg) {
 
 // ===== モーダル =====
 function openHowTo() {
-  document.getElementById('modal-title').textContent = '📚 Kindleライブラリ の使い方';
-  document.getElementById('modal-body').innerHTML = HOW_TO_USE.map(function(item) {
+  document.getElementById('modal-title').textContent = t('howtoTitle');
+  document.getElementById('modal-body').innerHTML = (LANG === 'en' ? HOW_TO_EN : HOW_TO_JA).map(function(item) {
     return '<h3>' + item.heading + '</h3><p>' + item.text + '</p>';
   }).join('');
   document.getElementById('info-modal').classList.add('open');
 }
 function openReleaseNotes() {
-  document.getElementById('modal-title').textContent = 'リリースノート';
+  document.getElementById('modal-title').textContent = t('releaseTitle');
   document.getElementById('modal-body').innerHTML = RELEASE_NOTES.map(function(r) {
     var items = r.changes.map(function(c) { return '<li>' + c + '</li>'; }).join('');
     return '<div class="release-ver"><span class="release-ver-tag">' + r.ver + '</span><span class="release-ver-date">' + r.date + '</span></div><ul>' + items + '</ul>';
@@ -416,7 +593,7 @@ var view = 'all';             // all | book | manga | magazine | fav | scrap
 var thumbQueue = [], thumbBusy = 0;
 
 var $ = function(id) { return document.getElementById(id); };
-var TYPE_LABEL = { book: '📖 本', manga: '📚 マンガ', magazine: '📰 雑誌' };
+function typeLabel(tp) { return tp === 'manga' ? t('typeManga') : tp === 'magazine' ? t('typeMag') : t('typeBook'); }
 
 // ===== ファイル名からの自動分類 =====
 // 戻り値 {type, series, volume, author}
@@ -465,11 +642,11 @@ function updateConnPill() {
   p.style.display = '';
   if (connected) {
     p.className = 'conn ok';
-    p.textContent = '🟢 ' + (dirHandle ? dirHandle.name : '') + ' に接続中';
+    p.textContent = t('connOk')(dirHandle ? dirHandle.name : '');
     p.onclick = null;
   } else {
     p.className = 'conn ng';
-    p.textContent = '🟡 未接続（クリックで再接続）';
+    p.textContent = t('connNg');
     p.onclick = reconnect;
   }
 }
@@ -510,7 +687,7 @@ async function collectPdfs(handle, path, depth, out) {
 // スキャン: フォルダの実ファイルと蔵書レコードをマージ
 async function scan() {
   if (!connected) { await reconnect(); if (!connected) return; }
-  $('stats').textContent = 'スキャン中…';
+  $('stats').textContent = t('scanning');
   var found = [];
   try { await collectPdfs(dirHandle, '', 0, found); }
   catch (e) { console.error('scan:', e.message); toast('フォルダを読めませんでした: ' + e.message); return; }
@@ -554,7 +731,7 @@ async function scan() {
     }
   }
   console.log('スキャン完了: ' + found.length + 'ファイル / 追加' + added + ' / 未検出化' + missing);
-  if (added) toast(added + '冊を蔵書に追加しました');
+  if (added) toast(t('added')(added));
   render();
   queueThumbs();
 }
@@ -570,9 +747,9 @@ function queueThumbs() {
 async function refreshThumbs() {
   if (!connected) { await reconnect(); if (!connected) return; }
   var targets = books.filter(function(b) { return !b.thumb && !b.missing; });
-  if (!targets.length) { toast('表紙が未取得の本はありません'); return; }
+  if (!targets.length) { toast(t('noMissingThumbs')); return; }
   targets.forEach(function(b) { b._thumbTries = 0; });
-  toast(targets.length + '冊の表紙を再取得します…');
+  toast(t('refreshingThumbs')(targets.length));
   queueThumbs();
 }
 function pumpThumbs() {
@@ -666,8 +843,8 @@ function render() {
   } else {
     list.forEach(function(b) { grid.appendChild(bookCard(b)); });
   }
-  $('stats').textContent = list.length + '冊を表示（蔵書 ' + books.length + '冊）';
-  if (!books.length) $('stats').textContent = '蔵書がありません。フォルダを接続して再スキャンしてください。';
+  $('stats').textContent = t('stats')(list.length, books.length);
+  if (!books.length) $('stats').textContent = t('statsEmpty');
 }
 
 function starsEl(b) {
@@ -697,17 +874,17 @@ function coverEl(b) {
   else {
     var ph = document.createElement('div');
     ph.style.cssText = 'text-align:center;';
-    ph.innerHTML = '📖<div style="font-size:9px; margin-top:4px;">表紙未取得<br>（✎から再生成）</div>';
+    ph.innerHTML = '📖<div style="font-size:9px; margin-top:4px;">' + t('noCover') + '</div>';
     cover.appendChild(ph);
   }
   var badge = document.createElement('span');
   badge.className = 'badge';
-  badge.textContent = TYPE_LABEL[b.type] || b.type;
+  badge.textContent = typeLabel(b.type);
   cover.appendChild(badge);
   if (b.missing) {
     var mi = document.createElement('div');
     mi.className = 'missing';
-    mi.textContent = 'ファイル未検出';
+    mi.textContent = t('missing');
     cover.appendChild(mi);
   }
   return cover;
@@ -742,7 +919,7 @@ function bookCard(b) {
   var meta = document.createElement('div');
   meta.className = 'meta';
   var parts = [];
-  if (b.volume != null) parts.push(b.volume + '巻');
+  if (b.volume != null) parts.push(t('vol')(b.volume));
   if (b.pages) parts.push(b.pages + 'p');
   parts.push(fmtDate(b.mtime));
   meta.textContent = parts.join('・');
@@ -763,7 +940,7 @@ function groupCard(o) {
   var cover = coverEl(face);
   var count = document.createElement('span');
   count.className = 'count';
-  count.textContent = g.length + '冊';
+  count.textContent = t('count')(g.length);
   cover.appendChild(count);
   card.appendChild(cover);
 
@@ -774,7 +951,7 @@ function groupCard(o) {
 
   var meta = document.createElement('div');
   meta.className = 'meta';
-  meta.textContent = (TYPE_LABEL[o.type] || '') + '・' + g.length + '冊';
+  meta.textContent = typeLabel(o.type) + '・' + t('count')(g.length);
   card.appendChild(meta);
 
   card.onclick = function() { openGroup(o.series, o.type); };
@@ -782,15 +959,15 @@ function groupCard(o) {
 }
 
 function openGroup(series, type) {
-  document.getElementById('modal-title').textContent = (TYPE_LABEL[type] || '') + ' ' + series;
+  document.getElementById('modal-title').textContent = typeLabel(type) + ' ' + series;
   var body = document.getElementById('modal-body');
   body.innerHTML = '';
   var renameBtn = document.createElement('button');
   renameBtn.className = 'btn';
-  renameBtn.textContent = '✎ シリーズ名を変更';
+  renameBtn.textContent = t('renameSeries');
   renameBtn.style.marginBottom = '12px';
   renameBtn.onclick = async function() {
-    var nv = prompt('新しいシリーズ名（空にするとグループ解除）', series);
+    var nv = prompt(t('renamePrompt'), series);
     if (nv === null) return;
     nv = nv.trim();
     var members = books.filter(function(b) { return b.series === series && b.type === type; });
@@ -800,7 +977,7 @@ function openGroup(series, type) {
     }
     closeModal();
     render();
-    toast(nv ? 'シリーズ名を「' + nv + '」に変更しました' : 'グループを解除しました');
+    toast(nv ? t('renameDone')(nv) : t('ungrouped'));
   };
   body.appendChild(renameBtn);
   var grid = document.createElement('div');
@@ -816,9 +993,31 @@ function openGroup(series, type) {
   document.getElementById('info-modal').classList.add('open');
 }
 
+// ===== ファイルの場所をコピー（Finderの⌘⇧G用） =====
+// ブラウザからFinderを直接開くことはできないため、フルパスをコピーして
+// Finderの「フォルダへ移動（⌘⇧G）」に貼り付けてもらう方式。
+// フォルダの絶対パスはFile System Access APIからは取得できないので初回に一度だけ入力
+async function copyFilePath(b, forceAsk) {
+  var base = '';
+  try { base = (await idbGet('kv', 'basePath')) || ''; } catch (e) {}
+  if (!base || forceAsk) {
+    base = prompt(t('revealPrompt'), base || ('~/Downloads/' + (dirHandle ? dirHandle.name : '')));
+    if (base === null) return;
+    base = base.trim().replace(/\/+$/, '');
+    if (base) await idbPut('kv', base, 'basePath');
+  }
+  var full = (base ? base + '/' : '') + b.key;
+  try {
+    await navigator.clipboard.writeText(full);
+    toast(t('revealDone'));
+  } catch (e) {
+    prompt(t('revealManual'), full);
+  }
+}
+
 // ===== 編集モーダル =====
 function openEdit(b) {
-  document.getElementById('modal-title').textContent = '✎ 蔵書の編集';
+  document.getElementById('modal-title').textContent = t('editTitle');
   var body = document.getElementById('modal-body');
   body.innerHTML = '';
 
@@ -833,21 +1032,21 @@ function openEdit(b) {
   var titleDiv = document.createElement('div');
   titleDiv.textContent = b.title;
   titleDiv.style.cssText = 'font-weight:700;';
-  body.appendChild(row('タイトル', titleDiv));
+  body.appendChild(row(t('lblTitle'), titleDiv));
 
   var typeSel = document.createElement('select');
-  [['book','📖 本'],['manga','📚 マンガ'],['magazine','📰 雑誌']].forEach(function(t) {
+  ['book','manga','magazine'].forEach(function(tp) {
     var op = document.createElement('option');
-    op.value = t[0]; op.textContent = t[1];
-    if (b.type === t[0]) op.selected = true;
+    op.value = tp; op.textContent = typeLabel(tp);
+    if (b.type === tp) op.selected = true;
     typeSel.appendChild(op);
   });
-  body.appendChild(row('種類', typeSel));
+  body.appendChild(row(t('lblType'), typeSel));
 
   var seriesIn = document.createElement('input');
   seriesIn.type = 'text';
   seriesIn.value = b.series || '';
-  seriesIn.placeholder = '同じシリーズ名でグループ化されます';
+  seriesIn.placeholder = t('seriesPh');
   seriesIn.setAttribute('list', 'seriesList');
   var dl = document.getElementById('seriesList') || document.createElement('datalist');
   dl.id = 'seriesList';
@@ -858,14 +1057,14 @@ function openEdit(b) {
     dl.appendChild(op);
   });
   document.body.appendChild(dl);
-  body.appendChild(row('シリーズ', seriesIn));
+  body.appendChild(row(t('lblSeries'), seriesIn));
 
   var volIn = document.createElement('input');
   volIn.type = 'number';
   volIn.min = '1';
   volIn.value = b.volume != null ? b.volume : '';
-  volIn.placeholder = '巻数（任意）';
-  body.appendChild(row('巻', volIn));
+  volIn.placeholder = t('volPh');
+  body.appendChild(row(t('lblVol'), volIn));
 
   var tmp = { rating: b.rating };
   var starsWrap = document.createElement('div');
@@ -883,7 +1082,7 @@ function openEdit(b) {
     })(i);
   }
   paintStars();
-  body.appendChild(row('評価', starsWrap));
+  body.appendChild(row(t('lblRating'), starsWrap));
 
   var favLabel = document.createElement('label');
   favLabel.style.cssText = 'display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px;';
@@ -891,7 +1090,7 @@ function openEdit(b) {
   favCb.type = 'checkbox';
   favCb.checked = b.fav;
   favCb.style.accentColor = 'var(--heart)';
-  favLabel.append(favCb, document.createTextNode('お気に入りに登録'));
+  favLabel.append(favCb, document.createTextNode(t('favLabel')));
   body.appendChild(row('♥', favLabel));
 
   var actions = document.createElement('div');
@@ -899,7 +1098,7 @@ function openEdit(b) {
   if (!b.thumb && fileMap.has(b.key)) {
     var thumbBtn2 = document.createElement('button');
     thumbBtn2.className = 'btn';
-    thumbBtn2.textContent = '🖼 表紙を再生成';
+    thumbBtn2.textContent = t('regenCover');
     thumbBtn2.onclick = function() {
       b._thumbTries = 0;
       makeThumb(b).then(function() { toast(b.thumb ? '表紙を再生成しました' : '表紙の生成に失敗しました（🐛でログ確認）'); });
@@ -907,25 +1106,31 @@ function openEdit(b) {
     };
     actions.appendChild(thumbBtn2);
   }
+  var revealB = document.createElement('button');
+  revealB.className = 'btn';
+  revealB.textContent = t('revealBtn');
+  revealB.title = 'Shift+クリックでフォルダパスを再設定 / Shift-click to reset the folder path';
+  revealB.onclick = function(e) { copyFilePath(b, e.shiftKey); };
+  actions.appendChild(revealB);
   var delBtn = document.createElement('button');
   delBtn.className = 'btn';
-  delBtn.textContent = '蔵書から削除';
+  delBtn.textContent = t('delFromLib');
   delBtn.style.marginRight = 'auto';
   delBtn.onclick = async function() {
-    if (!confirm('「' + b.title + '」を蔵書リストから削除しますか？（PDFファイル自体は削除されません）')) return;
+    if (!confirm(t('delConfirm')(b.title))) return;
     books = books.filter(function(x) { return x.key !== b.key; });
     await idbDel('books', b.key);
     closeModal();
     render();
-    toast('蔵書から削除しました（ファイルは残っています）');
+    toast(t('delDone'));
   };
   var cancel = document.createElement('button');
   cancel.className = 'btn';
-  cancel.textContent = 'キャンセル';
+  cancel.textContent = t('cancel');
   cancel.onclick = closeModal;
   var save = document.createElement('button');
   save.className = 'btn primary';
-  save.textContent = '保存';
+  save.textContent = t('save');
   save.onclick = async function() {
     b.type = typeSel.value;
     b.series = seriesIn.value.trim();
@@ -935,7 +1140,7 @@ function openEdit(b) {
     await idbPut('books', b);
     closeModal();
     render();
-    toast('保存しました');
+    toast(t('saved'));
   };
   actions.append(delBtn, cancel, save);
   body.appendChild(actions);
@@ -953,10 +1158,10 @@ function commonPrefix(titles) {
   return pre.replace(/[ 　_\-–—(（\d]+$/, '').trim();
 }
 function openBulkGroup() {
-  if (view === 'scrap') { toast('本の一覧（すべて/本/マンガ/雑誌）で使ってください'); return; }
+  if (view === 'scrap') { toast(t('bulkNoScrap')); return; }
   var list = filteredBooks();
-  if (list.length < 2) { toast('検索やフィルタで2冊以上に絞ってから実行してください'); return; }
-  document.getElementById('modal-title').textContent = '🗂 表示中の' + list.length + '冊をグループ化';
+  if (list.length < 2) { toast(t('bulkNeed2')); return; }
+  document.getElementById('modal-title').textContent = t('bulkTitle')(list.length);
   var body = document.getElementById('modal-body');
   body.innerHTML = '';
 
@@ -976,30 +1181,30 @@ function openBulkGroup() {
   var seriesIn = document.createElement('input');
   seriesIn.type = 'text';
   seriesIn.value = $('search').value.trim() || commonPrefix(list.map(function(b) { return b.title; }));
-  seriesIn.placeholder = 'シリーズ名';
+  seriesIn.placeholder = t('lblSeries');
   seriesIn.setAttribute('list', 'seriesList');
-  body.appendChild(row('シリーズ', seriesIn));
+  body.appendChild(row(t('lblSeries'), seriesIn));
 
   var typeSel = document.createElement('select');
-  [['', '（種類は変更しない）'], ['book','📖 本'],['manga','📚 マンガ'],['magazine','📰 雑誌']].forEach(function(t) {
+  [['', t('typeKeep')], ['book', typeLabel('book')], ['manga', typeLabel('manga')], ['magazine', typeLabel('magazine')]].forEach(function(tp) {
     var op = document.createElement('option');
-    op.value = t[0]; op.textContent = t[1];
+    op.value = tp[0]; op.textContent = tp[1];
     typeSel.appendChild(op);
   });
-  body.appendChild(row('種類', typeSel));
+  body.appendChild(row(t('lblType'), typeSel));
 
   var actions = document.createElement('div');
   actions.className = 'form-actions';
   var cancel = document.createElement('button');
   cancel.className = 'btn';
-  cancel.textContent = 'キャンセル';
+  cancel.textContent = t('cancel');
   cancel.onclick = closeModal;
   var apply = document.createElement('button');
   apply.className = 'btn primary';
-  apply.textContent = list.length + '冊に適用';
+  apply.textContent = t('bulkApply')(list.length);
   apply.onclick = async function() {
     var sv = seriesIn.value.trim();
-    if (!sv) { toast('シリーズ名を入力してください'); return; }
+    if (!sv) { toast(t('bulkNoName')); return; }
     for (var i = 0; i < list.length; i++) {
       list[i].series = sv;
       if (typeSel.value) list[i].type = typeSel.value;
@@ -1007,7 +1212,7 @@ function openBulkGroup() {
     }
     closeModal();
     render();
-    toast(list.length + '冊を「' + sv + '」にグループ化しました');
+    toast(t('bulkDone')(list.length, sv));
   };
   actions.append(cancel, apply);
   body.appendChild(actions);
@@ -1036,7 +1241,7 @@ async function renderScraps() {
     card.onclick = function() { openLightbox(s); };
     sg.appendChild(card);
   });
-  $('stats').textContent = list.length ? list.length + '件のスクラップ' : 'スクラップはまだありません。PDF Readerの ✂ ボタンで保存できます。';
+  $('stats').textContent = list.length ? t('statsScraps')(list.length) : t('scrapEmpty');
 }
 
 function openLightbox(s) {
@@ -1052,7 +1257,7 @@ function openLightbox(s) {
     await idbDel('scraps', s.id);
     document.getElementById('lightbox').classList.remove('open');
     renderScraps();
-    toast('スクラップを削除しました');
+    toast(t('scrapDeleted'));
   };
   document.getElementById('lightbox').classList.add('open');
 }
@@ -1073,10 +1278,10 @@ var showToast = toast;
 function readerOpen() { return $('reader').classList.contains('open'); }
 
 async function openInReader(b) {
-  if (b.missing) { toast('ファイルが見つかりません（移動または削除された可能性）'); return; }
+  if (b.missing) { toast(t('fileGone')); return; }
   if (!fileMap.has(b.key)) {
-    if (!connected) { toast('フォルダ未接続です。右上の「未接続」をクリックして再接続してください'); return; }
-    toast('ファイルが見つかりません。再スキャンしてください');
+    if (!connected) { toast(t('notConnected')); return; }
+    toast(t('fileGoneRescan'));
     return;
   }
   $('reader').classList.add('open');
@@ -1192,10 +1397,10 @@ function stopAuto() {
   updateAutoButton();
 }
 function autoTick() {
-  if (!goNext()) { stopAuto(); showToast('最終ページのため自動めくりを停止しました'); }
+  if (!goNext()) { stopAuto(); showToast(t('autoEndT')); }
 }
 function updateAutoButton() {
-  $('btnAuto').textContent = state.autoOn ? '⏸ 自動' : '▶ 自動';
+  $('btnAuto').textContent = state.autoOn ? t('autoOn') : t('autoOff');
   $('btnAuto').classList.toggle('active', state.autoOn);
 }
 
@@ -1205,14 +1410,14 @@ function currentSpreadBookmarked() {
   return pages.every(function (p) { return state.bookmarks.has(p); });
 }
 function toggleBookmark() {
-  if (!state.pdfDoc) { showToast('先にPDFを開いてください'); return; }
+  if (!state.pdfDoc) { showToast(t('openFirst')); return; }
   var pages = spreadOf(state.currentPage);
   if (currentSpreadBookmarked()) {
     pages.forEach(function (p) { state.bookmarks.delete(p); });
-    showToast('しおりを外しました（P.' + pages.join('-') + '）');
+    showToast(t('bmRm')(pages.join('-')));
   } else {
     pages.forEach(function (p) { state.bookmarks.add(p); });
-    showToast('しおりを挟みました（P.' + pages.join('-') + '）');
+    showToast(t('bmAdd')(pages.join('-')));
   }
   savePrefs();
   updateRdToolbar(spreadOf(state.currentPage));
@@ -1223,7 +1428,7 @@ function renderBmList() {
   var pages = Array.from(state.bookmarks).sort(function (a, b) { return a - b; });
   $('btnBmDownload').disabled = pages.length === 0;
   if (!pages.length) {
-    list.innerHTML = '<div class="bmEmpty">しおりはまだありません。<br>🔖ボタン（またはmキー）で現在のページに挟めます。</div>';
+    list.innerHTML = '<div class="bmEmpty">' + t('bmEmpty') + '</div>';
     return;
   }
   list.innerHTML = '';
@@ -1264,7 +1469,7 @@ function ensurePdfLib() {
 }
 async function downloadBookmarkedPages() {
   var pages = Array.from(state.bookmarks).sort(function (a, b) { return a - b; });
-  if (!pages.length) { showToast('しおりがありません'); return; }
+  if (!pages.length) { showToast(t('bmNone')); return; }
   if (!state.pdfBytes) { showToast('元のPDFデータがありません。開き直してください'); return; }
   $('rdLoading').style.display = 'flex';
   try {
@@ -1282,7 +1487,7 @@ async function downloadBookmarkedPages() {
     a.click();
     a.remove();
     setTimeout(function () { URL.revokeObjectURL(a.href); }, 10000);
-    showToast(pages.length + 'ページをPDFで保存しました');
+    showToast(t('bmSaved')(pages.length));
   } catch (err) {
     console.error('bookmark export error:', err.message || err);
     showToast('保存に失敗しました: ' + (err.message || err));
@@ -1293,7 +1498,7 @@ async function downloadBookmarkedPages() {
 
 // ---- スクラップ（このページ内で直接IndexedDBへ保存） ----
 async function scrapCurrent() {
-  if (!state.pdfDoc) { showToast('先にPDFを開いてください'); return; }
+  if (!state.pdfDoc) { showToast(t('openFirst')); return; }
   var pages = spreadOf(state.currentPage);
   try {
     for (var i = 0; i < pages.length; i++) {
@@ -1305,7 +1510,7 @@ async function scrapCurrent() {
       await pg.render({ canvasContext: cv.getContext('2d'), viewport: vp, intent: 'print' }).promise;
       await idbPut('scraps', { docName: state.docName, page: pages[i], dataUrl: cv.toDataURL('image/jpeg', 0.85), createdAt: Date.now() });
     }
-    showToast('✂ P.' + pages.join('-') + ' をスクラップしました');
+    showToast(t('scrapOk')(pages.join('-')));
   } catch (err) {
     console.error('scrap error:', err.message || err);
     showToast('スクラップに失敗しました: ' + (err.message || err));
@@ -1358,9 +1563,9 @@ function updateRdToolbar(pages) {
   var n = state.pdfDoc ? state.pdfDoc.numPages : 0;
   $('pageInput').value = pages ? pages.join('-') : '';
   $('pageTotal').textContent = '/ ' + (n || '-');
-  $('btnSpread').textContent = state.spreadMode ? '見開き' : '単ページ';
+  $('btnSpread').textContent = state.spreadMode ? t('spread') : t('single');
   $('btnSpread').classList.toggle('active', state.spreadMode);
-  $('btnBinding').textContent = state.rtl ? '右開き' : '左開き';
+  $('btnBinding').textContent = state.rtl ? t('rtl') : t('ltr');
   $('btnBinding').classList.toggle('active', state.rtl);
   $('btnOffset').classList.toggle('active', state.offset === 1);
   $('btnOffset').disabled = !state.spreadMode;
@@ -1405,15 +1610,15 @@ $('btnSpread').onclick = function () { state.spreadMode = !state.spreadMode; ren
 $('btnBinding').onclick = function () { state.rtl = !state.rtl; renderView(); };
 $('btnOffset').onclick = function () {
   state.offset = state.offset === 0 ? 1 : 0;
-  showToast(state.offset === 1 ? '1P目からペア（1-2, 3-4…）' : '1P目は単独表示（表紙）＋ 2-3, 4-5…');
+  showToast(state.offset === 1 ? t('offsetPair') : t('offsetSolo'));
   renderView();
 };
 $('btnAuto').onclick = function () {
-  if (state.autoOn) { stopAuto(); showToast('自動めくりを停止しました'); }
+  if (state.autoOn) { stopAuto(); showToast(t('autoStopT')); }
   else {
-    if (!state.pdfDoc) { showToast('先にPDFを開いてください'); return; }
+    if (!state.pdfDoc) { showToast(t('openFirst')); return; }
     startAuto();
-    showToast(state.autoSec + '秒ごとに自動めくりします');
+    showToast(t('autoGo')(state.autoSec));
   }
 };
 $('autoSecInput').onchange = function () {
@@ -1421,9 +1626,9 @@ $('autoSecInput').onchange = function () {
   if (v >= 0.5 && v <= 600) {
     state.autoSec = v;
     savePrefs();
-    if (state.autoOn) { startAuto(); showToast(v + '秒間隔に変更しました'); }
+    if (state.autoOn) { startAuto(); showToast(t('secSet')(v)); }
   } else {
-    showToast('0.5〜600秒で指定してください');
+    showToast(t('secRange'));
   }
   this.value = state.autoSec;
 };
@@ -1511,6 +1716,42 @@ window.addEventListener('resize', function () {
 
 loadPrefs();
 
+// ===== 言語切替 =====
+function applyLang() {
+  document.querySelector('h1 .subtitle').textContent = t('subtitle');
+  $('search').placeholder = t('searchPh');
+  var so = $('sortSel').options;
+  so[0].text = t('sortNew'); so[1].text = t('sortOld'); so[2].text = t('sortName'); so[3].text = t('sortRating');
+  $('groupToggle').parentNode.lastChild.textContent = t('groupToggle');
+  $('rescanBtn').textContent = t('rescan');
+  $('thumbBtn').textContent = t('thumbBtn');
+  $('folderBtn').textContent = t('folderBtn');
+  $('bulkGroupBtn').textContent = t('bulkGroup');
+  $('langBtn').textContent = LANG === 'ja' ? 'EN' : '日本語';
+  var chipKeys = { all: 'chipAll', book: 'chipBook', manga: 'chipManga', magazine: 'chipMag', fav: 'chipFav', scrap: 'chipScrap' };
+  document.querySelectorAll('#filterRow .chip').forEach(function(c) { c.textContent = t(chipKeys[c.dataset.view]); });
+  $('heroTitle').textContent = t('heroTitle');
+  $('heroText').innerHTML = t('heroText');
+  $('heroBtn').textContent = t('heroBtn');
+  $('lbSave').textContent = t('imgSave');
+  $('lbDel').textContent = t('del');
+  document.querySelector('#lightbox .lb-btns').lastElementChild.textContent = t('close');
+  $('rdBack').textContent = t('readerBack');
+  $('autoSecWrap').lastChild.textContent = t('sec');
+  document.querySelector('#bmHeader span').textContent = t('bmTitle');
+  $('btnBmDownload').textContent = t('bmDl');
+  document.querySelector('#rdLoading span').textContent = t('loading');
+  updateConnPill();
+  updateAutoButton();
+  if (state.pdfDoc) updateRdToolbar(spreadOf(state.currentPage));
+  render();
+}
+$('langBtn').onclick = function() {
+  LANG = LANG === 'ja' ? 'en' : 'ja';
+  try { localStorage.setItem('kl_lang', LANG); } catch (e) {}
+  applyLang();
+};
+
 // ===== イベント =====
 $('heroBtn').onclick = pickFolder;
 $('folderBtn').onclick = pickFolder;
@@ -1539,10 +1780,11 @@ function showLibrary() {
 
 // ===== 起動 =====
 (async function init() {
+  if (LANG === 'en') applyLang();
   if (!window.showDirectoryPicker) {
     $('hero').style.display = 'block';
-    $('heroTitle').textContent = 'このブラウザは未対応です';
-    $('heroText').textContent = 'フォルダ読み取り（File System Access API）に対応した Chrome / Edge（デスクトップ版）でお使いください。';
+    $('heroTitle').textContent = t('unsupTitle');
+    $('heroText').textContent = t('unsupText');
     $('heroBtn').style.display = 'none';
     return;
   }
