@@ -477,6 +477,7 @@ toggleOrderCheck, bulkRemoveFromOrder, clearOrderCheck, loadAllFolderVideos,
 toggleCtaContact, toggleCtaMeeting, setCtaType,
 loadAllPlaylists, addVideoToPlaylist,
 loadAnalytics, switchAnTab, filterAnVideo,
+loadAllSelVideos, loadAllThumbVideosForSearch,
 copyConsole:()=>navigator.clipboard.writeText(clog.join('\n')||'（ログなし）').then(()=>toast('コピーしました','suc'))
 });
 
@@ -662,26 +663,46 @@ renderVList();
 }
 }
 
-async function loadAllSelVideos(){
+// フォルダ内の全ページを取得（APIの1ページ上限で最新動画が落ちるのを防ぐ）
+async function fetchFolderAllPages(fid,maxPages=20){
+const out=[];
+let page=1,last=1;
+while(page<=last&&page<=maxPages){
+  const res=await Promise.race([
+    api('/v2/video?video_container_id='+fid+'&page='+page+'&per_page=250'),
+    new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),15000))
+  ]);
+  const vs=res.data||[];
+  out.push(...vs);
+  const meta=res.meta||res;
+  last=meta.last_page||1;
+  if(!vs.length) break;
+  page++;
+}
+return out;
+}
+
+async function loadAllSelVideos(force){
 const info=document.getElementById('vGlobalInfo');
 const list=document.getElementById('videoList');
 const input=document.getElementById('vGlobalQ');
 if(input) input.disabled=true;
 if(info) info.textContent='全フォルダを読み込み中…（'+folders.length+'フォルダ）';
 if(list) list.innerHTML='<div class="load"><div class="spin"></div>全フォルダ読み込み中...</div>';
-const fetchWithTimeout=fid=>Promise.race([
-  api('/v2/video?video_container_id='+fid),
-  new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),10000))
-]);
-const results=await Promise.allSettled(folders.map(f=>fetchWithTimeout(f.id)));
+const results=await Promise.allSettled(folders.map(f=>fetchFolderAllPages(f.id)));
 allSelVideos=[];let errCount=0;
+const seen=new Set();
 results.forEach(r=>{
-  if(r.status==='fulfilled'){const vs=r.value.data||[];vs.forEach(v=>videoMap[v.id]=v);allSelVideos.push(...vs);}
-  else errCount++;
+  if(r.status==='fulfilled'){
+    r.value.forEach(v=>{ videoMap[v.id]=v; if(!seen.has(v.id)){seen.add(v.id);allSelVideos.push(v);} });
+  } else errCount++;
 });
+// 新しい順に並べる
+allSelVideos.sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0));
 vGlobalLoaded=true;
 if(input){input.disabled=false;input.focus();}
-if(info) info.textContent='全'+allSelVideos.length+'本読み込み済み'+(errCount?'（'+errCount+'フォルダ失敗）':'');
+if(info) info.innerHTML='全'+allSelVideos.length+'本読み込み済み'+(errCount?'（'+errCount+'フォルダ失敗）':'')+
+  ' <button onclick="loadAllSelVideos(true)" style="margin-left:6px;padding:1px 8px;border-radius:4px;border:1px solid #d1d5db;background:#fff;font-size:10px;cursor:pointer">🔄 再読込</button>';
 renderVGlobalList();
 }
 
@@ -1508,21 +1529,19 @@ const input=document.getElementById('thumbGlobalQ');
 if(input) input.disabled=true;
 if(info) info.textContent='全フォルダを読み込み中…（'+folders.length+'フォルダ）';
 if(list) list.innerHTML='<div class="load"><div class="spin"></div>全フォルダ読み込み中...</div>';
-// 10秒タイムアウト付きフォルダフェッチ
-const fetchWithTimeout=fid=>Promise.race([
-  api('/v2/video?video_container_id='+fid),
-  new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),10000))
-]);
-const results=await Promise.allSettled(folders.map(f=>fetchWithTimeout(f.id)));
+const results=await Promise.allSettled(folders.map(f=>fetchFolderAllPages(f.id)));
 allThumbVideos=[];
 let errCount=0;
+const seen=new Set();
 results.forEach(r=>{
-  if(r.status==='fulfilled') allThumbVideos.push(...(r.value.data||[]));
+  if(r.status==='fulfilled') r.value.forEach(v=>{ videoMap[v.id]=v; if(!seen.has(v.id)){seen.add(v.id);allThumbVideos.push(v);} });
   else errCount++;
 });
+allThumbVideos.sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0));
 allThumbLoaded=true;
 if(input){ input.disabled=false; input.focus(); }
-if(info) info.textContent='全'+allThumbVideos.length+'本を読み込みました'+(errCount?'（'+errCount+'フォルダ取得失敗・スキップ）':'');
+if(info) info.innerHTML='全'+allThumbVideos.length+'本を読み込みました'+(errCount?'（'+errCount+'フォルダ取得失敗・スキップ）':'')+
+  ' <button onclick="loadAllThumbVideosForSearch()" style="margin-left:6px;padding:1px 8px;border-radius:4px;border:1px solid #d1d5db;background:#fff;font-size:10px;cursor:pointer">🔄 再読込</button>';
 renderThumbGlobalList();
 }
 
