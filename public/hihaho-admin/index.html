@@ -599,7 +599,9 @@ if(tabF) loadTabVideos(tabF); else renderVList();
 
 async function loadTabVideos(fid){
 const el=document.getElementById('videoList');
-el.innerHTML='<div class="load"><div class="spin"></div>読み込み中...</div>';
+// 全動画検索モード中はvideoListを触らない（グローバル検索結果の上書き防止）
+const owns=()=>vSelMode!=='global';
+if(owns()) el.innerHTML='<div class="load"><div class="spin"></div>読み込み中...</div>';
 tabVideos=[];vPage=1;vHasMore=false;
 let res=null;
 try{
@@ -608,7 +610,7 @@ res=await api('/v2/video?video_container_id='+fid+'&page=1&per_page=50');
 // 504等の場合はpaginationパラメータなしでリトライ
 try{ res=await api('/v2/video?video_container_id='+fid); }
 catch(e2){
-el.innerHTML='<div class="emp"><div class="ei">⚠️</div><p>'+e2.message+'</p><button class="btn bs bsm" style="margin-top:8px" onclick="loadTabVideos('+fid+')">🔄 再試行</button></div>';
+if(owns()) el.innerHTML='<div class="emp"><div class="ei">⚠️</div><p>'+e2.message+'</p><button class="btn bs bsm" style="margin-top:8px" onclick="loadTabVideos('+fid+')">🔄 再試行</button></div>';
 return;
 }
 }
@@ -616,8 +618,10 @@ tabVideos=res.data||[];
 tabVideos.forEach(v=>videoMap[v.id]=v);
 const meta=res.meta||{};
 vHasMore=(meta.current_page||1)<(meta.last_page||1);
+if(owns()){
 document.getElementById('vThumbBar').style.display='flex';
 renderVList();
+}
 if(editId) renderOrderCard();
 }
 
@@ -664,14 +668,26 @@ renderVList();
 }
 
 // フォルダ内の全ページを取得（APIの1ページ上限で最新動画が落ちるのを防ぐ）
+// 504/タイムアウトは1回リトライし、それでも失敗したらそのページだけ諦めて取得済み分を返す
 async function fetchFolderAllPages(fid,maxPages=20){
+const tryFetch=async(url)=>Promise.race([
+  api(url),
+  new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),15000))
+]);
 const out=[];
 let page=1,last=1;
 while(page<=last&&page<=maxPages){
-  const res=await Promise.race([
-    api('/v2/video?video_container_id='+fid+'&page='+page+'&per_page=250'),
-    new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),15000))
-  ]);
+  let res=null;
+  const url='/v2/video?video_container_id='+fid+'&page='+page+'&per_page=250';
+  try{ res=await tryFetch(url); }
+  catch(e){
+    // 1回リトライ → だめならpaginationなしで丸ごと取得を試す
+    try{ res=await tryFetch(url); }
+    catch(e2){
+      if(page===1){ try{ res=await tryFetch('/v2/video?video_container_id='+fid); }catch(e3){ break; } }
+      else break;
+    }
+  }
   const vs=res.data||[];
   out.push(...vs);
   const meta=res.meta||res;
@@ -687,9 +703,11 @@ const info=document.getElementById('vGlobalInfo');
 const list=document.getElementById('videoList');
 const input=document.getElementById('vGlobalQ');
 if(input) input.disabled=true;
-if(info) info.textContent='全フォルダを読み込み中…（'+folders.length+'フォルダ）';
 if(list) list.innerHTML='<div class="load"><div class="spin"></div>全フォルダ読み込み中...</div>';
-const results=await Promise.allSettled(folders.map(f=>fetchFolderAllPages(f.id)));
+let done=0;
+const upd=()=>{ if(info) info.textContent='読み込み中… '+done+'/'+folders.length+'フォルダ'; };
+upd();
+const results=await Promise.allSettled(folders.map(f=>fetchFolderAllPages(f.id).finally(()=>{done++;upd();})));
 allSelVideos=[];let errCount=0;
 const seen=new Set();
 results.forEach(r=>{
@@ -752,6 +770,7 @@ renderVList();
 }
 
 function renderVList(){
+if(vSelMode==='global') return; // 全動画検索中はグローバル結果を上書きしない
 let vs=[...tabVideos];
 // サムネイルフィルター
 const vfWith=document.getElementById('vfWith');
