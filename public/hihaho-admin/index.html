@@ -163,7 +163,7 @@ main{margin-left:var(--sw);margin-top:var(--hh);padding:24px;}
 <body>
 
 <header>
-<div class="logo"><div class="logo-bar"></div><span onclick="showHowTo()" title="使い方" style="cursor:pointer;border-bottom:1px dotted #9ca3af">hihaho Admin</span><span class="logo-badge">ADMIN</span><span class="ver-badge rn-trigger" onclick="showReleaseNotes()" title="リリースノート">v1.5.1</span></div>
+<div class="logo"><div class="logo-bar"></div><span onclick="showHowTo()" title="使い方" style="cursor:pointer;border-bottom:1px dotted #9ca3af">hihaho Admin</span><span class="logo-badge">ADMIN</span><span class="ver-badge rn-trigger" onclick="showReleaseNotes()" title="リリースノート">v1.5.2</span></div>
 <div style="margin-left:auto">
 <button class="btn bs bsm" onclick="copyConsole()">📋 console</button>
 </div>
@@ -663,30 +663,52 @@ if(isGlobal){
 if(!vGlobalLoaded) loadAllSelVideos();
 else renderVGlobalList();
 } else {
-renderVList();
+// フォルダモードに戻したとき、未取得なら選択中フォルダを読み込む
+if(!tabVideos.length&&tabF) loadTabVideos(tabF);
+else renderVList();
 }
 }
 
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+
+// 同時実行数を制限してタスクを実行（プロキシ過負荷による504を防ぐ）
+async function runPool(items,limit,worker){
+const results=new Array(items.length);
+let idx=0;
+const runners=Array.from({length:Math.min(limit,items.length)},async()=>{
+  while(idx<items.length){
+    const i=idx++;
+    try{ results[i]={status:'fulfilled',value:await worker(items[i],i)}; }
+    catch(e){ results[i]={status:'rejected',reason:e}; }
+  }
+});
+await Promise.all(runners);
+return results;
+}
+
 // フォルダ内の全ページを取得（APIの1ページ上限で最新動画が落ちるのを防ぐ）
-// 504/タイムアウトは1回リトライし、それでも失敗したらそのページだけ諦めて取得済み分を返す
+// 504/タイムアウトは指数バックオフで最大3回リトライし、それでも失敗したら取得済み分を返す
 async function fetchFolderAllPages(fid,maxPages=20){
-const tryFetch=async(url)=>Promise.race([
+const tryFetch=(url)=>Promise.race([
   api(url),
-  new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),15000))
+  new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),20000))
 ]);
+const fetchRetry=async(url,tries=3)=>{
+  for(let t=0;t<tries;t++){
+    try{ return await tryFetch(url); }
+    catch(e){ if(t===tries-1) throw e; await sleep(500*Math.pow(2,t)); }
+  }
+};
 const out=[];
 let page=1,last=1;
 while(page<=last&&page<=maxPages){
   let res=null;
   const url='/v2/video?video_container_id='+fid+'&page='+page+'&per_page=250';
-  try{ res=await tryFetch(url); }
+  try{ res=await fetchRetry(url); }
   catch(e){
-    // 1回リトライ → だめならpaginationなしで丸ごと取得を試す
-    try{ res=await tryFetch(url); }
-    catch(e2){
-      if(page===1){ try{ res=await tryFetch('/v2/video?video_container_id='+fid); }catch(e3){ break; } }
-      else break;
-    }
+    // pagination非対応の可能性 → パラメータなしで丸ごと取得
+    if(page===1){ try{ res=await fetchRetry('/v2/video?video_container_id='+fid,2); }catch(e2){ break; } }
+    else break;
   }
   const vs=res.data||[];
   out.push(...vs);
@@ -702,22 +724,25 @@ async function loadAllSelVideos(force){
 const info=document.getElementById('vGlobalInfo');
 const list=document.getElementById('videoList');
 const input=document.getElementById('vGlobalQ');
-if(input) input.disabled=true;
 if(list) list.innerHTML='<div class="load"><div class="spin"></div>全フォルダ読み込み中...</div>';
-let done=0;
-const upd=()=>{ if(info) info.textContent='読み込み中… '+done+'/'+folders.length+'フォルダ'; };
-upd();
-const results=await Promise.allSettled(folders.map(f=>fetchFolderAllPages(f.id).finally(()=>{done++;upd();})));
-allSelVideos=[];let errCount=0;
+// 初期取得済みの videos を即座に使えるようにする（読み込み中でも検索できる）
+allSelVideos=[];
 const seen=new Set();
-results.forEach(r=>{
-  if(r.status==='fulfilled'){
-    r.value.forEach(v=>{ videoMap[v.id]=v; if(!seen.has(v.id)){seen.add(v.id);allSelVideos.push(v);} });
-  } else errCount++;
-});
-// 新しい順に並べる
-allSelVideos.sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0));
+videos.forEach(v=>{ if(!seen.has(v.id)){seen.add(v.id);allSelVideos.push(v);} });
 vGlobalLoaded=true;
+let done=0,errCount=0;
+const upd=()=>{ if(info) info.textContent='読み込み中… '+done+'/'+folders.length+'フォルダ（現在'+allSelVideos.length+'本・検索可）'; };
+upd();
+// 同時5フォルダずつ取得し、届いた分から順次検索可能にする
+await runPool(folders,5,async(f)=>{
+  try{
+    const vs=await fetchFolderAllPages(f.id);
+    vs.forEach(v=>{ videoMap[v.id]=v; if(!seen.has(v.id)){seen.add(v.id);allSelVideos.push(v);} });
+  }catch(e){ errCount++; }
+  done++;upd();
+  if(vGlobalQ) renderVGlobalList();
+});
+allSelVideos.sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0));
 if(input){input.disabled=false;input.focus();}
 if(info) info.innerHTML='全'+allSelVideos.length+'本読み込み済み'+(errCount?'（'+errCount+'フォルダ失敗）':'')+
   ' <button onclick="loadAllSelVideos(true)" style="margin-left:6px;padding:1px 8px;border-radius:4px;border:1px solid #d1d5db;background:#fff;font-size:10px;cursor:pointer">🔄 再読込</button>';
@@ -1452,6 +1477,10 @@ if (btn) btn.textContent = _adminLang === 'ja' ? 'EN' : '日本語';
 
 // ── リリースノートデータ ──
 const RELEASE_NOTES = [
+{ ver:'v1.5.2', date:'2026-05-20', type:'admin',
+ja:['全動画検索が0件になる問題を修正（取得の同時実行数を制限しサーバー負荷を軽減）','読み込み中でも取得できた分から検索できるように','「全動画を検索」からフォルダ選択に戻ると動画が消える問題を修正'],
+en:['Fixed “search all videos” returning 0 results (limited request concurrency)','You can now search already-loaded videos while loading continues','Fixed videos disappearing when switching back from “search all videos” to folder mode']
+},
 { ver:'v1.5.1', date:'2026-05-20', type:'admin',
 ja:['全動画検索が一時的なサーバーエラーで0件になる問題を修正','読み込み中に「N/Mフォルダ」と進捗が表示されるように'],
 en:['Fixed: “search all videos” returning 0 results after a temporary server error','Loading progress is now shown as “N/M folders”']
@@ -1553,19 +1582,25 @@ async function loadAllThumbVideosForSearch(){
 const info=document.getElementById('thumbGlobalInfo');
 const list=document.getElementById('thumbList');
 const input=document.getElementById('thumbGlobalQ');
-if(input) input.disabled=true;
-if(info) info.textContent='全フォルダを読み込み中…（'+folders.length+'フォルダ）';
 if(list) list.innerHTML='<div class="load"><div class="spin"></div>全フォルダ読み込み中...</div>';
-const results=await Promise.allSettled(folders.map(f=>fetchFolderAllPages(f.id)));
+// 初期取得済みの videos を即座に使えるようにする
 allThumbVideos=[];
-let errCount=0;
 const seen=new Set();
-results.forEach(r=>{
-  if(r.status==='fulfilled') r.value.forEach(v=>{ videoMap[v.id]=v; if(!seen.has(v.id)){seen.add(v.id);allThumbVideos.push(v);} });
-  else errCount++;
+videos.forEach(v=>{ if(!seen.has(v.id)){seen.add(v.id);allThumbVideos.push(v);} });
+allThumbLoaded=true;
+let done=0,errCount=0;
+const upd=()=>{ if(info) info.textContent='読み込み中… '+done+'/'+folders.length+'フォルダ（現在'+allThumbVideos.length+'本・検索可）'; };
+upd();
+// 同時5フォルダずつ取得し、届いた分から順次検索可能にする
+await runPool(folders,5,async(f)=>{
+  try{
+    const vs=await fetchFolderAllPages(f.id);
+    vs.forEach(v=>{ videoMap[v.id]=v; if(!seen.has(v.id)){seen.add(v.id);allThumbVideos.push(v);} });
+  }catch(e){ errCount++; }
+  done++;upd();
+  if(thumbGlobalQ) renderThumbGlobalList();
 });
 allThumbVideos.sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0));
-allThumbLoaded=true;
 if(input){ input.disabled=false; input.focus(); }
 if(info) info.innerHTML='全'+allThumbVideos.length+'本を読み込みました'+(errCount?'（'+errCount+'フォルダ取得失敗・スキップ）':'')+
   ' <button onclick="loadAllThumbVideosForSearch()" style="margin-left:6px;padding:1px 8px;border-radius:4px;border:1px solid #d1d5db;background:#fff;font-size:10px;cursor:pointer">🔄 再読込</button>';
