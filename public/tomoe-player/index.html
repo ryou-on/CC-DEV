@@ -133,11 +133,25 @@ https://youtu.be/yyyyyyyyyyy"></textarea>
     </div>
     <div class="vlist" id="vlist"></div>
 
-    <h3>リストID（端末間で同じリストを使う）</h3>
-    <div class="row">
-      <input id="listIdInput" placeholder="default" style="max-width:240px">
-      <button onclick="switchList()">このIDに切り替え</button>
-      <span class="msg">URLに <code>?list=ID</code> を付けても開けます</span>
+    <h3>共有コード（別の端末でも同じセットを使う）</h3>
+    <div id="shareBox" style="display:none;align-items:center;gap:16px;flex-wrap:wrap;background:#fff7ed;border:1px solid var(--border);border-radius:12px;padding:12px 14px">
+      <div>
+        <div style="font-size:11px;color:#9ca3af">このセットのコード</div>
+        <div id="shareCode" style="font-size:34px;font-weight:900;letter-spacing:.18em;color:var(--accent2);font-family:ui-monospace,Menlo,monospace">------</div>
+        <div class="row" style="margin-top:6px">
+          <button onclick="copyText(listId,'コードをコピーしました')">📋 コード</button>
+          <button onclick="copyText(shareUrl(),'URLをコピーしました')">🔗 URL</button>
+          <button onclick="shareNative()">📤 共有</button>
+        </div>
+        <div class="msg" style="margin-top:6px">別の端末で ⚙ → コードを入力、または QR を読み取るだけ</div>
+      </div>
+      <img id="shareQr" alt="QR" style="width:120px;height:120px;border-radius:8px;background:#fff">
+    </div>
+    <p id="shareNone" class="msg" style="display:none">動画を保存すると共有コードが発行されます。</p>
+    <div class="row" style="margin-top:10px">
+      <input id="codeInput" placeholder="コードを入力（例: ABC123）" maxlength="12" style="max-width:240px;text-transform:uppercase;letter-spacing:.1em;font-weight:700" onkeydown="if(event.key==='Enter')loadByCode()">
+      <button class="p" onclick="loadByCode()">このコードを読み込む</button>
+      <span class="msg" id="codeMsg"></span>
     </div>
 
     <h3>キーボードのゾーン（どこを叩いても大丈夫）</h3>
@@ -166,8 +180,9 @@ https://youtu.be/yyyyyyyyyyy"></textarea>
 // =========================================================
 // 設定
 // =========================================================
-const VERSION = 'v0.2.3';
+const VERSION = 'v0.3.0';
 const RELEASE_NOTES = [
+  { ver:'v0.3.0', date:'2026-08-22', changes:['共有コードを追加：保存すると6文字のコードが発行され、別の端末で ⚙ からコード入力／QR読み取り／URLで同じセットを開ける','コード・URLのコピー、端末の共有シートにも対応'] },
   { ver:'v0.2.3', date:'2026-08-22', changes:['縦画面（iPhone/iPad縦）で候補カードが縦長に伸びるのを修正'] },
   { ver:'v0.2.2', date:'2026-08-22', changes:['起動直後にキーが効かないことがある問題を修正（動画側にフォーカスが残らないように）'] },
   { ver:'v0.2.1', date:'2026-08-22', changes:['キーの物理位置が取れないキーボードでも文字から判定するように'] },
@@ -215,7 +230,7 @@ function codeFromKey(k) {
 // =========================================================
 // 状態
 // =========================================================
-let db, videos = [], cur = -1, history = [], listId = 'default';
+let db, videos = [], cur = -1, history = [], listId = '';
 let yt = null, ytReady = false, lastKeyAt = 0, clog = [], userStarted = false;
 const ol = console.log.bind(console);
 console.log = (...a) => { ol(...a); clog.push(a.map(x => typeof x === 'object' ? JSON.stringify(x) : x).join(' ')); };
@@ -254,14 +269,16 @@ async function init() {
   renderKbdMap();
   firebase.initializeApp(FIREBASE_CONFIG);
   db = firebase.firestore();
-  listId = new URLSearchParams(location.search).get('list') || localStorage.getItem('tomoe_list_id') || 'default';
-  localStorage.setItem('tomoe_list_id', listId);
-  document.getElementById('listIdInput').value = listId;
+  listId = normCode(new URLSearchParams(location.search).get('list') || localStorage.getItem('tomoe_list_id') || '');
+  if (listId) localStorage.setItem('tomoe_list_id', listId);
+  renderShare();
 
   // まずローカルキャッシュ → Firestore
-  try { videos = JSON.parse(localStorage.getItem(LS_KEY + '_' + listId) || '[]'); } catch (e) { videos = []; }
+  try { videos = listId ? JSON.parse(localStorage.getItem(LS_KEY + '_' + listId) || '[]') : []; } catch (e) { videos = []; }
   try {
+    if (!listId) throw new Error('no list');
     const doc = await db.collection('tomoe-player').doc(listId).get();
+    if (!doc.exists) { document.getElementById('codeMsg').textContent = 'コード「' + listId + '」のセットはまだありません（保存すると作られます）'; }
     if (doc.exists) {
       const d = doc.data();
       videos = (d.videos || []).filter(v => v && v.id);
@@ -427,10 +444,17 @@ async function saveList() {
   const list = [];
   for (const id of ids) list.push({ id, title: old[id] || await fetchTitle(id) || id });
   videos = list;
+  if (!listId) {
+    msg.textContent = '共有コードを発行中…';
+    listId = await newCode();
+    localStorage.setItem('tomoe_list_id', listId);
+    history.replaceState(null, '', location.pathname + '?list=' + listId);
+    renderShare();
+  }
   localStorage.setItem(LS_KEY + '_' + listId, JSON.stringify(videos));
   try {
     await db.collection('tomoe-player').doc(listId).set({ videos, updatedAt: new Date().toISOString() });
-    msg.textContent = videos.length + '本を保存しました';
+    msg.textContent = videos.length + '本を保存しました（コード: ' + listId + '）';
   } catch (e) { msg.textContent = 'クラウド保存失敗（この端末には保存済み）: ' + e.message; log('save: ' + e.message); }
   renderVList();
   history = []; cur = -1;
@@ -442,10 +466,37 @@ function shuffleOrder() {
   document.getElementById('urlInput').value = videos.map(v => 'https://www.youtube.com/watch?v=' + v.id).join('\n');
   renderVList();
 }
-function switchList() {
-  const v = document.getElementById('listIdInput').value.trim().replace(/[^\w-]/g, '') || 'default';
+// ---- 共有コード ----
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 紛らわしい文字を除外
+function normCode(v) { return String(v || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 12); }
+async function newCode() {
+  for (let t = 0; t < 10; t++) {
+    let c = ''; for (let i = 0; i < 6; i++) c += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
+    try { const d = await db.collection('tomoe-player').doc(c).get(); if (!d.exists) return c; } catch (e) { return c; }
+  }
+  return 'T' + Date.now().toString(36).toUpperCase().slice(-5);
+}
+function shareUrl() { return location.origin + location.pathname + '?list=' + encodeURIComponent(listId); }
+function renderShare() {
+  const has = !!listId;
+  document.getElementById('shareBox').style.display = has ? 'flex' : 'none';
+  document.getElementById('shareNone').style.display = has ? 'none' : 'block';
+  if (has) {
+    document.getElementById('shareCode').textContent = listId;
+    document.getElementById('shareQr').src = 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&data=' + encodeURIComponent(shareUrl());
+  }
+}
+function loadByCode() {
+  const v = normCode(document.getElementById('codeInput').value);
+  if (!v) { document.getElementById('codeMsg').textContent = 'コードを入力してください'; return; }
   localStorage.setItem('tomoe_list_id', v);
   location.href = location.pathname + '?list=' + encodeURIComponent(v);
+}
+function copyText(t, m) { navigator.clipboard.writeText(t).then(() => flash('📋', m)); }
+async function shareNative() {
+  const data = { title: 'ともえプレイヤー', text: '共有コード: ' + listId, url: shareUrl() };
+  if (navigator.share) { try { await navigator.share(data); } catch (e) {} }
+  else copyText(shareUrl(), 'URLをコピーしました');
 }
 function renderVList() {
   document.getElementById('vlist').innerHTML = videos.map((v, i) =>
