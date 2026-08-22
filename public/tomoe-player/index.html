@@ -165,8 +165,9 @@ https://youtu.be/yyyyyyyyyyy"></textarea>
 // =========================================================
 // 設定
 // =========================================================
-const VERSION = 'v0.2.0';
+const VERSION = 'v0.2.1';
 const RELEASE_NOTES = [
+  { ver:'v0.2.1', date:'2026-08-22', changes:['キーの物理位置が取れないキーボードでも文字から判定するように'] },
   { ver:'v0.2.0', date:'2026-08-22', changes:['再生対象を YouTube に変更（保護者メニューに URL を貼るだけ）','動画が終わったら自動で「つぎ」へ','スペース／動画の真ん中タップで 止める・うごかす'] },
   { ver:'v0.1.0', date:'2026-08-22', changes:['初回リリース：幼児向けプレイヤー','キーボードをゾーン分け（左＝まえ／中央＝つぎ／右＝右側の候補）','画面左右のタップゾーン・右側の大きな候補カード'] }
 ];
@@ -196,6 +197,17 @@ const ZONES = {
 };
 const CODE2ZONE = {};
 Object.entries(ZONES).forEach(([z,codes]) => codes.forEach(c => CODE2ZONE[c] = z));
+// e.code を返さない端末（一部の外付けキーボード等）向けに e.key から推定
+function codeFromKey(k) {
+  if (!k) return '';
+  if (/^[a-z]$/i.test(k)) return 'Key' + k.toUpperCase();
+  if (/^[0-9]$/.test(k)) return 'Digit' + k;
+  const map = { ' ':'Space', 'Enter':'Enter', 'Backspace':'Backspace', 'Tab':'Tab', 'Escape':'Escape',
+    'ArrowLeft':'ArrowLeft', 'ArrowRight':'ArrowRight', 'ArrowUp':'ArrowUp', 'ArrowDown':'ArrowDown',
+    '-':'Minus', '=':'Equal', '[':'BracketLeft', ']':'BracketRight', '\\':'Backslash', ';':'Semicolon',
+    "'":'Quote', ',':'Comma', '.':'Period', '/':'Slash', '`':'Backquote', 'Shift':'ShiftRight' };
+  return map[k] || '';
+}
 
 // =========================================================
 // 状態
@@ -362,7 +374,7 @@ function goPrev(src) {
 document.addEventListener('keydown', e => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;           // 保護者用ショートカットはブラウザへ
   if (document.getElementById('parentMo').classList.contains('on')) return; // メニュー中は通常入力
-  const z = CODE2ZONE[e.code];
+  const z = CODE2ZONE[e.code || codeFromKey(e.key)];
   if (!z) return;
   e.preventDefault();
   const now = Date.now();
