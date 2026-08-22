@@ -121,10 +121,11 @@ main{flex:1;min-height:0;display:grid;grid-template-columns:1fr 300px;gap:14px;p
   <div class="mb">
     <h2>⚙ 保護者メニュー <span style="font-size:11px;color:#9ca3af;font-weight:400;margin-left:6px" id="verLabel"></span></h2>
 
-    <h3>再生する YouTube 動画（1行に1つ URL を貼る）</h3>
-    <p>通常の動画URL・短縮URL（youtu.be）・Shorts・埋め込みURL・動画IDのどれでもOK。保存するとこの端末と他の端末で共有されます。</p>
+    <h3>再生する YouTube 動画・チャンネル・再生リスト（1行に1つ貼る）</h3>
+    <p>動画URL（youtu.be / Shorts / 動画IDも可）のほか、<strong>チャンネルURL</strong>（@ハンドル・/channel/UC…）や<strong>再生リストURL</strong>（list=…）も貼れます。チャンネルは最新 <input id="chanLimit" type="number" min="5" max="100" value="30" style="width:60px;display:inline;padding:2px 6px"> 本を取り込みます（保存し直すと最新に更新）。</p>
     <textarea id="urlInput" placeholder="https://www.youtube.com/watch?v=xxxxxxxxxxx
-https://youtu.be/yyyyyyyyyyy"></textarea>
+https://www.youtube.com/@チャンネル名
+https://www.youtube.com/playlist?list=PLxxxxxxxx"></textarea>
     <div class="row">
       <button class="p" onclick="saveList()">保存して読み込む</button>
       <button onclick="shuffleOrder()">🔀 順番をシャッフル</button>
@@ -180,8 +181,9 @@ https://youtu.be/yyyyyyyyyyy"></textarea>
 // =========================================================
 // 設定
 // =========================================================
-const VERSION = 'v0.3.3';
+const VERSION = 'v0.4.0';
 const RELEASE_NOTES = [
+  { ver:'v0.4.0', date:'2026-08-22', changes:['チャンネルURL（@ハンドル・/channel/UC…）や再生リストURLを貼ると、その動画をまとめて取り込めるように','チャンネルは最新N本（既定30）を取り込み。保存し直すと最新に更新','タイトル取得を高速化'] },
   { ver:'v0.3.3', date:'2026-08-22', changes:['URL の後ろに ?code=コード（?list= / ?c= / ?コード / #コード でも可）を付けるだけで共有セットを開けるように'] },
   { ver:'v0.3.2', date:'2026-08-22', changes:['共有コードを小文字で入力しても見つかるように','存在しないコードを入力したときにメッセージを表示'] },
   { ver:'v0.3.1', date:'2026-08-22', changes:['保護者メニューの入力欄が選択・入力できない問題を修正'] },
@@ -233,7 +235,7 @@ function codeFromKey(k) {
 // =========================================================
 // 状態
 // =========================================================
-let db, videos = [], cur = -1, history = [], listId = '';
+let db, videos = [], cur = -1, history = [], listId = '', sources = '';
 let yt = null, ytReady = false, lastKeyAt = 0, clog = [], userStarted = false;
 const ol = console.log.bind(console);
 console.log = (...a) => { ol(...a); clog.push(a.map(x => typeof x === 'object' ? JSON.stringify(x) : x).join(' ')); };
@@ -264,6 +266,65 @@ async function fetchTitle(id) {
   } catch (e) { return ''; }
 }
 
+// 行を種別判定： video / channel / playlist
+function parseSource(t) {
+  try {
+    const u = new URL(/^https?:/.test(t) ? t : 'https://' + t);
+    const host = u.hostname.replace(/^www\.|^m\./, '');
+    if (host === 'youtube.com' || host === 'youtu.be') {
+      const list = u.searchParams.get('list');
+      const m = u.pathname.match(/^\/(channel\/(UC[\w-]{22})|(@[\w.-]+)|c\/([\w.-]+)|user\/([\w.-]+))/);
+      if (m && !u.searchParams.get('v')) return { type: 'channel', id: m[2] || m[3] || ('c/' + (m[4] || m[5])) };
+      if (list && !u.searchParams.get('v') && !/^\/(watch|shorts|embed)/.test(u.pathname)) return { type: 'playlist', id: list };
+    }
+  } catch (e) {}
+  if (/^UC[\w-]{22}$/.test(t)) return { type: 'channel', id: t };
+  if (/^(PL|UU|OL|LL|FL)[\w-]{10,}$/.test(t)) return { type: 'playlist', id: t };
+  if (/^@[\w.-]+$/.test(t)) return { type: 'channel', id: t };
+  const v = parseYtId(t);
+  return v ? { type: 'video', id: v } : null;
+}
+// @ハンドル / c/名前 → UC チャンネルID（公開の読み取りプロキシ経由・ベストエフォート）
+async function resolveChannelId(handle) {
+  const path = handle.startsWith('@') ? '/' + handle : '/' + handle;
+  try {
+    const r = await fetch('https://r.jina.ai/https://www.youtube.com' + path, { headers: { Accept: 'text/plain' } });
+    const txt = await r.text();
+    const m = txt.match(/"(?:channelId|externalId|browseId)":"(UC[\w-]{22})"/) || txt.match(/channel\/(UC[\w-]{22})/) || txt.match(/(UC[\w-]{22})/);
+    return m ? m[1] : '';
+  } catch (e) { log('resolve: ' + e.message); return ''; }
+}
+// 再生リストID → 動画ID配列（非表示の YouTube プレイヤーに読み込ませて取得）
+function expandPlaylist(plId) {
+  return new Promise((resolve, reject) => {
+    const host = document.createElement('div'); host.style.cssText = 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none;left:-9999px';
+    const el = document.createElement('div'); host.appendChild(el); document.body.appendChild(host);
+    let done = false, tries = 0;
+    const finish = (ids, err) => { if (done) return; done = true; try { p.destroy(); } catch (e) {} host.remove(); err ? reject(err) : resolve(ids); };
+    const poll = () => {
+      if (done) return;
+      let ids = null; try { ids = p.getPlaylist(); } catch (e) {}
+      if (ids && ids.length) return finish(ids);
+      if (++tries > 40) return finish(null, new Error('playlist timeout: ' + plId));
+      setTimeout(poll, 250);
+    };
+    const p = new YT.Player(el, {
+      width: 1, height: 1,
+      playerVars: { listType: 'playlist', list: plId, controls: 0, mute: 1 },
+      events: { onReady: () => { try { p.mute(); } catch (e) {} poll(); }, onError: () => finish(null, new Error('playlist error: ' + plId)) }
+    });
+    setTimeout(() => finish(null, new Error('playlist timeout: ' + plId)), 15000);
+  });
+}
+function ensureYtApi() {
+  return new Promise(res => {
+    if (window.YT && window.YT.Player) return res();
+    const prev = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => { prev && prev(); res(); };
+    if (!document.querySelector('script[src*="iframe_api"]')) { const s = document.createElement('script'); s.src = 'https://www.youtube.com/iframe_api'; document.head.appendChild(s); }
+  });
+}
+
 // =========================================================
 // 初期化
 // =========================================================
@@ -290,12 +351,13 @@ async function init() {
     if (doc.exists) {
       const d = doc.data();
       videos = (d.videos || []).filter(v => v && v.id);
+      sources = d.sources || '';
       if (d.name) document.getElementById('plName').textContent = d.name;
       localStorage.setItem(LS_KEY + '_' + listId, JSON.stringify(videos));
     }
   } catch (e) { log('firestore: ' + e.message); }
 
-  document.getElementById('urlInput').value = videos.map(v => 'https://www.youtube.com/watch?v=' + v.id).join('\n');
+  document.getElementById('urlInput').value = sources || videos.map(v => 'https://www.youtube.com/watch?v=' + v.id).join('\n');
   renderVList();
 
   if (!videos.length) { setPh('⚙ から YouTube の動画を登録してね'); openParent(); return; }
@@ -312,7 +374,7 @@ function loadYtApi() {
   const s = document.createElement('script'); s.src = 'https://www.youtube.com/iframe_api'; document.head.appendChild(s);
 }
 function onYouTubeIframeAPIReady() {
-  if (yt) return;
+  if (yt || !videos.length) return;
   cur = 0;
   yt = new YT.Player('yt', {
     videoId: videos[0].id,
@@ -450,13 +512,40 @@ function openParent() { document.getElementById('parentMo').classList.add('on');
 function closeParent() { document.getElementById('parentMo').classList.remove('on'); }
 async function saveList() {
   const msg = document.getElementById('saveMsg');
-  const ids = [...new Set(document.getElementById('urlInput').value.split(/\n/).map(parseYtId).filter(Boolean))];
-  if (!ids.length) { msg.textContent = 'URLが見つかりません'; return; }
-  msg.textContent = 'タイトル取得中…';
+  if (!(window.YT && window.YT.Player)) { msg.textContent = 'YouTube を準備中…'; await ensureYtApi(); }
+  const raw = document.getElementById('urlInput').value;
+  const limit = Math.max(5, Math.min(100, parseInt(document.getElementById('chanLimit').value, 10) || 30));
+  const ids = [];
+  for (const line of raw.split(/\n/)) {
+    const t = line.trim(); if (!t) continue;
+    const src = parseSource(t);
+    if (!src) continue;
+    if (src.type === 'video') { ids.push(src.id); continue; }
+    try {
+      msg.textContent = (src.type === 'channel' ? 'チャンネル' : '再生リスト') + 'の動画を取得中… ' + t.slice(0, 40);
+      let plId = src.id;
+      if (src.type === 'channel') {
+        const uc = src.id.startsWith('UC') ? src.id : await resolveChannelId(src.id);
+        if (!uc) { msg.textContent = 'チャンネルIDを解決できません: ' + t; await new Promise(r => setTimeout(r, 1500)); continue; }
+        plId = 'UU' + uc.slice(2);   // アップロード動画プレイリスト
+      }
+      const got = await expandPlaylist(plId);
+      log(src.type + ' ' + plId + ' → ' + got.length + '本');
+      ids.push(...(src.type === 'channel' ? got.slice(0, limit) : got));
+    } catch (e) { log('expand error: ' + e.message); }
+  }
+  const uniq = [...new Set(ids)];
+  if (!uniq.length) { msg.textContent = '動画が見つかりません'; return; }
+  msg.textContent = 'タイトル取得中… (' + uniq.length + '本)';
   const old = Object.fromEntries(videos.map(v => [v.id, v.title]));
-  const list = [];
-  for (const id of ids) list.push({ id, title: old[id] || await fetchTitle(id) || id });
+  const list = uniq.map(id => ({ id, title: old[id] || '' }));
+  // タイトルは並列取得（6本ずつ）
+  for (let i = 0; i < list.length; i += 6) {
+    await Promise.all(list.slice(i, i + 6).map(async v => { if (!v.title) v.title = await fetchTitle(v.id) || v.id; }));
+    msg.textContent = 'タイトル取得中… ' + Math.min(i + 6, list.length) + '/' + list.length;
+  }
   videos = list;
+  sources = raw.trim();
   if (!listId) {
     msg.textContent = '共有コードを発行中…';
     listId = await newCode();
@@ -466,7 +555,7 @@ async function saveList() {
   }
   localStorage.setItem(LS_KEY + '_' + listId, JSON.stringify(videos));
   try {
-    await db.collection('tomoe-player').doc(listId).set({ videos, updatedAt: new Date().toISOString() });
+    await db.collection('tomoe-player').doc(listId).set({ videos, sources, updatedAt: new Date().toISOString() });
     msg.textContent = videos.length + '本を保存しました（コード: ' + listId + '）';
   } catch (e) { msg.textContent = 'クラウド保存失敗（この端末には保存済み）: ' + e.message; log('save: ' + e.message); }
   renderVList();
