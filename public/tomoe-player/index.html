@@ -180,8 +180,9 @@ https://youtu.be/yyyyyyyyyyy"></textarea>
 // =========================================================
 // 設定
 // =========================================================
-const VERSION = 'v0.3.1';
+const VERSION = 'v0.3.2';
 const RELEASE_NOTES = [
+  { ver:'v0.3.2', date:'2026-08-22', changes:['共有コードを小文字で入力しても見つかるように','存在しないコードを入力したときにメッセージを表示'] },
   { ver:'v0.3.1', date:'2026-08-22', changes:['保護者メニューの入力欄が選択・入力できない問題を修正'] },
   { ver:'v0.3.0', date:'2026-08-22', changes:['共有コードを追加：保存すると6文字のコードが発行され、別の端末で ⚙ からコード入力／QR読み取り／URLで同じセットを開ける','コード・URLのコピー、端末の共有シートにも対応'] },
   { ver:'v0.2.3', date:'2026-08-22', changes:['縦画面（iPhone/iPad縦）で候補カードが縦長に伸びるのを修正'] },
@@ -270,7 +271,12 @@ async function init() {
   renderKbdMap();
   firebase.initializeApp(FIREBASE_CONFIG);
   db = firebase.firestore();
-  listId = normCode(new URLSearchParams(location.search).get('list') || localStorage.getItem('tomoe_list_id') || '');
+  // コードは大文字に正規化するが、既存セットが元の表記（小文字など）で存在すればそれを優先
+  const rawList = String(new URLSearchParams(location.search).get('list') || localStorage.getItem('tomoe_list_id') || '').trim().replace(/[^A-Za-z0-9_-]/g, '').slice(0, 12);
+  listId = normCode(rawList);
+  if (rawList && rawList !== listId) {
+    try { const d0 = await db.collection('tomoe-player').doc(rawList).get(); if (d0.exists) listId = rawList; } catch (e) {}
+  }
   if (listId) localStorage.setItem('tomoe_list_id', listId);
   renderShare();
 
@@ -492,9 +498,18 @@ function renderShare() {
     document.getElementById('shareQr').src = 'https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=8&data=' + encodeURIComponent(shareUrl());
   }
 }
-function loadByCode() {
-  const v = normCode(document.getElementById('codeInput').value);
-  if (!v) { document.getElementById('codeMsg').textContent = 'コードを入力してください'; return; }
+async function loadByCode() {
+  const raw = String(document.getElementById('codeInput').value || '').trim().replace(/[^A-Za-z0-9_-]/g, '').slice(0, 12);
+  const up = normCode(raw);
+  const msg = document.getElementById('codeMsg');
+  if (!up) { msg.textContent = 'コードを入力してください'; return; }
+  msg.textContent = '確認中…';
+  let v = up;
+  try {
+    let ok = (await db.collection('tomoe-player').doc(up).get()).exists;
+    if (!ok && raw !== up) { ok = (await db.collection('tomoe-player').doc(raw).get()).exists; if (ok) v = raw; }
+    if (!ok) { msg.textContent = 'コード「' + up + '」のセットは見つかりません'; return; }
+  } catch (e) { /* オフライン等は続行 */ }
   localStorage.setItem('tomoe_list_id', v);
   location.href = location.pathname + '?list=' + encodeURIComponent(v);
 }
