@@ -56,6 +56,16 @@ td .t{display:inline-block;max-width:360px;overflow:hidden;text-overflow:ellipsi
 .meter i{display:block;height:100%;background:var(--accent2)}
 .empty{padding:30px;text-align:center;color:var(--muted)}
 .foot{font-size:11px;color:var(--muted);margin-top:14px;line-height:1.7}
+.legend{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--sub);margin-top:8px}
+.legend .g{width:140px;height:10px;border-radius:5px;background:linear-gradient(90deg,#f3f4f6,rgba(249,115,22,.15) 10%,rgba(249,115,22,1))}
+.del{border:none;background:transparent;color:#d1d5db;cursor:pointer;font-size:13px}
+.del:hover{color:#dc2626}
+@media (max-width:600px){
+  .hide-sm{display:none}
+  td .t{max-width:150px}
+  td img{width:48px;height:27px;margin-right:6px}
+  .heat{grid-template-columns:22px repeat(24,1fr);font-size:8px;gap:1px}
+}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1f2937;color:#fff;padding:8px 16px;border-radius:10px;font-size:12px;opacity:0;transition:.2s;pointer-events:none}
 .toast.on{opacity:1}
 </style>
@@ -82,6 +92,7 @@ td .t{display:inline-block;max-width:360px;overflow:hidden;text-overflow:ellipsi
     </div>
     <input type="date" id="fromD" onchange="setRange('custom')"> 〜 <input type="date" id="toD" onchange="setRange('custom')">
     <label><input type="checkbox" id="minChk" checked onchange="render()"> 5秒未満の再生を除外</label>
+    <label><input type="checkbox" id="setupChk" checked onchange="render()"> 保護者のセットアップ再生を除外</label>
     <span id="rangeInfo" style="font-size:12px;color:var(--muted)"></span>
   </div>
 
@@ -106,6 +117,7 @@ td .t{display:inline-block;max-width:360px;overflow:hidden;text-overflow:ellipsi
   <div class="sec">
     <h2>曜日 × 時間帯 <span class="hint">色が濃いほど長く見ている（セルにカーソルで詳細）</span></h2>
     <div class="heat" id="heat"></div>
+    <div class="legend">少ない <span class="g"></span> 多い <span id="heatMax"></span><span style="margin-left:auto">セルをタップ／カーソルで値を表示</span></div>
   </div>
 
   <div class="sec">
@@ -120,7 +132,7 @@ td .t{display:inline-block;max-width:360px;overflow:hidden;text-overflow:ellipsi
 
   <p class="foot">
     記録の仕組み：動画を1回再生するごとに1件記録し、再生中の秒数を積算（一時停止中・裏に回っている間は数えません）。
-    「完走」は最後まで再生したか、長さの90%以上まで到達したもの。「終了理由」は次の動画へ進んだ操作（つぎ／まえ／候補／自動（完走）／画面を閉じた）です。
+    「完走」は最後まで再生したか、長さの90%以上まで到達したもの。「終了理由」は次の動画へ進んだ操作（つぎ／まえ／候補／完走して自動で次へ／画面を閉じた）です。操作がないまま3本続くとプレイヤーは自動停止し「放置停止」として記録します。強制終了などで閉じられなかった記録は次回起動時に「中断」になります。
     時刻は記録した端末の現地時間。<span id="verLabel"></span>
   </p>
 </main>
@@ -129,7 +141,7 @@ td .t{display:inline-block;max-width:360px;overflow:hidden;text-overflow:ellipsi
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 <script>
-const VERSION = 'v0.5.0';
+const VERSION = 'v0.5.1';
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDPlsAhtxbJBihy-EAHck9P7XbuMdzV0ds",
   authDomain: "cc-dev-ps7.firebaseapp.com",
@@ -139,7 +151,8 @@ const FIREBASE_CONFIG = {
   appId: "1:1029579090333:web:5a2ea499fec97c497f2774"
 };
 const DOW = ['日','月','火','水','木','金','土'];
-const REASON = { next:'つぎ', prev:'まえ', pick:'候補', ended:'完走', error:'エラー', unload:'閉じた', auto:'自動', unknown:'—', '':'再生中' };
+const REASON = { next:'つぎ', prev:'まえ', pick:'候補', ended:'完走→次へ', error:'エラー', unload:'閉じた', idle:'放置停止', abort:'中断', resume:'再開', setup:'準備', auto:'自動', unknown:'—', '':'再生中' };
+const DEV = { pc:'PC', tablet:'タブレット', phone:'スマホ' };
 let db, code = '', all = [], range = '30', sortKey = 'sec', sortDir = -1, videosMeta = {};
 const clog = []; const ol = console.log.bind(console);
 console.log = (...a) => { ol(...a); clog.push(a.map(x => typeof x === 'object' ? JSON.stringify(x) : x).join(' ')); };
@@ -180,9 +193,13 @@ async function load() {
       if (isNaN(st)) return;
       all.push({
         id: doc.id, videoId: d.videoId || '', title: d.title || videosMeta[d.videoId]?.title || d.videoId || '',
-        startedAt: d.startedAt, st, day: d.day || localDay(st), dow: Number.isInteger(d.dow) ? d.dow : st.getDay(), hour: Number.isInteger(d.hour) ? d.hour : st.getHours(),
+        startedAt: d.startedAt, st, day: (typeof d.day === 'string' && d.day.length === 10) ? d.day : localDay(st),
+        dow: (Number.isInteger(d.dow) && d.dow >= 0 && d.dow <= 6) ? d.dow : st.getDay(),
+        hour: (Number.isInteger(d.hour) && d.hour >= 0 && d.hour <= 23) ? d.hour : st.getHours(),
         sec: Math.max(0, Number(d.watchSec) || 0), maxPos: Number(d.maxPos) || 0, duration: Number(d.duration) || 0,
-        completed: !!d.completed, endReason: d.endReason || '', endedAt: d.endedAt || '', device: d.device || '', startReason: d.startReason || ''
+        completed: !!d.completed || (Number(d.duration) > 0 && Number(d.maxPos) / Number(d.duration) >= 0.9),
+        endReason: (d.endReason || '') || (Date.now() - st > 2 * 3600000 ? 'abort' : ''),
+        endedAt: d.endedAt || '', device: d.device || '', startReason: d.startReason || ''
       });
     });
     all.sort((a, b) => b.st - a.st);
@@ -215,14 +232,19 @@ function rangeBounds() {
 function filtered() {
   const { from, to } = rangeBounds();
   const minSec = document.getElementById('minChk').checked ? 5 : 0;
-  return all.filter(s => s.st >= from && s.st < to && s.sec >= minSec);
+  const noSetup = document.getElementById('setupChk').checked;
+  // 期間判定は記録端末の日付（day）で行い、日別集計と基準を揃える
+  const fd = from.getTime() === 0 ? '' : localDay(from), td = localDay(new Date(to.getTime() - 1));
+  return all.filter(s => (!fd || s.day >= fd) && s.day <= td && s.sec >= minSec && !(noSetup && s.startReason === 'setup'));
 }
 
 // ---------------- 描画 ----------------
 function render() {
   const rows = filtered();
   const { from, to } = rangeBounds();
-  const days = Math.max(1, Math.round((Math.min(to, new Date()) - (range === 'all' && rows.length ? new Date(Math.min(...rows.map(r => r.st))) : from)) / 86400000));
+  const startD = from.getTime() === 0 ? (rows.length ? new Date(Math.min(...rows.map(r => r.st))) : new Date()) : new Date(from); startD.setHours(0,0,0,0);
+  const endD = new Date(Math.min(to.getTime() - 1, Date.now())); endD.setHours(0,0,0,0);
+  const days = Math.max(1, Math.round((endD - startD) / 86400000) + 1);
   document.getElementById('rangeInfo').textContent = rows.length ? `${rows.length}件 ／ 期間 ${days}日` : '';
   renderCards(rows, days);
   renderDaily(rows, from, to);
@@ -248,7 +270,7 @@ function renderCards(rows, days) {
 }
 // 棒グラフ（汎用）
 function barChart(items, opts = {}) {
-  const W = 720, H = opts.h || 170, padL = 8, padR = 8, padT = 18, padB = 22;
+  const W = Math.max(240, Math.round(opts.w || 720)), H = opts.h || 170, padL = 8, padR = 8, padT = 18, padB = 22;
   const n = items.length; if (!n) return '<div class="empty">データなし</div>';
   const max = Math.max(1, ...items.map(i => i.v));
   const bw = (W - padL - padR) / n;
@@ -256,38 +278,41 @@ function barChart(items, opts = {}) {
     const h = (H - padT - padB) * it.v / max;
     const x = padL + i * bw, y = H - padB - h;
     const lab = it.label !== undefined ? it.label : (it.v ? Math.round(it.v) : '');
+    const showLab = it.label !== undefined ? it.label !== '' : !!it.v;
     const tip = `${it.name}: ${fmtMin(it.v * 60)}分 / ${it.c}回`;
     return `<g><title>${esc(tip)}</title><rect class="${i % 2 ? 'alt' : ''}" x="${(x + bw * .12).toFixed(1)}" y="${y.toFixed(1)}" width="${(bw * .76).toFixed(1)}" height="${Math.max(0, h).toFixed(1)}" rx="3"></rect>` +
-      (it.v ? `<text class="val" x="${(x + bw / 2).toFixed(1)}" y="${(y - 4).toFixed(1)}" text-anchor="middle">${esc(String(lab))}</text>` : '') +
+      (showLab ? `<text class="val" x="${(x + bw / 2).toFixed(1)}" y="${(y - 4).toFixed(1)}" text-anchor="middle">${esc(String(lab))}</text>` : '') +
       (opts.everyN && i % opts.everyN ? '' : `<text class="axis" x="${(x + bw / 2).toFixed(1)}" y="${H - 6}" text-anchor="middle">${esc(it.name)}</text>`) + `</g>`;
   }).join('');
-  return `<svg viewBox="0 0 ${W} ${H}" class="bars" preserveAspectRatio="none" style="height:${H}px">${bars}</svg>`;
+  return `<svg viewBox="0 0 ${W} ${H}" class="bars" width="${W}" height="${H}" style="height:${H}px">${bars}</svg>`;
 }
 function renderDaily(rows, from, to) {
   let start = from.getTime() === 0 ? (rows.length ? new Date(Math.min(...rows.map(r => r.st))) : new Date()) : new Date(from);
   start.setHours(0,0,0,0);
-  const end = new Date(Math.min(to, Date.now() + 1)); end.setHours(0,0,0,0);
+  const end = new Date(Math.min(to.getTime() - 1, Date.now())); end.setHours(0,0,0,0);
   const nDays = Math.min(120, Math.max(1, Math.round((end - start) / 86400000) + 1));
   if (nDays >= 120) start = new Date(end.getTime() - 119 * 86400000);
   const map = {}; rows.forEach(r => { (map[r.day] = map[r.day] || { s: 0, c: 0 }); map[r.day].s += r.sec; map[r.day].c++; });
   const items = [];
   for (let i = 0; i < nDays; i++) {
     const d = new Date(start.getTime() + i * 86400000); const k = localDay(d); const m = map[k] || { s: 0, c: 0 };
-    items.push({ name: nDays > 31 ? `${d.getMonth()+1}/${d.getDate()}` : `${d.getDate()}`, v: m.s / 60, c: m.c, label: m.c || '' });
+    const first = i === 0 || d.getDate() === 1;
+    items.push({ name: (nDays > 31 || first) ? `${d.getMonth()+1}/${d.getDate()}` : `${d.getDate()}`, v: m.s / 60, c: m.c, label: m.c || '' });
   }
-  document.getElementById('daily').innerHTML = barChart(items, { everyN: nDays > 31 ? Math.ceil(nDays / 20) : 1, h: 180 });
+  const el = document.getElementById('daily');
+  el.innerHTML = barChart(items, { everyN: nDays > 31 ? Math.ceil(nDays / 20) : 1, h: 180, w: el.clientWidth });
 }
 function renderDow(rows) {
   const a = Array.from({ length: 7 }, (_, i) => ({ name: DOW[i], v: 0, c: 0 }));
   rows.forEach(r => { a[r.dow].v += r.sec / 60; a[r.dow].c++; });
   a.forEach(x => x.label = x.c ? `${fmtMin(x.v * 60)}(${x.c})` : '');
-  document.getElementById('dow').innerHTML = barChart(a, { h: 160 });
+  const el = document.getElementById('dow'); el.innerHTML = barChart(a, { h: 160, w: el.clientWidth });
 }
 function renderHour(rows) {
   const a = Array.from({ length: 24 }, (_, i) => ({ name: String(i), v: 0, c: 0 }));
   rows.forEach(r => { a[r.hour].v += r.sec / 60; a[r.hour].c++; });
   a.forEach(x => x.label = x.c ? `${Math.round(x.v)}` : '');
-  document.getElementById('hour').innerHTML = barChart(a, { h: 160, everyN: 2 });
+  const el = document.getElementById('hour'); el.innerHTML = barChart(a, { h: 160, everyN: 2, w: el.clientWidth });
 }
 function renderHeat(rows) {
   const m = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => ({ s: 0, c: 0 })));
@@ -298,10 +323,11 @@ function renderHeat(rows) {
     html += `<div class="d">${DOW[d]}</div>`;
     for (let h = 0; h < 24; h++) {
       const x = m[d][h]; const a = x.s ? 0.15 + 0.85 * (x.s / max) : 0;
-      html += `<div class="c" style="${x.s ? `background:rgba(249,115,22,${a.toFixed(2)})` : ''}" title="${DOW[d]}曜 ${h}時台: ${fmtMin(x.s)}分 / ${x.c}回"></div>`;
+      html += `<div class="c"${x.s ? ` style="background:rgba(249,115,22,${a.toFixed(2)})"` : ''} title="${DOW[d]}曜 ${h}時台: ${fmtMin(x.s)}分 / ${x.c}回" onclick="toast(this.title)"></div>`;
     }
   }
   document.getElementById('heat').innerHTML = html;
+  const mx = document.getElementById('heatMax'); if (mx) mx.textContent = rows.length ? `（最大 ${fmtMin(max)}分）` : '';
 }
 function renderVideos(rows) {
   const m = {};
@@ -315,19 +341,19 @@ function renderVideos(rows) {
   const key = sortKey, dir = sortDir;
   list.sort((a, b) => (key === 'title' ? String(a.title).localeCompare(String(b.title), 'ja') : (a[key] - b[key])) * dir);
   const totalSec = list.reduce((a, o) => a + o.sec, 0) || 1;
-  const th = (k, label, r) => `<th class="${r ? 'r' : ''} ${sortKey === k ? 'on' : ''}" onclick="sortBy('${k}')">${label}${sortKey === k ? (sortDir < 0 ? ' ▼' : ' ▲') : ''}</th>`;
+  const th = (k, label, r, sm) => `<th class="${r ? 'r' : ''} ${sortKey === k ? 'on' : ''} ${sm ? 'hide-sm' : ''}" onclick="sortBy('${k}')">${label}${sortKey === k ? (sortDir < 0 ? ' ▼' : ' ▲') : ''}</th>`;
   const el = document.getElementById('vtable');
   if (!list.length) { el.innerHTML = '<tr><td class="empty">データなし</td></tr>'; return; }
-  el.innerHTML = `<thead><tr>${th('title','動画')}${th('c','回数',1)}${th('sec','合計',1)}<th>割合</th>${th('avg','1回平均',1)}${th('maxSec','最長',1)}${th('rate','完走率',1)}${th('last','最終視聴',1)}</tr></thead><tbody>` +
+  el.innerHTML = `<thead><tr>${th('title','動画')}${th('c','回数',1)}${th('sec','合計',1)}<th class="hide-sm">割合</th>${th('avg','1回平均',1,1)}${th('maxSec','最長',1,1)}${th('rate','完走率',1)}${th('last','最終視聴',1,1)}</tr></thead><tbody>` +
     list.map(o => `<tr>
       <td><img src="${thumb(o.id)}" alt="" loading="lazy"><span class="t" title="${esc(o.title)}">${esc(o.title)}</span></td>
       <td class="r"><b>${o.c}</b></td>
       <td class="r">${fmtMin(o.sec)} 分</td>
-      <td><div class="meter" title="${Math.round(o.sec / totalSec * 100)}%"><i style="width:${(o.sec / totalSec * 100).toFixed(1)}%"></i></div></td>
-      <td class="r">${fmtDur(o.avg)}</td>
-      <td class="r">${fmtDur(o.maxSec)}</td>
+      <td class="hide-sm"><div class="meter" title="${Math.round(o.sec / totalSec * 100)}%"><i style="width:${(o.sec / totalSec * 100).toFixed(1)}%"></i></div></td>
+      <td class="r hide-sm">${fmtDur(o.avg)}</td>
+      <td class="r hide-sm">${fmtDur(o.maxSec)}</td>
       <td class="r"><span class="pill ${o.rate >= .5 ? 'ok' : ''}">${Math.round(o.rate * 100)}%</span></td>
-      <td class="r" style="color:var(--sub);font-size:12px">${fmtDT(o.last && o.last.toISOString())}</td>
+      <td class="r hide-sm" style="color:var(--sub);font-size:12px">${fmtDT(o.last && o.last.toISOString())}</td>
     </tr>`).join('') + '</tbody>';
 }
 function sortBy(k) { if (sortKey === k) sortDir *= -1; else { sortKey = k; sortDir = k === 'title' ? 1 : -1; } render(); }
@@ -335,14 +361,15 @@ function renderRecent(rows) {
   const el = document.getElementById('rtable');
   const r = rows.slice(0, 100);
   if (!r.length) { el.innerHTML = '<tr><td class="empty">データなし</td></tr>'; return; }
-  el.innerHTML = '<thead><tr><th>日時</th><th>動画</th><th class="r">視聴</th><th class="r">到達</th><th>終了</th><th>端末</th></tr></thead><tbody>' +
+  el.innerHTML = '<thead><tr><th>日時</th><th>動画</th><th class="r">視聴</th><th class="r hide-sm">到達</th><th>終了</th><th class="hide-sm">端末</th><th></th></tr></thead><tbody>' +
     r.map(s => `<tr>
       <td style="white-space:nowrap">${fmtDT(s.startedAt)}</td>
       <td><img src="${thumb(s.videoId)}" alt="" loading="lazy"><span class="t" title="${esc(s.title)}">${esc(s.title)}</span></td>
       <td class="r">${fmtDur(s.sec)}</td>
-      <td class="r">${s.duration ? Math.min(100, Math.round(s.maxPos / s.duration * 100)) + '%' : '—'}${s.completed ? ' <span class="pill ok">完走</span>' : ''}</td>
-      <td><span class="pill">${esc(REASON[s.endReason] ?? s.endReason)}</span></td>
-      <td style="color:var(--sub);font-size:12px">${esc(s.device)}</td>
+      <td class="r hide-sm">${s.duration ? Math.min(100, Math.round(s.maxPos / s.duration * 100)) + '%' : '—'}${s.completed ? ' <span class="pill ok">完走</span>' : ''}</td>
+      <td><span class="pill">${esc(REASON[s.endReason] ?? s.endReason)}</span>${s.startReason === 'setup' ? ' <span class="pill">準備</span>' : ''}</td>
+      <td class="hide-sm" style="color:var(--sub);font-size:12px">${esc(DEV[s.device] || s.device)}</td>
+      <td><button class="del" title="この記録を削除" onclick="delSession('${esc(s.id)}')">🗑</button></td>
     </tr>`).join('') + '</tbody>';
 }
 
@@ -357,6 +384,12 @@ function exportCsv() {
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   toast(rows.length + '件を書き出しました');
 }
+async function delSession(id) {
+  if (!confirm('この再生の記録を削除しますか？')) return;
+  try { await db.collection('tomoe-player').doc(code).collection('sessions').doc(id).delete(); all = all.filter(s => s.id !== id); render(); toast('削除しました'); }
+  catch (e) { toast('削除できませんでした: ' + e.message); }
+}
+let _rz; window.addEventListener('resize', () => { clearTimeout(_rz); _rz = setTimeout(() => { if (all.length) render(); }, 200); });
 function copyConsole() { navigator.clipboard.writeText(clog.join('\n') || '（ログなし）').then(() => toast('ログをコピーしました')); }
 
 load();

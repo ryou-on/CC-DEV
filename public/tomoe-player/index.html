@@ -187,8 +187,9 @@ https://www.youtube.com/playlist?list=PLxxxxxxxx"></textarea>
 // =========================================================
 // 設定
 // =========================================================
-const VERSION = 'v0.5.0';
+const VERSION = 'v0.5.1';
 const RELEASE_NOTES = [
+  { ver:'v0.5.1', date:'2026-08-22', changes:['操作がないまま3本続けて流れたら自動で止まる（放置中を視聴として記録しないため）。キーやタップで続きから再開','強制終了・スリープで閉じられなかった記録は次回起動時に「中断」として整理','裏のタブで流している間の視聴時間が少なく記録される問題を修正'] },
   { ver:'v0.5.0', date:'2026-08-22', changes:['視聴の記録を開始（どの動画を何回・何分見たか、完走したか）','📊 視聴ダッシュボードを追加（合計・動画別・日別・曜日別・時間帯別・曜日×時間ヒートマップ・CSV出力）'] },
   { ver:'v0.4.1', date:'2026-08-22', changes:['PC でキーを叩くと自動で全画面に（保護者メニューでオフ可）','@ハンドル形式のチャンネルURLの取り込みを改善'] },
   { ver:'v0.4.0', date:'2026-08-22', changes:['チャンネルURL（@ハンドル・/channel/UC…）や再生リストURLを貼ると、その動画をまとめて取り込めるように','チャンネルは最新N本（既定30）を取り込み。保存し直すと最新に更新','タイトル取得を高速化'] },
@@ -246,6 +247,8 @@ function codeFromKey(k) {
 let db, videos = [], cur = -1, history = [], listId = '', sources = '';
 let yt = null, ytReady = false, lastKeyAt = 0, clog = [], userStarted = false;
 let sess = null, sessTick = null, lastTickAt = 0;   // 視聴ログ
+let autoRun = 0, idleStop = false;                   // 操作なしの連続自動再生カウント（放置検知）
+const AUTO_RUN_LIMIT = 3;                            // 操作なしで続けて流す上限（本）
 const ol = console.log.bind(console);
 console.log = (...a) => { ol(...a); clog.push(a.map(x => typeof x === 'object' ? JSON.stringify(x) : x).join(' ')); };
 const log = m => console.log('[tomoe] ' + m);
@@ -344,6 +347,7 @@ async function init() {
   renderKbdMap();
   firebase.initializeApp(FIREBASE_CONFIG);
   db = firebase.firestore();
+  try { await db.enablePersistence({ synchronizeTabs: true }); } catch (e) { log('persistence: ' + (e.code || e.message)); }
   // コードは大文字に正規化するが、既存セットが元の表記（小文字など）で存在すればそれを優先
   const rawList = String(codeFromUrl() || localStorage.getItem('tomoe_list_id') || '').trim().replace(/[^A-Za-z0-9_-]/g, '').slice(0, 12);
   listId = normCode(rawList);
@@ -353,6 +357,7 @@ async function init() {
   if (listId) localStorage.setItem('tomoe_list_id', listId);
   renderShare();
 
+  closeOrphanSession();
   // まずローカルキャッシュ → Firestore
   try { videos = listId ? JSON.parse(localStorage.getItem(LS_KEY + '_' + listId) || '[]') : []; } catch (e) { videos = []; }
   try {
@@ -395,7 +400,11 @@ function onYouTubeIframeAPIReady() {
       onStateChange: e => {
         refocus();
         if (e.data === YT.PlayerState.PLAYING) { document.getElementById('ph').style.display = 'none'; userStarted = true; if (!sess && videos[cur]) sessStart(videos[cur], 'auto'); lastTickAt = Date.now(); }
-        if (e.data === YT.PlayerState.ENDED) { if (sess) { sess.completed = true; } goNext('ended'); }
+        if (e.data === YT.PlayerState.ENDED) {
+          if (sess) { sess.completed = true; }
+          if (++autoRun >= AUTO_RUN_LIMIT) { idlePause(); return; }
+          goNext('ended');
+        }
       },
       onError: e => { log('yt error ' + e.data); flash('⚠', 'この動画は再生できません'); setTimeout(() => goNext('error'), 1200); }
     }
@@ -406,7 +415,21 @@ function tryAutoplay() {
   // 自動再生がブロックされたらプレースホルダーを残す（タップ/キーで開始）
   setTimeout(() => { if (ytReady && yt.getPlayerState() !== YT.PlayerState.PLAYING) setPh('▶ タップしてスタート'); }, 1500);
 }
-function startPlay() { if (!ytReady) return; document.getElementById('ph').style.display = 'none'; yt.playVideo(); }
+function startPlay() {
+  if (!ytReady) return;
+  document.getElementById('ph').style.display = 'none';
+  if (idleStop) { idleStop = false; autoRun = 0; goNext('resume'); return; }
+  yt.playVideo();
+}
+// 操作なしで AUTO_RUN_LIMIT 本続いたら止める（放置中の「視聴」を記録しないため）
+function idlePause() {
+  idleStop = true;
+  sessEnd('idle');
+  try { yt.pauseVideo(); } catch (e) {}
+  setPh('▶ まだ見る？ タップかキーでつづき');
+  log('idle stop after ' + autoRun + ' auto plays');
+}
+function userActed() { autoRun = 0; if (idleStop) { idleStop = false; document.getElementById('ph').style.display = 'none'; } }
 
 // =========================================================
 // 再生制御
@@ -429,6 +452,8 @@ function updateNow() {
 function togglePlay(src) {
   if (!ytReady) return;
   if (!userStarted) { startPlay(); return; }
+  if (idleStop) { startPlay(); return; }
+  userActed();
   const st = yt.getPlayerState();
   if (st === YT.PlayerState.PLAYING) { yt.pauseVideo(); flash('⏸', 'とめる'); }
   else { yt.playVideo(); flash('▶', 'うごかす'); }
@@ -455,6 +480,7 @@ function renderCands() {
   }).join('');
 }
 function pick(n, src) {
+  userActed();
   const c = candIdx();
   if (!c.length) return;
   if (n >= c.length) n = c.length - 1;
@@ -463,9 +489,10 @@ function pick(n, src) {
   flash(['①','②','③','④'][n] || '▶', videos[c[n]].title || '');
   play(c[n], true, 'pick');
 }
-function goNext(src) { if (!videos.length) return; flash('▶▶', 'つぎ'); play((cur + 1) % videos.length, true, src === 'ended' ? 'ended' : src === 'error' ? 'error' : 'next'); }
+function goNext(src) { if (!videos.length) return; if (src !== 'ended') userActed(); flash('▶▶', 'つぎ'); play((cur + 1) % videos.length, true, src === 'ended' ? 'ended' : src === 'error' ? 'error' : 'next'); }
 function goPrev(src) {
   if (!videos.length) return;
+  userActed();
   flash('◀◀', 'まえ');
   if (history.length) play(history.pop(), false, 'prev');
   else play((cur - 1 + videos.length) % videos.length, false, 'prev');
@@ -485,6 +512,7 @@ document.addEventListener('keydown', e => {
   if (e.repeat || now - lastKeyAt < KEY_COOLDOWN) return;
   lastKeyAt = now;
   if (!userStarted) { startPlay(); flash('▶', 'スタート'); return; }
+  if (idleStop && z === 'P') { startPlay(); return; }
   if (z === 'L') goPrev('key');
   else if (z === 'C') goNext('key');
   else if (z === 'P') togglePlay('key');
@@ -533,9 +561,10 @@ function sessStart(v, reason) {
     startedAt: now.toISOString(), day: localDay(now), dow: now.getDay(), hour: now.getHours(),
     watchSec: 0, maxPos: 0, duration: 0, completed: false, endReason: '', endedAt: '',
     device: DEVICE, startReason: reason || 'auto',
-    _dirty: true, _lastFlush: 0
+    _dirty: true, _lastFlush: 0, _lastPos: -1
   };
   lastTickAt = Date.now();
+  try { localStorage.setItem('tomoe_open_sess', JSON.stringify({ id: sess.id, list: listId })); } catch (e) {}
   if (!sessTick) sessTick = setInterval(sessTickFn, 1000);
   sessFlush();
 }
@@ -544,9 +573,15 @@ function sessTickFn() {
   const now = Date.now();
   let st = -1; try { st = yt.getPlayerState(); } catch (e) {}
   if (st === YT.PlayerState.PLAYING) {
-    const dt = Math.min(2, (now - lastTickAt) / 1000);   // スリープ等で飛んだ分は数えない
+    // 壁時計の経過を、再生位置の進み（＋余裕1秒）で上限する：
+    // タブが裏でタイマーが間引かれても位置の進み分は数え、スリープ（位置が進まない）は数えない
+    let pos = -1; try { pos = yt.getCurrentTime() || 0; } catch (e) {}
+    const wall = (now - lastTickAt) / 1000;
+    const posDelta = (pos >= 0 && sess._lastPos >= 0 && pos >= sess._lastPos) ? pos - sess._lastPos : 0;
+    const dt = Math.max(0, Math.min(wall, Math.max(2, posDelta + 1)));
     sess.watchSec += dt;
-    try { sess.maxPos = Math.max(sess.maxPos, yt.getCurrentTime() || 0); sess.duration = yt.getDuration() || sess.duration; } catch (e) {}
+    if (pos >= 0) { sess._lastPos = pos; sess.maxPos = Math.max(sess.maxPos, pos); }
+    try { sess.duration = yt.getDuration() || sess.duration; } catch (e) {}
     sess._dirty = true;
   }
   lastTickAt = now;
@@ -560,6 +595,16 @@ function sessEnd(reason) {
   sess._dirty = true;
   sessFlush();
   sess = null;
+  try { localStorage.removeItem('tomoe_open_sess'); } catch (e) {}
+}
+// 前回、強制終了やスリープ放置で閉じられなかったセッションを「中断」として閉じる
+function closeOrphanSession() {
+  let o = null; try { o = JSON.parse(localStorage.getItem('tomoe_open_sess') || 'null'); } catch (e) {}
+  if (!o || !o.id || !o.list) return;
+  try { localStorage.removeItem('tomoe_open_sess'); } catch (e) {}
+  db.collection('tomoe-player').doc(o.list).collection('sessions').doc(o.id)
+    .set({ endReason: 'abort', endedAt: new Date().toISOString() }, { merge: true })
+    .then(() => log('orphan session closed: ' + o.id)).catch(e => log('orphan close: ' + e.message));
 }
 function sessFlush() {
   if (!sess || !db || !listId) return;
@@ -631,7 +676,7 @@ async function saveList() {
   } catch (e) { msg.textContent = 'クラウド保存失敗（この端末には保存済み）: ' + e.message; log('save: ' + e.message); }
   renderVList();
   history = []; cur = -1;
-  if (!yt) loadYtApi(); else { play(0, false); }
+  if (!yt) loadYtApi(); else { play(0, false, 'setup'); }
   setTimeout(closeParent, 600);
 }
 function shuffleOrder() {
