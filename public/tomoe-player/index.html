@@ -165,8 +165,9 @@ https://youtu.be/yyyyyyyyyyy"></textarea>
 // =========================================================
 // 設定
 // =========================================================
-const VERSION = 'v0.2.1';
+const VERSION = 'v0.2.2';
 const RELEASE_NOTES = [
+  { ver:'v0.2.2', date:'2026-08-22', changes:['起動直後にキーが効かないことがある問題を修正（動画側にフォーカスが残らないように）'] },
   { ver:'v0.2.1', date:'2026-08-22', changes:['キーの物理位置が取れないキーボードでも文字から判定するように'] },
   { ver:'v0.2.0', date:'2026-08-22', changes:['再生対象を YouTube に変更（保護者メニューに URL を貼るだけ）','動画が終わったら自動で「つぎ」へ','スペース／動画の真ん中タップで 止める・うごかす'] },
   { ver:'v0.1.0', date:'2026-08-22', changes:['初回リリース：幼児向けプレイヤー','キーボードをゾーン分け（左＝まえ／中央＝つぎ／右＝右側の候補）','画面左右のタップゾーン・右側の大きな候補カード'] }
@@ -290,8 +291,9 @@ function onYouTubeIframeAPIReady() {
     videoId: videos[0].id,
     playerVars: { autoplay: 1, controls: 0, rel: 0, modestbranding: 1, playsinline: 1, disablekb: 1, iv_load_policy: 3, fs: 0, origin: location.origin },
     events: {
-      onReady: () => { ytReady = true; updateNow(); renderCands(); setPh('▶ タップしてスタート'); tryAutoplay(); },
+      onReady: () => { ytReady = true; updateNow(); renderCands(); setPh('▶ タップしてスタート'); tryAutoplay(); refocus(); },
       onStateChange: e => {
+        refocus();
         if (e.data === YT.PlayerState.PLAYING) { document.getElementById('ph').style.display = 'none'; userStarted = true; }
         if (e.data === YT.PlayerState.ENDED) goNext('ended');
       },
@@ -388,10 +390,16 @@ document.addEventListener('keydown', e => {
 }, true);
 
 // iframe がフォーカスを奪うとキーが効かなくなるので戻す
-setInterval(() => {
+function refocus() {
   const a = document.activeElement;
-  if (a && a.tagName === 'IFRAME') { a.blur(); window.focus(); }
-}, 400);
+  if (a && a.tagName === 'IFRAME') a.blur();
+  document.body.tabIndex = -1;
+  document.body.focus({ preventScroll: true });
+  window.focus();
+}
+setInterval(refocus, 250);
+window.addEventListener('blur', () => setTimeout(refocus, 50));
+document.addEventListener('pointerdown', () => setTimeout(refocus, 0), true);
 
 // スワイプ（動画エリア）
 let tx = null;
