@@ -104,6 +104,22 @@ service cloud.firestore {
         request.resource.data.keys().hasOnly(['videos','sources','updatedAt','name']) &&
         request.resource.data.videos is list &&
         request.resource.data.videos.size() <= 100;
+
+      // 視聴ログ: 1再生=1ドキュメント（認証不要・フィールド検証あり・削除は保護者向けに許可）
+      match /sessions/{sessionId} {
+        allow read: if true;
+        allow create, update: if
+          request.resource.data.keys().hasOnly(['videoId','title','startedAt','day','dow','hour','watchSec','maxPos','duration','completed','endReason','endedAt','device','startReason']) &&
+          request.resource.data.videoId is string && request.resource.data.videoId.size() <= 20 &&
+          request.resource.data.title is string && request.resource.data.title.size() <= 200 &&
+          request.resource.data.startedAt is string && request.resource.data.startedAt.size() <= 40 &&
+          request.resource.data.day is string && request.resource.data.day.size() == 10 &&
+          request.resource.data.dow is number && request.resource.data.dow >= 0 && request.resource.data.dow <= 6 &&
+          request.resource.data.hour is number && request.resource.data.hour >= 0 && request.resource.data.hour <= 23 &&
+          request.resource.data.watchSec is number && request.resource.data.watchSec >= 0 && request.resource.data.watchSec <= 86400 &&
+          request.resource.data.completed is bool;
+        allow delete: if true;
+      }
     }
 
     // hihaho アナリティクス: プレイリスト表示・動画再生カウント（認証なし書き込み可）
