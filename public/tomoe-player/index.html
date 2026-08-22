@@ -143,7 +143,7 @@ https://youtu.be/yyyyyyyyyyy"></textarea>
           <button onclick="copyText(shareUrl(),'URLをコピーしました')">🔗 URL</button>
           <button onclick="shareNative()">📤 共有</button>
         </div>
-        <div class="msg" style="margin-top:6px">別の端末で ⚙ → コードを入力、または QR を読み取るだけ</div>
+        <div class="msg" style="margin-top:6px">別の端末で ⚙ → コードを入力、QR を読み取る、または URL の後ろに <code>?code=コード</code> を付けて開く</div>
       </div>
       <img id="shareQr" alt="QR" style="width:120px;height:120px;border-radius:8px;background:#fff">
     </div>
@@ -180,8 +180,9 @@ https://youtu.be/yyyyyyyyyyy"></textarea>
 // =========================================================
 // 設定
 // =========================================================
-const VERSION = 'v0.3.2';
+const VERSION = 'v0.3.3';
 const RELEASE_NOTES = [
+  { ver:'v0.3.3', date:'2026-08-22', changes:['URL の後ろに ?code=コード（?list= / ?c= / ?コード / #コード でも可）を付けるだけで共有セットを開けるように'] },
   { ver:'v0.3.2', date:'2026-08-22', changes:['共有コードを小文字で入力しても見つかるように','存在しないコードを入力したときにメッセージを表示'] },
   { ver:'v0.3.1', date:'2026-08-22', changes:['保護者メニューの入力欄が選択・入力できない問題を修正'] },
   { ver:'v0.3.0', date:'2026-08-22', changes:['共有コードを追加：保存すると6文字のコードが発行され、別の端末で ⚙ からコード入力／QR読み取り／URLで同じセットを開ける','コード・URLのコピー、端末の共有シートにも対応'] },
@@ -272,7 +273,7 @@ async function init() {
   firebase.initializeApp(FIREBASE_CONFIG);
   db = firebase.firestore();
   // コードは大文字に正規化するが、既存セットが元の表記（小文字など）で存在すればそれを優先
-  const rawList = String(new URLSearchParams(location.search).get('list') || localStorage.getItem('tomoe_list_id') || '').trim().replace(/[^A-Za-z0-9_-]/g, '').slice(0, 12);
+  const rawList = String(codeFromUrl() || localStorage.getItem('tomoe_list_id') || '').trim().replace(/[^A-Za-z0-9_-]/g, '').slice(0, 12);
   listId = normCode(rawList);
   if (rawList && rawList !== listId) {
     try { const d0 = await db.collection('tomoe-player').doc(rawList).get(); if (d0.exists) listId = rawList; } catch (e) {}
@@ -460,7 +461,7 @@ async function saveList() {
     msg.textContent = '共有コードを発行中…';
     listId = await newCode();
     localStorage.setItem('tomoe_list_id', listId);
-    history.replaceState(null, '', location.pathname + '?list=' + listId);
+    history.replaceState(null, '', location.pathname + '?code=' + listId);
     renderShare();
   }
   localStorage.setItem(LS_KEY + '_' + listId, JSON.stringify(videos));
@@ -479,6 +480,15 @@ function shuffleOrder() {
   renderVList();
 }
 // ---- 共有コード ----
+// URL からコードを取り出す： ?code=XXX / ?list=XXX / ?c=XXX / ?XXX / #XXX のどれでもOK
+function codeFromUrl() {
+  const sp = new URLSearchParams(location.search);
+  for (const k of ['code', 'list', 'c']) { const v = sp.get(k); if (v) return v; }
+  for (const [k, v] of sp.entries()) { if (v === '' && /^[A-Za-z0-9_-]{3,12}$/.test(k) && k !== 'cb') return k; }
+  const h = location.hash.replace(/^#/, '');
+  if (/^[A-Za-z0-9_-]{3,12}$/.test(h)) return h;
+  return '';
+}
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 紛らわしい文字を除外
 function normCode(v) { return String(v || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 12); }
 async function newCode() {
@@ -488,7 +498,7 @@ async function newCode() {
   }
   return 'T' + Date.now().toString(36).toUpperCase().slice(-5);
 }
-function shareUrl() { return location.origin + location.pathname + '?list=' + encodeURIComponent(listId); }
+function shareUrl() { return location.origin + location.pathname + '?code=' + encodeURIComponent(listId); }
 function renderShare() {
   const has = !!listId;
   document.getElementById('shareBox').style.display = has ? 'flex' : 'none';
@@ -511,7 +521,7 @@ async function loadByCode() {
     if (!ok) { msg.textContent = 'コード「' + up + '」のセットは見つかりません'; return; }
   } catch (e) { /* オフライン等は続行 */ }
   localStorage.setItem('tomoe_list_id', v);
-  location.href = location.pathname + '?list=' + encodeURIComponent(v);
+  location.href = location.pathname + '?code=' + encodeURIComponent(v);
 }
 function copyText(t, m) { navigator.clipboard.writeText(t).then(() => flash('📋', m)); }
 async function shareNative() {
