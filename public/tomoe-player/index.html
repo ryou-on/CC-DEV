@@ -169,6 +169,8 @@ https://www.youtube.com/playlist?list=PLxxxxxxxx"></textarea>
     </div>
     <p style="color:#9ca3af">Ctrl / Alt / ⌘ を押しながらのキーはブラウザに渡します（保護者用）。矢印：← まえ／↑ 候補①／→ 候補②／↓ 候補③。テンキーも右側ブロック扱いです。動画が終わると自動で「つぎ」に進みます。</p>
 
+    <h3>全画面</h3>
+    <p>PC ではキーを叩くと自動で全画面になります（ブラウザのボタンやタブに触れないように）。<label style="margin-left:6px"><input type="checkbox" id="autoFsChk" onchange="localStorage.setItem('tomoe_autofs', this.checked ? 'on' : 'off')" style="width:auto"> 自動全画面を使う</label>　戻すときは <kbd>Esc</kbd> 長押し、または ⛶。</p>
     <h3>タッチ</h3>
     <p>動画の真ん中をタップ＝止める/うごかす、左端＝まえ、右端＝つぎ、右の候補をタップ＝その動画。左右スワイプでも進めます。</p>
     <div class="row"><button onclick="closeParent()">閉じる</button></div>
@@ -181,8 +183,9 @@ https://www.youtube.com/playlist?list=PLxxxxxxxx"></textarea>
 // =========================================================
 // 設定
 // =========================================================
-const VERSION = 'v0.4.0';
+const VERSION = 'v0.4.1';
 const RELEASE_NOTES = [
+  { ver:'v0.4.1', date:'2026-08-22', changes:['PC でキーを叩くと自動で全画面に（保護者メニューでオフ可）','@ハンドル形式のチャンネルURLの取り込みを改善'] },
   { ver:'v0.4.0', date:'2026-08-22', changes:['チャンネルURL（@ハンドル・/channel/UC…）や再生リストURLを貼ると、その動画をまとめて取り込めるように','チャンネルは最新N本（既定30）を取り込み。保存し直すと最新に更新','タイトル取得を高速化'] },
   { ver:'v0.3.3', date:'2026-08-22', changes:['URL の後ろに ?code=コード（?list= / ?c= / ?コード / #コード でも可）を付けるだけで共有セットを開けるように'] },
   { ver:'v0.3.2', date:'2026-08-22', changes:['共有コードを小文字で入力しても見つかるように','存在しないコードを入力したときにメッセージを表示'] },
@@ -288,9 +291,10 @@ function parseSource(t) {
 async function resolveChannelId(handle) {
   const path = handle.startsWith('@') ? '/' + handle : '/' + handle;
   try {
-    const r = await fetch('https://r.jina.ai/https://www.youtube.com' + path, { headers: { Accept: 'text/plain' } });
+    // HTML そのものを返してもらい、埋め込みJSONの channelId を拾う（Markdown変換だとIDが落ちる）
+    const r = await fetch('https://r.jina.ai/https://www.youtube.com' + path, { headers: { 'X-Return-Format': 'html' } });
     const txt = await r.text();
-    const m = txt.match(/"(?:channelId|externalId|browseId)":"(UC[\w-]{22})"/) || txt.match(/channel\/(UC[\w-]{22})/) || txt.match(/(UC[\w-]{22})/);
+    const m = txt.match(/"(?:channelId|externalId|browseId)":"(UC[\w-]{22})"/) || txt.match(/identifier" content="(UC[\w-]{22})/) || txt.match(/channel\/(UC[\w-]{22})/) || txt.match(/(UC[\w-]{22})/);
     return m ? m[1] : '';
   } catch (e) { log('resolve: ' + e.message); return ''; }
 }
@@ -330,6 +334,7 @@ function ensureYtApi() {
 // =========================================================
 async function init() {
   document.getElementById('verLabel').textContent = VERSION;
+  document.getElementById('autoFsChk').checked = localStorage.getItem('tomoe_autofs') !== 'off';
   renderKbdMap();
   firebase.initializeApp(FIREBASE_CONFIG);
   db = firebase.firestore();
@@ -468,6 +473,7 @@ document.addEventListener('keydown', e => {
   const z = CODE2ZONE[e.code || codeFromKey(e.key)];
   if (!z) return;
   e.preventDefault();
+  autoFullscreen();
   const now = Date.now();
   if (e.repeat || now - lastKeyAt < KEY_COOLDOWN) return;
   lastKeyAt = now;
@@ -634,6 +640,14 @@ function flash(big, small) {
   f.classList.add('on');
   clearTimeout(flashT);
   flashT = setTimeout(() => f.classList.remove('on'), 650);
+}
+// PC でキーを叩いたら自動で全画面（誤操作でブラウザのUIに触れないように）
+const IS_TOUCH = matchMedia('(pointer:coarse)').matches && !matchMedia('(pointer:fine)').matches;
+function autoFullscreen() {
+  if (IS_TOUCH || document.fullscreenElement || localStorage.getItem('tomoe_autofs') === 'off') return;
+  const el = document.documentElement;
+  const fn = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (fn) { try { const r = fn.call(el, { navigationUI: 'hide' }); if (r && r.catch) r.catch(() => {}); } catch (e) {} }
 }
 function toggleFs() {
   if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
