@@ -13,7 +13,7 @@ const cropBtn = document.getElementById('cropBtn');
 // 拡張本体（撮影側 background.js）が旧バージョンのまま動き続け、
 // 「修正したはずの問題が直らない」事故になる。編集画面（このファイル）の
 // バージョンと、実際にロードされている拡張本体のバージョンを比較して警告する
-const VIEWER_VERSION = '5.32.2';
+const VIEWER_VERSION = '5.32.3';
 try {
   const loaded = chrome.runtime.getManifest().version;
   if (loaded !== VIEWER_VERSION) {
@@ -500,6 +500,18 @@ function normalizeRects(caps) {
   if (fixed || grown) console.log("サイズ補正: 継承" + fixed + "枚 / 拡張" + grown + "枚");
 }
 
+// 見開き2分割ページの「余白カットOFF側」の枠（帯枠）を作る（v5.32.3）。
+// 従来は「外側=帯の端、内側=ノド」だったため、ノドが帯の中央からズレると
+// 左右ページの幅がそのまま不揃いになった（余白カットOFFで顕在化）。
+// ノドを挟んで短い側の幅に合わせて左右対称にする（帯の外＝黒帯には
+// 広げられないため、広い側の外側余白を切り詰めて揃える）
+function splitBandPiece(p, band) {
+  const half = Math.min(p._gx - band.x, band.x + band.w - p._gx);
+  return p._half === 'L'
+    ? { x: p._gx - half, y: band.y, w: half, h: band.h, _half: 'L', _gx: p._gx }
+    : { x: p._gx, y: band.y, w: half, h: band.h, _half: 'R', _gx: p._gx };
+}
+
 // 見開き2分割で生成した左右ページの出力寸法を全編で統一する（v5.32.2）。
 // キャプチャごとに内容検出枠の幅・高さが微妙に違うため、同一キャプチャ内の
 // 左右均等化だけではページ間でサイズがばらつき、PDFの見開き表示で崩れる。
@@ -516,6 +528,9 @@ async function unifySplitPages(caps) {
   };
   const mw = Math.round(pick(cards.map(c => c._cropRect.w), 0.8));
   const mh = Math.round(pick(cards.map(c => c._cropRect.h), 0.5));
+  // 余白カットOFF側の帯枠も全編で統一（中央値。帯の外へは広げられないので
+  // 目標より広い枠の切り詰めが基本。黒帯幅が揺れたキャプチャのブレを吸収）
+  const bwT = Math.round(pick(cards.map(c => c._bandRect.w), 0.5));
   const byImg = new Map();
   let adjusted = 0;
   for (const c of cards) {
@@ -536,8 +551,16 @@ async function unifySplitPages(caps) {
     let nh = Math.min(mh, band.h);
     let ny = Math.round(r.y + r.h / 2 - nh / 2);
     ny = Math.max(band.y, Math.min(ny, band.y + band.h - nh));
-    if (r.x === nx && r.y === ny && r.w === nw && r.h === nh) continue;
+    // 帯枠（余白カットOFF側）: ノド側の辺を固定し統一幅へ（帯の端でクランプ）
+    const bw = Math.min(bwT, r._half === 'L' ? r._gx - band.x : band.x + band.w - r._gx);
+    const nb = r._half === 'L'
+      ? { x: r._gx - bw, y: band.y, w: bw, h: band.h, _half: r._half, _gx: r._gx }
+      : { x: r._gx, y: band.y, w: bw, h: band.h, _half: r._half, _gx: r._gx };
+    const bandSame = c._bandRect.x === nb.x && c._bandRect.w === nb.w &&
+      c._bandRect.y === nb.y && c._bandRect.h === nb.h;
+    if (r.x === nx && r.y === ny && r.w === nw && r.h === nh && bandSame) continue;
     c._cropRect = { x: nx, y: ny, w: nw, h: nh, _half: r._half, _gx: r._gx };
+    c._bandRect = nb;
     if (!byImg.has(c._imgIdx)) byImg.set(c._imgIdx, []);
     byImg.get(c._imgIdx).push(c);
     adjusted++;
@@ -1069,11 +1092,7 @@ function buildCardsForImage(img, imgIdx, cap) {
       const pL = { x: eL, y: crop.y, w: gb - eL, h: crop.h, _half: 'L', _gx: gb };
       const pR = { x: gb, y: crop.y, w: eR - gb, h: crop.h, _half: 'R', _gx: gb };
       cropPieces = bookConfig.direction === 'rtl' ? [pR, pL] : [pL, pR];
-      bandPieces = cropPieces.map(p => {
-        const left = (p.x === eL) ? Math.min(band.x, eL) : p.x;
-        const right = (p.x + p.w === eR) ? Math.max(band.x + band.w, eR) : p.x + p.w;
-        return { x: left, y: band.y, w: right - left, h: band.h };
-      });
+      bandPieces = cropPieces.map(p => splitBandPiece(p, band));
     } else {
       bandPieces = cropPieces.map(p => {
         const left = (p.x === crop.x) ? band.x : p.x;                              // 外端だけ余白まで広げる
@@ -1153,6 +1172,7 @@ function buildCardsForImage(img, imgIdx, cap) {
         cropPieces = bookConfig.direction === 'rtl' ? [pR, pL] : [pL, pR];
       }
       bandPieces = cropPieces.map(p => {
+        if (p._half) return splitBandPiece(p, band);
         const left = (p.x === eL) ? Math.min(band.x, eL) : p.x;
         const right = (p.x + p.w === eR) ? Math.max(band.x + band.w, eR) : p.x + p.w;
         return { x: left, y: band.y, w: right - left, h: band.h };
