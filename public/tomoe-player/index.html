@@ -110,7 +110,7 @@ body.view-only .view-note{display:block}
     <div class="player" id="player">
       <div id="yt"></div>
       <div class="cover" id="cover" onclick="togglePlay('tap')"></div>
-      <div class="ph" id="ph" onclick="startPlay()"><div class="big">🧸</div><div id="phText">よみこみちゅう…</div></div>
+      <div class="ph" id="ph" onclick="startPlay()"><div class="big">🧸</div><div id="phText">よみこみちゅう…</div><button id="resumeBtn" style="display:none;margin-top:6px;padding:10px 22px;border-radius:12px;border:none;background:var(--accent2);color:#fff;font-size:16px;font-weight:800;cursor:pointer"></button></div>
       <div class="zone l" onclick="goPrev('tap')">◀</div>
       <div class="zone r" onclick="goNext('tap')">▶</div>
     </div>
@@ -173,7 +173,7 @@ https://www.youtube.com/playlist?list=PLxxxxxxxx"></textarea>
       </div>
       <img id="shareQr" alt="QR" style="width:120px;height:120px;border-radius:8px;background:#fff">
     </div>
-    <p id="shareNone" class="msg" style="display:none">動画を保存すると共有コードが発行されます。</p>
+    <p id="shareNone" class="msg" style="display:none">動画を保存すると共有コードと専用URLが発行されます（このページはコードなしの「登録用URL」です）。</p>
     <div class="row" style="margin-top:10px">
       <input id="codeInput" placeholder="コードを入力（例: ABC123）" maxlength="12" style="max-width:240px;text-transform:uppercase;letter-spacing:.1em;font-weight:700" onkeydown="if(event.key==='Enter')loadByCode()">
       <button class="p" onclick="loadByCode()">このコードを読み込む</button>
@@ -209,8 +209,9 @@ https://www.youtube.com/playlist?list=PLxxxxxxxx"></textarea>
 // =========================================================
 // 設定
 // =========================================================
-const VERSION = 'v0.6.3';
+const VERSION = 'v0.7.0';
 const RELEASE_NOTES = [
+  { ver:'v0.7.0', date:'2026-08-22', changes:['コードなしの素のURLは「登録用ページ」に。セットは保存時に発行される専用URL（?code=…）で開く方式へ','登録ページに「▶ 前回のセットをひらく」ボタンを追加（この端末で最後に使ったセット）'] },
   { ver:'v0.6.3', date:'2026-08-22', changes:['初回保存で共有コードが画面に表示されない問題を修正'] },
   { ver:'v0.6.2', date:'2026-08-22', changes:['候補リストをスクロールできるように：↑↓キー・上下スワイプ・候補の上でマウスホイールで、ほかの動画を順に表示','「ほかのどうが 3/12」のように位置を表示'] },
   { ver:'v0.6.1', date:'2026-08-22', changes:['再生専用URLで開いた場合は視聴ダッシュボードのメニューも非表示に'] },
@@ -380,18 +381,23 @@ async function init() {
   db = firebase.firestore();
   try { await db.enablePersistence({ synchronizeTabs: true }); } catch (e) { log('persistence: ' + (e.code || e.message)); }
   // コードは大文字に正規化するが、既存セットが元の表記（小文字など）で存在すればそれを優先
-  const rawList = String(codeFromUrl() || localStorage.getItem('tomoe_list_id') || '').trim().replace(/[^A-Za-z0-9_-]/g, '').slice(0, 12);
+  // 素のURL（コードなし）は「登録用ページ」。セットは必ず ?code= / ?watch= の個別URLで開く
+  const rawList = String(codeFromUrl() || '').trim().replace(/[^A-Za-z0-9_-]/g, '').slice(0, 12);
   listId = normCode(rawList);
   if (rawList && rawList !== listId) {
     try { const d0 = await db.collection('tomoe-player').doc(rawList).get(); if (d0.exists) listId = rawList; } catch (e) {}
   }
-  if (listId) localStorage.setItem('tomoe_list_id', listId);
-  // 再生専用モード: ?watch= で開いたら記憶、?code= 等の編集URLで開いたら解除
   const sp0 = new URLSearchParams(location.search);
-  if (sp0.get('watch')) localStorage.setItem('tomoe_view_only', '1');
-  else if (sp0.get('code') || sp0.get('list') || sp0.get('c')) localStorage.removeItem('tomoe_view_only');
-  viewOnly = viewOnly || localStorage.getItem('tomoe_view_only') === '1';
-  if (viewOnly) document.body.classList.add('view-only');
+  if (listId) {
+    // 個別URL: 端末に記憶（登録ページの「つづきをひらく」ボタン用）
+    localStorage.setItem('tomoe_list_id', listId);
+    if (sp0.get('watch')) localStorage.setItem('tomoe_view_only', '1');
+    else if (sp0.get('code') || sp0.get('list') || sp0.get('c')) localStorage.removeItem('tomoe_view_only');
+    viewOnly = viewOnly || localStorage.getItem('tomoe_view_only') === '1';
+    if (viewOnly) document.body.classList.add('view-only');
+  } else {
+    viewOnly = false;   // 登録ページは常に編集モード
+  }
   renderShare();
 
   playerName = localStorage.getItem('tomoe_player_name_' + listId) || '';
@@ -416,7 +422,12 @@ async function init() {
   applyPlayerName();
   renderVList();
 
-  if (!videos.length) { setPh('⚙ から YouTube の動画を登録してね'); openParent(); return; }
+  if (!videos.length) {
+    setPh(listId ? '⚙ から YouTube の動画を登録してね' : 'あたらしいセットをつくる：⚙ から動画を登録');
+    showResumeBtn();
+    openParent();
+    return;
+  }
   log('動画 ' + videos.length + '本');
   loadYtApi();
 }
@@ -725,6 +736,17 @@ async function savePlayerName() {
     msg.textContent = 'この端末に保存しました（動画リスト保存時に共有されます）';
     log('name save: ' + e.message);
   }
+}
+// 登録ページで、前回このブラウザで使ったセットへのショートカットを表示
+function showResumeBtn() {
+  if (listId) return;
+  const last = String(localStorage.getItem('tomoe_list_id') || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 12);
+  if (!last) return;
+  const ro = localStorage.getItem('tomoe_view_only') === '1';
+  const btn = document.getElementById('resumeBtn');
+  btn.textContent = '▶ 前回のセットをひらく（' + last + '）';
+  btn.style.display = 'inline-block';
+  btn.onclick = ev => { ev.stopPropagation(); location.href = location.pathname + (ro ? '?watch=' : '?code=') + encodeURIComponent(last); };
 }
 function openParent() { document.getElementById('parentMo').classList.add('on'); }
 function closeParent() { document.getElementById('parentMo').classList.remove('on'); }
