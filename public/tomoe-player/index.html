@@ -79,6 +79,11 @@ main{flex:1;min-height:0;display:grid;grid-template-columns:1fr 300px;gap:14px;p
 .vlist div{display:flex;align-items:center;gap:8px;font-size:12px;padding:4px 6px;border-radius:6px;background:#f9fafb}
 .vlist img{width:48px;height:27px;object-fit:cover;border-radius:4px}
 
+/* 再生専用モード：編集 UI を出さない */
+body.view-only .edit-only{display:none !important}
+.view-note{display:none;background:#fef3c7;border:1px solid #fcd34d;border-radius:10px;padding:10px 12px;font-size:13px;color:#92400e;margin-bottom:4px}
+body.view-only .view-note{display:block}
+
 /* 縦画面（iPhone・iPad縦） */
 @media (max-width:820px), (orientation:portrait){
   main{grid-template-columns:1fr;grid-template-rows:auto 1fr}
@@ -120,14 +125,18 @@ main{flex:1;min-height:0;display:grid;grid-template-columns:1fr 300px;gap:14px;p
 <div class="mo" id="parentMo" onclick="if(event.target===this)closeParent()">
   <div class="mb">
     <h2>⚙ 保護者メニュー <span style="font-size:11px;color:#9ca3af;font-weight:400;margin-left:6px" id="verLabel"></span></h2>
+    <div class="view-note">▶ このプレイヤーは<strong>再生専用の共有URL</strong>で開かれています。動画リストや名前の編集はできません（編集は保護者用のURL・コードから）。</div>
 
+    <div class="edit-only">
     <h3>プレイヤーの名前</h3>
     <div class="row">
       <input id="nameInput" placeholder="こどもtube" maxlength="30" style="max-width:240px">
       <button class="p" onclick="savePlayerName()">名前を保存</button>
       <span class="msg" id="nameMsg">画面左上のタイトルに表示されます（例: ともえtube）</span>
     </div>
+    </div>
 
+    <div class="edit-only">
     <h3>再生する YouTube 動画・チャンネル・再生リスト（1行に1つ貼る）</h3>
     <p>動画URL（youtu.be / Shorts / 動画IDも可）のほか、<strong>チャンネルURL</strong>（@ハンドル・/channel/UC…）や<strong>再生リストURL</strong>（list=…）も貼れます。チャンネルは最新 <input id="chanLimit" type="number" min="5" max="100" value="30" style="width:60px;display:inline;padding:2px 6px"> 本を取り込みます（保存し直すと最新に更新）。</p>
     <textarea id="urlInput" placeholder="https://www.youtube.com/watch?v=xxxxxxxxxxx
@@ -140,11 +149,13 @@ https://www.youtube.com/playlist?list=PLxxxxxxxx"></textarea>
       <span class="msg" id="saveMsg"></span>
     </div>
     <div class="vlist" id="vlist"></div>
+    </div>
 
     <h3>視聴の記録</h3>
     <p>どの動画を何回・何分見たか、曜日・時間帯ごとの傾向をまとめて見られます。</p>
     <div class="row"><button class="p" onclick="window.open('stats.html' + (listId ? '?code=' + encodeURIComponent(listId) : ''))">📊 視聴ダッシュボードを開く</button></div>
 
+    <div class="edit-only">
     <h3>共有コード（別の端末でも同じセットを使う）</h3>
     <div id="shareBox" style="display:none;align-items:center;gap:16px;flex-wrap:wrap;background:#fff7ed;border:1px solid var(--border);border-radius:12px;padding:12px 14px">
       <div>
@@ -153,9 +164,10 @@ https://www.youtube.com/playlist?list=PLxxxxxxxx"></textarea>
         <div class="row" style="margin-top:6px">
           <button onclick="copyText(listId,'コードをコピーしました')">📋 コード</button>
           <button onclick="copyText(shareUrl(),'URLをコピーしました')">🔗 URL</button>
+          <button onclick="copyText(watchUrl(),'再生専用URLをコピーしました')" style="border-color:#fcd34d;background:#fef3c7">▶ 再生専用URL</button>
           <button onclick="shareNative()">📤 共有</button>
         </div>
-        <div class="msg" style="margin-top:6px">別の端末で ⚙ → コードを入力、QR を読み取る、または URL の後ろに <code>?code=コード</code> を付けて開く</div>
+        <div class="msg" style="margin-top:6px">別の端末で ⚙ → コードを入力、QR を読み取る、または URL の後ろに <code>?code=コード</code> を付けて開く。<strong>▶ 再生専用URL</strong>（<code>?watch=コード</code>）で開いた端末は再生だけができ、リストの編集はできません（祖父母の家など向け）。</div>
       </div>
       <img id="shareQr" alt="QR" style="width:120px;height:120px;border-radius:8px;background:#fff">
     </div>
@@ -164,6 +176,7 @@ https://www.youtube.com/playlist?list=PLxxxxxxxx"></textarea>
       <input id="codeInput" placeholder="コードを入力（例: ABC123）" maxlength="12" style="max-width:240px;text-transform:uppercase;letter-spacing:.1em;font-weight:700" onkeydown="if(event.key==='Enter')loadByCode()">
       <button class="p" onclick="loadByCode()">このコードを読み込む</button>
       <span class="msg" id="codeMsg"></span>
+    </div>
     </div>
 
     <h3>キーボードのゾーン（どこを叩いても大丈夫）</h3>
@@ -194,8 +207,9 @@ https://www.youtube.com/playlist?list=PLxxxxxxxx"></textarea>
 // =========================================================
 // 設定
 // =========================================================
-const VERSION = 'v0.5.2';
+const VERSION = 'v0.6.0';
 const RELEASE_NOTES = [
+  { ver:'v0.6.0', date:'2026-08-22', changes:['再生専用の共有URLを追加（?watch=コード）。開いた端末では動画リスト・名前の編集メニューが出ません','共有ボックスに「▶ 再生専用URL」コピーボタンを追加'] },
   { ver:'v0.5.2', date:'2026-08-22', changes:['プレイヤーの名前を変更できるように（既定は「こどもtube」。⚙ → プレイヤーの名前 で「ともえtube」などに変更、共有コードで他の端末にも反映）'] },
   { ver:'v0.5.1', date:'2026-08-22', changes:['操作がないまま3本続けて流れたら自動で止まる（放置中を視聴として記録しないため）。キーやタップで続きから再開','強制終了・スリープで閉じられなかった記録は次回起動時に「中断」として整理','裏のタブで流している間の視聴時間が少なく記録される問題を修正'] },
   { ver:'v0.5.0', date:'2026-08-22', changes:['視聴の記録を開始（どの動画を何回・何分見たか、完走したか）','📊 視聴ダッシュボードを追加（合計・動画別・日別・曜日別・時間帯別・曜日×時間ヒートマップ・CSV出力）'] },
@@ -255,6 +269,7 @@ function codeFromKey(k) {
 let db, videos = [], cur = -1, history = [], listId = '', sources = '';
 let yt = null, ytReady = false, lastKeyAt = 0, clog = [], userStarted = false;
 const APP_NAME_DEFAULT = 'こどもtube';
+let viewOnly = false;   // 再生専用（?watch= で開いた端末）
 let playerName = '';
 let sess = null, sessTick = null, lastTickAt = 0;   // 視聴ログ
 let autoRun = 0, idleStop = false;                   // 操作なしの連続自動再生カウント（放置検知）
@@ -365,6 +380,12 @@ async function init() {
     try { const d0 = await db.collection('tomoe-player').doc(rawList).get(); if (d0.exists) listId = rawList; } catch (e) {}
   }
   if (listId) localStorage.setItem('tomoe_list_id', listId);
+  // 再生専用モード: ?watch= で開いたら記憶、?code= 等の編集URLで開いたら解除
+  const sp0 = new URLSearchParams(location.search);
+  if (sp0.get('watch')) localStorage.setItem('tomoe_view_only', '1');
+  else if (sp0.get('code') || sp0.get('list') || sp0.get('c')) localStorage.removeItem('tomoe_view_only');
+  viewOnly = viewOnly || localStorage.getItem('tomoe_view_only') === '1';
+  if (viewOnly) document.body.classList.add('view-only');
   renderShare();
 
   playerName = localStorage.getItem('tomoe_player_name_' + listId) || '';
@@ -646,6 +667,7 @@ function applyPlayerName() {
   if (playerName) localStorage.setItem('tomoe_player_name_' + listId, playerName);
 }
 async function savePlayerName() {
+  if (viewOnly) return;
   const msg = document.getElementById('nameMsg');
   playerName = document.getElementById('nameInput').value.trim().slice(0, 30);
   applyPlayerName();
@@ -662,6 +684,7 @@ async function savePlayerName() {
 function openParent() { document.getElementById('parentMo').classList.add('on'); }
 function closeParent() { document.getElementById('parentMo').classList.remove('on'); }
 async function saveList() {
+  if (viewOnly) return;
   const msg = document.getElementById('saveMsg');
   if (!(window.YT && window.YT.Player)) { msg.textContent = 'YouTube を準備中…'; await ensureYtApi(); }
   const raw = document.getElementById('urlInput').value;
@@ -723,7 +746,8 @@ function shuffleOrder() {
 // URL からコードを取り出す： ?code=XXX / ?list=XXX / ?c=XXX / ?XXX / #XXX のどれでもOK
 function codeFromUrl() {
   const sp = new URLSearchParams(location.search);
-  for (const k of ['code', 'list', 'c']) { const v = sp.get(k); if (v) return v; }
+  { const v = sp.get('watch'); if (v) { viewOnly = true; return v; } }
+  for (const k of ['code', 'list', 'c']) { const v = sp.get(k); if (v) { viewOnly = false; return v; } }
   for (const [k, v] of sp.entries()) { if (v === '' && /^[A-Za-z0-9_-]{3,12}$/.test(k) && k !== 'cb') return k; }
   const h = location.hash.replace(/^#/, '');
   if (/^[A-Za-z0-9_-]{3,12}$/.test(h)) return h;
@@ -739,6 +763,7 @@ async function newCode() {
   return 'T' + Date.now().toString(36).toUpperCase().slice(-5);
 }
 function shareUrl() { return location.origin + location.pathname + '?code=' + encodeURIComponent(listId); }
+function watchUrl() { return location.origin + location.pathname + '?watch=' + encodeURIComponent(listId); }
 function renderShare() {
   const has = !!listId;
   document.getElementById('shareBox').style.display = has ? 'flex' : 'none';
