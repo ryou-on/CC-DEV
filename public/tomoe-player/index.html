@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<title>ともえプレイヤー</title>
+<title>こどもtube</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧸</text></svg>">
 <style>
 :root{
@@ -94,7 +94,7 @@ main{flex:1;min-height:0;display:grid;grid-template-columns:1fr 300px;gap:14px;p
 <body>
 
 <header>
-  <div class="title">🧸 <span id="plName">ともえプレイヤー</span></div>
+  <div class="title">🧸 <span id="plName">こどもtube</span></div>
   <div class="sp"></div>
   <button onclick="toggleFs()" title="全画面">⛶</button>
   <button onclick="openParent()" title="保護者メニュー">⚙</button>
@@ -120,6 +120,13 @@ main{flex:1;min-height:0;display:grid;grid-template-columns:1fr 300px;gap:14px;p
 <div class="mo" id="parentMo" onclick="if(event.target===this)closeParent()">
   <div class="mb">
     <h2>⚙ 保護者メニュー <span style="font-size:11px;color:#9ca3af;font-weight:400;margin-left:6px" id="verLabel"></span></h2>
+
+    <h3>プレイヤーの名前</h3>
+    <div class="row">
+      <input id="nameInput" placeholder="こどもtube" maxlength="30" style="max-width:240px">
+      <button class="p" onclick="savePlayerName()">名前を保存</button>
+      <span class="msg" id="nameMsg">画面左上のタイトルに表示されます（例: ともえtube）</span>
+    </div>
 
     <h3>再生する YouTube 動画・チャンネル・再生リスト（1行に1つ貼る）</h3>
     <p>動画URL（youtu.be / Shorts / 動画IDも可）のほか、<strong>チャンネルURL</strong>（@ハンドル・/channel/UC…）や<strong>再生リストURL</strong>（list=…）も貼れます。チャンネルは最新 <input id="chanLimit" type="number" min="5" max="100" value="30" style="width:60px;display:inline;padding:2px 6px"> 本を取り込みます（保存し直すと最新に更新）。</p>
@@ -187,8 +194,9 @@ https://www.youtube.com/playlist?list=PLxxxxxxxx"></textarea>
 // =========================================================
 // 設定
 // =========================================================
-const VERSION = 'v0.5.1';
+const VERSION = 'v0.5.2';
 const RELEASE_NOTES = [
+  { ver:'v0.5.2', date:'2026-08-22', changes:['プレイヤーの名前を変更できるように（既定は「こどもtube」。⚙ → プレイヤーの名前 で「ともえtube」などに変更、共有コードで他の端末にも反映）'] },
   { ver:'v0.5.1', date:'2026-08-22', changes:['操作がないまま3本続けて流れたら自動で止まる（放置中を視聴として記録しないため）。キーやタップで続きから再開','強制終了・スリープで閉じられなかった記録は次回起動時に「中断」として整理','裏のタブで流している間の視聴時間が少なく記録される問題を修正'] },
   { ver:'v0.5.0', date:'2026-08-22', changes:['視聴の記録を開始（どの動画を何回・何分見たか、完走したか）','📊 視聴ダッシュボードを追加（合計・動画別・日別・曜日別・時間帯別・曜日×時間ヒートマップ・CSV出力）'] },
   { ver:'v0.4.1', date:'2026-08-22', changes:['PC でキーを叩くと自動で全画面に（保護者メニューでオフ可）','@ハンドル形式のチャンネルURLの取り込みを改善'] },
@@ -246,6 +254,8 @@ function codeFromKey(k) {
 // =========================================================
 let db, videos = [], cur = -1, history = [], listId = '', sources = '';
 let yt = null, ytReady = false, lastKeyAt = 0, clog = [], userStarted = false;
+const APP_NAME_DEFAULT = 'こどもtube';
+let playerName = '';
 let sess = null, sessTick = null, lastTickAt = 0;   // 視聴ログ
 let autoRun = 0, idleStop = false;                   // 操作なしの連続自動再生カウント（放置検知）
 const AUTO_RUN_LIMIT = 3;                            // 操作なしで続けて流す上限（本）
@@ -357,6 +367,8 @@ async function init() {
   if (listId) localStorage.setItem('tomoe_list_id', listId);
   renderShare();
 
+  playerName = localStorage.getItem('tomoe_player_name_' + listId) || '';
+  applyPlayerName();
   closeOrphanSession();
   // まずローカルキャッシュ → Firestore
   try { videos = listId ? JSON.parse(localStorage.getItem(LS_KEY + '_' + listId) || '[]') : []; } catch (e) { videos = []; }
@@ -368,12 +380,13 @@ async function init() {
       const d = doc.data();
       videos = (d.videos || []).filter(v => v && v.id);
       sources = d.sources || '';
-      if (d.name) document.getElementById('plName').textContent = d.name;
+      if (d.name) playerName = d.name;
       localStorage.setItem(LS_KEY + '_' + listId, JSON.stringify(videos));
     }
   } catch (e) { log('firestore: ' + e.message); }
 
   document.getElementById('urlInput').value = sources || videos.map(v => 'https://www.youtube.com/watch?v=' + v.id).join('\n');
+  applyPlayerName();
   renderVList();
 
   if (!videos.length) { setPh('⚙ から YouTube の動画を登録してね'); openParent(); return; }
@@ -624,6 +637,28 @@ document.addEventListener('visibilitychange', () => { if (document.visibilitySta
 // =========================================================
 // 保護者メニュー
 // =========================================================
+function applyPlayerName() {
+  const n = (playerName || '').trim() || APP_NAME_DEFAULT;
+  document.getElementById('plName').textContent = n;
+  document.title = n;
+  const ni = document.getElementById('nameInput');
+  if (ni && document.activeElement !== ni) ni.value = playerName || '';
+  if (playerName) localStorage.setItem('tomoe_player_name_' + listId, playerName);
+}
+async function savePlayerName() {
+  const msg = document.getElementById('nameMsg');
+  playerName = document.getElementById('nameInput').value.trim().slice(0, 30);
+  applyPlayerName();
+  if (!listId) { msg.textContent = 'この端末に保存しました（コード発行後に共有されます）'; return; }
+  localStorage.setItem('tomoe_player_name_' + listId, playerName);
+  try {
+    await db.collection('tomoe-player').doc(listId).set({ name: playerName }, { merge: true });
+    msg.textContent = '保存しました（他の端末にも反映されます）';
+  } catch (e) {
+    msg.textContent = 'この端末に保存しました（動画リスト保存時に共有されます）';
+    log('name save: ' + e.message);
+  }
+}
 function openParent() { document.getElementById('parentMo').classList.add('on'); }
 function closeParent() { document.getElementById('parentMo').classList.remove('on'); }
 async function saveList() {
@@ -671,7 +706,7 @@ async function saveList() {
   }
   localStorage.setItem(LS_KEY + '_' + listId, JSON.stringify(videos));
   try {
-    await db.collection('tomoe-player').doc(listId).set({ videos, sources, updatedAt: new Date().toISOString() });
+    await db.collection('tomoe-player').doc(listId).set({ videos, sources, name: playerName || '', updatedAt: new Date().toISOString() });
     msg.textContent = videos.length + '本を保存しました（コード: ' + listId + '）';
   } catch (e) { msg.textContent = 'クラウド保存失敗（この端末には保存済み）: ' + e.message; log('save: ' + e.message); }
   renderVList();
@@ -730,7 +765,7 @@ async function loadByCode() {
 }
 function copyText(t, m) { navigator.clipboard.writeText(t).then(() => flash('📋', m)); }
 async function shareNative() {
-  const data = { title: 'ともえプレイヤー', text: '共有コード: ' + listId, url: shareUrl() };
+  const data = { title: (playerName || APP_NAME_DEFAULT), text: '共有コード: ' + listId, url: shareUrl() };
   if (navigator.share) { try { await navigator.share(data); } catch (e) {} }
   else copyText(shareUrl(), 'URLをコピーしました');
 }
