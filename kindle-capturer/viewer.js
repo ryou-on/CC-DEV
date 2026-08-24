@@ -13,7 +13,7 @@ const cropBtn = document.getElementById('cropBtn');
 // 拡張本体（撮影側 background.js）が旧バージョンのまま動き続け、
 // 「修正したはずの問題が直らない」事故になる。編集画面（このファイル）の
 // バージョンと、実際にロードされている拡張本体のバージョンを比較して警告する
-const VIEWER_VERSION = '5.32.3';
+const VIEWER_VERSION = '5.33.0';
 try {
   const loaded = chrome.runtime.getManifest().version;
   if (loaded !== VIEWER_VERSION) {
@@ -512,22 +512,29 @@ function splitBandPiece(p, band) {
     : { x: p._gx, y: band.y, w: half, h: band.h, _half: 'R', _gx: p._gx };
 }
 
-// 見開き2分割で生成した左右ページの出力寸法を全編で統一する（v5.32.2）。
+// ページの出力寸法を全編で統一する（v5.32.2、v5.33.0で対象拡大）。
 // キャプチャごとに内容検出枠の幅・高さが微妙に違うため、同一キャプチャ内の
 // 左右均等化だけではページ間でサイズがばらつき、PDFの見開き表示で崩れる。
-// ノド位置（_gx）を基準に、幅は80パーセンタイル・高さは中央値へ全ページを
-// 合わせる（内容は拡大縮小せず枠を広げる方向が基本。帯の外へは出さず、
-// ノドを跨いで反対ページに食い込むこともしない）
+// 対象: 見開き2分割で生まれた左右ページ（全タイプ）に加え、固定レイアウト
+// （マンガ・雑誌）では分割されなかった本文ページも含む（サイズ固定の書籍は
+// 全ページ同寸が正しいため）。表紙・裏表紙（先頭・末尾キャプチャ）は
+// レイアウトが本文と違うことが多いので対象外のまま。
+// 分割ページはノド位置（_gx）を基準に、単ページは内容中心を基準に、
+// 幅・高さとも80パーセンタイルへ合わせる（内容は拡大縮小せず枠を広げる
+// 方向が基本。帯の外へは出さず、ノドを跨いで反対ページにも食い込まない）
 async function unifySplitPages(caps) {
+  const isFixed = bookConfig.resolvedType === 'manga' || bookConfig.resolvedType === 'magazine';
+  const lastIdx = rawImages.length - 1;
   const cards = Array.from(container.querySelectorAll('.page-card'))
-    .filter(c => !c._imported && !c._manualRect && c._cropRect && c._cropRect._half);
+    .filter(c => !c._imported && !c._manualRect && c._cropRect)
+    .filter(c => c._cropRect._half || (isFixed && c._imgIdx !== 0 && c._imgIdx !== lastIdx));
   if (cards.length < 6) return;
   const pick = (arr, q) => {
     const s = [...arr].sort((a, b) => a - b);
     return s[Math.min(s.length - 1, Math.floor(s.length * q))];
   };
   const mw = Math.round(pick(cards.map(c => c._cropRect.w), 0.8));
-  const mh = Math.round(pick(cards.map(c => c._cropRect.h), 0.5));
+  const mh = Math.round(pick(cards.map(c => c._cropRect.h), 0.8));
   // 余白カットOFF側の帯枠も全編で統一（中央値。帯の外へは広げられないので
   // 目標より広い枠の切り詰めが基本。黒帯幅が揺れたキャプチャのブレを吸収）
   const bwT = Math.round(pick(cards.map(c => c._bandRect.w), 0.5));
@@ -537,25 +544,39 @@ async function unifySplitPages(caps) {
     const cap = caps[c._imgIdx];
     if (!cap) continue;
     const band = cap.band, r = c._cropRect;
-    // 幅: ノド側の辺を固定し、外側の辺を目標幅へ（帯の端でクランプ。
-    // ノドを跨がないよう、足りない場合のみそのキャプチャだけ幅が狭くなる）
+    // 幅: 分割ページはノド側の辺を固定し、外側の辺を目標幅へ（帯の端でクランプ。
+    // ノドを跨がないよう、足りない場合のみそのキャプチャだけ幅が狭くなる）。
+    // 単ページは内容中心を保って目標幅へ
     let nx, nw;
     if (r._half === 'L') {
       nx = Math.max(band.x, r._gx - mw);
       nw = r._gx - nx;
-    } else {
+    } else if (r._half === 'R') {
       nx = r._gx;
       nw = Math.min(mw, band.x + band.w - nx);
+    } else {
+      nw = Math.min(mw, band.w);
+      nx = Math.round(r.x + r.w / 2 - nw / 2);
+      nx = Math.max(band.x, Math.min(nx, band.x + band.w - nw));
     }
     // 高さ: 内容の中心を保ちつつ目標高さへ（帯の上下でクランプ）
     let nh = Math.min(mh, band.h);
     let ny = Math.round(r.y + r.h / 2 - nh / 2);
     ny = Math.max(band.y, Math.min(ny, band.y + band.h - nh));
-    // 帯枠（余白カットOFF側）: ノド側の辺を固定し統一幅へ（帯の端でクランプ）
-    const bw = Math.min(bwT, r._half === 'L' ? r._gx - band.x : band.x + band.w - r._gx);
-    const nb = r._half === 'L'
-      ? { x: r._gx - bw, y: band.y, w: bw, h: band.h, _half: r._half, _gx: r._gx }
-      : { x: r._gx, y: band.y, w: bw, h: band.h, _half: r._half, _gx: r._gx };
+    // 帯枠（余白カットOFF側）: 分割ページはノド側の辺を固定し統一幅へ、
+    // 単ページは中央を保って統一幅へ（いずれも帯の端でクランプ）
+    let nb;
+    if (r._half) {
+      const bw = Math.min(bwT, r._half === 'L' ? r._gx - band.x : band.x + band.w - r._gx);
+      nb = r._half === 'L'
+        ? { x: r._gx - bw, y: band.y, w: bw, h: band.h, _half: r._half, _gx: r._gx }
+        : { x: r._gx, y: band.y, w: bw, h: band.h, _half: r._half, _gx: r._gx };
+    } else {
+      const bw = Math.min(bwT, band.w);
+      let bx = Math.round(r.x + r.w / 2 - bw / 2);
+      bx = Math.max(band.x, Math.min(bx, band.x + band.w - bw));
+      nb = { x: bx, y: band.y, w: bw, h: band.h };
+    }
     const bandSame = c._bandRect.x === nb.x && c._bandRect.w === nb.w &&
       c._bandRect.y === nb.y && c._bandRect.h === nb.h;
     if (r.x === nx && r.y === ny && r.w === nw && r.h === nh && bandSame) continue;
@@ -575,8 +596,56 @@ async function unifySplitPages(caps) {
     cs.forEach(c => drawCard(c, img, cropEnabled));
     await new Promise(r => setTimeout(r, 0));
   }
-  console.log("見開きページ寸法を統一: " + mw + "x" + mh + " に " + adjusted + "/" + cards.length + " 枚を調整");
+  console.log("ページ寸法を統一: " + mw + "x" + mh + " に " + adjusted + "/" + cards.length + " 枚を調整");
 }
+
+// ===== 🐞 診断情報のコピー =====
+// ページ寸法のバラツキ報告を受けたとき、原因（タイプ判定・ノド位置・
+// 各ページの枠と出力サイズ）をユーザーのワンクリックで回収するためのボタン。
+// クリップボードへコピーし、コンソールにも同じ内容を出力する
+document.getElementById('debugBtn').onclick = async () => {
+  const lines = [];
+  lines.push("Kindle Capturer 診断 v" + VIEWER_VERSION + " (" + new Date().toLocaleString() + ")");
+  lines.push("type=" + bookConfig.resolvedType + " splitMode=" + (bookConfig.splitMode || 'auto') +
+    " direction=" + bookConfig.direction + " cropEnabled=" + cropEnabled +
+    " gutterRel=" + globalGutterRel + " bookAspect=" + (bookAspect ? bookAspect.toFixed(3) : "null") +
+    " captures=" + rawImages.length);
+  const cards = Array.from(container.querySelectorAll('.page-card'));
+  const sizes = {};
+  cards.forEach(c => {
+    const cv = c.querySelector('canvas');
+    const k = cv.width + "x" + cv.height;
+    sizes[k] = (sizes[k] || 0) + 1;
+  });
+  lines.push("出力サイズ分布: " + Object.entries(sizes).sort((a, b) => b[1] - a[1])
+    .map(([k, n]) => k + "×" + n + "枚").join(", "));
+  cards.forEach((c, i) => {
+    const cv = c.querySelector('canvas');
+    const r = c._cropRect || {}, b = c._bandRect || {};
+    const fmt = (t) => [t.x, t.y, t.w, t.h].join(",");
+    lines.push("P." + (i + 1) + " img=" + c._imgIdx +
+      (r._half ? " half=" + r._half + " gx=" + r._gx : "") +
+      (c._manualRect ? " manual=" + fmt(c._manualRect) : "") +
+      (c._imported ? " imported" : "") +
+      " crop=" + fmt(r) + " band=" + fmt(b) +
+      " canvas=" + cv.width + "x" + cv.height);
+  });
+  const txt = lines.join("\n");
+  console.log(txt);
+  try {
+    await navigator.clipboard.writeText(txt);
+    info.innerText = "診断情報をコピーしました（そのままチャット等へ貼り付けできます）";
+  } catch (e) {
+    // クリップボードが使えない環境向けフォールバック
+    const ta = document.createElement('textarea');
+    ta.value = txt;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+    info.innerText = "診断情報をコピーしました（そのままチャット等へ貼り付けできます）";
+  }
+};
 
 // ===== 余白自動クロップ =====
 // (1) 四隅の色を背景として内容の外接矩形を求め、白余白を除去
