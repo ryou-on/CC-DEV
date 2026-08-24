@@ -90,7 +90,7 @@ body.view-only .view-note{display:block}
   .stage{flex:none}
   .player{flex:none;aspect-ratio:16/9}
   .now{display:none}
-  .cands{grid-template-rows:none;grid-template-columns:1fr 1fr;grid-auto-rows:auto;align-content:start;overflow-y:auto;padding-bottom:8px}
+  .cands{grid-template-rows:none;grid-template-columns:1fr 1fr;grid-auto-rows:auto;align-content:start;overflow-y:hidden;padding-bottom:8px}
   .cand .th{flex:none;aspect-ratio:16/9}
   .cand .badge{display:none}
 }
@@ -193,7 +193,7 @@ https://www.youtube.com/playlist?list=PLxxxxxxxx"></textarea>
       <span><i style="background:#bbf7d0"></i>候補③</span>
       <span><i style="background:#ddd6fe"></i>候補④</span>
     </div>
-    <p style="color:#9ca3af">Ctrl / Alt / ⌘ を押しながらのキーはブラウザに渡します（保護者用）。矢印：← まえ／↑ 候補①／→ 候補②／↓ 候補③。テンキーも右側ブロック扱いです。動画が終わると自動で「つぎ」に進みます。</p>
+    <p style="color:#9ca3af">Ctrl / Alt / ⌘ を押しながらのキーはブラウザに渡します（保護者用）。矢印：← まえ／→ 候補②／<strong>↑↓ 候補のリストをスクロール</strong>（上下スワイプ・候補の上でホイールでも）。テンキーも右側ブロック扱いです。動画が終わると自動で「つぎ」に進みます。</p>
 
     <h3>全画面</h3>
     <p>PC ではキーを叩くと自動で全画面になります（ブラウザのボタンやタブに触れないように）。<label style="margin-left:6px"><input type="checkbox" id="autoFsChk" onchange="localStorage.setItem('tomoe_autofs', this.checked ? 'on' : 'off')" style="width:auto"> 自動全画面を使う</label>　戻すときは <kbd>Esc</kbd> 長押し、または ⛶。</p>
@@ -209,8 +209,9 @@ https://www.youtube.com/playlist?list=PLxxxxxxxx"></textarea>
 // =========================================================
 // 設定
 // =========================================================
-const VERSION = 'v0.6.1';
+const VERSION = 'v0.6.2';
 const RELEASE_NOTES = [
+  { ver:'v0.6.2', date:'2026-08-22', changes:['候補リストをスクロールできるように：↑↓キー・上下スワイプ・候補の上でマウスホイールで、ほかの動画を順に表示','「ほかのどうが 3/12」のように位置を表示'] },
   { ver:'v0.6.1', date:'2026-08-22', changes:['再生専用URLで開いた場合は視聴ダッシュボードのメニューも非表示に'] },
   { ver:'v0.6.0', date:'2026-08-22', changes:['再生専用の共有URLを追加（?watch=コード）。開いた端末では動画リスト・名前の編集メニューが出ません','共有ボックスに「▶ 再生専用URL」コピーボタンを追加'] },
   { ver:'v0.5.2', date:'2026-08-22', changes:['プレイヤーの名前を変更できるように（既定は「こどもtube」。⚙ → プレイヤーの名前 で「ともえtube」などに変更、共有コードで他の端末にも反映）'] },
@@ -237,6 +238,7 @@ const FIREBASE_CONFIG = {
   appId: "1:1029579090333:web:5a2ea499fec97c497f2774"
 };
 const CAND_COUNT = 4;      // 右側に並べる候補の数
+let candOffset = 0;        // 候補リストのスクロール位置（↑↓キー・上下スワイプで回す）
 const KEY_COOLDOWN = 700;  // 連打防止（ms）
 const LS_KEY = 'tomoe_player_videos';
 
@@ -247,9 +249,9 @@ const ZONES = {
   L:  ['Escape','Backquote','Digit1','Digit2','Digit3','Tab','KeyQ','KeyW','KeyE','CapsLock','KeyA','KeyS','KeyD','ShiftLeft','KeyZ','KeyX','KeyC','ControlLeft','AltLeft','MetaLeft','ArrowLeft','F1','F2','F3'],
   C:  ['Digit4','Digit5','Digit6','Digit7','KeyR','KeyT','KeyY','KeyU','KeyF','KeyG','KeyH','KeyJ','KeyV','KeyB','KeyN','KeyM','F4','F5','F6','F7','F8'],
   P:  ['Space'],
-  R1: ['Digit8','Digit9','Digit0','Minus','Equal','Backspace','IntlYen','F9','F10','F11','F12','ArrowUp','Numpad7','Numpad8','Numpad9','NumpadDivide','NumpadMultiply','NumLock'],
+  R1: ['Digit8','Digit9','Digit0','Minus','Equal','Backspace','IntlYen','F9','F10','F11','F12','Numpad7','Numpad8','Numpad9','NumpadDivide','NumpadMultiply','NumLock'],
   R2: ['KeyI','KeyO','KeyP','BracketLeft','BracketRight','Backslash','ArrowRight','Numpad4','Numpad5','Numpad6','NumpadSubtract'],
-  R3: ['KeyK','KeyL','Semicolon','Quote','Enter','ArrowDown','Numpad1','Numpad2','Numpad3','NumpadAdd'],
+  R3: ['KeyK','KeyL','Semicolon','Quote','Enter','Numpad1','Numpad2','Numpad3','NumpadAdd'],
   R4: ['Comma','Period','Slash','IntlRo','ShiftRight','ControlRight','AltRight','MetaRight','ContextMenu','Numpad0','NumpadDecimal','NumpadEnter']
 };
 const CODE2ZONE = {};
@@ -270,7 +272,7 @@ function codeFromKey(k) {
 // 状態
 // =========================================================
 let db, videos = [], cur = -1, history = [], listId = '', sources = '';
-let yt = null, ytReady = false, lastKeyAt = 0, clog = [], userStarted = false;
+let yt = null, ytReady = false, lastKeyAt = 0, lastScrollAt = 0, clog = [], userStarted = false;
 const APP_NAME_DEFAULT = 'こどもtube';
 let viewOnly = false;   // 再生専用（?watch= で開いた端末）
 let playerName = '';
@@ -475,6 +477,7 @@ function play(i, pushHist = true, reason = 'next') {
   if (!ytReady || i < 0 || i >= videos.length) return;
   if (pushHist && cur >= 0 && cur !== i) history.push(cur);
   cur = i;
+  candOffset = 0;
   sessStart(videos[i], reason);
   yt.loadVideoById(videos[i].id);
   document.getElementById('ph').style.display = 'none';
@@ -496,14 +499,26 @@ function togglePlay(src) {
   else { yt.playVideo(); flash('▶', 'うごかす'); }
 }
 
-// 候補：現在の次から順に CAND_COUNT 本（ループ）
+// 候補：現在の次から順に CAND_COUNT 本（ループ・candOffset でスクロール）
 function candIdx() {
+  const pool = [];
+  for (let k = 1; k < videos.length; k++) pool.push((cur + k) % videos.length);   // 現在以外の全動画（次の順）
+  if (!pool.length) return [];
+  const n = pool.length;
+  const off = ((candOffset % n) + n) % n;
   const out = [];
-  for (let k = 1; k <= videos.length && out.length < CAND_COUNT; k++) {
-    const i = (cur + k) % videos.length;
-    if (i !== cur) out.push(i);
-  }
+  for (let k = 0; k < Math.min(CAND_COUNT, n); k++) out.push(pool[(off + k) % n]);
   return out;
+}
+// 候補を回す（dir: +1 下へ / -1 上へ）
+function scrollCands(dir) {
+  if (videos.length <= CAND_COUNT + 1) { flash(dir > 0 ? '▼' : '▲', 'ぜんぶ見えてるよ'); return; }
+  userActed();
+  candOffset += dir;
+  renderCands();
+  const n = videos.length - 1;
+  const off = ((candOffset % n) + n) % n;
+  flash(dir > 0 ? '▼' : '▲', 'ほかのどうが ' + (off + 1) + '/' + n);
 }
 function renderCands() {
   const c = candIdx();
@@ -541,7 +556,17 @@ function goPrev(src) {
 document.addEventListener('keydown', e => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;           // 保護者用ショートカットはブラウザへ
   if (document.getElementById('parentMo').classList.contains('on')) return; // メニュー中は通常入力
-  const z = CODE2ZONE[e.code || codeFromKey(e.key)];
+  const code = e.code || codeFromKey(e.key);
+  if (code === 'ArrowUp' || code === 'ArrowDown') {
+    e.preventDefault();
+    autoFullscreen();
+    const now = Date.now();
+    if (now - lastScrollAt < 250) return;
+    lastScrollAt = now;
+    if (userStarted) scrollCands(code === 'ArrowDown' ? 1 : -1);
+    return;
+  }
+  const z = CODE2ZONE[code];
   if (!z) return;
   e.preventDefault();
   autoFullscreen();
@@ -574,14 +599,30 @@ window.addEventListener('blur', () => setTimeout(refocus, 50));
 document.addEventListener('pointerdown', () => setTimeout(refocus, 0), true);
 
 // スワイプ（動画エリア）
-let tx = null;
+let tx = null, ty = null;
 const playerEl = document.getElementById('player');
-playerEl.addEventListener('touchstart', e => { tx = e.touches[0].clientX; }, { passive: true });
-playerEl.addEventListener('touchend', e => {
+const candsEl = document.getElementById('cands');
+function onSwipeEnd(e) {
   if (tx === null) return;
-  const dx = e.changedTouches[0].clientX - tx; tx = null;
-  if (Math.abs(dx) > 80) (dx < 0 ? goNext : goPrev)('swipe');
-}, { passive: true });
+  const dx = e.changedTouches[0].clientX - tx;
+  const dy = e.changedTouches[0].clientY - ty;
+  tx = ty = null;
+  if (Math.abs(dy) > 70 && Math.abs(dy) > Math.abs(dx) * 1.3) { scrollCands(dy < 0 ? 1 : -1); return; }  // 上へスワイプ＝次の候補
+  if (Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy)) (dx < 0 ? goNext : goPrev)('swipe');
+}
+for (const el of [playerEl, candsEl]) {
+  el.addEventListener('touchstart', e => { tx = e.touches[0].clientX; ty = e.touches[0].clientY; }, { passive: true });
+  el.addEventListener('touchend', onSwipeEnd, { passive: true });
+}
+// マウスホイールでも候補を回せる（候補エリア上）
+let lastWheelAt = 0;
+candsEl.addEventListener('wheel', e => {
+  e.preventDefault();
+  const now = Date.now();
+  if (now - lastWheelAt < 250) return;
+  lastWheelAt = now;
+  if (Math.abs(e.deltaY) > 5) scrollCands(e.deltaY > 0 ? 1 : -1);
+}, { passive: false });
 
 // =========================================================
 // 視聴ログ（tomoe-player/{code}/sessions/{id}）
