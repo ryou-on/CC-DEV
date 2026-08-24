@@ -13,7 +13,7 @@ const cropBtn = document.getElementById('cropBtn');
 // 拡張本体（撮影側 background.js）が旧バージョンのまま動き続け、
 // 「修正したはずの問題が直らない」事故になる。編集画面（このファイル）の
 // バージョンと、実際にロードされている拡張本体のバージョンを比較して警告する
-const VIEWER_VERSION = '5.33.0';
+const VIEWER_VERSION = '5.33.1';
 try {
   const loaded = chrome.runtime.getManifest().version;
   if (loaded !== VIEWER_VERSION) {
@@ -1154,10 +1154,18 @@ function buildCardsForImage(img, imgIdx, cap) {
       // 短い側を帯の内側（余白）まで外側に広げる。
       // 奇数・偶数ページで出力サイズが変わり見開き表示で崩れる事故への対策
       const geo = [...cropPieces].sort((p, q) => p.x - q.x);
-      const gb = Math.round((geo[1].x + geo[0].x + geo[0].w) / 2); // 共有余白帯の中心
-      const half = Math.max(gb - crop.x, crop.x + crop.w - gb);
-      const eL = Math.max(band.x, gb - half);
-      const eR = Math.min(band.x + band.w, gb + half);
+      let gb = Math.round((geo[1].x + geo[0].x + geo[0].w) / 2); // 共有余白帯の中心
+      let half = Math.max(gb - crop.x, crop.x + crop.w - gb);
+      let eL = Math.max(band.x, gb - half);
+      let eR = Math.min(band.x + band.w, gb + half);
+      // 均等化しても帯の端（画像の端）で片側だけ切られて左右幅が揃わない
+      // 場合は、谷の誤検出とみなして中央分割へ切り替える（v5.33.1）
+      if (Math.abs((gb - eL) - (eR - gb)) > Math.max(4, crop.w * 0.01)) {
+        gb = crop.x + Math.floor(crop.w / 2);
+        half = Math.max(gb - crop.x, crop.x + crop.w - gb);
+        eL = Math.max(band.x, gb - half);
+        eR = Math.min(band.x + band.w, gb + half);
+      }
       const pL = { x: eL, y: crop.y, w: gb - eL, h: crop.h, _half: 'L', _gx: gb };
       const pR = { x: gb, y: crop.y, w: eR - gb, h: crop.h, _half: 'R', _gx: gb };
       cropPieces = bookConfig.direction === 'rtl' ? [pR, pL] : [pL, pR];
@@ -1186,7 +1194,10 @@ function buildCardsForImage(img, imgIdx, cap) {
       let b = crop.x + Math.floor(crop.w / 2);
       if (globalGutterRel != null) {
         const gx = crop.x + globalGutterRel; // 統一クロップ基準の相対座標
-        const tol = isFixedType ? 0.04 : 0.15;
+        // 固定レイアウトの許容は±1.5%（v5.33.1で±4%から厳格化）。
+        // 白地の本では誌面内の白い縦筋をノドと誤検出することがあり、
+        // 中央から4%近くズレた投票が通ると左右ページ幅が2倍ズレる
+        const tol = isFixedType ? 0.015 : 0.15;
         if (gx > crop.x + crop.w * (0.5 - tol) && gx < crop.x + crop.w * (0.5 + tol)) b = gx;
       }
 
@@ -1235,6 +1246,15 @@ function buildCardsForImage(img, imgIdx, cap) {
           const half = Math.max(b - eL, eR - b);
           eL = Math.max(band.x, b - half);
           eR = Math.min(band.x + band.w, b + half);
+          // 均等化しても帯の端（画像の端）で片側だけ切られて左右幅が揃わない
+          // 場合は、ノドの誤検出とみなして中央分割へ切り替える（v5.33.1）。
+          // 帯⊇クロップ枠なので中央なら必ず左右同幅にできる
+          if (Math.abs((b - eL) - (eR - b)) > Math.max(4, crop.w * 0.01)) {
+            b = crop.x + Math.floor(crop.w / 2);
+            const half2 = Math.max(b - crop.x, crop.x + crop.w - b);
+            eL = Math.max(band.x, b - half2);
+            eR = Math.min(band.x + band.w, b + half2);
+          }
         }
         const pL = { x: eL, y: crop.y, w: b - eL, h: crop.h, _half: 'L', _gx: b };
         const pR = { x: b, y: crop.y, w: eR - b, h: crop.h, _half: 'R', _gx: b };
