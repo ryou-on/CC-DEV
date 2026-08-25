@@ -163,7 +163,7 @@ main{margin-left:var(--sw);margin-top:var(--hh);padding:24px;}
 <body>
 
 <header>
-<div class="logo"><div class="logo-bar"></div><span onclick="showHowTo()" title="使い方" style="cursor:pointer;border-bottom:1px dotted #9ca3af">hihaho Admin</span><span class="logo-badge">ADMIN</span><span class="ver-badge rn-trigger" onclick="showReleaseNotes()" title="リリースノート">v1.5.2</span></div>
+<div class="logo"><div class="logo-bar"></div><span onclick="showHowTo()" title="使い方" style="cursor:pointer;border-bottom:1px dotted #9ca3af">hihaho Admin</span><span class="logo-badge">ADMIN</span><span class="ver-badge rn-trigger" onclick="showReleaseNotes()" title="リリースノート">v1.5.3</span></div>
 <div style="margin-left:auto">
 <button class="btn bs bsm" onclick="copyConsole()">📋 console</button>
 </div>
@@ -453,6 +453,7 @@ let folders=[], videos=[], selF=new Set(), selV=new Set(), tabVideos=[];
 let mode=null, tabF=null, tabT=null, vmeta={}, clog=[];
 let vSortKey='new', vPage=1, vHasMore=false, vLoadingMore=false;
 let vSelMode='folder', vGlobalQ='', vGlobalLoaded=false, allSelVideos=[];
+let _allVideosLoaded=false; // 全ページ取り込み完了フラグ
 let editId=null; // 編集中プレイリストID
 let orderedVideoIds=[], dragSrcIdx=null, checkedOrderIds=new Set();
 let videoMap={};
@@ -492,12 +493,26 @@ try{
 const [fr,vr]=await Promise.all([api('/v2/video-container'),api('/v2/video')]);
 folders=fr.data||[]; videos=vr.data||[];
 videos.forEach(v=>videoMap[v.id]=v);
-log('F:'+folders.length+' V:'+videos.length);
+log('F:'+folders.length+' V:'+videos.length+'（1ページ目）');
 const sn=await getDocs(collection(db,'video_meta'));
 sn.forEach(d=>{vmeta[d.id]=d.data();});
 renderPlaylists();
 renderThumbFolderList(); // サムネイルフォルダリスト初期化
+// バックグラウンドで全ページを取り込み（APIは古い順のため最新動画は後ろのページにある）
+loadAllVideosBackground();
 }catch(e){toast('初期化エラー: '+e.message,'err');}
+}
+
+async function loadAllVideosBackground(){
+try{
+const seen=new Set(videos.map(v=>v.id));
+await fetchAllVideosPaged(vs=>{
+  vs.forEach(v=>{ videoMap[v.id]=v; if(!seen.has(v.id)){seen.add(v.id);videos.push(v);} });
+});
+_allVideosLoaded=true;
+log('全動画取り込み完了 V:'+videos.length);
+renderThumbFolderList(); // フォルダごとの本数表示を更新
+}catch(e){ log('全動画取り込み失敗: '+e.message); }
 }
 
 function turl(uuid){ return vmeta[uuid]?.thumbnailUrl||`${TBASE}/${uuid}.${TEXT}`; }
@@ -603,21 +618,20 @@ const el=document.getElementById('videoList');
 const owns=()=>vSelMode!=='global';
 if(owns()) el.innerHTML='<div class="load"><div class="spin"></div>読み込み中...</div>';
 tabVideos=[];vPage=1;vHasMore=false;
-let res=null;
+let vs=null;
 try{
-res=await api('/v2/video?video_container_id='+fid+'&page=1&per_page=50');
+// フォルダ内の全ページを取得（APIは古い順のため、1ページだけだと最新動画が漏れる）
+vs=await fetchFolderAllPages(fid);
 }catch(e){
-// 504等の場合はpaginationパラメータなしでリトライ
-try{ res=await api('/v2/video?video_container_id='+fid); }
-catch(e2){
-if(owns()) el.innerHTML='<div class="emp"><div class="ei">⚠️</div><p>'+e2.message+'</p><button class="btn bs bsm" style="margin-top:8px" onclick="loadTabVideos('+fid+')">🔄 再試行</button></div>';
+if(owns()) el.innerHTML='<div class="emp"><div class="ei">⚠️</div><p>'+e.message+'</p><button class="btn bs bsm" style="margin-top:8px" onclick="loadTabVideos('+fid+')">🔄 再試行</button></div>';
 return;
 }
+if(!vs.length&&owns()){
+el.innerHTML='<div class="emp"><div class="ei">⚠️</div><p>動画を取得できませんでした</p><button class="btn bs bsm" style="margin-top:8px" onclick="loadTabVideos('+fid+')">🔄 再試行</button></div>';
+return;
 }
-tabVideos=res.data||[];
+tabVideos=vs;
 tabVideos.forEach(v=>videoMap[v.id]=v);
-const meta=res.meta||{};
-vHasMore=(meta.current_page||1)<(meta.last_page||1);
 if(owns()){
 document.getElementById('vThumbBar').style.display='flex';
 renderVList();
@@ -686,19 +700,48 @@ await Promise.all(runners);
 return results;
 }
 
-// フォルダ内の全ページを取得（APIの1ページ上限で最新動画が落ちるのを防ぐ）
-// 504/タイムアウトは指数バックオフで最大3回リトライし、それでも失敗したら取得済み分を返す
-async function fetchFolderAllPages(fid,maxPages=20){
-const tryFetch=(url)=>Promise.race([
+const apiTimed=(url)=>Promise.race([
   api(url),
   new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),20000))
 ]);
-const fetchRetry=async(url,tries=3)=>{
+const apiRetry=async(url,tries=3)=>{
   for(let t=0;t<tries;t++){
-    try{ return await tryFetch(url); }
+    try{ return await apiTimed(url); }
     catch(e){ if(t===tries-1) throw e; await sleep(500*Math.pow(2,t)); }
   }
 };
+
+// 全動画をページ送りで取得（フォルダ単位より確実・最新動画も取れる）
+// APIは古い順に返すため、最終ページ（=最新動画）から逆順に取得する
+// onPage(vs, done, last, total) で1ページ届くたびに通知
+async function fetchAllVideosPaged(onPage,maxPages=40){
+let res;
+try{ res=await apiRetry('/v2/video?page=1&per_page=250'); }
+catch(e){ return {pages:0,last:1,total:0}; }
+const meta=res.meta||{};
+const last=Math.min(meta.last_page||1,maxPages);
+const total=meta.total||0;
+let done=1,ok=1;
+// 最新動画を最優先で取り込むため、最終ページを先に取得
+if(last>1){
+  const pages=[];for(let p=last;p>=2;p--)pages.push(p);
+  await runPool(pages,3,async(p)=>{
+    try{
+      const r=await apiRetry('/v2/video?page='+p+'&per_page=250');
+      done++;ok++;
+      if(onPage) onPage(r.data||[],done,last,total);
+    }catch(e){ done++; }
+  });
+}
+// 1ページ目（最古）は最後に反映
+if(onPage) onPage(res.data||[],done,last,total);
+return {pages:ok,last,total};
+}
+
+// フォルダ内の全ページを取得（フォールバック用）
+// 504/タイムアウトは指数バックオフで最大3回リトライし、それでも失敗したら取得済み分を返す
+async function fetchFolderAllPages(fid,maxPages=20){
+const fetchRetry=apiRetry;
 const out=[];
 let page=1,last=1;
 while(page<=last&&page<=maxPages){
@@ -722,29 +765,40 @@ return out;
 
 async function loadAllSelVideos(force){
 const info=document.getElementById('vGlobalInfo');
-const list=document.getElementById('videoList');
 const input=document.getElementById('vGlobalQ');
-if(list) list.innerHTML='<div class="load"><div class="spin"></div>全フォルダ読み込み中...</div>';
-// 初期取得済みの videos を即座に使えるようにする（読み込み中でも検索できる）
 allSelVideos=[];
 const seen=new Set();
-videos.forEach(v=>{ if(!seen.has(v.id)){seen.add(v.id);allSelVideos.push(v);} });
 vGlobalLoaded=true;
-let done=0,errCount=0;
-const upd=()=>{ if(info) info.textContent='読み込み中… '+done+'/'+folders.length+'フォルダ（現在'+allSelVideos.length+'本・検索可）'; };
-upd();
-// 同時5フォルダずつ取得し、届いた分から順次検索可能にする
-await runPool(folders,5,async(f)=>{
-  try{
-    const vs=await fetchFolderAllPages(f.id);
-    vs.forEach(v=>{ videoMap[v.id]=v; if(!seen.has(v.id)){seen.add(v.id);allSelVideos.push(v);} });
-  }catch(e){ errCount++; }
-  done++;upd();
+const add=vs=>vs.forEach(v=>{ videoMap[v.id]=v; if(!seen.has(v.id)){seen.add(v.id);allSelVideos.push(v);} });
+const upd=(msg)=>{ if(info) info.textContent=msg+'（現在'+allSelVideos.length+'本・検索可）'; };
+// 既に取り込み済みの videos を即座に検索対象へ
+add(videos);
+if(_allVideosLoaded&&!force){
+  allSelVideos.sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0));
+  if(info) info.innerHTML='全'+allSelVideos.length+'本読み込み済み'+
+    ' <button onclick="loadAllSelVideos(true)" style="margin-left:6px;padding:1px 8px;border-radius:4px;border:1px solid #d1d5db;background:#fff;font-size:10px;cursor:pointer">🔄 再読込</button>';
+  renderVGlobalList();
+  return;
+}
+upd('読み込み中…');
+// /v2/video を直接ページ送り（最新ページから取得）
+const r=await fetchAllVideosPaged((vs,done,last,total)=>{
+  add(vs);
+  upd('読み込み中… '+done+'/'+last+'ページ'+(total?'（全'+total+'本）':''));
   if(vGlobalQ) renderVGlobalList();
 });
+// ページ送りが機能しなかった場合はフォルダ単位でフォールバック
+if(r.pages<=1&&folders.length){
+  let done=0;
+  await runPool(folders,5,async(f)=>{
+    try{ add(await fetchFolderAllPages(f.id)); }catch(e){}
+    done++; upd('フォルダ読み込み中… '+done+'/'+folders.length);
+    if(vGlobalQ) renderVGlobalList();
+  });
+}
 allSelVideos.sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0));
 if(input){input.disabled=false;input.focus();}
-if(info) info.innerHTML='全'+allSelVideos.length+'本読み込み済み'+(errCount?'（'+errCount+'フォルダ失敗）':'')+
+if(info) info.innerHTML='全'+allSelVideos.length+'本読み込み済み'+
   ' <button onclick="loadAllSelVideos(true)" style="margin-left:6px;padding:1px 8px;border-radius:4px;border:1px solid #d1d5db;background:#fff;font-size:10px;cursor:pointer">🔄 再読込</button>';
 renderVGlobalList();
 }
@@ -1277,8 +1331,9 @@ const el=document.getElementById('thumbList');
 el.innerHTML='<div class="load"><div class="spin"></div>読み込み中...</div>';
 thumbSearchQ='';const sq=document.getElementById('thumbSearchQ');if(sq)sq.value='';
 try{
-const res=await api('/v2/video?video_container_id='+folderId);
-thumbVideos=res.data||[];
+// フォルダ内の全ページを取得（1ページだけだと最新動画が漏れる）
+thumbVideos=await fetchFolderAllPages(folderId);
+thumbVideos.forEach(v=>videoMap[v.id]=v);
 const ctrl=document.getElementById('thumbCtrl');if(ctrl)ctrl.style.display='';
 renderThumbList();
 }catch(e){
@@ -1477,6 +1532,10 @@ if (btn) btn.textContent = _adminLang === 'ja' ? 'EN' : '日本語';
 
 // ── リリースノートデータ ──
 const RELEASE_NOTES = [
+{ ver:'v1.5.3', date:'2026-05-20', type:'admin',
+ja:['最新の動画が検索・一覧に表示されない問題を修正（APIが古い順で返すため2ページ目以降にある最新動画が漏れていた）','全動画検索は最新動画のページから先に読み込むように','フォルダ選択時もフォルダ内の全動画を取得するように','起動時にバックグラウンドで全動画リストを取り込み、2回目以降の全動画検索を即時表示に'],
+en:['Fixed newest videos missing from search and lists (API returns oldest-first; videos beyond page 1 were dropped)','Global search now loads the newest pages first','Folder view now fetches all videos in the folder','All videos are preloaded in the background at startup for instant global search']
+},
 { ver:'v1.5.2', date:'2026-05-20', type:'admin',
 ja:['全動画検索が0件になる問題を修正（取得の同時実行数を制限しサーバー負荷を軽減）','読み込み中でも取得できた分から検索できるように','「全動画を検索」からフォルダ選択に戻ると動画が消える問題を修正'],
 en:['Fixed “search all videos” returning 0 results (limited request concurrency)','You can now search already-loaded videos while loading continues','Fixed videos disappearing when switching back from “search all videos” to folder mode']
@@ -1578,32 +1637,43 @@ else renderThumbGlobalList();
 }
 }
 
-async function loadAllThumbVideosForSearch(){
+async function loadAllThumbVideosForSearch(force){
 const info=document.getElementById('thumbGlobalInfo');
 const list=document.getElementById('thumbList');
 const input=document.getElementById('thumbGlobalQ');
-if(list) list.innerHTML='<div class="load"><div class="spin"></div>全フォルダ読み込み中...</div>';
-// 初期取得済みの videos を即座に使えるようにする
 allThumbVideos=[];
 const seen=new Set();
-videos.forEach(v=>{ if(!seen.has(v.id)){seen.add(v.id);allThumbVideos.push(v);} });
 allThumbLoaded=true;
-let done=0,errCount=0;
-const upd=()=>{ if(info) info.textContent='読み込み中… '+done+'/'+folders.length+'フォルダ（現在'+allThumbVideos.length+'本・検索可）'; };
-upd();
-// 同時5フォルダずつ取得し、届いた分から順次検索可能にする
-await runPool(folders,5,async(f)=>{
-  try{
-    const vs=await fetchFolderAllPages(f.id);
-    vs.forEach(v=>{ videoMap[v.id]=v; if(!seen.has(v.id)){seen.add(v.id);allThumbVideos.push(v);} });
-  }catch(e){ errCount++; }
-  done++;upd();
+const add=vs=>vs.forEach(v=>{ videoMap[v.id]=v; if(!seen.has(v.id)){seen.add(v.id);allThumbVideos.push(v);} });
+const upd=(msg)=>{ if(info) info.textContent=msg+'（現在'+allThumbVideos.length+'本・検索可）'; };
+// 既に取り込み済みの videos を即座に検索対象へ
+add(videos);
+if(_allVideosLoaded&&!force){
+  allThumbVideos.sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0));
+  if(info) info.innerHTML='全'+allThumbVideos.length+'本を読み込みました'+
+    ' <button onclick="loadAllThumbVideosForSearch(true)" style="margin-left:6px;padding:1px 8px;border-radius:4px;border:1px solid #d1d5db;background:#fff;font-size:10px;cursor:pointer">🔄 再読込</button>';
+  renderThumbGlobalList();
+  return;
+}
+if(list) list.innerHTML='<div class="load"><div class="spin"></div>全動画を読み込み中...</div>';
+upd('読み込み中…');
+const r=await fetchAllVideosPaged((vs,done,last,total)=>{
+  add(vs);
+  upd('読み込み中… '+done+'/'+last+'ページ'+(total?'（全'+total+'本）':''));
   if(thumbGlobalQ) renderThumbGlobalList();
 });
+if(r.pages<=1&&folders.length){
+  let done=0;
+  await runPool(folders,5,async(f)=>{
+    try{ add(await fetchFolderAllPages(f.id)); }catch(e){}
+    done++; upd('フォルダ読み込み中… '+done+'/'+folders.length);
+    if(thumbGlobalQ) renderThumbGlobalList();
+  });
+}
 allThumbVideos.sort((a,b)=>new Date(b.created_at||0)-new Date(a.created_at||0));
 if(input){ input.disabled=false; input.focus(); }
-if(info) info.innerHTML='全'+allThumbVideos.length+'本を読み込みました'+(errCount?'（'+errCount+'フォルダ取得失敗・スキップ）':'')+
-  ' <button onclick="loadAllThumbVideosForSearch()" style="margin-left:6px;padding:1px 8px;border-radius:4px;border:1px solid #d1d5db;background:#fff;font-size:10px;cursor:pointer">🔄 再読込</button>';
+if(info) info.innerHTML='全'+allThumbVideos.length+'本を読み込みました'+
+  ' <button onclick="loadAllThumbVideosForSearch(true)" style="margin-left:6px;padding:1px 8px;border-radius:4px;border:1px solid #d1d5db;background:#fff;font-size:10px;cursor:pointer">🔄 再読込</button>';
 renderThumbGlobalList();
 }
 
