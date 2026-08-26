@@ -111,6 +111,21 @@
   #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: rgba(41,37,36,0.92); color: #fff; font-size: 13px; padding: 10px 20px; border-radius: 9999px; opacity: 0; transition: opacity 0.25s; pointer-events: none; z-index: 6000; max-width: 90vw; }
   #toast.show { opacity: 1; }
 
+  /* モバイル対応 */
+  @media (max-width: 640px) {
+    header { padding: 8px 12px; }
+    h1 .subtitle { display: none; }
+    .hrow { gap: 8px; }
+    .search { flex: 1; width: 110px; min-width: 110px; }
+    main { padding: 12px; }
+    .grid { grid-template-columns: repeat(auto-fill, minmax(105px, 1fr)); gap: 12px; }
+    .book .title { font-size: 11px; }
+    .scrap-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+    #rdToolbar button { padding: 6px 8px; font-size: 12px; min-height: 30px; }
+    #rdTitle { display: none; }
+    .hero { margin: 40px auto; padding: 28px 20px; }
+  }
+
   /* 内蔵ブックリーダー（pdf-reader v0.5.1のコードを統合・ダークテーマ） */
   #reader { display: none; position: fixed; inset: 0; z-index: 4000; background: #1a1d2e; color: #e8eaf6; flex-direction: column; }
   #reader.open { display: flex; }
@@ -150,11 +165,12 @@
   <div class="hrow">
     <h1>
       <span class="app-name" onclick="openHowTo()" title="使い方を見る">📚 Kindleライブラリ</span>
-      <span class="ver" onclick="openReleaseNotes()" title="リリースノート">v0.6.1</span>
+      <span class="ver" onclick="openReleaseNotes()" title="リリースノート">v0.7.0</span>
       <span class="subtitle">kindle-capturerでスキャンした本のプレビュー</span>
     </h1>
     <div class="spacer"></div>
     <span id="connPill" class="conn" style="display:none;"></span>
+    <button id="addBtn" class="btn" style="display:none;">＋ PDFを追加</button>
     <button id="rescanBtn" class="btn" style="display:none;">再スキャン</button>
     <button id="thumbBtn" class="btn" style="display:none;" title="表紙が未取得の本のサムネイルを再生成">表紙再取得</button>
     <button id="folderBtn" class="btn" style="display:none;">フォルダ変更</button>
@@ -256,11 +272,12 @@
   </div>
 </div>
 
+<input type="file" id="filePick" accept="application/pdf,.pdf" multiple style="display:none;">
 <div id="toast"></div>
 
 <script>
 'use strict';
-var APP_VERSION = 'v0.6.1';
+var APP_VERSION = 'v0.7.0';
 
 // ===== 多言語対応（v0.6.0） =====
 var LANG = 'ja';
@@ -398,7 +415,13 @@ Object.assign(I18N.ja, {
   revealBtn: '📁 ファイルの場所をコピー',
   revealPrompt: 'スキャンフォルダの絶対パスを一度だけ設定してください（例: ~/Downloads/kindle本PDF）。コピーしたパスは Finder の ⌘⇧G で開けます。',
   revealDone: 'ファイルパスをコピーしました。Finderで ⌘⇧G（フォルダへ移動）を押して貼り付けてください',
-  revealManual: 'このパスをコピーしてください'
+  revealManual: 'このパスをコピーしてください',
+  addBtn: '＋ PDFを追加',
+  heroMobileTitle: 'PDFを追加してライブラリを作成',
+  heroMobileText: 'このブラウザはフォルダ参照に対応していないため、PDFを直接追加する方式で動作します。「PDFを追加」からkindle-capturerで保存したPDFを選ぶと、端末内（ブラウザのストレージ）に取り込まれ、表紙つきの蔵書として使えます。<br>データはこの端末の中だけに保存され、どこにもアップロードされません。',
+  importing: function(i, n) { return 'PDFを取り込み中… ' + i + ' / ' + n; },
+  importDone: function(n) { return n + '冊を取り込みました'; },
+  importNone: '取り込めるPDFがありませんでした'
 });
 Object.assign(I18N.en, {
   bmAdd: function(p) { return 'Bookmarked P.' + p; },
@@ -417,7 +440,13 @@ Object.assign(I18N.en, {
   revealBtn: '📁 Copy file location',
   revealPrompt: 'Set the absolute path of your scan folder once (e.g. ~/Downloads/kindle本PDF). Use the copied path with ⌘⇧G in Finder.',
   revealDone: 'File path copied. In Finder press ⌘⇧G (Go to Folder) and paste it',
-  revealManual: 'Copy this path'
+  revealManual: 'Copy this path',
+  addBtn: '＋ Add PDFs',
+  heroMobileTitle: 'Add PDFs to build your library',
+  heroMobileText: 'This browser cannot open folders, so the app works by importing PDFs directly. Tap "Add PDFs" and pick the PDFs saved by kindle-capturer — they are stored inside this device (browser storage) and shown as a cover-art library.<br>Data stays on this device only and is never uploaded.',
+  importing: function(i, n) { return 'Importing PDFs… ' + i + ' / ' + n; },
+  importDone: function(n) { return 'Imported ' + n + ' books'; },
+  importNone: 'No importable PDFs found'
 });
 function t(k) {
   var v = I18N[LANG][k];
@@ -425,6 +454,17 @@ function t(k) {
 }
 
 var RELEASE_NOTES = [
+  { ver: 'v0.7.0', date: '2026-08-17',
+    changes: [
+      'モバイルブラウザ対応 — フォルダ参照ができない環境（iPhone/iPad/Android等）では「＋ PDFを追加」でPDFを直接取り込み、端末内に保存して使えるように（蔵書・リーダー・評価・スクラップすべて動作）',
+      'デスクトップでも「＋ PDFを追加」でフォルダ外のPDFを個別追加できます（取り込んだ本は蔵書から削除すると本体も削除されストレージが空きます）',
+      'スマホ向けレイアウト調整（グリッド・ヘッダー・リーダーのツールバー）'
+    ],
+    en: [
+      'Mobile browser support — on devices without folder access (iPhone/iPad/Android), use "＋ Add PDFs" to import PDFs into on-device storage (library, reader, ratings and scraps all work)',
+      'On desktop, "＋ Add PDFs" also lets you add PDFs outside the folder (removing an imported book from the library also frees its storage)',
+      'Layout tuned for phones (grid, header, reader toolbar)'
+    ]},
   { ver: 'v0.6.1', date: '2026-08-17',
     changes: [
       'リリースノートの英語表示に対応（言語切替に追従）'
@@ -505,7 +545,7 @@ var RELEASE_NOTES = [
 ];
 
 var HOW_TO_JA = [
-  { heading: '① フォルダを選択（初回のみ）', text: 'kindle-capturerで保存したPDFが入ったフォルダ（例: ダウンロード/kindle本PDF）を選ぶと蔵書として記録されます。2回目からは記録済みの蔵書がすぐ表示されます。本を開く・再スキャンするときだけ「再接続」で許可を取り直します（ブラウザの仕様）。' },
+  { heading: '① フォルダを選択（初回のみ）', text: 'kindle-capturerで保存したPDFが入ったフォルダ（例: ダウンロード/kindle本PDF）を選ぶと蔵書として記録されます。2回目からは記録済みの蔵書がすぐ表示されます。本を開く・再スキャンするときだけ「再接続」で許可を取り直します（ブラウザの仕様）。<br>📱 スマホ・タブレットなどフォルダ参照に対応しないブラウザでは「＋ PDFを追加」でPDFを直接取り込みます（端末内に保存され、以後はオフラインでも閲覧可能）。' },
   { heading: '② 分類とグルーピング', text: '追加時にファイル名から 本/マンガ/雑誌・シリーズ名・巻数を自動判定します。同じシリーズは1枚のグループカードにまとまり、クリックで中身を一覧できます。自動判定が甘いときは手動で: 検索で対象を絞って「表示中をグループ化」でまとめて設定、グループ画面の「✎ シリーズ名を変更」で改名・解除、各カードの✎で個別修正（シリーズ名は入力候補が出ます）。' },
   { heading: '③ 評価とお気に入り', text: '各カードの★で5段階評価（同じ★をもう一度押すと解除）、表紙右上の♥でお気に入り登録。「♥ お気に入り」チップで絞り込めます。' },
   { heading: '④ プレビューとしおり', text: '表紙クリックでPDF Readerがその場で全画面表示されます（右下の「✕ ライブラリへ戻る」またはEscで戻る）。右開き見開き・±1P・ズーム・自動めくりに対応し、読んだ位置は自動記憶。しおりは🔖ボタン（一覧は📑、しおりページのPDF書き出しも可能）。' },
@@ -514,7 +554,7 @@ var HOW_TO_JA = [
 ];
 
 var HOW_TO_EN = [
-  { heading: '1. Select a folder (first time only)', text: 'Choose the folder with PDFs saved by kindle-capturer (e.g. Downloads/kindle本PDF) to register them as your library. From the second launch the saved library appears instantly; you only need to "reconnect" (a browser requirement) when opening a book or rescanning.' },
+  { heading: '1. Select a folder (first time only)', text: 'Choose the folder with PDFs saved by kindle-capturer (e.g. Downloads/kindle本PDF) to register them as your library. From the second launch the saved library appears instantly; you only need to "reconnect" (a browser requirement) when opening a book or rescanning.<br>📱 On phones/tablets without folder access, use "＋ Add PDFs" to import PDFs directly — they are stored on the device and readable offline.' },
   { heading: '2. Types and grouping', text: 'Type (Book/Manga/Magazine), series and volume are auto-detected from filenames. Books in the same series (magazine issues, manga vol.1/2/3…) are stacked into one group card. When detection is off, fix it manually: narrow with search then "Group visible", rename/ungroup via "✎ Rename series" in the group view, or edit each book via its ✎ button (with series suggestions).' },
   { heading: '3. Ratings and favorites', text: 'Rate with ★ (click the same star again to clear) and mark favorites with ♥ on the cover. Filter with the "♥ Favorites" chip.' },
   { heading: '4. Reading and bookmarks', text: 'Click a cover to open the built-in reader (back with "← Library" or Esc). Right-to-left spreads, ±1P adjustment, zoom, and auto page-turn are supported; your position is remembered per book. Bookmark with 🔖 (list via 📑, export bookmarked pages as PDF).' },
@@ -589,13 +629,14 @@ document.addEventListener('keydown', function(e) {
 var DB = null;
 function idb() {
   return DB ? Promise.resolve(DB) : new Promise(function(res, rej) {
-    var rq = indexedDB.open('kindle-library', 2);
+    var rq = indexedDB.open('kindle-library', 3);
     rq.onupgradeneeded = function() {
       var db = rq.result;
       if (!db.objectStoreNames.contains('kv')) db.createObjectStore('kv');
       if (!db.objectStoreNames.contains('thumbs')) db.createObjectStore('thumbs');
       if (!db.objectStoreNames.contains('books')) db.createObjectStore('books', { keyPath: 'key' });
       if (!db.objectStoreNames.contains('scraps')) db.createObjectStore('scraps', { keyPath: 'id', autoIncrement: true });
+      if (!db.objectStoreNames.contains('files')) db.createObjectStore('files'); // モバイル取り込みPDF本体
     };
     rq.onsuccess = function() { DB = rq.result; res(DB); };
     rq.onerror = function() { rej(rq.error); };
@@ -629,6 +670,7 @@ function idbDel(store, key) {
 // ===== 状態 =====
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
+var fsSupported = !!window.showDirectoryPicker; // モバイル等はfalse→PDF直接取り込みモード
 var dirHandle = null;
 var connected = false;        // 現セッションでフォルダ読み取り許可済みか
 var books = [];               // 蔵書レコード（IndexedDBと同期）
@@ -679,6 +721,52 @@ function classify(rawTitle) {
     }
   }
   return { type: 'book', series: '', volume: null, author: author };
+}
+
+// 本のFileを取得（フォルダ接続 or 端末内保存のどちらからでも）
+async function getBookFile(b) {
+  if (fileMap.has(b.key)) return fileMap.get(b.key).getFile();
+  if (b.stored) {
+    var bl = await idbGet('files', b.key);
+    if (bl) return bl;
+  }
+  return null;
+}
+
+// ===== PDF直接取り込み（モバイル用フォールバック・デスクトップでも使用可） =====
+async function importFiles(fileList) {
+  var files = Array.from(fileList).filter(function(f) { return /\.pdf$/i.test(f.name) || f.type === 'application/pdf'; });
+  if (!files.length) { toast(t('importNone')); return; }
+  showLibrary();
+  var added = 0;
+  for (var i = 0; i < files.length; i++) {
+    var f = files[i];
+    $('stats').textContent = t('importing')(i + 1, files.length);
+    try {
+      await idbPut('files', f, f.name); // PDF本体をブラウザ内に保存
+      var rec = books.find(function(b) { return b.key === f.name; });
+      if (!rec) {
+        var title = f.name.replace(/\.pdf$/i, '');
+        var cls = classify(title);
+        rec = {
+          key: f.name, title: title, type: cls.type, series: cls.series, volume: cls.volume,
+          author: cls.author, rating: 0, fav: false,
+          pages: null, size: f.size, mtime: f.lastModified, thumb: null,
+          addedAt: Date.now(), missing: false, stored: true
+        };
+        books.push(rec);
+        added++;
+      } else {
+        if (rec.size !== f.size || rec.mtime !== f.lastModified) { rec.thumb = null; rec.pages = null; }
+        rec.stored = true; rec.missing = false; rec.size = f.size; rec.mtime = f.lastModified;
+      }
+      await idbPut('books', rec);
+    } catch (e) { console.error('取り込み失敗:', f.name, e.message); }
+    await new Promise(function(r) { setTimeout(r, 0); });
+  }
+  toast(t('importDone')(added || files.length));
+  render();
+  queueThumbs();
 }
 
 // ===== 接続まわり =====
@@ -769,7 +857,7 @@ async function scan() {
   }
   var missing = 0;
   for (var j = 0; j < books.length; j++) {
-    if (!seen.has(books[j].key) && !books[j].missing) {
+    if (!seen.has(books[j].key) && !books[j].missing && !books[j].stored) {
       books[j].missing = true;
       missing++;
       await idbPut('books', books[j]);
@@ -784,13 +872,15 @@ async function scan() {
 // ===== サムネイル =====
 function queueThumbs() {
   thumbQueue = books.filter(function(b) {
-    return !b.thumb && !b.missing && fileMap.has(b.key) && (b._thumbTries || 0) < 3;
+    return !b.thumb && !b.missing && (fileMap.has(b.key) || b.stored) && (b._thumbTries || 0) < 3;
   });
   pumpThumbs();
 }
 // 表紙が取れていない本を接続確認のうえ再取得（リトライ回数もリセット）
 async function refreshThumbs() {
-  if (!connected) { await reconnect(); if (!connected) return; }
+  if (fsSupported && !connected && books.some(function(b) { return !b.thumb && !b.missing && !b.stored; })) {
+    await reconnect();
+  }
   var targets = books.filter(function(b) { return !b.thumb && !b.missing; });
   if (!targets.length) { toast(t('noMissingThumbs')); return; }
   targets.forEach(function(b) { b._thumbTries = 0; });
@@ -811,7 +901,8 @@ async function makeThumb(b) {
       b.thumb = legacy.dataUrl; b.pages = legacy.pages;
       await idbPut('books', b); render(); return;
     }
-    var f = await fileMap.get(b.key).getFile();
+    var f = await getBookFile(b);
+    if (!f) throw new Error('file unavailable');
     var doc = await pdfjsLib.getDocument({ data: await f.arrayBuffer() }).promise;
     var page = await doc.getPage(1);
     var vp = page.getViewport({ scale: 1 });
@@ -1165,6 +1256,7 @@ function openEdit(b) {
     if (!confirm(t('delConfirm')(b.title))) return;
     books = books.filter(function(x) { return x.key !== b.key; });
     await idbDel('books', b.key);
+    if (b.stored) { try { await idbDel('files', b.key); } catch (e) {} }
     closeModal();
     render();
     toast(t('delDone'));
@@ -1323,17 +1415,18 @@ var showToast = toast;
 function readerOpen() { return $('reader').classList.contains('open'); }
 
 async function openInReader(b) {
-  if (b.missing) { toast(t('fileGone')); return; }
-  if (!fileMap.has(b.key)) {
-    if (!connected) { toast(t('notConnected')); return; }
-    toast(t('fileGoneRescan'));
+  var f = null;
+  try { f = await getBookFile(b); } catch (e) { console.error('getBookFile:', e.message); }
+  if (!f) {
+    if (b.missing) toast(t('fileGone'));
+    else if (fsSupported && !connected && !b.stored) toast(t('notConnected'));
+    else toast(t('fileGoneRescan'));
     return;
   }
   $('reader').classList.add('open');
   document.body.style.overflow = 'hidden';
   try {
-    var f = await fileMap.get(b.key).getFile();
-    await loadPdf(await f.arrayBuffer(), f.name);
+    await loadPdf(await f.arrayBuffer(), f.name || b.key);
   } catch (err) {
     console.error('openInReader:', err.message || err);
     toast('読み込みに失敗しました: ' + (err.message || err));
@@ -1769,6 +1862,7 @@ function applyLang() {
   so[0].text = t('sortNew'); so[1].text = t('sortOld'); so[2].text = t('sortName'); so[3].text = t('sortRating');
   $('groupToggle').parentNode.lastChild.textContent = t('groupToggle');
   $('rescanBtn').textContent = t('rescan');
+  $('addBtn').textContent = t('addBtn');
   $('thumbBtn').textContent = t('thumbBtn');
   $('folderBtn').textContent = t('folderBtn');
   $('bulkGroupBtn').textContent = t('bulkGroup');
@@ -1802,6 +1896,8 @@ $('heroBtn').onclick = pickFolder;
 $('folderBtn').onclick = pickFolder;
 $('rescanBtn').onclick = scan;
 $('thumbBtn').onclick = refreshThumbs;
+$('addBtn').onclick = function() { $('filePick').click(); };
+$('filePick').onchange = function(e) { importFiles(e.target.files); e.target.value = ''; };
 $('bulkGroupBtn').onclick = openBulkGroup;
 $('search').oninput = render;
 $('sortSel').onchange = render;
@@ -1819,24 +1915,33 @@ function showLibrary() {
   $('hero').style.display = 'none';
   $('library').style.display = 'block';
   $('filterRow').style.display = '';
-  ['rescanBtn', 'thumbBtn', 'folderBtn'].forEach(function(id) { $(id).style.display = ''; });
-  updateConnPill();
+  $('addBtn').style.display = '';
+  $('thumbBtn').style.display = '';
+  // フォルダ関連UIはFS API対応ブラウザのみ
+  ['rescanBtn', 'folderBtn'].forEach(function(id) { $(id).style.display = fsSupported ? '' : 'none'; });
+  if (fsSupported) updateConnPill();
+  else $('connPill').style.display = 'none';
 }
 
 // ===== 起動 =====
 (async function init() {
   if (LANG === 'en') applyLang();
-  if (!window.showDirectoryPicker) {
-    $('hero').style.display = 'block';
-    $('heroTitle').textContent = t('unsupTitle');
-    $('heroText').textContent = t('unsupText');
-    $('heroBtn').style.display = 'none';
-    return;
-  }
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
   try {
     books = await idbGetAll('books');
-    dirHandle = await idbGet('kv', 'dirHandle') || null;
+    if (fsSupported) dirHandle = await idbGet('kv', 'dirHandle') || null;
   } catch (e) { console.warn('init:', e.message); }
+
+  // モバイル等（フォルダ参照不可）: PDF直接取り込みモード
+  if (!fsSupported) {
+    if (books.length) { showLibrary(); render(); queueThumbs(); return; }
+    $('hero').style.display = 'block';
+    $('heroTitle').textContent = t('heroMobileTitle');
+    $('heroText').innerHTML = t('heroMobileText');
+    $('heroBtn').textContent = t('addBtn');
+    $('heroBtn').onclick = function() { $('filePick').click(); };
+    return;
+  }
 
   if (!books.length && !dirHandle) {
     $('hero').style.display = 'block';
@@ -1846,6 +1951,7 @@ function showLibrary() {
   // 蔵書はデータとして即表示（フォルダ接続なしでも閲覧できる）
   showLibrary();
   render();
+  queueThumbs(); // 端末内保存分（stored）の表紙はフォルダ接続なしでも作れる
 
   // 前回のフォルダに静かに再接続できれば、バックグラウンドで差分スキャン
   if (dirHandle) {

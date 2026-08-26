@@ -1,7 +1,7 @@
 # HANDOVER.md - Kindleライブラリ (kindle-library)
 
 ## 基本情報
-- バージョン: v0.6.1
+- バージョン: v0.7.0
 - フェーズ: Phase 1（MVP）
 - 最終更新: 2026-08-17
 
@@ -21,7 +21,7 @@ public/kindle-library/
 ├── index.html   （全コード）
 └── HANDOVER.md
 
-## 主な機能（v0.6.0）
+## 主な機能（v0.7.0）
 - 蔵書のデータ永続化（IndexedDB 'books'）: フォルダ未接続でも一覧・評価・
   スクラップ閲覧が可能。接続（許可の再取得）は本を開く/再スキャン時のみ
 - 分類: 本/マンガ/雑誌（ファイル名から自動判定・✎で手動変更）とチップフィルタ
@@ -46,6 +46,11 @@ public/kindle-library/
 - ファイルの場所をコピー（v0.6.0）: ✎編集の「📁」でフルパスをコピーし、
   Finderの ⌘⇧G で元PDFへ。絶対パスはWeb APIでは取得不可のため初回に
   kv 'basePath' として手入力（📁のShift+クリックで再設定）
+- モバイル対応（v0.7.0）: FS API非対応ブラウザ（iOS Safari等）では「＋ PDFを追加」
+  （input type=file multiple）でPDF本体をIndexedDB 'files' に取り込み（book.stored=true）。
+  getBookFile() がフォルダ接続/端末内保存を吸収し、蔵書・リーダー・表紙・スクラップが
+  フル動作。蔵書から削除でBlobも削除。DBはv3（pdf-reader側のスキーマも同期済み）。
+  640px以下のレスポンシブCSSあり
 - app-header-meta準拠: アプリ名→使い方 / バージョン→リリースノート、
   新バージョン初回起動時にリリースノート自動表示
 - デバッグログコピー（🐛ボタン）
@@ -69,7 +74,8 @@ public/kindle-library/
 3. 削除・リネーム等のファイル操作（要 readwrite 権限）
 
 ## 既知の問題・注意事項
-- File System Access API対応ブラウザ（デスクトップのChrome/Edge）専用。Safari/Firefox不可
+- フォルダ参照はデスクトップのChrome/Edgeのみ。その他（iOS Safari/Firefox等）は
+  「＋ PDFを追加」の直接取り込みモードで動作（v0.7.0〜）
 - ブラウザの仕様上、再起動後は「再接続する」ボタンで許可の再取得が必要
 - スキャンPDFの閲覧は私的使用（個人利用）の範囲で（使い方モーダルにも明記）
 - iCloud未ダウンロードのPDF（雲マーク）は読み込みに時間がかかることがある
