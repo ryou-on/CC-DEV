@@ -209,8 +209,9 @@ https://www.youtube.com/playlist?list=PLxxxxxxxx"></textarea>
 // =========================================================
 // 設定
 // =========================================================
-const VERSION = 'v0.7.0';
+const VERSION = 'v0.7.1';
 const RELEASE_NOTES = [
+  { ver:'v0.7.1', date:'2026-08-22', changes:['連打しても動画が次々切り替わらないように（切り替えは1秒に1回まで。キー・タップ・スワイプ共通）','5秒未満しか見なかった再生は視聴記録に残さないように'] },
   { ver:'v0.7.0', date:'2026-08-22', changes:['コードなしの素のURLは「登録用ページ」に。セットは保存時に発行される専用URL（?code=…）で開く方式へ','登録ページに「▶ 前回のセットをひらく」ボタンを追加（この端末で最後に使ったセット）'] },
   { ver:'v0.6.3', date:'2026-08-22', changes:['初回保存で共有コードが画面に表示されない問題を修正'] },
   { ver:'v0.6.2', date:'2026-08-22', changes:['候補リストをスクロールできるように：↑↓キー・上下スワイプ・候補の上でマウスホイールで、ほかの動画を順に表示','「ほかのどうが 3/12」のように位置を表示'] },
@@ -241,7 +242,10 @@ const FIREBASE_CONFIG = {
 };
 const CAND_COUNT = 4;      // 右側に並べる候補の数
 let candOffset = 0;        // 候補リストのスクロール位置（↑↓キー・上下スワイプで回す）
-const KEY_COOLDOWN = 700;  // 連打防止（ms）
+const KEY_COOLDOWN = 1000; // 連打防止（ms）
+const NAV_BUFFER = 1000;   // 動画切り替えの最小間隔（連打してもこれ以上速く切り替わらない）
+const MIN_LOG_SEC = 5;     // これ未満の再生は視聴記録に残さない
+let lastNavAt = 0;
 const LS_KEY = 'tomoe_player_videos';
 
 // =========================================================
@@ -543,7 +547,17 @@ function renderCands() {
     </div>`;
   }).join('');
 }
+// 動画切り替えの連打バッファ。自動遷移（完走・エラー・再開・準備）は制限しない
+function navAllowed(src) {
+  if (src === 'ended' || src === 'error' || src === 'resume' || src === 'setup' || src === 'auto') { lastNavAt = Date.now(); return true; }
+  const now = Date.now();
+  if (now - lastNavAt < NAV_BUFFER) return false;
+  lastNavAt = now;
+  return true;
+}
+
 function pick(n, src) {
+  if (!navAllowed(src)) return;
   userActed();
   const c = candIdx();
   if (!c.length) return;
@@ -553,9 +567,10 @@ function pick(n, src) {
   flash(['①','②','③','④'][n] || '▶', videos[c[n]].title || '');
   play(c[n], true, 'pick');
 }
-function goNext(src) { if (!videos.length) return; if (src !== 'ended') userActed(); flash('▶▶', 'つぎ'); play((cur + 1) % videos.length, true, src === 'ended' ? 'ended' : src === 'error' ? 'error' : 'next'); }
+function goNext(src) { if (!videos.length) return; if (!navAllowed(src)) return; if (src !== 'ended') userActed(); flash('▶▶', 'つぎ'); play((cur + 1) % videos.length, true, src === 'ended' ? 'ended' : src === 'error' ? 'error' : 'next'); }
 function goPrev(src) {
   if (!videos.length) return;
+  if (!navAllowed(src)) return;
   userActed();
   flash('◀◀', 'まえ');
   if (histStack.length) play(histStack.pop(), false, 'prev');
@@ -654,9 +669,8 @@ function sessStart(v, reason) {
     _dirty: true, _lastFlush: 0, _lastPos: -1
   };
   lastTickAt = Date.now();
-  try { localStorage.setItem('tomoe_open_sess', JSON.stringify({ id: sess.id, list: listId })); } catch (e) {}
   if (!sessTick) sessTick = setInterval(sessTickFn, 1000);
-  sessFlush();
+  // 書き込みは watchSec が MIN_LOG_SEC に達してから（sessFlush 側で判定）
 }
 function sessTickFn() {
   if (!sess || !ytReady) return;
@@ -698,7 +712,9 @@ function closeOrphanSession() {
 }
 function sessFlush() {
   if (!sess || !db || !listId) return;
+  if (sess.watchSec < MIN_LOG_SEC) return;   // 5秒未満の再生は記録しない
   const d = sess; d._dirty = false; d._lastFlush = Date.now();
+  try { localStorage.setItem('tomoe_open_sess', JSON.stringify({ id: d.id, list: listId })); } catch (e) {}
   const data = {
     videoId: d.videoId, title: d.title, startedAt: d.startedAt, day: d.day, dow: d.dow, hour: d.hour,
     watchSec: Math.round(d.watchSec), maxPos: Math.round(d.maxPos), duration: Math.round(d.duration),
