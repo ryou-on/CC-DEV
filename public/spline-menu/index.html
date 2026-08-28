@@ -185,50 +185,69 @@ footer{margin-top:30px;color:var(--muted);font-size:11px;line-height:1.8}
   .summary{position:static}
 }
 
-/* ---- password gate ---- */
+/* ---- auth gate ---- */
 #gate{position:fixed;inset:0;z-index:1000;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px}
-#gate .box{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:32px 28px;max-width:360px;width:100%;text-align:center}
-#gate h1{font-family:var(--display);font-size:18px;font-weight:700;margin-bottom:6px}
+#gate.hidden{display:none}
+#gate .box{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:32px 28px;max-width:380px;width:100%;text-align:center}
+#gate h1{font-family:var(--display);font-size:18px;font-weight:700;margin-bottom:6px;line-height:1.5}
 #gate p{font-size:12px;color:var(--muted);margin-bottom:18px}
-#gate input{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:8px;color:var(--ink);padding:10px 12px;font-size:15px;text-align:center;font-family:var(--body)}
-#gate button{margin-top:12px;width:100%;background:var(--magenta);border:none;border-radius:8px;color:#fff;font-weight:700;padding:10px;font-size:14px;cursor:pointer;font-family:var(--body)}
-#gate .err{color:var(--magenta-text);font-size:12px;margin-top:10px;min-height:1.2em}
+#gate button{width:100%;background:var(--magenta);border:none;border-radius:8px;color:#fff;font-weight:700;padding:11px;font-size:14px;cursor:pointer;font-family:var(--body)}
+#gate .msg{color:var(--magenta-text);font-size:12px;margin-top:12px;min-height:1.2em}
 body.locked .wrap{display:none}
+.userbox{font-size:11px;color:var(--muted)}
+.userbox button{background:none;border:1px solid var(--line);border-radius:6px;color:var(--muted);font-size:11px;padding:2px 8px;cursor:pointer;font-family:var(--body)}
+.userbox button:hover{color:var(--ink);border-color:var(--muted)}
 </style>
 </head>
 <body class="locked">
 <div id="gate">
   <div class="box">
     <h1>スプライングローバル<br>動画サービス 料金シミュレーター</h1>
-    <p>閲覧にはパスワードが必要です</p>
-    <form id="gateForm">
-      <input type="password" id="gatePass" placeholder="パスワード" autocomplete="current-password" autofocus>
-      <button type="submit">開く</button>
-      <div class="err" id="gateErr"></div>
-    </form>
+    <p>社内メンバー限定ページです。Googleアカウントでログインしてください。</p>
+    <button type="button" id="btnLogin">Googleでログイン</button>
+    <div class="msg" id="gateMsg"></div>
   </div>
 </div>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script>
 (function(){
-  var HASH = "74e1186e412a3807b8bf1feba02e60a1e92035cc68590a1cab75280d6c2eb6da";
-  function unlock(){ document.body.classList.remove("locked"); var g=document.getElementById("gate"); if(g) g.remove(); }
-  try{ if(sessionStorage.getItem("spline-menu-auth") === HASH){ unlock(); return; } }catch(e){}
-  document.getElementById("gateForm").addEventListener("submit", async function(ev){
-    ev.preventDefault();
-    var v = document.getElementById("gatePass").value;
-    try{
-      var buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(v));
-      var hex = Array.from(new Uint8Array(buf)).map(function(b){return b.toString(16).padStart(2,"0");}).join("");
-      if(hex === HASH){ try{ sessionStorage.setItem("spline-menu-auth", HASH); }catch(e){} unlock(); }
-      else{ document.getElementById("gateErr").textContent = "パスワードが違います"; }
-    }catch(e){ document.getElementById("gateErr").textContent = "この環境では認証できません（https推奨）"; }
+  var ALLOW = function(e){ return !!e && (/@splineglobal\.com$/.test(e) || e === 'junpei.omote@gmail.com'); };
+  var firebaseConfig = {
+    apiKey: "AIzaSyDPlsAhtxbJBihy-EAHck9P7XbuMdzV0ds",
+    authDomain: "cc-dev-ps7.firebaseapp.com",
+    projectId: "cc-dev-ps7",
+    storageBucket: "cc-dev-ps7.firebasestorage.app",
+    messagingSenderId: "1029579090333",
+    appId: "1:1029579090333:web:5a2ea499fec97c497f2774"
+  };
+  firebase.initializeApp(firebaseConfig);
+  var auth = firebase.auth();
+  document.getElementById('btnLogin').onclick = function(){
+    auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(function(e){
+      document.getElementById('gateMsg').textContent = 'ログイン失敗: ' + e.message;
+    });
+  };
+  auth.onAuthStateChanged(function(u){
+    if(!u){ document.getElementById('gate').classList.remove('hidden'); document.body.classList.add('locked'); return; }
+    if(!ALLOW(u.email)){
+      document.getElementById('gateMsg').textContent = u.email + ' には閲覧権限がありません';
+      auth.signOut();
+      return;
+    }
+    document.getElementById('gate').classList.add('hidden');
+    document.body.classList.remove('locked');
+    document.getElementById('userEmail').textContent = u.email;
+    document.getElementById('userBox').hidden = false;
+    document.getElementById('btnLogout').onclick = function(){ auth.signOut().then(function(){ location.reload(); }); };
   });
 })();
 </script>
 <div class="wrap">
   <header class="top">
     <div class="brand">スプライングローバル <span class="hi">動画サービス</span> 料金シミュレーター</div>
-    <span class="ver">v1.8.1</span>
+    <span class="ver">v1.9.0</span>
+    <span class="userbox" id="userBox" hidden><span id="userEmail"></span> ｜ <button type="button" id="btnLogout">ログアウト</button></span>
     <button type="button" class="theme-btn" id="themeBtn">☀️ ライトモード</button>
   </header>
   <p class="lede">
@@ -278,7 +297,7 @@ body.locked .wrap{display:none}
     ※ ライセンスの表示価格は年間契約（請求書払い）。毎月払いはクレジットカード決済となり20%増額です。hihaho Custom・統計サポート（プランS/A/C）・iFrameカスタム/ホスティングの正式価格は応相談（ASK）。統計サポート プランBは¥500,000/回（3ヶ月に1回）、毎月実施は¥400,000/月（3ヶ月分一括前払い・20%割引適用時）。<br>
     ※ D. サポートプラン（伴走アドバイザリー含む）／スポットセッションと E. スポット利用は正式価格（『hihahoスポット利用価格表』ほか・税別）。<br>
     ※ B. 動画制作・C. インタラクティブ動画制作の単価は目安です。ヒアリングのうえ、別途お見積もりをご提示します（運用・マーケ実務代行も同様）。<br>
-    スプライングローバル株式会社（SPLINE GLOBAL K.K.） ｜ v1.8.1 Web版（2026-08-28）
+    スプライングローバル株式会社（SPLINE GLOBAL K.K.） ｜ v1.9.0 Web版・Google認証（2026-08-28）
   </footer>
 </div>
 <div class="toast" id="toast">コピーしました</div>
