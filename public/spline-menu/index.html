@@ -1,0 +1,632 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>スプライングローバル 料金シミュレーター</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@500;700;900&family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<style>
+:root{
+  --bg:#143248;
+  --panel:#1b3d5c;
+  --panel-deep:#0e2a42;
+  --ink:#ffffff;
+  --muted:#ffffff;
+  --line:rgba(237,243,248,.14);
+  --magenta:#ed1585;
+  --magenta-soft:rgba(237,21,133,.16);
+  --magenta-text:#ff6db8;
+  --green:#6ab24e;
+  --green-soft:rgba(106,178,78,.16);
+  --toast-ink:#0c2413;
+  --display:"Zen Kaku Gothic New","Noto Sans JP","Hiragino Kaku Gothic ProN",sans-serif;
+  --body:"Noto Sans JP","Hiragino Kaku Gothic ProN",sans-serif;
+}
+:root[data-theme="light"]{
+  --bg:#eef3f8;
+  --panel:#e2ebf3;
+  --panel-deep:#ffffff;
+  --ink:#000000;
+  --muted:#000000;
+  --line:rgba(20,50,72,.16);
+  --magenta:#ed1585;
+  --magenta-soft:rgba(237,21,133,.10);
+  --magenta-text:#c40e6b;
+  --green:#41802a;
+  --green-soft:rgba(106,178,78,.16);
+  --toast-ink:#ffffff;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:var(--bg);
+  color:var(--ink);
+  font-family:var(--body);
+  font-size:14px;
+  line-height:1.65;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1180px;margin:0 auto;padding:28px 20px 80px}
+header.top{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px 16px;margin-bottom:6px}
+.brand{font-family:var(--display);font-weight:900;font-size:26px;letter-spacing:.02em}
+.brand .hi{color:var(--magenta)}
+.ver{font-size:11px;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:2px 10px;letter-spacing:.08em}
+.theme-btn{
+  margin-left:auto;border:1px solid var(--line);background:var(--panel-deep);color:var(--ink);
+  border-radius:999px;padding:4px 14px;font-size:12px;cursor:pointer;font-family:var(--body)
+}
+.theme-btn:hover{border-color:var(--magenta)}
+.ask-badge{
+  display:inline-block;background:var(--magenta-soft);color:var(--magenta-text);
+  font-weight:700;font-size:12px;letter-spacing:.08em;border-radius:6px;padding:4px 12px
+}
+body,.cat,.summary,.qty button,.presets button,.actions button{transition:background .25s,color .25s,border-color .25s}
+@media (prefers-reduced-motion:reduce){body,.cat,.summary,.qty button,.presets button,.actions button{transition:none}}
+.lede{color:var(--muted);font-size:12.5px;margin-bottom:22px}
+.lede strong{color:var(--magenta);font-weight:700}
+.layout{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:22px;align-items:start}
+@media (max-width:900px){.layout{grid-template-columns:1fr}}
+
+/* ---- category cards ---- */
+.cat{background:var(--panel-deep);border:1px solid var(--line);border-radius:12px;margin-bottom:18px;overflow:hidden}
+.cat>h2{
+  font-family:var(--display);font-weight:700;font-size:15px;
+  padding:12px 16px;display:flex;align-items:center;gap:10px;
+  border-bottom:1px solid var(--line);background:var(--panel)
+}
+.cat>h2 .tag{font-size:10.5px;font-weight:700;letter-spacing:.1em;border-radius:4px;padding:2px 8px}
+.tag.monthly{background:var(--green-soft);color:var(--green)}
+.tag.initial{background:var(--magenta-soft);color:var(--magenta-text)}
+.tag.mixed{background:rgba(237,243,248,.1);color:var(--muted)}
+.cat>h2 .desc{margin-left:auto;font-family:var(--body);font-weight:400;font-size:11px;color:var(--muted)}
+.rows{padding:6px 0}
+.row{
+  display:grid;grid-template-columns:minmax(0,1fr) 118px 108px 96px;
+  gap:12px;align-items:center;padding:9px 16px;border-bottom:1px dashed var(--line)
+}
+.row:last-child{border-bottom:none}
+.row .nm{font-weight:500}
+.row .nm small{display:block;color:var(--muted);font-weight:400;font-size:11px;line-height:1.5}
+.row.off .nm,.row.off .price{opacity:.8}
+.price{display:flex;align-items:center;gap:4px;color:var(--muted);font-size:12px}
+.price input{
+  width:82px;background:var(--bg);border:1px solid var(--line);border-radius:6px;
+  color:var(--ink);padding:5px 7px;font-size:13px;text-align:right;
+  font-variant-numeric:tabular-nums;font-family:var(--body)
+}
+.qty{display:flex;align-items:center;gap:6px}
+.qty button{
+  width:26px;height:26px;border-radius:6px;border:1px solid var(--line);
+  background:var(--panel);color:var(--ink);font-size:15px;cursor:pointer;line-height:1
+}
+.qty button:hover{border-color:var(--magenta)}
+.qty input{
+  width:40px;background:var(--bg);border:1px solid var(--line);border-radius:6px;
+  color:var(--ink);padding:5px 4px;text-align:center;font-size:13px;font-variant-numeric:tabular-nums
+}
+.sub{text-align:right;font-variant-numeric:tabular-nums;font-weight:700}
+.sub.zero{color:var(--muted);font-weight:400}
+.unit-note{font-size:10.5px;color:var(--muted)}
+@media (max-width:640px){
+  .row{grid-template-columns:1fr 1fr;grid-row-gap:8px}
+  .row .nm{grid-column:1/-1}
+  .sub{grid-column:2}
+}
+
+/* ---- summary ---- */
+.summary{position:sticky;top:16px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px}
+@media (max-width:900px){.summary{position:static}}
+.summary h2{font-family:var(--display);font-size:15px;font-weight:700;margin-bottom:12px}
+.presets{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+.presets button{
+  border:1px solid var(--line);background:var(--panel-deep);color:var(--ink);
+  border-radius:8px;padding:8px 6px;font-size:12px;cursor:pointer;font-family:var(--body)
+}
+.presets button:hover{border-color:var(--green)}
+.opts{display:flex;flex-direction:column;gap:8px;margin-bottom:14px;font-size:12.5px}
+.opts label{display:flex;align-items:center;gap:8px}
+.opts input[type=number]{
+  width:56px;background:var(--bg);border:1px solid var(--line);border-radius:6px;
+  color:var(--ink);padding:4px 6px;text-align:right;font-size:12.5px
+}
+.opts input[type=checkbox],.opts input[type=radio]{accent-color:var(--magenta);width:15px;height:15px}
+.pick{display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer}
+.pick input{accent-color:var(--magenta);width:16px;height:16px;cursor:pointer}
+.auto-note{font-size:11px;color:var(--muted)}
+.tot{border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:6px}
+.tot .li{display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted)}
+.tot .li[hidden]{display:none}
+.tot .li b{color:var(--ink);font-variant-numeric:tabular-nums;font-weight:500}
+.big{display:flex;justify-content:space-between;align-items:baseline;border-radius:8px;padding:8px 10px;margin-top:2px}
+.big span{font-size:12px;font-weight:700}
+.big b{font-size:19px;font-variant-numeric:tabular-nums;letter-spacing:.01em}
+.big.init{background:var(--magenta-soft)}.big.init span{color:var(--magenta-text)}
+.big.mon{background:var(--green-soft)}.big.mon span{color:var(--green)}
+.annualized{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);padding:6px 10px 0}
+.annualized b{color:var(--ink);font-variant-numeric:tabular-nums}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px}
+.actions button{
+  border:1px solid var(--line);background:var(--panel-deep);color:var(--ink);
+  border-radius:8px;padding:8px 6px;font-size:12px;cursor:pointer;font-family:var(--body)
+}
+.actions button.primary{background:var(--magenta);border-color:var(--magenta);color:#fff;font-weight:700}
+.actions button:hover{filter:brightness(1.12)}
+.toast{
+  position:fixed;left:50%;bottom:26px;transform:translateX(-50%);
+  background:var(--green);color:var(--toast-ink);font-weight:700;font-size:13px;
+  padding:9px 18px;border-radius:999px;opacity:0;pointer-events:none;transition:opacity .25s
+}
+.toast.show{opacity:1}
+@media (prefers-reduced-motion:reduce){.toast{transition:none}}
+.addrow{padding:10px 16px}
+.addrow button{
+  border:1px dashed var(--line);background:none;color:var(--muted);
+  border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;width:100%
+}
+.addrow button:hover{color:var(--ink);border-color:var(--muted)}
+.custom-nm input{
+  width:100%;background:var(--bg);border:1px solid var(--line);border-radius:6px;
+  color:var(--ink);padding:5px 7px;font-size:13px;font-family:var(--body)
+}
+.custom-nm select{
+  background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--ink);
+  padding:4px;font-size:11px;margin-top:4px
+}
+footer{margin-top:30px;color:var(--muted);font-size:11px;line-height:1.8}
+
+/* ---- print: 見積書モード ---- */
+@media print{
+  body{background:#fff;color:#143248}
+  .summary,.cat{border-color:#c8d3dc;background:#fff}
+  .cat>h2{background:#f2f6f9;color:#143248}
+  .qty button,.presets,.actions,.addrow,.toast{display:none}
+  .row.off{display:none}
+  .price input,.qty input{border:none;background:none;color:#143248}
+  .layout{grid-template-columns:1fr}
+  .summary{position:static}
+}
+
+/* ---- password gate ---- */
+#gate{position:fixed;inset:0;z-index:1000;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px}
+#gate .box{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:32px 28px;max-width:360px;width:100%;text-align:center}
+#gate h1{font-family:var(--display);font-size:18px;font-weight:700;margin-bottom:6px}
+#gate p{font-size:12px;color:var(--muted);margin-bottom:18px}
+#gate input{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:8px;color:var(--ink);padding:10px 12px;font-size:15px;text-align:center;font-family:var(--body)}
+#gate button{margin-top:12px;width:100%;background:var(--magenta);border:none;border-radius:8px;color:#fff;font-weight:700;padding:10px;font-size:14px;cursor:pointer;font-family:var(--body)}
+#gate .err{color:var(--magenta-text);font-size:12px;margin-top:10px;min-height:1.2em}
+body.locked .wrap{display:none}
+</style>
+</head>
+<body class="locked">
+<div id="gate">
+  <div class="box">
+    <h1>スプライングローバル<br>動画サービス 料金シミュレーター</h1>
+    <p>閲覧にはパスワードが必要です</p>
+    <form id="gateForm">
+      <input type="password" id="gatePass" placeholder="パスワード" autocomplete="current-password" autofocus>
+      <button type="submit">開く</button>
+      <div class="err" id="gateErr"></div>
+    </form>
+  </div>
+</div>
+<script>
+(function(){
+  var HASH = "74e1186e412a3807b8bf1feba02e60a1e92035cc68590a1cab75280d6c2eb6da";
+  function unlock(){ document.body.classList.remove("locked"); var g=document.getElementById("gate"); if(g) g.remove(); }
+  try{ if(sessionStorage.getItem("spline-menu-auth") === HASH){ unlock(); return; } }catch(e){}
+  document.getElementById("gateForm").addEventListener("submit", async function(ev){
+    ev.preventDefault();
+    var v = document.getElementById("gatePass").value;
+    try{
+      var buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(v));
+      var hex = Array.from(new Uint8Array(buf)).map(function(b){return b.toString(16).padStart(2,"0");}).join("");
+      if(hex === HASH){ try{ sessionStorage.setItem("spline-menu-auth", HASH); }catch(e){} unlock(); }
+      else{ document.getElementById("gateErr").textContent = "パスワードが違います"; }
+    }catch(e){ document.getElementById("gateErr").textContent = "この環境では認証できません（https推奨）"; }
+  });
+})();
+</script>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">スプライングローバル <span class="hi">動画サービス</span> 料金シミュレーター</div>
+    <span class="ver">v1.8.1</span>
+    <button type="button" class="theme-btn" id="themeBtn">☀️ ライトモード</button>
+  </header>
+  <p class="lede">
+    hihahoライセンスを中心に、制作・実装・伴走・運用の4部門を自由に組み合わせて概算を試算できます。
+    <strong>単価・数量はすべてその場で編集可能</strong>／A. hihahoライセンス等は正式価格（税別）、B・Cの制作系は目安価格でヒアリング後に別途お見積もりとなります。変更内容はこのブラウザに自動保存されます。
+  </p>
+
+  <div class="layout">
+    <main id="cats"></main>
+
+    <aside class="summary">
+      <h2>お見積りサマリー</h2>
+      <div class="presets">
+        <button data-preset="small">① スモールスタート</button>
+        <button data-preset="standard">② 標準導入</button>
+        <button data-preset="full">③ フル活用</button>
+        <button data-preset="clear">クリア（全て0）</button>
+      </div>
+      <div class="opts">
+        <div style="font-weight:700">お支払い方法（hihahoライセンス）</div>
+        <label><input type="radio" name="pay" value="annual" checked> 年間契約（請求書払い）</label>
+        <label><input type="radio" name="pay" value="monthly"> 毎月払い（クレジットカード決済・<input type="number" id="surcharge" min="0" max="100" step="1" value="20">%増）</label>
+        <label>消費税率 <input type="number" id="tax" min="0" max="30" step="1" value="10">%</label>
+      </div>
+      <div class="tot">
+        <div class="li"><span>初期費用 小計（税抜）</span><b id="initSub">¥0</b></div>
+        <div class="li"><span>月額費用 小計（税抜）</span><b id="monSub">¥0</b></div>
+        <div class="li" id="payLine" hidden><span>クレカ決済増額（ライセンス）</span><b id="payAmt" style="color:var(--magenta-text)">＋¥0</b></div>
+        <div class="li" id="askLine" hidden><span style="color:var(--magenta-text)">ASK（応相談）項目あり — 別途見積</span><b> </b></div>
+        <div class="li"><span>消費税</span><b id="taxAmt">¥0</b></div>
+        <div class="big init"><span>初期費用（税込）</span><b id="initTotal">¥0</b></div>
+        <div class="big mon"><span>月額費用（税込）</span><b id="monTotal">¥0</b></div>
+        <div class="annualized"><span>年額換算（月額×12＋初期・税込）</span><b id="yearTotal">¥0</b></div>
+      </div>
+      <div class="actions">
+        <button class="primary" id="copyMd">見積をMarkdownコピー</button>
+        <button id="copyCsv">CSVをコピー</button>
+        <button id="dlCsv">CSVダウンロード</button>
+        <button id="printBtn">印刷（見積書）</button>
+        <button id="resetBtn" style="grid-column:1/-1">単価・数量を初期値に戻す</button>
+      </div>
+    </aside>
+  </div>
+
+  <footer>
+    ※ A. hihahoライセンスは『hihahoサービス資料5.0』p28・p32（2026年1月15日適用・税別）準拠の正式価格。初期費用（セットアップ、トレーニング）は初年度のみ。<br>
+    ※ ライセンスの表示価格は年間契約（請求書払い）。毎月払いはクレジットカード決済となり20%増額です。hihaho Custom・統計サポート（プランS/A/C）・iFrameカスタム/ホスティングの正式価格は応相談（ASK）。統計サポート プランBは¥500,000/回（3ヶ月に1回）、毎月実施は¥400,000/月（3ヶ月分一括前払い・20%割引適用時）。<br>
+    ※ D. サポートプラン（伴走アドバイザリー含む）／スポットセッションと E. スポット利用は正式価格（『hihahoスポット利用価格表』ほか・税別）。<br>
+    ※ B. 動画制作・C. インタラクティブ動画制作の単価は目安です。ヒアリングのうえ、別途お見積もりをご提示します（運用・マーケ実務代行も同様）。<br>
+    スプライングローバル株式会社（SPLINE GLOBAL K.K.） ｜ v1.8.1 Web版（2026-08-28）
+  </footer>
+</div>
+<div class="toast" id="toast">コピーしました</div>
+
+<script>
+"use strict";
+// 品目マスタ: kubun "月額" | "初期"
+const CATS = [
+  {key:"A", name:"A. hihahoライセンス", tag:"monthly", tagLabel:"月額", desc:"正式価格（2026年1月15日適用・税別）"},
+  {key:"B", name:"B. 動画制作部門（素材動画）", tag:"initial", tagLabel:"スポット", desc:"企画・撮影・編集｜目安価格・ヒアリング後に別途見積"},
+  {key:"C", name:"C. インタラクティブ動画制作部門", tag:"mixed", tagLabel:"スポット＋月額", desc:"hihaho設計・実装／iFrame制作｜目安価格・ヒアリング後に別途見積"},
+  {key:"D", name:"D. 活用プラン（サポート・運用コンサル）", tag:"mixed", tagLabel:"月額＋スポット", desc:"サポート・伴走アドバイザリー・統計分析・実務代行"},
+  {key:"E", name:"E. スポット利用（ライセンス契約なし）", tag:"mixed", tagLabel:"納品型", desc:"制作おまかせ・URL/iFrame納品（正式価格）"}
+];
+const ITEMS = [
+  {id:"a0",cat:"A",name:"hihaho Free",note:"検証・社内説明用／公開不可（プレビューのみ）／1ユーザー／500MB/動画",kubun:"月額",unit:"月",price:0,plan:true},
+  {id:"a1",cat:"A",name:"hihaho Starter",note:"小規模導入／公開3本／4,000回/動画/月／3ユーザー／AI機能",kubun:"月額",unit:"月",price:30000,plan:true},
+  {id:"a1x",cat:"A",name:"動画追加（1動画あたり）",note:"プランの公開本数を超える追加公開動画／月額",kubun:"月額",unit:"本",price:10000},
+  {id:"a2",cat:"A",name:"hihaho Standard",note:"本格導入／公開15本／10,000回/動画/月／10ユーザー",kubun:"月額",unit:"月",price:100000,plan:true},
+  {id:"a3",cat:"A",name:"hihaho Enterprise",note:"全社展開／公開100本／40,000回/全体/月／30ユーザー",kubun:"月額",unit:"月",price:300000,plan:true},
+  {id:"a4",cat:"A",name:"hihaho Custom",note:"大規模配信・事業利用／外販・品質保証／価格は応相談",kubun:"月額",unit:"月",price:0,ask:true,plan:true},
+  {id:"a5",cat:"A",name:"初期費用",note:"セットアップ、トレーニング（初年度のみ）／Free以外のプラン選択で自動適用",kubun:"初期",unit:"式",price:160000,auto:true},
+  {id:"a6",cat:"A",name:"ブランドプレイヤー追加 S（1カ国組織内）",note:"2つ目以降のプレイヤー追加（オプション）",kubun:"初期",unit:"件",price:160000},
+  {id:"a7",cat:"A",name:"ブランドプレイヤー追加 M（1カ国すべて）",note:"2つ目以降のプレイヤー追加（オプション）",kubun:"初期",unit:"件",price:430000},
+  {id:"a8",cat:"A",name:"ブランドプレイヤー追加 L（全世界組織内）",note:"2つ目以降のプレイヤー追加（オプション）",kubun:"初期",unit:"件",price:960000},
+  {id:"a9",cat:"A",name:"ブランドプレイヤー追加 XL（制限なし）",note:"Powered by hihaho非表示はSupremeのみ",kubun:"初期",unit:"件",price:1600000},
+  {id:"b1",cat:"B",name:"企画・構成",note:"構成台本・絵コンテ",kubun:"初期",unit:"本",price:80000},
+  {id:"b2",cat:"B",name:"撮影（半日）",note:"カメラマン1名・機材込み",kubun:"初期",unit:"回",price:120000},
+  {id:"b3",cat:"B",name:"撮影（1日）",note:"カメラマン1名・機材込み",kubun:"初期",unit:"回",price:200000},
+  {id:"b4",cat:"B",name:"編集（〜5分）",note:"カット編集・BGM・色調整",kubun:"初期",unit:"本",price:100000},
+  {id:"b5",cat:"B",name:"編集（5〜15分）",note:"カット編集・BGM・色調整",kubun:"初期",unit:"本",price:150000},
+  {id:"b6",cat:"B",name:"アニメーション／モーショングラフィックス",note:"30〜60秒目安",kubun:"初期",unit:"本",price:150000},
+  {id:"b7",cat:"B",name:"字幕・テロップ",note:"日本語",kubun:"初期",unit:"本",price:20000},
+  {id:"b8",cat:"B",name:"多言語化（翻訳字幕）",note:"英・中ほか",kubun:"初期",unit:"言語",price:30000},
+  {id:"c1",cat:"C",name:"インタラクティブ設計",note:"視聴フロー・分岐シナリオ設計",kubun:"初期",unit:"本",price:100000},
+  {id:"c2",cat:"C",name:"実装ライト",note:"ボタン・ポーズ画面など 〜10インタラクション",kubun:"初期",unit:"本",price:80000},
+  {id:"c3",cat:"C",name:"実装スタンダード",note:"分岐・クイズ含む 〜30インタラクション",kubun:"初期",unit:"本",price:150000},
+  {id:"c4",cat:"C",name:"実装フル",note:"フォーム・外部連携・スコアリング",kubun:"初期",unit:"本",price:300000},
+  {id:"c5",cat:"C",name:"パーソナライズ動画設定",note:"視聴者リスト連携・個別URL一括発行",kubun:"初期",unit:"案件",price:100000},
+  {id:"c6",cat:"C",name:"既存動画のインタラクティブ化",note:"お手持ちの動画への後付け実装",kubun:"初期",unit:"本",price:60000},
+  {id:"c7",cat:"C",name:"iFrame制作 ライト",note:"単機能の簡単なもの",kubun:"初期",unit:"本",price:30000},
+  {id:"c8",cat:"C",name:"iFrame制作 ミドル",note:"シミュレータ・簡単なゲーム・フォームなど（内容により〜¥300,000）",kubun:"初期",unit:"本",price:100000},
+  {id:"c9",cat:"C",name:"iFrame制作 カスタム",note:"複雑なシミュレータなど／価格は応相談",kubun:"初期",unit:"本",price:0,ask:true},
+  {id:"c10",cat:"C",name:"iFrameホスティング",note:"制作物のホスティング／価格は応相談",kubun:"月額",unit:"月",price:0,ask:true},
+  {id:"c11",cat:"C",name:"iFrameライブラリ使用料",note:"既製iFrameライブラリの利用",kubun:"月額",unit:"月",price:30000},
+  {id:"e1",cat:"D",name:"サポートプラン",note:"月2時間までのサポート／使い方・追加トレーニング・定例相談（伴走アドバイザリー）／ナレッジページ利用料込み",kubun:"月額",unit:"月",price:40000},
+  {id:"e2",cat:"D",name:"スポットセッション",note:"2時間のオンラインセッション",kubun:"初期",unit:"回",price:50000},
+  {id:"e3",cat:"D",name:"統計サポート プランS（サマリーのみ）",note:"要約レポートのみ／1〜3ヶ月に1回・ライト価格",kubun:"初期",unit:"回",price:0,ask:true},
+  {id:"e4",cat:"D",name:"統計サポート プランA（簡易）",note:"要約レポート＋簡易改善提案／1〜3ヶ月に1回",kubun:"初期",unit:"回",price:0,ask:true},
+  {id:"e5",cat:"D",name:"統計サポート プランB（標準・おすすめ）",note:"要約レポート＋詳細改善提案／3ヶ月に1回。毎月実施は¥400,000/月（3ヶ月分一括前払い・20%割引適用時）",kubun:"初期",unit:"回",price:500000},
+  {id:"e6",cat:"D",name:"統計サポート プランC（カスタム）",note:"精緻な戦略レポート＋高度分析・API連携",kubun:"初期",unit:"回",price:0,ask:true},
+  {id:"e8",cat:"D",name:"統計サポート 面談オプション",note:"データアナリストとの面談（2時間以内・月1回目安）",kubun:"初期",unit:"回",price:40000},
+  {id:"e7",cat:"D",name:"運用・マーケ実務代行",note:"公開・更新運用、LP・メール連携、A/Bテスト等（仮単価・範囲により応相談）",kubun:"月額",unit:"月",price:150000},
+  {id:"f1",cat:"E",name:"インタラクティブ制作費（標準）",note:"制作おまかせ／動画URLまたはiFrame埋め込みコード納品",kubun:"初期",unit:"本",price:700000},
+  {id:"f2",cat:"E",name:"プラットフォーム利用料",note:"年額・閲覧回数20,000回/年まで（更新も同額）",kubun:"初期",unit:"年",price:120000},
+  {id:"f3",cat:"E",name:"修正費",note:"納品後の修正・動画差し替え（内容により〜¥240,000）",kubun:"初期",unit:"回",price:80000},
+  {id:"f4",cat:"E",name:"レポート作成",note:"報告書1回ごと（内容により〜¥800,000）",kubun:"初期",unit:"回",price:100000},
+  {id:"f5",cat:"E",name:"レポートアクセス権付与",note:"統計データの閲覧権",kubun:"月額",unit:"月",price:10000},
+  {id:"f6",cat:"E",name:"追加表示回数",note:"20,000回表示ごとに追加",kubun:"初期",unit:"回",price:120000}
+];
+const PRESETS = {
+  small:    {plan:"a1", qty:{c6:2,e1:1}},
+  standard: {plan:"a2", qty:{b1:2,b2:1,b4:2,c1:2,c3:2,e1:1}},
+  full:     {plan:"a3", qty:{b1:1,b3:1,b5:1,c1:1,c4:1,e1:1,e7:1}},
+  clear:    {plan:null, qty:{}}
+};
+const LS_KEY = "spline-global-price-sim-v6";
+
+let state = {plan:null, qty:{}, price:{}, custom:[], tax:10, pay:"annual", surcharge:20, theme:"dark"};
+try{
+  const saved = JSON.parse(localStorage.getItem(LS_KEY));
+  if(saved && typeof saved === "object") state = Object.assign(state, saved);
+}catch(e){/* localStorage不可の環境では毎回初期値で動く */}
+
+function save(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){} }
+const yen = n => "¥" + Math.round(n).toLocaleString("ja-JP");
+const priceOf = it => (state.price[it.id] != null ? state.price[it.id] : it.price);
+const setupApplied = () => state.plan != null && state.plan !== "a0";
+function qtyOf(it){
+  if(it.plan) return state.plan === it.id ? 1 : 0;
+  if(it.auto) return setupApplied() ? 1 : 0;
+  return state.qty[it.id] || 0;
+}
+
+function allRows(){
+  const customs = state.custom.map((c,i)=>({id:"x"+i, cat:"X", name:c.name||"カスタム項目", note:"追加項目", kubun:c.kubun, unit:c.unit||"式", price:c.price||0, _custom:i}));
+  return ITEMS.concat(customs);
+}
+
+function render(){
+  const main = document.getElementById("cats");
+  main.innerHTML = "";
+  for(const cat of CATS){
+    const box = document.createElement("section");
+    box.className = "cat";
+    box.innerHTML = `<h2>${cat.name} <span class="tag ${cat.tag}">${cat.tagLabel}</span><span class="desc">${cat.desc}</span></h2>`;
+    const rows = document.createElement("div");
+    rows.className = "rows";
+    for(const it of ITEMS.filter(i=>i.cat===cat.key)) rows.appendChild(rowEl(it));
+    box.appendChild(rows);
+    main.appendChild(box);
+  }
+  // カスタム項目カード
+  const box = document.createElement("section");
+  box.className = "cat";
+  box.innerHTML = `<h2>＋ カスタム項目 <span class="tag mixed">自由追加</span><span class="desc">メニューにない品目を追加</span></h2>`;
+  const rows = document.createElement("div");
+  rows.className = "rows";
+  state.custom.forEach((c,i)=>rows.appendChild(customRowEl(c,i)));
+  const add = document.createElement("div");
+  add.className = "addrow";
+  add.innerHTML = `<button id="addCustom">＋ 項目を追加する</button>`;
+  rows.appendChild(add);
+  box.appendChild(rows);
+  main.appendChild(box);
+  document.getElementById("addCustom").onclick = ()=>{
+    state.custom.push({name:"", kubun:"初期", unit:"式", price:0, qty:0});
+    save(); render(); calc();
+  };
+  calc();
+}
+
+function rowEl(it){
+  const q = qtyOf(it), p = priceOf(it);
+  const div = document.createElement("div");
+  div.className = "row" + (q===0 ? " off" : "");
+  const priceCell = it.ask
+    ? `<div class="price"><span class="ask-badge">ASK</span><span class="unit-note">応相談</span></div>`
+    : `<div class="price">¥<input type="number" min="0" step="1000" value="${p}" data-price="${it.id}"><span class="unit-note">/${it.unit}</span></div>`;
+  const subText = q===0 ? "—" : (it.ask ? "ASK" : yen(p*q));
+  let ctrl;
+  if(it.plan){
+    ctrl = `<label class="pick"><input type="checkbox" data-plan="${it.id}"${q?" checked":""} aria-label="${it.name} を選択"> 選択</label>`;
+  } else if(it.auto){
+    ctrl = `<span class="auto-note">${q ? "✓ 自動適用中" : "プラン選択で自動適用"}</span>`;
+  } else {
+    ctrl = `<div class="qty">
+      <button type="button" data-dec="${it.id}" aria-label="減らす">−</button>
+      <input type="number" min="0" step="1" value="${q}" data-qty="${it.id}" aria-label="${it.name} 数量">
+      <button type="button" data-inc="${it.id}" aria-label="増やす">＋</button>
+    </div>`;
+  }
+  div.innerHTML = `
+    <div class="nm">${it.name}<small>${it.note}</small></div>
+    ${priceCell}
+    ${ctrl}
+    <div class="sub ${q===0?"zero":""}" data-sub="${it.id}">${subText}</div>`;
+  return div;
+}
+
+function customRowEl(c,i){
+  const div = document.createElement("div");
+  div.className = "row" + ((c.qty||0)===0 ? " off" : "");
+  div.innerHTML = `
+    <div class="nm custom-nm">
+      <input type="text" placeholder="品目名（例: ナレーション収録）" value="${(c.name||"").replace(/"/g,"&quot;")}" data-cname="${i}">
+      <select data-ckubun="${i}">
+        <option value="初期"${c.kubun==="初期"?" selected":""}>初期・スポット</option>
+        <option value="月額"${c.kubun==="月額"?" selected":""}>月額</option>
+      </select>
+    </div>
+    <div class="price">¥<input type="number" min="0" step="1000" value="${c.price||0}" data-cprice="${i}"></div>
+    <div class="qty">
+      <button type="button" data-cdec="${i}">−</button>
+      <input type="number" min="0" step="1" value="${c.qty||0}" data-cqty="${i}">
+      <button type="button" data-cinc="${i}">＋</button>
+    </div>
+    <div class="sub">${(c.qty||0)===0?"—":yen((c.price||0)*(c.qty||0))}</div>`;
+  return div;
+}
+
+function calc(){
+  let initSub = 0, monSubRaw = 0, licenseMon = 0, askCount = 0;
+  for(const it of ITEMS){
+    const q = qtyOf(it);
+    if(it.ask){ if(q > 0) askCount++; continue; }
+    const v = priceOf(it) * q;
+    if(it.kubun === "初期") initSub += v;
+    else { monSubRaw += v; if(it.cat === "A") licenseMon += v; }
+  }
+  for(const c of state.custom){
+    const v = (c.price||0)*(c.qty||0);
+    if(c.kubun === "初期") initSub += v; else monSubRaw += v;
+  }
+  const sur = state.pay === "monthly" ? Math.round(licenseMon * (state.surcharge/100)) : 0;
+  const monSub = monSubRaw + sur;
+  const taxR = state.tax/100;
+  const initTax = Math.round(initSub*taxR), monTax = Math.round(monSub*taxR);
+  const initTotal = initSub + initTax, monTotal = monSub + monTax;
+
+  document.getElementById("initSub").textContent = yen(initSub);
+  document.getElementById("monSub").textContent = yen(monSubRaw);
+  document.getElementById("payLine").hidden = sur === 0;
+  document.getElementById("payAmt").textContent = "＋" + yen(sur);
+  document.getElementById("askLine").hidden = askCount === 0;
+  document.getElementById("taxAmt").textContent = yen(initTax + monTax);
+  document.getElementById("initTotal").textContent = yen(initTotal);
+  document.getElementById("monTotal").textContent = yen(monTotal);
+  document.getElementById("yearTotal").textContent = yen(monTotal*12 + initTotal);
+  return {initSub, monSubRaw, sur, monSub, initTax, monTax, initTotal, monTotal, askCount};
+}
+
+// ---- イベント（委譲）----
+document.getElementById("cats").addEventListener("input", e=>{
+  const t = e.target;
+  if(t.dataset.plan != null){ state.plan = t.checked ? t.dataset.plan : null; save(); render(); return; }
+  if(t.dataset.price != null){ state.price[t.dataset.price] = Math.max(0, +t.value||0); }
+  else if(t.dataset.qty != null){ state.qty[t.dataset.qty] = Math.max(0, Math.floor(+t.value||0)); }
+  else if(t.dataset.cname != null){ state.custom[+t.dataset.cname].name = t.value; }
+  else if(t.dataset.cprice != null){ state.custom[+t.dataset.cprice].price = Math.max(0, +t.value||0); }
+  else if(t.dataset.cqty != null){ state.custom[+t.dataset.cqty].qty = Math.max(0, Math.floor(+t.value||0)); }
+  else if(t.dataset.ckubun != null){ state.custom[+t.dataset.ckubun].kubun = t.value; }
+  save(); softRefresh(t);
+});
+document.getElementById("cats").addEventListener("click", e=>{
+  const t = e.target;
+  let id = t.dataset.inc || t.dataset.dec, ci = t.dataset.cinc ?? t.dataset.cdec;
+  if(id){
+    const d = t.dataset.inc ? 1 : -1;
+    state.qty[id] = Math.max(0, (state.qty[id]||0) + d);
+    save(); render();
+  } else if(ci != null){
+    const d = t.dataset.cinc != null ? 1 : -1;
+    state.custom[+ci].qty = Math.max(0, (state.custom[+ci].qty||0) + d);
+    save(); render();
+  }
+});
+function softRefresh(t){
+  // 入力中はフォーカスを保つため部分更新
+  const id = t.dataset.price || t.dataset.qty;
+  if(id){
+    const it = ITEMS.find(i=>i.id===id);
+    const el = document.querySelector(`[data-sub="${id}"]`);
+    const q = qtyOf(it), p = priceOf(it);
+    if(el){ el.textContent = q===0?"—":(it.ask?"ASK":yen(p*q)); el.classList.toggle("zero", q===0); }
+    const row = el && el.closest(".row"); if(row) row.classList.toggle("off", q===0);
+  } else {
+    // カスタム行は小計セルのみ更新
+    const row = t.closest(".row");
+    if(row){
+      const i = +(t.dataset.cname ?? t.dataset.cprice ?? t.dataset.cqty ?? t.dataset.ckubun);
+      const c = state.custom[i];
+      const sub = row.querySelector(".sub");
+      if(sub && c) sub.textContent = (c.qty||0)===0?"—":yen((c.price||0)*(c.qty||0));
+      row.classList.toggle("off", (c && (c.qty||0)===0));
+    }
+  }
+  calc();
+}
+
+document.querySelectorAll("[data-preset]").forEach(b=>{
+  b.onclick = ()=>{
+    const p = PRESETS[b.dataset.preset];
+    state.plan = p.plan;
+    state.qty = Object.assign({}, p.qty);
+    state.custom.forEach(c=>c.qty=0);
+    save(); render();
+  };
+});
+function syncControls(){
+  document.querySelectorAll('input[name="pay"]').forEach(r=>{ r.checked = (r.value === state.pay); });
+  document.getElementById("surcharge").value = state.surcharge;
+  document.getElementById("tax").value = state.tax;
+}
+document.querySelectorAll('input[name="pay"]').forEach(r=>{
+  r.onchange = e=>{ if(e.target.checked){ state.pay = e.target.value; save(); calc(); } };
+});
+document.getElementById("surcharge").oninput = e=>{ state.surcharge = Math.min(100, Math.max(0, +e.target.value||0)); save(); calc(); };
+document.getElementById("tax").oninput = e=>{ state.tax = Math.min(30, Math.max(0, +e.target.value||0)); save(); calc(); };
+document.getElementById("resetBtn").onclick = ()=>{
+  if(!confirm("単価・数量・カスタム項目をすべて初期値に戻します。よろしいですか？")) return;
+  state = {plan:null, qty:{}, price:{}, custom:[], tax:10, pay:"annual", surcharge:20, theme:state.theme};
+  save(); syncControls(); render();
+};
+document.getElementById("printBtn").onclick = ()=>window.print();
+
+// ---- テーマ切替 ----
+function applyTheme(){
+  const light = state.theme === "light";
+  if(light) document.documentElement.setAttribute("data-theme","light");
+  else document.documentElement.removeAttribute("data-theme");
+  document.getElementById("themeBtn").textContent = light ? "🌙 ダークモード" : "☀️ ライトモード";
+}
+document.getElementById("themeBtn").onclick = ()=>{
+  state.theme = state.theme === "light" ? "dark" : "light";
+  save(); applyTheme();
+};
+applyTheme();
+syncControls();
+
+// ---- 書き出し ----
+function selectedRows(){
+  return allRows().map(it=>{
+    const q = it._custom != null ? (state.custom[it._custom].qty||0) : qtyOf(it);
+    const p = it._custom != null ? (state.custom[it._custom].price||0) : priceOf(it);
+    return {name:it.name, kubun:it.kubun, unit:it.unit, price:p, qty:q, sub:p*q, ask:!!it.ask};
+  }).filter(r=>r.qty>0);
+}
+const payLabel = ()=> state.pay === "monthly"
+  ? `毎月払い（クレジットカード決済・${state.surcharge}%増）`
+  : "年間契約（請求書払い）";
+function buildMd(){
+  const t = calc();
+  const today = new Date().toISOString().slice(0,10);
+  let md = `# スプライングローバル お見積り（概算）\n\n作成日: ${today} ／ hihahoライセンスは正式価格（税別）・B〜Eは仮単価\n\n| 品目 | 区分 | 単価 | 数量 | 小計 |\n|---|---|---:|---:|---:|\n`;
+  for(const r of selectedRows()) md += `| ${r.name} | ${r.kubun} | ${r.ask?"ASK（応相談）":yen(r.price)+"/"+r.unit} | ${r.qty} | ${r.ask?"ASK":yen(r.sub)} |\n`;
+  md += `\n- お支払い方法: ${payLabel()}\n- 初期費用 小計（税抜）: **${yen(t.initSub)}**\n- 月額費用 小計（税抜）: **${yen(t.monSubRaw)}**\n`;
+  if(t.sur>0) md += `- クレジットカード決済増額（ライセンス${state.surcharge}%）: ＋${yen(t.sur)}\n`;
+  md += `- 消費税（${state.tax}%）: ${yen(t.initTax+t.monTax)}\n- **初期費用 合計（税込）: ${yen(t.initTotal)}**\n- **月額費用 合計（税込）: ${yen(t.monTotal)}**\n- 年額換算（月額×12＋初期・税込）: ${yen(t.monTotal*12+t.initTotal)}\n`;
+  if(t.askCount>0) md += `\n※ ASK（応相談）項目を含みます。該当分は上記合計に含まれず、別途お見積りとなります。\n`;
+  return md;
+}
+function buildCsv(){
+  const t = calc();
+  let csv = "品目,区分,単位,単価,数量,小計\n";
+  for(const r of selectedRows()) csv += `"${r.name.replace(/"/g,'""')}",${r.kubun},${r.unit},${r.ask?"ASK":r.price},${r.qty},${r.ask?"ASK":r.sub}\n`;
+  csv += `お支払い方法,,,,,"${payLabel()}"\n初期費用小計(税抜),,,,,${t.initSub}\n月額費用小計(税抜),,,,,${t.monSubRaw}\n`;
+  if(t.sur>0) csv += `クレジットカード決済増額(${state.surcharge}%),,,,,${t.sur}\n`;
+  csv += `消費税(${state.tax}%),,,,,${t.initTax+t.monTax}\n初期費用合計(税込),,,,,${t.initTotal}\n月額費用合計(税込),,,,,${t.monTotal}\n`;
+  return csv;
+}
+function toast(msg){
+  const el = document.getElementById("toast");
+  el.textContent = msg; el.classList.add("show");
+  setTimeout(()=>el.classList.remove("show"), 1800);
+}
+async function copyText(text, label){
+  try{ await navigator.clipboard.writeText(text); toast(label + "をコピーしました"); }
+  catch(e){
+    const ta = document.createElement("textarea");
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    try{ document.execCommand("copy"); toast(label + "をコピーしました"); }
+    catch(e2){ toast("コピーできませんでした"); }
+    ta.remove();
+  }
+}
+document.getElementById("copyMd").onclick = ()=>copyText(buildMd(), "Markdown見積");
+document.getElementById("copyCsv").onclick = ()=>copyText(buildCsv(), "CSV");
+document.getElementById("dlCsv").onclick = ()=>{
+  const blob = new Blob(["﻿"+buildCsv()], {type:"text/csv"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "スプライングローバル_見積.csv";
+  document.body.appendChild(a); a.click(); a.remove();
+  toast("CSVを保存しました（保存できない環境ではコピーをご利用ください）");
+};
+
+render();
+</script>
+</body>
+</html>
