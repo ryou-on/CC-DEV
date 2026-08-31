@@ -15,7 +15,7 @@
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;user-select:none;-webkit-user-select:none}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;overflow:hidden;touch-action:manipulation}
-body{display:flex;flex-direction:column;height:100dvh}
+body{display:flex;flex-direction:column;height:100vh;height:100dvh}
 
 /* ヘッダー（極小・保護者用） */
 header{display:flex;align-items:center;gap:8px;padding:6px 12px;height:40px;flex-shrink:0}
@@ -206,11 +206,22 @@ https://www.youtube.com/playlist?list=PLxxxxxxxx"></textarea>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 <script>
+// 早期エラー捕捉：古い iOS 等でスクリプトが落ちても原因を画面に出す
+window.__errs = [];
+window.addEventListener('error', function (e) {
+  window.__errs.push((e.message || 'error') + ' @' + (e.filename || '').split('/').pop() + ':' + (e.lineno || 0));
+  var t = document.getElementById('phText');
+  if (t && window.__errs.length <= 3) t.textContent = '⚠ エラー: ' + e.message;
+});
+window.addEventListener('unhandledrejection', function (e) {
+  window.__errs.push('promise: ' + (e.reason && e.reason.message || e.reason));
+});
 // =========================================================
 // 設定
 // =========================================================
-const VERSION = 'v0.7.1';
+const VERSION = 'v0.7.2';
 const RELEASE_NOTES = [
+  { ver:'v0.7.2', date:'2026-08-22', changes:['iOS 16 など少し前の iPhone / iPad Safari 向けの互換性強化（画面高さのフォールバック・コピーの代替手段・エラー時に原因を画面表示）','全画面にできない iPhone では ⛶ ボタンを非表示に'] },
   { ver:'v0.7.1', date:'2026-08-22', changes:['連打しても動画が次々切り替わらないように（切り替えは1秒に1回まで。キー・タップ・スワイプ共通）','5秒未満しか見なかった再生は視聴記録に残さないように'] },
   { ver:'v0.7.0', date:'2026-08-22', changes:['コードなしの素のURLは「登録用ページ」に。セットは保存時に発行される専用URL（?code=…）で開く方式へ','登録ページに「▶ 前回のセットをひらく」ボタンを追加（この端末で最後に使ったセット）'] },
   { ver:'v0.6.3', date:'2026-08-22', changes:['初回保存で共有コードが画面に表示されない問題を修正'] },
@@ -379,6 +390,7 @@ function ensureYtApi() {
 // =========================================================
 async function init() {
   document.getElementById('verLabel').textContent = VERSION;
+  if (!document.documentElement.requestFullscreen && !document.documentElement.webkitRequestFullscreen) { const b = document.querySelector('header button[title="全画面"]'); if (b) b.style.display = 'none'; }
   document.getElementById('autoFsChk').checked = localStorage.getItem('tomoe_autofs') !== 'off';
   renderKbdMap();
   firebase.initializeApp(FIREBASE_CONFIG);
@@ -871,7 +883,18 @@ async function loadByCode() {
   localStorage.setItem('tomoe_list_id', v);
   location.href = location.pathname + '?code=' + encodeURIComponent(v);
 }
-function copyText(t, m) { navigator.clipboard.writeText(t).then(() => flash('📋', m)); }
+function copyText(t, m) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(t).then(() => flash('📋', m)).catch(() => copyTextFallback(t, m));
+  } else copyTextFallback(t, m);
+}
+function copyTextFallback(t, m) {
+  const ta = document.createElement('textarea');
+  ta.value = t; ta.style.cssText = 'position:fixed;opacity:0';
+  document.body.appendChild(ta); ta.focus(); ta.select();
+  try { document.execCommand('copy'); flash('📋', m); } catch (e) { prompt('コピーしてください', t); }
+  ta.remove();
+}
 async function shareNative() {
   const data = { title: (playerName || APP_NAME_DEFAULT), text: '共有コード: ' + listId, url: shareUrl() };
   if (navigator.share) { try { await navigator.share(data); } catch (e) {} }
@@ -881,7 +904,7 @@ function renderVList() {
   document.getElementById('vlist').innerHTML = videos.map((v, i) =>
     `<div><span style="color:#9ca3af;width:18px">${i + 1}</span><img src="${thumbSrc(v.id)}" alt=""><span>${esc(v.title || v.id)}</span></div>`).join('');
 }
-function copyConsole() { navigator.clipboard.writeText(clog.join('\n') || '（ログなし）').then(() => flash('📋', 'コピーしました')); }
+function copyConsole() { copyText((window.__errs || []).concat(clog).join('\n') || '（ログなし）', 'コピーしました'); }
 
 // =========================================================
 // UI 補助

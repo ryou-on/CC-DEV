@@ -141,7 +141,7 @@ td .t{display:inline-block;max-width:360px;overflow:hidden;text-overflow:ellipsi
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 <script>
-const VERSION = 'v0.5.1';
+const VERSION = 'v0.7.2';
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDPlsAhtxbJBihy-EAHck9P7XbuMdzV0ds",
   authDomain: "cc-dev-ps7.firebaseapp.com",
@@ -154,6 +154,8 @@ const DOW = ['日','月','火','水','木','金','土'];
 const REASON = { next:'つぎ', prev:'まえ', pick:'候補', ended:'完走→次へ', error:'エラー', unload:'閉じた', idle:'放置停止', abort:'中断', resume:'再開', setup:'準備', auto:'自動', unknown:'—', '':'再生中' };
 const DEV = { pc:'PC', tablet:'タブレット', phone:'スマホ' };
 let db, code = '', all = [], range = '30', sortKey = 'sec', sortDir = -1, videosMeta = {};
+window.__errs = [];
+window.addEventListener('error', e => window.__errs.push((e.message||'error') + ':' + (e.lineno||0)));
 const clog = []; const ol = console.log.bind(console);
 console.log = (...a) => { ol(...a); clog.push(a.map(x => typeof x === 'object' ? JSON.stringify(x) : x).join(' ')); };
 const log = m => console.log('[stats] ' + m);
@@ -390,7 +392,11 @@ async function delSession(id) {
   catch (e) { toast('削除できませんでした: ' + e.message); }
 }
 let _rz; window.addEventListener('resize', () => { clearTimeout(_rz); _rz = setTimeout(() => { if (all.length) render(); }, 200); });
-function copyConsole() { navigator.clipboard.writeText(clog.join('\n') || '（ログなし）').then(() => toast('ログをコピーしました')); }
+function copyConsole() {
+  const t = (window.__errs || []).concat(clog).join('\n') || '（ログなし）';
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(() => toast('ログをコピーしました')).catch(() => prompt('コピーしてください', t));
+  else prompt('コピーしてください', t);
+}
 
 load();
 </script>
