@@ -163,7 +163,7 @@ main{margin-left:var(--sw);margin-top:var(--hh);padding:24px;}
 <body>
 
 <header>
-<div class="logo"><div class="logo-bar"></div><span onclick="showHowTo()" title="使い方" style="cursor:pointer;border-bottom:1px dotted #9ca3af">hihaho Admin</span><span class="logo-badge">ADMIN</span><span class="ver-badge rn-trigger" onclick="showReleaseNotes()" title="リリースノート">v1.5.3</span></div>
+<div class="logo"><div class="logo-bar"></div><span onclick="showHowTo()" title="使い方" style="cursor:pointer;border-bottom:1px dotted #9ca3af">hihaho Admin</span><span class="logo-badge">ADMIN</span><span class="ver-badge rn-trigger" onclick="showReleaseNotes()" title="リリースノート">v1.5.4</span></div>
 <div style="margin-left:auto">
 <button class="btn bs bsm" onclick="copyConsole()">📋 console</button>
 </div>
@@ -476,7 +476,7 @@ switchThumbMode, onThumbGlobalSearch,
 renderOrderCard, renderDefaultVideoSelect, onDragStart, onDragOver, onDragLeave, onDrop, onDragEnd, removeFromOrder,
 toggleOrderCheck, bulkRemoveFromOrder, clearOrderCheck, loadAllFolderVideos,
 toggleCtaContact, toggleCtaMeeting, setCtaType,
-loadAllPlaylists, addVideoToPlaylist,
+loadAllPlaylists, addVideoToPlaylist, removeVideoFromPlaylist,
 loadAnalytics, switchAnTab, filterAnVideo,
 loadAllSelVideos, loadAllThumbVideosForSearch,
 copyConsole:()=>navigator.clipboard.writeText(clog.join('\n')||'（ログなし）').then(()=>toast('コピーしました','suc'))
@@ -668,6 +668,8 @@ loadTabVideos(tabF);
 function switchVSelMode(m){
 vSelMode=m;
 const isGlobal=(m==='global');
+// フォルダモードの検索欄の残留値が全動画検索の結果を隠さないようにクリア
+if(isGlobal){const vs=document.getElementById('videoSearch');if(vs)vs.value='';}
 document.getElementById('vSelModeFolder').style.cssText='padding:5px 14px;border-radius:6px;font-size:12px;font-weight:600;border:1px solid '+(isGlobal?'#d1d5db;background:#f3f4f6;color:#374151':'#1565c0;background:#1565c0;color:#fff')+';cursor:pointer';
 document.getElementById('vSelModeGlobal').style.cssText='padding:5px 14px;border-radius:6px;font-size:12px;font-weight:600;border:1px solid '+(isGlobal?'#1565c0;background:#1565c0;color:#fff':'#d1d5db;background:#f3f4f6;color:#374151')+';cursor:pointer';
 document.getElementById('vGlobalPanel').style.display=isGlobal?'block':'none';
@@ -1017,6 +1019,10 @@ catch(e){toast('削除エラー: '+e.message,'err');}
 
 // 動画名検索フィルター
 function filterVideoSearch(){
+  // 全動画検索モードでは #videoSearch（フォルダモード用の検索欄）は使わない。
+  // ここで適用すると、フォルダモードで残った検索文字列が原因で
+  // 全動画検索の結果行が誤って非表示になってしまう。
+  if(vSelMode==='global') return;
   const q=(document.getElementById('videoSearch')?.value||'').toLowerCase().trim();
   document.querySelectorAll('#videoList .vi').forEach(el=>{
     const name=(el.querySelector('.vn')?.textContent||'').toLowerCase();
@@ -1391,6 +1397,10 @@ value="${esc(cur)}" oninput="previewThumb('${v.uuid}')">
 </label>
 <span id="uprog-${v.uuid}" class="uprog">アップロード中...</span>
 </div>
+<!-- 登録済みプレイリスト -->
+<div style="margin-top:8px" id="pin-${v.uuid}">
+${renderVideoPlaylistBadges(v.id,v.uuid)}
+</div>
 <!-- プレイリストに追加 -->
 <div style="margin-top:8px">
 <div style="font-size:11px;font-weight:600;color:var(--text-sub);margin-bottom:4px">📋 プレイリストに追加</div>
@@ -1438,6 +1448,8 @@ async function loadAllPlaylists(){
 const sn=await getDocs(collection(db,'playlists'));
 allPlaylists=[];sn.forEach(d=>{const d2=d.data();if(d2.type!=='folder')allPlaylists.push({id:d.id,...d2});});
 allPlaylists.sort((a,b)=>a.name?.localeCompare(b.name,'ja')||0);
+// 読み込み前に描画済みだった登録済みプレイリストバッジを更新
+if(thumbGlobalMode) renderThumbGlobalList(); else if(thumbVideos.length) renderThumbList();
 }
 async function addVideoToPlaylist(videoId,playlistId){
 if(!playlistId){toast('プレイリストを選択してください','err');return;}
@@ -1447,9 +1459,46 @@ const snap=await getDoc(ref);
 if(!snap.exists()){toast('プレイリストが見つかりません','err');return;}
 const ids=snap.data().videoIds||[];
 if(ids.includes(videoId)){toast('すでに追加されています','err');return;}
-await updateDoc(ref,{videoIds:[...ids,videoId]});
+const newIds=[...ids,videoId];
+await updateDoc(ref,{videoIds:newIds});
+const local=allPlaylists.find(p=>p.id===playlistId);
+if(local) local.videoIds=newIds;
 toast('プレイリストに追加しました ✓','suc');
+refreshVideoPlaylistBadges(videoId);
 }catch(e){toast('追加エラー: '+e.message,'err');}
+}
+
+// 動画が登録済みのプレイリストをバッジ表示（クリックで削除）
+function renderVideoPlaylistBadges(videoId,uuid){
+const pls=allPlaylists.filter(p=>(p.videoIds||[]).includes(videoId));
+if(!pls.length){
+return '<div style="font-size:11px;color:var(--text-muted)">📌 登録済みプレイリスト: なし</div>';
+}
+return '<div style="font-size:11px;font-weight:600;color:var(--text-sub);margin-bottom:4px">📌 登録済みプレイリスト</div>'
++'<div style="display:flex;flex-wrap:wrap;gap:5px">'
++pls.map(p=>`<span style="display:inline-flex;align-items:center;gap:5px;background:#eef2ff;color:#3730a3;border:1px solid #c7d2fe;border-radius:12px;padding:2px 6px 2px 10px;font-size:11px">${esc(p.name)}<span onclick="removeVideoFromPlaylist(${videoId},'${p.id}')" title="このプレイリストから削除" style="cursor:pointer;color:#6366f1;font-weight:700;line-height:1">×</span></span>`).join('')
++'</div>';
+}
+
+function refreshVideoPlaylistBadges(videoId){
+const uuid=videoMap[videoId]?.uuid;
+if(!uuid) return;
+const el=document.getElementById('pin-'+uuid);
+if(el) el.innerHTML=renderVideoPlaylistBadges(videoId,uuid);
+}
+
+async function removeVideoFromPlaylist(videoId,playlistId){
+try{
+const ref=doc(db,'playlists',playlistId);
+const snap=await getDoc(ref);
+if(!snap.exists()) return;
+const ids=(snap.data().videoIds||[]).filter(id=>id!==videoId);
+await updateDoc(ref,{videoIds:ids});
+const local=allPlaylists.find(p=>p.id===playlistId);
+if(local) local.videoIds=ids;
+toast('プレイリストから削除しました','suc');
+refreshVideoPlaylistBadges(videoId);
+}catch(e){toast('削除エラー: '+e.message,'err');}
 }
 async function saveDesc(uuid){
 const desc=document.getElementById('tdesc-'+uuid)?.value.trim()||'';
@@ -1532,6 +1581,10 @@ if (btn) btn.textContent = _adminLang === 'ja' ? 'EN' : '日本語';
 
 // ── リリースノートデータ ──
 const RELEASE_NOTES = [
+{ ver:'v1.5.4', date:'2026-08-26', type:'admin',
+ja:['サムネイル設定の各動画に、登録済みのプレイリストをバッジ表示（クリックでそのプレイリストから削除も可能）','全動画検索で件数は出るのに動画が表示されない問題を修正（フォルダ検索欄の残り文字列が誤って結果を隠していた）'],
+en:['Thumbnail settings now shows which playlists each video is already in (click a badge to remove it from that playlist)','Fixed global video search showing a match count but no results (leftover text in the folder search box was hiding them)']
+},
 { ver:'v1.5.3', date:'2026-05-20', type:'admin',
 ja:['最新の動画が検索・一覧に表示されない問題を修正（APIが古い順で返すため2ページ目以降にある最新動画が漏れていた）','全動画検索は最新動画のページから先に読み込むように','フォルダ選択時もフォルダ内の全動画を取得するように','起動時にバックグラウンドで全動画リストを取り込み、2回目以降の全動画検索を即時表示に'],
 en:['Fixed newest videos missing from search and lists (API returns oldest-first; videos beyond page 1 were dropped)','Global search now loads the newest pages first','Folder view now fetches all videos in the folder','All videos are preloaded in the background at startup for instant global search']
