@@ -9,8 +9,9 @@
 <meta property="og:description" content="動画配信・インタラクティブ動画・映像制作・アプリ制作の企画制作チーム。" />
 <meta property="og:type" content="website" />
 <meta property="og:url" content="https://ps7.co.jp/" />
-<meta property="og:image" content="https://ps7.co.jp/images/work2.jpg" />
+<meta property="og:image" content="https://ps7.co.jp/images/logo.png" />
 <meta name="twitter:card" content="summary_large_image" />
+<meta name="robots" content="noindex, nofollow" />
 <link rel="canonical" href="https://ps7.co.jp/" />
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='13' fill='%231d1d1f'/%3E%3Ctext x='32' y='42' font-size='30' text-anchor='middle' fill='%230066cc' font-family='sans-serif'%3E7%3C/text%3E%3C/svg%3E" />
 <script type="application/ld+json">
@@ -142,9 +143,59 @@
   .release-ver-tag{font-size:14px;font-weight:600;color:var(--primary);white-space:nowrap;}
   .release-ver-date{font-size:12px;color:var(--ink-48);white-space:nowrap;}
   #modal-body ul{margin:6px 0 0;padding-left:18px;}
+
+  /* ===== gate（入室ゲート・テスト運用） ===== */
+  .gate{position:fixed;inset:0;z-index:100000;background:var(--parchment);display:flex;align-items:center;justify-content:center;padding:20px;}
+  .gate.hidden{display:none;}
+  .gate-card{width:360px;max-width:100%;text-align:center;background:var(--canvas);border-radius:18px;padding:40px 32px 32px;box-shadow:rgba(0,0,0,.22) 3px 5px 30px 0;}
+  .gate-brand{font-family:var(--font-d);font-size:21px;font-weight:600;letter-spacing:.231px;color:var(--ink);margin-bottom:6px;}
+  .gate-note{font-family:var(--font-d);font-size:12px;font-weight:600;letter-spacing:-0.12px;color:var(--primary);text-transform:uppercase;margin-bottom:18px;}
+  .gate-title{font-size:14px;line-height:1.6;color:var(--ink-48);margin:0 0 26px;}
+  .gate-field{display:grid;gap:6px;text-align:left;margin-bottom:14px;}
+  .gate-field label{font-size:12px;color:var(--ink-48);letter-spacing:-0.12px;}
+  .gate-field input{width:100%;padding:12px 14px;border-radius:10px;border:1px solid var(--hairline);background:var(--parchment);color:var(--ink);font-size:16px;letter-spacing:.04em;}
+  .gate-field input:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(0,102,204,.15);}
+  .gate-btn{width:100%;margin-top:8px;}
+  .gate-err{color:#d70015;font-size:12px;margin-top:14px;min-height:16px;}
+  .gate.shake .gate-card{animation:gShake .4s;}
+  @keyframes gShake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
 </style>
 </head>
 <body>
+
+<div class="gate" id="gate">
+  <div class="gate-card">
+    <p class="gate-brand">企画7課</p>
+    <p class="gate-note">Test Site</p>
+    <p class="gate-title">テストサイトです。<br>ID／パスワードを入力してください。</p>
+    <div class="gate-field"><label for="gateId">ID</label><input id="gateId" type="text" inputmode="numeric" autocomplete="off" autocapitalize="off" /></div>
+    <div class="gate-field"><label for="gatePw">パスワード</label><input id="gatePw" type="password" autocomplete="off" /></div>
+    <button class="btn-primary gate-btn" id="gateBtn" type="button">入室する</button>
+    <div class="gate-err" id="gateErr"></div>
+  </div>
+</div>
+<script>
+  (function () {
+    var GATE_HASH = 2088511905;
+    function h(s) { var x = 5381; for (var i = 0; i < s.length; i++) { x = ((x << 5) + x + s.charCodeAt(i)) >>> 0; } return x; }
+    var gate = document.getElementById('gate');
+    try { if (sessionStorage.getItem('ps7auth') === '1') { gate.classList.add('hidden'); return; } } catch (e) {}
+    var idEl = document.getElementById('gateId'), pwEl = document.getElementById('gatePw'), err = document.getElementById('gateErr');
+    function submit() {
+      if (h(idEl.value.trim()) === GATE_HASH && h(pwEl.value) === GATE_HASH) {
+        try { sessionStorage.setItem('ps7auth', '1'); } catch (e) {}
+        gate.classList.add('hidden');
+      } else {
+        err.textContent = 'ID または パスワードが違います';
+        gate.classList.remove('shake'); void gate.offsetWidth; gate.classList.add('shake');
+        pwEl.value = ''; (idEl.value ? pwEl : idEl).focus();
+      }
+    }
+    document.getElementById('gateBtn').addEventListener('click', submit);
+    [idEl, pwEl].forEach(function (el) { el.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); submit(); } }); });
+    setTimeout(function () { idEl.focus(); }, 60);
+  })();
+</script>
 
 <nav class="global-nav">
   <span class="nav-brand" onclick="window.scrollTo({top:0,behavior:'smooth'})">企画7課</span>
@@ -364,7 +415,7 @@
     </div>
     <div class="footer-legal">
       <span>© 2026 株式会社企画7課</span>
-      <span class="ver" onclick="openReleaseNotes()">v1.0.0</span>
+      <span class="ver" onclick="openReleaseNotes()">v1.1.0</span>
     </div>
   </div>
 </footer>
@@ -378,6 +429,7 @@
 
 <script>
   var RELEASE_NOTES = [
+    { ver: 'v1.1.0', date: '2026-09-03', changes: ['入室ID／パスワードによる限定公開に変更', '検索エンジンにインデックスされないよう設定'] },
     { ver: 'v1.0.0', date: '2026-09-03', changes: ['ps7.co.jp で本番公開しました', 'OGP画像・構造化データなど公開に向けた調整'] },
     { ver: 'v0.1.0', date: '2026-07-10', changes: ['Apple風デザインの新規デザイン案を公開', '既存の放送スタジオ風サイトとは別ページとして提供'] }
   ];
