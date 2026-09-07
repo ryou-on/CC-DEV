@@ -3,6 +3,14 @@
 // ページフェードイン
 document.body.classList.add('ready');
 
+// ローディング（設置ページのみ）
+const loader = document.getElementById('loader');
+if (loader) {
+  window.addEventListener('load', () => {
+    setTimeout(() => loader.classList.add('done'), 900);
+  });
+}
+
 // ヘッダー（スクロール状態）+ ヒーローパララックス
 const hd = document.getElementById('hd');
 const heroBg = document.getElementById('heroBg');
