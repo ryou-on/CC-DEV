@@ -81,7 +81,7 @@ function collect(dirs) {
 }
 
 // --- 1. 公開JSON ---
-const pub = collect(['support', 'service']).filter(a => a.audience === 'public');
+const pub = collect(['support', 'service', 'releases']).filter(a => a.audience === 'public');
 const pubOut = {
   generated: new Date().toISOString(),
   count: pub.length,
@@ -109,7 +109,7 @@ if (process.argv.includes('--vault')) {
     console.error('❌ Vaultが見つかりません:', VAULT);
     process.exit(1);
   }
-  const all = [...collect(['support', 'service']), ...internal];
+  const all = [...collect(['support', 'service', 'releases']), ...internal];
   let copied = 0;
   for (const a of all) {
     const rel = path.relative(ROOT, a._file); // support/faq/xxx.md
