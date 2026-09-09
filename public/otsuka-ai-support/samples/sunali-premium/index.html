@@ -320,6 +320,46 @@
   .rv { opacity: 0; transform: translateY(34px); transition: opacity 1.1s cubic-bezier(.2,.6,.2,1), transform 1.1s cubic-bezier(.2,.6,.2,1); }
   .rv.in { opacity: 1; transform: none; }
   .rv-d1 { transition-delay: .12s; } .rv-d2 { transition-delay: .24s; } .rv-d3 { transition-delay: .36s; }
+
+  /* ===== プレミアム演出：スクロールプログレスバー ===== */
+  #progress {
+    position: fixed; top: 0; left: 0; height: 2px; width: 0; z-index: 150;
+    background: linear-gradient(90deg, var(--kin), var(--shu));
+    box-shadow: 0 0 8px rgba(211,161,74,.6);
+  }
+
+  /* ===== プレミアム演出：金グラデーションタイトル ===== */
+  .hero-title { text-shadow: none; }
+  .hero-title .ch {
+    background: linear-gradient(120deg, var(--kinari) 20%, var(--kin) 45%, #f0d9a8 60%, var(--kinari) 80%);
+    background-size: 220% 100%;
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    animation: ch-in .9s cubic-bezier(.2,.6,.2,1) forwards, gold-slide 7s ease-in-out 2s infinite;
+  }
+  @keyframes gold-slide { 0%, 100% { background-position: 0% 0; } 50% { background-position: 100% 0; } }
+
+  /* ===== プレミアム演出：巨大装飾ナンバー ===== */
+  .sec-head { position: relative; }
+  .sec-head .sec-num {
+    position: absolute; left: -8px; top: 50%; transform: translateY(-56%); z-index: 0;
+    font-size: clamp(64px, 9vw, 110px); letter-spacing: 0; font-style: italic;
+    color: transparent; -webkit-text-stroke: 1px rgba(211,161,74,.24); pointer-events: none;
+  }
+  .sec-head .sec-title, .sec-head .sec-title-en { position: relative; z-index: 1; }
+
+  /* ===== プレミアム演出：カスタムカーソル（デスクトップのみ） ===== */
+  .cursor-dot, .cursor-ring {
+    position: fixed; top: 0; left: 0; z-index: 300; pointer-events: none;
+    border-radius: 50%; transform: translate(-50%, -50%); display: none;
+  }
+  @media (pointer: fine) {
+    .cursor-dot { display: block; width: 6px; height: 6px; background: var(--kin); }
+    .cursor-ring {
+      display: block; width: 34px; height: 34px; border: 1px solid rgba(211,161,74,.55);
+      transition: width .25s ease, height .25s ease, border-color .25s ease;
+    }
+    .cursor-ring.hov { width: 54px; height: 54px; border-color: rgba(179,64,28,.8); }
+  }
 </style>
 </head>
 <body>
@@ -332,6 +372,10 @@
 </div>
 
 <div class="grade-chip">つるしサンプル：プレミアム（¥300,000・多言語/予約/お知らせ機能つき）</div>
+
+<div id="progress"></div>
+<div class="cursor-dot" id="cDot"></div>
+<div class="cursor-ring" id="cRing"></div>
 
 <header id="hd">
   <a class="h-logo" href="#">ベンガルビストロ スナリ<small>BENGALI BISTRO SUNALI</small></a>
@@ -751,12 +795,35 @@
   const hd = document.getElementById('hd');
   const fixedBar = document.getElementById('fixedBar');
   const heroBg = document.getElementById('heroBg');
+  const progress = document.getElementById('progress');
   addEventListener('scroll', () => {
     const y = scrollY;
     hd.classList.toggle('scrolled', y > 60);
     fixedBar.classList.toggle('show', y > innerHeight * .9);
     if (y < innerHeight) heroBg.style.transform = `translateY(${y * .18}px) scale(${1 + y * .0001})`;
+    const max = document.documentElement.scrollHeight - innerHeight;
+    progress.style.width = (max > 0 ? y / max * 100 : 0) + '%';
   }, { passive: true });
+
+  // ===== カスタムカーソル（デスクトップのみ） =====
+  if (matchMedia('(pointer: fine)').matches) {
+    const cDot = document.getElementById('cDot');
+    const cRing = document.getElementById('cRing');
+    let mx = -100, my = -100, rx = -100, ry = -100;
+    addEventListener('mousemove', e => {
+      mx = e.clientX; my = e.clientY;
+      cDot.style.left = mx + 'px'; cDot.style.top = my + 'px';
+    }, { passive: true });
+    (function follow() {
+      rx += (mx - rx) * .16; ry += (my - ry) * .16;
+      cRing.style.left = rx + 'px'; cRing.style.top = ry + 'px';
+      requestAnimationFrame(follow);
+    })();
+    document.querySelectorAll('a, button').forEach(el => {
+      el.addEventListener('mouseenter', () => cRing.classList.add('hov'));
+      el.addEventListener('mouseleave', () => cRing.classList.remove('hov'));
+    });
+  }
 
   // ===== スクロールリビール =====
   const io = new IntersectionObserver(entries => {
