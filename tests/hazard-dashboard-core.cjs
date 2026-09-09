@@ -1,0 +1,31 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const assert = require('node:assert/strict');
+const html = fs.readFileSync(path.join(__dirname, '../public/hazard-dashboard/index.html'), 'utf8');
+const scripts = [...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map(m => m[1]);
+scripts.forEach(s => new vm.Script(s));
+const context = { module: { exports: {} } };
+vm.runInNewContext(scripts[0], context);
+const g = context.module.exports;
+assert.equal(g.decodeElevation(0, 0, 100), 1);
+assert.equal(g.decodeElevation(255, 255, 156), -1);
+assert(Number.isNaN(g.decodeElevation(128, 0, 0)));
+assert.equal(g.parseCoordinate('91,139'), null);
+const p = g.toPixel(35.6975, 139.8266, 14);
+const back = g.fromPixel(p.x, p.y, 14);
+assert(Math.abs(back.lat - 35.6975) < 1e-9);
+assert(Math.abs(back.lng - 139.8266) < 1e-9);
+const params = { mode: 'rain', rain: 80, duration: 3, runoff: .8, drain: 10 };
+const flat = { cells: [0, 0, 0, 0], cellArea: 100, anchorElevation: 0 };
+assert(Math.abs(g.computeScenario(flat, params).pointDepth - .162) < 1e-9);
+assert.equal(g.computeScenario(flat, {...params, drain: 100}).volume, 0);
+assert.equal(g.computeScenario({...flat, cells: [NaN]}, params), null);
+assert.equal(g.computeScenario(flat, {...params, mode: 'level', depth: -1}).volume, 0);
+for (let i = 1; i <= 500; i++) {
+  const cells = Array.from({length: 64}, (_, j) => 15 * Math.sin(i * .37 + j * .83) - 5);
+  const grid = {cells, cellArea: 25, anchorElevation: cells[0]};
+  const result = g.computeScenario(grid, {...params, rain: i % 201, duration: (i % 24) + .5}, (i % 100) / 100);
+  assert(Math.abs(result.volume - result.massBalanceVolume) < 1e-6);
+}
+console.log('PASS: script syntax, elevation decoding, coordinates, missing-data stop, flat terrain, drainage, negative water level, 500 mass-balance scenarios');
