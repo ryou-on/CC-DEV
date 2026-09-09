@@ -1,3 +1,13 @@
+## v0.2.0 — 豊島区・新宿区の自治体情報
+
+- 自治体を選ぶと周辺へ移動し、東京都の公開浸水深を重ね表示。
+- 区の公式PDF・発行年月・解説・原典リンクを掲載。
+- 神田川（2018年）、石神井川・白子川（2019年）、隅田川・新河岸川（2021年）の浸水予想データから両区周辺671,701地点を抽出。
+- データは外水＋内水の参考図。最新の法定区域図や現在の浸水状況を示すものではありません。
+- 約10m間隔のデータ地点を再描画し、地点カードには8m以内の最寄りデータ地点の値と距離・流域・作成年を表示。未収録と0mを区別。
+- 自治体と表示モードを共有URLに保存。JSONにも出典を記録。3D計算への流用なし。
+- 試験データは矩形範囲の抽出で、近隣区の一部を含みます。区境・避難所マーカーは未収録。
+
 
 ## v0.1.1 — 地図最大化
 
@@ -9,7 +19,7 @@
 
 # MIZUMIRU — ハザードダッシュボード
 
-**Phase 1 / v0.1.1 α / 2026-09-08**
+**Phase 1 / v0.2.0 α / 2026-09-09**
 
 全国の公的ハザード情報の閲覧と、選択地点の地形を使った学習用3D参考モデルを、一つの画面にまとめたWebアプリです。国・自治体の公式アプリではありません。
 
@@ -18,7 +28,7 @@
 
 ## 起動する
 
-`public/hazard-dashboard/index.html` がアプリ本体です。HTML・CSS・JavaScriptを一つにまとめています。npmビルド、APIキー、CDNのJavaScriptは不要です。地図・検索・標高・建物の取得にはインターネット接続が必要です。
+`public/hazard-dashboard/index.html` がアプリ本体です。自治体表示用の `municipal.js` と `data/` も同じディレクトリに配置してください。npmビルド、APIキー、CDNのJavaScriptは不要です。地図・検索・標高・建物の取得にはインターネット接続が必要です。
 
 CC-DEVリポジトリのルートで、Pythonがある場合：
 
@@ -118,7 +128,9 @@ OSM建物は単純な閉じたwayを最大650棟まで表示します。全建�
 CC-DEV/
 └── public/
     └── hazard-dashboard/
-        └── index.html
+        ├── index.html
+        ├── municipal.js
+        └── data/
 ```
 
 既存のGitHub Actionsはmainへのpushを契機に、Firebase Hostingのmainターゲットへ公開します。
@@ -127,12 +139,12 @@ GitHub Actions： https://github.com/ryou-on/CC-DEV/actions
 
 本番URL（公開後）： https://cc-dev-ps7.web.app/hazard-dashboard/
 
-単一HTMLなので、アプリ自身のビルドやFirebase Functionsの追加は不要です。Firebase Hostingで使うAPIキーもアプリ内には必要ありません。
+静的ファイルとして配信するため、アプリ自身のビルドやFirebase Functionsの追加は不要です。Firebase Hostingで使うAPIキーもアプリ内には必要ありません。
 
 ## 検証
 
 元の配布ZIPにはテストスクリプトとTEST_REPORT.mdが含まれていません。旧READMEに記載された合格件数は、このリポジトリでの実行結果として扱いません。
-`node tests/hazard-dashboard-core.cjs` で基本計算の検証を実行できます。今回の公開時の検証結果は同じディレクトリのTEST_REPORT.mdを参照してください。
+`node tests/hazard-dashboard-core.cjs` で基本計算、`node tests/municipal-hazard.cjs` で数値データ・地点照会・凡例の検証を実行できます。今回の公開時の検証結果は同じディレクトリのTEST_REPORT.mdを参照してください。
 
 ## 今後の開発範囲（未実装）
 

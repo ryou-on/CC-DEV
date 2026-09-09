@@ -26,6 +26,9 @@
 .maximize-btn{white-space:nowrap}
 .app.map-maximized .maximize-btn{background:var(--ink);color:#fff;border-color:var(--ink)}
 @media(max-width:720px){.maximize-btn span{display:none}.maximize-btn{width:42px;padding:8px}.app.map-maximized .content{padding:6px}.app.map-maximized .toolbar{gap:6px}.app.map-maximized .locate-btn span{display:none}}
+
+.municipal-panel{border:1px solid #cce3dc;border-radius:12px;padding:12px 15px;background:#f4fbf8;flex-shrink:0}.municipal-row{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.municipal-row label{font-weight:750;font-size:12px}.municipal-row select{padding:8px 28px 8px 10px;border:1px solid #b8d7ca;border-radius:7px;background:#fff;max-width:100%}.municipal-row .btn{font-size:10px;padding:7px 10px}.municipal-meta{font-size:10px;color:#526f65;line-height:1.6;margin:8px 0 0}.municipal-summary{font-size:10px;color:#6f6451;line-height:1.6;margin:5px 0 0}.municipal-key{display:grid;grid-template-columns:1fr 1fr;gap:4px 10px;font-size:9px}.municipal-key span{display:flex;align-items:center;gap:5px}.municipal-key i{width:16px;height:10px;display:inline-block;border:1px solid #0002}.municipal-reference{font-size:10px;line-height:1.6}.map-maximized .municipal-panel{padding:7px 11px}.map-maximized .municipal-summary{display:none}.map-maximized .municipal-meta{margin-top:3px;font-size:9px}.municipal-current{color:var(--teal);font-weight:700}.municipal-data-table{width:100%;border-collapse:collapse;font-size:11px}.municipal-data-table th,.municipal-data-table td{padding:7px;border-bottom:1px solid var(--line);text-align:left}
+@media(max-width:700px){.municipal-panel{padding:11px}.municipal-row{gap:7px}.municipal-row label{font-size:11px}.municipal-meta,.municipal-summary{font-size:10px}.map-maximized .municipal-panel .municipal-row label{display:none}.map-maximized .municipal-row .btn{padding:5px}.map-maximized .municipal-meta{max-height:44px;overflow:auto}}
 </style>
 </head>
 <body>
@@ -73,7 +76,7 @@
   </div>
   <div class="side-bottom">
     <a id="officialSidebar" href="https://disaportal.gsi.go.jp/maps/index.html" target="_blank" rel="noopener noreferrer"><svg><use href="#i-arrow"/></svg>国のハザードマップで確認</a>
-    <div class="version-row"><span>PHASE 1 · v0.1.1 α</span><button id="debugButton" title="座標を除いたデバッグログをコピー">コンソールをコピー</button></div>
+    <div class="version-row"><span>PHASE 1 · v0.2.0 α</span><button id="debugButton" title="座標を除いたデバッグログをコピー">コンソールをコピー</button></div>
   </div>
 </aside>
 <main class="main">
@@ -89,6 +92,11 @@
       <div class="view-tabs" role="group" aria-label="表示モード"><button id="mapTab" class="active" aria-pressed="true"><svg><use href="#i-map"/></svg>ハザードマップ</button><button id="threeTab" aria-pressed="false"><svg><use href="#i-cube"/></svg>3D シミュレーション</button></div>
       <button class="btn maximize-btn" id="maximizeMap" aria-pressed="false" title="ダッシュボードを収納して地図を最大化"><svg><use id="maximizeIcon" href="#i-expand"/></svg><span id="maximizeLabel">地図を最大化</span></button>
     </div>
+    <section class="municipal-panel" aria-label="自治体のハザードマップ">
+      <div class="municipal-row"><label for="municipalitySelect">自治体のハザードマップ</label><select id="municipalitySelect"><option value="">試験対象の自治体を選ぶ</option><option value="toshima">豊島区</option><option value="shinjuku">新宿区</option></select><button class="btn" id="municipalToggle" aria-pressed="false" hidden>浸水深を地図に表示</button><a class="btn" id="municipalPdf" target="_blank" rel="noopener noreferrer" hidden>区の公式PDF ↗</a><button class="btn" id="municipalInfo">資料・出典</button></div>
+      <p class="municipal-meta" id="municipalMeta">豊島区・新宿区で試験対応。区を選ぶと周辺へ移動し、東京都の公開浸水深を表示します。</p>
+      <p class="municipal-summary" id="municipalSummary">公式原図の発行年と公開数値データの作成年を分けて確認できます。</p>
+    </section>
     <section class="workspace" id="workspace" aria-label="地図とシミュレーション">
       <div class="map-stage" id="mapStage">
         <canvas id="mapCanvas" tabindex="0" aria-label="全国ハザードマップ。ドラッグで移動、ホイールまたはピンチで拡大縮小、クリックで地点選択。キーボードの矢印で移動、プラスとマイナスで拡大縮小、Enterで中心地点を選択。"></canvas>
@@ -96,8 +104,8 @@
         <div class="selection-pill" id="selectionPill">東京都・亀戸</div>
         <div class="map-status" id="mapStatus" aria-live="polite">地図データを取得しています…</div>
         <div class="map-controls"><div class="zoom-group"><button id="zoomIn" aria-label="地図を拡大">＋</button><button id="zoomOut" aria-label="地図を縮小">−</button></div><button class="icon-btn" id="recenterButton" title="選択地点に戻る"><svg><use href="#i-pin"/></svg></button><button class="icon-btn" id="japanButton" title="日本全体を表示"><svg><use href="#i-map"/></svg></button></div>
-        <div class="map-bottom"><div class="legend-box"><div class="legend-heading"><span>公的データの凡例</span><button id="legendButton">開く ↗</button></div><div id="legendPreview"></div><p class="legend-hint">境界・浸水深は公式原図でも確認。<br>未着色と未整備を区別できない場合があります。</p></div><div class="map-help">地図をクリックして地点を選択<br>「3D」で周囲の地形と仮の水位を比較</div></div>
-        <div class="attribution">出典：<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener noreferrer">地理院タイル</a> · <a href="https://disaportal.gsi.go.jp/hazardmapportal/hazardmap/copyright/opendata.html" target="_blank" rel="noopener noreferrer">ハザードマップポータルサイト</a>（国土交通省・都道府県・市町村等）</div>
+        <div class="map-bottom"><div class="legend-box"><div class="legend-heading"><span id="legendTitle">公的データの凡例</span><button id="legendButton">開く ↗</button></div><div id="legendPreview"></div><p class="legend-hint">境界・浸水深は公式原図でも確認。<br>未着色と未整備を区別できない場合があります。</p></div><div class="map-help">地図をクリックして地点を選択<br>「3D」で周囲の地形と仮の水位を比較</div></div>
+        <div class="attribution">出典：<a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener noreferrer">地理院タイル</a> · <a href="https://disaportal.gsi.go.jp/hazardmapportal/hazardmap/copyright/opendata.html" target="_blank" rel="noopener noreferrer">ハザードマップポータルサイト</a>（国土交通省・都道府県・市町村等）<span id="municipalCredit" hidden> · 浸水深：東京都の公開データ（CC BY）を加工</span></div>
       </div>
       <div class="three-stage" id="threeStage" hidden>
         <canvas id="threeCanvas" tabindex="0" aria-label="実地形の3D参考モデル。ドラッグで回転、ホイールまたはピンチで拡大縮小。キーボードの矢印で回転。"></canvas>
@@ -139,7 +147,7 @@
 <div class="toast" id="toast" role="status" hidden></div>
 <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" hidden><div class="modal-content"><div class="modal-head"><h2 id="modalTitle"></h2><button id="modalClose" aria-label="閉じる">×</button></div><div id="modalBody"></div></div></div>
 <noscript>このアプリにはJavaScriptが必要です。公式ハザードマップは https://disaportal.gsi.go.jp/ で確認できます。</noscript>
-<script>/* MIZUMIRU v0.1.1 / 地理計算・参考モデル。外部依存なし。 */
+<script>/* MIZUMIRU v0.2.0 / 地理計算・参考モデル。外部依存なし。 */
 const GeoModel = (() => {
   'use strict';
   const earthRadius = 6378137;
@@ -223,9 +231,10 @@ const GeoModel = (() => {
 })();
 if (typeof module !== 'undefined') module.exports = GeoModel;
 </script>
+<script src="./municipal.js"></script>
 <script>(() => {
 'use strict';
-const version='0.1.1';
+const version='0.2.0';
 const $=id=>document.getElementById(id);
 const {clamp,toPixel,fromPixel,offsetPoint,decodeElevation,parseCoordinate,computeScenario,clipBelowLevel}=GeoModel;
 const icon=name=>`<svg aria-hidden="true"><use href="#i-${name}"/></svg>`;
@@ -250,7 +259,8 @@ const places=[
  {name:'札幌駅',fullName:'札幌市・札幌駅周辺',lat:43.0687,lng:141.3508},
  {name:'金沢駅',fullName:'金沢市・金沢駅周辺',lat:36.5781,lng:136.6478}
 ];
-const state={point:{...places[0],name:places[0].fullName},layer:'flood',view:'map',base:'pale',opacity:.65,
+const municipal=new MunicipalHazard.Overlay(toPixel);
+const state={municipality:'',municipalOverlay:false,point:{...places[0],name:places[0].fullName},layer:'flood',view:'map',base:'pale',opacity:.65,
  params:{mode:'rain',rain:80,duration:3,runoff:.8,drain:10,depth:1},progress:1,size:800,exaggeration:3,
  terrain:null,result:null,terrainKey:null,playing:false,favorites:[],elevation:null,pointVersion:0,terrainVersion:0,buildingBusy:false};
 const logs=[];
@@ -339,7 +349,7 @@ class SeamlessMap{
  }
  draw(){
   if(!this.width||!this.height)return;const ctx=this.context;ctx.setTransform(this.dpr,0,0,this.dpr,0,0);ctx.clearRect(0,0,this.width,this.height);ctx.fillStyle='#e9eeea';ctx.fillRect(0,0,this.width,this.height);
-  const required=[];this.drawTiles(state.base,false,required);for(const source of getHazardLayer().sources)this.drawTiles(source,true,required);
+  const required=[];this.drawTiles(state.base,false,required);if(state.municipalOverlay)municipal.draw(ctx,this,state.opacity);else for(const source of getHazardLayer().sources)this.drawTiles(source,true,required);
   this.renderStatus(required);
   const point=this.geoToScreen(state.point);const nw=this.geoToScreen(offsetPoint(state.point,-state.size/2,-state.size/2)),se=this.geoToScreen(offsetPoint(state.point,state.size/2,state.size/2));
   if(this.zoom>=12){ctx.save();ctx.strokeStyle='#1b7d7b';ctx.globalAlpha=.7;ctx.lineWidth=1.3;ctx.setLineDash([5,5]);ctx.strokeRect(nw.x,nw.y,se.x-nw.x,se.y-nw.y);ctx.restore();ctx.font='10px -apple-system,sans-serif';ctx.fillStyle='#176964';ctx.fillText(`3D対象 ${state.size} m`,nw.x+4,nw.y-5)}
@@ -367,6 +377,7 @@ class SeamlessMap{
   else if(pending)status.textContent='表示範囲のデータを取得中…';
   else if(baseMissing)status.textContent='背景地図の一部が未取得です。';
   else if(failed)status.textContent='一部タイルは未提供または未取得です。無色＝安全ではありません。';
+  else if(state.municipalOverlay&&municipal.status!=='ready')status.textContent=municipal.status==='error'?'自治体参考データの取得に失敗しました。資料パネルから再取得してください。':'自治体参考データを取得しています…';
   else status.hidden=true;
  }
  drawScale(){
@@ -541,12 +552,65 @@ function updatePlaceDisplay(){
 }
 function officialUrl(){const layer=getHazardLayer().sources[0];return `https://disaportal.gsi.go.jp/maps/index.html?ll=${state.point.lat.toFixed(6)},${state.point.lng.toFixed(6)}&z=15&base=pale&ls=${encodeURIComponent(layer)}&disp=1&vs=c1j0l0u0`}
 function renderLayers(){
- $('layerList').innerHTML=layers.map(item=>`<button class="layer-btn ${state.layer===item.id?'selected':''}" data-layer="${item.id}" aria-pressed="${state.layer===item.id}"><span class="layer-icon">${icon(item.icon)}</span><span><span class="layer-title">${item.name}</span><span class="layer-sub">${item.sub}</span></span><span class="radio" aria-hidden="true"></span></button>`).join('');
+ $('layerList').innerHTML=layers.map(item=>`<button class="layer-btn ${!state.municipalOverlay&&state.layer===item.id?'selected':''}" data-layer="${item.id}" aria-pressed="${!state.municipalOverlay&&state.layer===item.id}"><span class="layer-icon">${icon(item.icon)}</span><span><span class="layer-title">${item.name}</span><span class="layer-sub">${item.sub}</span></span><span class="radio" aria-hidden="true"></span></button>`).join('');
  for(const button of $('layerList').querySelectorAll('button'))button.onclick=()=>setLayer(button.dataset.layer);
+ renderMunicipal();$('legendTitle').textContent=state.municipalOverlay?'参考浸水深の凡例':'公的データの凡例';
+ if(state.municipalOverlay){
+  $('layerTag').textContent='東京都 浸水予想（2018–2021年）';
+  $('legendPreview').innerHTML='<div class="municipal-key">'+MunicipalHazard.scale.map(([, ,color,label])=>`<span><i style="background:${color}"></i>${label}</span>`).join('')+'</div><p class="legend-hint">0.1m未満は無色。未収録も無色。<br>配色は本アプリで再作成。</p>';
+  return;
+ }
  $('layerTag').textContent=getHazardLayer().tag;
- const image=document.createElement('img');image.src=infoRoot+'img/'+getHazardLayer().legend;image.alt=`${getHazardLayer().name}の公式凡例`;image.loading='lazy';image.onerror=()=>{image.remove();const note=document.createElement('p');note.className='legend-hint';note.textContent='凡例画像が未取得です。「開く」から公式ページをご確認ください。';$('legendPreview').replaceChildren(note)};$('legendPreview').replaceChildren(image);
+ const image=document.createElement('img');image.src=infoRoot+'img/'+getHazardLayer().legend;image.alt=`${getHazardLayer().name}の公式凡例`;image.loading='lazy';image.onerror=()=>{if(!$('legendPreview').contains(image))return;image.remove();const note=document.createElement('p');note.className='legend-hint';note.textContent='凡例画像が未取得です。「開く」から公式ページをご確認ください。';$('legendPreview').replaceChildren(note)};$('legendPreview').replaceChildren(image);
 }
-function setLayer(id){if(!layers.some(item=>item.id===id))return;state.layer=id;renderLayers();map.requestDraw();queryPoint();$('officialSidebar').href=officialUrl();if(state.view==='three')toast('公的ハザードを切り替えました。3D参考モデルの数値には影響しません。');logEvent('layer-change',id)}
+function renderMunicipal(){
+ const city=MunicipalHazard.cities[state.municipality];
+ $('municipalitySelect').value=state.municipality;$('municipalToggle').hidden=!city;$('municipalPdf').hidden=!city;$('municipalCredit').hidden=!state.municipalOverlay;
+ $('municipalToggle').setAttribute('aria-pressed',String(state.municipalOverlay));$('municipalToggle').classList.toggle('primary',state.municipalOverlay);
+ $('municipalToggle').textContent=state.municipalOverlay?(municipal.status==='error'?'取得に失敗・再取得':'全国レイヤーに戻す'):'浸水深を地図に表示';
+ if(city){$('municipalPdf').href=city.pdf;$('municipalPdf').textContent=city.name+'公式PDF ↗';
+  $('municipalMeta').textContent=`${city.name}公式原図：${city.edition} · ${state.municipalOverlay?'表示中：東京都の浸水予想（2018–2021年作成）':'表示中：全国配信レイヤー'} · 資料確認：2026年9月9日`;
+  $('municipalSummary').textContent=state.municipalOverlay?'外水＋内水の参考データ。両区周辺を収録（区境での切り抜きなし）。最新の法定区域・避難所は区の公式PDFで確認。':city.description;
+ }else{$('municipalMeta').textContent='豊島区・新宿区で試験対応。区を選ぶと周辺へ移動し、東京都の公開浸水深を表示します。';$('municipalSummary').textContent='公式原図の発行年と公開数値データの作成年を分けて確認できます。'}
+}
+function renderMunicipalDepth(){
+ if(!state.municipalOverlay)return;
+ $('riskLabel').textContent='東京都の参考浸水深';
+ if(municipal.status!=='ready'){$('riskValue').textContent=municipal.status==='error'?'取得できません':'取得中';$('riskNote').textContent='未取得を浸水深0mとは扱いません';return}
+ const samples=municipal.query(state.point);
+ if(!samples.length){$('riskValue').textContent='未収録';$('riskNote').textContent='8m以内に公開データ地点がありません。試験範囲外・欠損を0mとは扱いません';return}
+ const max=Math.max(...samples.map(p=>p.depth));
+ $('riskValue').textContent='約 '+max.toFixed(2)+' m';
+ $('riskNote').textContent=samples.map(p=>`${p.source}（${p.modelDate}）約${p.depth.toFixed(2)}m / データ地点まで${p.distance.toFixed(1)}m`).join('、')+'。選択位置そのものの実測値ではありません'+(samples.length>1?'。見出しは最大値':'');
+}
+async function loadMunicipal(){
+ const pending=municipal.load();renderMunicipal();renderMunicipalDepth();map.requestDraw();
+ try{await pending;logEvent('municipal-ready','公開数値データを取得')}
+ catch(error){logEvent('municipal-error',error.message);if(state.municipalOverlay)toast('公開浸水深を取得できません。再取得するか、区の公式PDFをご確認ください。')}
+ renderMunicipal();if(state.municipalOverlay)renderMunicipalDepth();map.requestDraw();
+}
+function showMunicipalInfo(){
+ const city=MunicipalHazard.cities[state.municipality];
+ openModal('自治体の公式マップと公開浸水深',`
+  ${Object.values(MunicipalHazard.cities).map(c=>`<h3>${c.name} · ${c.edition}</h3><p>${c.description}</p><p><a href="${c.pdf}" target="_blank" rel="noopener noreferrer">公式PDF ↗</a> · <a href="${c.page}" target="_blank" rel="noopener noreferrer">区の解説・最新情報 ↗</a>${c.gis?` · <a href="${c.gis}" target="_blank" rel="noopener noreferrer">区の公式GIS ↗</a>`:''}</p>`).join('')}
+  <h3>地図に表示する数値データ</h3><p>東京都が公開する浸水予想区域図（外水＋内水）のCSVを使い、約10m間隔のデータ地点を再描画しています。総雨量690mm・時間最大雨量153mmを想定した当時の計算結果です。最新の法定ハザード区域や、降雨スライダーに連動する予測ではありません。</p>
+  <table class="municipal-data-table"><tr><th>流域</th><th>原図作成</th></tr><tr><td>神田川</td><td>2018年3月</td></tr><tr><td>石神井川・白子川</td><td>2019年5月</td></tr><tr><td>隅田川・新河岸川</td><td>2021年3月</td></tr></table>
+  <p>試験用に豊島区・新宿区周辺の矩形を抽出しており、近隣区の一部も含みます。区境や法定区域の輪郭を示す図ではありません。凡例の色は本アプリで再作成し、0.1m未満と未収録は着色しません。描画が重なる場合は深い色を前面に表示します。</p>
+  <p>地点カードは8m以内の最寄りデータ地点を流域ごとに照会します。元データの0mと未収録を区別し、複数流域の値が得られる場合は個別値も表示します。建物単位の深さの保証や安全判定には使えません。</p>
+  <p>出典：東京都建設局・東京都下水道局（CC BY）を加工。<a href="https://catalog.data.metro.tokyo.lg.jp/dataset/t000014d0000000029" target="_blank" rel="noopener noreferrer">建設局CSV ↗</a> · <a href="https://catalog.data.metro.tokyo.lg.jp/dataset/t000020d0000000043" target="_blank" rel="noopener noreferrer">下水道局CSV ↗</a></p>
+  <p><a href="https://www.gesui.metro.tokyo.lg.jp/living/amesh/inundation" target="_blank" rel="noopener noreferrer">2026年公表の内水区域図など、東京都の最新資料 ↗</a></p>
+  <p>資料・配信情報の確認日：2026年9月9日。区のPDFは公式サイトで直接開きます。3Dの雨量・水位計算には、この参考浸水深を流用しません。</p>`);
+}
+$('municipalInfo').onclick=showMunicipalInfo;
+$('municipalitySelect').onchange=()=>{
+ state.municipality=$('municipalitySelect').value;const city=MunicipalHazard.cities[state.municipality];state.municipalOverlay=!!city;
+ renderLayers();if(city){setView('map');selectPoint({...city.center,name:city.name+'周辺'});map.flyTo(city.center,13);loadMunicipal()}else{queryPoint();map.requestDraw()}
+};
+$('municipalToggle').onclick=()=>{
+ if(state.municipalOverlay&&municipal.status==='error'){loadMunicipal();return}
+ state.municipalOverlay=!state.municipalOverlay;renderLayers();queryPoint();map.requestDraw();if(state.municipalOverlay)loadMunicipal();
+};
+function setLayer(id){if(!layers.some(item=>item.id===id))return;state.layer=id;state.municipalOverlay=false;renderLayers();map.requestDraw();queryPoint();$('officialSidebar').href=officialUrl();if(state.view==='three')toast('公的ハザードを切り替えました。3D参考モデルの数値には影響しません。');logEvent('layer-change',id)}
 function selectPoint(point,fly=true){
  if(!Number.isFinite(point.lat)||!Number.isFinite(point.lng)||Math.abs(point.lat)>85||Math.abs(point.lng)>180)return;
  state.point={lat:point.lat,lng:point.lng,name:String(point.name||point.fullName||'選択地点').slice(0,100)};state.elevation=null;state.terrainKey=null;state.result=null;state.terrain=null;stopPlayback();updatePlaceDisplay();$('searchResults').hidden=true;toggleSidebar(false);
@@ -561,6 +625,7 @@ async function queryPoint(){
    if(Number.isFinite(height)){state.elevation=height;$('elevationValue').textContent=height.toFixed(1);$('elevationNote').textContent='地盤高の参考値 / 海面からの高さ。建物高ではありません'}
    else{$('elevationValue').textContent='未取得';$('elevationNote').textContent='標高の欠損または通信エラー。0mとは扱いません'}
   }catch(error){if(token!==state.pointVersion)return;$('elevationValue').textContent='未取得';$('elevationNote').textContent='標高の読み取りに失敗しました';logEvent('elevation-error',error.message)}})();
+ if(state.municipalOverlay){renderMunicipalDepth();return}
  try{
   const p=toPixel(point.lat,point.lng,16),x=Math.floor(p.x/256),y=Math.floor(p.y/256);
   const results=await Promise.all(layer.sources.map(async source=>{const entry=await store.get(`hazard/${source}/16/${x}/${y}`,hazardUrl(source,16,x,y),true);return{entry,pixel:store.pixel(entry,p.x-x*256,p.y-y*256)}}));if(token!==state.pointVersion)return;
@@ -706,6 +771,7 @@ $('zoomIn').onclick=()=>map.zoomAt(map.zoom+1);$('zoomOut').onclick=()=>map.zoom
 $('baseSelect').onchange=()=>{state.base=$('baseSelect').value;map.requestDraw()};
 $('opacity').oninput=()=>{state.opacity=Number($('opacity').value)/100;$('opacityValue').textContent=Math.round(state.opacity*100)+'%';map.requestDraw()};
 $('legendButton').onclick=()=>{
+ if(state.municipalOverlay){showMunicipalInfo();return}
  const layer=getHazardLayer();openModal(layer.name+'の公式凡例',`<img src="${infoRoot}img/${layer.legend}" alt="${layer.name}の公式凡例"><p>データ作成者の凡例画像をそのまま表示しています。浸水の色は深さの区分であり、発生確率を示すものではありません。土砂災害の凡例は3種の区域に共通する区分の参考です。</p><p><a href="${infoRoot}opendata.html" target="_blank" rel="noopener noreferrer">配信元で凡例・整備範囲を確認 ↗</a></p>`)
 };
 $('sourceButton').onclick=()=>{
@@ -716,7 +782,7 @@ $('sourceButton').onclick=()=>{
   <div class="source-item"><a href="https://maps.gsi.go.jp/development/demtile.html" target="_blank" rel="noopener noreferrer">標高タイルの詳細仕様 ↗</a><small>PNGの符号付き24ビット値を0.01m単位で復号。格納単位は測定精度ではありません。DEM10B相当、ズーム14の値を使用。</small></div>
   <div class="source-item"><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors / ODbL ↗</a><small>任意操作でOverpass APIから建物輪郭を取得。単純なwayを最大650棟まで表示。高さは全て9mの模式値。実際の高さ・階数・屋根形状・地下空間は再現しません。</small></div>
   <div class="source-item"><a href="https://maps.gsi.go.jp/" target="_blank" rel="noopener noreferrer">地名検索 / 地理院地図 ↗</a><small>外部の地名検索サービスを利用。提供仕様・CORS・稼働状況の変更により利用できない場合があります。</small></div>
-  <h3>欠損と安全判定</h3><p>無色の場所は未整備の場合があります。HTTP 404は、未提供・提供範囲外などの理由をこのアプリだけでは判別できません。エラーを浸水深0mや「安全」に置き換えません。地点カードはタイル画素の着色有無のみを照会し、深さや危険度を自動判定しません。</p>
+  <h3>自治体ハザードマップ</h3><p>豊島区・新宿区の公式PDFへ案内します。追加の浸水深表示は東京都のCC BY公開CSVを両区周辺で抽出・再描画した参考図です。神田川2018年、石神井川・白子川2019年、隅田川・新河岸川2021年の浸水予想を使用し、2024年以降の法定区域図と同一ではありません。取得・確認日：2026年9月9日。</p><p><a href="https://catalog.data.metro.tokyo.lg.jp/dataset/t000014d0000000029" target="_blank" rel="noopener noreferrer">東京都建設局のデータ出典 ↗</a> · <a href="https://catalog.data.metro.tokyo.lg.jp/dataset/t000020d0000000043" target="_blank" rel="noopener noreferrer">東京都下水道局のデータ出典 ↗</a></p><h3>欠損と安全判定</h3><p>無色の場所は未整備の場合があります。HTTP 404は、未提供・提供範囲外などの理由をこのアプリだけでは判別できません。エラーを浸水深0mや「安全」に置き換えません。地点カードはタイル画素の着色有無のみを照会し、深さや危険度を自動判定しません。</p>
   <h3>3D参考モデルの限界</h3><p>一様な雨量・流出率・排水能力を仮定し、閉鎖した範囲の静的な水位を体積から逆算します。流れ・堤防・河川氾濫・下水道網・潮位・水の到達時刻を解く流体解析ではありません。地形の接続性も判定しません。公式ハザードを雨量スライダーで変形する処理は行っていません。</p>
   <h3>保存・共有と外部通信</h3><p>お気に入りはこの端末のlocalStorageに保存します。地図タイル・標高・検索語・建物検索の範囲は、機能の利用に必要な外部提供先へ送信されます。現在地はボタンを押し、許可された場合にのみ取得します。共有URLと書き出すJSONには選択地点の座標と条件が含まれます。デバッグコピーには座標・検索語・お気に入りを含めません。</p>
   <p><a href="https://disaportal.gsi.go.jp/hazardmapportal/hazardmap/update/update.html" target="_blank" rel="noopener noreferrer">公的データの更新・掲載停止情報 ↗</a></p><p class="quiet">Phase 1 / v${version} α · ライブ気象・警報・避難情報・自治体の避難所データ・クラウド同期は未実装です。</p>
@@ -730,17 +796,18 @@ $('debugButton').onclick=()=>{
  const content=JSON.stringify({app:'MIZUMIRU',version,privacy:'座標・地点名・検索語・お気に入りは含めていません',time:new Date().toISOString(),userAgent:navigator.userAgent,online:navigator.onLine,secureContext:isSecureContext,view:state.view,layer:state.layer,viewport:{width:innerWidth,height:innerHeight,dpr:devicePixelRatio},webgl:!!renderer?.gl&&!renderer.contextLost,renderer:renderer?.software?'canvas3d':renderer?'webgl':'uninitialized',terrainReady:!!state.terrain,scenario:{...state.params,size:state.size},tileCounts:store.stats,logs},null,2);copyText(content,'デバッグコンソールをコピー');
 };
 function buildShareUrl(){
- const hash=new URLSearchParams({lat:state.point.lat.toFixed(6),lng:state.point.lng.toFixed(6),layer:state.layer,view:state.view,rain:String(state.params.rain),hours:String(state.params.duration),runoff:String(state.params.runoff),drain:String(state.params.drain),water:String(state.params.depth),sim:state.params.mode,size:String(state.size),ex:String(state.exaggeration),t:String(Math.round(state.progress*100))});
+ const hash=new URLSearchParams({city:state.municipality,local:state.municipalOverlay?'1':'0',lat:state.point.lat.toFixed(6),lng:state.point.lng.toFixed(6),layer:state.layer,view:state.view,rain:String(state.params.rain),hours:String(state.params.duration),runoff:String(state.params.runoff),drain:String(state.params.drain),water:String(state.params.depth),sim:state.params.mode,size:String(state.size),ex:String(state.exaggeration),t:String(Math.round(state.progress*100))});
  return location.href.split('#')[0]+'#'+hash.toString();
 }
 $('shareButton').onclick=()=>{if(location.protocol==='file:'){toast('他端末へのURL共有はHTTP/HTTPSで公開した後に利用してください。ローカルファイルは共有URLになりません。');return}copyText(buildShareUrl(),'地点と条件を含むURLをコピー')};
 $('exportScenario').onclick=()=>{
  if(!state.result||!state.terrain){toast('地形の取得後に保存できます');return}
- const report={schemaVersion:'1.0',appVersion:version,title:'MIZUMIRU 学習用3D参考モデル',notFloodForecast:true,generatedAt:new Date().toISOString(),point:state.point,parameters:{...state.params,progress:state.progress,elapsedHours:state.params.duration*state.progress,domainSizeMeters:state.size,verticalDisplayExaggeration:state.exaggeration},terrain:{source:'国土地理院 標高タイル DEM10B相当 / z14',sourceUrl:'https://maps.gsi.go.jp/development/demtile.html',retrievedAt:state.terrain.retrievedAt,gridCells:64,cellSizeMeters:state.size/64,validCoverage:1,anchorElevationMeters:state.terrain.anchorElevation},result:{waterSurfaceElevationMeters:state.result.level,referencePointDepthMeters:state.result.pointDepth,referenceMaxCellDepthMeters:state.result.maxDepth,storageVolumeCubicMeters:state.result.volume,meanStoredDepthMillimeters:state.result.meanDepth*1000,areaAboveOneCentimeterSquareMeters:state.result.wetArea},method:'closed-domain, uniform-static-water-level volume balance; not a hydrodynamic model',limitations:['避難判断・実際の浸水予測には使用できません','河川・堤防・下水道網・潮位・地形の水理的接続性は計算しません','初期貯留0・区域外との流出入なし・雨量と排水は一様と仮定','建物は参考輪郭。全棟の高さ9mは模式値で、計算上の障害物ではありません','水深の計算はセル代表標高、描画は三角形の水位切断のため離散化の差があります','公式ハザードの浸水想定とは別の独自条件です'],officialHazard:{layer:getHazardLayer().tag,url:officialUrl(),usedForSimulation:false}};
+ const report={schemaVersion:'1.0',appVersion:version,title:'MIZUMIRU 学習用3D参考モデル',notFloodForecast:true,generatedAt:new Date().toISOString(),point:state.point,parameters:{...state.params,progress:state.progress,elapsedHours:state.params.duration*state.progress,domainSizeMeters:state.size,verticalDisplayExaggeration:state.exaggeration},terrain:{source:'国土地理院 標高タイル DEM10B相当 / z14',sourceUrl:'https://maps.gsi.go.jp/development/demtile.html',retrievedAt:state.terrain.retrievedAt,gridCells:64,cellSizeMeters:state.size/64,validCoverage:1,anchorElevationMeters:state.terrain.anchorElevation},result:{waterSurfaceElevationMeters:state.result.level,referencePointDepthMeters:state.result.pointDepth,referenceMaxCellDepthMeters:state.result.maxDepth,storageVolumeCubicMeters:state.result.volume,meanStoredDepthMillimeters:state.result.meanDepth*1000,areaAboveOneCentimeterSquareMeters:state.result.wetArea},method:'closed-domain, uniform-static-water-level volume balance; not a hydrodynamic model',limitations:['避難判断・実際の浸水予測には使用できません','河川・堤防・下水道網・潮位・地形の水理的接続性は計算しません','初期貯留0・区域外との流出入なし・雨量と排水は一様と仮定','建物は参考輪郭。全棟の高さ9mは模式値で、計算上の障害物ではありません','水深の計算はセル代表標高、描画は三角形の水位切断のため離散化の差があります','公式ハザードの浸水想定とは別の独自条件です'],officialHazard:{layer:state.municipalOverlay?'東京都 浸水予想（2018–2021年）':getHazardLayer().tag,url:state.municipalOverlay?'https://catalog.data.metro.tokyo.lg.jp/dataset/t000014d0000000029':officialUrl(),usedForSimulation:false},municipalReference:state.municipality?{city:MunicipalHazard.cities[state.municipality].name,officialPage:MunicipalHazard.cities[state.municipality].page,pdf:MunicipalHazard.cities[state.municipality].pdf,checkedAt:'2026-09-09',overlayEnabled:state.municipalOverlay,status:municipal.status,samples:state.municipalOverlay&&municipal.status==='ready'?municipal.query(state.point):[],usedForSimulation:false}:null};
  const blob=new Blob([JSON.stringify(report,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`mizumiru-scenario-${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),5000);toast('地点・条件・制約を含むJSONを保存しました');
 };
 function readShareHash(){
  const hash=new URLSearchParams(location.hash.slice(1));if(!hash.has('lat')||!hash.has('lng'))return;
+ if(MunicipalHazard.cities[hash.get('city')]){state.municipality=hash.get('city');state.municipalOverlay=hash.get('local')==='1'}
  const point=parseCoordinate(hash.get('lat')+','+hash.get('lng'));if(!point)return;state.point={...point,name:'共有された地点'};map.center=point;
  if(layers.some(l=>l.id===hash.get('layer')))state.layer=hash.get('layer');
  for(const[key,query,min,max]of[['rain','rain',0,200],['duration','hours',.5,24],['runoff','runoff',0,1],['drain','drain',0,150],['depth','water',-5,10]])if(hash.has(query)&&Number.isFinite(Number(hash.get(query))))state.params[key]=clamp(Number(hash.get(query)),min,max);
@@ -750,12 +817,12 @@ function readShareHash(){
  if(hash.has('t')&&Number.isFinite(Number(hash.get('t'))))state.progress=clamp(Number(hash.get('t'))/100,0,1);
  if(hash.get('view')==='three')state.view='three';
 }
-readShareHash();renderLayers();readFavorites();updatePlaceDisplay();syncControls();queryPoint();
+readShareHash();renderLayers();if(state.municipalOverlay)loadMunicipal();readFavorites();updatePlaceDisplay();syncControls();queryPoint();
 if(state.view==='three')setView('three');else map.requestDraw();
 window.addEventListener('beforeunload',()=>{stopPlayback();renderer?.observer.disconnect();map.resizeObserver.disconnect()});
 logEvent('boot',`v${version}`);
 // 自動テスト・不具合調査用。地理データの実体や保存地点を公開しない。
-window.mizumiru={version,getStatus:()=>({renderer:renderer?.software?'canvas3d':renderer?'webgl':'uninitialized',view:state.view,layer:state.layer,terrainReady:!!state.terrain,resultReady:!!state.result,terrainSize:state.size,waterVertices:renderer?.meshes.water?.count||0,buildingVertices:renderer?.meshes.buildings?.count||0,params:{...state.params},network:{...store.stats}})};
+window.mizumiru={version,getStatus:()=>({renderer:renderer?.software?'canvas3d':renderer?'webgl':'uninitialized',view:state.view,layer:state.layer,municipality:state.municipality,municipalOverlay:state.municipalOverlay,municipalStatus:municipal.status,terrainReady:!!state.terrain,resultReady:!!state.result,terrainSize:state.size,waterVertices:renderer?.meshes.water?.count||0,buildingVertices:renderer?.meshes.buildings?.count||0,params:{...state.params},network:{...store.stats}})};
 })();
 </script>
 </body></html>
