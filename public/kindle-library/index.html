@@ -127,7 +127,7 @@
   }
 
   /* 内蔵ブックリーダー（pdf-reader v0.5.1のコードを統合・ダークテーマ） */
-  #reader { display: none; position: fixed; inset: 0; z-index: 4000; background: #1a1d2e; color: #e8eaf6; flex-direction: column; }
+  #reader { display: none; position: fixed; inset: 0; z-index: 4000; background: #1a1d2e; color: #e8eaf6; flex-direction: column; touch-action: manipulation; }
   #reader.open { display: flex; }
   #rdToolbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 6px 10px; background: #252945; border-bottom: 1px solid #333a5c; z-index: 10; }
   #rdToolbar button { background: #333a5c; color: #e8eaf6; border: none; border-radius: 6px; padding: 6px 10px; font-size: 13px; cursor: pointer; white-space: nowrap; min-height: 32px; }
@@ -165,7 +165,7 @@
   <div class="hrow">
     <h1>
       <span class="app-name" onclick="openHowTo()" title="使い方を見る">📚 Kindleライブラリ</span>
-      <span class="ver" onclick="openReleaseNotes()" title="リリースノート">v0.7.0</span>
+      <span class="ver" onclick="openReleaseNotes()" title="リリースノート">v0.7.1</span>
       <span class="subtitle">kindle-capturerでスキャンした本のプレビュー</span>
     </h1>
     <div class="spacer"></div>
@@ -277,7 +277,7 @@
 
 <script>
 'use strict';
-var APP_VERSION = 'v0.7.0';
+var APP_VERSION = 'v0.7.1';
 
 // ===== 多言語対応（v0.6.0） =====
 var LANG = 'ja';
@@ -421,7 +421,8 @@ Object.assign(I18N.ja, {
   heroMobileText: 'このブラウザはフォルダ参照に対応していないため、PDFを直接追加する方式で動作します。「PDFを追加」からkindle-capturerで保存したPDFを選ぶと、端末内（ブラウザのストレージ）に取り込まれ、表紙つきの蔵書として使えます。<br>データはこの端末の中だけに保存され、どこにもアップロードされません。',
   importing: function(i, n) { return 'PDFを取り込み中… ' + i + ' / ' + n; },
   importDone: function(n) { return n + '冊を取り込みました'; },
-  importNone: '取り込めるPDFがありませんでした'
+  importNone: '取り込めるPDFがありませんでした',
+  zoomNavHint: '🔍 ズーム中はタップ移動を無効化しています。ページ移動は左右端をダブルタップ（または◀▶ボタン）'
 });
 Object.assign(I18N.en, {
   bmAdd: function(p) { return 'Bookmarked P.' + p; },
@@ -446,7 +447,8 @@ Object.assign(I18N.en, {
   heroMobileText: 'This browser cannot open folders, so the app works by importing PDFs directly. Tap "Add PDFs" and pick the PDFs saved by kindle-capturer — they are stored inside this device (browser storage) and shown as a cover-art library.<br>Data stays on this device only and is never uploaded.',
   importing: function(i, n) { return 'Importing PDFs… ' + i + ' / ' + n; },
   importDone: function(n) { return 'Imported ' + n + ' books'; },
-  importNone: 'No importable PDFs found'
+  importNone: 'No importable PDFs found',
+  zoomNavHint: '🔍 Tap navigation is disabled while zoomed. Double-tap the left/right edge (or use ◀▶) to turn pages'
 });
 function t(k) {
   var v = I18N[LANG][k];
@@ -454,6 +456,17 @@ function t(k) {
 }
 
 var RELEASE_NOTES = [
+  { ver: 'v0.7.1', date: '2026-09-11',
+    changes: [
+      'ズーム中の誤ページ送りを修正 — ピンチズーム/拡大表示中はタップ・スワイプでのページ移動を無効化（パン操作と衝突しないように）',
+      'ズーム中のページ移動は「左右端のダブルタップ」で（中央ダブルタップはズームリセット）。ツールバーの◀▶は常に使用可能',
+      'ズーム中にタップした場合は操作ヒントを表示'
+    ],
+    en: [
+      'Fixed accidental page turns while zoomed — tap/swipe navigation is disabled during pinch zoom or magnified view (no more conflicts with panning)',
+      'While zoomed, turn pages by double-tapping the left/right edge (double-tap the center to reset zoom). The ◀▶ buttons always work',
+      'A hint toast appears if you tap while zoomed'
+    ]},
   { ver: 'v0.7.0', date: '2026-08-17',
     changes: [
       'モバイルブラウザ対応 — フォルダ参照ができない環境（iPhone/iPad/Android等）では「＋ PDFを追加」でPDFを直接取り込み、端末内に保存して使えるように（蔵書・リーダー・評価・スクラップすべて動作）',
@@ -1817,16 +1830,31 @@ document.addEventListener('keydown', function (e) {
   }
 });
 
-// クリックゾーン：左右30%で前後移動（綴じ方向に追従）
+// ズーム判定: アプリ内ズーム（±ボタン）に加えて、スマホ・タブレットの
+// ピンチズーム（ブラウザ側の拡大。state.zoomは変わらない）も検出する。
+// ズーム中のタップ/スワイプはパン操作なので、ページ遷移を完全に止める
+function pinchZoomed() {
+  return !!(window.visualViewport && window.visualViewport.scale > 1.05);
+}
+function navLocked() { return state.zoom > 1 || pinchZoomed(); }
+var zoomHintAt = 0;
+
+// クリックゾーン：左右30%で前後移動（綴じ方向に追従）。ズーム中は無効化しヒント表示
 rdStage.addEventListener('click', function (e) {
-  if (!state.pdfDoc || state.zoom > 1) return;
+  if (!state.pdfDoc) return;
   var rect = rdStage.getBoundingClientRect();
   var x = (e.clientX - rect.left) / rect.width;
+  if (x >= 0.3 && x <= 0.7) return;
+  if (navLocked()) {
+    if (Date.now() - zoomHintAt > 5000) { zoomHintAt = Date.now(); showToast(t('zoomNavHint')); }
+    return;
+  }
   if (x < 0.3) state.rtl ? goNext() : goPrev();
-  else if (x > 0.7) state.rtl ? goPrev() : goNext();
+  else state.rtl ? goPrev() : goNext();
 });
 
-// スワイプ：紙の本と同じ方向（右開きなら右スワイプで次のページ）
+// スワイプ：紙の本と同じ方向（右開きなら右スワイプで次のページ）。
+// ズーム中（ピンチ含む）はパンと衝突するため無効
 (function () {
   var sx = 0, sy = 0, tracking = false;
   rdStage.addEventListener('touchstart', function (e) {
@@ -1834,7 +1862,7 @@ rdStage.addEventListener('click', function (e) {
     sx = e.touches[0].clientX; sy = e.touches[0].clientY; tracking = true;
   }, { passive: true });
   rdStage.addEventListener('touchend', function (e) {
-    if (!tracking || state.zoom > 1) return;
+    if (!tracking || navLocked()) return;
     tracking = false;
     var dx = e.changedTouches[0].clientX - sx;
     var dy = e.changedTouches[0].clientY - sy;
@@ -1842,6 +1870,27 @@ rdStage.addEventListener('click', function (e) {
     if (dx > 0) state.rtl ? goNext() : goPrev();
     else state.rtl ? goPrev() : goNext();
   }, { passive: true });
+})();
+
+// ズーム中のページ移動: 左右端のダブルタップ（意図的な操作のみ受け付ける）。
+// 中央のダブルタップはアプリズームのリセット（ピンチズームはOS側の操作で戻す）
+(function () {
+  var lastT = 0, lastX = 0, lastY = 0;
+  rdStage.addEventListener('touchend', function (e) {
+    if (!state.pdfDoc || e.changedTouches.length !== 1) return;
+    var tch = e.changedTouches[0];
+    var now = Date.now();
+    var isDouble = (now - lastT < 320) &&
+      Math.abs(tch.clientX - lastX) < 40 && Math.abs(tch.clientY - lastY) < 40;
+    lastT = now; lastX = tch.clientX; lastY = tch.clientY;
+    if (!isDouble || !navLocked()) return;
+    lastT = 0;
+    var rect = rdStage.getBoundingClientRect();
+    var x = (tch.clientX - rect.left) / rect.width;
+    if (x < 0.35) { state.rtl ? goNext() : goPrev(); e.preventDefault(); }
+    else if (x > 0.65) { state.rtl ? goPrev() : goNext(); e.preventDefault(); }
+    else if (state.zoom !== 1) { state.zoom = 1; renderView(); e.preventDefault(); }
+  }, { passive: false });
 })();
 
 // リサイズで再フィット（デバウンス）

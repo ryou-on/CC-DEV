@@ -174,7 +174,7 @@
   <button id="btnZoomIn" title="拡大">＋</button>
   <button id="btnFullscreen" title="フルスクリーン">⛶</button>
   <button id="btnDebug" title="デバッグログをコピー">🐛</button>
-  <span id="version">v0.5.2</span>
+  <span id="version">v0.5.3</span>
 </div>
 
 <div id="stage">
@@ -648,16 +648,34 @@ document.addEventListener('keydown', function (e) {
   }
 });
 
-// クリックゾーン：左右30%で前後移動（綴じ方向に追従）
+// ズーム判定: アプリ内ズーム（±ボタン）に加えて、スマホ・タブレットの
+// ピンチズーム（ブラウザ側の拡大。state.zoomは変わらない）も検出する（v0.5.3）。
+// ズーム中のタップ/スワイプはパン操作なので、ページ遷移を完全に止める
+function pinchZoomed() {
+  return !!(window.visualViewport && window.visualViewport.scale > 1.05);
+}
+function navLocked() { return state.zoom > 1 || pinchZoomed(); }
+let zoomHintAt = 0;
+
+// クリックゾーン：左右30%で前後移動（綴じ方向に追従）。ズーム中は無効化しヒント表示
 stage.addEventListener('click', function (e) {
-  if (!state.pdfDoc || state.zoom > 1) return;  // ズーム中はスクロール優先
+  if (!state.pdfDoc) return;
   const rect = stage.getBoundingClientRect();
   const x = (e.clientX - rect.left) / rect.width;
+  if (x >= 0.3 && x <= 0.7) return;
+  if (navLocked()) {
+    if (Date.now() - zoomHintAt > 5000) {
+      zoomHintAt = Date.now();
+      showToast('🔍 ズーム中はタップ移動を無効化しています。ページ移動は左右端をダブルタップ（または◀▶ボタン）');
+    }
+    return;
+  }
   if (x < 0.3) state.rtl ? goNext() : goPrev();
-  else if (x > 0.7) state.rtl ? goPrev() : goNext();
+  else state.rtl ? goPrev() : goNext();
 });
 
-// スワイプ：紙の本と同じ方向（右開きなら右スワイプで次のページ）
+// スワイプ：紙の本と同じ方向（右開きなら右スワイプで次のページ）。
+// ズーム中（ピンチ含む）はパンと衝突するため無効
 (function () {
   let sx = 0, sy = 0, tracking = false;
   stage.addEventListener('touchstart', function (e) {
@@ -665,7 +683,7 @@ stage.addEventListener('click', function (e) {
     sx = e.touches[0].clientX; sy = e.touches[0].clientY; tracking = true;
   }, { passive: true });
   stage.addEventListener('touchend', function (e) {
-    if (!tracking || state.zoom > 1) return;
+    if (!tracking || navLocked()) return;
     tracking = false;
     const dx = e.changedTouches[0].clientX - sx;
     const dy = e.changedTouches[0].clientY - sy;
@@ -673,6 +691,27 @@ stage.addEventListener('click', function (e) {
     if (dx > 0) state.rtl ? goNext() : goPrev();
     else state.rtl ? goPrev() : goNext();
   }, { passive: true });
+})();
+
+// ズーム中のページ移動: 左右端のダブルタップ（意図的な操作のみ受け付ける）。
+// 中央のダブルタップはアプリズームのリセット（ピンチズームはOS側の操作で戻す）
+(function () {
+  let lastT = 0, lastX = 0, lastY = 0;
+  stage.addEventListener('touchend', function (e) {
+    if (!state.pdfDoc || e.changedTouches.length !== 1) return;
+    const tch = e.changedTouches[0];
+    const now = Date.now();
+    const isDouble = (now - lastT < 320) &&
+      Math.abs(tch.clientX - lastX) < 40 && Math.abs(tch.clientY - lastY) < 40;
+    lastT = now; lastX = tch.clientX; lastY = tch.clientY;
+    if (!isDouble || !navLocked()) return;
+    lastT = 0;
+    const rect = stage.getBoundingClientRect();
+    const x = (tch.clientX - rect.left) / rect.width;
+    if (x < 0.35) { state.rtl ? goNext() : goPrev(); e.preventDefault(); }
+    else if (x > 0.65) { state.rtl ? goPrev() : goNext(); e.preventDefault(); }
+    else if (state.zoom !== 1) { state.zoom = 1; renderView(); e.preventDefault(); }
+  }, { passive: false });
 })();
 
 // ドラッグ＆ドロップ
