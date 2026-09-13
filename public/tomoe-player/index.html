@@ -38,6 +38,11 @@ main>*{min-width:0}
 .player #yt,.player iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
 .player .ph{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;gap:12px;font-size:22px;font-weight:700;background:#000;z-index:4;cursor:pointer}
 .player .ph .big{font-size:90px}
+/* 動画の全画面ボタン */
+.fsbtn{position:absolute;right:12px;bottom:12px;z-index:6;width:48px;height:48px;border-radius:50%;border:none;background:rgba(0,0,0,.45);color:#fff;font-size:22px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s}
+.fsbtn:hover{background:rgba(249,115,22,.8)}
+.player:fullscreen{border-radius:0}
+.player:-webkit-full-screen{border-radius:0}
 /* YouTube の UI を子どもが触らないように透明カバー（タップ＝再生/一時停止） */
 .cover{position:absolute;inset:0;z-index:3;cursor:pointer}
 .zone{position:absolute;top:0;bottom:0;width:18%;display:flex;align-items:center;justify-content:center;font-size:64px;color:#fff;opacity:0;transition:opacity .15s;background:linear-gradient(90deg,rgba(0,0,0,.35),transparent);cursor:pointer;z-index:5}
@@ -120,13 +125,13 @@ body.view-only .view-note{display:block}
       <div class="ph" id="ph" onclick="startPlay()"><div class="big">🧸</div><div id="phText">よみこみちゅう…</div><button id="resumeBtn" style="display:none;margin-top:6px;padding:10px 22px;border-radius:12px;border:none;background:var(--accent2);color:#fff;font-size:16px;font-weight:800;cursor:pointer"></button></div>
       <div class="zone l" onclick="goPrev('tap')">◀</div>
       <div class="zone r" onclick="goNext('tap')">▶</div>
+      <button class="fsbtn" id="fsBtn" onclick="toggleVideoFs(event)" title="動画を全画面に">⛶</button>
+      <div class="flash" id="flash"><div class="box" id="flashBox"></div></div>
     </div>
     <div class="now"><div class="t" id="nowTitle">—</div><div class="n" id="nowNum"></div></div>
   </div>
   <div class="cands" id="cands"></div>
 </main>
-
-<div class="flash" id="flash"><div class="box" id="flashBox"></div></div>
 
 <!-- 保護者メニュー -->
 <div class="mo" id="parentMo" onclick="if(event.target===this)closeParent()">
@@ -226,8 +231,9 @@ window.addEventListener('unhandledrejection', function (e) {
 // =========================================================
 // 設定
 // =========================================================
-const VERSION = 'v0.8.2';
+const VERSION = 'v0.9.0';
 const RELEASE_NOTES = [
+  { ver:'v0.9.0', date:'2026-09-13', changes:['動画の右下に全画面ボタン ⛶ を追加（動画だけを全画面に。タップ・スワイプ・キー操作はそのまま使えます）','全画面中も「▶▶ つぎ」などの操作フィードバックが見えるように'] },
   { ver:'v0.8.2', date:'2026-09-13', changes:['タイトルの長い曲で画面が横に伸びて動画がはみ出し・候補が見えなくなる崩れを修正'] },
   { ver:'v0.8.1', date:'2026-09-13', changes:['読み込み直後にメニューでURLを編集していると裏の同期に消されることがある問題を修正','電波が不安定なとき保存が「YouTubeを準備中…」のまま止まることがある問題を修正（自動再試行とエラー表示）'] },
   { ver:'v0.8.0', date:'2026-09-13', changes:['起動を高速化：2回目以降は端末に覚えた動画リストですぐ再生を開始し、リストの更新は裏で反映（iPhone X などの古い端末向け）','接続先の先読みなどで初回の読み込みも短縮'] },
@@ -409,7 +415,7 @@ function ensureYtApi() {
 // Firebase（SDKパース・IndexedDB・Firestore往復）は裏で接続して差分だけ反映する（古い iPhone の初回体感を優先）
 async function init() {
   document.getElementById('verLabel').textContent = VERSION;
-  if (!document.documentElement.requestFullscreen && !document.documentElement.webkitRequestFullscreen) { const b = document.querySelector('header button[title="全画面"]'); if (b) b.style.display = 'none'; }
+  if (!document.documentElement.requestFullscreen && !document.documentElement.webkitRequestFullscreen) { const b = document.querySelector('header button[title="全画面"]'); if (b) b.style.display = 'none'; const fb = document.getElementById('fsBtn'); if (fb) fb.style.display = 'none'; }
   document.getElementById('autoFsChk').checked = localStorage.getItem('tomoe_autofs') !== 'off';
   renderKbdMap();
   // 素のURL（コードなし）は「登録用ページ」。セットは必ず ?code= / ?watch= の個別URLで開く
@@ -1001,6 +1007,19 @@ function autoFullscreen() {
   const el = document.documentElement;
   const fn = el.requestFullscreen || el.webkitRequestFullscreen;
   if (fn) { try { const r = fn.call(el, { navigationUI: 'hide' }); if (r && r.catch) r.catch(() => {}); } catch (e) {} }
+}
+// 動画エリアだけを全画面に（YouTube のUIは出さない・ゾーン操作はそのまま使える）
+function toggleVideoFs(ev) {
+  if (ev) ev.stopPropagation();
+  const p = document.getElementById('player');
+  const cur = document.fullscreenElement || document.webkitFullscreenElement;
+  if (cur === p) {
+    const ex = document.exitFullscreen || document.webkitExitFullscreen;
+    if (ex) { try { const r = ex.call(document); if (r && r.catch) r.catch(() => {}); } catch (e) {} }
+    return;
+  }
+  const f = p.requestFullscreen || p.webkitRequestFullscreen;
+  if (f) { try { const r = f.call(p); if (r && r.catch) r.catch(() => {}); } catch (e) {} }
 }
 function toggleFs() {
   if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
