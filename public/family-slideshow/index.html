@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#000000" />
+  <title>家族フォトスライドショー</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* ===== 基本 ===== */
+    html, body { height: 100%; background: #000; overflow: hidden; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", sans-serif; color: #fff; -webkit-user-select: none; user-select: none; }
+
+    /* ===== スライド（2枚を交互にフェード） ===== */
+    .slide {
+      position: absolute; inset: 0;
+      background-position: center; background-size: contain; background-repeat: no-repeat;
+      opacity: 0; transition: opacity 1.2s ease-in-out; will-change: opacity, transform;
+    }
+    .slide.active { opacity: 1; }
+    /* Ken Burns（ゆっくりズーム）: interval に合わせて JS が animation-duration を設定 */
+    .slide.kenburns.active { animation-name: kenburns; animation-timing-function: linear; animation-fill-mode: forwards; }
+    @keyframes kenburns {
+      from { transform: scale(1.0) translate(0, 0); }
+      to   { transform: scale(1.08) translate(1%, -1%); }
+    }
+    /* ぼかし背景（写真の縦横比が画面と違うときの黒帯を隠す） */
+    .blurbg {
+      position: absolute; inset: -40px;
+      background-position: center; background-size: cover;
+      filter: blur(40px) brightness(0.45); opacity: 0; transition: opacity 1.2s ease-in-out;
+    }
+    .blurbg.active { opacity: 1; }
+
+    /* ===== オーバーレイ UI（タップで表示、数秒で自動的に隠す） ===== */
+    .overlay { transition: opacity .3s; }
+    .overlay.hidden-ui { opacity: 0; pointer-events: none; }
+    .ctl { background: rgba(0,0,0,.55); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,.15); }
+    .ctl:active { background: rgba(255,255,255,.2); }
+
+    /* ===== モーダル ===== */
+    .modal-bg { background: rgba(0,0,0,.75); backdrop-filter: blur(6px); }
+    .modal { max-height: 85vh; overflow-y: auto; -webkit-user-select: text; user-select: text; }
+    .modal h2 { font-size: 1.1rem; font-weight: 700; margin: 1rem 0 .4rem; }
+    .modal ul { list-style: disc; padding-left: 1.2rem; }
+    .modal li { margin: .15rem 0; }
+    .modal code { background: rgba(255,255,255,.12); padding: 0 .3em; border-radius: .25em; font-size: .9em; }
+    input, select { color-scheme: dark; }
+
+    /* ===== 進行バー ===== */
+    #progress { transition: width linear; }
+
+    /* カーソル自動非表示 */
+    body.nocursor { cursor: none; }
+  </style>
+</head>
+<body>
+
+  <!-- ===== スライド表示領域 ===== -->
+  <div id="stage" class="absolute inset-0 bg-black">
+    <div id="bg0" class="blurbg"></div>
+    <div id="bg1" class="blurbg"></div>
+    <div id="slide0" class="slide"></div>
+    <div id="slide1" class="slide"></div>
+  </div>
+
+  <!-- ===== 初期メッセージ（設定前 / 読み込み中 / エラー） ===== -->
+  <div id="message" class="absolute inset-0 flex items-center justify-center p-6 text-center">
+    <div class="max-w-md">
+      <div class="text-5xl mb-4">📷</div>
+      <h1 class="text-2xl font-bold mb-2">家族フォトスライドショー</h1>
+      <p id="messageText" class="text-white/70 mb-6">Google ドライブの共有フォルダを設定すると、写真のスライドショーが始まります。</p>
+      <button id="btnSetupOpen" class="ctl px-5 py-3 rounded-xl text-lg">⚙️ 設定する</button>
+    </div>
+  </div>
+
+  <!-- ===== キャプション（日付 / ファイル名） ===== -->
+  <div id="caption" class="absolute left-4 bottom-4 text-sm md:text-base text-white/85 drop-shadow-lg pointer-events-none hidden"></div>
+
+  <!-- ===== 進行バー ===== -->
+  <div class="absolute left-0 bottom-0 w-full h-[3px] bg-white/10 pointer-events-none">
+    <div id="progress" class="h-full bg-white/60" style="width:0%"></div>
+  </div>
+
+  <!-- ===== 操作オーバーレイ ===== -->
+  <div id="overlay" class="overlay hidden-ui absolute inset-0 pointer-events-none">
+    <!-- ヘッダー -->
+    <div class="absolute top-0 left-0 right-0 p-3 md:p-4 flex items-center justify-between pointer-events-auto bg-gradient-to-b from-black/70 to-transparent">
+      <button id="btnHelp" class="text-lg md:text-xl font-bold drop-shadow">📷 家族フォトスライドショー</button>
+      <div class="flex gap-2">
+        <button id="btnReload" class="ctl px-3 py-2 rounded-lg text-sm" title="写真リストを再読み込み">🔄</button>
+        <button id="btnSettings" class="ctl px-3 py-2 rounded-lg text-sm" title="設定">⚙️</button>
+        <button id="btnFullscreen" class="ctl px-3 py-2 rounded-lg text-sm" title="全画面">⛶</button>
+      </div>
+    </div>
+    <!-- 左右ボタン -->
+    <button id="btnPrev" class="ctl pointer-events-auto absolute left-3 top-1/2 -translate-y-1/2 w-12 h-12 md:w-14 md:h-14 rounded-full text-2xl">‹</button>
+    <button id="btnNext" class="ctl pointer-events-auto absolute right-3 top-1/2 -translate-y-1/2 w-12 h-12 md:w-14 md:h-14 rounded-full text-2xl">›</button>
+    <!-- 下部：再生/一時停止・カウンター -->
+    <div class="absolute bottom-6 left-0 right-0 flex items-center justify-center gap-3 pointer-events-auto">
+      <button id="btnPlay" class="ctl px-5 py-2 rounded-full text-xl">⏸</button>
+      <span id="counter" class="ctl px-3 py-2 rounded-full text-sm">0 / 0</span>
+    </div>
+  </div>
+
+  <!-- ===== 設定モーダル ===== -->
+  <div id="settingsModal" class="modal-bg fixed inset-0 z-40 hidden items-center justify-center p-4">
+    <div class="modal bg-neutral-900 border border-white/15 rounded-2xl w-full max-w-lg p-5 md:p-6 shadow-2xl">
+      <div class="flex items-center justify-between mb-3">
+        <h1 class="text-xl font-bold">⚙️ 設定</h1>
+        <button class="btnClose text-white/60 text-2xl leading-none px-2">×</button>
+      </div>
+
+      <label class="block text-sm text-white/70 mt-3 mb-1">Google ドライブ フォルダ URL（または ID）</label>
+      <input id="inpFolder" type="text" placeholder="https://drive.google.com/drive/folders/xxxxxxxx" class="w-full bg-black/40 border border-white/20 rounded-lg px-3 py-2 text-base" />
+      <p class="text-xs text-white/50 mt-1">フォルダは「リンクを知っている全員」に共有しておく必要があります。</p>
+
+      <label class="block text-sm text-white/70 mt-4 mb-1">Google API キー</label>
+      <input id="inpKey" type="text" placeholder="AIza..." class="w-full bg-black/40 border border-white/20 rounded-lg px-3 py-2 text-base" />
+      <p class="text-xs text-white/50 mt-1">Google Cloud Console で Drive API を有効化して発行（無料）。手順はヘルプ参照。</p>
+
+      <div class="grid grid-cols-2 gap-3 mt-4">
+        <div>
+          <label class="block text-sm text-white/70 mb-1">表示秒数</label>
+          <select id="selInterval" class="w-full bg-black/40 border border-white/20 rounded-lg px-3 py-2">
+            <option value="5">5秒</option><option value="8">8秒</option><option value="10">10秒</option>
+            <option value="15">15秒</option><option value="30">30秒</option><option value="60">60秒</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm text-white/70 mb-1">順番</label>
+          <select id="selOrder" class="w-full bg-black/40 border border-white/20 rounded-lg px-3 py-2">
+            <option value="random">ランダム</option>
+            <option value="newest">新しい順</option>
+            <option value="oldest">古い順</option>
+            <option value="name">ファイル名順</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm text-white/70 mb-1">演出</label>
+          <select id="selEffect" class="w-full bg-black/40 border border-white/20 rounded-lg px-3 py-2">
+            <option value="kenburns">ゆっくりズーム</option>
+            <option value="fade">フェードのみ</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-sm text-white/70 mb-1">キャプション</label>
+          <select id="selCaption" class="w-full bg-black/40 border border-white/20 rounded-lg px-3 py-2">
+            <option value="date">撮影日</option>
+            <option value="name">ファイル名</option>
+            <option value="both">撮影日 + ファイル名</option>
+            <option value="none">表示しない</option>
+          </select>
+        </div>
+      </div>
+
+      <label class="flex items-center gap-2 mt-4 text-sm">
+        <input id="chkSubfolders" type="checkbox" class="w-4 h-4" checked />
+        サブフォルダの写真も含める
+      </label>
+      <label class="flex items-center gap-2 mt-2 text-sm">
+        <input id="chkBlurBg" type="checkbox" class="w-4 h-4" checked />
+        黒帯をぼかし背景で埋める
+      </label>
+
+      <div class="mt-5 p-3 rounded-lg bg-white/5 border border-white/10">
+        <div class="text-xs text-white/60 mb-1">家族に配る共有リンク（設定込み）</div>
+        <div class="flex gap-2">
+          <input id="inpShareUrl" type="text" readonly class="flex-1 bg-black/40 border border-white/20 rounded-lg px-2 py-1 text-xs" />
+          <button id="btnCopyShare" class="ctl px-3 py-1 rounded-lg text-sm">コピー</button>
+        </div>
+      </div>
+
+      <div class="flex gap-3 mt-5">
+        <button id="btnSave" class="flex-1 bg-white text-black font-bold rounded-xl py-3">保存して開始</button>
+        <button class="btnClose ctl rounded-xl px-5">閉じる</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== ヘルプモーダル ===== -->
+  <div id="helpModal" class="modal-bg fixed inset-0 z-40 hidden items-center justify-center p-4">
+    <div class="modal bg-neutral-900 border border-white/15 rounded-2xl w-full max-w-2xl p-5 md:p-6 shadow-2xl text-sm leading-relaxed">
+      <div class="flex items-center justify-between mb-1">
+        <h1 class="text-xl font-bold">📷 家族フォトスライドショー の使い方</h1>
+        <button class="btnClose text-white/60 text-2xl leading-none px-2">×</button>
+      </div>
+      <p class="text-white/70">Google ドライブの共有フォルダに入れた写真を、テレビ・iPad・PC で全画面スライドショー表示するアプリです。フォルダに写真を追加するだけで、次回読み込み時に自動で反映されます。</p>
+
+      <h2>1. Google ドライブ側の準備</h2>
+      <ul>
+        <li>Google ドライブに写真用フォルダを作り、家族と共有（編集者）します。</li>
+        <li>フォルダを右クリック →「共有」→「一般的なアクセス」を <b>「リンクを知っている全員（閲覧者）」</b> にします。</li>
+        <li>フォルダ URL（<code>https://drive.google.com/drive/folders/...</code>）をコピーします。</li>
+        <li>iPhone の HEIC 写真もそのまま入れて OK です（Google 側で JPEG に変換して表示します）。</li>
+      </ul>
+
+      <h2>2. Google API キーの発行（初回のみ・無料）</h2>
+      <ul>
+        <li><a class="underline" href="https://console.cloud.google.com/" target="_blank" rel="noopener">Google Cloud Console</a> でプロジェクトを作成します。</li>
+        <li>「API とサービス」→「ライブラリ」→ <b>Google Drive API</b> を有効化します。</li>
+        <li>「認証情報」→「認証情報を作成」→「API キー」を発行します。</li>
+        <li>推奨：キーの制限で「HTTP リファラー」に <code>https://cc-dev-ps7.web.app/*</code> を追加し、「API の制限」で Google Drive API のみに絞ります。</li>
+      </ul>
+
+      <h2>3. このアプリの設定</h2>
+      <ul>
+        <li>画面をタップ → 右上「⚙️」→ フォルダ URL と API キーを入力 →「保存して開始」。</li>
+        <li>設定画面の「共有リンク」をコピーして家族に送ると、相手は設定不要で同じスライドショーを見られます。</li>
+      </ul>
+
+      <h2>操作方法</h2>
+      <ul>
+        <li><b>画面タップ / マウス移動</b>：操作ボタンを表示（数秒で自動的に隠れます）</li>
+        <li><b>‹ ›</b> または <b>← →</b> キー：前 / 次の写真</li>
+        <li><b>⏸ / ▶</b> または <b>スペース</b>キー：一時停止 / 再開</li>
+        <li><b>⛶</b> または <b>F</b> キー：全画面表示</li>
+        <li><b>🔄</b>：フォルダを再読み込み（追加した写真を反映）。10分ごとに自動でも再読み込みします。</li>
+        <li>画面のスリープは自動で防止します（対応ブラウザのみ）。</li>
+      </ul>
+
+      <h2>iCloud について</h2>
+      <p class="text-white/70">iCloud Drive には Web から読める公開 API がないため、現バージョンでは対応していません。iPhone の写真は「Google ドライブ」アプリからアップロードするか、iPhone の設定で Google フォト / ドライブへの自動バックアップを使うのが簡単です。iCloud「共有アルバム」の公開リンク対応は今後の検討項目です。</p>
+
+      <h2>トラブルシューティング</h2>
+      <ul>
+        <li><b>「写真が見つかりません」</b>：フォルダの共有設定が「リンクを知っている全員」になっているか確認。</li>
+        <li><b>「API キーが無効」</b>：Drive API が有効化されているか、リファラー制限が正しいか確認。</li>
+        <li><b>写真が表示されない（黒いまま）</b>：ファイル自体も共有されている必要があります。フォルダ共有後に追加した写真は自動で継承されます。</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ===== リリースノートモーダル ===== -->
+  <div id="notesModal" class="modal-bg fixed inset-0 z-40 hidden items-center justify-center p-4">
+    <div class="modal bg-neutral-900 border border-white/15 rounded-2xl w-full max-w-lg p-5 md:p-6 shadow-2xl text-sm">
+      <div class="flex items-center justify-between mb-1">
+        <h1 class="text-xl font-bold">リリースノート</h1>
+        <button class="btnClose text-white/60 text-2xl leading-none px-2">×</button>
+      </div>
+      <div id="notesBody"></div>
+    </div>
+  </div>
+
+  <!-- ===== 右下固定：バージョン + デバッグ ===== -->
+  <div class="fixed right-2 bottom-2 z-50 flex items-center gap-2 text-[11px]">
+    <button id="btnDebug" class="bg-white/10 text-white/60 rounded px-2 py-0.5 hover:bg-white/20" title="console.log をクリップボードにコピー">🐞</button>
+    <button id="btnVersion" class="bg-white/10 text-white/60 rounded px-2 py-0.5 hover:bg-white/20"></button>
+  </div>
+
+  <script>
+  // ==========================================================
+  //  家族フォトスライドショー  v0.1.0
+  //  Google ドライブ共有フォルダ → Drive API v3（API キーのみ）→ 画像 URL でスライド表示
+  // ==========================================================
+  const APP_VERSION = '0.1.0';
+  const RELEASE_NOTES = `## v0.1.0 (2026-09-13)
+- 初回リリース
+- Google ドライブ共有フォルダの写真をスライドショー表示
+- 表示秒数・順番（ランダム / 新旧 / 名前）・ゆっくりズーム演出・キャプション設定
+- サブフォルダ対応、黒帯のぼかし背景
+- 設定込みの共有リンク生成（家族は設定不要）
+- 全画面表示、キーボード操作、画面スリープ防止
+- 10分ごとにフォルダを自動再読み込み`;
+
+  // ---------- console.log 収集（デバッグボタン用） ----------
+  const logBuffer = [];
+  ['log', 'warn', 'error'].forEach(level => {
+    const orig = console[level].bind(console);
+    console[level] = (...args) => {
+      try {
+        logBuffer.push(`[${new Date().toISOString()}][${level}] ` + args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' '));
+        if (logBuffer.length > 500) logBuffer.shift();
+      } catch (_) {}
+      orig(...args);
+    };
+  });
+  window.addEventListener('error', e => console.error('window.error', e.message));
+
+  // ---------- DOM ----------
+  const $ = id => document.getElementById(id);
+  const slides = [$('slide0'), $('slide1')];
+  const bgs = [$('bg0'), $('bg1')];
+
+  // ---------- 設定 ----------
+  const SETTINGS_KEY = 'familySlideshow_settings';
+  const DEFAULTS = { folder: '', key: '', interval: 8, order: 'random', effect: 'kenburns', caption: 'date', subfolders: true, blurbg: true };
+  let settings = { ...DEFAULTS };
+
+  function loadSettings() {
+    try { settings = { ...DEFAULTS, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}') }; } catch (_) {}
+    // URL パラメータで上書き（共有リンク用）
+    const p = new URLSearchParams(location.search);
+    if (p.get('folder')) settings.folder = p.get('folder');
+    if (p.get('key')) settings.key = p.get('key');
+    if (p.get('interval')) settings.interval = Number(p.get('interval')) || settings.interval;
+    if (p.get('order')) settings.order = p.get('order');
+    if (p.get('effect')) settings.effect = p.get('effect');
+    if (p.get('caption')) settings.caption = p.get('caption');
+    if (p.has('subfolders')) settings.subfolders = p.get('subfolders') !== '0';
+    if (p.has('blurbg')) settings.blurbg = p.get('blurbg') !== '0';
+    if (p.get('folder') || p.get('key')) saveSettings(); // 共有リンクで開いた設定を保存しておく
+  }
+  function saveSettings() {
+    try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (_) {}
+  }
+  // URL / ID のどちらでも受け付けてフォルダ ID を抽出
+  function extractFolderId(str) {
+    str = (str || '').trim();
+    const m = str.match(/\/folders\/([a-zA-Z0-9_-]+)/) || str.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    return m ? m[1] : str;
+  }
+  function buildShareUrl() {
+    const u = new URL(location.origin + location.pathname);
+    u.searchParams.set('folder', extractFolderId(settings.folder));
+    u.searchParams.set('key', settings.key);
+    u.searchParams.set('interval', settings.interval);
+    u.searchParams.set('order', settings.order);
+    u.searchParams.set('effect', settings.effect);
+    u.searchParams.set('caption', settings.caption);
+    if (!settings.subfolders) u.searchParams.set('subfolders', '0');
+    if (!settings.blurbg) u.searchParams.set('blurbg', '0');
+    return u.toString();
+  }
+
+  // ---------- Google Drive API ----------
+  const API = 'https://www.googleapis.com/drive/v3/files';
+  const FIELDS = 'nextPageToken,files(id,name,mimeType,createdTime,modifiedTime,imageMediaMetadata(time,width,height))';
+
+  async function listFolder(folderId, key) {
+    const files = [];
+    let pageToken = '';
+    do {
+      const q = `'${folderId}' in parents and trashed = false`;
+      const url = `${API}?q=${encodeURIComponent(q)}&fields=${encodeURIComponent(FIELDS)}&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true&key=${encodeURIComponent(key)}` + (pageToken ? `&pageToken=${pageToken}` : '');
+      const res = await fetch(url);
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try { const j = await res.json(); msg = j.error?.message || msg; } catch (_) {}
+        throw new Error(msg);
+      }
+      const j = await res.json();
+      files.push(...(j.files || []));
+      pageToken = j.nextPageToken || '';
+    } while (pageToken);
+    return files;
+  }
+
+  // サブフォルダを再帰的に集めて画像だけ返す
+  async function collectPhotos(folderId, key, recursive, depth = 0) {
+    const files = await listFolder(folderId, key);
+    let photos = files.filter(f => f.mimeType && f.mimeType.startsWith('image/'));
+    if (recursive && depth < 5) {
+      const folders = files.filter(f => f.mimeType === 'application/vnd.google-apps.folder');
+      for (const f of folders) {
+        try { photos = photos.concat(await collectPhotos(f.id, key, true, depth + 1)); }
+        catch (e) { console.warn('subfolder skip', f.name, e.message); }
+      }
+    }
+    return photos;
+  }
+
+  // 画像 URL（公開共有ファイルは lh3 経由で任意サイズ取得可。HEIC も JPEG 変換される）
+  function imageUrl(file) {
+    const w = Math.min(2048, Math.ceil(Math.max(window.innerWidth, window.innerHeight) * (window.devicePixelRatio || 1)));
+    return `https://lh3.googleusercontent.com/d/${file.id}=w${w}-h${w}`;
+  }
+  function fallbackUrl(file) {
+    return `https://drive.google.com/thumbnail?id=${file.id}&sz=w1920`;
+  }
+
+  // ---------- 撮影日パース（EXIF "2024:05:03 12:34:56" → Date） ----------
+  function photoDate(f) {
+    const t = f.imageMediaMetadata?.time;
+    if (t) {
+      const m = t.match(/^(\d{4}):(\d{2}):(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/);
+      if (m) return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+    }
+    return new Date(f.createdTime);
+  }
+  function fmtDate(d) {
+    if (isNaN(d)) return '';
+    return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+  }
+
+  // ---------- 並び替え ----------
+  function sortPhotos(list) {
+    const arr = list.slice();
+    switch (settings.order) {
+      case 'newest': arr.sort((a, b) => photoDate(b) - photoDate(a)); break;
+      case 'oldest': arr.sort((a, b) => photoDate(a) - photoDate(b)); break;
+      case 'name': arr.sort((a, b) => a.name.localeCompare(b.name, 'ja')); break;
+      default: // random（Fisher–Yates）
+        for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; }
+    }
+    return arr;
+  }
+
+  // ---------- スライドショー本体 ----------
+  let photos = [];
+  let index = -1;
+  let current = 0;           // 表示中のレイヤー(0/1)
+  let playing = true;
+  let timer = null;
+  let loadingList = false;
+  const preloadCache = new Map();
+
+  function preload(file) {
+    if (!file || preloadCache.has(file.id)) return;
+    const img = new Image();
+    img.src = imageUrl(file);
+    preloadCache.set(file.id, img);
+    if (preloadCache.size > 6) preloadCache.delete(preloadCache.keys().next().value);
+  }
+
+  function showMessage(text, showButton = true) {
+    $('messageText').textContent = text;
+    $('btnSetupOpen').classList.toggle('hidden', !showButton);
+    $('message').classList.remove('hidden');
+  }
+  function hideMessage() { $('message').classList.add('hidden'); }
+
+  function updateCaption(file) {
+    const cap = $('caption');
+    if (settings.caption === 'none') { cap.classList.add('hidden'); return; }
+    const d = fmtDate(photoDate(file));
+    const parts = [];
+    if (settings.caption === 'date' || settings.caption === 'both') parts.push(d);
+    if (settings.caption === 'name' || settings.caption === 'both') parts.push(file.name.replace(/\.[^.]+$/, ''));
+    cap.textContent = parts.filter(Boolean).join('　');
+    cap.classList.toggle('hidden', !cap.textContent);
+  }
+
+  function restartProgress() {
+    const bar = $('progress');
+    bar.style.transition = 'none';
+    bar.style.width = '0%';
+    if (!playing) return;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      bar.style.transition = `width ${settings.interval}s linear`;
+      bar.style.width = '100%';
+    }));
+  }
+
+  function show(i) {
+    if (!photos.length) return;
+    index = ((i % photos.length) + photos.length) % photos.length;
+    const file = photos[index];
+    const next = 1 - current;
+    const layer = slides[next], bg = bgs[next];
+    const url = imageUrl(file);
+
+    // 画像を先に読み込んでから切り替える（黒画面を防ぐ）
+    const img = new Image();
+    const apply = src => {
+      layer.style.backgroundImage = `url("${src}")`;
+      bg.style.backgroundImage = settings.blurbg ? `url("${src}")` : '';
+      layer.classList.toggle('kenburns', settings.effect === 'kenburns');
+      layer.style.animationDuration = `${settings.interval + 2}s`;
+      // 再アニメーションのためにリフロー
+      void layer.offsetWidth;
+      slides[current].classList.remove('active', 'kenburns');
+      bgs[current].classList.remove('active');
+      layer.classList.add('active');
+      if (settings.blurbg) bg.classList.add('active');
+      current = next;
+      updateCaption(file);
+      $('counter').textContent = `${index + 1} / ${photos.length}`;
+      hideMessage();
+      restartProgress();
+      preload(photos[(index + 1) % photos.length]);
+      preload(photos[(index + 2) % photos.length]);
+      scheduleNext();
+    };
+    img.onload = () => apply(url);
+    img.onerror = () => {
+      console.warn('image load failed, fallback', file.name);
+      const img2 = new Image();
+      img2.onload = () => apply(fallbackUrl(file));
+      img2.onerror = () => { console.error('image unavailable, skip', file.name); scheduleNext(1500); };
+      img2.src = fallbackUrl(file);
+    };
+    img.src = url;
+  }
+
+  function scheduleNext(ms) {
+    clearTimeout(timer);
+    if (!playing) return;
+    timer = setTimeout(() => show(index + 1), ms ?? settings.interval * 1000);
+  }
+  function nextPhoto() { clearTimeout(timer); show(index + 1); }
+  function prevPhoto() { clearTimeout(timer); show(index - 1); }
+  function togglePlay() {
+    playing = !playing;
+    $('btnPlay').textContent = playing ? '⏸' : '▶';
+    if (playing) { restartProgress(); scheduleNext(); } else { clearTimeout(timer); $('progress').style.transition = 'none'; }
+  }
+
+  // ---------- 読み込み ----------
+  async function loadPhotos({ keepIndex = false } = {}) {
+    const folderId = extractFolderId(settings.folder);
+    if (!folderId || !settings.key) { showMessage('Google ドライブの共有フォルダと API キーを設定してください。'); return; }
+    if (loadingList) return;
+    loadingList = true;
+    if (!photos.length) showMessage('写真を読み込んでいます…', false);
+    try {
+      const list = await collectPhotos(folderId, settings.key, settings.subfolders);
+      console.log('photos loaded', list.length);
+      if (!list.length) { showMessage('写真が見つかりません。フォルダの共有設定（リンクを知っている全員）を確認してください。'); photos = []; return; }
+      const currentId = photos[index]?.id;
+      photos = sortPhotos(list);
+      if (keepIndex && currentId) {
+        const i = photos.findIndex(p => p.id === currentId);
+        index = i >= 0 ? i : index; // 表示中の写真の位置を維持
+      } else {
+        clearTimeout(timer);
+        show(0);
+      }
+    } catch (e) {
+      console.error('load failed', e.message);
+      if (!photos.length) showMessage(`読み込みに失敗しました：${e.message}`);
+    } finally {
+      loadingList = false;
+    }
+  }
+  // 10分ごとに自動再読み込み（新しい写真を反映）
+  setInterval(() => { if (photos.length) loadPhotos({ keepIndex: true }); }, 10 * 60 * 1000);
+
+  // ---------- オーバーレイ UI の表示制御 ----------
+  let uiTimer = null;
+  function showUi() {
+    $('overlay').classList.remove('hidden-ui');
+    document.body.classList.remove('nocursor');
+    clearTimeout(uiTimer);
+    uiTimer = setTimeout(hideUi, 4000);
+  }
+  function hideUi() {
+    if (anyModalOpen()) return;
+    $('overlay').classList.add('hidden-ui');
+    document.body.classList.add('nocursor');
+  }
+  function anyModalOpen() {
+    return ['settingsModal', 'helpModal', 'notesModal'].some(id => !$(id).classList.contains('hidden'));
+  }
+  $('stage').addEventListener('click', () => {
+    if ($('overlay').classList.contains('hidden-ui')) showUi(); else hideUi();
+  });
+  document.addEventListener('mousemove', showUi);
+
+  // スワイプ操作
+  let touchX = null;
+  document.addEventListener('touchstart', e => { touchX = e.touches[0].clientX; }, { passive: true });
+  document.addEventListener('touchend', e => {
+    if (touchX === null || anyModalOpen()) return;
+    const dx = e.changedTouches[0].clientX - touchX; touchX = null;
+    if (Math.abs(dx) > 60) { dx < 0 ? nextPhoto() : prevPhoto(); showUi(); }
+  }, { passive: true });
+
+  // ---------- モーダル ----------
+  function openModal(id) { $(id).classList.remove('hidden'); $(id).classList.add('flex'); showUi(); }
+  function closeModal(id) { $(id).classList.add('hidden'); $(id).classList.remove('flex'); }
+  document.querySelectorAll('.btnClose').forEach(b => b.addEventListener('click', e => closeModal(e.target.closest('.modal-bg').id)));
+  document.querySelectorAll('.modal-bg').forEach(m => m.addEventListener('click', e => { if (e.target === m) closeModal(m.id); }));
+
+  function openSettings() {
+    $('inpFolder').value = settings.folder;
+    $('inpKey').value = settings.key;
+    $('selInterval').value = String(settings.interval);
+    $('selOrder').value = settings.order;
+    $('selEffect').value = settings.effect;
+    $('selCaption').value = settings.caption;
+    $('chkSubfolders').checked = settings.subfolders;
+    $('chkBlurBg').checked = settings.blurbg;
+    $('inpShareUrl').value = settings.folder && settings.key ? buildShareUrl() : '';
+    openModal('settingsModal');
+  }
+  function readSettingsForm() {
+    settings.folder = $('inpFolder').value.trim();
+    settings.key = $('inpKey').value.trim();
+    settings.interval = Number($('selInterval').value) || 8;
+    settings.order = $('selOrder').value;
+    settings.effect = $('selEffect').value;
+    settings.caption = $('selCaption').value;
+    settings.subfolders = $('chkSubfolders').checked;
+    settings.blurbg = $('chkBlurBg').checked;
+  }
+  $('btnSave').addEventListener('click', () => {
+    readSettingsForm();
+    saveSettings();
+    closeModal('settingsModal');
+    playing = true; $('btnPlay').textContent = '⏸';
+    photos = []; index = -1; preloadCache.clear();
+    loadPhotos();
+  });
+  $('btnCopyShare').addEventListener('click', async () => {
+    readSettingsForm();
+    const url = buildShareUrl();
+    $('inpShareUrl').value = url;
+    try { await navigator.clipboard.writeText(url); $('btnCopyShare').textContent = 'コピー済'; setTimeout(() => $('btnCopyShare').textContent = 'コピー', 1500); }
+    catch (_) { $('inpShareUrl').select(); }
+  });
+  $('btnSettings').addEventListener('click', openSettings);
+  $('btnSetupOpen').addEventListener('click', openSettings);
+  $('btnHelp').addEventListener('click', () => openModal('helpModal'));
+
+  // リリースノート（簡易 Markdown → HTML）
+  $('btnVersion').textContent = `v${APP_VERSION}`;
+  $('btnVersion').addEventListener('click', () => {
+    const html = RELEASE_NOTES.split('\n').map(l => {
+      if (l.startsWith('## ')) return `<h2>${l.slice(3)}</h2>`;
+      if (l.startsWith('- ')) return `<li>${l.slice(2)}</li>`;
+      return l ? `<p>${l}</p>` : '';
+    }).join('').replace(/(<li>.*?<\/li>)+/g, m => `<ul>${m}</ul>`);
+    $('notesBody').innerHTML = html;
+    openModal('notesModal');
+  });
+
+  // デバッグ：console.log をクリップボードへ
+  $('btnDebug').addEventListener('click', async () => {
+    const text = [`family-slideshow v${APP_VERSION}`, `UA: ${navigator.userAgent}`, `photos: ${photos.length}, index: ${index}`,
+      `settings: ${JSON.stringify({ ...settings, key: settings.key ? '(set)' : '' })}`, '', ...logBuffer].join('\n');
+    try { await navigator.clipboard.writeText(text); $('btnDebug').textContent = '✅'; }
+    catch (_) { prompt('ログをコピーしてください', text); }
+    setTimeout(() => $('btnDebug').textContent = '🐞', 1500);
+  });
+
+  // ---------- 操作ボタン / キーボード ----------
+  $('btnNext').addEventListener('click', () => { nextPhoto(); showUi(); });
+  $('btnPrev').addEventListener('click', () => { prevPhoto(); showUi(); });
+  $('btnPlay').addEventListener('click', () => { togglePlay(); showUi(); });
+  $('btnReload').addEventListener('click', () => { loadPhotos({ keepIndex: true }); showUi(); });
+  $('btnFullscreen').addEventListener('click', toggleFullscreen);
+  function toggleFullscreen() {
+    const el = document.documentElement;
+    if (!document.fullscreenElement) (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el);
+    else (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
+  }
+  document.addEventListener('keydown', e => {
+    if (anyModalOpen()) { if (e.key === 'Escape') ['settingsModal', 'helpModal', 'notesModal'].forEach(closeModal); return; }
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+    switch (e.key) {
+      case 'ArrowRight': case 'PageDown': nextPhoto(); showUi(); break;
+      case 'ArrowLeft': case 'PageUp': prevPhoto(); showUi(); break;
+      case ' ': e.preventDefault(); togglePlay(); showUi(); break;
+      case 'f': case 'F': toggleFullscreen(); break;
+      case 's': case 'S': openSettings(); break;
+      case 'Escape': hideUi(); break;
+    }
+  });
+
+  // ---------- 画面スリープ防止（Wake Lock API） ----------
+  let wakeLock = null;
+  async function requestWakeLock() {
+    try { if ('wakeLock' in navigator) { wakeLock = await navigator.wakeLock.request('screen'); console.log('wakeLock acquired'); } }
+    catch (e) { console.warn('wakeLock failed', e.message); }
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { requestWakeLock(); if (playing && photos.length) scheduleNext(); } else { clearTimeout(timer); } });
+  document.addEventListener('click', () => { if (!wakeLock) requestWakeLock(); }, { once: true });
+
+  // ---------- 起動 ----------
+  loadSettings();
+  requestWakeLock();
+  loadPhotos();
+  hideUi();
+  console.log('family-slideshow started', APP_VERSION);
+  </script>
+</body>
+</html>
