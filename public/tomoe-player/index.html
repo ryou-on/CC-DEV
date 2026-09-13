@@ -225,8 +225,9 @@ window.addEventListener('unhandledrejection', function (e) {
 // =========================================================
 // 設定
 // =========================================================
-const VERSION = 'v0.8.0';
+const VERSION = 'v0.8.1';
 const RELEASE_NOTES = [
+  { ver:'v0.8.1', date:'2026-09-13', changes:['読み込み直後にメニューでURLを編集していると裏の同期に消されることがある問題を修正','電波が不安定なとき保存が「YouTubeを準備中…」のまま止まることがある問題を修正（自動再試行とエラー表示）'] },
   { ver:'v0.8.0', date:'2026-09-13', changes:['起動を高速化：2回目以降は端末に覚えた動画リストですぐ再生を開始し、リストの更新は裏で反映（iPhone X などの古い端末向け）','接続先の先読みなどで初回の読み込みも短縮'] },
   { ver:'v0.7.2', date:'2026-08-22', changes:['iOS 16 など少し前の iPhone / iPad Safari 向けの互換性強化（画面高さのフォールバック・コピーの代替手段・エラー時に原因を画面表示）','全画面にできない iPhone では ⛶ ボタンを非表示に'] },
   { ver:'v0.7.1', date:'2026-08-22', changes:['連打しても動画が次々切り替わらないように（切り替えは1秒に1回まで。キー・タップ・スワイプ共通）','5秒未満しか見なかった再生は視聴記録に残さないように'] },
@@ -385,11 +386,17 @@ function expandPlaylist(plId) {
   });
 }
 function ensureYtApi() {
-  return new Promise(res => {
+  return new Promise((res, rej) => {
     if (window.YT && window.YT.Player) return res();
     const prev = window.onYouTubeIframeAPIReady;
-    window.onYouTubeIframeAPIReady = () => { prev && prev(); res(); };
-    if (!document.querySelector('script[src*="iframe_api"]')) { const s = document.createElement('script'); s.src = 'https://www.youtube.com/iframe_api'; document.head.appendChild(s); }
+    let done = false;
+    window.onYouTubeIframeAPIReady = () => { done = true; prev && prev(); res(); };
+    // head の先読みが失敗している可能性に備え、3秒待って未達なら再注入・15秒で諦める
+    setTimeout(() => {
+      if (done || (window.YT && window.YT.Player)) return;
+      const s = document.createElement('script'); s.src = 'https://www.youtube.com/iframe_api'; document.head.appendChild(s);
+    }, 3000);
+    setTimeout(() => { if (!done && !(window.YT && window.YT.Player)) rej(new Error('YouTube API を読み込めません（電波を確認してください）')); }, 15000);
   });
 }
 
@@ -471,7 +478,6 @@ async function initFirebaseAndSync(rawList) {
   if (rawList && rawList !== listId && !localStorage.getItem(LS_KEY + '_' + rawList)) {
     try { const d0 = await db.collection('tomoe-player').doc(rawList).get(); if (d0.exists) { listId = rawList; localStorage.setItem('tomoe_list_id', listId); } } catch (e) {}
   }
-  const playingId = (yt && videos[cur]) ? videos[cur].id : null;
   try {
     const doc = await db.collection('tomoe-player').doc(listId).get();
     if (!doc.exists) { document.getElementById('codeMsg').textContent = 'コード「' + listId + '」のセットはまだありません（保存すると作られます）'; }
@@ -483,15 +489,21 @@ async function initFirebaseAndSync(rawList) {
       localStorage.setItem(LS_KEY + '_' + listId, JSON.stringify(fresh));
       localStorage.setItem('tomoe_src_' + listId, sources || '');
       if (JSON.stringify(fresh) !== JSON.stringify(videos)) {
+        // 置換の直前に「今まさに再生中のID」を捕捉（await 中の操作で cur が動いていても正しく追従）
+        let playingId = (yt && videos[cur]) ? videos[cur].id : null;
+        try { if (yt && yt.getVideoData) playingId = (yt.getVideoData() || {}).video_id || playingId; } catch (e) {}
         videos = fresh;
-        if (playingId) { const i = videos.findIndex(v => v.id === playingId); cur = i >= 0 ? i : 0; }
+        if (playingId) { const i = videos.findIndex(v => v.id === playingId); cur = i >= 0 ? i : Math.min(cur, videos.length - 1); }
+        else cur = Math.min(Math.max(cur, 0), videos.length - 1);
         if (yt) { renderCands(); updateNow(); }
         log('リストを最新化 ' + videos.length + '本');
       }
     }
   } catch (e) { log('firestore: ' + e.message); }
 
-  document.getElementById('urlInput').value = sources || videos.map(v => 'https://www.youtube.com/watch?v=' + v.id).join('\n');
+  // 保護者が編集中の入力欄は上書きしない
+  const ui = document.getElementById('urlInput');
+  if (document.activeElement !== ui) ui.value = sources || videos.map(v => 'https://www.youtube.com/watch?v=' + v.id).join('\n');
   applyPlayerName();
   renderVList();
 
@@ -839,7 +851,10 @@ async function saveList() {
   if (viewOnly) return;
   const msg = document.getElementById('saveMsg');
   if (!db) { msg.textContent = '接続中…'; if (!(await waitDb())) { msg.textContent = '接続できません（電波を確認してください）'; return; } msg.textContent = ''; }
-  if (!(window.YT && window.YT.Player)) { msg.textContent = 'YouTube を準備中…'; await ensureYtApi(); }
+  if (!(window.YT && window.YT.Player)) {
+    msg.textContent = 'YouTube を準備中…';
+    try { await ensureYtApi(); } catch (e) { msg.textContent = '⚠ ' + e.message; return; }
+  }
   const raw = document.getElementById('urlInput').value;
   const limit = Math.max(5, Math.min(100, parseInt(document.getElementById('chanLimit').value, 10) || 30));
   const ids = [];
