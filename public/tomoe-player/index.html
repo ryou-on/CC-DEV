@@ -7,6 +7,12 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>こどもtube</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧸</text></svg>">
+<link rel="preconnect" href="https://www.youtube.com">
+<link rel="preconnect" href="https://i.ytimg.com">
+<link rel="preconnect" href="https://www.gstatic.com">
+<link rel="preconnect" href="https://firestore.googleapis.com">
+<link rel="preconnect" href="https://www.google.com">
+<script async src="https://www.youtube.com/iframe_api"></script>
 <style>
 :root{
   --bg:#fff7ed; --card:#ffffff; --accent:#fb923c; --accent2:#f97316;
@@ -203,8 +209,8 @@ https://www.youtube.com/playlist?list=PLxxxxxxxx"></textarea>
   </div>
 </div>
 
-<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 <script>
 // 早期エラー捕捉：古い iOS 等でスクリプトが落ちても原因を画面に出す
 window.__errs = [];
@@ -219,8 +225,9 @@ window.addEventListener('unhandledrejection', function (e) {
 // =========================================================
 // 設定
 // =========================================================
-const VERSION = 'v0.7.2';
+const VERSION = 'v0.8.0';
 const RELEASE_NOTES = [
+  { ver:'v0.8.0', date:'2026-09-13', changes:['起動を高速化：2回目以降は端末に覚えた動画リストですぐ再生を開始し、リストの更新は裏で反映（iPhone X などの古い端末向け）','接続先の先読みなどで初回の読み込みも短縮'] },
   { ver:'v0.7.2', date:'2026-08-22', changes:['iOS 16 など少し前の iPhone / iPad Safari 向けの互換性強化（画面高さのフォールバック・コピーの代替手段・エラー時に原因を画面表示）','全画面にできない iPhone では ⛶ ボタンを非表示に'] },
   { ver:'v0.7.1', date:'2026-08-22', changes:['連打しても動画が次々切り替わらないように（切り替えは1秒に1回まで。キー・タップ・スワイプ共通）','5秒未満しか見なかった再生は視聴記録に残さないように'] },
   { ver:'v0.7.0', date:'2026-08-22', changes:['コードなしの素のURLは「登録用ページ」に。セットは保存時に発行される専用URL（?code=…）で開く方式へ','登録ページに「▶ 前回のセットをひらく」ボタンを追加（この端末で最後に使ったセット）'] },
@@ -293,6 +300,7 @@ let yt = null, ytReady = false, lastKeyAt = 0, lastScrollAt = 0, clog = [], user
 const APP_NAME_DEFAULT = 'こどもtube';
 let viewOnly = false;   // 再生専用（?watch= で開いた端末）
 let playerName = '';
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 let sess = null, sessTick = null, lastTickAt = 0;   // 視聴ログ
 let autoRun = 0, idleStop = false;                   // 操作なしの連続自動再生カウント（放置検知）
 const AUTO_RUN_LIMIT = 3;                            // 操作なしで続けて流す上限（本）
@@ -388,24 +396,20 @@ function ensureYtApi() {
 // =========================================================
 // 初期化
 // =========================================================
+// 起動戦略：端末キャッシュの動画リストで即 YouTube を起動し、
+// Firebase（SDKパース・IndexedDB・Firestore往復）は裏で接続して差分だけ反映する（古い iPhone の初回体感を優先）
 async function init() {
   document.getElementById('verLabel').textContent = VERSION;
   if (!document.documentElement.requestFullscreen && !document.documentElement.webkitRequestFullscreen) { const b = document.querySelector('header button[title="全画面"]'); if (b) b.style.display = 'none'; }
   document.getElementById('autoFsChk').checked = localStorage.getItem('tomoe_autofs') !== 'off';
   renderKbdMap();
-  firebase.initializeApp(FIREBASE_CONFIG);
-  db = firebase.firestore();
-  try { await db.enablePersistence({ synchronizeTabs: true }); } catch (e) { log('persistence: ' + (e.code || e.message)); }
-  // コードは大文字に正規化するが、既存セットが元の表記（小文字など）で存在すればそれを優先
   // 素のURL（コードなし）は「登録用ページ」。セットは必ず ?code= / ?watch= の個別URLで開く
   const rawList = String(codeFromUrl() || '').trim().replace(/[^A-Za-z0-9_-]/g, '').slice(0, 12);
   listId = normCode(rawList);
-  if (rawList && rawList !== listId) {
-    try { const d0 = await db.collection('tomoe-player').doc(rawList).get(); if (d0.exists) listId = rawList; } catch (e) {}
-  }
+  // 小文字コード互換：キャッシュがあれば Firestore を待たずに判定（なければ裏の接続後に再確認）
+  if (rawList && rawList !== listId && localStorage.getItem(LS_KEY + '_' + rawList)) listId = rawList;
   const sp0 = new URLSearchParams(location.search);
   if (listId) {
-    // 個別URL: 端末に記憶（登録ページの「つづきをひらく」ボタン用）
     localStorage.setItem('tomoe_list_id', listId);
     if (sp0.get('watch')) localStorage.setItem('tomoe_view_only', '1');
     else if (sp0.get('code') || sp0.get('list') || sp0.get('c')) localStorage.removeItem('tomoe_view_only');
@@ -415,22 +419,75 @@ async function init() {
     viewOnly = false;   // 登録ページは常に編集モード
   }
   renderShare();
-
-  playerName = localStorage.getItem('tomoe_player_name_' + listId) || '';
+  playerName = localStorage.getItem('tomoe_player_name_' + (listId || '')) || '';
   applyPlayerName();
+
+  if (!listId) {
+    setPh('あたらしいセットをつくる：⚙ から動画を登録');
+    showResumeBtn();
+    openParent();
+  } else {
+    try { videos = JSON.parse(localStorage.getItem(LS_KEY + '_' + listId) || '[]'); } catch (e) { videos = []; }
+    sources = localStorage.getItem('tomoe_src_' + listId) || '';
+    if (videos.length) {
+      // キャッシュ即起動（Firestore を待たない）
+      document.getElementById('urlInput').value = sources || videos.map(v => 'https://www.youtube.com/watch?v=' + v.id).join('\n');
+      renderVList();
+      log('キャッシュから起動 ' + videos.length + '本');
+      loadYtApi();
+    } else {
+      setPh('よみこみちゅう…');
+    }
+  }
+  initFirebaseAndSync(rawList);
+}
+
+// Firebase 接続とリストの最新化（裏で実行・UIをブロックしない）
+async function waitDb(timeoutMs) {
+  const until = Date.now() + (timeoutMs || 15000);
+  while (!db && Date.now() < until) {
+    if (window.firebase && window.firebase.firestore) {
+      try {
+        firebase.initializeApp(FIREBASE_CONFIG);
+        const d = firebase.firestore();
+        d.enablePersistence({ synchronizeTabs: true }).catch(e => log('persistence: ' + (e.code || e.message)));
+        db = d;   // enablePersistence は待たない（後続の呼び出しはSDK内部でキューされる）
+        break;
+      } catch (e) {
+        // 別経路が先に initializeApp 済みのケース（duplicate-app）は firestore を取り直す
+        try { db = firebase.firestore(); } catch (e2) { log('fb init: ' + e.message); }
+        break;
+      }
+    }
+    await sleep(50);
+  }
+  return db;
+}
+async function initFirebaseAndSync(rawList) {
+  if (!(await waitDb(20000))) { if (!videos.length && listId) setPh('⚠ 接続できません（電波を確認して再読み込み）'); return; }
   closeOrphanSession();
-  // まずローカルキャッシュ → Firestore
-  try { videos = listId ? JSON.parse(localStorage.getItem(LS_KEY + '_' + listId) || '[]') : []; } catch (e) { videos = []; }
+  if (!listId) return;   // 登録ページはここまで（保存時に newCode が waitDb 済みの db を使う）
+  // 小文字コード互換の後追い確認（キャッシュで判定できなかった場合）
+  if (rawList && rawList !== listId && !localStorage.getItem(LS_KEY + '_' + rawList)) {
+    try { const d0 = await db.collection('tomoe-player').doc(rawList).get(); if (d0.exists) { listId = rawList; localStorage.setItem('tomoe_list_id', listId); } } catch (e) {}
+  }
+  const playingId = (yt && videos[cur]) ? videos[cur].id : null;
   try {
-    if (!listId) throw new Error('no list');
     const doc = await db.collection('tomoe-player').doc(listId).get();
     if (!doc.exists) { document.getElementById('codeMsg').textContent = 'コード「' + listId + '」のセットはまだありません（保存すると作られます）'; }
-    if (doc.exists) {
+    else {
       const d = doc.data();
-      videos = (d.videos || []).filter(v => v && v.id);
-      sources = d.sources || '';
+      const fresh = (d.videos || []).filter(v => v && v.id);
+      sources = d.sources || sources;
       if (d.name) playerName = d.name;
-      localStorage.setItem(LS_KEY + '_' + listId, JSON.stringify(videos));
+      localStorage.setItem(LS_KEY + '_' + listId, JSON.stringify(fresh));
+      localStorage.setItem('tomoe_src_' + listId, sources || '');
+      if (JSON.stringify(fresh) !== JSON.stringify(videos)) {
+        videos = fresh;
+        if (playingId) { const i = videos.findIndex(v => v.id === playingId); cur = i >= 0 ? i : 0; }
+        if (yt) { renderCands(); updateNow(); }
+        log('リストを最新化 ' + videos.length + '本');
+      }
     }
   } catch (e) { log('firestore: ' + e.message); }
 
@@ -439,13 +496,12 @@ async function init() {
   renderVList();
 
   if (!videos.length) {
-    setPh(listId ? '⚙ から YouTube の動画を登録してね' : 'あたらしいセットをつくる：⚙ から動画を登録');
+    setPh('⚙ から YouTube の動画を登録してね');
     showResumeBtn();
     openParent();
     return;
   }
-  log('動画 ' + videos.length + '本');
-  loadYtApi();
+  if (!yt) { log('動画 ' + videos.length + '本'); loadYtApi(); }
 }
 function setPh(t) { document.getElementById('phText').textContent = t; document.getElementById('ph').style.display = 'flex'; }
 
@@ -753,6 +809,7 @@ function applyPlayerName() {
 async function savePlayerName() {
   if (viewOnly) return;
   const msg = document.getElementById('nameMsg');
+  await waitDb(8000);
   playerName = document.getElementById('nameInput').value.trim().slice(0, 30);
   applyPlayerName();
   if (!listId) { msg.textContent = 'この端末に保存しました（コード発行後に共有されます）'; return; }
@@ -781,6 +838,7 @@ function closeParent() { document.getElementById('parentMo').classList.remove('o
 async function saveList() {
   if (viewOnly) return;
   const msg = document.getElementById('saveMsg');
+  if (!db) { msg.textContent = '接続中…'; if (!(await waitDb())) { msg.textContent = '接続できません（電波を確認してください）'; return; } msg.textContent = ''; }
   if (!(window.YT && window.YT.Player)) { msg.textContent = 'YouTube を準備中…'; await ensureYtApi(); }
   const raw = document.getElementById('urlInput').value;
   const limit = Math.max(5, Math.min(100, parseInt(document.getElementById('chanLimit').value, 10) || 30));
@@ -823,6 +881,7 @@ async function saveList() {
     try { window.history.replaceState(null, '', location.pathname + '?code=' + listId); } catch (e) { log('replaceState: ' + e.message); }
   }
   localStorage.setItem(LS_KEY + '_' + listId, JSON.stringify(videos));
+  localStorage.setItem('tomoe_src_' + listId, sources || '');
   try {
     await db.collection('tomoe-player').doc(listId).set({ videos, sources, name: playerName || '', updatedAt: new Date().toISOString() });
     msg.textContent = videos.length + '本を保存しました（コード: ' + listId + '）';
@@ -874,6 +933,7 @@ async function loadByCode() {
   const msg = document.getElementById('codeMsg');
   if (!up) { msg.textContent = 'コードを入力してください'; return; }
   msg.textContent = '確認中…';
+  await waitDb();
   let v = up;
   try {
     let ok = (await db.collection('tomoe-player').doc(up).get()).exists;
