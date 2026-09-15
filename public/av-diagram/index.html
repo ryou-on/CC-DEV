@@ -30,6 +30,16 @@
   .toast { animation: toast-in 0.2s ease-out; }
   @keyframes toast-in { from { transform: translateY(10px); opacity: 0; } to { transform: none; opacity: 1; } }
   input[type=number]::-webkit-inner-spin-button { opacity: 1; }
+  /* スマホ幅：左右パネルをドロワー表示 */
+  .drawer-btn { display: none; }
+  @media (max-width: 900px) {
+    .drawer-btn { display: inline-block; }
+    aside.side { position: fixed; top: 0; bottom: 0; z-index: 30; width: min(85vw, 300px); transform: translateX(-105%); transition: transform 0.2s ease; box-shadow: 0 0 24px rgba(0,0,0,0.25); }
+    aside.side.right { right: 0; left: auto; transform: translateX(105%); }
+    aside.side.open { transform: none; }
+    #legend { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { aside.side, .toast, .snap-ring { transition: none; animation: none; } }
 </style>
 </head>
 <body class="text-slate-800">
@@ -37,7 +47,9 @@
 
   <!-- ===== ヘッダー ===== -->
   <header class="flex items-center gap-2 px-3 py-2 bg-slate-900 text-white shadow z-20 flex-wrap">
+    <button id="btnLeft" class="drawer-btn px-2 py-1 rounded bg-slate-700 text-xs" title="機材パレット">☰ 機材</button>
     <button id="btnHelp" class="font-bold text-base tracking-wide hover:text-sky-300" title="クリックで使い方を表示">🎬 AV構成図シミュレーター</button>
+    <button id="btnRight" class="drawer-btn px-2 py-1 rounded bg-slate-700 text-xs ml-auto" title="プロパティ・一覧">ⓘ 情報</button>
     <input id="projectName" class="ml-2 px-2 py-1 rounded bg-slate-700 text-white text-sm w-56 placeholder-slate-400" placeholder="プロジェクト名（例：JAICA TiB 2025-12-10）">
     <div class="flex-1"></div>
     <div class="flex items-center gap-1 text-xs flex-wrap">
@@ -60,7 +72,7 @@
   <div class="flex flex-1 min-h-0">
 
     <!-- ===== 左：機材パレット ===== -->
-    <aside class="w-60 shrink-0 bg-white border-r border-slate-200 flex flex-col">
+    <aside id="leftPane" class="side w-60 shrink-0 bg-white border-r border-slate-200 flex flex-col">
       <div class="p-2 border-b border-slate-200">
         <input id="paletteSearch" class="w-full px-2 py-1 text-sm border border-slate-300 rounded" placeholder="🔍 機材を検索（V-8HD, XLR…）">
         <div class="mt-1 text-[10px] text-slate-500">クリックで追加 / キャンバスへドラッグでも配置可</div>
@@ -91,7 +103,7 @@
         </g>
       </svg>
       <!-- 凡例 -->
-      <div class="absolute left-2 top-2 bg-white/90 rounded shadow px-2 py-1 text-[11px] flex gap-3 pointer-events-none">
+      <div id="legend" class="absolute left-2 top-2 bg-white/90 rounded shadow px-2 py-1 text-[11px] flex gap-3 flex-wrap pointer-events-none">
         <span><i class="inline-block w-3 h-1.5 rounded align-middle" style="background:#2563eb"></i> 映像 (HDMI/SDI)</span>
         <span><i class="inline-block w-3 h-1.5 rounded align-middle" style="background:#16a34a"></i> 音声 (XLR/TRS/RCA/ミニ)</span>
         <span><i class="inline-block w-3 h-1.5 rounded align-middle" style="background:#f97316"></i> ネットワーク (LAN)</span>
@@ -103,7 +115,7 @@
     </main>
 
     <!-- ===== 右：プロパティ・一覧 ===== -->
-    <aside class="w-72 shrink-0 bg-white border-l border-slate-200 flex flex-col text-sm">
+    <aside id="rightPane" class="side right w-72 shrink-0 bg-white border-l border-slate-200 flex flex-col text-sm">
       <div class="flex border-b border-slate-200 text-xs">
         <button data-tab="prop" class="tab flex-1 py-2 font-bold border-b-2 border-sky-500">プロパティ</button>
         <button data-tab="equip" class="tab flex-1 py-2 border-b-2 border-transparent text-slate-500">機材表</button>
@@ -928,8 +940,7 @@ function serialize() {
 }
 function saveJson() {
   const blob = new Blob([JSON.stringify(serialize(), null, 2)], { type: 'application/json' });
-  download(blob, `${fileBase()}.json`);
-  toast('JSON を保存しました');
+  download(blob, `${fileBase()}.json`).then(() => toast('JSON を保存しました'));
 }
 function loadJsonObject(o) {
   if (!o || !Array.isArray(o.nodes)) { toast('⚠ 対応していないJSON形式です'); return; }
@@ -952,7 +963,17 @@ $('fileInput').addEventListener('change', e => {
 $('btnSave').addEventListener('click', saveJson);
 $('projectName').addEventListener('input', e => { state.name = e.target.value; autosave(); });
 function fileBase() { return (state.name || 'av-diagram').replace(/[\\/:*?"<>|]/g, '_') + '_' + new Date().toISOString().slice(0, 10); }
-function download(blob, name) {
+async function download(blob, name) {
+  // claude.ai アーティファクト内では viewer の downloads 機能経由で保存（利用不可なら通常保存）
+  try {
+    if (window.claude && typeof window.claude.use === 'function') {
+      const dl = await window.claude.use('downloads');
+      if (dl) {
+        try { await dl.save({ filename: name, data: blob }); return; }
+        catch (e) { if (e && e.code === 'declined') { toast('保存をキャンセルしました'); return; } console.warn('downloads.save', e); }
+      }
+    }
+  } catch (e) { console.warn('downloads capability', e); }
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
 }
@@ -1012,7 +1033,7 @@ function equipmentTable() { return equipmentRows().map((r, i) => [i + 1, r.cat, 
 function cableTable() { return cableRows().map(r => [r.no, r.signal, r.cable, `${r.from} [${r.fromPort}]`, `${r.to} [${r.toPort}]`, r.length !== '' ? r.length + ' m' : '', r.note]); }
 
 async function exportPng() {
-  try { const cv = await renderDiagramCanvas(2); cv.toBlob(b => download(b, `${fileBase()}.png`), 'image/png'); toast('PNG を書き出しました'); }
+  try { const cv = await renderDiagramCanvas(2); const b = await new Promise(r => cv.toBlob(r, 'image/png')); await download(b, `${fileBase()}.png`); toast('PNG を書き出しました'); }
   catch (e) { console.error(e); toast('⚠ ' + e.message); }
 }
 async function exportPdf() {
@@ -1027,7 +1048,7 @@ async function exportPdf() {
     const addPages = pages => pages.forEach(p => { pdf.addPage(); pdf.addImage(p.toDataURL('image/jpeg', 0.9), 'JPEG', 0, 0, W, H); });
     addPages(renderTableCanvases('機材表', ['No', 'カテゴリ', 'メーカー', '機材名', '台数', 'ラベル'], equipmentTable(), [60, 180, 180, 420, 80, 640]));
     addPages(renderTableCanvases('ケーブル表（結線一覧）', ['No', '区分', 'ケーブル', 'From', 'To', '長さ', 'メモ'], cableTable(), [60, 120, 260, 390, 390, 90, 254]));
-    pdf.save(`${fileBase()}.pdf`);
+    await download(pdf.output('blob'), `${fileBase()}.pdf`);
     toast('PDF を書き出しました');
   } catch (e) { console.error(e); toast('⚠ ' + e.message); }
 }
@@ -1090,7 +1111,8 @@ async function exportPptx() {
     const s4 = pptx.addSlide();
     s4.addText('ケーブル表（結線一覧）', { x: 0.3, y: 0.1, w: 5, h: 0.4, fontSize: 16, bold: true });
     s4.addTable([hdr(['No', '区分', 'ケーブル', 'From', 'To', '長さ', 'メモ'])].concat(cableTable().map(r => r.map(String))), { ...tableOpts, colW: [0.4, 0.8, 1.6, 2.4, 2.4, 0.6, 1.2] });
-    await pptx.writeFile({ fileName: `${fileBase()}.pptx` });
+    const pptxBlob = await pptx.write({ outputType: 'blob' });
+    await download(pptxBlob, `${fileBase()}.pptx`);
     toast('PowerPoint を書き出しました');
   } catch (e) { console.error(e); toast('⚠ ' + e.message); }
 }
@@ -1200,8 +1222,13 @@ $('btnDebug').addEventListener('click', async () => {
 });
 
 /* ============================================================
-   ツールバー
+   ツールバー・ドロワー（スマホ幅）
    ============================================================ */
+$('btnLeft').addEventListener('click', () => { $('rightPane').classList.remove('open'); $('leftPane').classList.toggle('open'); });
+$('btnRight').addEventListener('click', () => { $('leftPane').classList.remove('open'); $('rightPane').classList.toggle('open'); });
+svg.addEventListener('pointerdown', () => { $('leftPane').classList.remove('open'); $('rightPane').classList.remove('open'); });
+// パレットで機材を追加したらドロワーを閉じる（スマホ）
+$('palette').addEventListener('click', e => { if (e.target.closest('[data-dev]') && window.innerWidth <= 900) $('leftPane').classList.remove('open'); });
 $('btnNew').addEventListener('click', () => {
   if (state.nodes.length && !confirm('現在の図を消去して新規作成しますか？（JSON保存していない変更は失われます）')) return;
   pushHistory(); state.nodes = []; state.conns = []; state.name = ''; $('projectName').value = ''; selection = null; view = { x: 60, y: 60, k: 1 }; render(); autosave();
