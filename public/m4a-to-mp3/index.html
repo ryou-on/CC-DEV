@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>M4A → MP3 変換</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js"></script>
+<style>
+  body { background: #0f172a; }
+  .glass {
+    background: rgba(255,255,255,0.05);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+  .drop-zone {
+    border: 2px dashed rgba(255,255,255,0.2);
+    transition: all 0.2s;
+  }
+  .drop-zone.drag-over {
+    border-color: #6366f1;
+    background: rgba(99,102,241,0.08);
+  }
+  .progress-bar {
+    height: 6px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    transition: width 0.2s;
+  }
+  .modal-overlay {
+    background: rgba(0,0,0,0.6);
+  }
+  #debugButton, #versionBadge {
+    position: fixed;
+    bottom: 12px;
+    z-index: 40;
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.08);
+    color: #94a3b8;
+    backdrop-filter: blur(6px);
+  }
+  #versionBadge { right: 12px; }
+  #debugButton { right: 100px; }
+</style>
+</head>
+<body class="min-h-screen text-white p-4 md:p-8">
+
+  <div class="max-w-2xl mx-auto pb-16">
+
+    <!-- ヘッダー：アプリ名クリックでヘルプモーダル -->
+    <div class="text-center mb-8">
+      <button onclick="openModal('helpModal')" class="text-3xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent hover:opacity-80 transition">
+        M4A → MP3 変換
+      </button>
+      <p class="text-slate-400 mt-2 text-sm">ブラウザだけで変換・アップロード不要</p>
+    </div>
+
+    <!-- ビットレート選択 -->
+    <div class="glass rounded-2xl p-5 mb-4">
+      <label class="text-xs text-slate-400 uppercase tracking-wider font-semibold block mb-2">
+        MP3ビットレート
+      </label>
+      <select id="bitrate" class="w-full bg-slate-800 border border-slate-600 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-indigo-500">
+        <option value="128" selected>128 kbps（標準）</option>
+        <option value="192">192 kbps（高音質）</option>
+        <option value="320">320 kbps（最高音質）</option>
+      </select>
+    </div>
+
+    <!-- ドロップゾーン -->
+    <div id="dropZone" class="drop-zone glass rounded-2xl p-8 text-center cursor-pointer mb-6" onclick="document.getElementById('fileInput').click()">
+      <p class="text-slate-300 font-semibold mb-1">M4Aファイルをドラッグ＆ドロップ</p>
+      <p class="text-slate-500 text-sm">またはクリックして選択（複数選択可）</p>
+      <input id="fileInput" type="file" accept=".m4a,audio/x-m4a,audio/mp4,audio/aac" multiple class="hidden" />
+    </div>
+
+    <!-- ファイルリスト -->
+    <div id="fileList" class="space-y-3"></div>
+
+    <!-- コンソールログ -->
+    <div class="mt-6 glass rounded-2xl p-4">
+      <div class="flex justify-between items-center mb-2">
+        <span class="text-xs text-slate-500 uppercase tracking-wider">ログ</span>
+        <button onclick="copyConsole()" class="text-xs bg-slate-700 px-3 py-1 rounded-lg hover:bg-slate-600 transition">
+          コピー
+        </button>
+      </div>
+      <pre id="consoleLog" class="text-xs text-slate-400 max-h-32 overflow-y-auto whitespace-pre-wrap"></pre>
+    </div>
+
+  </div>
+
+  <!-- ヘルプモーダル -->
+  <div id="helpModal" class="hidden fixed inset-0 modal-overlay flex items-center justify-center p-4 z-50" onclick="closeModalOnOverlay(event, 'helpModal')">
+    <div class="glass rounded-2xl p-6 max-w-md w-full max-h-[80vh] overflow-y-auto bg-slate-900">
+      <h2 class="text-lg font-bold mb-3">使い方</h2>
+      <ul class="text-sm text-slate-300 space-y-2 list-disc list-inside">
+        <li>M4Aファイルをドロップ、またはクリックして選択します（複数可）</li>
+        <li>ビットレートを選ぶと変換品質・ファイルサイズが変わります</li>
+        <li>選択すると自動で変換が始まり、完了すると「ダウンロード」ボタンが表示されます</li>
+        <li>変換はすべてブラウザ内で行われ、ファイルは外部サーバーへ送信されません</li>
+      </ul>
+      <h2 class="text-lg font-bold mt-4 mb-3">機能一覧</h2>
+      <ul class="text-sm text-slate-300 space-y-2 list-disc list-inside">
+        <li>M4A（AAC）→ MP3 変換（複数ファイル対応）</li>
+        <li>ビットレート選択（128 / 192 / 320 kbps）</li>
+        <li>変換進捗のリアルタイム表示</li>
+      </ul>
+      <button onclick="closeModal('helpModal')" class="mt-5 w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-sm font-semibold transition">
+        閉じる
+      </button>
+    </div>
+  </div>
+
+  <!-- リリースノートモーダル -->
+  <div id="releaseModal" class="hidden fixed inset-0 modal-overlay flex items-center justify-center p-4 z-50" onclick="closeModalOnOverlay(event, 'releaseModal')">
+    <div class="glass rounded-2xl p-6 max-w-md w-full max-h-[80vh] overflow-y-auto bg-slate-900">
+      <h2 class="text-lg font-bold mb-3">リリースノート</h2>
+      <div id="releaseNotesContent" class="text-sm text-slate-300 space-y-3 whitespace-pre-wrap"></div>
+      <button onclick="closeModal('releaseModal')" class="mt-5 w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-sm font-semibold transition">
+        閉じる
+      </button>
+    </div>
+  </div>
+
+  <!-- バージョン表示・デバッグボタン（右下固定） -->
+  <button id="versionBadge" onclick="openModal('releaseModal')">v0.1.0</button>
+  <button id="debugButton" onclick="copyConsole()" title="コンソールログをクリップボードにコピー">デバッグ</button>
+
+  <script>
+    // ===== リリースノート（バージョンアップ時は先頭に追記） =====
+    const RELEASE_NOTES = [
+      { version: '0.1.0', date: '2026-09-15', changes: ['初回リリース：M4AファイルをMP3に変換する機能を追加'] }
+    ];
+
+    // ===== ログ機能 =====
+    const logs = [];
+    function log(msg) {
+      const time = new Date().toLocaleTimeString('ja-JP');
+      const line = `[${time}] ${msg}`;
+      logs.push(line);
+      const el = document.getElementById('consoleLog');
+      el.textContent = logs.slice(-30).join('\n');
+      el.scrollTop = el.scrollHeight;
+    }
+    function copyConsole() {
+      navigator.clipboard.writeText(logs.join('\n'));
+      log('コンソールログをコピーしました');
+    }
+
+    // ===== モーダル制御 =====
+    function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+    function closeModalOnOverlay(e, id) { if (e.target.id === id) closeModal(id); }
+
+    function renderReleaseNotes() {
+      const container = document.getElementById('releaseNotesContent');
+      container.innerHTML = RELEASE_NOTES.map(entry => `
+        <div>
+          <p class="font-semibold text-white">v${entry.version}（${entry.date}）</p>
+          <ul class="list-disc list-inside text-slate-400 mt-1">
+            ${entry.changes.map(c => `<li>${c}</li>`).join('')}
+          </ul>
+        </div>
+      `).join('');
+    }
+    renderReleaseNotes();
+
+    // ===== ファイル選択・ドラッグ＆ドロップ =====
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const fileList = document.getElementById('fileList');
+
+    fileInput.addEventListener('change', e => handleFiles(e.target.files));
+
+    dropZone.addEventListener('dragover', e => {
+      e.preventDefault();
+      dropZone.classList.add('drag-over');
+    });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      handleFiles(e.dataTransfer.files);
+    });
+
+    function handleFiles(fileArray) {
+      const files = Array.from(fileArray).filter(f => /\.m4a$/i.test(f.name) || f.type.includes('m4a') || f.type.includes('mp4') || f.type.includes('aac'));
+      if (files.length === 0) {
+        log('M4Aファイルが見つかりませんでした');
+        return;
+      }
+      files.forEach(file => convertFile(file));
+    }
+
+    // ===== Float32 PCM → Int16 PCM 変換 =====
+    function floatTo16BitPCM(float32Array) {
+      const int16Array = new Int16Array(float32Array.length);
+      for (let i = 0; i < float32Array.length; i++) {
+        const s = Math.max(-1, Math.min(1, float32Array[i]));
+        int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+      }
+      return int16Array;
+    }
+
+    // ===== 1ファイルの変換処理 =====
+    async function convertFile(file) {
+      const id = `file-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const card = createFileCard(id, file.name);
+      fileList.prepend(card);
+      log(`変換開始: ${file.name}`);
+
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        const audioCtx = new AudioContextClass();
+        const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+
+        const channels = audioBuffer.numberOfChannels > 1 ? 2 : 1;
+        const sampleRate = audioBuffer.sampleRate;
+        const kbps = parseInt(document.getElementById('bitrate').value, 10);
+
+        const left = floatTo16BitPCM(audioBuffer.getChannelData(0));
+        const right = channels === 2 ? floatTo16BitPCM(audioBuffer.getChannelData(1)) : null;
+
+        const encoder = new lamejs.Mp3Encoder(channels, sampleRate, kbps);
+        const blockSize = 1152;
+        const mp3Data = [];
+        const totalBlocks = Math.ceil(left.length / blockSize);
+
+        for (let i = 0, blockIndex = 0; i < left.length; i += blockSize, blockIndex++) {
+          const leftChunk = left.subarray(i, i + blockSize);
+          let buf;
+          if (channels === 2) {
+            const rightChunk = right.subarray(i, i + blockSize);
+            buf = encoder.encodeBuffer(leftChunk, rightChunk);
+          } else {
+            buf = encoder.encodeBuffer(leftChunk);
+          }
+          if (buf.length > 0) mp3Data.push(buf);
+
+          // 100ブロックごとに進捗を更新しUIをブロックしない
+          if (blockIndex % 100 === 0) {
+            updateProgress(id, Math.round((blockIndex / totalBlocks) * 100));
+            await new Promise(r => setTimeout(r, 0));
+          }
+        }
+        const end = encoder.flush();
+        if (end.length > 0) mp3Data.push(end);
+
+        audioCtx.close();
+
+        const blob = new Blob(mp3Data, { type: 'audio/mpeg' });
+        const mp3Name = file.name.replace(/\.m4a$/i, '.mp3');
+        finishFileCard(id, blob, mp3Name);
+        log(`変換完了: ${mp3Name}`);
+      } catch (err) {
+        errorFileCard(id, err.message);
+        log(`エラー（${file.name}）: ${err.message}`);
+      }
+    }
+
+    // ===== ファイルカードのUI生成・更新 =====
+    function createFileCard(id, name) {
+      const div = document.createElement('div');
+      div.id = id;
+      div.className = 'glass rounded-2xl p-4';
+      div.innerHTML = `
+        <div class="flex justify-between items-center mb-2">
+          <span class="text-sm font-medium truncate mr-2">${name}</span>
+          <span class="text-xs text-slate-400 status-text">変換中...</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-bar-fill" style="width: 0%"></div>
+        </div>
+      `;
+      return div;
+    }
+
+    function updateProgress(id, percent) {
+      const card = document.getElementById(id);
+      if (!card) return;
+      card.querySelector('.progress-bar-fill').style.width = `${percent}%`;
+      card.querySelector('.status-text').textContent = `変換中... ${percent}%`;
+    }
+
+    function finishFileCard(id, blob, mp3Name) {
+      const card = document.getElementById(id);
+      if (!card) return;
+      const url = URL.createObjectURL(blob);
+      const sizeKb = Math.round(blob.size / 1024);
+      card.querySelector('.progress-bar-fill').style.width = '100%';
+      card.querySelector('.status-text').textContent = `完了（${sizeKb} KB）`;
+      card.insertAdjacentHTML('beforeend', `
+        <a href="${url}" download="${mp3Name}" class="mt-3 block text-center py-2 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-semibold transition">
+          ダウンロード（${mp3Name}）
+        </a>
+      `);
+    }
+
+    function errorFileCard(id, message) {
+      const card = document.getElementById(id);
+      if (!card) return;
+      card.querySelector('.progress-bar-fill').style.width = '0%';
+      card.querySelector('.status-text').textContent = '失敗';
+      card.querySelector('.status-text').classList.add('text-red-400');
+      card.insertAdjacentHTML('beforeend', `
+        <p class="mt-2 text-xs text-red-400">${message}</p>
+      `);
+    }
+
+    log('アプリ起動完了 · M4A → MP3 変換（lamejs）');
+  </script>
+</body>
+</html>
