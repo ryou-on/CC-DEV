@@ -1,7 +1,7 @@
 # HANDOVER.md - AV構成図シミュレーター (av-diagram)
 
 ## 基本情報
-- バージョン: v0.1.0
+- バージョン: v0.2.0
 - フェーズ: Phase 1（MVP・α版）
 - 最終更新: 2026-09-15
 
@@ -29,6 +29,8 @@ public/av-diagram/
 - ケーブル長・メモ入力、機材表・ケーブル表の自動集計
 - JSON 保存・読込、PNG / PDF（図 + 機材表 + ケーブル表）/ PowerPoint（編集可能図形 + 画像 + 表）
 - カスタム機材の登録（localStorage 保存、JSON にも同梱）
+- 配置済み機材の編集：メーカー・機材名・役割ラベル・端子（種別/向き/ラベル/追加/削除）、「パレットに保存」で再利用
+- 写真モード：機材ボックスを実機写真に切替。PDF由来の写真を内蔵（PHOTOS 定数、約250KB）、機材ごとに写真アップロード可（480px縮小・JSON保存）
 - 共通UI：ヘルプモーダル、バージョン表示 → リリースノート、デバッグ（console.log コピー）
 
 ## 機材データの根拠（端子数）
@@ -46,9 +48,9 @@ public/av-diagram/
 ```json
 {
   "app": "av-diagram", "version": "v0.1.0", "name": "プロジェクト名",
-  "nodes": [{ "id": "…", "x": 0, "y": 0, "label": "C-1", "note": "", "def": { "id": "roland-v8hd", "brand": "Roland", "name": "V-8HD", "cat": "switcher", "icon": "🎛️", "ports": [ { "id": "hdmi_in_hdmi_in_1", "type": "hdmi", "dir": "in", "label": "HDMI IN 1" } ] } }],
+  "nodes": [{ "id": "…", "x": 0, "y": 0, "label": "C-1", "note": "", "photo": "data:image/jpeg;base64,…(任意)", "def": { "id": "roland-v8hd", "brand": "Roland", "name": "V-8HD", "cat": "switcher", "icon": "🎛️", "ports": [ { "id": "hdmi_in_hdmi_in_1", "type": "hdmi", "dir": "in", "label": "HDMI IN 1" } ] } }],
   "conns": [{ "id": "…", "a": { "node": "…", "port": "…" }, "b": { "node": "…", "port": "…" }, "length": 5, "note": "" }],
-  "customDevices": [], "view": { "x": 0, "y": 0, "k": 1 }
+  "customDevices": [], "photoMode": false, "view": { "x": 0, "y": 0, "k": 1 }
 }
 ```
 
@@ -64,7 +66,7 @@ public/av-diagram/
 - [x] PNG / PDF / PowerPoint 書き出し
 - [x] 機材表・ケーブル表
 - [x] カスタム機材
-- [ ] 機材写真（PDF内の実機画像）のノード表示
+- [x] 機材写真（PDF内の実機画像）のノード表示（写真モード）
 - [ ] 自動整列（レイアウト）
 - [ ] Firestore 保存・共有URL
 
