@@ -1,0 +1,1292 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AV構成図シミュレーター</title>
+<link rel="icon" href="data:,">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
+<style>
+  html, body { height: 100%; overflow: hidden; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", Meiryo, sans-serif; background: #f1f5f9; }
+  #canvas { touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab; }
+  #canvas.panning { cursor: grabbing; }
+  .node-body { cursor: move; }
+  .port { cursor: crosshair; }
+  .conn-hit { cursor: pointer; }
+  .palette-item { cursor: grab; }
+  .palette-item:active { cursor: grabbing; }
+  .modal-bg { background: rgba(15, 23, 42, 0.55); }
+  .prose-md h2 { font-size: 1rem; font-weight: 700; margin: 0.9rem 0 0.3rem; }
+  .prose-md h3 { font-size: 0.9rem; font-weight: 700; margin: 0.7rem 0 0.2rem; }
+  .prose-md ul { list-style: disc; padding-left: 1.2rem; margin: 0.2rem 0; }
+  .prose-md li { margin: 0.1rem 0; }
+  .prose-md p { margin: 0.3rem 0; }
+  .prose-md code { background: #e2e8f0; padding: 0 0.25rem; border-radius: 0.2rem; font-size: 0.85em; }
+  @keyframes pulse-ring { 0% { r: 8; opacity: 1; } 100% { r: 16; opacity: 0; } }
+  .snap-ring { animation: pulse-ring 0.8s ease-out infinite; }
+  .toast { animation: toast-in 0.2s ease-out; }
+  @keyframes toast-in { from { transform: translateY(10px); opacity: 0; } to { transform: none; opacity: 1; } }
+  input[type=number]::-webkit-inner-spin-button { opacity: 1; }
+</style>
+</head>
+<body class="text-slate-800">
+<div class="flex flex-col h-full">
+
+  <!-- ===== ヘッダー ===== -->
+  <header class="flex items-center gap-2 px-3 py-2 bg-slate-900 text-white shadow z-20 flex-wrap">
+    <button id="btnHelp" class="font-bold text-base tracking-wide hover:text-sky-300" title="クリックで使い方を表示">🎬 AV構成図シミュレーター</button>
+    <input id="projectName" class="ml-2 px-2 py-1 rounded bg-slate-700 text-white text-sm w-56 placeholder-slate-400" placeholder="プロジェクト名（例：JAICA TiB 2025-12-10）">
+    <div class="flex-1"></div>
+    <div class="flex items-center gap-1 text-xs flex-wrap">
+      <button id="btnNew" class="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600">新規</button>
+      <button id="btnSample" class="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600">サンプル</button>
+      <button id="btnOpen" class="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600">📂 JSON読込</button>
+      <button id="btnSave" class="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500">💾 JSON保存</button>
+      <span class="mx-1 text-slate-500">|</span>
+      <button id="btnPng" class="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600">PNG</button>
+      <button id="btnPdf" class="px-2 py-1 rounded bg-rose-600 hover:bg-rose-500">📄 PDF</button>
+      <button id="btnPptx" class="px-2 py-1 rounded bg-orange-600 hover:bg-orange-500">📊 PowerPoint</button>
+      <span class="mx-1 text-slate-500">|</span>
+      <button id="btnUndo" class="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600" title="Ctrl+Z">↶ 戻す</button>
+      <button id="btnFit" class="px-2 py-1 rounded bg-slate-700 hover:bg-slate-600">⛶ 全体表示</button>
+      <button id="btnDelete" class="px-2 py-1 rounded bg-slate-700 hover:bg-red-600" title="Delete キー">🗑 削除</button>
+    </div>
+    <input type="file" id="fileInput" accept=".json,application/json" class="hidden">
+  </header>
+
+  <div class="flex flex-1 min-h-0">
+
+    <!-- ===== 左：機材パレット ===== -->
+    <aside class="w-60 shrink-0 bg-white border-r border-slate-200 flex flex-col">
+      <div class="p-2 border-b border-slate-200">
+        <input id="paletteSearch" class="w-full px-2 py-1 text-sm border border-slate-300 rounded" placeholder="🔍 機材を検索（V-8HD, XLR…）">
+        <div class="mt-1 text-[10px] text-slate-500">クリックで追加 / キャンバスへドラッグでも配置可</div>
+      </div>
+      <div id="palette" class="flex-1 overflow-y-auto p-2 space-y-2 text-sm"></div>
+      <div class="p-2 border-t border-slate-200">
+        <button id="btnCustom" class="w-full px-2 py-1 text-xs rounded bg-slate-800 text-white hover:bg-slate-700">＋ カスタム機材を作成</button>
+      </div>
+    </aside>
+
+    <!-- ===== 中央：キャンバス ===== -->
+    <main class="flex-1 relative min-w-0">
+      <svg id="canvas" class="w-full h-full bg-slate-100" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+            <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e2e8f0" stroke-width="1"/>
+          </pattern>
+          <pattern id="gridBig" width="100" height="100" patternUnits="userSpaceOnUse">
+            <rect width="100" height="100" fill="url(#grid)"/>
+            <path d="M 100 0 L 0 0 0 100" fill="none" stroke="#cbd5e1" stroke-width="1"/>
+          </pattern>
+        </defs>
+        <g id="world">
+          <rect id="gridRect" x="-20000" y="-20000" width="40000" height="40000" fill="url(#gridBig)"/>
+          <g id="connLayer"></g>
+          <g id="nodeLayer"></g>
+          <g id="tempLayer"></g>
+        </g>
+      </svg>
+      <!-- 凡例 -->
+      <div class="absolute left-2 top-2 bg-white/90 rounded shadow px-2 py-1 text-[11px] flex gap-3 pointer-events-none">
+        <span><i class="inline-block w-3 h-1.5 rounded align-middle" style="background:#2563eb"></i> 映像 (HDMI/SDI)</span>
+        <span><i class="inline-block w-3 h-1.5 rounded align-middle" style="background:#16a34a"></i> 音声 (XLR/TRS/RCA/ミニ)</span>
+        <span><i class="inline-block w-3 h-1.5 rounded align-middle" style="background:#f97316"></i> ネットワーク (LAN)</span>
+        <span><i class="inline-block w-3 h-1.5 rounded align-middle" style="background:#7c3aed"></i> USB/データ</span>
+        <span><i class="inline-block w-3 h-1.5 rounded align-middle" style="background:#64748b"></i> 制御 (MIDI/TALLY/RS-422)</span>
+      </div>
+      <div id="zoomInfo" class="absolute right-2 top-2 bg-white/90 rounded shadow px-2 py-1 text-[11px] pointer-events-none">100%</div>
+      <div id="toast" class="hidden absolute left-1/2 -translate-x-1/2 bottom-6 bg-slate-900 text-white text-sm px-4 py-2 rounded shadow-lg toast z-30"></div>
+    </main>
+
+    <!-- ===== 右：プロパティ・一覧 ===== -->
+    <aside class="w-72 shrink-0 bg-white border-l border-slate-200 flex flex-col text-sm">
+      <div class="flex border-b border-slate-200 text-xs">
+        <button data-tab="prop" class="tab flex-1 py-2 font-bold border-b-2 border-sky-500">プロパティ</button>
+        <button data-tab="equip" class="tab flex-1 py-2 border-b-2 border-transparent text-slate-500">機材表</button>
+        <button data-tab="cable" class="tab flex-1 py-2 border-b-2 border-transparent text-slate-500">ケーブル表</button>
+      </div>
+      <div id="tab-prop" class="flex-1 overflow-y-auto p-3"></div>
+      <div id="tab-equip" class="flex-1 overflow-y-auto p-3 hidden"></div>
+      <div id="tab-cable" class="flex-1 overflow-y-auto p-3 hidden"></div>
+    </aside>
+  </div>
+</div>
+
+<!-- ===== 右下固定：バージョン・デバッグ ===== -->
+<div class="fixed bottom-2 right-2 flex items-center gap-2 z-40">
+  <button id="btnDebug" class="text-[10px] px-2 py-0.5 rounded bg-slate-700/40 text-white hover:bg-slate-700/70" title="console.log をクリップボードにコピー">🐞 debug</button>
+  <button id="btnVersion" class="text-[11px] px-2 py-0.5 rounded bg-slate-800/70 text-white hover:bg-slate-800">v0.1.0</button>
+</div>
+
+<!-- ===== モーダル共通 ===== -->
+<div id="modal" class="hidden fixed inset-0 modal-bg z-50 flex items-center justify-center p-4">
+  <div class="bg-white rounded-lg shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col">
+    <div class="flex items-center px-4 py-2 border-b border-slate-200">
+      <div id="modalTitle" class="font-bold"></div>
+      <div class="flex-1"></div>
+      <button id="modalClose" class="text-slate-500 hover:text-slate-800 text-xl leading-none">×</button>
+    </div>
+    <div id="modalBody" class="p-4 overflow-y-auto text-sm prose-md"></div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   コンソールログ捕捉（デバッグボタン用）
+   ============================================================ */
+const LOG_BUFFER = [];
+['log', 'warn', 'error', 'info'].forEach(level => {
+  const orig = console[level].bind(console);
+  console[level] = (...args) => {
+    try {
+      LOG_BUFFER.push(`[${new Date().toISOString()}] [${level}] ` + args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '));
+      if (LOG_BUFFER.length > 500) LOG_BUFFER.shift();
+    } catch (e) {}
+    orig(...args);
+  };
+});
+window.addEventListener('error', e => console.error('window.error', e.message));
+
+/* ============================================================
+   バージョン・リリースノート
+   ============================================================ */
+const APP_VERSION = 'v0.1.0';
+const RELEASE_NOTES = `## v0.1.0 (2026-09-15)
+- 初回リリース
+- Roland / Blackmagic 等の機材パレット（端子数はメーカー仕様準拠）
+- ドラッグ＆ドロップで機材配置、端子同士をドラッグで結線（マグネット吸着）
+- 端子種別（HDMI / SDI / XLR オス・メス / LAN 等）による接続制約
+- 映像・音声・ネットワーク・USB・制御の色分け
+- JSON 保存・読込、PNG / PDF / PowerPoint 書き出し
+- 機材表・ケーブル表の自動集計、カスタム機材の登録`;
+
+/* ============================================================
+   端子（ポート）種別の定義
+   signal: 線の色分け区分 / gender: オスメスあり（XLR系）
+   ============================================================ */
+const SIGNALS = {
+  video:   { label: '映像',       color: '#2563eb' },
+  audio:   { label: '音声',       color: '#16a34a' },
+  network: { label: 'ネットワーク', color: '#f97316' },
+  data:    { label: 'USB/データ',  color: '#7c3aed' },
+  control: { label: '制御',       color: '#64748b' },
+};
+const PORT_TYPES = {
+  hdmi:    { label: 'HDMI',            signal: 'video',   cable: 'HDMIケーブル' },
+  sdi:     { label: 'SDI (BNC)',       signal: 'video',   cable: 'SDIケーブル (BNC)' },
+  imglink: { label: 'IMG.LINK (BNC同軸)', signal: 'video', cable: '同軸ケーブル (BNC)' },
+  xlr:     { label: 'XLR (キャノン)',   signal: 'audio',   cable: 'キャノンケーブル (XLR)', gender: true },
+  minixlr: { label: 'mini XLR',        signal: 'audio',   cable: 'mini XLR ケーブル', gender: true },
+  trs:     { label: 'TRS (6.3mm)',     signal: 'audio',   cable: 'フォンケーブル (TRS)' },
+  rca:     { label: 'RCA',             signal: 'audio',   cable: 'RCAケーブル' },
+  mini:    { label: 'ステレオミニ (3.5mm)', signal: 'audio', cable: 'ステレオミニケーブル' },
+  usb:     { label: 'USB',             signal: 'data',    cable: 'USBケーブル' },
+  rj45:    { label: 'LAN (RJ45)',      signal: 'network', cable: 'LANケーブル' },
+  midi:    { label: 'MIDI',            signal: 'control', cable: 'MIDIケーブル' },
+  db25:    { label: 'TALLY/GPIO (DB-25)', signal: 'control', cable: 'TALLYケーブル (DB-25)' },
+  rs422:   { label: 'RS-422',          signal: 'control', cable: 'RS-422ケーブル' },
+};
+const DIRS = { in: '入力', out: '出力', bi: '双方向' };
+
+/* ============================================================
+   カテゴリ
+   ============================================================ */
+const CATEGORIES = {
+  switcher: { label: 'スイッチャー',       color: '#1e3a8a' },
+  camera:   { label: 'カメラ',             color: '#0369a1' },
+  audio:    { label: '音響',               color: '#166534' },
+  video:    { label: '映像周辺・変換',     color: '#6d28d9' },
+  pc:       { label: 'PC・ネットワーク',   color: '#334155' },
+  venue:    { label: '会場設備',           color: '#b45309' },
+  custom:   { label: 'カスタム',           color: '#be185d' },
+};
+
+/* ============================================================
+   機材データベース
+   spec: [type, dir, label, count]  count>1 なら「label 1..n」
+   LR(): L/R ペアを生成
+   ============================================================ */
+function makePorts(spec) {
+  const ports = [];
+  for (const [type, dir, label, count = 1] of spec) {
+    for (let i = 1; i <= count; i++) {
+      const lbl = count > 1 ? `${label} ${i}` : label;
+      ports.push({ id: `${type}_${dir}_${lbl}`.replace(/[^\w]+/g, '_').toLowerCase(), type, dir, label: lbl });
+    }
+  }
+  return ports;
+}
+const LR = (type, dir, base) => [[type, dir, `${base} L`], [type, dir, `${base} R`]];
+const D = (id, brand, name, cat, icon, spec, note = '') => ({ id, brand, name, cat, icon, note, ports: makePorts(spec) });
+
+const DEVICES = [
+  // ---------- スイッチャー ----------
+  D('roland-v8hd', 'Roland', 'V-8HD', 'switcher', '🎛️', [
+    ['hdmi', 'in', 'HDMI IN', 8], ['hdmi', 'out', 'HDMI OUT', 3],
+    ...LR('rca', 'in', 'RCA AUDIO IN'), ...LR('rca', 'out', 'RCA AUDIO OUT'),
+    ['mini', 'out', 'PHONES'], ['usb', 'bi', 'USB'], ['midi', 'in', 'MIDI IN'], ['midi', 'out', 'MIDI OUT'], ['db25', 'out', 'TALLY/GPIO'],
+  ], 'HDMI 8入力 / 3出力 HDビデオスイッチャー'),
+  D('roland-v1hd-plus', 'Roland', 'V-1HD+', 'switcher', '🎛️', [
+    ['hdmi', 'in', 'HDMI IN', 4], ['hdmi', 'out', 'HDMI OUT', 2],
+    ['xlr', 'in', 'XLR AUDIO IN', 2], ...LR('rca', 'in', 'RCA LINE IN'), ['mini', 'in', 'MIC/AUX IN'],
+    ...LR('trs', 'out', 'TRS AUDIO OUT'), ['mini', 'out', 'PHONES'], ['usb', 'bi', 'USB'],
+  ], 'HDMI 4入力 / 2出力、XLRマイク入力2'),
+  D('roland-v02hd-mk2', 'Roland', 'V-02HD MK II', 'switcher', '🎛️', [
+    ['hdmi', 'in', 'HDMI IN', 2], ['hdmi', 'out', 'HDMI PGM OUT'], ['hdmi', 'out', 'HDMI PVW OUT'],
+    ['mini', 'in', 'AUDIO IN', 2], ['mini', 'out', 'PHONES'], ['usb', 'bi', 'USB-C STREAM'],
+  ], 'HDMI 2入力、USB配信出力'),
+  D('roland-vr1hd', 'Roland', 'VR-1HD', 'switcher', '🎛️', [
+    ['hdmi', 'in', 'HDMI IN', 3], ['hdmi', 'out', 'HDMI MAIN OUT'], ['hdmi', 'out', 'HDMI MONITOR OUT'],
+    ['xlr', 'in', 'XLR/TRS MIC IN', 2], ...LR('rca', 'in', 'RCA LINE IN'), ...LR('rca', 'out', 'RCA LINE OUT'),
+    ['usb', 'bi', 'USB STREAM'], ['mini', 'out', 'PHONES'],
+  ], 'AVストリーミングミキサー（HDMI 3入力・USB配信）'),
+  D('roland-v160hd', 'Roland', 'V-160HD', 'switcher', '🎛️', [
+    ['sdi', 'in', 'SDI IN', 8], ['hdmi', 'in', 'HDMI IN', 8], ['sdi', 'out', 'SDI OUT', 3], ['hdmi', 'out', 'HDMI OUT', 3],
+    ['xlr', 'in', 'XLR/TRS AUDIO IN', 2], ...LR('rca', 'in', 'RCA AUDIO IN 3/4'), ...LR('xlr', 'out', 'XLR AUDIO OUT'), ...LR('rca', 'out', 'RCA AUDIO OUT'),
+    ['trs', 'out', 'PHONES'], ['usb', 'bi', 'USB-C STREAM'], ['rj45', 'bi', 'LAN'], ['db25', 'out', 'TALLY/GPIO'],
+  ], 'SDI 8 / HDMI 8 入力、SDI 3 / HDMI 3 出力'),
+  D('bmd-atem-mini-pro', 'Blackmagic', 'ATEM Mini Pro / Pro ISO', 'switcher', '🎛️', [
+    ['hdmi', 'in', 'HDMI IN', 4], ['hdmi', 'out', 'HDMI OUT'], ['mini', 'in', 'MIC IN', 2], ['usb', 'bi', 'USB-C'], ['rj45', 'bi', 'LAN'],
+  ], 'HDMI 4入力、USB-C Webcam出力、LAN配信'),
+  D('bmd-atem-mini-extreme', 'Blackmagic', 'ATEM Mini Extreme / ISO', 'switcher', '🎛️', [
+    ['hdmi', 'in', 'HDMI IN', 8], ['hdmi', 'out', 'HDMI OUT', 2], ['mini', 'in', 'MIC IN', 2], ['mini', 'out', 'PHONES'], ['usb', 'bi', 'USB-C', 2], ['rj45', 'bi', 'LAN'],
+  ], 'HDMI 8入力 / 2出力'),
+
+  // ---------- カメラ ----------
+  D('jvc-gy-hm250', 'JVC', 'GY-HM250 (4K)', 'camera', '📹', [
+    ['hdmi', 'out', 'HDMI OUT'], ['sdi', 'out', 'SDI OUT'], ['xlr', 'in', 'XLR MIC IN', 2], ['rj45', 'bi', 'LAN'], ['mini', 'out', 'PHONES'],
+  ], '4Kカムコーダー（HDMI/SDI出力、XLR入力2）'),
+  D('sony-pxw-z90', 'Sony', 'PXW-Z90', 'camera', '📹', [
+    ['hdmi', 'out', 'HDMI OUT'], ['sdi', 'out', 'SDI OUT'], ['xlr', 'in', 'XLR MIC IN', 2], ['mini', 'out', 'PHONES'],
+  ]),
+  D('sony-srg-ptz', 'Sony', 'SRG-X120 (PTZ)', 'camera', '🎥', [
+    ['hdmi', 'out', 'HDMI OUT'], ['sdi', 'out', 'SDI OUT'], ['rj45', 'bi', 'LAN (PoE+)'], ['rs422', 'in', 'RS-422'],
+  ], 'PTZカメラ'),
+  D('panasonic-aw-ue50', 'Panasonic', 'AW-UE50 (PTZ)', 'camera', '🎥', [
+    ['sdi', 'out', 'SDI OUT'], ['hdmi', 'out', 'HDMI OUT'], ['rj45', 'bi', 'LAN (PoE+)'], ['rs422', 'in', 'RS-422'],
+  ], 'PTZカメラ'),
+  D('generic-mirrorless', '汎用', 'ミラーレス/一眼カメラ', 'camera', '📷', [
+    ['hdmi', 'out', 'HDMI OUT'], ['mini', 'in', 'MIC IN'], ['usb', 'bi', 'USB-C'],
+  ]),
+  D('generic-camera', '汎用', 'ビデオカメラ (HDMI)', 'camera', '📹', [['hdmi', 'out', 'HDMI OUT'], ['mini', 'in', 'MIC IN']]),
+  D('generic-webcam', '汎用', 'USB Webカメラ', 'camera', '📷', [['usb', 'out', 'USB']]),
+  D('generic-smartphone', '汎用', 'スマートフォン', 'camera', '📱', [['usb', 'bi', 'USB-C'], ['mini', 'out', 'ステレオミニ OUT']]),
+
+  // ---------- 音響 ----------
+  D('wireless-mic-rx', '汎用', 'ワイヤレスマイク受信機', 'audio', '📡', [['xlr', 'out', 'XLR OUT'], ['trs', 'out', 'TRS OUT']]),
+  D('wired-mic', '汎用', '有線マイク (SM58等)', 'audio', '🎤', [['xlr', 'out', 'XLR OUT']]),
+  D('zoom-l8', 'Zoom', 'LiveTrak L-8', 'audio', '🎚️', [
+    ['xlr', 'in', 'XLR/TRS IN', 6], ...LR('trs', 'out', 'MASTER OUT'), ['mini', 'out', 'PHONES', 4], ['usb', 'bi', 'USB-C'],
+  ], '8chデジタルミキサー'),
+  D('yamaha-mg10xu', 'Yamaha', 'MG10XU', 'audio', '🎚️', [
+    ['xlr', 'in', 'XLR/TRS IN', 4], ...LR('trs', 'in', 'TRS LINE IN 5/6'), ...LR('trs', 'in', 'TRS LINE IN 7/8'),
+    ...LR('xlr', 'out', 'XLR STEREO OUT'), ...LR('trs', 'out', 'TRS MONITOR OUT'), ['trs', 'out', 'PHONES'], ['usb', 'bi', 'USB'],
+  ], '10chアナログミキサー'),
+  D('audio-interface', '汎用', 'オーディオI/F (2in/2out)', 'audio', '🔊', [
+    ['xlr', 'in', 'XLR/TRS IN', 2], ...LR('trs', 'out', 'TRS LINE OUT'), ['mini', 'out', 'PHONES'], ['usb', 'bi', 'USB'],
+  ], 'USBオーディオインターフェース'),
+  D('powered-speaker', '汎用', 'パワードスピーカー', 'audio', '🔈', [['xlr', 'in', 'XLR IN'], ['xlr', 'out', 'XLR THRU']]),
+  D('di-box', '汎用', 'DIボックス', 'audio', '🔌', [['trs', 'in', 'TRS IN'], ['trs', 'out', 'TRS THRU'], ['xlr', 'out', 'XLR OUT']]),
+  D('adapter-mini-xlr', '変換', 'ステレオミニ→XLR 変換', 'audio', '🔀', [['mini', 'in', 'ステレオミニ IN'], ...LR('xlr', 'out', 'XLR OUT')]),
+  D('adapter-rca-xlr', '変換', 'RCA→XLR 変換', 'audio', '🔀', [...LR('rca', 'in', 'RCA IN'), ...LR('xlr', 'out', 'XLR OUT')]),
+  D('adapter-xlr-mini', '変換', 'XLR→ステレオミニ 変換', 'audio', '🔀', [['xlr', 'in', 'XLR IN'], ['mini', 'out', 'ステレオミニ OUT']]),
+  D('headphones', '汎用', 'ヘッドホン', 'audio', '🎧', [['mini', 'in', 'ステレオミニ IN']]),
+
+  // ---------- 映像周辺・変換 ----------
+  D('bmd-video-assist-7-12g', 'Blackmagic', 'Video Assist 7" 12G HDR', 'video', '🖥️', [
+    ['sdi', 'in', 'SDI IN'], ['hdmi', 'in', 'HDMI IN'], ['sdi', 'out', 'SDI OUT'], ['hdmi', 'out', 'HDMI OUT'],
+    ['minixlr', 'in', 'mini XLR IN', 2], ['mini', 'out', 'PHONES'], ['usb', 'bi', 'USB-C'],
+  ], 'レコーダー兼モニター'),
+  D('hdmi-splitter-1x2', '汎用', 'HDMIスプリッター 1×2', 'video', '🔁', [['hdmi', 'in', 'HDMI IN'], ['hdmi', 'out', 'HDMI OUT', 2]]),
+  D('hdmi-splitter-1x4', '汎用', 'HDMIスプリッター 1×4', 'video', '🔁', [['hdmi', 'in', 'HDMI IN'], ['hdmi', 'out', 'HDMI OUT', 4]]),
+  D('imagenics-dce-u1tx', 'IMAGENICS', 'DCE-U1TX (同軸延長 送信)', 'video', '📤', [['hdmi', 'in', 'HDMI IN'], ['imglink', 'out', 'IMG.LINK OUT']], '4K HDMI 同軸延長器・送信機'),
+  D('imagenics-dce-u1rx', 'IMAGENICS', 'DCE-U1RX (同軸延長 受信)', 'video', '📥', [['imglink', 'in', 'IMG.LINK IN'], ['hdmi', 'out', 'HDMI OUT']], '4K HDMI 同軸延長器・受信機'),
+  D('bmd-mc-hdmi-sdi', 'Blackmagic', 'Micro Converter HDMI→SDI 12G', 'video', '🔀', [['hdmi', 'in', 'HDMI IN'], ['sdi', 'out', 'SDI OUT', 2]]),
+  D('bmd-mc-sdi-hdmi', 'Blackmagic', 'Micro Converter SDI→HDMI 12G', 'video', '🔀', [['sdi', 'in', 'SDI IN'], ['sdi', 'out', 'SDI LOOP OUT'], ['hdmi', 'out', 'HDMI OUT']]),
+  D('usb-capture', '汎用', 'HDMI→USB キャプチャ', 'video', '🎞️', [['hdmi', 'in', 'HDMI IN'], ['usb', 'out', 'USB OUT']], 'Cam Link 等'),
+  D('monitor', '汎用', 'モニター / ディスプレイ', 'video', '🖥️', [['hdmi', 'in', 'HDMI IN', 2]]),
+  D('projector', '汎用', 'プロジェクター', 'video', '📽️', [['hdmi', 'in', 'HDMI IN', 2]]),
+  D('large-display', '汎用', '大型ディスプレイ (スタンド)', 'video', '🖥️', [['hdmi', 'in', 'HDMI IN']]),
+
+  // ---------- PC・ネットワーク ----------
+  D('laptop', '汎用', 'ノートPC', 'pc', '💻', [
+    ['hdmi', 'out', 'HDMI OUT'], ['usb', 'bi', 'USB-A', 2], ['usb', 'bi', 'USB-C'], ['rj45', 'bi', 'LAN'], ['mini', 'bi', 'ヘッドセット (ミニ)'],
+  ]),
+  D('desktop-pc', '汎用', '配信PC (デスクトップ)', 'pc', '🖥️', [
+    ['hdmi', 'out', 'HDMI OUT', 2], ['usb', 'bi', 'USB-A', 4], ['usb', 'bi', 'USB-C'], ['rj45', 'bi', 'LAN'], ['mini', 'out', 'LINE OUT'], ['mini', 'in', 'LINE IN'],
+  ]),
+  D('tablet', '汎用', 'タブレット / iPad', 'pc', '📱', [['usb', 'bi', 'USB-C'], ['mini', 'out', 'ステレオミニ OUT']]),
+  D('clicker', '汎用', 'クリッカー (USBレシーバー)', 'pc', '🖱️', [['usb', 'out', 'USB']]),
+  D('lan-hub-8', '汎用', 'LANハブ 8ポート', 'pc', '🔗', [['rj45', 'bi', 'LAN', 8]]),
+  D('lan-hub-5', '汎用', 'LANハブ 5ポート', 'pc', '🔗', [['rj45', 'bi', 'LAN', 5]]),
+  D('router', '汎用', 'Wi-Fi / LTE ルーター', 'pc', '📶', [['rj45', 'bi', 'WAN'], ['rj45', 'bi', 'LAN', 4]]),
+  D('internet', '—', 'インターネット回線 (ONU)', 'pc', '🌐', [['rj45', 'bi', 'LAN']]),
+  D('cloud', '—', '配信先 (YouTube / Zoom 等)', 'pc', '☁️', [['rj45', 'bi', 'ネットワーク']]),
+
+  // ---------- 会場設備 ----------
+  D('venue-input-panel', '会場', '外部入力パネル', 'venue', '🏢', [['xlr', 'in', 'XLR IN', 2], ['hdmi', 'in', 'HDMI IN']]),
+  D('venue-audio-out', '会場', '会場音響 出力 (マイク音声)', 'venue', '🏢', [['xlr', 'out', 'XLR OUT', 2]]),
+  D('venue-rack', '会場', '機器収納架 (音響ラック)', 'venue', '🗄️', [['xlr', 'in', 'XLR IN', 4], ['xlr', 'out', 'XLR OUT', 2], ['hdmi', 'in', 'HDMI IN'], ['rj45', 'bi', 'LAN']]),
+  D('venue-lan', '会場', '会場LAN口', 'venue', '🏢', [['rj45', 'bi', 'LAN']]),
+  D('venue-projector', '会場', '会場プロジェクター / スクリーン', 'venue', '📽️', [['hdmi', 'in', 'HDMI IN']]),
+  D('venue-speaker', '会場', '会場スピーカー (PA)', 'venue', '🔈', [['xlr', 'in', 'XLR IN']]),
+];
+
+/* ============================================================
+   状態
+   ============================================================ */
+const LS_KEY = 'avdiagram_autosave';
+const LS_CUSTOM = 'avdiagram_custom';
+let state = { name: '', nodes: [], conns: [], custom: [] };
+let view = { x: 60, y: 60, k: 1 };
+let selection = null;        // {type:'node'|'conn', id}
+let history = [];
+let drag = null;             // 現在のドラッグ操作
+let activeTab = 'prop';
+
+const uid = () => Math.random().toString(36).slice(2, 10);
+const $ = id => document.getElementById(id);
+const svg = $('canvas'), world = $('world'), connLayer = $('connLayer'), nodeLayer = $('nodeLayer'), tempLayer = $('tempLayer');
+
+function allDevices() { return [...DEVICES, ...state.custom]; }
+function getDevice(id) { return allDevices().find(d => d.id === id); }
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+/* ============================================================
+   ノード形状
+   ============================================================ */
+const NODE_W = 230, HEAD_H = 36, ROW_H = 17, PORT_R = 6;
+function nodeGeom(node) {
+  const ins = node.def.ports.filter(p => p.dir === 'in');
+  const outs = node.def.ports.filter(p => p.dir === 'out');
+  const bis = node.def.ports.filter(p => p.dir === 'bi');
+  const rows = Math.max(ins.length, outs.length, 1);
+  const h = HEAD_H + rows * ROW_H + 10 + (bis.length ? (bis.length > 1 ? 26 : 18) : 0);
+  return { w: NODE_W, h, ins, outs, bis };
+}
+function portLabel(p) {
+  const t = PORT_TYPES[p.type];
+  if (t && t.gender) {
+    const g = p.dir === 'in' ? '♀' : '♂';
+    return p.label.includes('XLR') ? p.label.replace('XLR', 'XLR' + g) : `${p.label} ${g}`;
+  }
+  return p.label;
+}
+// ノード内でのポート位置（ローカル座標）と接線方向
+function portLocal(node, portId) {
+  const g = nodeGeom(node);
+  let i = g.ins.findIndex(p => p.id === portId);
+  if (i >= 0) return { x: 0, y: HEAD_H + 12 + i * ROW_H, dx: -1, dy: 0 };
+  i = g.outs.findIndex(p => p.id === portId);
+  if (i >= 0) return { x: g.w, y: HEAD_H + 12 + i * ROW_H, dx: 1, dy: 0 };
+  i = g.bis.findIndex(p => p.id === portId);
+  if (i >= 0) {
+    const n = g.bis.length, spacing = Math.min(34, (g.w - 40) / Math.max(n - 1, 1));
+    return { x: g.w / 2 - (n - 1) * spacing / 2 + i * spacing, y: g.h, dx: 0, dy: 1 };
+  }
+  return { x: g.w / 2, y: g.h / 2, dx: 0, dy: 0 };
+}
+function portWorld(node, portId) {
+  const l = portLocal(node, portId);
+  return { x: node.x + l.x, y: node.y + l.y, dx: l.dx, dy: l.dy };
+}
+function findPort(node, portId) { return node.def.ports.find(p => p.id === portId); }
+function portOccupied(nodeId, portId) {
+  return state.conns.some(c => (c.a.node === nodeId && c.a.port === portId) || (c.b.node === nodeId && c.b.port === portId));
+}
+
+/* ============================================================
+   接続可否判定（端子種別・向き・オスメス）
+   ============================================================ */
+function checkCompat(nodeA, portA, nodeB, portB) {
+  if (nodeA.id === nodeB.id) return { ok: false, msg: '同じ機材の端子同士は接続できません' };
+  if (portA.type !== portB.type) {
+    return { ok: false, msg: `${PORT_TYPES[portA.type].label} 端子は ${PORT_TYPES[portA.type].label} 端子にしか接続できません（相手: ${PORT_TYPES[portB.type].label}）` };
+  }
+  const t = PORT_TYPES[portA.type];
+  if (portA.dir === 'in' && portB.dir === 'in') return { ok: false, msg: t.gender ? '入力(メス)同士は接続できません' : '入力同士は接続できません' };
+  if (portA.dir === 'out' && portB.dir === 'out') return { ok: false, msg: t.gender ? '出力(オス)同士は接続できません' : '出力同士は接続できません' };
+  if (portOccupied(nodeB.id, portB.id)) return { ok: false, msg: 'その端子は既に使用中です' };
+  return { ok: true };
+}
+
+/* ============================================================
+   描画
+   ============================================================ */
+function connPath(a, b) {
+  const dist = Math.hypot(b.x - a.x, b.y - a.y);
+  const d = Math.max(40, Math.min(160, dist / 2));
+  const c1 = { x: a.x + a.dx * d, y: a.y + a.dy * d };
+  const c2 = { x: b.x + b.dx * d, y: b.y + b.dy * d };
+  const mid = bezierPoint(a, c1, c2, b, 0.5);
+  return { d: `M ${a.x} ${a.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${b.x} ${b.y}`, mid };
+}
+function bezierPoint(p0, p1, p2, p3, t) {
+  const mt = 1 - t;
+  return {
+    x: mt * mt * mt * p0.x + 3 * mt * mt * t * p1.x + 3 * mt * t * t * p2.x + t * t * t * p3.x,
+    y: mt * mt * mt * p0.y + 3 * mt * mt * t * p1.y + 3 * mt * t * t * p2.y + t * t * t * p3.y,
+  };
+}
+function connLabel(c) {
+  const na = state.nodes.find(n => n.id === c.a.node);
+  const pa = na && findPort(na, c.a.port);
+  const t = pa ? PORT_TYPES[pa.type] : null;
+  let s = t ? t.label.replace(/ \(.*\)$/, '') : '';
+  if (c.length) s += ` ${c.length}m`;
+  return s;
+}
+function renderNodesSvg(opts = {}) {
+  let out = '';
+  for (const node of state.nodes) {
+    const g = nodeGeom(node), cat = CATEGORIES[node.def.cat] || CATEGORIES.custom;
+    const sel = !opts.export && selection && selection.type === 'node' && selection.id === node.id;
+    out += `<g data-node="${node.id}" transform="translate(${node.x},${node.y})">`;
+    out += `<rect class="node-body" x="0" y="0" width="${g.w}" height="${g.h}" rx="6" fill="#ffffff" stroke="${sel ? '#0ea5e9' : '#94a3b8'}" stroke-width="${sel ? 3 : 1.2}"/>`;
+    out += `<path class="node-body" d="M 0 6 a 6 6 0 0 1 6 -6 h ${g.w - 12} a 6 6 0 0 1 6 6 v ${HEAD_H - 6} h -${g.w} z" fill="${cat.color}"/>`;
+    out += `<text class="node-body" x="8" y="15" font-size="12" font-weight="700" fill="#fff">${esc(node.def.icon)} ${esc(node.label)}</text>`;
+    out += `<text class="node-body" x="8" y="29" font-size="9" fill="#e2e8f0">${esc(node.def.brand)} ${esc(node.def.name)}</text>`;
+    for (const p of node.def.ports) {
+      const l = portLocal(node, p.id), t = PORT_TYPES[p.type], color = SIGNALS[t.signal].color;
+      const used = portOccupied(node.id, p.id);
+      const snap = !opts.export && drag && drag.type === 'conn' && drag.snap && drag.snap.node === node.id && drag.snap.port === p.id;
+      const compat = !opts.export && drag && drag.type === 'conn' && drag.compat && drag.compat.has(node.id + '|' + p.id);
+      if (snap) out += `<circle class="snap-ring" cx="${l.x}" cy="${l.y}" r="10" fill="none" stroke="${color}" stroke-width="2"/>`;
+      out += `<circle class="port" data-node="${node.id}" data-port="${p.id}" cx="${l.x}" cy="${l.y}" r="${compat ? PORT_R + 2 : PORT_R}" fill="${used ? color : '#fff'}" stroke="${color}" stroke-width="${compat ? 3 : 2}"><title>${esc(portLabel(p))} — ${esc(t.label)} ${DIRS[p.dir]}${used ? '（使用中）' : ''}</title></circle>`;
+      if (p.dir === 'in') out += `<text class="node-body" x="${l.x + 10}" y="${l.y + 3}" font-size="9" fill="#334155">${esc(portLabel(p))}</text>`;
+      else if (p.dir === 'out') out += `<text class="node-body" x="${l.x - 10}" y="${l.y + 3}" font-size="9" fill="#334155" text-anchor="end">${esc(portLabel(p))}</text>`;
+      else { const bi = g.bis.indexOf(p); out += `<text class="node-body" x="${l.x}" y="${l.y - (bi % 2 ? 18 : 9)}" font-size="7.5" fill="#334155" text-anchor="middle">${esc(p.label)}</text>`; }
+    }
+    if (node.note) out += `<text x="0" y="${g.h + 12}" font-size="9" fill="#64748b">📝 ${esc(node.note)}</text>`;
+    out += `</g>`;
+  }
+  return out;
+}
+function renderConnsSvg(opts = {}) {
+  let out = '';
+  for (const c of state.conns) {
+    const na = state.nodes.find(n => n.id === c.a.node), nb = state.nodes.find(n => n.id === c.b.node);
+    if (!na || !nb) continue;
+    const pa = findPort(na, c.a.port); if (!pa) continue;
+    const color = SIGNALS[PORT_TYPES[pa.type].signal].color;
+    const A = portWorld(na, c.a.port), B = portWorld(nb, c.b.port);
+    const { d, mid } = connPath(A, B);
+    const sel = !opts.export && selection && selection.type === 'conn' && selection.id === c.id;
+    out += `<g data-conn="${c.id}">`;
+    if (sel) out += `<path d="${d}" fill="none" stroke="#0ea5e9" stroke-width="9" opacity="0.35"/>`;
+    out += `<path d="${d}" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round"/>`;
+    if (!opts.export) out += `<path class="conn-hit" d="${d}" fill="none" stroke="transparent" stroke-width="14"/>`;
+    const label = connLabel(c);
+    const w = label.length * 6.2 + 10;
+    out += `<rect x="${mid.x - w / 2}" y="${mid.y - 8}" width="${w}" height="16" rx="8" fill="#fff" stroke="${color}" stroke-width="1"/>`;
+    out += `<text x="${mid.x}" y="${mid.y + 3.5}" font-size="9" text-anchor="middle" fill="${color}" font-weight="700">${esc(label)}</text>`;
+    if (c.note) out += `<text x="${mid.x}" y="${mid.y + 20}" font-size="8" text-anchor="middle" fill="#64748b">${esc(c.note)}</text>`;
+    out += `</g>`;
+  }
+  return out;
+}
+function render() {
+  world.setAttribute('transform', `translate(${view.x},${view.y}) scale(${view.k})`);
+  connLayer.innerHTML = renderConnsSvg();
+  nodeLayer.innerHTML = renderNodesSvg();
+  // 仮の結線（ドラッグ中）
+  if (drag && drag.type === 'conn') {
+    const na = state.nodes.find(n => n.id === drag.from.node);
+    const A = portWorld(na, drag.from.port);
+    let B = { x: drag.cur.x, y: drag.cur.y, dx: -A.dx, dy: -A.dy };
+    if (drag.snap) { const nb = state.nodes.find(n => n.id === drag.snap.node); B = portWorld(nb, drag.snap.port); }
+    const color = SIGNALS[PORT_TYPES[findPort(na, drag.from.port).type].signal].color;
+    tempLayer.innerHTML = `<path d="${connPath(A, B).d}" fill="none" stroke="${color}" stroke-width="3" stroke-dasharray="${drag.snap ? '' : '6 4'}" opacity="0.8" pointer-events="none"/>`;
+  } else tempLayer.innerHTML = '';
+  $('zoomInfo').textContent = Math.round(view.k * 100) + '%';
+  renderProps();
+  renderLists();
+}
+
+/* ============================================================
+   座標変換
+   ============================================================ */
+function toWorld(sx, sy) {
+  const r = svg.getBoundingClientRect();
+  return { x: (sx - r.left - view.x) / view.k, y: (sy - r.top - view.y) / view.k };
+}
+function snapGrid(v) { return Math.round(v / 10) * 10; }
+
+/* ============================================================
+   履歴・保存
+   ============================================================ */
+function pushHistory() {
+  history.push(JSON.stringify({ nodes: state.nodes, conns: state.conns }));
+  if (history.length > 60) history.shift();
+}
+function undo() {
+  const s = history.pop();
+  if (!s) { toast('これ以上戻せません'); return; }
+  const o = JSON.parse(s); state.nodes = o.nodes; state.conns = o.conns; selection = null;
+  render(); autosave();
+}
+function autosave() {
+  try { localStorage.setItem(LS_KEY, JSON.stringify({ ...state, view })); } catch (e) {}
+}
+function loadAutosave() {
+  try {
+    const s = localStorage.getItem(LS_KEY);
+    if (s) { const o = JSON.parse(s); state = { name: o.name || '', nodes: o.nodes || [], conns: o.conns || [], custom: state.custom }; if (o.view) view = o.view; return true; }
+  } catch (e) {}
+  return false;
+}
+function loadCustomDevices() {
+  try { const s = localStorage.getItem(LS_CUSTOM); if (s) state.custom = JSON.parse(s); } catch (e) {}
+}
+function saveCustomDevices() {
+  try { localStorage.setItem(LS_CUSTOM, JSON.stringify(state.custom)); } catch (e) {}
+}
+
+/* ============================================================
+   ノード・接続の操作
+   ============================================================ */
+function addNode(defId, x, y, label) {
+  const def = getDevice(defId);
+  if (!def) { toast('機材定義が見つかりません: ' + defId); return null; }
+  pushHistory();
+  const node = { id: uid(), x: snapGrid(x), y: snapGrid(y), label: label || def.name, note: '', def: JSON.parse(JSON.stringify(def)) };
+  state.nodes.push(node);
+  selection = { type: 'node', id: node.id };
+  render(); autosave();
+  console.log('addNode', def.name);
+  return node;
+}
+function deleteNode(id) {
+  pushHistory();
+  state.nodes = state.nodes.filter(n => n.id !== id);
+  state.conns = state.conns.filter(c => c.a.node !== id && c.b.node !== id);
+  if (selection && selection.type === 'node' && selection.id === id) selection = null;
+  render(); autosave();
+}
+function duplicateNode(id) {
+  const n = state.nodes.find(x => x.id === id); if (!n) return;
+  pushHistory();
+  const copy = JSON.parse(JSON.stringify(n)); copy.id = uid(); copy.x += 30; copy.y += 30;
+  state.nodes.push(copy); selection = { type: 'node', id: copy.id };
+  render(); autosave();
+}
+function addConn(a, b, extra = {}) {
+  const na = state.nodes.find(n => n.id === a.node), nb = state.nodes.find(n => n.id === b.node);
+  if (!na || !nb) return null;
+  const pa = findPort(na, a.port), pb = findPort(nb, b.port);
+  if (!pa || !pb) return null;
+  if (portOccupied(na.id, pa.id)) { toast('その端子は既に使用中です'); return null; }
+  const r = checkCompat(na, pa, nb, pb);
+  if (!r.ok) { toast('⚠ ' + r.msg); return null; }
+  pushHistory();
+  // 出力→入力の向きに正規化（bi は元の順）
+  let A = a, B = b;
+  if (pa.dir === 'in' && pb.dir !== 'in') { A = b; B = a; }
+  const c = { id: uid(), a: A, b: B, length: extra.length || null, note: extra.note || '' };
+  state.conns.push(c);
+  selection = { type: 'conn', id: c.id };
+  render(); autosave();
+  console.log('addConn', na.label, pa.label, '->', nb.label, pb.label);
+  return c;
+}
+function deleteConn(id) {
+  pushHistory();
+  state.conns = state.conns.filter(c => c.id !== id);
+  if (selection && selection.type === 'conn' && selection.id === id) selection = null;
+  render(); autosave();
+}
+function deleteSelection() {
+  if (!selection) { toast('削除する対象を選択してください'); return; }
+  if (selection.type === 'node') deleteNode(selection.id); else deleteConn(selection.id);
+}
+
+/* ============================================================
+   ポインタ操作（配置・移動・結線・パン・ズーム）
+   ============================================================ */
+const SNAP_PX = 26, HOVER_PX = 14;
+svg.addEventListener('pointerdown', e => {
+  if (e.button === 1 || (e.button === 0 && e.target === svg) || e.target.id === 'gridRect' || (e.button === 0 && e.altKey)) {
+    drag = { type: 'pan', sx: e.clientX, sy: e.clientY, ox: view.x, oy: view.y };
+    svg.classList.add('panning');
+    if (e.target === svg || e.target.id === 'gridRect') { selection = null; render(); }
+    return;
+  }
+  const portEl = e.target.closest('[data-port]');
+  if (portEl) {
+    const nodeId = portEl.dataset.node, portId = portEl.dataset.port;
+    if (portOccupied(nodeId, portId)) { toast('この端子は使用中です。先に既存のケーブルを削除してください'); return; }
+    const node = state.nodes.find(n => n.id === nodeId), port = findPort(node, portId);
+    // 接続可能な端子集合を事前計算（ハイライト用）
+    const compat = new Set();
+    for (const n of state.nodes) for (const p of n.def.ports) if (checkCompat(node, port, n, p).ok) compat.add(n.id + '|' + p.id);
+    drag = { type: 'conn', from: { node: nodeId, port: portId }, cur: toWorld(e.clientX, e.clientY), snap: null, compat };
+    render();
+    return;
+  }
+  const connEl = e.target.closest('[data-conn]');
+  if (connEl) { selection = { type: 'conn', id: connEl.dataset.conn }; render(); return; }
+  const nodeEl = e.target.closest('[data-node]');
+  if (nodeEl) {
+    const node = state.nodes.find(n => n.id === nodeEl.dataset.node);
+    selection = { type: 'node', id: node.id };
+    const w = toWorld(e.clientX, e.clientY);
+    drag = { type: 'node', id: node.id, ox: w.x - node.x, oy: w.y - node.y, moved: false, startX: node.x, startY: node.y };
+    // 最前面へ
+    state.nodes = state.nodes.filter(n => n.id !== node.id).concat(node);
+    render();
+  }
+});
+window.addEventListener('pointermove', e => {
+  if (!drag) return;
+  if (drag.type === 'pan') {
+    view.x = drag.ox + (e.clientX - drag.sx); view.y = drag.oy + (e.clientY - drag.sy);
+    world.setAttribute('transform', `translate(${view.x},${view.y}) scale(${view.k})`);
+    return;
+  }
+  const w = toWorld(e.clientX, e.clientY);
+  if (drag.type === 'node') {
+    const node = state.nodes.find(n => n.id === drag.id);
+    const nx = snapGrid(w.x - drag.ox), ny = snapGrid(w.y - drag.oy);
+    if (nx !== node.x || ny !== node.y) {
+      if (!drag.moved) { pushHistory(); drag.moved = true; }
+      node.x = nx; node.y = ny;
+      connLayer.innerHTML = renderConnsSvg(); nodeLayer.innerHTML = renderNodesSvg();
+    }
+    return;
+  }
+  if (drag.type === 'conn') {
+    drag.cur = w;
+    // マグネット吸着：接続可能端子のうち最も近いもの（画面上 SNAP_PX 以内）
+    // ただし非互換端子の真上（HOVER_PX 以内）にいる場合は吸着させず、理由を保持する
+    let best = null, bestD = SNAP_PX / view.k, hover = null, hoverD = HOVER_PX / view.k;
+    const na = state.nodes.find(n => n.id === drag.from.node), pa = findPort(na, drag.from.port);
+    for (const n of state.nodes) for (const p of n.def.ports) {
+      const pw = portWorld(n, p.id), d = Math.hypot(pw.x - w.x, pw.y - w.y);
+      if (d < hoverD) { hoverD = d; hover = { n, p }; }
+      if (!drag.compat.has(n.id + '|' + p.id)) continue;
+      if (d < bestD) { bestD = d; best = { node: n.id, port: p.id }; }
+    }
+    drag.reject = null;
+    if (hover && !drag.compat.has(hover.n.id + '|' + hover.p.id) && hover.n.id !== na.id) {
+      best = null; drag.reject = checkCompat(na, pa, hover.n, hover.p).msg;
+    }
+    drag.snap = best;
+    render();
+  }
+});
+window.addEventListener('pointerup', e => {
+  if (!drag) return;
+  const d = drag; drag = null; svg.classList.remove('panning');
+  if (d.type === 'conn') {
+    if (d.snap) addConn(d.from, d.snap);
+    else {
+      // 吸着していない場合、非互換端子の上で離したなら理由を表示
+      if (d.reject) toast('⚠ ' + d.reject);
+      render();
+    }
+  } else if (d.type === 'node') { render(); autosave(); }
+  else render();
+});
+svg.addEventListener('wheel', e => {
+  e.preventDefault();
+  const r = svg.getBoundingClientRect();
+  const mx = e.clientX - r.left, my = e.clientY - r.top;
+  const factor = Math.exp(-e.deltaY * 0.0012);
+  const nk = Math.min(3, Math.max(0.2, view.k * factor));
+  view.x = mx - (mx - view.x) * (nk / view.k); view.y = my - (my - view.y) * (nk / view.k); view.k = nk;
+  render(); autosave();
+}, { passive: false });
+svg.addEventListener('dblclick', e => {
+  const nodeEl = e.target.closest('[data-node]');
+  if (nodeEl) {
+    const node = state.nodes.find(n => n.id === nodeEl.dataset.node);
+    const v = prompt('機材のラベル（例：C-1 メインカメラ）', node.label);
+    if (v !== null && v.trim()) { pushHistory(); node.label = v.trim(); render(); autosave(); }
+  }
+});
+// パレットからのドロップ
+svg.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
+svg.addEventListener('drop', e => {
+  e.preventDefault();
+  const id = e.dataTransfer.getData('text/plain');
+  if (!id) return;
+  const w = toWorld(e.clientX, e.clientY);
+  addNode(id, w.x - NODE_W / 2, w.y - 20);
+});
+// キーボード
+window.addEventListener('keydown', e => {
+  const tag = (e.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+  if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelection(); }
+  else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); }
+  else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveJson(); }
+  else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') { e.preventDefault(); if (selection && selection.type === 'node') duplicateNode(selection.id); }
+  else if (e.key === 'Escape') { if (drag) { drag = null; render(); } else if ($('modal').classList.contains('hidden') === false) closeModal(); else { selection = null; render(); } }
+});
+
+function fitView() {
+  if (!state.nodes.length) { view = { x: 60, y: 60, k: 1 }; render(); return; }
+  const bb = bbox(); const r = svg.getBoundingClientRect();
+  const k = Math.min(3, Math.max(0.2, Math.min((r.width - 40) / bb.w, (r.height - 60) / bb.h)));
+  view = { x: (r.width - bb.w * k) / 2 - bb.x * k, y: (r.height - bb.h * k) / 2 - bb.y * k + 10, k };
+  render(); autosave();
+}
+function bbox() {
+  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+  for (const n of state.nodes) { const g = nodeGeom(n); x1 = Math.min(x1, n.x); y1 = Math.min(y1, n.y); x2 = Math.max(x2, n.x + g.w); y2 = Math.max(y2, n.y + g.h + (n.note ? 16 : 0)); }
+  // 結線（ベジェ曲線）のはみ出し分も含める
+  for (const c of state.conns) {
+    const na = state.nodes.find(n => n.id === c.a.node), nb = state.nodes.find(n => n.id === c.b.node);
+    if (!na || !nb) continue;
+    const A = portWorld(na, c.a.port), B = portWorld(nb, c.b.port);
+    const dist = Math.hypot(B.x - A.x, B.y - A.y), d = Math.max(40, Math.min(160, dist / 2));
+    const c1 = { x: A.x + A.dx * d, y: A.y + A.dy * d }, c2 = { x: B.x + B.dx * d, y: B.y + B.dy * d };
+    for (let t = 0; t <= 1.001; t += 0.1) { const q = bezierPoint(A, c1, c2, B, t); x1 = Math.min(x1, q.x); y1 = Math.min(y1, q.y); x2 = Math.max(x2, q.x); y2 = Math.max(y2, q.y + 12); }
+  }
+  const m = 40;
+  return { x: x1 - m, y: y1 - m, w: x2 - x1 + m * 2, h: y2 - y1 + m * 2 };
+}
+
+/* ============================================================
+   パレット
+   ============================================================ */
+function renderPalette() {
+  const q = ($('paletteSearch').value || '').trim().toLowerCase();
+  const devices = allDevices().filter(d => !q || `${d.brand} ${d.name} ${d.note} ${d.ports.map(p => p.label + ' ' + PORT_TYPES[p.type].label).join(' ')}`.toLowerCase().includes(q));
+  let html = '';
+  for (const [cat, meta] of Object.entries(CATEGORIES)) {
+    const list = devices.filter(d => d.cat === cat);
+    if (!list.length) continue;
+    html += `<div><div class="text-[11px] font-bold text-white px-2 py-0.5 rounded" style="background:${meta.color}">${meta.label}</div><div class="mt-1 space-y-1">`;
+    for (const d of list) {
+      const ins = d.ports.filter(p => p.dir === 'in').length, outs = d.ports.filter(p => p.dir === 'out').length, bis = d.ports.filter(p => p.dir === 'bi').length;
+      html += `<div class="palette-item flex items-center gap-1 px-2 py-1 rounded border border-slate-200 hover:bg-sky-50 hover:border-sky-300" draggable="true" data-dev="${d.id}" title="${esc(d.note || '')}\n入力${ins} / 出力${outs} / 双方向${bis}">
+        <span class="text-base">${d.icon}</span>
+        <div class="flex-1 min-w-0"><div class="text-xs font-bold truncate">${esc(d.name)}</div><div class="text-[10px] text-slate-500 truncate">${esc(d.brand)} · IN${ins} OUT${outs}${bis ? ' BI' + bis : ''}</div></div>
+        ${d.cat === 'custom' ? `<button class="text-[10px] text-slate-400 hover:text-red-600" data-delcustom="${d.id}" title="カスタム機材を削除">✕</button>` : ''}
+      </div>`;
+    }
+    html += `</div></div>`;
+  }
+  if (!html) html = '<div class="text-xs text-slate-500">該当する機材がありません。「カスタム機材を作成」で追加できます。</div>';
+  $('palette').innerHTML = html;
+}
+$('palette').addEventListener('click', e => {
+  const del = e.target.closest('[data-delcustom]');
+  if (del) {
+    if (confirm('このカスタム機材を削除しますか？（配置済みノードは残ります）')) {
+      state.custom = state.custom.filter(d => d.id !== del.dataset.delcustom); saveCustomDevices(); renderPalette();
+    }
+    return;
+  }
+  const item = e.target.closest('[data-dev]');
+  if (!item) return;
+  const r = svg.getBoundingClientRect();
+  const w = toWorld(r.left + r.width / 2 + (Math.random() - 0.5) * 80, r.top + r.height / 2 + (Math.random() - 0.5) * 80);
+  addNode(item.dataset.dev, w.x - NODE_W / 2, w.y - 40);
+});
+$('palette').addEventListener('dragstart', e => {
+  const item = e.target.closest('[data-dev]');
+  if (!item) return;
+  e.dataTransfer.setData('text/plain', item.dataset.dev);
+  e.dataTransfer.effectAllowed = 'copy';
+});
+$('paletteSearch').addEventListener('input', renderPalette);
+
+/* ============================================================
+   右パネル：プロパティ
+   ============================================================ */
+document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => {
+  activeTab = b.dataset.tab;
+  document.querySelectorAll('.tab').forEach(t => { const on = t.dataset.tab === activeTab; t.classList.toggle('font-bold', on); t.classList.toggle('border-sky-500', on); t.classList.toggle('border-transparent', !on); t.classList.toggle('text-slate-500', !on); });
+  ['prop', 'equip', 'cable'].forEach(t => $('tab-' + t).classList.toggle('hidden', t !== activeTab));
+}));
+function renderProps() {
+  const el = $('tab-prop');
+  if (!selection) {
+    el.innerHTML = `<div class="text-slate-500 text-xs leading-relaxed">
+      <p class="font-bold text-slate-700 mb-1">操作方法</p>
+      <ul class="list-disc pl-4 space-y-1">
+        <li>左のパレットから機材をクリック or ドラッグして配置</li>
+        <li>端子（○）をドラッグして相手の端子へ → 近づくと<b>マグネット吸着</b></li>
+        <li>同じ種類の端子同士のみ接続可（HDMI↔HDMI、XLRオス↔メス など）</li>
+        <li>機材ダブルクリックでラベル変更（例：C-1）</li>
+        <li>背景ドラッグでパン、ホイールでズーム</li>
+        <li>Delete で削除、Ctrl+Z で元に戻す、Ctrl+D で複製</li>
+      </ul>
+      <p class="mt-3">機材: ${state.nodes.length} 台 / ケーブル: ${state.conns.length} 本</p>
+    </div>`;
+    return;
+  }
+  if (selection.type === 'node') {
+    const n = state.nodes.find(x => x.id === selection.id); if (!n) { selection = null; return renderProps(); }
+    const cat = CATEGORIES[n.def.cat] || CATEGORIES.custom;
+    let ports = '';
+    for (const p of n.def.ports) {
+      const t = PORT_TYPES[p.type];
+      const c = state.conns.find(c => (c.a.node === n.id && c.a.port === p.id) || (c.b.node === n.id && c.b.port === p.id));
+      let to = '';
+      if (c) { const other = c.a.node === n.id ? c.b : c.a; const on = state.nodes.find(x => x.id === other.node); const op = on && findPort(on, other.port); to = on ? `→ ${esc(on.label)} / ${esc(op ? portLabel(op) : '')}` : ''; }
+      ports += `<div class="flex items-center gap-1 py-0.5 border-b border-slate-100 text-[11px]"><i class="inline-block w-2 h-2 rounded-full" style="background:${SIGNALS[t.signal].color}"></i><span class="w-28 shrink-0 truncate" title="${esc(t.label)}">${esc(portLabel(p))}</span><span class="text-[10px] text-slate-400 w-10 shrink-0">${DIRS[p.dir]}</span><span class="flex-1 truncate ${c ? 'text-slate-700' : 'text-slate-300'}">${c ? to : '未接続'}</span>${c ? `<button class="text-red-500 hover:text-red-700" data-delconn="${c.id}" title="このケーブルを削除">✕</button>` : ''}</div>`;
+    }
+    el.innerHTML = `
+      <div class="text-[11px] font-bold text-white px-2 py-0.5 rounded inline-block" style="background:${cat.color}">${cat.label}</div>
+      <div class="mt-1 text-xs text-slate-500">${esc(n.def.brand)} ${esc(n.def.name)}</div>
+      <label class="block mt-2 text-[11px] text-slate-500">ラベル（図に表示）</label>
+      <input id="propLabel" class="w-full px-2 py-1 border border-slate-300 rounded text-sm" value="${esc(n.label)}">
+      <label class="block mt-2 text-[11px] text-slate-500">メモ</label>
+      <input id="propNote" class="w-full px-2 py-1 border border-slate-300 rounded text-sm" value="${esc(n.note)}" placeholder="例：会場持込 / 要電源">
+      <div class="flex gap-1 mt-2">
+        <button id="propDup" class="flex-1 px-2 py-1 text-xs rounded bg-slate-200 hover:bg-slate-300">複製 (Ctrl+D)</button>
+        <button id="propDel" class="flex-1 px-2 py-1 text-xs rounded bg-red-100 text-red-700 hover:bg-red-200">削除</button>
+      </div>
+      <div class="mt-3 text-[11px] font-bold text-slate-600">端子一覧（${n.def.ports.length}）</div>
+      <div class="mt-1">${ports}</div>`;
+    $('propLabel').addEventListener('change', e => { pushHistory(); n.label = e.target.value.trim() || n.def.name; render(); autosave(); });
+    $('propNote').addEventListener('change', e => { pushHistory(); n.note = e.target.value.trim(); render(); autosave(); });
+    $('propDup').addEventListener('click', () => duplicateNode(n.id));
+    $('propDel').addEventListener('click', () => deleteNode(n.id));
+    el.querySelectorAll('[data-delconn]').forEach(b => b.addEventListener('click', () => deleteConn(b.dataset.delconn)));
+  } else {
+    const c = state.conns.find(x => x.id === selection.id); if (!c) { selection = null; return renderProps(); }
+    const na = state.nodes.find(n => n.id === c.a.node), nb = state.nodes.find(n => n.id === c.b.node);
+    const pa = findPort(na, c.a.port), pb = findPort(nb, c.b.port), t = PORT_TYPES[pa.type];
+    el.innerHTML = `
+      <div class="text-[11px] font-bold text-white px-2 py-0.5 rounded inline-block" style="background:${SIGNALS[t.signal].color}">${SIGNALS[t.signal].label}ケーブル</div>
+      <div class="mt-2 text-sm font-bold">${esc(t.cable)}</div>
+      <div class="mt-2 text-xs"><span class="text-slate-500">From:</span> ${esc(na.label)}<br><span class="ml-4 text-slate-600">${esc(portLabel(pa))}</span></div>
+      <div class="mt-1 text-xs"><span class="text-slate-500">To:</span> ${esc(nb.label)}<br><span class="ml-4 text-slate-600">${esc(portLabel(pb))}</span></div>
+      <label class="block mt-2 text-[11px] text-slate-500">ケーブル長 (m)</label>
+      <input id="propLen" type="number" min="0" step="0.5" class="w-full px-2 py-1 border border-slate-300 rounded text-sm" value="${c.length ?? ''}" placeholder="例：10">
+      <label class="block mt-2 text-[11px] text-slate-500">メモ</label>
+      <input id="propCNote" class="w-full px-2 py-1 border border-slate-300 rounded text-sm" value="${esc(c.note)}" placeholder="例：会場常設 / 予備あり">
+      <button id="propCDel" class="mt-3 w-full px-2 py-1 text-xs rounded bg-red-100 text-red-700 hover:bg-red-200">このケーブルを削除</button>`;
+    $('propLen').addEventListener('change', e => { pushHistory(); c.length = e.target.value ? parseFloat(e.target.value) : null; render(); autosave(); });
+    $('propCNote').addEventListener('change', e => { pushHistory(); c.note = e.target.value.trim(); render(); autosave(); });
+    $('propCDel').addEventListener('click', () => deleteConn(c.id));
+  }
+}
+
+/* ============================================================
+   右パネル：機材表・ケーブル表
+   ============================================================ */
+function equipmentRows() {
+  const map = new Map();
+  for (const n of state.nodes) {
+    const key = n.def.id;
+    if (!map.has(key)) map.set(key, { brand: n.def.brand, name: n.def.name, cat: CATEGORIES[n.def.cat]?.label || '', count: 0, labels: [] });
+    const r = map.get(key); r.count++; r.labels.push(n.label);
+  }
+  return [...map.values()].sort((a, b) => (a.cat + a.brand + a.name).localeCompare(b.cat + b.brand + b.name, 'ja'));
+}
+function cableRows() {
+  return state.conns.map((c, i) => {
+    const na = state.nodes.find(n => n.id === c.a.node), nb = state.nodes.find(n => n.id === c.b.node);
+    const pa = na && findPort(na, c.a.port), pb = nb && findPort(nb, c.b.port);
+    const t = pa ? PORT_TYPES[pa.type] : { cable: '?', signal: 'control' };
+    return { no: i + 1, signal: SIGNALS[t.signal].label, cable: t.cable, from: na ? na.label : '?', fromPort: pa ? portLabel(pa) : '?', to: nb ? nb.label : '?', toPort: pb ? portLabel(pb) : '?', length: c.length ?? '', note: c.note || '' };
+  });
+}
+function cableSummary() {
+  const map = new Map();
+  for (const r of cableRows()) {
+    if (!map.has(r.cable)) map.set(r.cable, { cable: r.cable, count: 0, total: 0, unknown: 0 });
+    const s = map.get(r.cable); s.count++; if (r.length === '') s.unknown++; else s.total += Number(r.length);
+  }
+  return [...map.values()];
+}
+function renderLists() {
+  const eq = equipmentRows();
+  $('tab-equip').innerHTML = eq.length ? `<div class="text-xs text-slate-500 mb-2">合計 ${state.nodes.length} 台</div>` + eq.map(r => `
+    <div class="border-b border-slate-100 py-1.5">
+      <div class="flex items-center"><span class="text-sm font-bold flex-1">${esc(r.name)}</span><span class="text-xs bg-slate-200 rounded px-1.5">× ${r.count}</span></div>
+      <div class="text-[10px] text-slate-500">${esc(r.brand)} · ${esc(r.cat)}</div>
+      <div class="text-[10px] text-slate-600">${r.labels.map(esc).join(' / ')}</div>
+    </div>`).join('') : '<div class="text-xs text-slate-500">機材を配置すると自動で集計されます。</div>';
+  const cs = cableSummary(), cr = cableRows();
+  $('tab-cable').innerHTML = cr.length ? `
+    <div class="text-[11px] font-bold text-slate-600 mb-1">種別サマリー</div>
+    ${cs.map(s => `<div class="flex text-xs py-0.5 border-b border-slate-100"><span class="flex-1">${esc(s.cable)}</span><span class="text-slate-600">${s.count}本${s.total ? ` / 計${s.total}m` : ''}${s.unknown ? ` (${s.unknown}本 長さ未入力)` : ''}</span></div>`).join('')}
+    <div class="text-[11px] font-bold text-slate-600 mt-3 mb-1">結線一覧</div>
+    ${cr.map(r => `<div class="text-[11px] py-1 border-b border-slate-100 cursor-pointer hover:bg-sky-50" data-selconn="${state.conns[r.no - 1].id}">
+      <div class="flex"><span class="text-slate-400 w-5">${r.no}</span><span class="font-bold flex-1">${esc(r.cable)}</span><span class="text-slate-500">${r.length !== '' ? r.length + 'm' : '—'}</span></div>
+      <div class="pl-5 text-slate-600">${esc(r.from)} <span class="text-slate-400">[${esc(r.fromPort)}]</span> → ${esc(r.to)} <span class="text-slate-400">[${esc(r.toPort)}]</span></div>
+    </div>`).join('')}` : '<div class="text-xs text-slate-500">端子同士を結線するとケーブル表が自動生成されます。</div>';
+  $('tab-cable').querySelectorAll('[data-selconn]').forEach(el => el.addEventListener('click', () => { selection = { type: 'conn', id: el.dataset.selconn }; activateTab('prop'); render(); }));
+}
+function activateTab(t) { document.querySelector(`.tab[data-tab="${t}"]`).click(); }
+
+/* ============================================================
+   JSON 保存・読込
+   ============================================================ */
+function serialize() {
+  return { app: 'av-diagram', version: APP_VERSION, savedAt: new Date().toISOString(), name: state.name, nodes: state.nodes, conns: state.conns, customDevices: state.custom, view };
+}
+function saveJson() {
+  const blob = new Blob([JSON.stringify(serialize(), null, 2)], { type: 'application/json' });
+  download(blob, `${fileBase()}.json`);
+  toast('JSON を保存しました');
+}
+function loadJsonObject(o) {
+  if (!o || !Array.isArray(o.nodes)) { toast('⚠ 対応していないJSON形式です'); return; }
+  pushHistory();
+  state.name = o.name || ''; state.nodes = o.nodes; state.conns = o.conns || [];
+  // カスタム機材をマージ
+  for (const d of (o.customDevices || [])) if (!state.custom.some(x => x.id === d.id)) state.custom.push(d);
+  saveCustomDevices();
+  $('projectName').value = state.name;
+  selection = null; renderPalette(); fitView(); autosave();
+  toast(`読み込みました：機材 ${state.nodes.length} 台 / ケーブル ${state.conns.length} 本`);
+}
+$('btnOpen').addEventListener('click', () => $('fileInput').click());
+$('fileInput').addEventListener('change', e => {
+  const f = e.target.files[0]; if (!f) return;
+  const fr = new FileReader();
+  fr.onload = () => { try { loadJsonObject(JSON.parse(fr.result)); } catch (err) { console.error(err); toast('⚠ JSON の読み込みに失敗しました'); } };
+  fr.readAsText(f); e.target.value = '';
+});
+$('btnSave').addEventListener('click', saveJson);
+$('projectName').addEventListener('input', e => { state.name = e.target.value; autosave(); });
+function fileBase() { return (state.name || 'av-diagram').replace(/[\\/:*?"<>|]/g, '_') + '_' + new Date().toISOString().slice(0, 10); }
+function download(blob, name) {
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+
+/* ============================================================
+   書き出し：PNG / PDF / PowerPoint
+   ============================================================ */
+function exportSvgString() {
+  const bb = bbox();
+  const title = state.name || 'AV構成図';
+  const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" width="${bb.w}" height="${bb.h + 40}" viewBox="${bb.x} ${bb.y - 40} ${bb.w} ${bb.h + 40}" font-family="-apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Noto Sans JP', 'Yu Gothic', Meiryo, sans-serif">
+    <rect x="${bb.x}" y="${bb.y - 40}" width="${bb.w}" height="${bb.h + 40}" fill="#ffffff"/>
+    <text x="${bb.x + 16}" y="${bb.y - 12}" font-size="18" font-weight="700" fill="#0f172a">${esc(title)}</text>
+    <text x="${bb.x + bb.w - 16}" y="${bb.y - 12}" font-size="10" fill="#64748b" text-anchor="end">${new Date().toLocaleDateString('ja-JP')} · 機材 ${state.nodes.length} 台 / ケーブル ${state.conns.length} 本</text>
+    ${renderConnsSvg({ export: true })}${renderNodesSvg({ export: true })}
+  </svg>`;
+  return { svgStr, w: bb.w, h: bb.h + 40 };
+}
+async function renderDiagramCanvas(scale = 2) {
+  if (!state.nodes.length) throw new Error('機材が配置されていません');
+  const { svgStr, w, h } = exportSvgString();
+  const url = URL.createObjectURL(new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' }));
+  try {
+    const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('SVG描画に失敗')); i.src = url; });
+    const cv = document.createElement('canvas'); cv.width = Math.round(w * scale); cv.height = Math.round(h * scale);
+    const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height); ctx.drawImage(img, 0, 0, cv.width, cv.height);
+    return cv;
+  } finally { URL.revokeObjectURL(url); }
+}
+// 表を canvas に描画（jsPDF は日本語フォント非対応のため画像化する）
+function renderTableCanvases(title, headers, rows, widths, pageW = 1684, pageH = 1190) {
+  const pages = [], rowH = 30, top = 110, maxRows = Math.floor((pageH - top - 60) / rowH);
+  const chunks = []; for (let i = 0; i < Math.max(rows.length, 1); i += maxRows) chunks.push(rows.slice(i, i + maxRows));
+  chunks.forEach((chunk, pi) => {
+    const cv = document.createElement('canvas'); cv.width = pageW; cv.height = pageH; const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, pageW, pageH);
+    ctx.fillStyle = '#0f172a'; ctx.font = '700 28px sans-serif'; ctx.fillText(`${title}${chunks.length > 1 ? `（${pi + 1}/${chunks.length}）` : ''}`, 60, 60);
+    ctx.font = '16px sans-serif'; ctx.fillStyle = '#64748b'; ctx.textAlign = 'right'; ctx.fillText(`${state.name || ''}  ${new Date().toLocaleDateString('ja-JP')}`, pageW - 60, 60); ctx.textAlign = 'left';
+    let x = 60, y = top;
+    ctx.fillStyle = '#1e293b'; ctx.fillRect(60, y - 22, pageW - 120, rowH);
+    ctx.fillStyle = '#fff'; ctx.font = '700 15px sans-serif';
+    headers.forEach((h, i) => { ctx.fillText(h, x + 8, y); x += widths[i]; });
+    y += rowH;
+    ctx.font = '15px sans-serif';
+    chunk.forEach((r, ri) => {
+      if (ri % 2) { ctx.fillStyle = '#f1f5f9'; ctx.fillRect(60, y - 22, pageW - 120, rowH); }
+      ctx.fillStyle = '#0f172a'; x = 60;
+      r.forEach((cell, i) => { ctx.save(); ctx.beginPath(); ctx.rect(x, y - 22, widths[i] - 4, rowH); ctx.clip(); ctx.fillText(String(cell ?? ''), x + 8, y); ctx.restore(); x += widths[i]; });
+      y += rowH;
+    });
+    if (!rows.length) { ctx.fillStyle = '#94a3b8'; ctx.fillText('（データなし）', 68, y); }
+    pages.push(cv);
+  });
+  return pages;
+}
+function equipmentTable() { return equipmentRows().map((r, i) => [i + 1, r.cat, r.brand, r.name, r.count, r.labels.join(' / ')]); }
+function cableTable() { return cableRows().map(r => [r.no, r.signal, r.cable, `${r.from} [${r.fromPort}]`, `${r.to} [${r.toPort}]`, r.length !== '' ? r.length + ' m' : '', r.note]); }
+
+async function exportPng() {
+  try { const cv = await renderDiagramCanvas(2); cv.toBlob(b => download(b, `${fileBase()}.png`), 'image/png'); toast('PNG を書き出しました'); }
+  catch (e) { console.error(e); toast('⚠ ' + e.message); }
+}
+async function exportPdf() {
+  try {
+    if (!window.jspdf) throw new Error('PDFライブラリが読み込めていません（ネットワークを確認）');
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4', compress: true });
+    const W = 297, H = 210, m = 8;
+    const cv = await renderDiagramCanvas(2);
+    const k = Math.min((W - m * 2) / cv.width, (H - m * 2) / cv.height);
+    pdf.addImage(cv.toDataURL('image/jpeg', 0.92), 'JPEG', (W - cv.width * k) / 2, (H - cv.height * k) / 2, cv.width * k, cv.height * k);
+    const addPages = pages => pages.forEach(p => { pdf.addPage(); pdf.addImage(p.toDataURL('image/jpeg', 0.9), 'JPEG', 0, 0, W, H); });
+    addPages(renderTableCanvases('機材表', ['No', 'カテゴリ', 'メーカー', '機材名', '台数', 'ラベル'], equipmentTable(), [60, 180, 180, 420, 80, 640]));
+    addPages(renderTableCanvases('ケーブル表（結線一覧）', ['No', '区分', 'ケーブル', 'From', 'To', '長さ', 'メモ'], cableTable(), [60, 120, 260, 390, 390, 90, 254]));
+    pdf.save(`${fileBase()}.pdf`);
+    toast('PDF を書き出しました');
+  } catch (e) { console.error(e); toast('⚠ ' + e.message); }
+}
+async function exportPptx() {
+  try {
+    if (!window.PptxGenJS) throw new Error('PowerPointライブラリが読み込めていません（ネットワークを確認）');
+    if (!state.nodes.length) throw new Error('機材が配置されていません');
+    const pptx = new PptxGenJS(); pptx.layout = 'LAYOUT_16x9'; // 10 x 5.625 inch
+    pptx.title = state.name || 'AV構成図';
+    const SW = 10, SH = 5.625;
+    // --- スライド1：編集可能な図形で構成図 ---
+    const s1 = pptx.addSlide();
+    s1.addText(state.name || 'AV構成図', { x: 0.3, y: 0.1, w: 7, h: 0.4, fontSize: 16, bold: true, color: '0F172A' });
+    s1.addText(`${new Date().toLocaleDateString('ja-JP')} · 機材 ${state.nodes.length} 台 / ケーブル ${state.conns.length} 本`, { x: 6.5, y: 0.1, w: 3.2, h: 0.4, fontSize: 8, color: '64748B', align: 'right' });
+    const bb = bbox(), area = { x: 0.3, y: 0.55, w: SW - 0.6, h: SH - 0.7 };
+    const k = Math.min(area.w / bb.w, area.h / bb.h);
+    const X = v => area.x + (v - bb.x) * k, Y = v => area.y + (v - bb.y) * k, S = v => v * k;
+    for (const n of state.nodes) {
+      const g = nodeGeom(n), cat = CATEGORIES[n.def.cat] || CATEGORIES.custom;
+      s1.addShape(pptx.ShapeType.roundRect, { x: X(n.x), y: Y(n.y), w: S(g.w), h: S(g.h), fill: { color: 'FFFFFF' }, line: { color: '94A3B8', width: 0.75 }, rectRadius: 0.04 });
+      s1.addShape(pptx.ShapeType.rect, { x: X(n.x), y: Y(n.y), w: S(g.w), h: S(HEAD_H), fill: { color: cat.color.slice(1) }, line: { color: cat.color.slice(1), width: 0.5 } });
+      s1.addText([{ text: `${n.def.icon} ${n.label}`, options: { bold: true, fontSize: Math.max(6, S(12) * 72 / 1.1), color: 'FFFFFF', breakLine: true } }, { text: `${n.def.brand} ${n.def.name}`, options: { fontSize: Math.max(5, S(9) * 72 / 1.1), color: 'E2E8F0' } }],
+        { x: X(n.x), y: Y(n.y), w: S(g.w), h: S(HEAD_H), margin: 2, valign: 'middle' });
+      for (const p of n.def.ports) {
+        const l = portLocal(n, p.id), color = SIGNALS[PORT_TYPES[p.type].signal].color.slice(1), used = portOccupied(n.id, p.id);
+        const r = S(PORT_R);
+        s1.addShape(pptx.ShapeType.ellipse, { x: X(n.x + l.x) - r, y: Y(n.y + l.y) - r, w: r * 2, h: r * 2, fill: { color: used ? color : 'FFFFFF' }, line: { color, width: 0.75 } });
+        const fs = Math.max(4, S(9) * 72 / 1.1);
+        if (p.dir === 'in') s1.addText(portLabel(p), { x: X(n.x + l.x) + r, y: Y(n.y + l.y) - S(ROW_H) / 2, w: S(g.w / 2), h: S(ROW_H), fontSize: fs, color: '334155', margin: 1, valign: 'middle' });
+        else if (p.dir === 'out') s1.addText(portLabel(p), { x: X(n.x + l.x) - r - S(g.w / 2), y: Y(n.y + l.y) - S(ROW_H) / 2, w: S(g.w / 2), h: S(ROW_H), fontSize: fs, color: '334155', margin: 1, align: 'right', valign: 'middle' });
+        else s1.addText(p.label, { x: X(n.x + l.x) - S(20), y: Y(n.y + l.y) - S(g.bis.indexOf(p) % 2 ? 27 : 18), w: S(40), h: S(12), fontSize: Math.max(3.5, fs * 0.8), color: '334155', margin: 0, align: 'center', valign: 'bottom' });
+      }
+    }
+    for (const c of state.conns) {
+      const na = state.nodes.find(n => n.id === c.a.node), nb = state.nodes.find(n => n.id === c.b.node); if (!na || !nb) continue;
+      const pa = findPort(na, c.a.port); if (!pa) continue;
+      const color = SIGNALS[PORT_TYPES[pa.type].signal].color.slice(1);
+      const A = portWorld(na, c.a.port), B = portWorld(nb, c.b.port);
+      const x1 = X(A.x), y1 = Y(A.y), x2 = X(B.x), y2 = Y(B.y);
+      const lw = Math.max(Math.abs(x2 - x1), 0.01), lh = Math.max(Math.abs(y2 - y1), 0.01);
+      const flipV = (x2 - x1) * (y2 - y1) < 0;
+      s1.addShape(pptx.ShapeType.line, { x: Math.min(x1, x2), y: Math.min(y1, y2), w: lw, h: lh, line: { color, width: 1.5 }, flipV });
+      const label = connLabel(c), mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+      s1.addText(label, { x: mx - 0.45, y: my - 0.1, w: 0.9, h: 0.2, fontSize: 6, color, bold: true, align: 'center', valign: 'middle', fill: { color: 'FFFFFF' }, line: { color, width: 0.5 }, margin: 0 });
+    }
+    // 凡例
+    const legend = Object.values(SIGNALS).map(s => ({ text: '━ ' + s.label + '  ', options: { color: s.color.slice(1), bold: true, fontSize: 7 } }));
+    s1.addText(legend, { x: 0.3, y: SH - 0.25, w: 8, h: 0.2, margin: 0 });
+    // --- スライド2：画像版（高忠実度） ---
+    const cv = await renderDiagramCanvas(2);
+    const s2 = pptx.addSlide();
+    const ik = Math.min((SW - 0.4) / cv.width, (SH - 0.4) / cv.height);
+    s2.addImage({ data: cv.toDataURL('image/png'), x: (SW - cv.width * ik) / 2, y: (SH - cv.height * ik) / 2, w: cv.width * ik, h: cv.height * ik });
+    // --- スライド3・4：機材表・ケーブル表 ---
+    const tableOpts = { x: 0.3, y: 0.6, w: SW - 0.6, fontSize: 9, border: { type: 'solid', pt: 0.5, color: 'CBD5E1' }, autoPage: true, autoPageRepeatHeader: true, colW: null };
+    const hdr = cells => cells.map(t => ({ text: t, options: { bold: true, color: 'FFFFFF', fill: { color: '1E293B' } } }));
+    const s3 = pptx.addSlide();
+    s3.addText('機材表', { x: 0.3, y: 0.1, w: 5, h: 0.4, fontSize: 16, bold: true });
+    s3.addTable([hdr(['No', 'カテゴリ', 'メーカー', '機材名', '台数', 'ラベル'])].concat(equipmentTable().map(r => r.map(String))), { ...tableOpts, colW: [0.4, 1.2, 1.2, 2.6, 0.6, 3.4] });
+    const s4 = pptx.addSlide();
+    s4.addText('ケーブル表（結線一覧）', { x: 0.3, y: 0.1, w: 5, h: 0.4, fontSize: 16, bold: true });
+    s4.addTable([hdr(['No', '区分', 'ケーブル', 'From', 'To', '長さ', 'メモ'])].concat(cableTable().map(r => r.map(String))), { ...tableOpts, colW: [0.4, 0.8, 1.6, 2.4, 2.4, 0.6, 1.2] });
+    await pptx.writeFile({ fileName: `${fileBase()}.pptx` });
+    toast('PowerPoint を書き出しました');
+  } catch (e) { console.error(e); toast('⚠ ' + e.message); }
+}
+$('btnPng').addEventListener('click', exportPng);
+$('btnPdf').addEventListener('click', exportPdf);
+$('btnPptx').addEventListener('click', exportPptx);
+
+/* ============================================================
+   カスタム機材エディタ
+   ============================================================ */
+function openCustomEditor() {
+  const typeOpts = Object.entries(PORT_TYPES).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('');
+  const dirOpts = Object.entries(DIRS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
+  const row = () => `<div class="flex gap-1 items-center crow"><select class="ctype border rounded px-1 py-0.5 text-xs">${typeOpts}</select><select class="cdir border rounded px-1 py-0.5 text-xs">${dirOpts}</select><input class="clabel border rounded px-1 py-0.5 text-xs w-24" placeholder="ラベル (HDMI IN)"><input class="ccount border rounded px-1 py-0.5 text-xs w-12" type="number" min="1" value="1"><button class="cdel text-slate-400 hover:text-red-600">✕</button></div>`;
+  openModal('カスタム機材を作成', `
+    <div class="grid grid-cols-2 gap-2 text-sm">
+      <label>メーカー<input id="cBrand" class="w-full border rounded px-2 py-1" placeholder="Roland"></label>
+      <label>機材名<input id="cName" class="w-full border rounded px-2 py-1" placeholder="V-60HD"></label>
+      <label>カテゴリ<select id="cCat" class="w-full border rounded px-2 py-1">${Object.entries(CATEGORIES).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('')}</select></label>
+      <label>アイコン（絵文字）<input id="cIcon" class="w-full border rounded px-2 py-1" value="📦"></label>
+    </div>
+    <div class="mt-3 font-bold text-xs">端子（種別 / 向き / ラベル / 数）</div>
+    <div class="text-[11px] text-slate-500 mb-1">数が2以上ならラベルに 1..n が付きます。XLR は入力=メス(♀)、出力=オス(♂) として扱います。</div>
+    <div id="cRows" class="space-y-1">${row()}${row()}</div>
+    <button id="cAddRow" class="mt-2 text-xs px-2 py-1 rounded bg-slate-200 hover:bg-slate-300">＋ 端子を追加</button>
+    <div class="mt-4 flex justify-end gap-2"><button id="cCancel" class="px-3 py-1 text-sm rounded bg-slate-200">キャンセル</button><button id="cSave" class="px-3 py-1 text-sm rounded bg-sky-600 text-white">保存してパレットに追加</button></div>`);
+  $('cCat').value = 'custom';
+  $('cAddRow').addEventListener('click', () => $('cRows').insertAdjacentHTML('beforeend', row()));
+  $('cRows').addEventListener('click', e => { if (e.target.classList.contains('cdel')) e.target.closest('.crow').remove(); });
+  $('cCancel').addEventListener('click', closeModal);
+  $('cSave').addEventListener('click', () => {
+    const name = $('cName').value.trim(); if (!name) { toast('機材名を入力してください'); return; }
+    const spec = [...document.querySelectorAll('#cRows .crow')].map(r => [r.querySelector('.ctype').value, r.querySelector('.cdir').value, r.querySelector('.clabel').value.trim() || PORT_TYPES[r.querySelector('.ctype').value].label.split(' ')[0] + ' ' + (r.querySelector('.cdir').value === 'in' ? 'IN' : r.querySelector('.cdir').value === 'out' ? 'OUT' : ''), Math.max(1, parseInt(r.querySelector('.ccount').value) || 1)]);
+    if (!spec.length) { toast('端子を1つ以上追加してください'); return; }
+    const dev = D('custom-' + uid(), $('cBrand').value.trim() || 'カスタム', name, $('cCat').value, $('cIcon').value.trim() || '📦', spec, 'カスタム機材');
+    state.custom.push(dev); saveCustomDevices(); renderPalette(); closeModal();
+    toast(`「${name}」をパレットに追加しました`);
+  });
+}
+$('btnCustom').addEventListener('click', openCustomEditor);
+
+/* ============================================================
+   モーダル・トースト・ヘルプ・リリースノート
+   ============================================================ */
+function openModal(title, html) { $('modalTitle').textContent = title; $('modalBody').innerHTML = html; $('modal').classList.remove('hidden'); }
+function closeModal() { $('modal').classList.add('hidden'); }
+$('modalClose').addEventListener('click', closeModal);
+$('modal').addEventListener('click', e => { if (e.target === $('modal')) closeModal(); });
+let toastTimer;
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.remove('hidden'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.add('hidden'), 3200); console.log('toast:', msg); }
+function mdToHtml(md) {
+  return md.split('\n').map(l => {
+    if (l.startsWith('## ')) return `<h2>${esc(l.slice(3))}</h2>`;
+    if (l.startsWith('### ')) return `<h3>${esc(l.slice(4))}</h3>`;
+    if (l.startsWith('- ')) return `<li>${esc(l.slice(2)).replace(/`([^`]+)`/g, '<code>$1</code>')}</li>`;
+    if (!l.trim()) return '';
+    return `<p>${esc(l).replace(/`([^`]+)`/g, '<code>$1</code>')}</p>`;
+  }).join('\n').replace(/(<li>[\s\S]*?<\/li>\n?)+/g, m => `<ul>${m}</ul>`);
+}
+$('btnVersion').addEventListener('click', () => openModal('リリースノート', mdToHtml(RELEASE_NOTES)));
+$('btnHelp').addEventListener('click', () => openModal('使い方 — AV構成図シミュレーター', mdToHtml(`## これは何？
+映像配信・イベント現場の機材構成図（結線図）を、機材をドラッグして端子同士を繋ぐだけで作れるツールです。
+機材ごとの端子数・種類はメーカー仕様に合わせてあり、繋がらない端子は物理的に繋げないようになっています。
+
+## 基本操作
+- 左パレットの機材を **クリック** するとキャンバス中央に配置、**ドラッグ＆ドロップ** で好きな位置に配置
+- 機材本体をドラッグで移動（10px グリッドに吸着）
+- 端子（○）からドラッグして相手の端子へ。接続できる端子は太く表示され、近づくと **マグネットのように吸着** します
+- 機材を **ダブルクリック** でラベル変更（例：C-1 / スライドPC）
+- 背景をドラッグでパン、マウスホイールでズーム、「全体表示」で全体をフィット
+- \`Delete\` 削除 / \`Ctrl+Z\` 元に戻す / \`Ctrl+D\` 複製 / \`Ctrl+S\` JSON保存 / \`Esc\` 選択解除
+
+## 接続ルール
+- 同じ種類の端子同士のみ接続可（HDMI↔HDMI、SDI↔SDI、LAN↔LAN …）
+- 出力→入力の向きのみ（出力同士・入力同士は不可）
+- XLR（キャノン）は 入力=メス(♀)、出力=オス(♂)。オス同士・メス同士は繋がりません
+- 1つの端子には1本のケーブルのみ
+- 異なる端子種を繋ぐには「変換」機材（ステレオミニ→XLR、HDMI→SDI 等）を間に入れます
+
+## 線の色
+- 青：映像（HDMI / SDI / 同軸）
+- 緑：音声（XLR / TRS / RCA / ステレオミニ）
+- オレンジ：ネットワーク（LAN）
+- 紫：USB / データ
+- グレー：制御（MIDI / TALLY / RS-422）
+
+## 保存・書き出し
+- **JSON保存 / 読込**：作業データをファイルに保存。ブラウザにも自動保存されます
+- **PNG**：構成図の画像
+- **PDF**：構成図 + 機材表 + ケーブル表（A4横）
+- **PowerPoint**：図形として編集できる構成図スライド + 画像版 + 機材表 + ケーブル表
+
+## カスタム機材
+パレットに無い機材は「カスタム機材を作成」から端子構成を指定して登録できます。登録した機材はブラウザに保存され、JSONにも含まれます。
+
+## 機材データについて
+端子構成はメーカー公開仕様をもとに作成しています（Roland V-8HD / V-1HD+ / V-02HD MK II / VR-1HD / V-160HD、Blackmagic ATEM Mini Pro / Extreme、Video Assist 7" 12G、IMAGENICS DCE-U1 など）。
+実機と差異がある場合はカスタム機材で調整してください。`)));
+
+/* ============================================================
+   デバッグ：console.log をクリップボードへ
+   ============================================================ */
+$('btnDebug').addEventListener('click', async () => {
+  const text = `AV構成図シミュレーター ${APP_VERSION}\nUA: ${navigator.userAgent}\n機材: ${state.nodes.length} / ケーブル: ${state.conns.length}\n---\n` + LOG_BUFFER.join('\n');
+  try { await navigator.clipboard.writeText(text); toast('ログをクリップボードにコピーしました'); }
+  catch (e) { prompt('コピーしてください', text); }
+});
+
+/* ============================================================
+   ツールバー
+   ============================================================ */
+$('btnNew').addEventListener('click', () => {
+  if (state.nodes.length && !confirm('現在の図を消去して新規作成しますか？（JSON保存していない変更は失われます）')) return;
+  pushHistory(); state.nodes = []; state.conns = []; state.name = ''; $('projectName').value = ''; selection = null; view = { x: 60, y: 60, k: 1 }; render(); autosave();
+});
+$('btnUndo').addEventListener('click', undo);
+$('btnFit').addEventListener('click', fitView);
+$('btnDelete').addEventListener('click', deleteSelection);
+$('btnSample').addEventListener('click', () => {
+  if (state.nodes.length && !confirm('現在の図を消去してサンプル構成を読み込みますか？')) return;
+  loadSample();
+});
+
+/* ============================================================
+   サンプル構成（セミナー配信：V-8HD + Zoom 3台構成）
+   ============================================================ */
+function loadSample() {
+  pushHistory();
+  state.nodes = []; state.conns = []; selection = null;
+  state.name = 'サンプル：セミナー会場 Zoom配信（V-8HD）';
+  $('projectName').value = state.name;
+  const add = (id, x, y, label) => { const def = getDevice(id); const n = { id: uid(), x, y, label: label || def.name, note: '', def: JSON.parse(JSON.stringify(def)) }; state.nodes.push(n); return n; };
+  const link = (na, la, nb, lb, len) => {
+    const pa = na.def.ports.find(p => p.label === la && !portOccupied(na.id, p.id)), pb = nb.def.ports.find(p => p.label === lb && !portOccupied(nb.id, p.id));
+    if (!pa || !pb) { console.warn('sample link failed', la, lb); return; }
+    const r = checkCompat(na, pa, nb, pb); if (!r.ok) { console.warn('sample compat', r.msg); return; }
+    state.conns.push({ id: uid(), a: { node: na.id, port: pa.id }, b: { node: nb.id, port: pb.id }, length: len || null, note: '' });
+  };
+  // 映像系
+  const pcSlide = add('laptop', 0, 0, 'スライドPC');
+  const cam1 = add('jvc-gy-hm250', 0, 160, 'C-1 メインカメラ');
+  const tx = add('imagenics-dce-u1tx', 300, 160, 'DCE-U1TX');
+  const rx = add('imagenics-dce-u1rx', 560, 160, 'DCE-U1RX');
+  const ptz = add('sony-srg-ptz', 0, 300, 'PTZ 客席');
+  const pcZoomVideo = add('laptop', 0, 440, 'Zoom映像PC');
+  const sw = add('roland-v8hd', 860, 60, 'V-8HD');
+  const split = add('hdmi-splitter-1x2', 1200, 0, 'HDMIスプリッター');
+  const proj = add('venue-projector', 1500, -40, '左スクリーン');
+  const mon = add('monitor', 1500, 80, '確認モニター');
+  const va = add('bmd-video-assist-7-12g', 1200, 180, 'Video Assist 録画');
+  const cap = add('usb-capture', 1200, 360, 'HDMIキャプチャ');
+  const pcZoomMon = add('laptop', 1500, 360, 'Zoom監視PC');
+  link(pcSlide, 'HDMI OUT', sw, 'HDMI IN 1', 5);
+  link(cam1, 'HDMI OUT', tx, 'HDMI IN', 1);
+  link(tx, 'IMG.LINK OUT', rx, 'IMG.LINK IN', 30);
+  link(rx, 'HDMI OUT', sw, 'HDMI IN 2', 1);
+  link(ptz, 'HDMI OUT', sw, 'HDMI IN 3', 10);
+  link(pcZoomVideo, 'HDMI OUT', sw, 'HDMI IN 4', 3);
+  link(sw, 'HDMI OUT 1', split, 'HDMI IN', 2);
+  link(split, 'HDMI OUT 1', proj, 'HDMI IN', 15);
+  link(split, 'HDMI OUT 2', mon, 'HDMI IN 1', 2);
+  link(sw, 'HDMI OUT 2', va, 'HDMI IN', 2);
+  link(sw, 'HDMI OUT 3', cap, 'HDMI IN', 2);
+  link(cap, 'USB OUT', pcZoomMon, 'USB-A 1', 1);
+  // 音声系
+  const venueOut = add('venue-audio-out', 0, 640, '会場音響 マイク出力');
+  const aif = add('audio-interface', 300, 640, 'オーディオI/F');
+  const pcZoomAudio = add('laptop', 600, 640, 'Zoom音声PC');
+  const conv = add('adapter-mini-xlr', 900, 700, 'ミニ→XLR変換');
+  const panel = add('venue-input-panel', 1200, 700, '外部入力パネル');
+  link(venueOut, 'XLR OUT 1', aif, 'XLR/TRS IN 1', 5);
+  link(aif, 'USB', pcZoomAudio, 'USB-A 1', 1);
+  link(pcZoomAudio, 'ヘッドセット (ミニ)', conv, 'ステレオミニ IN', 1);
+  link(conv, 'XLR OUT L', panel, 'XLR IN 1', 10);
+  // ネットワーク系
+  const inet = add('internet', 0, 1000, '会場回線');
+  const router = add('router', 300, 1000, 'ルーター');
+  const hub = add('lan-hub-8', 600, 1000, 'LANハブ');
+  link(inet, 'LAN', router, 'WAN', 3);
+  link(router, 'LAN 1', hub, 'LAN 1', 2);
+  link(hub, 'LAN 2', pcZoomVideo, 'LAN', 10);
+  link(hub, 'LAN 3', pcZoomAudio, 'LAN', 5);
+  link(hub, 'LAN 4', pcZoomMon, 'LAN', 15);
+  renderPalette(); fitView(); autosave();
+  toast('サンプル構成を読み込みました');
+}
+
+/* ============================================================
+   初期化
+   ============================================================ */
+loadCustomDevices();
+const restored = loadAutosave();
+$('projectName').value = state.name || '';
+renderPalette();
+if (!restored || !state.nodes.length) { loadSample(); history = []; } else render();
+console.log('AV構成図シミュレーター 起動', APP_VERSION);
+</script>
+</body>
+</html>
