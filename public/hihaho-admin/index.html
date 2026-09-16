@@ -157,14 +157,35 @@ main{margin-left:var(--sw);margin-top:var(--hh);padding:24px;}
 .order-num{font-family:var(--mono);font-size:11px;color:var(--text-muted);min-width:18px;text-align:right;}
 .order-thumb{width:44px;height:30px;object-fit:cover;border-radius:4px;flex-shrink:0;background:#f3f4f6;}
 .order-check-bar{display:flex;align-items:center;gap:8px;padding:6px 10px;background:#eff6ff;border-radius:8px;margin-bottom:8px;font-size:12px;color:#1d4ed8;}
+/* ---- auth gate ---- */
+#gate{position:fixed;inset:0;z-index:1000;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px;}
+#gate.hidden{display:none;}
+#gate .box{background:var(--white);border:1px solid var(--border);border-radius:14px;padding:32px 28px;max-width:380px;width:100%;text-align:center;}
+#gate h1{font-family:var(--mono);font-size:18px;font-weight:700;margin-bottom:6px;line-height:1.5;}
+#gate p{font-size:12px;color:var(--text-sub);margin-bottom:18px;}
+#gate button{width:100%;background:var(--accent);border:none;border-radius:8px;color:#fff;font-weight:700;padding:11px;font-size:14px;cursor:pointer;font-family:var(--font);}
+#gate button:hover{background:#0052cc;}
+#gate .msg{color:var(--danger);font-size:12px;margin-top:12px;min-height:1.2em;}
+body.locked header,body.locked aside,body.locked main{display:none;}
+.userbox{display:none;align-items:center;gap:8px;font-size:11px;color:var(--text-sub);}
 </style>
 <!-- v1.2.0 stable -->
 </head>
-<body>
+<body class="locked">
+
+<div id="gate">
+  <div class="box">
+    <h1>hihaho Admin</h1>
+    <p>社内メンバー限定の管理画面です。<br>Googleアカウントでログインしてください。</p>
+    <button type="button" id="btnLogin">Googleでログイン</button>
+    <div class="msg" id="gateMsg"></div>
+  </div>
+</div>
 
 <header>
-<div class="logo"><div class="logo-bar"></div><span onclick="showHowTo()" title="使い方" style="cursor:pointer;border-bottom:1px dotted #9ca3af">hihaho Admin</span><span class="logo-badge">ADMIN</span><span class="ver-badge rn-trigger" onclick="showReleaseNotes()" title="リリースノート">v1.5.4</span></div>
-<div style="margin-left:auto">
+<div class="logo"><div class="logo-bar"></div><span onclick="showHowTo()" title="使い方" style="cursor:pointer;border-bottom:1px dotted #9ca3af">hihaho Admin</span><span class="logo-badge">ADMIN</span><span class="ver-badge rn-trigger" onclick="showReleaseNotes()" title="リリースノート">v1.6.0</span></div>
+<div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+<div class="userbox" id="userBox"><span id="userEmail"></span><button class="btn bs bsm" id="btnLogout">ログアウト</button></div>
 <button class="btn bs bsm" onclick="copyConsole()">📋 console</button>
 </div>
 </header>
@@ -432,6 +453,8 @@ import { getFirestore, collection, doc, setDoc, getDocs, deleteDoc, getDoc, upda
 from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
 import { getStorage, ref, uploadBytes, getDownloadURL }
 from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
 
 const fbApp = initializeApp({
 apiKey:"AIzaSyDPlsAhtxbJBihy-EAHck9P7XbuMdzV0ds",
@@ -443,6 +466,36 @@ appId:"1:1029579090333:web:5a2ea499fec97c497f2774"
 });
 const db = getFirestore(fbApp);
 const storage = getStorage(fbApp);
+const auth = getAuth(fbApp);
+
+// ── 認証ゲート（@splineglobal.com or 許可リストのGoogleアカウントのみ）──
+// firestore.rules の isKbEditor() / storage.rules と同じ条件
+const ALLOW = e => !!e && (/@splineglobal\.com$/.test(e) || e === 'junpei.omote@gmail.com');
+let _authInited = false;
+document.getElementById('btnLogin').onclick = async () => {
+  document.getElementById('gateMsg').textContent = '';
+  try { await signInWithPopup(auth, new GoogleAuthProvider()); }
+  catch (e) { document.getElementById('gateMsg').textContent = 'ログイン失敗: ' + e.message; }
+};
+document.getElementById('btnLogout').onclick = () => signOut(auth).then(() => location.reload());
+onAuthStateChanged(auth, u => {
+  if (!u) {
+    document.getElementById('gate').classList.remove('hidden');
+    document.body.classList.add('locked');
+    return;
+  }
+  if (!ALLOW(u.email)) {
+    document.getElementById('gateMsg').textContent = `${u.email} には管理権限がありません`;
+    signOut(auth);
+    return;
+  }
+  document.getElementById('gate').classList.add('hidden');
+  document.body.classList.remove('locked');
+  document.getElementById('userEmail').textContent = u.email;
+  document.getElementById('userBox').style.display = 'flex';
+  log('login: ' + u.email);
+  if (!_authInited) { _authInited = true; init(); }
+});
 
 const WORKER = 'https://hihaho-proxy.jumpei-omote.workers.dev';
 const PLAYER = 'https://cc-dev-ps7.web.app/hihaho-view/';
@@ -1564,7 +1617,7 @@ el.textContent=msg;el.className='toast show'+(type?' '+type:'');
 setTimeout(()=>el.classList.remove('show'),2800);
 }
 
-init();
+// init() は onAuthStateChanged でログイン確認後に呼ぶ（v1.6.0〜）
 // videoList変化時に動画検索フィルターを再適用
 new MutationObserver(()=>filterVideoSearch())
   .observe(document.getElementById('videoList'),{childList:true,subtree:true});
@@ -1581,6 +1634,10 @@ if (btn) btn.textContent = _adminLang === 'ja' ? 'EN' : '日本語';
 
 // ── リリースノートデータ ──
 const RELEASE_NOTES = [
+{ ver:'v1.6.0', date:'2026-09-16', type:'admin',
+ja:['Googleログインを必須化（@splineglobal.com または許可済みアカウントのみ管理画面を操作可能）','ヘッダーにログイン中のアカウントとログアウトボタンを表示'],
+en:['Google sign-in is now required (only @splineglobal.com or allow-listed accounts can use the admin panel)','Header shows the signed-in account with a logout button']
+},
 { ver:'v1.5.4', date:'2026-08-26', type:'admin',
 ja:['サムネイル設定の各動画に、登録済みのプレイリストをバッジ表示（クリックでそのプレイリストから削除も可能）','全動画検索で件数は出るのに動画が表示されない問題を修正（フォルダ検索欄の残り文字列が誤って結果を隠していた）'],
 en:['Thumbnail settings now shows which playlists each video is already in (click a badge to remove it from that playlist)','Fixed global video search showing a match count but no results (leftover text in the folder search box was hiding them)']

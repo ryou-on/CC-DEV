@@ -7,10 +7,27 @@ service firebase.storage {
       allow read, write: if request.auth != null;
     }
 
-    // hihaho サムネイル: 読み取り公開・書き込み公開（管理画面から認証なしでアップロード）
+    // hihaho 編集者 = @splineglobal.com ドメイン or 許可リストのGoogleアカウント
+    function isHihahoEditor() {
+      return request.auth != null
+          && (request.auth.token.email.matches('.*@splineglobal[.]com')
+              || request.auth.token.email == 'junpei.omote@gmail.com');
+    }
+
+    // hihaho サムネイル: 読み取り公開・書き込みは編集者のみ（hihaho-admin からGoogleログイン後にアップロード）
     match /hihaho-thumbs/{allPaths=**} {
       allow read: if true;
-      allow write: if request.resource.size < 5 * 1024 * 1024
+      allow write: if isHihahoEditor()
+                   && request.resource.size < 5 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    // hihaho プレイリストのロゴ画像: 読み取り公開・書き込みは編集者のみ・画像2MBまで
+    // （hihaho-admin の uploadLogoFile が logos/ に保存。従来はルール未定義で全拒否だった）
+    match /logos/{allPaths=**} {
+      allow read: if true;
+      allow write: if isHihahoEditor()
+                   && request.resource.size < 2 * 1024 * 1024
                    && request.resource.contentType.matches('image/.*');
     }
 
