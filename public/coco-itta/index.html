@@ -5,9 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>COCO-ITTA 🗺️</title>
 
-  <!-- ファビコン（インラインSVG：地図帳の方眼紙＋赤いピン） -->
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23f5f0e8'/%3E%3Cg stroke='%23d4c4a0' stroke-width='1.2'%3E%3Cpath d='M16 0v64M32 0v64M48 0v64M0 16h64M0 32h64M0 48h64'/%3E%3C/g%3E%3Cpath d='M32 14c-7 0-12.5 5.4-12.5 12.2 0 9.6 12.5 23.5 12.5 23.5s12.5-13.9 12.5-23.5C44.5 19.4 39 14 32 14z' fill='%23e05c5c' stroke='%23b94040' stroke-width='1.5'/%3E%3Ccircle cx='32' cy='26' r='4.5' fill='%23fdf8f0'/%3E%3C/svg%3E" />
-  <link rel="mask-icon" href="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath d='M32 8c-9 0-16 7-16 15.7 0 12.3 16 32.3 16 32.3s16-20 16-32.3C48 15 41 8 32 8z'/%3E%3C/svg%3E" color="%23e05c5c" />
+  <!-- ファビコン（地図帳＋赤ピン, v0.11.0〜）。?v= はブラウザキャッシュ対策 -->
+  <link rel="icon" type="image/svg+xml" href="favicon.svg?v=2" />
+  <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png?v=2" />
+  <link rel="alternate icon" href="favicon.ico?v=2" />
 
   <!-- PWA: ホーム画面追加対応 -->
   <link rel="manifest" href="manifest.json" />
@@ -16,7 +17,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="ここいった" />
-  <link rel="apple-touch-icon" href="icon-180.png" />
+  <link rel="apple-touch-icon" sizes="180x180" href="icon-180.png?v=2" />
 
   <!-- Firebase SDK (compat版: シングルHTMLで使いやすい) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
@@ -141,7 +142,7 @@
 
     /* ===== サイドパネル ===== */
     .side-panel {
-      width: 280px;
+      width: 340px;
       background: var(--paper);
       border-left: 1.5px solid var(--border);
       display: flex;
@@ -214,6 +215,80 @@
     .tag-visited  { background: var(--green-lt);  color: var(--green); }
     .tag-revisit  { background: #d0e4f8;  color: var(--blue); }
     .tag-wishlist { background: var(--amber-lt);  color: #8a5c00; }
+    /* ===== ピン一覧: カード型レイアウト（v0.11.0〜） ===== */
+    .pin-list.view-card {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      grid-auto-rows: max-content; /* 高さ不足時にカードが潰れないよう内容の高さで固定 */
+      gap: 10px;
+      padding: 10px;
+      align-content: start;
+    }
+    .pin-card {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 1px 3px var(--shadow);
+      transition: transform .15s, box-shadow .15s;
+      min-width: 0;
+    }
+    .pin-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px var(--shadow); }
+    .pin-card:active { transform: scale(0.98); }
+    .pin-card-thumb {
+      position: relative;
+      aspect-ratio: 4 / 3;
+      flex-shrink: 0; /* 本文が長くてもサムネを潰さない */
+      background: var(--bg);
+      overflow: hidden;
+    }
+    .pin-card-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    /* 写真なし: 地図帳の方眼紙風プレースホルダー */
+    .pin-card-nophoto {
+      width: 100%; height: 100%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 2.2rem;
+      background-color: var(--paper);
+      background-image:
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+      background-size: 16px 16px;
+      background-position: -1px -1px;
+    }
+    .pin-card-nophoto.st-visited  { background-color: #eef6ef; }
+    .pin-card-nophoto.st-revisit  { background-color: #eaf2fb; }
+    .pin-card-nophoto.st-wishlist { background-color: #fbf3e2; }
+    .pin-card-status {
+      position: absolute; top: 6px; left: 6px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+    .pin-card-visit { position: absolute; top: 6px; right: 6px; margin: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+    .pin-card-photos {
+      position: absolute; bottom: 6px; right: 6px;
+      background: rgba(0,0,0,0.55); color: #fff;
+      font-size: 0.6rem; font-weight: 700;
+      padding: 1px 7px; border-radius: 10px;
+    }
+    .pin-card-body { padding: 7px 9px 9px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .pin-card-name {
+      font-size: 0.8rem; font-weight: 700; line-height: 1.35;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+      word-break: break-all;
+    }
+    .pin-card-meta { font-size: 0.64rem; color: var(--ink-light); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pin-card-memo {
+      font-size: 0.64rem; color: var(--ink-light); line-height: 1.45;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    }
+    .pin-list.view-card .empty-state { grid-column: 1 / -1; }
+    /* 表示切替ボタン（カード ⇔ リスト） */
+    .panel-view-btn {
+      background: #fff; border: 1px solid var(--border); border-radius: 8px;
+      font-size: 0.85rem; padding: 2px 9px; cursor: pointer; line-height: 1.4;
+    }
     /* マーカーのスタックカウント（地図上アイコン右上） */
     .marker-stack-count {
       position: absolute; top: -6px; right: -6px;
@@ -1256,7 +1331,7 @@
       .btn-add { /* 地図に重ねるボタンとして既存ヘッダ内表示は維持 */ }
     }
 
-      /* スマホヘッダーをコンパクトに（2段構成: ロゴ＋ボタン群 ／ フィルター横スクロール） */
+    /* ヘッダーをコンパクトに（全幅共通: ロゴ＋ボタン群 ／ フィルター横スクロール） */
       header {
         flex-wrap: wrap;
         padding: 6px 10px;
@@ -1273,7 +1348,6 @@
         overflow: hidden;
       }
       .logo span { display: inline; font-size: 0.6rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .logo span:last-child { display: none; } /* 末尾のバージョン表記はバッジが別にあるので省略 */
       .filters {
         order: 3;
         width: 100%;
@@ -1288,29 +1362,39 @@
       .filter-btn { flex-shrink: 0; padding: 3px 9px; font-size: 0.7rem; }
       .btn-add { padding: 5px 10px; font-size: 0.74rem; }
       .btn-settings { padding: 3px 7px; font-size: 0.9rem; }
-    }
 
     /* ===== UI共通コンポーネント ===== */
-    .version-badge {
-      position: fixed;
-      bottom: 14px;
-      right: 14px;
-      background: rgba(44,36,22,0.8);
+    /* バージョン表記（アプリ名の右横・クリックでリリースノート, v0.11.0〜） */
+    .logo .app-version {
+      display: inline-block;
+      flex-shrink: 0;
+      align-self: center;
+      font-family: 'Zen Maru Gothic', sans-serif;
+      font-style: normal;
+      font-size: 0.62rem;
+      font-weight: 700;
+      line-height: 1.5;
       color: var(--amber-lt);
-      padding: 6px 10px;
-      border-radius: 6px;
-      font-size: 0.7rem;
-      cursor: pointer;
-      z-index: 400;
-      transition: all .2s;
+      opacity: 1;
+      overflow: visible;
+      padding: 0 7px;
       border: 1px solid var(--amber);
+      border-radius: 10px;
+      background: rgba(200,130,26,0.15);
+      cursor: pointer;
+      transition: background .15s;
     }
-    .version-badge:hover { background: rgba(44,36,22,0.95); transform: scale(1.05); }
+    .logo .app-version:hover { background: rgba(200,130,26,0.4); }
+    /* スマホ: アプリ名＋バージョンを1段目に独立させ、ボタン群は2段目に右寄せ */
+    @media (max-width: 600px) {
+      header { justify-content: flex-end; }
+      .logo { flex: 1 0 100%; }
+    }
 
     .debug-btn {
       position: fixed;
       bottom: 14px;
-      right: 70px;
+      right: 14px;
       background: rgba(150,150,150,0.6);
       color: white;
       padding: 5px 8px;
@@ -1357,8 +1441,8 @@
 <header>
   <div class="logo">
     COCO-ITTA
-    <span>ここいった — 家族の地図帳</span>
-    <span style="font-size:0.6rem;opacity:0.5;">v0.10.0</span>
+    <span class="app-version" id="appVersion" title="リリースノート"></span>
+    <span class="logo-tagline">ここいった — 家族の地図帳</span>
   </div>
   <div class="filters" id="filters">
     <button class="filter-btn active" data-filter="all">すべて</button>
@@ -1456,6 +1540,7 @@
     <div class="panel-header">
       <span data-i18n="panel.title">📌 ピン一覧</span>
       <span style="display:flex;align-items:center;gap:6px;">
+        <button id="btnListView" class="panel-view-btn" title="リスト表示に切替">☰</button>
         <button id="btnAlbum" data-i18n-title="panel.album.title" title="写真アルバム" style="background:#fff;border:1px solid var(--border);border-radius:8px;font-size:0.85rem;padding:2px 9px;cursor:pointer;line-height:1.4;">📷</button>
         <span class="count-badge" id="pinCount">0</span>
       </span>
@@ -1474,7 +1559,7 @@
         <option value="rating">⭐ 評価が高い順</option>
       </select>
     </div>
-    <div class="pin-list" id="pinList">
+    <div class="pin-list view-card" id="pinList">
       <div class="empty-state">
         <span class="e-icon">🗺️</span>
         地図をクリックするか<br>「＋ ピン追加」で<br>はじめての場所を記録しよう
@@ -1780,7 +1865,7 @@
 
 <script>
 // ============================================================
-// COCO-ITTA v0.10.0 - ルートREDO・再訪日付指定・メンバー顔写真
+// COCO-ITTA v0.11.0 - ピン一覧カード型レイアウト
 // - Leaflet + OpenStreetMap
 // - localStorage でデータ永続化
 // - ピン追加・編集・削除
@@ -1953,6 +2038,9 @@ const DICT_JA = {
   'panel.stats.wishlist': '行きたい',
   'panel.btn.openSheet': '📌 ピン一覧を開く',
   'panel.btn.closeSheet': '🗺️ 地図を見る',
+  'panel.view.toList': 'リスト表示に切替',
+  'panel.view.toCard': 'カード表示に切替',
+  'panel.card.photos': '📷 {n}',
   // ピン一覧の項目
   'pin.tag.visited': '行った',
   'pin.tag.revisit': 'また行きたい',
@@ -2175,6 +2263,9 @@ const DICT_EN = {
   'panel.stats.wishlist': 'Wishlist',
   'panel.btn.openSheet': '📌 Open pin list',
   'panel.btn.closeSheet': '🗺️ Show map',
+  'panel.view.toList': 'Switch to list view',
+  'panel.view.toCard': 'Switch to card view',
+  'panel.card.photos': '📷 {n}',
   // Pin tags
   'pin.tag.visited': 'Visited',
   'pin.tag.revisit': 'Revisit',
@@ -2254,7 +2345,8 @@ function t(key, params) {
 /** セレクタ → キー の宣言マップ。attr='textContent'(既定) | 'placeholder' | 'title' | 'value' */
 const I18N_MAP = [
   // タグライン
-  { sel: '.logo > span:nth-of-type(1)', key: 'header.tagline' },
+  { sel: '.logo-tagline', key: 'header.tagline' },
+  { sel: '#appVersion', key: 'modal.release.title', attr: 'title' },
   // フィルター
   { sel: '.filter-btn[data-filter="all"]', key: 'header.filter.all' },
   { sel: '.filter-btn[data-filter="visited"]', key: 'header.filter.visited' },
@@ -3453,8 +3545,75 @@ function getSortedPins(arr) {
   return copy;
 }
 
+// ===== ピン一覧の表示モード（card / list）v0.11.0〜 =====
+const LIST_VIEW_KEY = 'coco-itta-list-view';
+let pinListView = (() => {
+  try { return localStorage.getItem(LIST_VIEW_KEY) === 'list' ? 'list' : 'card'; }
+  catch { return 'card'; }
+})();
+
+/** 表示切替ボタンとリストのクラスを現在のモードに合わせる */
+function syncPinListViewUi() {
+  const list = document.getElementById('pinList');
+  const btn  = document.getElementById('btnListView');
+  list?.classList.toggle('view-card', pinListView === 'card');
+  if (btn) {
+    // 押すと切り替わる先のアイコンを表示
+    btn.textContent = pinListView === 'card' ? '☰' : '▦';
+    btn.title = t(pinListView === 'card' ? 'panel.view.toList' : 'panel.view.toCard');
+  }
+}
+
+document.getElementById('btnListView')?.addEventListener('click', () => {
+  pinListView = pinListView === 'card' ? 'list' : 'card';
+  try { localStorage.setItem(LIST_VIEW_KEY, pinListView); } catch {}
+  log('ピン一覧表示切替:', pinListView);
+  renderPinList();
+  document.getElementById('pinList').scrollTop = 0;
+});
+
+/** カード1枚分のHTMLを生成（写真サムネを大きく表示） */
+function renderPinCard(pin) {
+  const layerEmoji = { spot: '🏪', area: '🏙', country: '🌍' }[pin.layer] || '📍';
+  const dateStr = pin.dateUnknown ? t('pin.dateUnknown') : (pin.date || '');
+  const { rank, total } = getVisitRank(pin);
+  const photos = getPinPhotos(pin.id);
+  const statusCls = pin.status === 'visited' ? 'visited' : pin.status === 'revisit' ? 'revisit' : 'wishlist';
+  const tagKey = 'pin.tag.' + statusCls;
+
+  // サムネ部分: 写真があれば1枚目を大きく、無ければ方眼紙＋レイヤー絵文字
+  const thumbInner = photos.length
+    ? `<img src="${escHtml(photos[0])}" loading="lazy" decoding="async" alt="" />`
+    : `<div class="pin-card-nophoto st-${statusCls}">${layerEmoji}</div>`;
+  const photoCount = photos.length > 1
+    ? `<span class="pin-card-photos">${t('panel.card.photos', {n: photos.length})}</span>` : '';
+  const visitBadge = total > 1
+    ? `<span class="visit-badge pin-card-visit">${t('pin.visitBadge', {n: rank})}</span>` : '';
+
+  const ratingHtml = pin.rating ? `<span class="pin-rating-inline">${'★'.repeat(pin.rating)}</span>` : '';
+  const metaParts = [ratingHtml, escHtml(dateStr)].filter(Boolean).join(' · ');
+  const memoHtml = pin.memo ? `<div class="pin-card-memo">${escHtml(pin.memo)}</div>` : '';
+
+  return `
+    <div class="pin-card" onclick="focusPin('${pin.id}')">
+      <div class="pin-card-thumb">
+        ${thumbInner}
+        <span class="pin-status-tag pin-card-status tag-${statusCls}">${t(tagKey)}</span>
+        ${visitBadge}${photoCount}
+      </div>
+      <div class="pin-card-body">
+        <div class="pin-card-name">${escHtml(pin.name || '')}</div>
+        ${metaParts ? `<div class="pin-card-meta">${metaParts}</div>` : ''}
+        ${memoHtml}
+        ${pin.members?.length ? buildMemberAvatarsHtml(pin.members) : ''}
+      </div>
+    </div>
+  `;
+}
+
 function renderPinList() {
   const list = document.getElementById('pinList');
+  syncPinListViewUi();
   const filtered = getSortedPins(getFilteredPins());
 
   // 統計更新
@@ -3465,6 +3624,12 @@ function renderPinList() {
 
   if (filtered.length === 0) {
     list.innerHTML = `<div class="empty-state"><span class="e-icon">🗺️</span>${t('panel.empty.main')}</div>`;
+    return;
+  }
+
+  // カード表示（v0.11.0〜 既定）
+  if (pinListView === 'card') {
+    list.innerHTML = filtered.map(renderPinCard).join('');
     return;
   }
 
@@ -4954,7 +5119,14 @@ if ('serviceWorker' in navigator) {
 
 // ===== UI共通コンポーネント（ページロード完了後に初期化）=====
 window.addEventListener('load', () => {
-const RELEASE_NOTES_JA = `## v0.10.0 (2026-09-26)
+const RELEASE_NOTES_JA = `## v0.11.0 (2026-09-26)
+- 🖼️ ピン一覧をカード型に刷新：写真サムネを大きく表示（写真なしは方眼紙デザイン）
+- 📐 サイドパネルを少し広げて見やすく（スマホは2列グリッド）
+- ☰ ピン一覧の右上ボタンでカード⇔リスト表示を切替（選択は保存）
+- 🗺️ アプリアイコンとファビコンを新デザインに（折りたたみ地図＋赤いピン）
+- 🔢 バージョン番号をアプリ名の右横に表示（タップでリリースノート）
+
+## v0.10.0 (2026-09-26)
 - 🔄 再訪パネルをフル入力対応（評価・写真・メンバー・ゲスト追加）
 - 📷 写真専用アップロードモーダル追加（ヘッダーの📷ボタン）
 - 🔢 バージョン番号の表示を統一（v0.10.0）
@@ -5044,7 +5216,14 @@ const RELEASE_NOTES_JA = `## v0.10.0 (2026-09-26)
 - ルート描画機能
 - メンバー管理`;
 
-const RELEASE_NOTES_EN = `## v0.10.0 (2026-09-26)
+const RELEASE_NOTES_EN = `## v0.11.0 (2026-09-26)
+- 🖼️ Pin list redesigned as cards with large photo thumbnails (grid-paper placeholder when no photo)
+- 📐 Wider side panel for easier browsing (2-column grid on mobile)
+- ☰ Toggle card ⇔ list view with the button at the top of the pin list (choice is saved)
+- 🗺️ New app icon and favicon (folded map + red pin)
+- 🔢 Version number now shown next to the app name (tap for release notes)
+
+## v0.10.0 (2026-09-26)
 - 🔄 Revisit panel now supports full input (rating, photos, members, guests)
 - 📷 Dedicated photo upload modal added (📷 button in header)
 - 🔢 Version number unified to v0.10.0
@@ -5181,6 +5360,10 @@ const HELP_JA = `## 使い方
 - **日**：その日の訪問記録を詳細カードで（写真・評価・メモ・同行メンバー）
 - ピンや日付セルをタップすると地図に戻ってそのピンを表示
 
+### ピン一覧の表示
+- 既定はカード表示（写真を大きく表示）。右上の ☰ / ▦ ボタンでリスト表示と切替できます
+- カードをタップすると地図上のピンへ移動します
+
 ### 写真アルバム
 - ピン一覧の 📷 ボタンでスポット別の写真一覧を表示
 - 写真をタップすると拡大表示できます
@@ -5244,6 +5427,10 @@ const HELP_EN = `## How to use
 - **Day**: detailed cards (photos, rating, memo, members)
 - Tap a pin or day cell to jump back to the map
 
+### Pin list view
+- Card view (large photos) is the default. Use the ☰ / ▦ button at the top right to switch to list view
+- Tap a card to jump to that pin on the map
+
 ### Photo album
 - Tap 📷 in the pin list to see photos grouped by spot
 - Tap a photo to view it larger
@@ -5261,14 +5448,15 @@ const HELP_EN = `## How to use
 - Use the 🌐 button in the header to switch English ↔ 日本語`;
 
 // UI共通コンポーネント初期化
-const versionBadge = document.createElement('div');
-  versionBadge.className = 'version-badge';
-  versionBadge.textContent = 'v0.10.0';
-  versionBadge.addEventListener('click', () => {
+// バージョン番号はここ1箇所で管理（ヘッダー表示・既読判定の両方で使用）
+const APP_VERSION = 'v0.11.0';
+const versionBadge = document.getElementById('appVersion');
+  versionBadge.textContent = APP_VERSION;
+  versionBadge.addEventListener('click', (e) => {
+    e.stopPropagation(); // アプリ名クリック（ヘルプ表示）と区別
     const modal = document.getElementById('releaseNotesModal');
     modal.classList.add('open');
   });
-  document.body.appendChild(versionBadge);
 
   const debugBtn = document.createElement('button');
   debugBtn.className = 'debug-btn';
@@ -5288,7 +5476,6 @@ const versionBadge = document.createElement('div');
   });
 
   const releaseModal = document.getElementById('releaseNotesModal');
-  const APP_VERSION = 'v0.10.0';
   const LAST_SEEN_KEY = 'coco-itta-last-seen-version';
   releaseModal.addEventListener('click', e => {
     if (e.target === releaseModal) {
