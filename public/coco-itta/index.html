@@ -1331,7 +1331,7 @@
       .btn-add { /* 地図に重ねるボタンとして既存ヘッダ内表示は維持 */ }
     }
 
-      /* スマホヘッダーをコンパクトに（2段構成: ロゴ＋ボタン群 ／ フィルター横スクロール） */
+    /* ヘッダーをコンパクトに（全幅共通: ロゴ＋ボタン群 ／ フィルター横スクロール） */
       header {
         flex-wrap: wrap;
         padding: 6px 10px;
@@ -1348,7 +1348,6 @@
         overflow: hidden;
       }
       .logo span { display: inline; font-size: 0.6rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .logo span:last-child { display: none; } /* 末尾のバージョン表記はバッジが別にあるので省略 */
       .filters {
         order: 3;
         width: 100%;
@@ -1363,29 +1362,39 @@
       .filter-btn { flex-shrink: 0; padding: 3px 9px; font-size: 0.7rem; }
       .btn-add { padding: 5px 10px; font-size: 0.74rem; }
       .btn-settings { padding: 3px 7px; font-size: 0.9rem; }
-    }
 
     /* ===== UI共通コンポーネント ===== */
-    .version-badge {
-      position: fixed;
-      bottom: 14px;
-      right: 14px;
-      background: rgba(44,36,22,0.8);
+    /* バージョン表記（アプリ名の右横・クリックでリリースノート, v0.11.0〜） */
+    .logo .app-version {
+      display: inline-block;
+      flex-shrink: 0;
+      align-self: center;
+      font-family: 'Zen Maru Gothic', sans-serif;
+      font-style: normal;
+      font-size: 0.62rem;
+      font-weight: 700;
+      line-height: 1.5;
       color: var(--amber-lt);
-      padding: 6px 10px;
-      border-radius: 6px;
-      font-size: 0.7rem;
-      cursor: pointer;
-      z-index: 400;
-      transition: all .2s;
+      opacity: 1;
+      overflow: visible;
+      padding: 0 7px;
       border: 1px solid var(--amber);
+      border-radius: 10px;
+      background: rgba(200,130,26,0.15);
+      cursor: pointer;
+      transition: background .15s;
     }
-    .version-badge:hover { background: rgba(44,36,22,0.95); transform: scale(1.05); }
+    .logo .app-version:hover { background: rgba(200,130,26,0.4); }
+    /* スマホ: アプリ名＋バージョンを1段目に独立させ、ボタン群は2段目に右寄せ */
+    @media (max-width: 600px) {
+      header { justify-content: flex-end; }
+      .logo { flex: 1 0 100%; }
+    }
 
     .debug-btn {
       position: fixed;
       bottom: 14px;
-      right: 70px;
+      right: 14px;
       background: rgba(150,150,150,0.6);
       color: white;
       padding: 5px 8px;
@@ -1432,8 +1441,8 @@
 <header>
   <div class="logo">
     COCO-ITTA
-    <span>ここいった — 家族の地図帳</span>
-    <span style="font-size:0.6rem;opacity:0.5;">v0.11.0</span>
+    <span class="app-version" id="appVersion" title="リリースノート"></span>
+    <span class="logo-tagline">ここいった — 家族の地図帳</span>
   </div>
   <div class="filters" id="filters">
     <button class="filter-btn active" data-filter="all">すべて</button>
@@ -2336,7 +2345,8 @@ function t(key, params) {
 /** セレクタ → キー の宣言マップ。attr='textContent'(既定) | 'placeholder' | 'title' | 'value' */
 const I18N_MAP = [
   // タグライン
-  { sel: '.logo > span:nth-of-type(1)', key: 'header.tagline' },
+  { sel: '.logo-tagline', key: 'header.tagline' },
+  { sel: '#appVersion', key: 'modal.release.title', attr: 'title' },
   // フィルター
   { sel: '.filter-btn[data-filter="all"]', key: 'header.filter.all' },
   { sel: '.filter-btn[data-filter="visited"]', key: 'header.filter.visited' },
@@ -5114,6 +5124,7 @@ const RELEASE_NOTES_JA = `## v0.11.0 (2026-09-26)
 - 📐 サイドパネルを少し広げて見やすく（スマホは2列グリッド）
 - ☰ ピン一覧の右上ボタンでカード⇔リスト表示を切替（選択は保存）
 - 🗺️ アプリアイコンとファビコンを新デザインに（折りたたみ地図＋赤いピン）
+- 🔢 バージョン番号をアプリ名の右横に表示（タップでリリースノート）
 
 ## v0.10.0 (2026-09-26)
 - 🔄 再訪パネルをフル入力対応（評価・写真・メンバー・ゲスト追加）
@@ -5210,6 +5221,7 @@ const RELEASE_NOTES_EN = `## v0.11.0 (2026-09-26)
 - 📐 Wider side panel for easier browsing (2-column grid on mobile)
 - ☰ Toggle card ⇔ list view with the button at the top of the pin list (choice is saved)
 - 🗺️ New app icon and favicon (folded map + red pin)
+- 🔢 Version number now shown next to the app name (tap for release notes)
 
 ## v0.10.0 (2026-09-26)
 - 🔄 Revisit panel now supports full input (rating, photos, members, guests)
@@ -5436,14 +5448,15 @@ const HELP_EN = `## How to use
 - Use the 🌐 button in the header to switch English ↔ 日本語`;
 
 // UI共通コンポーネント初期化
-const versionBadge = document.createElement('div');
-  versionBadge.className = 'version-badge';
-  versionBadge.textContent = 'v0.11.0';
-  versionBadge.addEventListener('click', () => {
+// バージョン番号はここ1箇所で管理（ヘッダー表示・既読判定の両方で使用）
+const APP_VERSION = 'v0.11.0';
+const versionBadge = document.getElementById('appVersion');
+  versionBadge.textContent = APP_VERSION;
+  versionBadge.addEventListener('click', (e) => {
+    e.stopPropagation(); // アプリ名クリック（ヘルプ表示）と区別
     const modal = document.getElementById('releaseNotesModal');
     modal.classList.add('open');
   });
-  document.body.appendChild(versionBadge);
 
   const debugBtn = document.createElement('button');
   debugBtn.className = 'debug-btn';
@@ -5463,7 +5476,6 @@ const versionBadge = document.createElement('div');
   });
 
   const releaseModal = document.getElementById('releaseNotesModal');
-  const APP_VERSION = 'v0.11.0';
   const LAST_SEEN_KEY = 'coco-itta-last-seen-version';
   releaseModal.addEventListener('click', e => {
     if (e.target === releaseModal) {
