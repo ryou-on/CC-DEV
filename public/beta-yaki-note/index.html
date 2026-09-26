@@ -218,6 +218,10 @@
     .contact-sheet[data-paper="warm"] { background: #fbf6ea; }
     .contact-sheet[data-paper="gray"] { background: #dad9d5; }
     .contact-sheet[data-paper="dark"] { color: #f6f1e7; background: #181816; border-color: #292723; }
+    .contact-sheet[data-paper="white"] { --perf-color: #fff; }
+    .contact-sheet[data-paper="warm"] { --perf-color: #fbf6ea; }
+    .contact-sheet[data-paper="gray"] { --perf-color: #dad9d5; }
+    .contact-sheet[data-paper="dark"] { --perf-color: #181816; }
 
     .sheet-heading { padding-bottom: 24px; border-bottom: 1px solid currentColor; opacity: .98; }
     .sheet-title {
@@ -232,24 +236,38 @@
       font-weight: 500;
       letter-spacing: -.025em;
     }
-    .sheet-meta { gap: 10px; margin-top: 10px; color: currentColor; opacity: .62; font-size: .88rem; }
+    .sheet-meta { gap: 10px; margin-top: 10px; color: currentColor; opacity: .62; font-size: .88rem; flex-wrap: wrap; }
     .sheet-note { margin: 14px 0 0; max-width: 72ch; white-space: pre-wrap; line-height: 1.65; }
 
     .drop-zone {
+      position: relative;
       display: grid;
       place-items: center;
       min-height: 430px;
       margin-top: 28px;
-      padding: 40px 24px;
-      border: 2px dashed #c8c1b7;
+      padding: 70px 24px;
+      border: 0;
+      color: #f5f1e8;
+      background: #11110f;
       text-align: center;
       transition: border-color .18s ease, background .18s ease;
+      overflow: hidden;
     }
-    .drop-zone.dragover { border-color: var(--red); background: rgba(227,72,58,.06); }
+    .drop-zone::before, .drop-zone::after {
+      content: "";
+      position: absolute;
+      left: 16px;
+      right: 16px;
+      height: 18px;
+      background: repeating-linear-gradient(90deg, var(--perf-color, #fff) 0 24px, transparent 24px 40px);
+    }
+    .drop-zone::before { top: 15px; }
+    .drop-zone::after { bottom: 15px; }
+    .drop-zone.dragover { outline: 4px solid var(--red); outline-offset: -4px; background: #25100e; }
     .empty-inner { max-width: 360px; }
     .empty-icon { font-size: 3.5rem; line-height: 1; filter: grayscale(1); }
     .empty-inner h2 { margin: 18px 0 8px; font-family: Georgia, "Yu Mincho", serif; font-size: 1.45rem; }
-    .empty-inner p { margin: 0 0 18px; color: var(--muted); font-size: .91rem; line-height: 1.7; }
+    .empty-inner p { margin: 0 0 18px; color: #aaa69e; font-size: .91rem; line-height: 1.7; }
 
     .photo-grid {
       display: grid;
@@ -261,49 +279,107 @@
     .photo-card {
       position: relative;
       min-width: 0;
-      aspect-ratio: var(--frame-ratio, 3 / 4);
+      padding: 24px 0;
       border: 0;
-      background: #e9e6df;
+      background: #11110f;
       cursor: pointer;
       isolation: isolate;
       user-select: none;
       overflow: visible;
     }
-    .contact-sheet[data-paper="dark"] .photo-card { background: #292824; }
+    .photo-card::before, .photo-card::after {
+      content: "";
+      position: absolute;
+      z-index: 2;
+      left: 5px;
+      right: 5px;
+      height: 9px;
+      background: repeating-linear-gradient(90deg, var(--perf-color, #fff) 0 10px, transparent 10px 18px);
+      border-radius: 1px;
+      pointer-events: none;
+    }
+    .photo-card::before { top: 5px; }
+    .photo-card::after { bottom: 5px; }
     .photo-card.dragging { opacity: .38; }
     .photo-card.drag-target { outline: 3px solid #1f75cc; outline-offset: 3px; }
-    .photo-frame { position: absolute; inset: 0; overflow: hidden; }
-    .photo-card img {
+    .photo-frame {
+      position: relative;
+      z-index: 1;
       width: 100%;
-      height: 100%;
+      aspect-ratio: var(--frame-ratio, 3 / 2);
+      overflow: hidden;
+      background: #292824;
+    }
+    .photo-card img {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: var(--image-width, 100%);
+      height: var(--image-height, 100%);
       display: block;
       object-fit: var(--photo-fit, cover);
-      transform: rotate(var(--rotation, 0deg)) scale(var(--rotation-scale, 1));
+      transform: translate(-50%, -50%) rotate(var(--rotation, 0deg));
       transition: transform .18s ease, filter .18s ease;
       pointer-events: none;
     }
-    .photo-card:hover img { filter: brightness(.9); }
-    .photo-card.selected::before, .photo-card.selected::after {
+    .photo-card:hover .photo-frame { filter: brightness(.92); }
+    .contact-sheet[data-view="negative"] .photo-frame img {
+      filter: invert(1) sepia(.34) saturate(1.45) hue-rotate(326deg) contrast(.94);
+    }
+    .contact-sheet[data-view="negative"][data-film-tone="bw"] .photo-frame img {
+      filter: invert(1) grayscale(1) contrast(1.08);
+    }
+    .contact-sheet[data-view="meta"] .photo-frame img { filter: brightness(.28) grayscale(.25); }
+    .photo-card.selected .photo-frame::before, .photo-card.selected .photo-frame::after {
       content: "";
       position: absolute;
       z-index: 5;
       pointer-events: none;
       border: 5px solid rgba(232, 61, 48, .89);
-      inset: -6px;
+      inset: 4px;
       transform: rotate(-.8deg);
       filter: drop-shadow(0 1px 0 rgba(134,12,5,.15));
     }
-    .photo-card.selected::after {
-      inset: -2px -8px -7px -3px;
+    .photo-card.selected .photo-frame::after {
+      inset: 1px 3px 5px 2px;
       border-width: 2px 7px 6px 3px;
       border-color: rgba(255, 92, 75, .62);
       transform: rotate(.9deg);
     }
+    .film-stock, .film-frame-code {
+      position: absolute;
+      z-index: 4;
+      color: #d9ad55;
+      background: #11110f;
+      font: 700 clamp(.38rem, .8vw, .55rem)/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: .08em;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    .film-stock { left: 50%; bottom: 5px; max-width: 70%; padding: 1px 4px; overflow: hidden; text-overflow: ellipsis; transform: translateX(-50%); }
+    .film-frame-code { top: 5px; right: 8px; padding: 1px 3px; }
+    .meta-overlay {
+      position: absolute;
+      z-index: 4;
+      inset: 0;
+      display: none;
+      align-content: center;
+      gap: 5px;
+      padding: 10px;
+      color: #fff;
+      background: linear-gradient(180deg, rgba(0,0,0,.08), rgba(0,0,0,.7));
+      font: 600 clamp(.5rem, 1vw, .72rem)/1.35 ui-monospace, SFMono-Regular, Menlo, monospace;
+      text-shadow: 0 1px 2px #000;
+      pointer-events: none;
+    }
+    .contact-sheet[data-view="meta"] .meta-overlay { display: grid; }
+    .meta-file { color: #f0c76e; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .meta-line { opacity: .92; }
     .photo-number {
       position: absolute;
       z-index: 6;
       left: 7px;
-      bottom: 7px;
+      bottom: 31px;
       min-width: 27px;
       padding: 4px 6px;
       border-radius: 3px;
@@ -315,7 +391,7 @@
     .card-actions {
       position: absolute;
       z-index: 7;
-      top: 6px;
+      top: 29px;
       right: 6px;
       display: flex;
       gap: 4px;
@@ -435,8 +511,14 @@
       .contact-sheet { padding: 20px 14px; }
       .sheet-heading { padding-bottom: 18px; }
       .photo-grid { margin-top: 20px; }
-      .photo-card.selected::before { border-width: 3px; inset: -4px; }
-      .photo-card.selected::after { border-width: 2px 4px 4px 2px; }
+      .photo-card { padding-block: 19px; }
+      .photo-card::before, .photo-card::after { height: 7px; background-size: auto; }
+      .photo-card.selected .photo-frame::before { border-width: 3px; inset: 3px; }
+      .photo-card.selected .photo-frame::after { border-width: 2px 4px 4px 2px; }
+      .film-stock, .film-frame-code { font-size: .34rem; }
+      .film-stock { bottom: 4px; }
+      .film-frame-code { top: 4px; }
+      .photo-number { bottom: 25px; }
       .card-actions { opacity: 1; }
       .card-actions button { width: 30px; height: 30px; }
     }
@@ -462,7 +544,7 @@
         <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
         <span>ベタ焼きノート</span>
       </button>
-      <button class="version-button" id="version-button" type="button" title="リリースノートを開く">v0.1.0</button>
+      <button class="version-button" id="version-button" type="button" title="リリースノートを開く">v0.2.0</button>
     </div>
     <div class="header-actions">
       <button class="header-button" id="feedback-button" type="button" title="目安箱を開く">✉ <span class="long-label">目安箱</span></button>
@@ -484,18 +566,16 @@
           <span class="control-label" id="layout-label">1段の枚数</span>
           <div class="segment" id="column-controls">
             <button type="button" data-columns="3" aria-pressed="false">3</button>
-            <button type="button" data-columns="4" aria-pressed="true">4</button>
-            <button type="button" data-columns="5" aria-pressed="false">5</button>
+            <button type="button" data-columns="4" aria-pressed="false">4</button>
+            <button type="button" data-columns="5" aria-pressed="true">5</button>
             <button type="button" data-columns="6" aria-pressed="false">6</button>
           </div>
           <label class="field">
-            <span>コマの比率</span>
+            <span>フィルム規格</span>
             <select id="ratio-select">
-              <option value="3/4">縦 3:4</option>
-              <option value="2/3">縦 2:3</option>
-              <option value="1/1">正方形</option>
-              <option value="4/3">横 4:3</option>
-              <option value="3/2">横 3:2</option>
+              <option value="3/2">35mm フルサイズ（3:2）</option>
+              <option value="4/3">35mm ハーフ（4:3）</option>
+              <option value="1/1">中判 6×6（1:1）</option>
             </select>
           </label>
           <label class="field">
@@ -508,10 +588,35 @@
           <div class="field">
             <span>コマの間隔</span>
             <div class="range-wrap">
-              <input id="gap-range" type="range" min="4" max="26" value="12" step="1">
-              <output class="range-value" id="gap-output" for="gap-range">12</output>
+              <input id="gap-range" type="range" min="2" max="24" value="6" step="1">
+              <output class="range-value" id="gap-output" for="gap-range">6</output>
             </div>
           </div>
+        </section>
+
+        <section class="control-group" aria-labelledby="film-label">
+          <span class="control-label" id="film-label">フィルム表現</span>
+          <div class="segment three" id="view-controls">
+            <button type="button" data-view="positive" aria-pressed="true">ポジ</button>
+            <button type="button" data-view="negative" aria-pressed="false">ネガ</button>
+            <button type="button" data-view="meta" aria-pressed="false">META</button>
+          </div>
+          <label class="field">
+            <span>フィルム銘柄</span>
+            <select id="film-preset">
+              <option value="KODAK PORTRA 400">KODAK PORTRA 400</option>
+              <option value="KODAK GOLD 200">KODAK GOLD 200</option>
+              <option value="FUJIFILM SUPERIA X-TRA 400">FUJIFILM SUPERIA X-TRA 400</option>
+              <option value="ILFORD HP5 PLUS 400">ILFORD HP5 PLUS 400</option>
+              <option value="CINESTILL 800T">CINESTILL 800T</option>
+              <option value="CUSTOM">自由入力</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>エッジに印字する名前</span>
+            <input id="film-name-input" type="text" maxlength="40" value="KODAK PORTRA 400" autocomplete="off">
+          </label>
+          <p class="privacy-note">縦写真は読み込み時に自動回転し、フィルムの長辺方向へ揃えます。</p>
         </section>
 
         <section class="control-group" aria-labelledby="paper-label">
@@ -570,7 +675,7 @@
       <article class="contact-sheet" id="contact-sheet" data-paper="white">
         <header class="sheet-heading">
           <input class="sheet-title" id="sheet-title" value="TOKYO WALK" maxlength="60" aria-label="コンタクトシートのタイトル">
-          <div class="sheet-meta" id="sheet-meta"><span id="sheet-date"></span><span aria-hidden="true">—</span><span id="sheet-count">0 FRAMES</span></div>
+          <div class="sheet-meta" id="sheet-meta"><span id="sheet-date"></span><span aria-hidden="true">—</span><span id="sheet-count">0 FRAMES</span><span aria-hidden="true">—</span><span id="sheet-film">KODAK PORTRA 400</span></div>
           <p class="sheet-note" id="sheet-note" hidden></p>
         </header>
 
@@ -635,18 +740,21 @@
       'use strict';
 
       const APP_ID = 'beta-yaki-note';
-      const APP_VERSION = '0.1.0';
+      const APP_VERSION = '0.2.0';
       const RELEASE_NOTES = [
+        { ver: 'v0.2.0', date: '2026-09-26', changes: ['35mmフィルムのパーフォレーションとエッジ印字を再現', 'ポジ・ネガ・META表示を追加', 'JPEGのEXIF情報表示に対応', '縦写真を自動回転し、全コマの長辺方向を統一'] },
         { ver: 'v0.1.0', date: '2026-09-26', changes: ['複数写真の読み込みと並べ替えに対応', '赤入れ、回転、レイアウト調整を追加', 'JPEG保存と印刷／PDF出力を追加', '使い方・リリースノート・目安箱を追加'] }
       ];
 
       const state = {
         photos: [],
-        columns: 4,
-        ratio: '3/4',
+        columns: 5,
+        ratio: '3/2',
         fit: 'cover',
-        gap: 12,
+        gap: 6,
         paper: 'white',
+        view: 'positive',
+        filmName: 'KODAK PORTRA 400',
         showNumbers: true,
         showDate: true,
         draggingId: null,
@@ -668,8 +776,11 @@
         noteInput: document.getElementById('note-input'),
         sheetNote: document.getElementById('sheet-note'),
         sheetDate: document.getElementById('sheet-date'),
+        sheetFilm: document.getElementById('sheet-film'),
         ratioSelect: document.getElementById('ratio-select'),
         fitSelect: document.getElementById('fit-select'),
+        filmPreset: document.getElementById('film-preset'),
+        filmNameInput: document.getElementById('film-name-input'),
         gapRange: document.getElementById('gap-range'),
         gapOutput: document.getElementById('gap-output'),
         rotateSelected: document.getElementById('rotate-selected'),
@@ -704,14 +815,123 @@
 
       function selectedPhotos() { return state.photos.filter(photo => photo.selected); }
 
+      function displayFilmName() { return state.filmName.trim() || 'UNTITLED FILM'; }
+
       function ratioCss(value) { return value.replace('/', ' / '); }
+
+      function formatExposure(value) {
+        if (!Number.isFinite(value) || value <= 0) return '';
+        return value >= 1 ? `${Number(value.toFixed(1))}s` : `1/${Math.max(1, Math.round(1 / value))}s`;
+      }
+
+      function formatPhotoMeta(photo) {
+        const exif = photo.exif || {};
+        const megapixels = ((photo.width * photo.height) / 1000000).toFixed(1);
+        const camera = [exif.make, exif.model].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+        const exposure = [formatExposure(exif.exposure), exif.fNumber ? `ƒ/${Number(exif.fNumber.toFixed(1))}` : '', exif.iso ? `ISO ${exif.iso}` : '', exif.focalLength ? `${Math.round(exif.focalLength)}mm` : ''].filter(Boolean).join('  ');
+        return {
+          file: photo.name,
+          size: `${photo.width}×${photo.height}  ${megapixels}MP`,
+          camera: camera || 'CAMERA —',
+          lens: exif.lens || '',
+          exposure: exposure || 'EXPOSURE —',
+          date: exif.date || photo.modified || 'DATE —'
+        };
+      }
+
+      async function readExif(file) {
+        if (!/jpe?g/i.test(file.type) && !/\.jpe?g$/i.test(file.name)) return {};
+        try {
+          const buffer = await file.slice(0, 1024 * 1024).arrayBuffer();
+          const view = new DataView(buffer);
+          if (view.byteLength < 12 || view.getUint16(0, false) !== 0xffd8) return {};
+          let offset = 2;
+          let tiffBase = -1;
+          while (offset + 10 < view.byteLength) {
+            if (view.getUint8(offset) !== 0xff) { offset++; continue; }
+            const marker = view.getUint8(offset + 1);
+            if (marker === 0xda || marker === 0xd9) break;
+            const length = view.getUint16(offset + 2, false);
+            if (marker === 0xe1 && length >= 8) {
+              const signature = String.fromCharCode(...new Uint8Array(buffer, offset + 4, 6));
+              if (signature === 'Exif\0\0') { tiffBase = offset + 10; break; }
+            }
+            if (length < 2) break;
+            offset += 2 + length;
+          }
+          if (tiffBase < 0 || tiffBase + 8 >= view.byteLength) return {};
+          const little = view.getUint16(tiffBase, false) === 0x4949;
+          const get16 = pos => view.getUint16(pos, little);
+          const get32 = pos => view.getUint32(pos, little);
+          if (get16(tiffBase + 2) !== 42) return {};
+          const typeSize = { 1: 1, 2: 1, 3: 2, 4: 4, 5: 8, 9: 4, 10: 8 };
+
+          function readValue(entry, type, count) {
+            const bytes = (typeSize[type] || 0) * count;
+            if (!bytes) return null;
+            const valuePos = bytes <= 4 ? entry + 8 : tiffBase + get32(entry + 8);
+            if (valuePos < 0 || valuePos + bytes > view.byteLength) return null;
+            if (type === 2) {
+              let text = '';
+              for (let i = 0; i < count && view.getUint8(valuePos + i); i++) text += String.fromCharCode(view.getUint8(valuePos + i));
+              return text.trim();
+            }
+            if (type === 3) return get16(valuePos);
+            if (type === 4) return get32(valuePos);
+            if (type === 9) return view.getInt32(valuePos, little);
+            if (type === 5 || type === 10) {
+              const numerator = type === 5 ? get32(valuePos) : view.getInt32(valuePos, little);
+              const denominator = type === 5 ? get32(valuePos + 4) : view.getInt32(valuePos + 4, little);
+              return denominator ? numerator / denominator : null;
+            }
+            return view.getUint8(valuePos);
+          }
+
+          function readIfd(relativeOffset) {
+            const start = tiffBase + relativeOffset;
+            if (start < 0 || start + 2 > view.byteLength) return new Map();
+            const count = Math.min(get16(start), 256);
+            const tags = new Map();
+            for (let i = 0; i < count; i++) {
+              const entry = start + 2 + i * 12;
+              if (entry + 12 > view.byteLength) break;
+              const tag = get16(entry);
+              const type = get16(entry + 2);
+              const itemCount = get32(entry + 4);
+              tags.set(tag, readValue(entry, type, itemCount));
+            }
+            return tags;
+          }
+
+          const ifd0 = readIfd(get32(tiffBase + 4));
+          const exifPointer = ifd0.get(0x8769);
+          const exifIfd = Number.isFinite(exifPointer) ? readIfd(exifPointer) : new Map();
+          return {
+            make: ifd0.get(0x010f) || '',
+            model: ifd0.get(0x0110) || '',
+            date: exifIfd.get(0x9003) || ifd0.get(0x0132) || '',
+            exposure: exifIfd.get(0x829a),
+            fNumber: exifIfd.get(0x829d),
+            iso: exifIfd.get(0x8827),
+            focalLength: exifIfd.get(0x920a),
+            lens: exifIfd.get(0xa434) || ''
+          };
+        } catch (error) {
+          console.warn('EXIFを読み取れませんでした', error);
+          return {};
+        }
+      }
 
       function render() {
         const hasPhotos = state.photos.length > 0;
+        const filmName = displayFilmName();
         setPressedGroup(document.getElementById('column-controls'), 'columns', state.columns);
         setPressedGroup(document.getElementById('paper-controls'), 'paper', state.paper);
+        setPressedGroup(document.getElementById('view-controls'), 'view', state.view);
         el.ratioSelect.value = state.ratio;
         el.fitSelect.value = state.fit;
+        if (document.activeElement !== el.filmNameInput) el.filmNameInput.value = state.filmName;
+        el.sheetFilm.textContent = filmName;
         el.gapRange.value = String(state.gap);
         el.gapOutput.value = String(state.gap);
         el.dropZone.hidden = hasPhotos;
@@ -721,6 +941,8 @@
         el.grid.style.setProperty('--frame-ratio', ratioCss(state.ratio));
         el.grid.style.setProperty('--photo-fit', state.fit);
         el.sheet.dataset.paper = state.paper;
+        el.sheet.dataset.view = state.view;
+        el.sheet.dataset.filmTone = /ILFORD|TRI-X|T-MAX|ACROS/i.test(filmName) ? 'bw' : 'color';
         el.grid.replaceChildren();
 
         state.photos.forEach((photo, index) => {
@@ -741,8 +963,32 @@
           img.decoding = 'async';
           img.style.setProperty('--rotation', photo.rotation + 'deg');
           const quarterTurn = Math.abs(photo.rotation % 180) === 90;
-          img.style.setProperty('--rotation-scale', quarterTurn ? '1.34' : '1');
-          frame.append(img);
+          const [ratioWidth, ratioHeight] = state.ratio.split('/').map(Number);
+          const frameRatio = ratioWidth / ratioHeight;
+          img.style.setProperty('--image-width', quarterTurn ? `${100 / frameRatio}%` : '100%');
+          img.style.setProperty('--image-height', quarterTurn ? `${100 * frameRatio}%` : '100%');
+
+          const meta = formatPhotoMeta(photo);
+          const metaOverlay = document.createElement('div');
+          metaOverlay.className = 'meta-overlay';
+          [
+            ['meta-file', meta.file],
+            ['meta-line', meta.size],
+            ['meta-line', meta.camera],
+            ['meta-line', meta.lens],
+            ['meta-line', meta.exposure],
+            ['meta-line', meta.date]
+          ].filter(([, value]) => value).forEach(([className, value]) => {
+            const line = document.createElement('div'); line.className = className; line.textContent = value; metaOverlay.append(line);
+          });
+          frame.append(img, metaOverlay);
+
+          const filmStock = document.createElement('span');
+          filmStock.className = 'film-stock';
+          filmStock.textContent = filmName;
+          const frameCode = document.createElement('span');
+          frameCode.className = 'film-frame-code';
+          frameCode.textContent = `◁ ${String(index + 1).padStart(2, '0')}A`;
 
           const number = document.createElement('span');
           number.className = 'photo-number';
@@ -764,7 +1010,7 @@
           remove.setAttribute('aria-label', `${index + 1}枚目を削除`);
           remove.textContent = '×';
           actions.append(rotate, remove);
-          card.append(frame, number, actions);
+          card.append(frame, filmStock, frameCode, number, actions);
           el.grid.append(card);
         });
 
@@ -788,18 +1034,34 @@
         const accepted = files.slice(0, remaining);
         if (!remaining) { showToast('読み込める写真は200枚までです'); return; }
 
-        const loaded = await Promise.all(accepted.map(file => new Promise(resolve => {
-          const url = URL.createObjectURL(file);
-          const img = new Image();
-          img.onload = () => resolve({ id: uid(), name: file.name, url, img, rotation: 0, selected: false, width: img.naturalWidth, height: img.naturalHeight });
-          img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
-          img.src = url;
-        })));
+        const loaded = await Promise.all(accepted.map(async file => {
+          const exifPromise = readExif(file);
+          const photo = await new Promise(resolve => {
+            const url = URL.createObjectURL(file);
+            const img = new Image();
+            img.onload = () => resolve({
+              id: uid(),
+              name: file.name,
+              url,
+              img,
+              rotation: img.naturalHeight > img.naturalWidth ? 90 : 0,
+              selected: false,
+              width: img.naturalWidth,
+              height: img.naturalHeight,
+              modified: file.lastModified ? new Intl.DateTimeFormat('ja-JP', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(file.lastModified)) : ''
+            });
+            img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+            img.src = url;
+          });
+          if (photo) photo.exif = await exifPromise;
+          return photo;
+        }));
 
         const good = loaded.filter(Boolean);
         state.photos.push(...good);
         render();
-        showToast(`${good.length}枚を追加しました` + (files.length > remaining ? '（上限200枚）' : ''));
+        const autoRotated = good.filter(photo => photo.rotation === 90).length;
+        showToast(`${good.length}枚を追加しました${autoRotated ? `（縦写真${autoRotated}枚を自動回転）` : ''}` + (files.length > remaining ? '（上限200枚）' : ''));
       }
 
       function removePhoto(id) {
@@ -896,7 +1158,9 @@
           const gap = state.gap * 2.2;
           const cellWidth = (width - pad * 2 - gap * (state.columns - 1)) / state.columns;
           const [rw, rh] = state.ratio.split('/').map(Number);
-          const cellHeight = cellWidth * rh / rw;
+          const frameHeight = cellWidth * rh / rw;
+          const filmEdge = Math.max(34, Math.round(cellWidth * .105));
+          const cellHeight = frameHeight + filmEdge * 2;
           const rows = Math.ceil(state.photos.length / state.columns);
           const height = Math.ceil(pad + headerHeight + rows * cellHeight + Math.max(0, rows - 1) * gap + pad);
           const canvas = document.createElement('canvas');
@@ -910,7 +1174,8 @@
           ctx.fillText((el.sheetTitle.value || 'UNTITLED').slice(0, 60), pad, pad + 74, width - pad * 2);
           ctx.globalAlpha = .62;
           ctx.font = '32px -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif';
-          const meta = `${state.showDate ? today + '  —  ' : ''}${state.photos.length} FRAMES`;
+          const filmName = displayFilmName();
+          const meta = `${state.showDate ? today + '  —  ' : ''}${state.photos.length} FRAMES  —  ${filmName}  —  ${state.view.toUpperCase()}`;
           ctx.fillText(meta, pad, pad + 132);
           ctx.globalAlpha = 1;
           if (!el.sheetNote.hidden) {
@@ -926,17 +1191,56 @@
             const col = index % state.columns;
             const x = pad + col * (cellWidth + gap);
             const y = pad + headerHeight + row * (cellHeight + gap);
-            ctx.fillStyle = state.paper === 'dark' ? '#292824' : '#e9e6df';
+            const photoY = y + filmEdge;
+            ctx.fillStyle = '#11110f';
             ctx.fillRect(x, y, cellWidth, cellHeight);
-            drawCover(ctx, photo.img, x, y, cellWidth, cellHeight, photo.rotation, state.fit);
+            const holes = 5;
+            const holeStep = cellWidth / holes;
+            const holeWidth = holeStep * .56;
+            const holeHeight = Math.max(9, filmEdge * .34);
+            ctx.fillStyle = paperColor();
+            for (let hole = 0; hole < holes; hole++) {
+              const holeX = x + hole * holeStep + (holeStep - holeWidth) / 2;
+              ctx.fillRect(holeX, y + 7, holeWidth, holeHeight);
+              ctx.fillRect(holeX, y + cellHeight - holeHeight - 7, holeWidth, holeHeight);
+            }
+            ctx.save();
+            if (state.view === 'negative') {
+              ctx.filter = /ILFORD|TRI-X|T-MAX|ACROS/i.test(filmName)
+                ? 'invert(1) grayscale(1) contrast(1.08)'
+                : 'invert(1) sepia(.34) saturate(1.45) hue-rotate(326deg) contrast(.94)';
+            } else if (state.view === 'meta') {
+              ctx.filter = 'brightness(.3) grayscale(.25)';
+            }
+            drawCover(ctx, photo.img, x, photoY, cellWidth, frameHeight, photo.rotation, state.fit);
+            ctx.restore();
+            if (state.view === 'meta') {
+              const info = formatPhotoMeta(photo);
+              ctx.fillStyle = 'rgba(0,0,0,.58)';
+              ctx.fillRect(x, photoY, cellWidth, frameHeight);
+              const lines = [info.file, info.size, info.camera, info.lens, info.exposure, info.date].filter(Boolean);
+              const lineHeight = Math.max(18, cellWidth * .055);
+              const fontSize = Math.max(13, cellWidth * .042);
+              ctx.font = `600 ${fontSize}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+              lines.forEach((line, lineIndex) => {
+                ctx.fillStyle = lineIndex === 0 ? '#f0c76e' : '#fff';
+                ctx.fillText(line.slice(0, 34), x + 13, photoY + 26 + lineIndex * lineHeight, cellWidth - 26);
+              });
+            }
+            ctx.fillStyle = '#d9ad55';
+            ctx.font = `700 ${Math.max(10, cellWidth * .032)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+            ctx.fillText(filmName.slice(0, 28), x + 8, y + cellHeight - 8, cellWidth - 58);
+            ctx.textAlign = 'right';
+            ctx.fillText(`${String(index + 1).padStart(2, '0')}A`, x + cellWidth - 8, y + 17);
+            ctx.textAlign = 'left';
             if (state.showNumbers) {
               ctx.fillStyle = 'rgba(0,0,0,.65)';
-              ctx.fillRect(x + 12, y + cellHeight - 49, 62, 37);
+              ctx.fillRect(x + 12, photoY + frameHeight - 49, 62, 37);
               ctx.fillStyle = '#fff';
               ctx.font = '700 24px ui-monospace, SFMono-Regular, Menlo, monospace';
-              ctx.fillText(String(index + 1).padStart(2, '0'), x + 22, y + cellHeight - 21);
+              ctx.fillText(String(index + 1).padStart(2, '0'), x + 22, photoY + frameHeight - 21);
             }
-            if (photo.selected) drawRoughFrame(ctx, x, y, cellWidth, cellHeight, index);
+            if (photo.selected) drawRoughFrame(ctx, x, photoY, cellWidth, frameHeight, index);
           });
 
           canvas.toBlob(blob => {
@@ -981,11 +1285,12 @@
         el.modalTitle.textContent = 'ベタ焼きノートの使い方';
         el.modalBody.replaceChildren();
         const sections = [
-          ['① 写真を読み込む', '「写真を選ぶ」または台紙へのドラッグ＆ドロップで、写真をまとめて追加します。'],
-          ['② 並びと見え方を整える', '1段の枚数、コマの比率、間隔、台紙を選べます。写真はドラッグで並べ替え、各コマの ↻ で回転できます。'],
-          ['③ 気になるコマに赤入れ', '写真をタップすると赤い囲みが付きます。もう一度タップすると解除されます。'],
-          ['④ 保存する', '「JPEGで保存」で1枚の画像にまとめます。「印刷 / PDF」から紙やPDFにも出力できます。'],
-          ['注意事項', '写真はブラウザ内だけで処理され、サーバーには送信されません。ページを閉じると作業中の写真は消えます。']
+          ['① 写真を読み込む', '「写真を選ぶ」または台紙へのドラッグ＆ドロップで、写真をまとめて追加します。縦写真はフィルムの長辺方向へ自動回転します。'],
+          ['② フィルムを選ぶ', 'フィルム銘柄を選ぶか自由入力すると、パーフォレーション脇のエッジ印字へ反映されます。'],
+          ['③ ポジ・ネガ・METAを切り替える', 'ポジは通常表示、ネガはネガフィルム風、METAはJPEGのEXIFや画像サイズをコマ上に表示します。'],
+          ['④ 並びと赤入れを整える', '写真はドラッグで並べ替え、各コマの ↻ で回転できます。写真をタップすると赤い囲みが付きます。'],
+          ['⑤ 保存する', '「JPEGで保存」でパーフォレーションを含む1枚の画像にまとめます。「印刷 / PDF」から紙やPDFにも出力できます。'],
+          ['注意事項', '写真とEXIF情報はブラウザ内だけで処理され、サーバーには送信されません。ページを閉じると作業中の写真は消えます。']
         ];
         sections.forEach(([heading, text]) => {
           const h = document.createElement('h3'); h.textContent = heading;
@@ -1036,37 +1341,43 @@
             description: '現在の写真枚数、赤入れ枚数、レイアウト設定を確認します。',
             inputSchema: { type: 'object', properties: {}, additionalProperties: false },
             annotations: { readOnlyHint: true, untrustedContentHint: false },
-            execute() { return { photoCount: state.photos.length, selectedCount: selectedPhotos().length, columns: state.columns, ratio: state.ratio, fit: state.fit, paper: state.paper }; }
+            execute() { return { photoCount: state.photos.length, selectedCount: selectedPhotos().length, columns: state.columns, ratio: state.ratio, fit: state.fit, paper: state.paper, view: state.view, filmName: state.filmName }; }
           },
           {
             name: 'configure_contact_sheet',
             title: 'ベタ焼きのレイアウトを変更',
-            description: '表示中のベタ焼きについて、列数、コマ比率、トリミング、台紙をまとめて変更します。',
+            description: '表示中のベタ焼きについて、列数、コマ比率、トリミング、台紙、ポジ／ネガ／META表示、フィルム名をまとめて変更します。',
             inputSchema: {
               type: 'object',
               properties: {
                 columns: { type: 'integer', enum: [3,4,5,6] },
-                ratio: { type: 'string', enum: ['3/4','2/3','1/1','4/3','3/2'] },
+                ratio: { type: 'string', enum: ['3/2','4/3','1/1'] },
                 fit: { type: 'string', enum: ['cover','contain'] },
-                paper: { type: 'string', enum: ['white','warm','gray','dark'] }
+                paper: { type: 'string', enum: ['white','warm','gray','dark'] },
+                view: { type: 'string', enum: ['positive','negative','meta'] },
+                filmName: { type: 'string', minLength: 1, maxLength: 40 }
               },
               additionalProperties: false
             },
             annotations: { readOnlyHint: false, untrustedContentHint: false },
             execute(input) {
               if (!input || typeof input !== 'object') throw new TypeError('設定値が必要です');
-              const allowedKeys = ['columns', 'ratio', 'fit', 'paper'];
+              const allowedKeys = ['columns', 'ratio', 'fit', 'paper', 'view', 'filmName'];
               if (Object.keys(input).some(key => !allowedKeys.includes(key))) throw new TypeError('未対応の設定項目があります');
               if (input.columns !== undefined && ![3,4,5,6].includes(input.columns)) throw new TypeError('columnsは3〜6の選択肢から指定してください');
-              if (input.ratio !== undefined && !['3/4','2/3','1/1','4/3','3/2'].includes(input.ratio)) throw new TypeError('未対応のratioです');
+              if (input.ratio !== undefined && !['3/2','4/3','1/1'].includes(input.ratio)) throw new TypeError('未対応のratioです');
               if (input.fit !== undefined && !['cover','contain'].includes(input.fit)) throw new TypeError('未対応のfitです');
               if (input.paper !== undefined && !['white','warm','gray','dark'].includes(input.paper)) throw new TypeError('未対応のpaperです');
+              if (input.view !== undefined && !['positive','negative','meta'].includes(input.view)) throw new TypeError('未対応のviewです');
+              if (input.filmName !== undefined && (typeof input.filmName !== 'string' || !input.filmName.trim() || input.filmName.length > 40)) throw new TypeError('filmNameは1〜40文字で指定してください');
               if (input.columns !== undefined) state.columns = input.columns;
               if (input.ratio !== undefined) state.ratio = input.ratio;
               if (input.fit !== undefined) state.fit = input.fit;
               if (input.paper !== undefined) state.paper = input.paper;
+              if (input.view !== undefined) state.view = input.view;
+              if (input.filmName !== undefined) state.filmName = input.filmName.trim();
               render();
-              return { ok: true, columns: state.columns, ratio: state.ratio, fit: state.fit, paper: state.paper };
+              return { ok: true, columns: state.columns, ratio: state.ratio, fit: state.fit, paper: state.paper, view: state.view, filmName: state.filmName };
             }
           }
         ];
@@ -1085,8 +1396,21 @@
         const button = event.target.closest('[data-paper]'); if (!button) return;
         state.paper = button.dataset.paper; setPressedGroup(event.currentTarget, 'paper', state.paper); render();
       });
+      document.getElementById('view-controls').addEventListener('click', event => {
+        const button = event.target.closest('[data-view]'); if (!button) return;
+        state.view = button.dataset.view; render();
+      });
       el.ratioSelect.addEventListener('change', () => { state.ratio = el.ratioSelect.value; render(); });
       el.fitSelect.addEventListener('change', () => { state.fit = el.fitSelect.value; render(); });
+      el.filmPreset.addEventListener('change', () => {
+        if (el.filmPreset.value === 'CUSTOM') { el.filmNameInput.focus(); return; }
+        state.filmName = el.filmPreset.value; render();
+      });
+      el.filmNameInput.addEventListener('input', () => {
+        state.filmName = el.filmNameInput.value;
+        if (el.filmPreset.value !== state.filmName) el.filmPreset.value = 'CUSTOM';
+        render();
+      });
       el.gapRange.addEventListener('input', () => { state.gap = Number(el.gapRange.value); el.gapOutput.value = String(state.gap); render(); });
       el.titleInput.addEventListener('input', () => updateTitle(el.titleInput.value));
       el.sheetTitle.addEventListener('input', () => updateTitle(el.sheetTitle.value));
