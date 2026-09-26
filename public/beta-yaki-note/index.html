@@ -1,0 +1,1195 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#11100e">
+  <meta name="description" content="写真をベタ焼き風のコンタクトシートに並べ、選び、回転し、1枚の画像として保存できる写真整理アプリ。">
+  <title>ベタ焼きノート</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%2311100e'/%3E%3Cg fill='none' stroke='%23f4efe5' stroke-width='3'%3E%3Crect x='10' y='12' width='18' height='24'/%3E%3Crect x='36' y='12' width='18' height='24'/%3E%3Crect x='10' y='42' width='18' height='12'/%3E%3Crect x='36' y='42' width='18' height='12'/%3E%3C/g%3E%3Cpath d='M8 39C20 34 43 43 57 37' fill='none' stroke='%23ef4f41' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #171714;
+      --muted: #6d6a63;
+      --paper: #f6f2e9;
+      --panel: #fffdf8;
+      --line: #d9d3c8;
+      --charcoal: #11100e;
+      --red: #e3483a;
+      --gold: #d8b45b;
+      --blue: #335c7d;
+      --shadow: 0 18px 55px rgba(35, 28, 19, .13);
+      --grid-columns: 4;
+      --grid-gap: 12px;
+      font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", "Noto Sans JP", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html { min-width: 320px; background: #e8e3da; }
+    body { margin: 0; min-height: 100vh; color: var(--ink); background: #e8e3da; }
+    button, input, textarea, select { font: inherit; }
+    button { color: inherit; }
+    button, [role="button"] { -webkit-tap-highlight-color: transparent; }
+    :focus-visible { outline: 3px solid #1f75cc; outline-offset: 3px; }
+
+    .app-header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      min-height: 66px;
+      padding: 10px clamp(14px, 3vw, 34px);
+      color: #f7f2e7;
+      background: rgba(17, 16, 14, .96);
+      border-bottom: 1px solid rgba(255, 255, 255, .11);
+      backdrop-filter: blur(16px);
+    }
+
+    .brand-row, .header-actions, .toolbar-row, .control-row, .sheet-meta, .modal-actions {
+      display: flex;
+      align-items: center;
+    }
+
+    .brand-row { gap: 9px; min-width: 0; }
+    .brand-button, .version-button, .header-button {
+      border: 0;
+      background: none;
+      cursor: pointer;
+    }
+
+    .brand-button {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 5px 0;
+      color: inherit;
+      font-weight: 800;
+      font-size: clamp(1rem, 2.2vw, 1.18rem);
+      letter-spacing: .03em;
+      white-space: nowrap;
+    }
+
+    .brand-mark {
+      display: grid;
+      grid-template-columns: repeat(2, 7px);
+      gap: 3px;
+      padding: 5px;
+      border: 1px solid rgba(255,255,255,.42);
+      border-radius: 5px;
+      transform: rotate(-2deg);
+    }
+
+    .brand-mark i { display: block; width: 7px; height: 8px; background: #f7f2e7; }
+    .brand-mark i:nth-child(3) { background: var(--red); }
+    .version-button { padding: 7px 4px; color: var(--gold); font-size: .78rem; }
+    .header-actions { justify-content: flex-end; gap: 6px; }
+    .header-button {
+      padding: 9px 11px;
+      color: #e7e1d6;
+      border: 1px solid rgba(255,255,255,.16);
+      border-radius: 8px;
+      font-size: .84rem;
+    }
+    .header-button:hover { background: rgba(255,255,255,.08); }
+
+    .app-shell {
+      display: grid;
+      grid-template-columns: minmax(250px, 306px) minmax(0, 1fr);
+      min-height: calc(100vh - 66px);
+    }
+
+    .control-panel {
+      position: sticky;
+      top: 66px;
+      align-self: start;
+      height: calc(100vh - 66px);
+      overflow-y: auto;
+      padding: 22px 18px 34px;
+      background: #f3eee4;
+      border-right: 1px solid #d2cbc0;
+    }
+
+    .panel-kicker { margin: 0 0 4px; color: var(--red); font-size: .77rem; font-weight: 800; letter-spacing: .16em; }
+    .panel-title { margin: 0; font-family: Georgia, "Yu Mincho", serif; font-size: 1.52rem; font-weight: 600; }
+    .panel-copy { margin: 8px 0 20px; color: var(--muted); font-size: .88rem; line-height: 1.65; }
+
+    .import-button {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      width: 100%;
+      min-height: 50px;
+      padding: 12px 16px;
+      border: 0;
+      border-radius: 8px;
+      color: white;
+      background: var(--charcoal);
+      font-weight: 800;
+      cursor: pointer;
+      box-shadow: 0 7px 0 #c8bfb2;
+      transition: transform .16s ease, box-shadow .16s ease;
+    }
+    .import-button:hover { transform: translateY(-2px); box-shadow: 0 9px 0 #c8bfb2; }
+    .import-button:active { transform: translateY(4px); box-shadow: 0 3px 0 #c8bfb2; }
+    #file-input { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; pointer-events: none; }
+
+    .control-group { padding: 19px 0; border-bottom: 1px solid #d8d1c5; }
+    .control-label { display: block; margin-bottom: 10px; font-size: .88rem; font-weight: 800; }
+    .control-row { gap: 8px; }
+    .control-row.wrap { flex-wrap: wrap; }
+    .segment { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+    .segment.three { grid-template-columns: repeat(3, 1fr); }
+    .segment button, .chip-button, .icon-button {
+      min-height: 39px;
+      border: 1px solid #cfc7b9;
+      border-radius: 7px;
+      background: #fffdf9;
+      cursor: pointer;
+    }
+    .segment button[aria-pressed="true"], .chip-button[aria-pressed="true"] {
+      color: #fff;
+      background: var(--blue);
+      border-color: var(--blue);
+    }
+
+    .range-wrap { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; }
+    input[type="range"] { width: 100%; accent-color: var(--red); }
+    .range-value { min-width: 3ch; color: var(--muted); font-size: .8rem; text-align: right; }
+
+    .field { display: grid; gap: 7px; margin-top: 12px; }
+    .field span { color: var(--muted); font-size: .8rem; font-weight: 700; }
+    .field input, .field textarea, .field select {
+      width: 100%;
+      padding: 10px 11px;
+      border: 1px solid #cfc7b9;
+      border-radius: 7px;
+      color: var(--ink);
+      background: #fffdf9;
+    }
+    .field textarea { min-height: 70px; resize: vertical; line-height: 1.5; }
+
+    .selection-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+    .selection-actions button, .secondary-button, .danger-button, .primary-button {
+      min-height: 42px;
+      padding: 9px 12px;
+      border-radius: 7px;
+      font-weight: 750;
+      cursor: pointer;
+    }
+    .selection-actions button, .secondary-button { color: var(--ink); border: 1px solid #c9c0b3; background: #fffdf9; }
+    .danger-button { color: #a5261c; border: 1px solid #d8a59f; background: #fff8f7; }
+    .primary-button { color: white; border: 1px solid var(--charcoal); background: var(--charcoal); }
+    button:disabled { opacity: .42; cursor: not-allowed; }
+
+    .export-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .export-actions .primary-button { grid-column: 1 / -1; }
+    .privacy-note { margin: 13px 0 0; color: var(--muted); font-size: .76rem; line-height: 1.55; }
+
+    .workspace { min-width: 0; padding: clamp(16px, 3vw, 38px); overflow: hidden; }
+    .workspace-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      max-width: 1120px;
+      margin: 0 auto 13px;
+    }
+    .status-text { color: #615d55; font-size: .85rem; }
+    .status-text strong { color: var(--ink); }
+    .toolbar-row { gap: 7px; flex-wrap: wrap; justify-content: flex-end; }
+    .chip-button { padding: 7px 10px; font-size: .8rem; }
+
+    .contact-sheet {
+      position: relative;
+      width: min(100%, 1120px);
+      min-height: 650px;
+      margin: 0 auto;
+      padding: clamp(26px, 5vw, 68px);
+      background: #fff;
+      border: 1px solid #d3cec6;
+      box-shadow: var(--shadow);
+      transition: background-color .2s ease;
+    }
+    .contact-sheet[data-paper="warm"] { background: #fbf6ea; }
+    .contact-sheet[data-paper="gray"] { background: #dad9d5; }
+    .contact-sheet[data-paper="dark"] { color: #f6f1e7; background: #181816; border-color: #292723; }
+
+    .sheet-heading { padding-bottom: 24px; border-bottom: 1px solid currentColor; opacity: .98; }
+    .sheet-title {
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      color: inherit;
+      background: transparent;
+      font-family: Georgia, "Yu Mincho", serif;
+      font-size: clamp(1.7rem, 5vw, 3.8rem);
+      font-weight: 500;
+      letter-spacing: -.025em;
+    }
+    .sheet-meta { gap: 10px; margin-top: 10px; color: currentColor; opacity: .62; font-size: .88rem; }
+    .sheet-note { margin: 14px 0 0; max-width: 72ch; white-space: pre-wrap; line-height: 1.65; }
+
+    .drop-zone {
+      display: grid;
+      place-items: center;
+      min-height: 430px;
+      margin-top: 28px;
+      padding: 40px 24px;
+      border: 2px dashed #c8c1b7;
+      text-align: center;
+      transition: border-color .18s ease, background .18s ease;
+    }
+    .drop-zone.dragover { border-color: var(--red); background: rgba(227,72,58,.06); }
+    .empty-inner { max-width: 360px; }
+    .empty-icon { font-size: 3.5rem; line-height: 1; filter: grayscale(1); }
+    .empty-inner h2 { margin: 18px 0 8px; font-family: Georgia, "Yu Mincho", serif; font-size: 1.45rem; }
+    .empty-inner p { margin: 0 0 18px; color: var(--muted); font-size: .91rem; line-height: 1.7; }
+
+    .photo-grid {
+      display: grid;
+      grid-template-columns: repeat(var(--grid-columns), minmax(0, 1fr));
+      gap: var(--grid-gap);
+      margin-top: 28px;
+    }
+
+    .photo-card {
+      position: relative;
+      min-width: 0;
+      aspect-ratio: var(--frame-ratio, 3 / 4);
+      border: 0;
+      background: #e9e6df;
+      cursor: pointer;
+      isolation: isolate;
+      user-select: none;
+      overflow: visible;
+    }
+    .contact-sheet[data-paper="dark"] .photo-card { background: #292824; }
+    .photo-card.dragging { opacity: .38; }
+    .photo-card.drag-target { outline: 3px solid #1f75cc; outline-offset: 3px; }
+    .photo-frame { position: absolute; inset: 0; overflow: hidden; }
+    .photo-card img {
+      width: 100%;
+      height: 100%;
+      display: block;
+      object-fit: var(--photo-fit, cover);
+      transform: rotate(var(--rotation, 0deg)) scale(var(--rotation-scale, 1));
+      transition: transform .18s ease, filter .18s ease;
+      pointer-events: none;
+    }
+    .photo-card:hover img { filter: brightness(.9); }
+    .photo-card.selected::before, .photo-card.selected::after {
+      content: "";
+      position: absolute;
+      z-index: 5;
+      pointer-events: none;
+      border: 5px solid rgba(232, 61, 48, .89);
+      inset: -6px;
+      transform: rotate(-.8deg);
+      filter: drop-shadow(0 1px 0 rgba(134,12,5,.15));
+    }
+    .photo-card.selected::after {
+      inset: -2px -8px -7px -3px;
+      border-width: 2px 7px 6px 3px;
+      border-color: rgba(255, 92, 75, .62);
+      transform: rotate(.9deg);
+    }
+    .photo-number {
+      position: absolute;
+      z-index: 6;
+      left: 7px;
+      bottom: 7px;
+      min-width: 27px;
+      padding: 4px 6px;
+      border-radius: 3px;
+      color: #fff;
+      background: rgba(0,0,0,.62);
+      font: 700 .72rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+      text-align: center;
+    }
+    .card-actions {
+      position: absolute;
+      z-index: 7;
+      top: 6px;
+      right: 6px;
+      display: flex;
+      gap: 4px;
+      opacity: 0;
+      transform: translateY(-3px);
+      transition: opacity .16s ease, transform .16s ease;
+    }
+    .photo-card:hover .card-actions, .photo-card:focus-within .card-actions { opacity: 1; transform: none; }
+    .card-actions button {
+      display: grid;
+      place-items: center;
+      width: 33px;
+      height: 33px;
+      padding: 0;
+      border: 1px solid rgba(255,255,255,.75);
+      border-radius: 50%;
+      color: white;
+      background: rgba(15,15,14,.76);
+      cursor: pointer;
+    }
+    .card-actions button:hover { background: #000; }
+
+    .drop-hint {
+      position: absolute;
+      inset: 16px;
+      z-index: 20;
+      display: none;
+      place-items: center;
+      border: 4px dashed var(--red);
+      color: var(--red);
+      background: rgba(255,255,255,.93);
+      font-size: clamp(1.25rem, 4vw, 2rem);
+      font-weight: 900;
+    }
+    body.is-dragging .drop-hint { display: grid; }
+
+    .toast {
+      position: fixed;
+      z-index: 10000;
+      left: 50%;
+      bottom: max(24px, env(safe-area-inset-bottom));
+      max-width: calc(100vw - 32px);
+      padding: 12px 18px;
+      color: #fff;
+      background: #111;
+      border-radius: 999px;
+      box-shadow: 0 8px 30px rgba(0,0,0,.28);
+      opacity: 0;
+      transform: translate(-50%, 14px);
+      transition: opacity .2s ease, transform .2s ease;
+      pointer-events: none;
+      text-align: center;
+      font-size: .88rem;
+    }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: rgba(0,0,0,.67);
+    }
+    .modal-overlay.open { display: flex; }
+    .modal-box {
+      width: min(560px, 100%);
+      max-height: min(82vh, 760px);
+      display: flex;
+      flex-direction: column;
+      color: #e8e3d9;
+      background: #1a1916;
+      border: 1px solid rgba(216,180,91,.46);
+      border-radius: 12px;
+      box-shadow: 0 24px 90px rgba(0,0,0,.55);
+    }
+    .modal-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 17px 20px; border-bottom: 1px solid rgba(255,255,255,.11); }
+    .modal-header h2 { margin: 0; color: var(--gold); font-size: 1.04rem; }
+    .modal-close-btn { width: 38px; height: 38px; border: 0; border-radius: 50%; color: #ddd; background: rgba(255,255,255,.07); cursor: pointer; }
+    #modal-body { overflow-y: auto; padding: 18px 20px 4px; font-size: .93rem; line-height: 1.75; }
+    #modal-body h3 { margin: 18px 0 6px; color: var(--gold); font-size: .9rem; }
+    #modal-body h3:first-child { margin-top: 0; }
+    #modal-body p { margin: 0 0 10px; }
+    #modal-body ul { margin: 5px 0 14px; padding-left: 1.3em; }
+    .release-ver { display: flex; gap: 12px; align-items: baseline; margin: 19px 0 6px; padding-top: 15px; border-top: 1px solid rgba(255,255,255,.1); }
+    .release-ver:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+    .release-ver-tag { color: var(--gold); font-weight: 800; }
+    .release-ver-date { color: #928e86; font-size: .8rem; }
+    .modal-actions { justify-content: flex-end; gap: 9px; padding: 16px 20px 20px; }
+    .modal-actions .secondary-button { color: #eee9df; border-color: rgba(255,255,255,.2); background: rgba(255,255,255,.07); }
+    .modal-actions .primary-button { border-color: var(--gold); background: var(--gold); color: #17140d; }
+
+    #feedback-modal .modal-box { width: min(520px, 100%); }
+    #feedback-modal .field span { color: #bbb5aa; }
+    #feedback-modal .field input, #feedback-modal .field textarea, #feedback-modal .field select { color: #171714; background: #fff; }
+    .feedback-caution { margin: 0; padding: 12px; color: #e6d9b9; background: rgba(216,180,91,.12); border-radius: 7px; font-size: .83rem; line-height: 1.55; }
+
+    @media (max-width: 850px) {
+      .app-shell { display: block; }
+      .control-panel { position: static; height: auto; overflow: visible; border-right: 0; border-bottom: 1px solid #d2cbc0; }
+      .control-panel-inner { max-width: 680px; margin: 0 auto; }
+      .control-group.responsive-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+      .workspace { padding: 18px 10px 32px; }
+      .contact-sheet { padding: clamp(20px, 5vw, 38px); min-height: 500px; }
+    }
+
+    @media (max-width: 560px) {
+      .app-header { align-items: flex-start; padding: 9px 12px; }
+      .brand-row { align-items: flex-start; flex-wrap: wrap; gap: 1px 8px; }
+      .brand-button { width: 100%; }
+      .header-button .long-label { display: none; }
+      .control-group.responsive-grid { display: block; }
+      .workspace-toolbar { align-items: flex-start; flex-direction: column; }
+      .toolbar-row { justify-content: flex-start; }
+      .contact-sheet { padding: 20px 14px; }
+      .sheet-heading { padding-bottom: 18px; }
+      .photo-grid { margin-top: 20px; }
+      .photo-card.selected::before { border-width: 3px; inset: -4px; }
+      .photo-card.selected::after { border-width: 2px 4px 4px 2px; }
+      .card-actions { opacity: 1; }
+      .card-actions button { width: 30px; height: 30px; }
+    }
+
+    @media print {
+      body { background: white; }
+      .app-header, .control-panel, .workspace-toolbar, .drop-hint, .toast, .card-actions { display: none !important; }
+      .app-shell { display: block; min-height: 0; }
+      .workspace { padding: 0; }
+      .contact-sheet { width: 100%; min-height: 0; padding: 12mm; border: 0; box-shadow: none; }
+      .photo-number { display: none; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand-row">
+      <button class="brand-button" id="manual-button" type="button" aria-label="ベタ焼きノートの使い方を開く">
+        <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+        <span>ベタ焼きノート</span>
+      </button>
+      <button class="version-button" id="version-button" type="button" title="リリースノートを開く">v0.1.0</button>
+    </div>
+    <div class="header-actions">
+      <button class="header-button" id="feedback-button" type="button" title="目安箱を開く">✉ <span class="long-label">目安箱</span></button>
+      <button class="header-button" id="debug-button" type="button" title="診断情報をコピー">⧉ <span class="long-label">診断情報</span></button>
+    </div>
+  </header>
+
+  <main class="app-shell">
+    <aside class="control-panel" aria-label="ベタ焼き設定">
+      <div class="control-panel-inner">
+        <p class="panel-kicker">DIGITAL CONTACT SHEET</p>
+        <h1 class="panel-title">写真を、見渡せる一枚に。</h1>
+        <p class="panel-copy">写真を選び、気になるコマに赤入れして、ベタ焼き風に保存できます。</p>
+
+        <button class="import-button" id="import-button" type="button"><span aria-hidden="true">＋</span> 写真を選ぶ</button>
+        <input id="file-input" type="file" accept="image/*" multiple aria-label="写真ファイルを選ぶ">
+
+        <section class="control-group" aria-labelledby="layout-label">
+          <span class="control-label" id="layout-label">1段の枚数</span>
+          <div class="segment" id="column-controls">
+            <button type="button" data-columns="3" aria-pressed="false">3</button>
+            <button type="button" data-columns="4" aria-pressed="true">4</button>
+            <button type="button" data-columns="5" aria-pressed="false">5</button>
+            <button type="button" data-columns="6" aria-pressed="false">6</button>
+          </div>
+          <label class="field">
+            <span>コマの比率</span>
+            <select id="ratio-select">
+              <option value="3/4">縦 3:4</option>
+              <option value="2/3">縦 2:3</option>
+              <option value="1/1">正方形</option>
+              <option value="4/3">横 4:3</option>
+              <option value="3/2">横 3:2</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>トリミング</span>
+            <select id="fit-select">
+              <option value="cover">枠いっぱい</option>
+              <option value="contain">写真全体</option>
+            </select>
+          </label>
+          <div class="field">
+            <span>コマの間隔</span>
+            <div class="range-wrap">
+              <input id="gap-range" type="range" min="4" max="26" value="12" step="1">
+              <output class="range-value" id="gap-output" for="gap-range">12</output>
+            </div>
+          </div>
+        </section>
+
+        <section class="control-group" aria-labelledby="paper-label">
+          <span class="control-label" id="paper-label">台紙</span>
+          <div class="segment" id="paper-controls">
+            <button type="button" data-paper="white" aria-pressed="true">白</button>
+            <button type="button" data-paper="warm" aria-pressed="false">生成</button>
+            <button type="button" data-paper="gray" aria-pressed="false">灰</button>
+            <button type="button" data-paper="dark" aria-pressed="false">黒</button>
+          </div>
+        </section>
+
+        <section class="control-group" aria-labelledby="memo-label">
+          <span class="control-label" id="memo-label">見出し</span>
+          <label class="field">
+            <span>タイトル</span>
+            <input id="title-input" type="text" maxlength="60" value="TOKYO WALK" autocomplete="off">
+          </label>
+          <label class="field">
+            <span>メモ</span>
+            <textarea id="note-input" maxlength="240" placeholder="撮影場所、カメラ、気づいたことなど"></textarea>
+          </label>
+        </section>
+
+        <section class="control-group" aria-labelledby="selection-label">
+          <span class="control-label" id="selection-label">赤入れした写真 <span id="selected-count">0</span>枚</span>
+          <div class="selection-actions">
+            <button id="rotate-selected" type="button" disabled>↻ 回転</button>
+            <button id="unselect-all" type="button" disabled>赤入れ解除</button>
+            <button id="select-all" type="button" disabled>すべて選ぶ</button>
+            <button class="danger-button" id="delete-selected" type="button" disabled>削除</button>
+          </div>
+        </section>
+
+        <section class="control-group" aria-labelledby="export-label">
+          <span class="control-label" id="export-label">書き出し</span>
+          <div class="export-actions">
+            <button class="secondary-button" id="print-button" type="button" disabled>印刷 / PDF</button>
+            <button class="secondary-button" id="clear-button" type="button" disabled>最初から</button>
+            <button class="primary-button" id="export-button" type="button" disabled>JPEGで保存</button>
+          </div>
+          <p class="privacy-note">写真は端末内だけで処理します。サーバーには送信しません。</p>
+        </section>
+      </div>
+    </aside>
+
+    <section class="workspace" aria-label="コンタクトシート編集エリア">
+      <div class="workspace-toolbar">
+        <div class="status-text"><strong id="photo-count">0枚</strong> · タップで赤入れ · ドラッグで並べ替え</div>
+        <div class="toolbar-row" aria-label="クイック設定">
+          <button class="chip-button" id="numbers-toggle" type="button" aria-pressed="true">番号</button>
+          <button class="chip-button" id="date-toggle" type="button" aria-pressed="true">日付</button>
+        </div>
+      </div>
+
+      <article class="contact-sheet" id="contact-sheet" data-paper="white">
+        <header class="sheet-heading">
+          <input class="sheet-title" id="sheet-title" value="TOKYO WALK" maxlength="60" aria-label="コンタクトシートのタイトル">
+          <div class="sheet-meta" id="sheet-meta"><span id="sheet-date"></span><span aria-hidden="true">—</span><span id="sheet-count">0 FRAMES</span></div>
+          <p class="sheet-note" id="sheet-note" hidden></p>
+        </header>
+
+        <div class="drop-zone" id="drop-zone">
+          <div class="empty-inner">
+            <div class="empty-icon" aria-hidden="true">▦</div>
+            <h2>写真をここにドロップ</h2>
+            <p>JPEG・PNGなどをまとめて読み込めます。iPadでは「写真を選ぶ」から追加してください。</p>
+            <button class="secondary-button" id="empty-import-button" type="button">写真を選ぶ</button>
+          </div>
+        </div>
+
+        <div class="photo-grid" id="photo-grid" hidden aria-live="polite"></div>
+        <div class="drop-hint" aria-hidden="true">写真を追加</div>
+      </article>
+    </section>
+  </main>
+
+  <div class="modal-overlay" id="info-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" aria-hidden="true">
+    <div class="modal-box" role="document">
+      <div class="modal-header">
+        <h2 id="modal-title"></h2>
+        <button class="modal-close-btn" id="modal-x" type="button" aria-label="閉じる">✕</button>
+      </div>
+      <div id="modal-body"></div>
+      <div class="modal-actions">
+        <a class="secondary-button" id="home-link" href="https://cc-dev-ps7.web.app/">ホームへ戻る</a>
+        <button class="primary-button" id="modal-close" type="button">閉じる</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="feedback-modal" role="dialog" aria-modal="true" aria-labelledby="feedback-title" aria-hidden="true">
+    <div class="modal-box" role="document">
+      <div class="modal-header">
+        <h2 id="feedback-title">目安箱</h2>
+        <button class="modal-close-btn" id="feedback-x" type="button" aria-label="閉じる">✕</button>
+      </div>
+      <div id="feedback-body">
+        <p class="feedback-caution">氏名、メールアドレス、電話番号、住所、アカウント情報などの個人情報や機密情報は入力しないでください。</p>
+        <label class="field">
+          <span>種類</span>
+          <select id="feedback-type"><option>要望</option><option>不具合</option><option>質問</option><option>その他</option></select>
+        </label>
+        <label class="field">
+          <span>内容</span>
+          <textarea id="feedback-message" maxlength="2000" placeholder="気づいたことを入力してください"></textarea>
+        </label>
+        <p class="privacy-note">試作版のため送信はせず、内容をクリップボードへコピーします。</p>
+      </div>
+      <div class="modal-actions">
+        <button class="secondary-button" id="feedback-close" type="button">閉じる</button>
+        <button class="primary-button" id="feedback-copy" type="button">内容をコピー</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+    (() => {
+      'use strict';
+
+      const APP_ID = 'beta-yaki-note';
+      const APP_VERSION = '0.1.0';
+      const RELEASE_NOTES = [
+        { ver: 'v0.1.0', date: '2026-09-26', changes: ['複数写真の読み込みと並べ替えに対応', '赤入れ、回転、レイアウト調整を追加', 'JPEG保存と印刷／PDF出力を追加', '使い方・リリースノート・目安箱を追加'] }
+      ];
+
+      const state = {
+        photos: [],
+        columns: 4,
+        ratio: '3/4',
+        fit: 'cover',
+        gap: 12,
+        paper: 'white',
+        showNumbers: true,
+        showDate: true,
+        draggingId: null,
+        lastFocus: null
+      };
+
+      const el = {
+        fileInput: document.getElementById('file-input'),
+        importButton: document.getElementById('import-button'),
+        emptyImportButton: document.getElementById('empty-import-button'),
+        dropZone: document.getElementById('drop-zone'),
+        grid: document.getElementById('photo-grid'),
+        sheet: document.getElementById('contact-sheet'),
+        photoCount: document.getElementById('photo-count'),
+        sheetCount: document.getElementById('sheet-count'),
+        selectedCount: document.getElementById('selected-count'),
+        sheetTitle: document.getElementById('sheet-title'),
+        titleInput: document.getElementById('title-input'),
+        noteInput: document.getElementById('note-input'),
+        sheetNote: document.getElementById('sheet-note'),
+        sheetDate: document.getElementById('sheet-date'),
+        ratioSelect: document.getElementById('ratio-select'),
+        fitSelect: document.getElementById('fit-select'),
+        gapRange: document.getElementById('gap-range'),
+        gapOutput: document.getElementById('gap-output'),
+        rotateSelected: document.getElementById('rotate-selected'),
+        unselectAll: document.getElementById('unselect-all'),
+        selectAll: document.getElementById('select-all'),
+        deleteSelected: document.getElementById('delete-selected'),
+        exportButton: document.getElementById('export-button'),
+        printButton: document.getElementById('print-button'),
+        clearButton: document.getElementById('clear-button'),
+        numbersToggle: document.getElementById('numbers-toggle'),
+        dateToggle: document.getElementById('date-toggle'),
+        infoModal: document.getElementById('info-modal'),
+        modalTitle: document.getElementById('modal-title'),
+        modalBody: document.getElementById('modal-body'),
+        feedbackModal: document.getElementById('feedback-modal'),
+        toast: document.getElementById('toast')
+      };
+
+      const today = new Intl.DateTimeFormat('ja-JP', { year: 'numeric', month: 'long', day: 'numeric' }).format(new Date());
+      el.sheetDate.textContent = today;
+
+      function uid() {
+        return (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
+      }
+
+      function showToast(message) {
+        el.toast.textContent = message;
+        el.toast.classList.add('show');
+        clearTimeout(showToast.timer);
+        showToast.timer = setTimeout(() => el.toast.classList.remove('show'), 2300);
+      }
+
+      function selectedPhotos() { return state.photos.filter(photo => photo.selected); }
+
+      function ratioCss(value) { return value.replace('/', ' / '); }
+
+      function render() {
+        const hasPhotos = state.photos.length > 0;
+        setPressedGroup(document.getElementById('column-controls'), 'columns', state.columns);
+        setPressedGroup(document.getElementById('paper-controls'), 'paper', state.paper);
+        el.ratioSelect.value = state.ratio;
+        el.fitSelect.value = state.fit;
+        el.gapRange.value = String(state.gap);
+        el.gapOutput.value = String(state.gap);
+        el.dropZone.hidden = hasPhotos;
+        el.grid.hidden = !hasPhotos;
+        el.grid.style.setProperty('--grid-columns', state.columns);
+        el.grid.style.setProperty('--grid-gap', state.gap + 'px');
+        el.grid.style.setProperty('--frame-ratio', ratioCss(state.ratio));
+        el.grid.style.setProperty('--photo-fit', state.fit);
+        el.sheet.dataset.paper = state.paper;
+        el.grid.replaceChildren();
+
+        state.photos.forEach((photo, index) => {
+          const card = document.createElement('article');
+          card.className = 'photo-card' + (photo.selected ? ' selected' : '');
+          card.dataset.id = photo.id;
+          card.tabIndex = 0;
+          card.draggable = true;
+          card.setAttribute('role', 'button');
+          card.setAttribute('aria-label', `${index + 1}枚目 ${photo.name}${photo.selected ? '、赤入れ済み' : ''}`);
+          card.setAttribute('aria-pressed', String(photo.selected));
+
+          const frame = document.createElement('div');
+          frame.className = 'photo-frame';
+          const img = document.createElement('img');
+          img.src = photo.url;
+          img.alt = '';
+          img.decoding = 'async';
+          img.style.setProperty('--rotation', photo.rotation + 'deg');
+          const quarterTurn = Math.abs(photo.rotation % 180) === 90;
+          img.style.setProperty('--rotation-scale', quarterTurn ? '1.34' : '1');
+          frame.append(img);
+
+          const number = document.createElement('span');
+          number.className = 'photo-number';
+          number.textContent = String(index + 1).padStart(2, '0');
+          number.hidden = !state.showNumbers;
+
+          const actions = document.createElement('div');
+          actions.className = 'card-actions';
+          const rotate = document.createElement('button');
+          rotate.type = 'button';
+          rotate.dataset.action = 'rotate';
+          rotate.title = '90度回転';
+          rotate.setAttribute('aria-label', `${index + 1}枚目を90度回転`);
+          rotate.textContent = '↻';
+          const remove = document.createElement('button');
+          remove.type = 'button';
+          remove.dataset.action = 'delete';
+          remove.title = '削除';
+          remove.setAttribute('aria-label', `${index + 1}枚目を削除`);
+          remove.textContent = '×';
+          actions.append(rotate, remove);
+          card.append(frame, number, actions);
+          el.grid.append(card);
+        });
+
+        const selected = selectedPhotos().length;
+        el.photoCount.textContent = `${state.photos.length}枚`;
+        el.sheetCount.textContent = `${state.photos.length} FRAME${state.photos.length === 1 ? '' : 'S'}`;
+        el.selectedCount.textContent = String(selected);
+        el.rotateSelected.disabled = selected === 0;
+        el.unselectAll.disabled = selected === 0;
+        el.deleteSelected.disabled = selected === 0;
+        el.selectAll.disabled = !hasPhotos || selected === state.photos.length;
+        el.exportButton.disabled = !hasPhotos;
+        el.printButton.disabled = !hasPhotos;
+        el.clearButton.disabled = !hasPhotos;
+      }
+
+      async function addFiles(fileList) {
+        const files = Array.from(fileList).filter(file => file.type.startsWith('image/'));
+        if (!files.length) { showToast('画像ファイルを選んでください'); return; }
+        const remaining = Math.max(0, 200 - state.photos.length);
+        const accepted = files.slice(0, remaining);
+        if (!remaining) { showToast('読み込める写真は200枚までです'); return; }
+
+        const loaded = await Promise.all(accepted.map(file => new Promise(resolve => {
+          const url = URL.createObjectURL(file);
+          const img = new Image();
+          img.onload = () => resolve({ id: uid(), name: file.name, url, img, rotation: 0, selected: false, width: img.naturalWidth, height: img.naturalHeight });
+          img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+          img.src = url;
+        })));
+
+        const good = loaded.filter(Boolean);
+        state.photos.push(...good);
+        render();
+        showToast(`${good.length}枚を追加しました` + (files.length > remaining ? '（上限200枚）' : ''));
+      }
+
+      function removePhoto(id) {
+        const index = state.photos.findIndex(photo => photo.id === id);
+        if (index < 0) return;
+        URL.revokeObjectURL(state.photos[index].url);
+        state.photos.splice(index, 1);
+        render();
+      }
+
+      function clearAll() {
+        state.photos.forEach(photo => URL.revokeObjectURL(photo.url));
+        state.photos = [];
+        render();
+        showToast('写真をすべて外しました');
+      }
+
+      function updateTitle(value) {
+        el.sheetTitle.value = value;
+        el.titleInput.value = value;
+      }
+
+      function updateNote(value) {
+        el.sheetNote.textContent = value;
+        el.sheetNote.hidden = !value.trim();
+      }
+
+      function setPressedGroup(container, attribute, value) {
+        container.querySelectorAll('button').forEach(button => button.setAttribute('aria-pressed', String(button.dataset[attribute] === String(value))));
+      }
+
+      function reorder(sourceId, targetId) {
+        if (!sourceId || sourceId === targetId) return;
+        const from = state.photos.findIndex(photo => photo.id === sourceId);
+        const to = state.photos.findIndex(photo => photo.id === targetId);
+        if (from < 0 || to < 0) return;
+        const [moved] = state.photos.splice(from, 1);
+        state.photos.splice(to, 0, moved);
+        render();
+      }
+
+      function paperColor() {
+        return { white: '#ffffff', warm: '#fbf6ea', gray: '#dad9d5', dark: '#181816' }[state.paper];
+      }
+
+      function inkColor() { return state.paper === 'dark' ? '#f6f1e7' : '#171714'; }
+
+      function drawCover(ctx, image, x, y, width, height, rotation, fit) {
+        const radians = rotation * Math.PI / 180;
+        const swap = Math.abs(rotation % 180) === 90;
+        const sourceW = swap ? image.naturalHeight : image.naturalWidth;
+        const sourceH = swap ? image.naturalWidth : image.naturalHeight;
+        const scale = fit === 'contain' ? Math.min(width / sourceW, height / sourceH) : Math.max(width / sourceW, height / sourceH);
+        const drawW = image.naturalWidth * scale;
+        const drawH = image.naturalHeight * scale;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x, y, width, height);
+        ctx.clip();
+        ctx.translate(x + width / 2, y + height / 2);
+        ctx.rotate(radians);
+        ctx.drawImage(image, -drawW / 2, -drawH / 2, drawW, drawH);
+        ctx.restore();
+      }
+
+      function drawRoughFrame(ctx, x, y, width, height, seed) {
+        ctx.save();
+        ctx.strokeStyle = 'rgba(227, 63, 49, .9)';
+        ctx.lineCap = 'round';
+        for (let pass = 0; pass < 3; pass++) {
+          const jitter = (pass - 1) * 4;
+          ctx.lineWidth = 5 + pass * 2;
+          ctx.globalAlpha = .52 + pass * .14;
+          ctx.beginPath();
+          ctx.moveTo(x - 7 + jitter, y - 4 - (seed % 3));
+          ctx.lineTo(x + width + 5, y - 7 + jitter);
+          ctx.lineTo(x + width + 7 - jitter, y + height + 6);
+          ctx.lineTo(x - 6, y + height + 4 - jitter);
+          ctx.closePath();
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      async function exportJpeg() {
+        if (!state.photos.length) return;
+        el.exportButton.disabled = true;
+        el.exportButton.textContent = '作成中…';
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        try {
+          const width = 2000;
+          const pad = 110;
+          const headerHeight = el.sheetNote.hidden ? 230 : 310;
+          const gap = state.gap * 2.2;
+          const cellWidth = (width - pad * 2 - gap * (state.columns - 1)) / state.columns;
+          const [rw, rh] = state.ratio.split('/').map(Number);
+          const cellHeight = cellWidth * rh / rw;
+          const rows = Math.ceil(state.photos.length / state.columns);
+          const height = Math.ceil(pad + headerHeight + rows * cellHeight + Math.max(0, rows - 1) * gap + pad);
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = paperColor();
+          ctx.fillRect(0, 0, width, height);
+          ctx.fillStyle = inkColor();
+          ctx.font = '500 82px Georgia, "Yu Mincho", serif';
+          ctx.fillText((el.sheetTitle.value || 'UNTITLED').slice(0, 60), pad, pad + 74, width - pad * 2);
+          ctx.globalAlpha = .62;
+          ctx.font = '32px -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif';
+          const meta = `${state.showDate ? today + '  —  ' : ''}${state.photos.length} FRAMES`;
+          ctx.fillText(meta, pad, pad + 132);
+          ctx.globalAlpha = 1;
+          if (!el.sheetNote.hidden) {
+            ctx.font = '30px -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif';
+            ctx.fillText(el.sheetNote.textContent.slice(0, 120), pad, pad + 194, width - pad * 2);
+          }
+          ctx.globalAlpha = .45;
+          ctx.fillRect(pad, pad + headerHeight - 36, width - pad * 2, 2);
+          ctx.globalAlpha = 1;
+
+          state.photos.forEach((photo, index) => {
+            const row = Math.floor(index / state.columns);
+            const col = index % state.columns;
+            const x = pad + col * (cellWidth + gap);
+            const y = pad + headerHeight + row * (cellHeight + gap);
+            ctx.fillStyle = state.paper === 'dark' ? '#292824' : '#e9e6df';
+            ctx.fillRect(x, y, cellWidth, cellHeight);
+            drawCover(ctx, photo.img, x, y, cellWidth, cellHeight, photo.rotation, state.fit);
+            if (state.showNumbers) {
+              ctx.fillStyle = 'rgba(0,0,0,.65)';
+              ctx.fillRect(x + 12, y + cellHeight - 49, 62, 37);
+              ctx.fillStyle = '#fff';
+              ctx.font = '700 24px ui-monospace, SFMono-Regular, Menlo, monospace';
+              ctx.fillText(String(index + 1).padStart(2, '0'), x + 22, y + cellHeight - 21);
+            }
+            if (photo.selected) drawRoughFrame(ctx, x, y, cellWidth, cellHeight, index);
+          });
+
+          canvas.toBlob(blob => {
+            if (!blob) throw new Error('画像を作成できませんでした');
+            const link = document.createElement('a');
+            link.href = URL.createObjectURL(blob);
+            const safeTitle = (el.sheetTitle.value || 'contact-sheet').trim().replace(/[\\/:*?"<>|]/g, '-');
+            link.download = `${safeTitle}-beta.jpg`;
+            link.click();
+            setTimeout(() => URL.revokeObjectURL(link.href), 2000);
+            showToast('JPEGを書き出しました');
+          }, 'image/jpeg', .94);
+        } catch (error) {
+          console.error(error);
+          showToast('書き出しに失敗しました');
+        } finally {
+          el.exportButton.disabled = false;
+          el.exportButton.textContent = 'JPEGで保存';
+        }
+      }
+
+      function modalFocusable(modal) {
+        return Array.from(modal.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'));
+      }
+
+      function openOverlay(modal, opener) {
+        state.lastFocus = opener || document.activeElement;
+        modal.classList.add('open');
+        modal.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+        requestAnimationFrame(() => modalFocusable(modal)[0]?.focus());
+      }
+
+      function closeOverlay(modal) {
+        modal.classList.remove('open');
+        modal.setAttribute('aria-hidden', 'true');
+        if (!document.querySelector('.modal-overlay.open')) document.body.style.overflow = '';
+        state.lastFocus?.focus?.();
+      }
+
+      function openHowTo(opener) {
+        el.modalTitle.textContent = 'ベタ焼きノートの使い方';
+        el.modalBody.replaceChildren();
+        const sections = [
+          ['① 写真を読み込む', '「写真を選ぶ」または台紙へのドラッグ＆ドロップで、写真をまとめて追加します。'],
+          ['② 並びと見え方を整える', '1段の枚数、コマの比率、間隔、台紙を選べます。写真はドラッグで並べ替え、各コマの ↻ で回転できます。'],
+          ['③ 気になるコマに赤入れ', '写真をタップすると赤い囲みが付きます。もう一度タップすると解除されます。'],
+          ['④ 保存する', '「JPEGで保存」で1枚の画像にまとめます。「印刷 / PDF」から紙やPDFにも出力できます。'],
+          ['注意事項', '写真はブラウザ内だけで処理され、サーバーには送信されません。ページを閉じると作業中の写真は消えます。']
+        ];
+        sections.forEach(([heading, text]) => {
+          const h = document.createElement('h3'); h.textContent = heading;
+          const p = document.createElement('p'); p.textContent = text;
+          el.modalBody.append(h, p);
+        });
+        openOverlay(el.infoModal, opener);
+      }
+
+      function openReleaseNotes(opener) {
+        el.modalTitle.textContent = 'リリースノート';
+        el.modalBody.replaceChildren();
+        RELEASE_NOTES.forEach(release => {
+          const heading = document.createElement('div'); heading.className = 'release-ver';
+          const ver = document.createElement('span'); ver.className = 'release-ver-tag'; ver.textContent = release.ver;
+          const date = document.createElement('span'); date.className = 'release-ver-date'; date.textContent = release.date;
+          heading.append(ver, date);
+          const list = document.createElement('ul');
+          release.changes.forEach(change => { const item = document.createElement('li'); item.textContent = change; list.append(item); });
+          el.modalBody.append(heading, list);
+        });
+        openOverlay(el.infoModal, opener);
+      }
+
+      async function copyText(text, successMessage) {
+        try {
+          await navigator.clipboard.writeText(text);
+          showToast(successMessage);
+          return true;
+        } catch {
+          const area = document.createElement('textarea');
+          area.value = text;
+          area.style.position = 'fixed'; area.style.opacity = '0';
+          document.body.append(area); area.select();
+          const ok = document.execCommand('copy'); area.remove();
+          showToast(ok ? successMessage : 'コピーできませんでした');
+          return ok;
+        }
+      }
+
+      function registerWebMcp() {
+        const context = document.modelContext;
+        if (!context?.registerTool) return;
+        const tools = [
+          {
+            name: 'get_contact_sheet_state',
+            title: 'ベタ焼きの状態を確認',
+            description: '現在の写真枚数、赤入れ枚数、レイアウト設定を確認します。',
+            inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+            annotations: { readOnlyHint: true, untrustedContentHint: false },
+            execute() { return { photoCount: state.photos.length, selectedCount: selectedPhotos().length, columns: state.columns, ratio: state.ratio, fit: state.fit, paper: state.paper }; }
+          },
+          {
+            name: 'configure_contact_sheet',
+            title: 'ベタ焼きのレイアウトを変更',
+            description: '表示中のベタ焼きについて、列数、コマ比率、トリミング、台紙をまとめて変更します。',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                columns: { type: 'integer', enum: [3,4,5,6] },
+                ratio: { type: 'string', enum: ['3/4','2/3','1/1','4/3','3/2'] },
+                fit: { type: 'string', enum: ['cover','contain'] },
+                paper: { type: 'string', enum: ['white','warm','gray','dark'] }
+              },
+              additionalProperties: false
+            },
+            annotations: { readOnlyHint: false, untrustedContentHint: false },
+            execute(input) {
+              if (!input || typeof input !== 'object') throw new TypeError('設定値が必要です');
+              const allowedKeys = ['columns', 'ratio', 'fit', 'paper'];
+              if (Object.keys(input).some(key => !allowedKeys.includes(key))) throw new TypeError('未対応の設定項目があります');
+              if (input.columns !== undefined && ![3,4,5,6].includes(input.columns)) throw new TypeError('columnsは3〜6の選択肢から指定してください');
+              if (input.ratio !== undefined && !['3/4','2/3','1/1','4/3','3/2'].includes(input.ratio)) throw new TypeError('未対応のratioです');
+              if (input.fit !== undefined && !['cover','contain'].includes(input.fit)) throw new TypeError('未対応のfitです');
+              if (input.paper !== undefined && !['white','warm','gray','dark'].includes(input.paper)) throw new TypeError('未対応のpaperです');
+              if (input.columns !== undefined) state.columns = input.columns;
+              if (input.ratio !== undefined) state.ratio = input.ratio;
+              if (input.fit !== undefined) state.fit = input.fit;
+              if (input.paper !== undefined) state.paper = input.paper;
+              render();
+              return { ok: true, columns: state.columns, ratio: state.ratio, fit: state.fit, paper: state.paper };
+            }
+          }
+        ];
+        tools.forEach(tool => { try { Promise.resolve(context.registerTool(tool)).catch(() => {}); } catch {} });
+      }
+
+      el.importButton.addEventListener('click', () => el.fileInput.click());
+      el.emptyImportButton.addEventListener('click', () => el.fileInput.click());
+      el.fileInput.addEventListener('change', event => { addFiles(event.target.files); event.target.value = ''; });
+
+      document.getElementById('column-controls').addEventListener('click', event => {
+        const button = event.target.closest('[data-columns]'); if (!button) return;
+        state.columns = Number(button.dataset.columns); setPressedGroup(event.currentTarget, 'columns', state.columns); render();
+      });
+      document.getElementById('paper-controls').addEventListener('click', event => {
+        const button = event.target.closest('[data-paper]'); if (!button) return;
+        state.paper = button.dataset.paper; setPressedGroup(event.currentTarget, 'paper', state.paper); render();
+      });
+      el.ratioSelect.addEventListener('change', () => { state.ratio = el.ratioSelect.value; render(); });
+      el.fitSelect.addEventListener('change', () => { state.fit = el.fitSelect.value; render(); });
+      el.gapRange.addEventListener('input', () => { state.gap = Number(el.gapRange.value); el.gapOutput.value = String(state.gap); render(); });
+      el.titleInput.addEventListener('input', () => updateTitle(el.titleInput.value));
+      el.sheetTitle.addEventListener('input', () => updateTitle(el.sheetTitle.value));
+      el.noteInput.addEventListener('input', () => updateNote(el.noteInput.value));
+
+      el.grid.addEventListener('click', event => {
+        const card = event.target.closest('.photo-card'); if (!card) return;
+        const photo = state.photos.find(item => item.id === card.dataset.id); if (!photo) return;
+        const action = event.target.closest('[data-action]')?.dataset.action;
+        if (action === 'rotate') photo.rotation = (photo.rotation + 90) % 360;
+        else if (action === 'delete') { removePhoto(photo.id); return; }
+        else photo.selected = !photo.selected;
+        render();
+      });
+      el.grid.addEventListener('keydown', event => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        const card = event.target.closest('.photo-card'); if (!card || event.target.closest('button')) return;
+        event.preventDefault();
+        const photo = state.photos.find(item => item.id === card.dataset.id); if (photo) { photo.selected = !photo.selected; render(); }
+      });
+      el.grid.addEventListener('dragstart', event => {
+        const card = event.target.closest('.photo-card'); if (!card) return;
+        state.draggingId = card.dataset.id; card.classList.add('dragging'); event.dataTransfer.effectAllowed = 'move';
+      });
+      el.grid.addEventListener('dragover', event => { const card = event.target.closest('.photo-card'); if (!card) return; event.preventDefault(); card.classList.add('drag-target'); });
+      el.grid.addEventListener('dragleave', event => event.target.closest('.photo-card')?.classList.remove('drag-target'));
+      el.grid.addEventListener('drop', event => {
+        const card = event.target.closest('.photo-card'); if (!card) return;
+        event.preventDefault(); reorder(state.draggingId, card.dataset.id); state.draggingId = null;
+      });
+      el.grid.addEventListener('dragend', () => { state.draggingId = null; document.querySelectorAll('.dragging,.drag-target').forEach(node => node.classList.remove('dragging','drag-target')); });
+
+      let dragDepth = 0;
+      document.addEventListener('dragenter', event => { if (event.dataTransfer?.types?.includes('Files')) { dragDepth++; document.body.classList.add('is-dragging'); } });
+      document.addEventListener('dragleave', event => { if (event.dataTransfer?.types?.includes('Files')) { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) document.body.classList.remove('is-dragging'); } });
+      document.addEventListener('dragover', event => { if (event.dataTransfer?.types?.includes('Files')) event.preventDefault(); });
+      document.addEventListener('drop', event => {
+        if (event.dataTransfer?.files?.length) { event.preventDefault(); addFiles(event.dataTransfer.files); }
+        dragDepth = 0; document.body.classList.remove('is-dragging');
+      });
+
+      el.rotateSelected.addEventListener('click', () => { selectedPhotos().forEach(photo => photo.rotation = (photo.rotation + 90) % 360); render(); });
+      el.unselectAll.addEventListener('click', () => { state.photos.forEach(photo => photo.selected = false); render(); });
+      el.selectAll.addEventListener('click', () => { state.photos.forEach(photo => photo.selected = true); render(); });
+      el.deleteSelected.addEventListener('click', () => {
+        const targets = selectedPhotos();
+        if (!targets.length || !confirm(`赤入れした${targets.length}枚を外しますか？`)) return;
+        targets.forEach(photo => URL.revokeObjectURL(photo.url));
+        state.photos = state.photos.filter(photo => !photo.selected); render(); showToast(`${targets.length}枚を外しました`);
+      });
+      el.clearButton.addEventListener('click', () => { if (confirm('読み込んだ写真をすべて外しますか？')) clearAll(); });
+      el.exportButton.addEventListener('click', exportJpeg);
+      el.printButton.addEventListener('click', () => window.print());
+      el.numbersToggle.addEventListener('click', () => { state.showNumbers = !state.showNumbers; el.numbersToggle.setAttribute('aria-pressed', String(state.showNumbers)); render(); });
+      el.dateToggle.addEventListener('click', () => { state.showDate = !state.showDate; el.dateToggle.setAttribute('aria-pressed', String(state.showDate)); el.sheetDate.hidden = !state.showDate; render(); });
+
+      document.getElementById('manual-button').addEventListener('click', event => openHowTo(event.currentTarget));
+      document.getElementById('version-button').addEventListener('click', event => openReleaseNotes(event.currentTarget));
+      document.getElementById('modal-x').addEventListener('click', () => closeOverlay(el.infoModal));
+      document.getElementById('modal-close').addEventListener('click', () => closeOverlay(el.infoModal));
+      el.infoModal.addEventListener('mousedown', event => { if (event.target === el.infoModal) closeOverlay(el.infoModal); });
+
+      document.getElementById('feedback-button').addEventListener('click', event => openOverlay(el.feedbackModal, event.currentTarget));
+      document.getElementById('feedback-x').addEventListener('click', () => closeOverlay(el.feedbackModal));
+      document.getElementById('feedback-close').addEventListener('click', () => closeOverlay(el.feedbackModal));
+      el.feedbackModal.addEventListener('mousedown', event => { if (event.target === el.feedbackModal) closeOverlay(el.feedbackModal); });
+      document.getElementById('feedback-copy').addEventListener('click', async () => {
+        const message = document.getElementById('feedback-message').value.trim();
+        if (!message) { showToast('内容を入力してください'); document.getElementById('feedback-message').focus(); return; }
+        const type = document.getElementById('feedback-type').value;
+        const ok = await copyText(`[${type}] ${message}\n\nappId: ${APP_ID}\nversion: ${APP_VERSION}\nurl: ${location.origin + location.pathname}`, '目安箱の内容をコピーしました');
+        if (ok) closeOverlay(el.feedbackModal);
+      });
+
+      document.getElementById('debug-button').addEventListener('click', () => {
+        const debug = [
+          `appId: ${APP_ID}`,
+          `version: ${APP_VERSION}`,
+          `url: ${location.origin + location.pathname}`,
+          `time: ${new Date().toISOString()}`,
+          `photos: ${state.photos.length}`,
+          `selected: ${selectedPhotos().length}`,
+          `viewport: ${innerWidth}x${innerHeight}`,
+          `userAgent: ${navigator.userAgent.replace(/[\r\n]/g, ' ').slice(0, 240)}`
+        ].join('\n');
+        copyText(debug, '診断情報をコピーしました');
+      });
+
+      document.addEventListener('keydown', event => {
+        const modal = document.querySelector('.modal-overlay.open');
+        if (event.key === 'Escape' && modal) { closeOverlay(modal); return; }
+        if (event.key === 'Tab' && modal) {
+          const items = modalFocusable(modal); if (!items.length) return;
+          const first = items[0], last = items[items.length - 1];
+          if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+          else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+        }
+      });
+
+      window.addEventListener('beforeunload', () => state.photos.forEach(photo => URL.revokeObjectURL(photo.url)));
+      registerWebMcp();
+      render();
+    })();
+  </script>
+</body>
+</html>
