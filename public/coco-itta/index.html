@@ -141,7 +141,7 @@
 
     /* ===== サイドパネル ===== */
     .side-panel {
-      width: 280px;
+      width: 340px;
       background: var(--paper);
       border-left: 1.5px solid var(--border);
       display: flex;
@@ -214,6 +214,80 @@
     .tag-visited  { background: var(--green-lt);  color: var(--green); }
     .tag-revisit  { background: #d0e4f8;  color: var(--blue); }
     .tag-wishlist { background: var(--amber-lt);  color: #8a5c00; }
+    /* ===== ピン一覧: カード型レイアウト（v0.11.0〜） ===== */
+    .pin-list.view-card {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      grid-auto-rows: max-content; /* 高さ不足時にカードが潰れないよう内容の高さで固定 */
+      gap: 10px;
+      padding: 10px;
+      align-content: start;
+    }
+    .pin-card {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 1px 3px var(--shadow);
+      transition: transform .15s, box-shadow .15s;
+      min-width: 0;
+    }
+    .pin-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px var(--shadow); }
+    .pin-card:active { transform: scale(0.98); }
+    .pin-card-thumb {
+      position: relative;
+      aspect-ratio: 4 / 3;
+      flex-shrink: 0; /* 本文が長くてもサムネを潰さない */
+      background: var(--bg);
+      overflow: hidden;
+    }
+    .pin-card-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    /* 写真なし: 地図帳の方眼紙風プレースホルダー */
+    .pin-card-nophoto {
+      width: 100%; height: 100%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 2.2rem;
+      background-color: var(--paper);
+      background-image:
+        linear-gradient(var(--border) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+      background-size: 16px 16px;
+      background-position: -1px -1px;
+    }
+    .pin-card-nophoto.st-visited  { background-color: #eef6ef; }
+    .pin-card-nophoto.st-revisit  { background-color: #eaf2fb; }
+    .pin-card-nophoto.st-wishlist { background-color: #fbf3e2; }
+    .pin-card-status {
+      position: absolute; top: 6px; left: 6px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+    .pin-card-visit { position: absolute; top: 6px; right: 6px; margin: 0; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+    .pin-card-photos {
+      position: absolute; bottom: 6px; right: 6px;
+      background: rgba(0,0,0,0.55); color: #fff;
+      font-size: 0.6rem; font-weight: 700;
+      padding: 1px 7px; border-radius: 10px;
+    }
+    .pin-card-body { padding: 7px 9px 9px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+    .pin-card-name {
+      font-size: 0.8rem; font-weight: 700; line-height: 1.35;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+      word-break: break-all;
+    }
+    .pin-card-meta { font-size: 0.64rem; color: var(--ink-light); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pin-card-memo {
+      font-size: 0.64rem; color: var(--ink-light); line-height: 1.45;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    }
+    .pin-list.view-card .empty-state { grid-column: 1 / -1; }
+    /* 表示切替ボタン（カード ⇔ リスト） */
+    .panel-view-btn {
+      background: #fff; border: 1px solid var(--border); border-radius: 8px;
+      font-size: 0.85rem; padding: 2px 9px; cursor: pointer; line-height: 1.4;
+    }
     /* マーカーのスタックカウント（地図上アイコン右上） */
     .marker-stack-count {
       position: absolute; top: -6px; right: -6px;
@@ -1358,7 +1432,7 @@
   <div class="logo">
     COCO-ITTA
     <span>ここいった — 家族の地図帳</span>
-    <span style="font-size:0.6rem;opacity:0.5;">v0.10.0</span>
+    <span style="font-size:0.6rem;opacity:0.5;">v0.11.0</span>
   </div>
   <div class="filters" id="filters">
     <button class="filter-btn active" data-filter="all">すべて</button>
@@ -1456,6 +1530,7 @@
     <div class="panel-header">
       <span data-i18n="panel.title">📌 ピン一覧</span>
       <span style="display:flex;align-items:center;gap:6px;">
+        <button id="btnListView" class="panel-view-btn" title="リスト表示に切替">☰</button>
         <button id="btnAlbum" data-i18n-title="panel.album.title" title="写真アルバム" style="background:#fff;border:1px solid var(--border);border-radius:8px;font-size:0.85rem;padding:2px 9px;cursor:pointer;line-height:1.4;">📷</button>
         <span class="count-badge" id="pinCount">0</span>
       </span>
@@ -1474,7 +1549,7 @@
         <option value="rating">⭐ 評価が高い順</option>
       </select>
     </div>
-    <div class="pin-list" id="pinList">
+    <div class="pin-list view-card" id="pinList">
       <div class="empty-state">
         <span class="e-icon">🗺️</span>
         地図をクリックするか<br>「＋ ピン追加」で<br>はじめての場所を記録しよう
@@ -1780,7 +1855,7 @@
 
 <script>
 // ============================================================
-// COCO-ITTA v0.10.0 - ルートREDO・再訪日付指定・メンバー顔写真
+// COCO-ITTA v0.11.0 - ピン一覧カード型レイアウト
 // - Leaflet + OpenStreetMap
 // - localStorage でデータ永続化
 // - ピン追加・編集・削除
@@ -1953,6 +2028,9 @@ const DICT_JA = {
   'panel.stats.wishlist': '行きたい',
   'panel.btn.openSheet': '📌 ピン一覧を開く',
   'panel.btn.closeSheet': '🗺️ 地図を見る',
+  'panel.view.toList': 'リスト表示に切替',
+  'panel.view.toCard': 'カード表示に切替',
+  'panel.card.photos': '📷 {n}',
   // ピン一覧の項目
   'pin.tag.visited': '行った',
   'pin.tag.revisit': 'また行きたい',
@@ -2175,6 +2253,9 @@ const DICT_EN = {
   'panel.stats.wishlist': 'Wishlist',
   'panel.btn.openSheet': '📌 Open pin list',
   'panel.btn.closeSheet': '🗺️ Show map',
+  'panel.view.toList': 'Switch to list view',
+  'panel.view.toCard': 'Switch to card view',
+  'panel.card.photos': '📷 {n}',
   // Pin tags
   'pin.tag.visited': 'Visited',
   'pin.tag.revisit': 'Revisit',
@@ -3453,8 +3534,75 @@ function getSortedPins(arr) {
   return copy;
 }
 
+// ===== ピン一覧の表示モード（card / list）v0.11.0〜 =====
+const LIST_VIEW_KEY = 'coco-itta-list-view';
+let pinListView = (() => {
+  try { return localStorage.getItem(LIST_VIEW_KEY) === 'list' ? 'list' : 'card'; }
+  catch { return 'card'; }
+})();
+
+/** 表示切替ボタンとリストのクラスを現在のモードに合わせる */
+function syncPinListViewUi() {
+  const list = document.getElementById('pinList');
+  const btn  = document.getElementById('btnListView');
+  list?.classList.toggle('view-card', pinListView === 'card');
+  if (btn) {
+    // 押すと切り替わる先のアイコンを表示
+    btn.textContent = pinListView === 'card' ? '☰' : '▦';
+    btn.title = t(pinListView === 'card' ? 'panel.view.toList' : 'panel.view.toCard');
+  }
+}
+
+document.getElementById('btnListView')?.addEventListener('click', () => {
+  pinListView = pinListView === 'card' ? 'list' : 'card';
+  try { localStorage.setItem(LIST_VIEW_KEY, pinListView); } catch {}
+  log('ピン一覧表示切替:', pinListView);
+  renderPinList();
+  document.getElementById('pinList').scrollTop = 0;
+});
+
+/** カード1枚分のHTMLを生成（写真サムネを大きく表示） */
+function renderPinCard(pin) {
+  const layerEmoji = { spot: '🏪', area: '🏙', country: '🌍' }[pin.layer] || '📍';
+  const dateStr = pin.dateUnknown ? t('pin.dateUnknown') : (pin.date || '');
+  const { rank, total } = getVisitRank(pin);
+  const photos = getPinPhotos(pin.id);
+  const statusCls = pin.status === 'visited' ? 'visited' : pin.status === 'revisit' ? 'revisit' : 'wishlist';
+  const tagKey = 'pin.tag.' + statusCls;
+
+  // サムネ部分: 写真があれば1枚目を大きく、無ければ方眼紙＋レイヤー絵文字
+  const thumbInner = photos.length
+    ? `<img src="${escHtml(photos[0])}" loading="lazy" decoding="async" alt="" />`
+    : `<div class="pin-card-nophoto st-${statusCls}">${layerEmoji}</div>`;
+  const photoCount = photos.length > 1
+    ? `<span class="pin-card-photos">${t('panel.card.photos', {n: photos.length})}</span>` : '';
+  const visitBadge = total > 1
+    ? `<span class="visit-badge pin-card-visit">${t('pin.visitBadge', {n: rank})}</span>` : '';
+
+  const ratingHtml = pin.rating ? `<span class="pin-rating-inline">${'★'.repeat(pin.rating)}</span>` : '';
+  const metaParts = [ratingHtml, escHtml(dateStr)].filter(Boolean).join(' · ');
+  const memoHtml = pin.memo ? `<div class="pin-card-memo">${escHtml(pin.memo)}</div>` : '';
+
+  return `
+    <div class="pin-card" onclick="focusPin('${pin.id}')">
+      <div class="pin-card-thumb">
+        ${thumbInner}
+        <span class="pin-status-tag pin-card-status tag-${statusCls}">${t(tagKey)}</span>
+        ${visitBadge}${photoCount}
+      </div>
+      <div class="pin-card-body">
+        <div class="pin-card-name">${escHtml(pin.name || '')}</div>
+        ${metaParts ? `<div class="pin-card-meta">${metaParts}</div>` : ''}
+        ${memoHtml}
+        ${pin.members?.length ? buildMemberAvatarsHtml(pin.members) : ''}
+      </div>
+    </div>
+  `;
+}
+
 function renderPinList() {
   const list = document.getElementById('pinList');
+  syncPinListViewUi();
   const filtered = getSortedPins(getFilteredPins());
 
   // 統計更新
@@ -3465,6 +3613,12 @@ function renderPinList() {
 
   if (filtered.length === 0) {
     list.innerHTML = `<div class="empty-state"><span class="e-icon">🗺️</span>${t('panel.empty.main')}</div>`;
+    return;
+  }
+
+  // カード表示（v0.11.0〜 既定）
+  if (pinListView === 'card') {
+    list.innerHTML = filtered.map(renderPinCard).join('');
     return;
   }
 
@@ -4954,7 +5108,12 @@ if ('serviceWorker' in navigator) {
 
 // ===== UI共通コンポーネント（ページロード完了後に初期化）=====
 window.addEventListener('load', () => {
-const RELEASE_NOTES_JA = `## v0.10.0 (2026-09-26)
+const RELEASE_NOTES_JA = `## v0.11.0 (2026-09-26)
+- 🖼️ ピン一覧をカード型に刷新：写真サムネを大きく表示（写真なしは方眼紙デザイン）
+- 📐 サイドパネルを少し広げて見やすく（スマホは2列グリッド）
+- ☰ ピン一覧の右上ボタンでカード⇔リスト表示を切替（選択は保存）
+
+## v0.10.0 (2026-09-26)
 - 🔄 再訪パネルをフル入力対応（評価・写真・メンバー・ゲスト追加）
 - 📷 写真専用アップロードモーダル追加（ヘッダーの📷ボタン）
 - 🔢 バージョン番号の表示を統一（v0.10.0）
@@ -5044,7 +5203,12 @@ const RELEASE_NOTES_JA = `## v0.10.0 (2026-09-26)
 - ルート描画機能
 - メンバー管理`;
 
-const RELEASE_NOTES_EN = `## v0.10.0 (2026-09-26)
+const RELEASE_NOTES_EN = `## v0.11.0 (2026-09-26)
+- 🖼️ Pin list redesigned as cards with large photo thumbnails (grid-paper placeholder when no photo)
+- 📐 Wider side panel for easier browsing (2-column grid on mobile)
+- ☰ Toggle card ⇔ list view with the button at the top of the pin list (choice is saved)
+
+## v0.10.0 (2026-09-26)
 - 🔄 Revisit panel now supports full input (rating, photos, members, guests)
 - 📷 Dedicated photo upload modal added (📷 button in header)
 - 🔢 Version number unified to v0.10.0
@@ -5181,6 +5345,10 @@ const HELP_JA = `## 使い方
 - **日**：その日の訪問記録を詳細カードで（写真・評価・メモ・同行メンバー）
 - ピンや日付セルをタップすると地図に戻ってそのピンを表示
 
+### ピン一覧の表示
+- 既定はカード表示（写真を大きく表示）。右上の ☰ / ▦ ボタンでリスト表示と切替できます
+- カードをタップすると地図上のピンへ移動します
+
 ### 写真アルバム
 - ピン一覧の 📷 ボタンでスポット別の写真一覧を表示
 - 写真をタップすると拡大表示できます
@@ -5244,6 +5412,10 @@ const HELP_EN = `## How to use
 - **Day**: detailed cards (photos, rating, memo, members)
 - Tap a pin or day cell to jump back to the map
 
+### Pin list view
+- Card view (large photos) is the default. Use the ☰ / ▦ button at the top right to switch to list view
+- Tap a card to jump to that pin on the map
+
 ### Photo album
 - Tap 📷 in the pin list to see photos grouped by spot
 - Tap a photo to view it larger
@@ -5263,7 +5435,7 @@ const HELP_EN = `## How to use
 // UI共通コンポーネント初期化
 const versionBadge = document.createElement('div');
   versionBadge.className = 'version-badge';
-  versionBadge.textContent = 'v0.10.0';
+  versionBadge.textContent = 'v0.11.0';
   versionBadge.addEventListener('click', () => {
     const modal = document.getElementById('releaseNotesModal');
     modal.classList.add('open');
@@ -5288,7 +5460,7 @@ const versionBadge = document.createElement('div');
   });
 
   const releaseModal = document.getElementById('releaseNotesModal');
-  const APP_VERSION = 'v0.10.0';
+  const APP_VERSION = 'v0.11.0';
   const LAST_SEEN_KEY = 'coco-itta-last-seen-version';
   releaseModal.addEventListener('click', e => {
     if (e.target === releaseModal) {
