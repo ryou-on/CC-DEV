@@ -143,6 +143,7 @@
     .control-row { gap: 8px; }
     .control-row.wrap { flex-wrap: wrap; }
     .segment { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+    .segment.two { grid-template-columns: repeat(2, 1fr); }
     .segment.three { grid-template-columns: repeat(3, 1fr); }
     .segment button, .chip-button, .icon-button {
       min-height: 39px;
@@ -189,6 +190,24 @@
     .export-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     .export-actions .primary-button { grid-column: 1 / -1; }
     .privacy-note { margin: 13px 0 0; color: var(--muted); font-size: .76rem; line-height: 1.55; }
+    .draw-toggle {
+      width: 100%;
+      min-height: 45px;
+      border: 1px solid #bcafa0;
+      border-radius: 8px;
+      color: var(--ink);
+      background: #fffdf9;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .draw-toggle[aria-pressed="true"] { color: #fff; background: var(--red); border-color: #b72f25; box-shadow: 0 0 0 3px rgba(227,72,58,.14); }
+    .ink-controls { margin-top: 9px; }
+    .ink-controls button { display: flex; align-items: center; justify-content: center; gap: 7px; }
+    .ink-swatch { width: 14px; height: 14px; border: 1px solid rgba(0,0,0,.28); border-radius: 50%; box-shadow: inset 0 0 0 2px rgba(255,255,255,.38); }
+    .ink-swatch.red { background: #e3483a; }
+    .ink-swatch.white { background: #fffdf2; }
+    .pen-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 9px; }
+    .pen-actions button { min-height: 39px; border: 1px solid #c9c0b3; border-radius: 7px; background: #fffdf9; cursor: pointer; }
 
     .workspace { min-width: 0; padding: clamp(16px, 3vw, 38px); overflow: hidden; }
     .workspace-toolbar {
@@ -222,6 +241,17 @@
     .contact-sheet[data-paper="warm"] { --perf-color: #fbf6ea; }
     .contact-sheet[data-paper="gray"] { --perf-color: #dad9d5; }
     .contact-sheet[data-paper="dark"] { --perf-color: #181816; }
+    .contact-sheet.is-drawing { outline: 3px solid rgba(227,72,58,.55); outline-offset: 6px; }
+    .annotation-canvas {
+      position: absolute;
+      z-index: 20;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      touch-action: pan-x pan-y pinch-zoom;
+    }
+    .contact-sheet.is-drawing .annotation-canvas { pointer-events: auto; cursor: crosshair; }
 
     .sheet-heading { padding-bottom: 24px; border-bottom: 1px solid currentColor; opacity: .98; }
     .sheet-title {
@@ -544,7 +574,7 @@
         <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
         <span>ベタ焼きノート</span>
       </button>
-      <button class="version-button" id="version-button" type="button" title="リリースノートを開く">v0.2.0</button>
+      <button class="version-button" id="version-button" type="button" title="リリースノートを開く">v0.3.0</button>
     </div>
     <div class="header-actions">
       <button class="header-button" id="feedback-button" type="button" title="目安箱を開く">✉ <span class="long-label">目安箱</span></button>
@@ -629,6 +659,27 @@
           </div>
         </section>
 
+        <section class="control-group" aria-labelledby="drawing-label">
+          <span class="control-label" id="drawing-label">Apple Pencil／ダーマットペン</span>
+          <button class="draw-toggle" id="draw-toggle" type="button" aria-pressed="false">✎ 書き込みを開始</button>
+          <div class="segment two ink-controls" id="ink-controls" aria-label="ペンの色">
+            <button type="button" data-ink="#e3483a" aria-pressed="true"><span class="ink-swatch red" aria-hidden="true"></span>赤</button>
+            <button type="button" data-ink="#fffdf2" aria-pressed="false"><span class="ink-swatch white" aria-hidden="true"></span>白</button>
+          </div>
+          <div class="field">
+            <span>芯の太さ</span>
+            <div class="range-wrap">
+              <input id="pen-size-range" type="range" min="3" max="16" value="8" step="1">
+              <output class="range-value" id="pen-size-output" for="pen-size-range">8</output>
+            </div>
+          </div>
+          <div class="pen-actions">
+            <button id="undo-stroke" type="button" disabled>↩ 元に戻す</button>
+            <button id="clear-strokes" type="button" disabled>書き込みを消す</button>
+          </div>
+          <p class="privacy-note">Apple Pencilの筆圧で濃さと太さが変わります。Pencilは描画、指はスクロールとして扱います。</p>
+        </section>
+
         <section class="control-group" aria-labelledby="memo-label">
           <span class="control-label" id="memo-label">見出し</span>
           <label class="field">
@@ -690,6 +741,7 @@
 
         <div class="photo-grid" id="photo-grid" hidden aria-live="polite"></div>
         <div class="drop-hint" aria-hidden="true">写真を追加</div>
+        <canvas class="annotation-canvas" id="annotation-canvas" aria-label="ダーマットペンの書き込みレイヤー"></canvas>
       </article>
     </section>
   </main>
@@ -740,8 +792,9 @@
       'use strict';
 
       const APP_ID = 'beta-yaki-note';
-      const APP_VERSION = '0.2.0';
+      const APP_VERSION = '0.3.0';
       const RELEASE_NOTES = [
+        { ver: 'v0.3.0', date: '2026-09-27', changes: ['Apple Pencilの筆圧に対応した書き込みモードを追加', '赤・白のダーマットペン風テクスチャと芯の太さ調整を追加', '書き込みの元に戻す・全消去に対応', '手書き線をJPEG保存と印刷／PDFへ反映'] },
         { ver: 'v0.2.0', date: '2026-09-26', changes: ['35mmフィルムのパーフォレーションとエッジ印字を再現', 'ポジ・ネガ・META表示を追加', 'JPEGのEXIF情報表示に対応', '縦写真を自動回転し、全コマの長辺方向を統一'] },
         { ver: 'v0.1.0', date: '2026-09-26', changes: ['複数写真の読み込みと並べ替えに対応', '赤入れ、回転、レイアウト調整を追加', 'JPEG保存と印刷／PDF出力を追加', '使い方・リリースノート・目安箱を追加'] }
       ];
@@ -757,6 +810,11 @@
         filmName: 'KODAK PORTRA 400',
         showNumbers: true,
         showDate: true,
+        drawEnabled: false,
+        penColor: '#e3483a',
+        penSize: 8,
+        strokes: [],
+        activeStroke: null,
         draggingId: null,
         lastFocus: null
       };
@@ -768,6 +826,7 @@
         dropZone: document.getElementById('drop-zone'),
         grid: document.getElementById('photo-grid'),
         sheet: document.getElementById('contact-sheet'),
+        annotationCanvas: document.getElementById('annotation-canvas'),
         photoCount: document.getElementById('photo-count'),
         sheetCount: document.getElementById('sheet-count'),
         selectedCount: document.getElementById('selected-count'),
@@ -792,6 +851,11 @@
         clearButton: document.getElementById('clear-button'),
         numbersToggle: document.getElementById('numbers-toggle'),
         dateToggle: document.getElementById('date-toggle'),
+        drawToggle: document.getElementById('draw-toggle'),
+        penSizeRange: document.getElementById('pen-size-range'),
+        penSizeOutput: document.getElementById('pen-size-output'),
+        undoStroke: document.getElementById('undo-stroke'),
+        clearStrokes: document.getElementById('clear-strokes'),
         infoModal: document.getElementById('info-modal'),
         modalTitle: document.getElementById('modal-title'),
         modalBody: document.getElementById('modal-body'),
@@ -811,6 +875,168 @@
         el.toast.classList.add('show');
         clearTimeout(showToast.timer);
         showToast.timer = setTimeout(() => el.toast.classList.remove('show'), 2300);
+      }
+
+      let annotationFrame = 0;
+
+      function roughNoise(seed) {
+        const value = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
+        return (value - Math.floor(value)) * 2 - 1;
+      }
+
+      function drawDermatographStroke(ctx, stroke, width, height) {
+        const points = stroke.points;
+        if (!points.length) return;
+        const color = stroke.color;
+        const nominalWidth = Math.max(1, stroke.size * width);
+
+        if (points.length === 1) {
+          const point = points[0];
+          const pressure = .58 + point.pressure * .78;
+          ctx.save();
+          ctx.globalAlpha = .78;
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.arc(point.x * width, point.y * height, nominalWidth * pressure * .48, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+          return;
+        }
+
+        ctx.save();
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        for (let index = 1; index < points.length; index++) {
+          const previous = points[index - 1];
+          const point = points[index];
+          const pressure = Math.max(.12, (previous.pressure + point.pressure) / 2);
+          const tilt = Math.min(1, ((previous.tilt || 0) + (point.tilt || 0)) / 2);
+          const lineWidth = nominalWidth * (.52 + pressure * .75 + tilt * .18);
+
+          ctx.globalAlpha = .69 + pressure * .14;
+          ctx.strokeStyle = color;
+          ctx.lineWidth = lineWidth;
+          ctx.beginPath();
+          ctx.moveTo(previous.x * width, previous.y * height);
+          ctx.lineTo(point.x * width, point.y * height);
+          ctx.stroke();
+
+          for (let pass = 0; pass < 3; pass++) {
+            const jitter = lineWidth * .1;
+            const seed = stroke.seed + index * 17 + pass * 101;
+            const offsetAX = roughNoise(seed) * jitter;
+            const offsetAY = roughNoise(seed + 3) * jitter;
+            const offsetBX = roughNoise(seed + 7) * jitter;
+            const offsetBY = roughNoise(seed + 11) * jitter;
+            ctx.globalAlpha = .1 + pressure * .055;
+            ctx.lineWidth = Math.max(.7, lineWidth * (.28 + pass * .08));
+            ctx.beginPath();
+            ctx.moveTo(previous.x * width + offsetAX, previous.y * height + offsetAY);
+            ctx.lineTo(point.x * width + offsetBX, point.y * height + offsetBY);
+            ctx.stroke();
+          }
+        }
+        ctx.restore();
+      }
+
+      function paintAnnotations(ctx, width, height, clear = false) {
+        if (clear) ctx.clearRect(0, 0, width, height);
+        state.strokes.forEach(stroke => drawDermatographStroke(ctx, stroke, width, height));
+      }
+
+      function renderAnnotationCanvas() {
+        annotationFrame = 0;
+        const canvas = el.annotationCanvas;
+        const width = Math.max(1, canvas.clientWidth);
+        const height = Math.max(1, canvas.clientHeight);
+        const scale = Math.min(3, Math.max(1, window.devicePixelRatio || 1));
+        const pixelWidth = Math.round(width * scale);
+        const pixelHeight = Math.round(height * scale);
+        if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+          canvas.width = pixelWidth;
+          canvas.height = pixelHeight;
+        }
+        const ctx = canvas.getContext('2d');
+        ctx.setTransform(scale, 0, 0, scale, 0, 0);
+        paintAnnotations(ctx, width, height, true);
+      }
+
+      function requestAnnotationRender() {
+        if (!annotationFrame) annotationFrame = requestAnimationFrame(renderAnnotationCanvas);
+      }
+
+      function syncDrawingControls() {
+        el.sheet.classList.toggle('is-drawing', state.drawEnabled);
+        el.drawToggle.setAttribute('aria-pressed', String(state.drawEnabled));
+        el.drawToggle.textContent = state.drawEnabled ? '✓ 書き込み中' : '✎ 書き込みを開始';
+        setPressedGroup(document.getElementById('ink-controls'), 'ink', state.penColor);
+        el.penSizeRange.value = String(state.penSize);
+        el.penSizeOutput.value = String(state.penSize);
+        el.undoStroke.disabled = state.strokes.length === 0;
+        el.clearStrokes.disabled = state.strokes.length === 0;
+        el.clearButton.disabled = state.photos.length === 0 && state.strokes.length === 0;
+      }
+
+      function pointerPoint(event, rect) {
+        const pressure = event.pressure > 0 ? event.pressure : .55;
+        const tilt = Math.min(1, Math.hypot(event.tiltX || 0, event.tiltY || 0) / 90);
+        return {
+          x: Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
+          y: Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
+          pressure,
+          tilt
+        };
+      }
+
+      function appendPointerSamples(event) {
+        const stroke = state.activeStroke;
+        if (!stroke) return;
+        const rect = el.annotationCanvas.getBoundingClientRect();
+        const coalesced = typeof event.getCoalescedEvents === 'function' ? event.getCoalescedEvents() : [];
+        const samples = coalesced.length ? coalesced : [event];
+        samples.forEach(sample => {
+          const point = pointerPoint(sample, rect);
+          const previous = stroke.points[stroke.points.length - 1];
+          if (previous && Math.hypot((point.x - previous.x) * rect.width, (point.y - previous.y) * rect.height) < .6) return;
+          stroke.points.push(point);
+        });
+      }
+
+      function beginDrawing(event) {
+        if (!state.drawEnabled || event.pointerType === 'touch' || (event.pointerType === 'mouse' && event.button !== 0)) return;
+        event.preventDefault();
+        const rect = el.annotationCanvas.getBoundingClientRect();
+        const stroke = {
+          id: uid(),
+          color: state.penColor,
+          size: state.penSize / Math.max(1, rect.width),
+          seed: Date.now() % 100000 + Math.random() * 1000,
+          pointerId: event.pointerId,
+          points: []
+        };
+        state.activeStroke = stroke;
+        state.strokes.push(stroke);
+        appendPointerSamples(event);
+        el.annotationCanvas.setPointerCapture?.(event.pointerId);
+        syncDrawingControls();
+        requestAnnotationRender();
+      }
+
+      function continueDrawing(event) {
+        if (!state.activeStroke || event.pointerId !== state.activeStroke.pointerId && state.activeStroke.pointerId !== undefined) return;
+        event.preventDefault();
+        appendPointerSamples(event);
+        requestAnnotationRender();
+      }
+
+      function endDrawing(event) {
+        if (!state.activeStroke) return;
+        event.preventDefault();
+        appendPointerSamples(event);
+        try { el.annotationCanvas.releasePointerCapture?.(event.pointerId); } catch {}
+        state.activeStroke = null;
+        syncDrawingControls();
+        requestAnnotationRender();
       }
 
       function selectedPhotos() { return state.photos.filter(photo => photo.selected); }
@@ -1024,7 +1250,9 @@
         el.selectAll.disabled = !hasPhotos || selected === state.photos.length;
         el.exportButton.disabled = !hasPhotos;
         el.printButton.disabled = !hasPhotos;
-        el.clearButton.disabled = !hasPhotos;
+        el.clearButton.disabled = !hasPhotos && state.strokes.length === 0;
+        syncDrawingControls();
+        requestAnnotationRender();
       }
 
       async function addFiles(fileList) {
@@ -1075,8 +1303,11 @@
       function clearAll() {
         state.photos.forEach(photo => URL.revokeObjectURL(photo.url));
         state.photos = [];
+        state.strokes = [];
+        state.activeStroke = null;
+        state.drawEnabled = false;
         render();
-        showToast('写真をすべて外しました');
+        showToast('写真と書き込みをすべて消去しました');
       }
 
       function updateTitle(value) {
@@ -1243,6 +1474,8 @@
             if (photo.selected) drawRoughFrame(ctx, x, photoY, cellWidth, frameHeight, index);
           });
 
+          paintAnnotations(ctx, width, height);
+
           canvas.toBlob(blob => {
             if (!blob) throw new Error('画像を作成できませんでした');
             const link = document.createElement('a');
@@ -1288,9 +1521,10 @@
           ['① 写真を読み込む', '「写真を選ぶ」または台紙へのドラッグ＆ドロップで、写真をまとめて追加します。縦写真はフィルムの長辺方向へ自動回転します。'],
           ['② フィルムを選ぶ', 'フィルム銘柄を選ぶか自由入力すると、パーフォレーション脇のエッジ印字へ反映されます。'],
           ['③ ポジ・ネガ・METAを切り替える', 'ポジは通常表示、ネガはネガフィルム風、METAはJPEGのEXIFや画像サイズをコマ上に表示します。'],
-          ['④ 並びと赤入れを整える', '写真はドラッグで並べ替え、各コマの ↻ で回転できます。写真をタップすると赤い囲みが付きます。'],
-          ['⑤ 保存する', '「JPEGで保存」でパーフォレーションを含む1枚の画像にまとめます。「印刷 / PDF」から紙やPDFにも出力できます。'],
-          ['注意事項', '写真とEXIF情報はブラウザ内だけで処理され、サーバーには送信されません。ページを閉じると作業中の写真は消えます。']
+          ['④ Apple Pencilで書き込む', '「書き込みを開始」をオンにし、Apple Pencilで囲みやメモを書きます。筆圧に合わせてダーマットペン風の濃さと太さが変わります。指はスクロールに使えます。'],
+          ['⑤ 並びと赤入れを整える', '写真はドラッグで並べ替え、各コマの ↻ で回転できます。写真をタップすると赤い囲みが付きます。'],
+          ['⑥ 保存する', '「JPEGで保存」でパーフォレーションと手書き線を含む1枚の画像にまとめます。「印刷 / PDF」にも書き込みを反映します。'],
+          ['注意事項', '写真、EXIF情報、書き込みはブラウザ内だけで処理され、サーバーには送信されません。ページを閉じると作業中の内容は消えます。']
         ];
         sections.forEach(([heading, text]) => {
           const h = document.createElement('h3'); h.textContent = heading;
@@ -1341,7 +1575,7 @@
             description: '現在の写真枚数、赤入れ枚数、レイアウト設定を確認します。',
             inputSchema: { type: 'object', properties: {}, additionalProperties: false },
             annotations: { readOnlyHint: true, untrustedContentHint: false },
-            execute() { return { photoCount: state.photos.length, selectedCount: selectedPhotos().length, columns: state.columns, ratio: state.ratio, fit: state.fit, paper: state.paper, view: state.view, filmName: state.filmName }; }
+            execute() { return { photoCount: state.photos.length, selectedCount: selectedPhotos().length, annotationCount: state.strokes.length, drawEnabled: state.drawEnabled, penColor: state.penColor, penSize: state.penSize, columns: state.columns, ratio: state.ratio, fit: state.fit, paper: state.paper, view: state.view, filmName: state.filmName }; }
           },
           {
             name: 'configure_contact_sheet',
@@ -1415,6 +1649,39 @@
       el.titleInput.addEventListener('input', () => updateTitle(el.titleInput.value));
       el.sheetTitle.addEventListener('input', () => updateTitle(el.sheetTitle.value));
       el.noteInput.addEventListener('input', () => updateNote(el.noteInput.value));
+      el.drawToggle.addEventListener('click', () => {
+        state.drawEnabled = !state.drawEnabled;
+        syncDrawingControls();
+        showToast(state.drawEnabled ? 'Apple Pencilで書き込めます' : '書き込みモードを終了しました');
+      });
+      document.getElementById('ink-controls').addEventListener('click', event => {
+        const button = event.target.closest('[data-ink]'); if (!button) return;
+        state.penColor = button.dataset.ink;
+        syncDrawingControls();
+      });
+      el.penSizeRange.addEventListener('input', () => {
+        state.penSize = Number(el.penSizeRange.value);
+        el.penSizeOutput.value = String(state.penSize);
+      });
+      el.undoStroke.addEventListener('click', () => {
+        if (!state.strokes.length) return;
+        state.strokes.pop();
+        syncDrawingControls();
+        requestAnnotationRender();
+        showToast('1画を元に戻しました');
+      });
+      el.clearStrokes.addEventListener('click', () => {
+        if (!state.strokes.length || !confirm('書き込みをすべて消しますか？')) return;
+        state.strokes = [];
+        state.activeStroke = null;
+        syncDrawingControls();
+        requestAnnotationRender();
+        showToast('書き込みを消去しました');
+      });
+      el.annotationCanvas.addEventListener('pointerdown', beginDrawing);
+      el.annotationCanvas.addEventListener('pointermove', continueDrawing);
+      el.annotationCanvas.addEventListener('pointerup', endDrawing);
+      el.annotationCanvas.addEventListener('pointercancel', endDrawing);
 
       el.grid.addEventListener('click', event => {
         const card = event.target.closest('.photo-card'); if (!card) return;
@@ -1461,7 +1728,7 @@
         targets.forEach(photo => URL.revokeObjectURL(photo.url));
         state.photos = state.photos.filter(photo => !photo.selected); render(); showToast(`${targets.length}枚を外しました`);
       });
-      el.clearButton.addEventListener('click', () => { if (confirm('読み込んだ写真をすべて外しますか？')) clearAll(); });
+      el.clearButton.addEventListener('click', () => { if (confirm('読み込んだ写真と書き込みをすべて消しますか？')) clearAll(); });
       el.exportButton.addEventListener('click', exportJpeg);
       el.printButton.addEventListener('click', () => window.print());
       el.numbersToggle.addEventListener('click', () => { state.showNumbers = !state.showNumbers; el.numbersToggle.setAttribute('aria-pressed', String(state.showNumbers)); render(); });
@@ -1493,6 +1760,8 @@
           `time: ${new Date().toISOString()}`,
           `photos: ${state.photos.length}`,
           `selected: ${selectedPhotos().length}`,
+          `annotations: ${state.strokes.length}`,
+          `drawMode: ${state.drawEnabled}`,
           `viewport: ${innerWidth}x${innerHeight}`,
           `userAgent: ${navigator.userAgent.replace(/[\r\n]/g, ' ').slice(0, 240)}`
         ].join('\n');
@@ -1502,6 +1771,7 @@
       document.addEventListener('keydown', event => {
         const modal = document.querySelector('.modal-overlay.open');
         if (event.key === 'Escape' && modal) { closeOverlay(modal); return; }
+        if (event.key === 'Escape' && state.drawEnabled) { state.drawEnabled = false; syncDrawingControls(); showToast('書き込みモードを終了しました'); return; }
         if (event.key === 'Tab' && modal) {
           const items = modalFocusable(modal); if (!items.length) return;
           const first = items[0], last = items[items.length - 1];
@@ -1511,6 +1781,9 @@
       });
 
       window.addEventListener('beforeunload', () => state.photos.forEach(photo => URL.revokeObjectURL(photo.url)));
+      window.addEventListener('resize', requestAnnotationRender);
+      window.addEventListener('beforeprint', renderAnnotationCanvas);
+      if ('ResizeObserver' in window) new ResizeObserver(requestAnnotationRender).observe(el.sheet);
       registerWebMcp();
       render();
     })();
