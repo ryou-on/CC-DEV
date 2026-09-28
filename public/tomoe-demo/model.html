@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>巴御前 3Dモデル</title>
+<link rel="icon" href="logo.png">
+<style>
+  html, body { margin:0; height:100%; background:#07060c; color:#e9ebf1; font-family:'Hiragino Mincho ProN', serif; overflow:hidden; }
+  #ui { position:fixed; left:16px; top:14px; display:flex; gap:8px; align-items:center; z-index:2; flex-wrap:wrap; }
+  #ui img { height:40px; }
+  button, a.btn { background:rgba(0,0,0,.5); color:#e9ebf1; border:1px solid #c9a45a; padding:6px 12px; font-size:13px; cursor:pointer; text-decoration:none; }
+  canvas { display:block; }
+  #hint { position:fixed; bottom:12px; left:0; right:0; text-align:center; font-size:12px; color:#9aa0b3; }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="ui">
+  <a href="./"><img src="logo.png" alt="巴御前"></a>
+  <button id="spin">回転 ON/OFF</button>
+  <button id="fx">エフェクト ON/OFF</button>
+  <button id="glb">GLB保存</button>
+</div>
+<div id="hint">ドラッグで回転／ホイールでズーム</div>
+<script type="module">
+  import * as THREE from 'three';
+  import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+  import {RoomEnvironment} from 'three/addons/environments/RoomEnvironment.js';
+  import {GLTFExporter} from 'three/addons/exporters/GLTFExporter.js';
+  import {buildTomoe, buildFx} from './tomoe-model.js';
+
+  // レンダラー・シーン初期化
+  const renderer = new THREE.WebGLRenderer({antialias: true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setSize(innerWidth, innerHeight);
+  document.body.appendChild(renderer.domElement);
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0d0f22);
+  scene.environment = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+  scene.environmentIntensity = 0.55;
+  const camera = new THREE.PerspectiveCamera(32, innerWidth / innerHeight, 0.1, 50);
+  camera.position.set(0, 1.4, 4.4);
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.target.set(0, 1.0, 0);
+  controls.enableDamping = true;
+
+  // ライト（暖色キー・朱のリム・月光フィル）
+  scene.add(new THREE.AmbientLight(0x8a90c0, 0.35));
+  const key = new THREE.DirectionalLight(0xffd9b8, 2.4); key.position.set(2.5, 3.5, 3); scene.add(key);
+  const rim = new THREE.DirectionalLight(0xff4a36, 2.2); rim.position.set(-3, 2, -2.5); scene.add(rim);
+  const fill = new THREE.DirectionalLight(0x9fb3ff, 0.7); fill.position.set(-2, 1.5, 3); scene.add(fill);
+
+  const model = buildTomoe(THREE);
+  scene.add(model);
+  const fx = buildFx(THREE);
+  scene.add(fx.group);
+
+  let spin = true;
+  document.getElementById('spin').onclick = () => (spin = !spin);
+  document.getElementById('fx').onclick = () => (fx.group.visible = !fx.group.visible);
+  document.getElementById('glb').onclick = () => {
+    new GLTFExporter().parse(model, (glb) => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([glb], {type: 'model/gltf-binary'}));
+      a.download = 'tomoe.glb';
+      a.click();
+    }, (e) => console.error(e), {binary: true});
+  };
+
+  addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+  });
+  const clock = new THREE.Clock();
+  renderer.setAnimationLoop(() => {
+    const t = clock.getElapsedTime();
+    if (spin) model.rotation.y += 0.006;
+    fx.update(t);
+    controls.update();
+    renderer.render(scene, camera);
+  });
+</script>
+</body>
+</html>
