@@ -20,3 +20,4 @@
 - プラン承認済: /root/.claude/plans/clever-munching-bunny.md（Higgsfieldは次セッション）
 - transaction 506046251929032455 も期限切れ。s3 t4,t5 + s4,s5 各6 = 14ページ残
 - Canvaタイル取得は打切り（transaction即失効）。s3欠損t4,t5とs4,s5はフルサムネ(600x338)拡大で補完。full thumbs: key 1790500491299-wdzor0 s1 1790500504637-9s63ym s2 1790500509462-phq1q0 s3 1790500513368-81k8ki s4 1790500517185-4eqsys s5 1790500520926-gk5lh4
+- 完了: tomoeModel.js(3D), TomoeModel3D.tsx, Root.tsx(Logo/ModelSheet stills), remotion.config.ts(Chromium=/opt/pw-browsers headless_shell), フォントはローカルTTF(scripts-fetch-fonts.sh)。次: BGM→TomoeDemo scenes→shotlist→HANDOVER

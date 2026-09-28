@@ -1,12 +1,33 @@
 // ブランドカラー・フォント定義（巴御前 -TOMOE-）
-import {loadFont as loadSyuku} from '@remotion/google-fonts/YujiSyuku';
-import {loadFont as loadShippori} from '@remotion/google-fonts/ShipporiMinchoB1';
-import {loadFont as loadCinzel} from '@remotion/google-fonts/Cinzel';
+import {continueRender, delayRender, staticFile} from 'remotion';
+
+// ローカルTTFを FontFace で読み込む（public/fonts は scripts-fetch-fonts.sh で取得）
+const faces: [string, string, string][] = [
+  ['TomoeBrush', 'YujiSyuku-Regular.ttf', '400'],
+  ['TomoeMincho', 'ShipporiMinchoB1-Medium.ttf', '500'],
+  ['TomoeMincho', 'ShipporiMinchoB1-ExtraBold.ttf', '800'],
+  ['TomoeRoman', 'Cinzel-Regular.ttf', '400'],
+  ['TomoeRoman', 'Cinzel-Bold.ttf', '700'],
+];
+if (typeof document !== 'undefined') {
+  const handle = delayRender('fonts', {timeoutInMilliseconds: 60000});
+  Promise.all(
+    faces.map(([family, file, weight]) => {
+      const face = new FontFace(family, `url(${staticFile(`fonts/${file}`)})`, {weight});
+      return face.load().then((f) => (document as any).fonts.add(f));
+    }),
+  )
+    .then(() => continueRender(handle))
+    .catch((e) => {
+      console.error(e);
+      continueRender(handle);
+    });
+}
 
 export const fonts = {
-  brush: loadSyuku('normal', {weights: ['400'], subsets: ['japanese', 'latin']}).fontFamily,
-  mincho: loadShippori('normal', {weights: ['500', '800'], subsets: ['japanese', 'latin']}).fontFamily,
-  roman: loadCinzel('normal', {weights: ['400', '700'], subsets: ['latin']}).fontFamily,
+  brush: 'TomoeBrush, serif',
+  mincho: 'TomoeMincho, serif',
+  roman: 'TomoeRoman, serif',
 };
 
 export const colors = {

@@ -2,21 +2,30 @@
 import React from 'react';
 import {colors, fonts} from './theme';
 
-// 巴（コンマ形）1つ分のパス。R=外周半径、c=頭の中心距離、h=頭の半径
-const R = 95;
-const c = 55;
-const h = 40;
-const tailDeg = 112;
-const rad = (tailDeg * Math.PI) / 180;
-const tipX = R * Math.sin(rad);
-const tipY = -R * Math.cos(rad);
-export const tomoePath = [
-  `M 0 ${-(c - h)}`, // 頭の内側の点
-  `A ${h} ${h} 0 0 1 0 ${-R}`, // 頭の左側を回って外周へ
-  `A ${R} ${R} 0 0 1 ${tipX.toFixed(2)} ${tipY.toFixed(2)}`, // 尾の外側（時計回り）
-  `A 66 66 0 0 0 0 ${-(c - h)}`, // 尾の内側で頭へ戻る
-  'Z',
-].join(' ');
+// 巴（コンマ形）1つ分のパス：丸い頭＋外周に沿って細くなる尾（渦巻き状）
+const R = 92; // 尾の外周半径
+const c = 48; // 頭の中心距離
+const h = 28; // 頭の半径
+const tailDeg = 160; // 尾の長さ（時計回り角度）
+const taper = 1.5;
+const polar = (deg: number, r: number) => {
+  const a = (deg * Math.PI) / 180;
+  return `${(r * Math.sin(a)).toFixed(2)} ${(-r * Math.cos(a)).toFixed(2)}`;
+};
+const buildTomoePath = () => {
+  const parts = [`M 0 ${-(c - h)}`, `A ${h} ${h} 0 0 1 0 ${-(c + h)}`];
+  // 頭の上端から外周へ滑らかに繋ぐ
+  parts.push(`L ${polar(0, R)}`);
+  for (let d = 4; d <= tailDeg; d += 4) parts.push(`L ${polar(d, R)}`);
+  // 内側の縁：先端から頭の下端へ（半径が徐々に減る）
+  for (let d = tailDeg; d >= 0; d -= 4) {
+    const r = R - (R - (c - h)) * Math.pow(1 - d / tailDeg, taper);
+    parts.push(`L ${polar(d, r)}`);
+  }
+  parts.push('Z');
+  return parts.join(' ');
+};
+export const tomoePath = buildTomoePath();
 
 // 三つ巴紋（単体）
 export const Mitsudomoe: React.FC<{
