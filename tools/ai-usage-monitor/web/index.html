@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI Usage Monitor</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen">
+<header class="p-4 flex items-center justify-between border-b border-slate-700">
+  <button id="appName" class="text-lg font-bold hover:text-sky-300">📊 AI Usage Monitor</button>
+  <span id="updated" class="text-xs text-slate-400"></span>
+</header>
+<main id="cards" class="p-4 grid gap-4 md:grid-cols-3"></main>
+
+<!-- ChatGPT 手動カウンター -->
+<section class="p-4">
+  <div class="bg-slate-800 rounded-xl p-4 max-w-xl">
+    <h2 class="font-bold mb-2">ChatGPT 手動カウンター</h2>
+    <p class="text-xs text-slate-400 mb-3">ChatGPT は使用量を取得できる公式APIがないため手動です。送信ごとに +1 を押してください。</p>
+    <div class="flex flex-wrap gap-2 items-center">
+      <button id="inc" class="bg-emerald-600 hover:bg-emerald-500 rounded px-3 py-1">+1 メッセージ</button>
+      <label class="text-sm">上限 <input id="limit" type="number" class="w-20 bg-slate-700 rounded px-2 py-1"></label>
+      <label class="text-sm">窓(時間) <input id="win" type="number" class="w-16 bg-slate-700 rounded px-2 py-1"></label>
+      <button id="save" class="bg-slate-600 hover:bg-slate-500 rounded px-3 py-1">保存</button>
+    </div>
+  </div>
+</section>
+
+<!-- 右下固定: バージョン / デバッグ -->
+<div class="fixed bottom-2 right-2 flex gap-2">
+  <button id="debug" class="text-xs bg-white/10 rounded px-2 py-1 opacity-70 hover:opacity-100">debug</button>
+  <button id="ver" class="text-xs text-slate-300 hover:text-white underline">v0.1.0</button>
+</div>
+
+<div id="modal" class="hidden fixed inset-0 bg-black/60 flex items-center justify-center p-4" onclick="this.classList.add('hidden')">
+  <div class="bg-slate-800 rounded-xl p-5 max-w-lg w-full whitespace-pre-wrap text-sm" id="modalBody" onclick="event.stopPropagation()"></div>
+</div>
+
+<script>
+const COLORS = { claude: '#f59e0b', codex: '#38bdf8', chatgpt: '#34d399' };
+const logs = [];
+const origLog = console.log;
+console.log = (...a) => { logs.push(a.map(String).join(' ')); origLog(...a); };
+
+const RELEASE = `## v0.1.0 (2026-10-01)
+- 初回リリース
+- Claude Code / Codex / ChatGPT の使用率を表示
+- メニューバー(SwiftBar / Electron)・Stream Deck 連携`;
+const HELP = `【AI Usage Monitor の使い方】
+・Claude Code: ~/.claude のログから5時間/7日間のトークン使用率を算出
+・Codex: ~/.codex のセッションログ内の rate_limits（公式値）を表示
+・ChatGPT: 手動カウンター（+1 を押して記録）
+・10秒ごとに自動更新
+・メニューバー / Stream Deck も同じAPI(http://127.0.0.1:7777/api/usage)を参照`;
+
+function showModal(t) { modalBody.textContent = t; modal.classList.remove('hidden'); }
+ver.onclick = () => showModal(RELEASE);
+appName.onclick = () => showModal(HELP);
+debug.onclick = () => { navigator.clipboard.writeText(logs.join('\n')); debug.textContent = 'copied'; setTimeout(() => (debug.textContent = 'debug'), 1200); };
+
+const color = (p) => (p >= 90 ? '#ef4444' : p >= 70 ? '#f59e0b' : null);
+const remain = (t) => { if (!t) return ''; const m = Math.max(0, Math.round((t - Date.now()) / 60000)); return m >= 1440 ? `リセットまで ${Math.round(m / 1440)}日` : `リセットまで ${Math.floor(m / 60)}h${m % 60}m`; };
+
+async function load() {
+  try {
+    const d = await (await fetch('/api/usage')).json();
+    console.log('usage', JSON.stringify(d));
+    updated.textContent = '更新 ' + new Date(d.generatedAt).toLocaleTimeString();
+    cards.innerHTML = d.services.map((s) => `
+      <div class="bg-slate-800 rounded-xl p-4">
+        <div class="font-bold mb-3" style="color:${COLORS[s.id]}">${s.name}
+          ${s.status === 'nodata' ? '<span class="text-xs text-slate-400 ml-2">データなし</span>' : ''}
+          ${s.status === 'error' ? '<span class="text-xs text-red-400 ml-2">' + s.error + '</span>' : ''}</div>
+        ${s.windows.map((w) => `
+          <div class="mb-3">
+            <div class="flex justify-between text-sm"><span>${w.label}</span><span class="font-mono">${w.percent.toFixed(0)}%</span></div>
+            <div class="h-3 bg-slate-700 rounded overflow-hidden"><div class="h-full" style="width:${w.percent}%;background:${color(w.percent) || COLORS[s.id]}"></div></div>
+            <div class="text-xs text-slate-400 mt-1">${w.detail} ${remain(w.resetsAt)}</div>
+          </div>`).join('')}
+      </div>`).join('');
+  } catch (e) { console.log('error', e.message); }
+}
+async function loadChat() { const c = await (await fetch('/api/chatgpt')).json(); limit.value = c.limit; win.value = c.windowHours; }
+const post = (b) => fetch('/api/chatgpt', { method: 'POST', body: JSON.stringify(b) }).then(load);
+inc.onclick = () => post({ increment: 1 });
+save.onclick = () => post({ limit: +limit.value, windowHours: +win.value });
+load(); loadChat(); setInterval(load, 10000);
+</script>
+</body>
+</html>
