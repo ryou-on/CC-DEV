@@ -51,3 +51,18 @@ test('cloud endpoints reject missing identity and answer only allowed CORS prefl
     assert.equal((await fetch(`${base}/api/speech/recordings`, { method: 'OPTIONS', headers: { Origin: 'https://other.invalid' } })).status, 403);
   });
 });
+test('OCR route validates sheet shape, enforces auth and cleans transient inputs', async () => {
+  const directory=await mkdtemp(join(tmpdir(),'ocr-api-')); let inputPath;
+  try {
+    const store=createStore('local',directory);
+    await serve(createApp({store,ocr:async (path,count)=>{inputPath=path;return [{index:0,name:'テスト',confidence:80}];}}),async base=>{
+      const png=Buffer.alloc(24); Buffer.from([137,80,78,71,13,10,26,10]).copy(png); png.writeUInt32BE(1024,16); png.writeUInt32BE(128,20);
+      const body=new FormData(); body.set('file',new Blob([png]),'labels.png'); body.set('count','1');
+      const response=await fetch(`${base}/api/speech/photo-names`,{method:'POST',body}); assert.equal(response.status,200); assert.equal((await response.json()).labels[0].name,'テスト');
+      await assert.rejects(readdir(inputPath.replace(/\/labels.png$/,'')));
+      const bad=new FormData(); bad.set('file',new Blob(['bad']),'labels.png'); bad.set('count','1');
+      assert.equal((await fetch(`${base}/api/speech/photo-names`,{method:'POST',body:bad})).status,400);
+    });
+    await serve(createApp({mode:'cloud',store}),async base=>assert.equal((await fetch(`${base}/api/speech/photo-names`,{method:'POST'})).status,401));
+  } finally { await rm(directory,{recursive:true,force:true}); }
+});

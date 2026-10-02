@@ -19,3 +19,14 @@ export function cropBounds(width, height, x, y, size) {
   const side = Math.max(1, Math.min(width, height) * size / 100);
   return { x: Math.max(0, Math.min(width - side, width * x / 100 - side / 2)), y: Math.max(0, Math.min(height - side, height * y / 100 - side / 2)), side };
 }
+
+export function writePhotos(namespace, current, rows) {
+  const next = { ...current }, names = new Set();
+  for (const { name, photo } of rows) {
+    if (!name || name.length > 80 || !isPhoto(photo) || names.has(name)) throw new Error('INVALID_PHOTOS');
+    names.add(name); Object.defineProperty(next, name, { value: photo, enumerable: true, configurable: true, writable: true });
+  }
+  if (Object.keys(next).length > 100) throw new Error('PHOTO_LIMIT');
+  localStorage.setItem(PHOTO_PREFIX + namespace, JSON.stringify(next));
+  return next;
+}

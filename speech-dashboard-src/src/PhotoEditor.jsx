@@ -1,12 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
+import BulkPhotos from './BulkPhotos';
 import { cropBounds } from './photos';
 export function Avatar({ name, photo, small = false }) {
   const style = { width: small ? 24 : 32, height: small ? 24 : 32 };
   return photo ? <img src={photo} alt={`${name}の顔写真`} style={style} className="rounded-full object-cover shrink-0" /> : <span aria-hidden="true" style={style} className="inline-flex items-center justify-center rounded-full bg-[#e6ede5] text-[#698069] text-[10px] shrink-0">{Array.from(name)[0] || '人'}</span>;
 }
-export default function PhotoEditor({ people, photos, save, namespace, initialPerson = '' }) {
+export default function PhotoEditor({ people, photos, save, saveMany, namespace, initialPerson = '' }) {
   const [person, setPerson] = useState(initialPerson || people[0] || ''), [image, setImage] = useState(null), [message, setMessage] = useState(''), [capturing, setCapturing] = useState(false);
   const [x, setX] = useState(50), [y, setY] = useState(50), [size, setSize] = useState(25), [preview, setPreview] = useState('');
+  const [adjusting, setAdjusting] = useState(false);
+  const applyAdjustment = useRef(null);
   const current = useRef(null), picker = useRef(null), generation = useRef(0), streamRef = useRef(null), mounted = useRef(true);
   const stop = () => { streamRef.current?.getTracks().forEach(track => track.stop()); streamRef.current = null; };
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; generation.current++; stop(); }; }, []);
@@ -30,6 +33,7 @@ export default function PhotoEditor({ people, photos, save, namespace, initialPe
       canvas.width = Math.round(img.naturalWidth * scale); canvas.height = Math.round(img.naturalHeight * scale);
       canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
       current.current = canvas; setImage({ src: canvas.toDataURL('image/jpeg', .9), width: canvas.width, height: canvas.height });
+      applyAdjustment.current = null; setAdjusting(false);
       setX(50); setY(50); setSize(25); setMessage('画像の中で顔の中心をクリックし、枠の大きさを調整してください。');
     } finally { URL.revokeObjectURL(url); }
   }
@@ -61,19 +65,26 @@ export default function PhotoEditor({ people, photos, save, namespace, initialPe
   }
   const bounds = image ? cropBounds(image.width, image.height, x, y, size) : null;
   return <div className="space-y-4 text-sm">
-    <p>Zoomのギャラリー画面から顔を切り取り、参加者IDに紐付けます。写真はこのブラウザに保存され、音声分析APIへ送信されません。</p>
+    <p>Zoomのギャラリー画面から顔を切り取り、参加者IDに紐付けます。写真はこのブラウザに保存されます。一括読取では表示名欄だけをアプリのOCRサーバーへ送ります。</p>
     <label>写真を設定する参加者<select value={person} onChange={e => { setPerson(e.target.value); setMessage(''); }} aria-label="写真の参加者"><option value="">参加者を選択</option>{people.map(name => <option key={name}>{name}</option>)}</select></label>
-    {!people.length && <p>先に音声を取り込み、参加者IDを設定してください。</p>}
+    {!people.length && <p>音声登録前でも、一括読取で名前と顔写真を登録できます。</p>}
     <div className="flex flex-wrap gap-2"><button className="btn" disabled={capturing} onClick={() => picker.current.click()}>スクショ画像を読み込む</button>{!!navigator.mediaDevices?.getDisplayMedia && <button className="btn" disabled={capturing} onClick={capture}>{capturing ? '画面を取得中…' : 'Zoom画面を選んで取得'}</button>}</div>
     <input ref={picker} type="file" accept="image/png,image/jpeg,image/webp" aria-label="スクリーンショット画像" className="hidden" onChange={e => { readFile(e.target.files[0]); e.target.value = ''; }} />
     <p className="text-xs text-[#788d7b]">Macでは Shift＋⌘＋4 でも撮影できます。画像内の顔と参加者IDの対応をご確認ください。元のスクショ全体は保存しません。</p>
     {image && <>
+      <BulkPhotos key={image.src.slice(-100)} canvas={current.current} people={people} saveMany={saveMany} onAdjust={(rect, apply) => {
+        applyAdjustment.current = apply; setAdjusting(true);
+        const side = Math.min(rect.width, rect.height * .77);
+        setX((rect.x + rect.width / 2) / image.width * 100); setY((rect.y + side / 2) / image.height * 100); setSize(side / Math.min(image.width, image.height) * 100);
+        setMessage('下の画像とスライダーで調整し「候補へ反映」を押してください。');
+      }}/>
+      <h3 className="font-bold">{adjusting ? '選択した候補を調整' : '1人ずつ切り抜く'}</h3>
       <div className="relative w-full overflow-hidden rounded-lg bg-[#142b2a] cursor-crosshair" onClick={e => { const rect = e.currentTarget.getBoundingClientRect(); setX((e.clientX - rect.left) / rect.width * 100); setY((e.clientY - rect.top) / rect.height * 100); }}>
         <img src={image.src} alt="読み込んだスクリーンショット。下の位置スライダーでも範囲を調整できます。" className="block w-full" />
         <div aria-hidden="true" className="absolute border-2 border-white ring-2 ring-[#258c78] pointer-events-none" style={{ left: `${bounds.x / image.width * 100}%`, top: `${bounds.y / image.height * 100}%`, width: `${bounds.side / image.width * 100}%`, height: `${bounds.side / image.height * 100}%` }} />
       </div>
       <div className="grid grid-cols-3 gap-3">{[['横位置', x, setX, 0, 100], ['縦位置', y, setY, 0, 100], ['枠の大きさ', size, setSize, 3, 100]].map(([name, value, set, min, max]) => <label key={name}>{name}<input type="range" aria-label={name} min={min} max={max} step=".1" value={value} onChange={e => set(Number(e.target.value))} /></label>)}</div>
-      <div className="flex items-center gap-4"><img src={preview || undefined} alt="切り抜きプレビュー" width="72" height="72" className="rounded-full"/><div><p className="mb-2">{person || '参加者を選択してください'}</p><button className="btn primary" disabled={!person || !preview || capturing} onClick={() => update(preview)}>この写真を保存</button></div></div>
+      <div className="flex items-center gap-4"><img src={preview || undefined} alt="切り抜きプレビュー" width="72" height="72" className="rounded-full"/><div><p className="mb-2">{person || '参加者を選択してください'}</p>{adjusting ? <button className="btn primary" disabled={!preview || capturing} onClick={() => { applyAdjustment.current?.(preview); applyAdjustment.current = null; setAdjusting(false); setMessage('候補の写真を更新しました。一括登録一覧で確認してください。'); }}>候補へ反映</button> : <button className="btn primary" disabled={!person || !preview || capturing} onClick={() => update(preview)}>この写真を保存</button>}</div></div>
     </>}
     {person && Object.hasOwn(photos, person) && <div className="flex items-center gap-3 border-t border-[#dce4de] pt-4"><Avatar name={person} photo={photos[person]} /><span>登録済み</span><button className="btn ml-auto" onClick={() => update(null)}>この参加者の写真を削除</button></div>}
     <p role="status" className="text-xs text-[#41745f]">{message}</p>

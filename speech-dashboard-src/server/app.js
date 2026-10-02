@@ -1,6 +1,6 @@
 import express from 'express';
 import multer from 'multer';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
@@ -9,11 +9,12 @@ import { getAppCheck } from 'firebase-admin/app-check';
 import { Metadata, MAX_BYTES, EXTENSIONS } from './domain.js';
 import { processAudio } from './pipeline.js';
 import { createStore, admin } from './store.js';
+import { readNameSheet, validateSheet } from './ocr.js';
 import { APP } from '../src/meta.js';
 export function assertMode(mode) {
   if (!['local', 'cloud'].includes(mode) || (process.env.K_SERVICE && mode !== 'cloud')) throw new Error('UNSAFE_APP_MODE');
 }
-export function createApp({ mode = process.env.APP_MODE || 'local', store, processor = processAudio, authenticate } = {}) {
+export function createApp({ mode = process.env.APP_MODE || 'local', store, processor = processAudio, ocr = readNameSheet, authenticate } = {}) {
   assertMode(mode);
   store ??= createStore(mode);
   if (mode === 'cloud') admin();
@@ -82,6 +83,26 @@ export function createApp({ mode = process.env.APP_MODE || 'local', store, proce
       busy = false;
     }
     res.status(responseStatus).json(responseBody);
+  });
+  const uploadSheet = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024, files: 1, fields: 1, fieldSize: 16 } }).single('file');
+  app.post('/api/speech/photo-names', async (req, res) => {
+    if (busy) return res.status(429).json({ code: 'BUSY' });
+    busy = true;
+    let directory, status = 200, body;
+    try {
+      if (!(await store.limit(req.uid, 'ocr', 20, 3600000))) throw new Error('RATE_LIMIT');
+      await new Promise((resolve, reject) => uploadSheet(req, res, e => e ? reject(e) : resolve()));
+      const count = Number(req.body?.count);
+      if (!req.file || !validateSheet(req.file.buffer, count)) throw new Error('INVALID_OCR_IMAGE');
+      directory = await mkdtemp(join(tmpdir(), 'speech-ocr-'));
+      const path = join(directory, 'labels.png'); await writeFile(path, req.file.buffer);
+      body = { labels: await ocr(path, count) };
+    } catch (error) {
+      const code = error.code === 'LIMIT_FILE_SIZE' ? 'FILE_TOO_LARGE' : ['RATE_LIMIT', 'INVALID_OCR_IMAGE'].includes(error.message) ? error.message : 'OCR_UNAVAILABLE';
+      status = code === 'RATE_LIMIT' ? 429 : code === 'FILE_TOO_LARGE' ? 413 : code === 'INVALID_OCR_IMAGE' ? 400 : 503;
+      body = { code };
+    } finally { if (directory) await rm(directory, { recursive: true, force: true }).catch(() => {}); busy = false; }
+    res.status(status).json(body);
   });
   app.post('/api/speech/feedback', async (req, res) => {
     const { message, startedAt, website, appId, version, url } = req.body || {};
