@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { createApp } from '../server/app.js';
 import { createStore } from '../server/store.js';
 import { APP } from '../src/meta.js';
-const meta = { speaker: 'A', day: 'Day 1', session: 'work1', kind: 'Main', room: 'Main', start: 0, end: '', offset: 0 };
+const meta = { analysisMode: 'full', speaker: 'A', day: 'Day 1', session: 'work1', kind: 'Main', room: 'Main', start: 0, end: '', offset: 0 };
 async function serve(app, fn) { const server = app.listen(0, '127.0.0.1'); await new Promise(resolve => server.once('listening', resolve)); try { await fn(`http://127.0.0.1:${server.address().port}`); } finally { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); } }
 function form(metadata = meta, size = 3) { const body = new FormData(); body.set('file', new Blob([new Uint8Array(size)]), 'test.wav'); body.set('metadata', JSON.stringify(metadata)); return body; }
 test('upload ownership, deduplication, validation and feedback limits', async () => {
@@ -65,4 +65,12 @@ test('OCR route validates sheet shape, enforces auth and cleans transient inputs
     });
     await serve(createApp({mode:'cloud',store}),async base=>assert.equal((await fetch(`${base}/api/speech/photo-names`,{method:'POST'})).status,401));
   } finally { await rm(directory,{recursive:true,force:true}); }
+});
+test('volume can upgrade to full without duplicate records or losing complete analysis', async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'speech-modes-'));let calls=0;
+ try {const store=createStore('local',directory);await serve(createApp({store,processor:async(file,data)=>{calls++;return {...data,status:'complete',utterances:[],duration:1};}}),async base=>{
+  const send=async analysisMode=>(await (await fetch(`${base}/api/speech/recordings`,{method:'POST',body:form({...meta,analysisMode})})).json());
+  const first=await send('volume');const upgraded=await send('full');assert.equal(first.recording.id,upgraded.recording.id);assert.equal(upgraded.recording.analysisMode,'full');assert.equal(calls,2);
+  await send('volume');assert.equal(calls,2);assert.equal((await store.list()).length,1);assert.equal((await store.list())[0].analysisMode,'full');
+ });}finally{await rm(directory,{recursive:true,force:true});}
 });

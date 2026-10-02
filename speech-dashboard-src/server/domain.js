@@ -1,5 +1,6 @@
 import { z } from 'zod';
 export const Metadata = z.object({
+  analysisMode: z.enum(['volume', 'full']).default('volume'),
   speaker: z.string().trim().min(1).max(80),
   day: z.string().regex(/^Day [1-9][0-9]?$/),
   session: z.string().trim().min(1).max(80),

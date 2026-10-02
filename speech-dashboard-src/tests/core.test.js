@@ -10,7 +10,7 @@ import { summarize, totals, timelineGroups } from '../src/metrics.js';
 import { classify, parseJev, transcribe } from '../server/providers.js';
 import { processAudio } from '../server/pipeline.js';
 import { assertMode } from '../server/app.js';
-const meta = { speaker: 'A', day: 'Day 1', session: 'work1', kind: 'Room', room: 'Room A', start: 0, end: '', offset: 0 };
+const meta = { analysisMode: 'full', speaker: 'A', day: 'Day 1', session: 'work1', kind: 'Room', room: 'Room A', start: 0, end: '', offset: 0 };
 test('intervals: silence-only, none, short gaps and no silence inflation', () => {
   assert.deepEqual(activeIntervals('silence_start: 0\nsilence_end: 5', 5), []);
   assert.deepEqual(activeIntervals('', 5), [[0, 5]]);
@@ -60,6 +60,9 @@ test('actual FFmpeg: two tones + silence, provider partial failure and OpenAI fo
     const result = await processAudio(file, { ...meta, offset: 10 }, directory, providers);
     assert.equal(result.utterances.length, 2); assert.ok(Math.abs(totals([result]).seconds - 3) < .1); assert.equal(result.status, 'complete');
     assert.equal(result.utterances[0].start, 10);
+    let calls = 0;
+    const volume = await processAudio(file, { ...meta, analysisMode: 'volume' }, directory, { transcribe: async()=>{calls++;throw Error('must not call');}, classify: async()=>{calls++;throw Error('must not call');} });
+    assert.equal(calls,0); assert.equal(volume.status,'complete'); assert.equal(volume.transcriptionModel,null); assert.deepEqual(volume.warnings,[]); assert.ok(Math.abs(totals([volume]).seconds-3)<.1);
     const partial = await processAudio(file, meta, directory, { transcribe: async () => { throw new Error('unavailable'); }, classify: providers.classify });
     assert.equal(partial.status, 'partial'); assert.ok(partial.utterances.every(u => u.analysis === null));
     const transcript = await transcribe(file, { key: 'test', fetcher: async (url, options) => {

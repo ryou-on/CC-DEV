@@ -67,9 +67,10 @@ export function createApp({ mode = process.env.APP_MODE || 'local', store, proce
       const parsed = Metadata.safeParse(JSON.parse(req.body.metadata || '{}'));
       if (!parsed.success) throw new Error('INVALID_METADATA');
       const meta = parsed.data;
-      const id = createHash('sha256').update(req.uid).update(await readFile(req.file.path)).update(JSON.stringify(meta)).digest('hex');
+      const { analysisMode, ...identityMeta } = meta;
+      const id = createHash('sha256').update(req.uid).update(await readFile(req.file.path)).update(JSON.stringify(identityMeta)).digest('hex');
       const previous = (await store.list(req.uid)).find(r => r.id === id);
-      if (previous?.status === 'complete') responseBody = { recording: previous, duplicate: true };
+      if (previous?.status === 'complete' && (meta.analysisMode === 'volume' || (previous.analysisMode || 'full') === 'full')) responseBody = { recording: previous, duplicate: true };
       else {
         const result = await processor(req.file.path, meta, directory);
         const recording = { ...result, id, updatedAt: new Date().toISOString() };

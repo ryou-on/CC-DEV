@@ -16,6 +16,7 @@ export async function processAudio(file, meta, directory, providers = { transcri
   const shift = meta.start + meta.offset;
   const utterances = makeUtterances(activeIntervals(silence.stderr, end - meta.start), shift);
   if (utterances.length > 300) throw new Error('TOO_MANY_UTTERANCES');
+  if (meta.analysisMode !== 'full') return { ...meta, analysisMode: 'volume', duration, end, utterances, warnings: [], status: 'complete', source: 'audio', measurement: 'ffmpeg-silencedetect-v1', transcriptionModel: null };
   const warnings = [], segments = [];
   // One shared budget bounds synchronous processing even when a provider stalls repeatedly.
   const deadline = Date.now() + 600000;
