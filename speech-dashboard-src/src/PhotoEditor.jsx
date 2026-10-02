@@ -5,7 +5,7 @@ export function Avatar({ name, photo, small = false }) {
   const style = { width: small ? 24 : 32, height: small ? 24 : 32 };
   return photo ? <img src={photo} alt={`${name}の顔写真`} style={style} className="rounded-full object-cover shrink-0" /> : <span aria-hidden="true" style={style} className="inline-flex items-center justify-center rounded-full bg-[#e6ede5] text-[#698069] text-[10px] shrink-0">{Array.from(name)[0] || '人'}</span>;
 }
-export default function PhotoEditor({ people, photos, save, saveMany, namespace, initialPerson = '' }) {
+export default function PhotoEditor({ people, photos, save, saveMany, namespace, initialPerson = '', initialFile = null }) {
   const [person, setPerson] = useState(initialPerson || people[0] || ''), [image, setImage] = useState(null), [message, setMessage] = useState(''), [capturing, setCapturing] = useState(false);
   const [x, setX] = useState(50), [y, setY] = useState(50), [size, setSize] = useState(25), [preview, setPreview] = useState('');
   const [adjusting, setAdjusting] = useState(false);
@@ -42,6 +42,7 @@ export default function PhotoEditor({ people, photos, save, saveMany, namespace,
     if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 20 * 1024 * 1024) { setMessage('PNG・JPEG・WebPの画像を20MB以内で選んでください。'); return; }
     try { await useBlob(file); } catch { if (mounted.current) setMessage('画像を読み込めません。別のスクリーンショットを選んでください。'); }
   }
+  useEffect(() => { if (initialFile) readFile(initialFile); }, [initialFile]);
   async function capture() {
     setCapturing(true); setMessage('共有する画面としてZoomのウィンドウを選択してください。');
     let stream, timer, video;

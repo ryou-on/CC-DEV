@@ -34,7 +34,7 @@ test('partial result can be retried without duplicate records, oversized file is
   const directory = await mkdtemp(join(tmpdir(), 'speech-retry-')); let count = 0;
   try {
     const store = createStore('local', directory);
-    await serve(createApp({ store, processor: async (file, data) => ({ ...data, status: ++count === 1 ? 'partial' : 'complete', utterances: [] }) }), async base => {
+    await serve(createApp({ store, maxBytes: 20*1024*1024, processor: async (file, data) => ({ ...data, status: ++count === 1 ? 'partial' : 'complete', utterances: [] }) }), async base => {
       const first = await (await fetch(`${base}/api/speech/recordings`, { method: 'POST', body: form() })).json(); assert.equal(first.recording.status, 'partial');
       const second = await (await fetch(`${base}/api/speech/recordings`, { method: 'POST', body: form() })).json(); assert.equal(second.recording.status, 'complete');
       assert.equal((await store.list('local-user')).length, 1);
@@ -72,5 +72,14 @@ test('volume can upgrade to full without duplicate records or losing complete an
   const send=async analysisMode=>(await (await fetch(`${base}/api/speech/recordings`,{method:'POST',body:form({...meta,analysisMode})})).json());
   const first=await send('volume');const upgraded=await send('full');assert.equal(first.recording.id,upgraded.recording.id);assert.equal(upgraded.recording.analysisMode,'full');assert.equal(calls,2);
   await send('volume');assert.equal(calls,2);assert.equal((await store.list()).length,1);assert.equal((await store.list())[0].analysisMode,'full');
+ });}finally{await rm(directory,{recursive:true,force:true});}
+});
+test('background job saves result and exposes only owner status',async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'speech-job-'));
+ try {const store=createStore('local',directory);await serve(createApp({store,authenticate:async req=>req.headers['x-test-user'] || 'owner',processor:async(file,data,dir,providers,progress)=>{progress('test progress');return {...data,status:'complete',utterances:[]};}}),async base=>{
+  const response=await fetch(`${base}/api/speech/recordings?background=1`,{method:'POST',body:form({...meta,analysisMode:'volume'})});assert.equal(response.status,202);const {jobId}=await response.json();
+  let job;for(let i=0;i<100;i++){job=await (await fetch(`${base}/api/speech/jobs/${jobId}`)).json();if(job.status==='complete')break;await new Promise(r=>setTimeout(r,10));}
+  assert.equal(job.status,'complete');assert.equal((await store.list()).length,1);
+  assert.equal((await fetch(`${base}/api/speech/jobs/${jobId}`,{headers:{'x-test-user':'other'}})).status,404);
  });}finally{await rm(directory,{recursive:true,force:true});}
 });

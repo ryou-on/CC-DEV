@@ -3,6 +3,7 @@ import multer from 'multer';
 import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
+import { createReadStream } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import { getAuth } from 'firebase-admin/auth';
 import { getAppCheck } from 'firebase-admin/app-check';
@@ -14,7 +15,7 @@ import { APP } from '../src/meta.js';
 export function assertMode(mode) {
   if (!['local', 'cloud'].includes(mode) || (process.env.K_SERVICE && mode !== 'cloud')) throw new Error('UNSAFE_APP_MODE');
 }
-export function createApp({ mode = process.env.APP_MODE || 'local', store, processor = processAudio, ocr = readNameSheet, authenticate } = {}) {
+export function createApp({ mode = process.env.APP_MODE || 'local', store, processor = processAudio, ocr = readNameSheet, authenticate, maxBytes = MAX_BYTES } = {}) {
   assertMode(mode);
   store ??= createStore(mode);
   if (mode === 'cloud') admin();
@@ -53,28 +54,41 @@ export function createApp({ mode = process.env.APP_MODE || 'local', store, proce
     try { res.json({ photos: JSON.parse(await readFile('.local-data/demo-photos.json', 'utf8')) }); }
     catch { res.json({ photos: {} }); }
   });
+  const jobs = new Map();
+  app.get('/api/speech/jobs/:id', (req,res) => {
+    const job=jobs.get(req.params.id);
+    if(!job || job.uid!==req.uid) return res.status(404).json({code:'JOB_NOT_FOUND'});
+    const {uid,expires,...view}=job;res.json(view);
+  });
   let busy = false;
-  const upload = multer({ storage: multer.diskStorage({ destination: (req, file, cb) => cb(null, req.tempDir), filename: (req, file, cb) => cb(null, randomUUID() + extname(file.originalname).toLowerCase()) }), limits: { fileSize: MAX_BYTES, files: 1, fields: 1, fieldSize: 4096 }, fileFilter: (req, file, cb) => cb(EXTENSIONS.has(extname(file.originalname).toLowerCase()) ? null : new Error('INVALID_AUDIO'), true) }).single('file');
+  const upload = multer({ storage: multer.diskStorage({ destination: (req, file, cb) => cb(null, req.tempDir), filename: (req, file, cb) => cb(null, randomUUID() + extname(file.originalname).toLowerCase()) }), limits: { fileSize: maxBytes, files: 1, fields: 1, fieldSize: 4096 }, fileFilter: (req, file, cb) => cb(EXTENSIONS.has(extname(file.originalname).toLowerCase()) ? null : new Error('INVALID_AUDIO'), true) }).single('file');
   app.post('/api/speech/recordings', async (req, res) => {
     if (busy) return res.status(429).json({ code: 'BUSY' });
     busy = true;
-    let directory, responseBody, responseStatus = 200;
+    let directory, responseBody, responseStatus = 200, job;
     try {
-      if (!(await store.limit(req.uid, 'uploads', 20, 3600000))) throw new Error('RATE_LIMIT');
+      if (mode !== 'local' && !(await store.limit(req.uid, 'uploads', 200, 3600000))) throw new Error('RATE_LIMIT');
       directory = await mkdtemp(join(tmpdir(), 'speech-')); req.tempDir = directory;
       await new Promise((resolve, reject) => upload(req, res, error => error ? reject(error) : resolve()));
       if (!req.file || req.file.size === 0) throw new Error('INVALID_AUDIO');
       const parsed = Metadata.safeParse(JSON.parse(req.body.metadata || '{}'));
       if (!parsed.success) throw new Error('INVALID_METADATA');
       const meta = parsed.data;
+      if (mode === 'local' && req.query.background === '1') {
+        for(const [id,value] of jobs) if(value.expires<Date.now())jobs.delete(id);
+        const jobId=randomUUID(); job={uid:req.uid,status:'running',phase:'音声を確認中',expires:Date.now()+86400000};jobs.set(jobId,job);
+        res.status(202).json({jobId});
+      }
       const { analysisMode, ...identityMeta } = meta;
-      const id = createHash('sha256').update(req.uid).update(await readFile(req.file.path)).update(JSON.stringify(identityMeta)).digest('hex');
+      const hash = createHash('sha256').update(req.uid);
+      for await (const chunk of createReadStream(req.file.path)) hash.update(chunk);
+      const id = hash.update(JSON.stringify(identityMeta)).digest('hex');
       const previous = (await store.list(req.uid)).find(r => r.id === id);
       if (previous?.status === 'complete' && (meta.analysisMode === 'volume' || (previous.analysisMode || 'full') === 'full')) responseBody = { recording: previous, duplicate: true };
       else {
-        const result = await processor(req.file.path, meta, directory);
+        const result = await processor(req.file.path, meta, directory, undefined, phase => { if(job)job.phase=phase; }, job ? 6*3600000 : 600000);
         const recording = { ...result, id, updatedAt: new Date().toISOString() };
-        if (Buffer.byteLength(JSON.stringify(recording)) > 750000) throw new Error('RESULT_TOO_LARGE');
+        if (Buffer.byteLength(JSON.stringify(recording)) > (mode === 'local' ? 50 * 1024 * 1024 : 750000)) throw new Error('RESULT_TOO_LARGE');
         await store.put(req.uid, recording);
         responseStatus = previous ? 200 : 201; responseBody = { recording };
       }
@@ -88,7 +102,7 @@ export function createApp({ mode = process.env.APP_MODE || 'local', store, proce
       if (directory) await rm(directory, { recursive: true, force: true }).catch(() => {});
       busy = false;
     }
-    res.status(responseStatus).json(responseBody);
+    if(job) {job.status=responseStatus<400?'complete':'failed';job.result=responseBody;job.phase=responseStatus<400?'保存完了':'処理失敗';} else res.status(responseStatus).json(responseBody);
   });
   const uploadSheet = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024, files: 1, fields: 1, fieldSize: 16 } }).single('file');
   app.post('/api/speech/photo-names', async (req, res) => {

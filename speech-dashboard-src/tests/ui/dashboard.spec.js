@@ -3,7 +3,7 @@ test('demo filters, chart axes, timeline and accessible modals', async ({ page }
   const errors = []; page.on('pageerror', e => errors.push(e.message));
   await page.goto('./');
   await expect(page.getByRole('heading', { name: '対話のかたちを、見える化。' })).toBeVisible();
-  for (const [button, title] of [['発話分析', '発話分析の使い方'], ['v0.7.0', 'リリースノート']]) {
+  for (const [button, title] of [['発話分析', '発話分析の使い方'], ['v0.8.0', 'リリースノート']]) {
     const trigger = page.getByRole('button', { name: button, exact: true });
     await trigger.click(); await expect(page.getByRole('dialog')).toBeVisible();
     await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();
@@ -29,7 +29,7 @@ test('mobile layout, file selection, metadata editing and private debug copy', a
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.setViewportSize({ width: 390, height: 844 }); await page.goto('./');
   await page.getByText('録音を取り込む', { exact: false }).first().click();
-  await page.locator('input[type=file]').setInputFiles({ name: 'private-person.m4a', mimeType: 'audio/mp4', buffer: Buffer.from('fixture') });
+  await page.locator('input[type=file]').first().setInputFiles({ name: 'private-person.m4a', mimeType: 'audio/mp4', buffer: Buffer.from('fixture') });
   await expect(page.getByLabel('参加者ID', { exact: true })).toHaveValue('private-person');
   await page.getByLabel('参加者ID', { exact: true }).fill('参加者X');
   await page.getByRole('button', { name: '区間を追加', exact: true }).click();
@@ -42,7 +42,7 @@ test('mobile layout, file selection, metadata editing and private debug copy', a
 });
 test('drag-drop through upload, partial result, reload and empty filter', async ({ page }) => {
   let saved = [];
-  await page.route('**/api/speech/recordings', async route => {
+  await page.route('**/api/speech/recordings*', async route => {
     if (route.request().method() === 'POST') {
       saved = [{ id: 'ui-test', speaker: 'participant.wav', day: 'Day 1', session: '全体会', kind: 'Main', room: 'Main', status: 'partial', utterances: [{ id: 'u0', start: 2, end: 7, speechSeconds: 5, text: '', analysis: null }] }];
       await route.fulfill({ status: 201, json: { recording: saved[0] } });
@@ -51,7 +51,7 @@ test('drag-drop through upload, partial result, reload and empty filter', async 
   await page.goto('./');
   await page.getByText('録音を取り込む', { exact: false }).first().click();
   const transfer = await page.evaluateHandle(() => { const data = new DataTransfer(); data.items.add(new File(['test'], 'participant.wav', { type: 'audio/wav' })); return data; });
-  await page.getByText('Zoom参加者別音声をドラッグ＆ドロップ', { exact: true }).dispatchEvent('drop', { dataTransfer: transfer });
+  await page.getByText('音声・テキスト・スクショ・フォルダをドラッグ＆ドロップ', { exact: true }).dispatchEvent('drop', { dataTransfer: transfer });
   await expect(page.getByLabel('参加者ID', { exact: true })).toHaveCount(1);
   await page.getByRole('button', { name: '分析して保存', exact: true }).click();
   await expect(page.getByText('部分完了', { exact: true })).toBeVisible();

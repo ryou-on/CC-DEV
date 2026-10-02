@@ -27,7 +27,7 @@ test('metrics retain silence participants, overlap and a stable denominator', ()
 });
 test('validation rejects invalid windows, blank names and negative aligned time', () => {
   assert.equal(Metadata.safeParse(meta).success, true);
-  for (const patch of [{ speaker: ' ' }, { end: 601 }, { end: 3, start: 4 }, { offset: -1 }, { day: '1' }]) assert.equal(Metadata.safeParse({ ...meta, ...patch }).success, false);
+  for (const patch of [{ speaker: ' ' }, { end: 43201 }, { end: 3, start: 4 }, { offset: -1 }, { day: '1' }]) assert.equal(Metadata.safeParse({ ...meta, ...patch }).success, false);
   assert.equal(Metadata.parse({ ...meta, kind: 'Main', room: 'A' }).room, 'Main');
 });
 test('transcript segment assigned once to largest overlap with timeline offset', () => {
@@ -71,4 +71,14 @@ test('actual FFmpeg: two tones + silence, provider partial failure and OpenAI fo
     } });
     assert.equal(transcript[0].text, 'hello');
   } finally { await rm(directory, { recursive: true, force: true }); }
+});
+test('audio over ten minutes measures full duration and transcribes in automatic chunks',async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'speech-long-'));
+ try {
+  const file=join(directory,'long.wav');await promisify(execFile)('ffmpeg',['-nostdin','-y','-v','error','-f','lavfi','-i','sine=frequency=440:duration=610','-ar','16000',file]);
+  const volume=await processAudio(file,{...meta,analysisMode:'volume'},directory);
+  assert.equal(volume.status,'complete');assert.ok(Math.abs(totals([volume]).seconds-610)<.1);assert.equal(volume.end,610);
+  let calls=0;const full=await processAudio(file,meta,directory,{transcribe:async()=>{calls++;return [{start:0,end:1,text:'確認'}];},classify:async()=>parseJev(response)});
+  assert.equal(calls,3);assert.equal(full.status,'complete');assert.ok(Math.abs(totals([full]).seconds-610)<.1);
+ }finally{await rm(directory,{recursive:true,force:true});}
 });

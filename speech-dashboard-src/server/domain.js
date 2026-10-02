@@ -8,10 +8,10 @@ export const Metadata = z.object({
   start: z.coerce.number().finite().min(0).max(86400),
   end: z.union([z.literal(''), z.coerce.number().finite().positive().max(86400)]).default(''),
   offset: z.coerce.number().finite().min(-86400).max(86400)
-}).refine(m => m.end === '' || (m.end > m.start && m.end - m.start <= 600), '区間は10分以内にしてください')
+}).refine(m => m.end === '' || (m.end > m.start && m.end - m.start <= 43200), '区間は12時間以内にしてください')
   .refine(m => m.start + m.offset >= 0, '補正後の開始時刻は0秒以上です')
   .transform(m => ({ ...m, room: m.kind === 'Main' ? 'Main' : m.room }));
-export const MAX_BYTES = 20 * 1024 * 1024;
+export const MAX_BYTES = 512 * 1024 * 1024;
 export const EXTENSIONS = new Set(['.m4a', '.mp3', '.wav', '.mp4', '.webm', '.ogg', '.flac']);
 export function activeIntervals(stderr, duration) {
   const silences = [], pattern = /silence_(start|end):\s*([0-9.]+)/g;

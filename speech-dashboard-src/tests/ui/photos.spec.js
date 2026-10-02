@@ -11,7 +11,7 @@ async function screenshotFixture(page) {
 test('crop screenshot, persist portraits, isolate sample photos and delete', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   const posted = []; page.on('request', request => { if (request.method() === 'POST') posted.push(request.postData() || ''); });
-  await page.route('**/api/speech/recordings', route => route.fulfill({ json: { recordings: [{ id: 'r1', day: 'Day 1', room: 'Main', speaker: 'A-01', session: '全体会', utterances: [] }] } }));
+  await page.route('**/api/speech/recordings*', route => route.fulfill({ json: { recordings: [{ id: 'r1', day: 'Day 1', room: 'Main', speaker: 'A-01', session: '全体会', utterances: [] }] } }));
   await page.goto('./');
   await page.getByRole('button', { name: 'A-01の写真を設定' }).click();
   await expect(page.getByLabel('写真の参加者')).toHaveValue('A-01');
