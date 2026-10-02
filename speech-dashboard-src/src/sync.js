@@ -1,6 +1,7 @@
+import { participantName } from './participants.js';
 // Match visible labels only. Never infer identity from a face or voice.
 export function personKey(value='') {
- return value.normalize('NFKC').replace(/\.(m4a|mp3|wav|mp4|webm|ogg|flac|srt|vtt|txt|png|jpe?g|webp)$/i,'').replace(/^audio\s*/i,'').replace(/\d{9,}$/,'').replace(/^[A-D][\s_\-:：]+(?=[^\d\s])/i,'').replace(/[\s_\-]/g,'').toLowerCase();
+ return participantName(value).replace(/^[A-D][\s_\-:：]*(?=[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}])/u,'').replace(/[\s_\-]/g,'').toLowerCase();
 }
 export function uniquePerson(name, people) {
  const key=personKey(name);if(!key)return null;

@@ -1,3 +1,4 @@
+import { participantName, normalizeParticipants } from './participants.js';
 import SyncPanel from './SyncPanel';
 import { uniquePerson } from './sync.js';
 import { fileKind, droppedFiles, textLines, importPath, folderRoom } from './imports.js';
@@ -64,7 +65,7 @@ function App() {
     return () => { active = false; };
   }, []);
   useEffect(() => { if (!demo && !busy && (!cloud || user)) { load(); request('/analytics', { method: 'POST' }).catch(() => {}); } }, [demo, user, busy]);
-  const all = (demo ? DEMO : records).map(r=>({...r,utterances:r.utterances.map(u=>u.syncedText?{...u,text:u.syncedText,analysis:null,analysisMode:'synced'}:u)}));
+  const all = (demo ? DEMO : normalizeParticipants(records)).map(r=>({...r,utterances:r.utterances.map(u=>u.syncedText?{...u,text:u.syncedText,analysis:null,analysisMode:'synced'}:u)}));
   const scope = selectRecordings(all, { day, room }), filtered = scope.filter(r => speaker === 'all' || r.speaker === speaker);
   // Personal filtering never changes the denominator of the speaking share.
   const comparison = summarize(scope, axis), peopleRows = summarize(scope, 'speaker'), kpi = totals(filtered);
@@ -80,7 +81,7 @@ function App() {
         const location=importPath(file), inferred=folderRoom(location);
         const row={id:crypto.randomUUID(),file,kind,name:location,folderRoom:inferred.room};
         if(!file.size || file.size>limit*1024*1024 || kind==='unsupported') {other.push({...row,kind:'unsupported',reason:!file.size?'空ファイル':kind==='unsupported'?'未対応形式':`${limit}MB上限を超過`});continue;}
-        if(kind==='audio') audio.push({id:row.id,file,speaker:file.name.replace(/\.[^.]+$/, '').slice(0,80),day:'Day 1',session:inferred.kind==='Main'?'全体会':'ワーク1',kind:inferred.kind,room:inferred.room,folderHint:inferred.folder,start:'0',end:'',offset:'0',status:'待機'});
+        if(kind==='audio') audio.push({id:row.id,file,speaker:participantName(file.name).slice(0,80),day:'Day 1',session:inferred.kind==='Main'?'全体会':'ワーク1',kind:inferred.kind,room:inferred.room,folderHint:inferred.folder,start:'0',end:'',offset:'0',status:'待機'});
         else if(kind==='text') {try {const body=new TextDecoder('utf-8',{fatal:true}).decode(await file.arrayBuffer());other.push({...row,body,lines:textLines(body,file.name)});}catch {other.push({...row,kind:'unsupported',reason:'UTF-8のテキストとして読み込めません'});}}
         else other.push(row);
       }
@@ -102,7 +103,7 @@ function App() {
       edit(row.id, 'status', '分析中');
       try {
         const { file, id, status, error, folderHint, ...metadata } = row;
-        const form = new FormData(); form.set('file', file); form.set('metadata', JSON.stringify({ ...metadata, analysisMode }));
+        const form = new FormData(); form.set('file', file); form.set('metadata', JSON.stringify({ ...metadata, speaker: participantName(metadata.speaker), analysisMode }));
         let result = await request(cloud ? '/recordings' : '/recordings?background=1', { method: 'POST', body: form });
         if(result.jobId) {
           const jobId=result.jobId;
@@ -153,7 +154,7 @@ function App() {
           <div onDragOver={e => e.preventDefault()} onDrop={onDropFiles} className="border-2 border-dashed border-[#c3d2c6] rounded-xl p-7 text-center bg-[#f8faf7]">
             <p className="font-medium mb-2">音声・テキスト・スクショ・フォルダをドラッグ＆ドロップ</p><p className="text-xs text-[#7c8e80] mb-4">音声：512MB・12時間まで / 画像：PNG・JPEG・WebP 20MBまで / テキスト：TXT・MD・CSV・TSV・JSON・SRT・VTT（UTF-8）5MBまで</p><button className="btn" disabled={busy || importing} onClick={() => input.current.click()}>ファイルを選択</button><input ref={input} type="file" className="hidden" multiple accept=".m4a,.wav,.mp3,.mp4,.webm,.ogg,.flac,.png,.jpg,.jpeg,.webp,.txt,.md,.csv,.tsv,.json,.srt,.vtt" onChange={e => { addFiles(Array.from(e.target.files)); e.target.value = ''; }} /><button className="btn ml-3" disabled={busy || importing} onClick={()=>folderInput.current.click()}>フォルダを選択</button><input ref={folderInput} aria-label="取り込みフォルダ" type="file" className="hidden" multiple webkitdirectory="" onChange={e=>{addFiles(Array.from(e.target.files));e.target.value='';}}/><p className="text-xs mt-3">{importing?'フォルダ内を読み込み中…':`音声 ${queue.length}件 / 画像・テキスト等 ${attachments.length}件`}</p>
           </div>
-          <p className="text-xs text-[#6d7f72] mt-3">フォルダ名からMain/Roomを設定します。Room A・ルームA・AはRoom A、その他の名前はフォルダ名を使います。終了秒が空欄なら録音の末尾まで分析します。詳細分析は5分単位で自動分割します。 Mainの重複録音は代表1本を選んでください。同一参加者には全日を通して同じ参加者IDを使います。API未設定時も発話量を算出し、内容は未分析として保存します。</p>
+          <p className="text-xs text-[#6d7f72] mt-3">フォルダ名からMain/Roomを設定します。Room A・ルームA・AはRoom A、その他の名前はフォルダ名を使います。終了秒が空欄なら録音の末尾まで分析します。詳細分析は5分単位で自動分割します。 氏名末尾の数字と空白を除き、同じ表示名は同一参加者として合算します。A〜D・TFは保持します。Mainの重複録音は代表1本を選んでください。同一参加者には全日を通して同じ参加者IDを使います。API未設定時も発話量を算出し、内容は未分析として保存します。</p>
           {!!attachments.length && <section className="my-4 space-y-2" aria-label="画像・テキスト・未対応ファイル"><p className="text-xs">画像は顔写真登録、テキストは確認・語の集計に使います。字幕は分析後に「資料の自動照合・字幕同期」で時刻と話者名を照合できます。参考資料は発話時間に加算しません。資料と選択ファイルは再読込で消えます。</p>{attachments.map(row=><div key={row.id} className="border rounded p-3 flex flex-wrap gap-3 items-center"><span className="break-all">{row.name}</span><span className="pill">{row.kind==='image'?'スクショ・画像':row.kind==='text'?'参考テキスト':'要確認'}</span>{row.reason && <span className="text-xs">{row.reason}</span>}{row.kind==='image' && <button className="btn" onClick={()=>{setPhotoFile(row.file);setPhotoPerson('');setModal('photos');}}>顔写真を読み取る</button>}{row.kind==='text' && <button className="btn" onClick={()=>{setTextPreview(row);setModal('text');}}>テキストを確認</button>}<button onClick={()=>setAttachments(prev=>prev.filter(r=>r.id!==row.id))}>取り込みから外す</button></div>)}</section>}
           {!!queue.length && <div className="space-y-3 mt-5">{queue.map(row => <div key={row.id} className="rounded-lg border border-[#dde5df] p-4">
             <div className="flex justify-between gap-3 text-xs mb-4"><p className="break-all">{row.file.name} <span className="pill ml-2">{row.status}</span></p><div className="flex gap-3 shrink-0"><button disabled={busy} onClick={() => setQueue(q => [...q, { ...row, id: crypto.randomUUID(), status: '待機' }])}>区間を追加</button><button disabled={busy} onClick={() => setQueue(q => q.filter(r => r.id !== row.id))}>削除</button></div></div>
