@@ -28,6 +28,19 @@ function App() {
   const photoNamespace = demo ? 'demo' : cloud ? (user?.uid ? `user-${user.uid}` : 'signed-out') : 'local';
   const photos = photoState.namespace === photoNamespace ? photoState.data : {};
   useEffect(() => { setPhotoState({ namespace: photoNamespace, data: readPhotos(photoNamespace) }); }, [photoNamespace]);
+  useEffect(() => {
+    if (cloud) return;
+    let active = true;
+    request('/demo-photos').then(({ photos: seed }) => {
+      const key = 'speech-dashboard.demo-photos-seeded.v1';
+      if (!active || localStorage.getItem(key) || !Object.keys(seed || {}).length) return;
+      const existing = readPhotos('demo');
+      const rows = Object.entries(seed).filter(([name]) => !Object.hasOwn(existing, name)).map(([name, photo]) => ({ name, photo }));
+      const data = writePhotos('demo', existing, rows); localStorage.setItem(key, '1');
+      setPhotoState(current => current.namespace === 'demo' ? { namespace: 'demo', data } : current);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, []);
   const photoFor = name => Object.hasOwn(photos, name) ? photos[name] : null;
   const openPhotos = (name = '') => { setPhotoPerson(name); setModal('photos'); };
   const savePhoto = (name, image) => setPhotoState({ namespace: photoNamespace, data: writePhoto(photoNamespace, readPhotos(photoNamespace), name, image) });
@@ -91,7 +104,7 @@ function App() {
     <main className="max-w-[1400px] mx-auto px-5 md:px-10 py-9">
       <div className="flex flex-wrap items-end justify-between gap-4 mb-7"><div><p className="text-xs tracking-[.2em] text-[#718679] mb-3">SPEECH INSIGHTS / PHASE 1</p><h1 className="text-3xl font-bold tracking-tight">対話のかたちを、見える化。</h1><p className="text-sm text-[#6c7f75] mt-3">誰が、いつ、どのように話したか。研修の対話を振り返る。</p></div><div className="flex gap-2"><button className={`btn ${demo ? 'primary' : ''}`} disabled={busy} onClick={() => { setDemo(true); resetFilters(); }}>サンプル</button><button className={`btn ${!demo ? 'primary' : ''}`} disabled={busy} onClick={() => { setDemo(false); resetFilters(); }}>実録音</button></div></div>
       {notice && <div role="status" className="mb-5 rounded-lg border border-[#d2ded5] bg-[#eaf1eb] px-4 py-3 text-sm flex justify-between gap-4"><span>{notice}</span><button aria-label="通知を閉じる" onClick={() => setNotice('')}>×</button></div>}
-      <div className="mb-6 flex flex-wrap gap-3 items-center text-xs"><span className="pill">{demo ? 'サンプルデータ · 架空の3日間' : cloud ? 'Firebase保存' : 'ローカル保存'}</span><span className="text-[#6e7e73]">発話時間は推定値です。{demo ? '録音は送信されません。' : '音声をOpenAI、発言本文をJevへ送信します。'}</span></div>
+      <div className="mb-6 flex flex-wrap gap-3 items-center text-xs"><span className="pill">{demo ? 'DEMO · 32人 / A〜D各8人 / 1日3回のワーク' : cloud ? 'Firebase保存' : 'ローカル保存'}</span><span className="text-[#6e7e73]">発話時間は推定値です。{demo ? '発言・数値・IDは架空です。写真の人物の実績ではありません。' : '音声をOpenAI、発言本文をJevへ送信します。'}</span></div>
       <details className="card mb-7" open={!demo || queue.length > 0}>
         <summary className="cursor-pointer p-5 font-bold text-sm">録音を取り込む <span className="font-normal text-[#849187] ml-3">参加者ごとの音声 → 区間を分類 → 分析</span></summary>
         <div className="px-5 pb-5">

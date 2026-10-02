@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+test.beforeEach(async ({page}) => { await page.route('**/api/speech/demo-photos', route => route.fulfill({json:{photos:{}}})); });
 async function loadGallery(page) {
  const data=await page.evaluate(()=>{
   const c=document.createElement('canvas');c.width=640;c.height=360;const ctx=c.getContext('2d');ctx.fillStyle='#000';ctx.fillRect(0,0,640,360);

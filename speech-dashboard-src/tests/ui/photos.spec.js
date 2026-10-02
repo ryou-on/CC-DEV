@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+test.beforeEach(async ({page}) => { await page.route('**/api/speech/demo-photos', route => route.fulfill({json:{photos:{}}})); });
 async function screenshotFixture(page) {
   const png = await page.evaluate(() => {
     const canvas = document.createElement('canvas'); canvas.width = 400; canvas.height = 200;
@@ -10,37 +11,37 @@ async function screenshotFixture(page) {
 test('crop screenshot, persist portraits, isolate sample photos and delete', async ({ page, context }) => {
   await context.grantPermissions(['clipboard-read', 'clipboard-write']);
   const posted = []; page.on('request', request => { if (request.method() === 'POST') posted.push(request.postData() || ''); });
-  await page.route('**/api/speech/recordings', route => route.fulfill({ json: { recordings: [{ id: 'r1', day: 'Day 1', room: 'Main', speaker: '参加者A', session: '全体会', utterances: [] }] } }));
+  await page.route('**/api/speech/recordings', route => route.fulfill({ json: { recordings: [{ id: 'r1', day: 'Day 1', room: 'Main', speaker: 'A-01', session: '全体会', utterances: [] }] } }));
   await page.goto('./');
-  await page.getByRole('button', { name: '参加者Aの写真を設定' }).click();
-  await expect(page.getByLabel('写真の参加者')).toHaveValue('参加者A');
+  await page.getByRole('button', { name: 'A-01の写真を設定' }).click();
+  await expect(page.getByLabel('写真の参加者')).toHaveValue('A-01');
   await page.getByLabel('スクリーンショット画像').setInputFiles(await screenshotFixture(page));
   await page.getByLabel('横位置', { exact: true }).fill('25');
   await page.getByLabel('枠の大きさ', { exact: true }).fill('50');
   await page.getByRole('button', { name: 'この写真を保存', exact: true }).click();
   await expect(page.getByRole('status').last()).toContainText('このブラウザに保存しました');
-  const red = await page.evaluate(() => JSON.parse(localStorage.getItem('speech-dashboard.photos.v1.demo'))['参加者A']);
+  const red = await page.evaluate(() => JSON.parse(localStorage.getItem('speech-dashboard.photos.v1.demo'))['A-01']);
   expect(red).toMatch(/^data:image\/jpeg;base64,/);
   const pixel = await page.evaluate(async src => { const img = new Image(); img.src = src; await img.decode(); const c = document.createElement('canvas'); c.width = c.height = 160; const ctx = c.getContext('2d'); ctx.drawImage(img, 0, 0); return [...ctx.getImageData(80, 80, 1, 1).data]; }, red);
   expect(pixel[0]).toBeGreaterThan(200); expect(pixel[2]).toBeLessThan(70);
-  await page.getByLabel('写真の参加者').selectOption('参加者B');
+  await page.getByLabel('写真の参加者').selectOption('B-01');
   await page.getByLabel('横位置', { exact: true }).fill('75');
   await page.getByRole('button', { name: 'この写真を保存', exact: true }).click();
   await page.screenshot({ path: 'test-results/photos-editor.png', fullPage: true });
   await page.getByRole('button', { name: '閉じる', exact: true }).click();
-  await expect(page.getByAltText('参加者Aの顔写真').first()).toBeVisible();
+  await expect(page.getByAltText('A-01の顔写真').first()).toBeVisible();
   await page.reload();
-  await expect(page.getByAltText('参加者Aの顔写真').first()).toHaveAttribute('src', red);
+  await expect(page.getByAltText('A-01の顔写真').first()).toHaveAttribute('src', red);
   await page.getByRole('button', { name: 'コンソールをコピー' }).click();
   expect(await page.evaluate(() => navigator.clipboard.readText())).not.toContain('data:image');
   await page.getByRole('button', { name: '実録音', exact: true }).click();
-  await expect(page.getByRole('button', { name: '参加者Aの写真を設定' })).toBeVisible();
-  await expect(page.getByAltText('参加者Aの顔写真')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'A-01の写真を設定' })).toBeVisible();
+  await expect(page.getByAltText('A-01の顔写真')).toHaveCount(0);
   await page.getByRole('button', { name: 'サンプル', exact: true }).click();
-  await page.getByRole('button', { name: '参加者Aの写真を設定' }).click();
+  await page.getByRole('button', { name: 'A-01の写真を設定' }).click();
   await page.getByRole('button', { name: 'この参加者の写真を削除' }).click();
   await page.getByRole('button', { name: '閉じる', exact: true }).click();
-  await page.reload(); await expect(page.getByAltText('参加者Aの顔写真')).toHaveCount(0);
+  await page.reload(); await expect(page.getByAltText('A-01の顔写真')).toHaveCount(0);
   expect(posted.join('')).not.toContain('data:image');
 });
 test('screen capture stops video tracks after snapshot; cancellation offers file fallback', async ({ page }) => {

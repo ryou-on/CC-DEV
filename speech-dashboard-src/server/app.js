@@ -48,6 +48,11 @@ export function createApp({ mode = process.env.APP_MODE || 'local', store, proce
     } catch { res.status(401).json({ code: 'AUTH_REQUIRED' }); }
   });
   app.get('/api/speech/recordings', async (req, res) => { res.json({ recordings: await store.list(req.uid) }); });
+  app.get('/api/speech/demo-photos', async (req, res) => {
+    if (mode !== 'local') return res.status(404).json({ code: 'NOT_FOUND' });
+    try { res.json({ photos: JSON.parse(await readFile('.local-data/demo-photos.json', 'utf8')) }); }
+    catch { res.json({ photos: {} }); }
+  });
   let busy = false;
   const upload = multer({ storage: multer.diskStorage({ destination: (req, file, cb) => cb(null, req.tempDir), filename: (req, file, cb) => cb(null, randomUUID() + extname(file.originalname).toLowerCase()) }), limits: { fileSize: MAX_BYTES, files: 1, fields: 1, fieldSize: 4096 }, fileFilter: (req, file, cb) => cb(EXTENSIONS.has(extname(file.originalname).toLowerCase()) ? null : new Error('INVALID_AUDIO'), true) }).single('file');
   app.post('/api/speech/recordings', async (req, res) => {
