@@ -10,7 +10,7 @@ import { readPhotos, writePhoto, writePhotos } from './photos';
 import WordCloud from './WordCloud';
 import { DEMO } from './demo';
 import { selectRecordings, summarize, totals, time, timelineGroups } from './metrics';
-import { request, API_BASE, cloud, watchUser, login, logout, MESSAGES } from './api';
+import { request, API_BASE, cloud, previewOnly, watchUser, login, logout, MESSAGES } from './api';
 const COLORS = ['#24786a', '#d39b4e', '#6a8fbc', '#9d86b1', '#75a484'];
 function Modal({ title, close, children }) {
   const ref = useRef(null);
@@ -37,7 +37,7 @@ function App() {
   const photos = photoState.namespace === photoNamespace ? photoState.data : {};
   useEffect(() => { setPhotoState({ namespace: photoNamespace, data: readPhotos(photoNamespace) }); }, [photoNamespace]);
   useEffect(() => {
-    if (cloud) return;
+    if (cloud || previewOnly) return;
     let active = true;
     request('/demo-photos').then(({ photos: seed }) => {
       const key = 'speech-dashboard.demo-photos-seeded.v1';
@@ -60,11 +60,12 @@ function App() {
   const load = async () => { try { const data = await request('/recordings'); setRecords(data.recordings); } catch (e) { fail(e); } };
   useEffect(() => watchUser(value => { setUser(value); setRecords([]); setSelected(null); }), []);
   useEffect(() => {
+    if (previewOnly) return;
     let active = true;
     fetch(`${API_BASE}/api/speech/health`).then(r => r.json()).then(data => { if (active) setHealth(data); }).catch(() => { if (active) setHealth(null); });
     return () => { active = false; };
   }, []);
-  useEffect(() => { if (!demo && !busy && (!cloud || user)) { load(); request('/analytics', { method: 'POST' }).catch(() => {}); } }, [demo, user, busy]);
+  useEffect(() => { if (!previewOnly && !demo && !busy && (!cloud || user)) { load(); request('/analytics', { method: 'POST' }).catch(() => {}); } }, [demo, user, busy]);
   const all = (demo ? DEMO : normalizeParticipants(records)).map(r=>({...r,utterances:r.utterances.map(u=>u.syncedText?{...u,text:u.syncedText,analysis:null,analysisMode:'synced'}:u)}));
   const scope = selectRecordings(all, { day, room }), filtered = scope.filter(r => speaker === 'all' || r.speaker === speaker);
   // Personal filtering never changes the denominator of the speaking share.
@@ -146,7 +147,8 @@ function App() {
     <main className="max-w-[1400px] mx-auto px-5 md:px-10 py-9">
       <div className="flex flex-wrap items-end justify-between gap-4 mb-7"><div><p className="text-xs tracking-[.2em] text-[#718679] mb-3">SPEECH INSIGHTS / PHASE 1</p><h1 className="text-3xl font-bold tracking-tight">対話のかたちを、見える化。</h1><p className="text-sm text-[#6c7f75] mt-3">誰が、いつ、どのように話したか。研修の対話を振り返る。</p></div><div className="flex gap-2"><button className={`btn ${demo ? 'primary' : ''}`} disabled={busy} onClick={() => { setDemo(true); resetFilters(); }}>サンプル</button><button className={`btn ${!demo ? 'primary' : ''}`} disabled={busy} onClick={() => { setDemo(false); resetFilters(); }}>実録音</button></div></div>
       {notice && <div role="status" className="mb-5 rounded-lg border border-[#d2ded5] bg-[#eaf1eb] px-4 py-3 text-sm flex justify-between gap-4"><span>{notice}</span><button aria-label="通知を閉じる" onClick={() => setNotice('')}>×</button></div>}
-      <div className="mb-6 flex flex-wrap gap-3 items-center text-xs"><span className="pill">{demo ? 'DEMO · 32人 / A〜D各8人 / 1日3回のワーク' : cloud ? 'Firebase保存' : 'ローカル保存'}</span><span className="text-[#6e7e73]">発話時間は推定値です。{demo ? '発言・数値・IDは架空です。写真の人物の実績ではありません。' : analysisMode === 'full' ? '次の分析では音声をOpenAI、発言本文をJevへ送信します。' : '次の分析は外部AIへの送信なしで発話量を計測します。'}</span></div>
+      {previewOnly && <p role="status" className="card p-4 mb-6">公開プレビュー：サンプル分析・ファイルの取り込み設定を確認できます。実録音の分析・OCR・保存・目安箱送信は、本番サーバーの設定後に利用できます。</p>}
+      <div className="mb-6 flex flex-wrap gap-3 items-center text-xs"><span className="pill">{demo ? 'DEMO · 32人 / A〜D各8人 / 1日3回のワーク' : previewOnly ? '公開プレビュー' : cloud ? 'Firebase保存' : 'ローカル保存'}</span><span className="text-[#6e7e73]">発話時間は推定値です。{demo ? '発言・数値・IDは架空です。写真の人物の実績ではありません。' : analysisMode === 'full' ? '次の分析では音声をOpenAI、発言本文をJevへ送信します。' : '次の分析は外部AIへの送信なしで発話量を計測します。'}</span></div>
       <fieldset disabled={busy} className="card p-5 mb-6" aria-label="分析プラン"><legend className="font-bold">分析プランを選択</legend><div className="grid md:grid-cols-2 gap-4">{[['volume','発話量のみ','低コスト · 外部AI API料金なし','発話時間・発話率・回数・平均発話長・タイムラインを比較します。'],['full','文字起こし＋内容分析','詳細分析 · 外部AI API料金あり','発話量に加え、文字起こし・発言タイプ・主体性・質問判定・ワードクラウドを利用できます。']].map(([value,title,price,description])=><label key={value} className={`block border rounded-xl p-4 cursor-pointer ${analysisMode===value?'border-[#24786a] bg-[#edf4ed]':'border-[#dce5dc]'}`}><span className="flex items-center gap-2 font-bold"><input type="radio" aria-label={title} name="analysisMode" value={value} checked={analysisMode===value} onChange={()=>{setAnalysisMode(value);setQueue(q=>q.map(r=>({...r,status:'待機',error:''})));}}/>{title}</span><span className="block text-xs my-2 text-[#496b59]">{price}</span><span className="block text-sm leading-6">{description}</span></label>)}</div><p className="text-xs mt-3 text-[#6c7f75]">次に取り込む録音へ適用します。保存済み結果やサンプルは切り替えだけでは変更しません。発話時間は両プランとも同じ無音検出方式です。詳細分析は内容まで確認できるプランで、計測精度やAI判定の正しさを保証するものではありません。</p>{analysisMode==='full' && <p className="text-sm mt-3">OpenAI・Jevの設定が必要です。送信音声の合計時間・分析量に応じて費用が発生します。</p>}</fieldset>
       <details className="card mb-7" open={!demo || queue.length > 0}>
         <summary className="cursor-pointer p-5 font-bold text-sm">録音を取り込む <span className="font-normal text-[#849187] ml-3">参加者ごとの音声 → 区間を分類 → 分析</span></summary>
@@ -211,7 +213,7 @@ function App() {
     {modal === 'photos' && <Modal title="参加者の顔写真" close={() => setModal(null)}><PhotoEditor key={photoNamespace} namespace={photoNamespace} initialFile={photoFile} initialPerson={photoPerson} people={[...new Set([...Object.keys(photos), ...all.map(r => r.speaker), ...(!demo ? queue.map(r => r.speaker.trim()).filter(Boolean) : [])])].sort()} photos={photos} save={savePhoto} saveMany={saveManyPhotos} /></Modal>}
     {modal === 'manual' && <Modal title="発話分析の使い方" close={() => setModal(null)}><div className="space-y-4 text-sm leading-7"><p>参加者ごとのZoom録音から、発話量と発言内容を振り返るアプリです。</p><ol className="list-decimal pl-5"><li>分析プランを選びます。発話量のみは外部AI料金なし、詳細分析は文字起こしと内容分析のAPI料金が発生します。切り替えだけでは処理を開始しません。</li><li>「録音を取り込む」で参加者別の音声を選びます。</li><li>参加者ID、Day、Main/Room、セッションと区間を設定します。</li><li>録音の開始時刻がずれている場合は時刻補正秒を入力します。録音100秒をセッション0秒に合わせる例は −100 です。</li><li>「分析して保存」で発話量・文字起こし・分類を取得します。</li><li>実録音画面の「資料の自動照合・字幕同期」で字幕を選びます。候補の参加者・日・セッションと時刻補正を確認し、同期します。同期は保存され、解除で元に戻せます。写真はOCR表示名と参加者IDが一意に一致すると表示されます。</li><li>フィルタと比較軸を切り替え、タイムラインから発言を確認します。</li><li>ワードクラウドは頻出語を大きく表示します。単語を押すと元の発言を確認でき、不要な語は除外欄で隠せます。ワードクラウドのライト／ダークを切り替えられ、色は歯科・医療・研修／整理法・一般語を表します。単語選択後に分類を修正できます。</li><li>「顔写真」でZoom画面のスクショを読み込むか、対応ブラウザではZoom画面を選んで取得します。「参加者枠と名前を一括読み取り」で候補を作り、名前の誤読を修正し、不要な枠を外して確認後に一括登録します。個別の切り抜き位置も調整できます。</li></ol><p>発話率は選択範囲の全員の発話時間に占める割合です。雑音や無音検出の誤差を含む推定値のため、録音内容と照合してください。サンプル表示は架空データです。</p><p>録音はOpenAI、発言本文はJevに送信されます。参加者の了承と利用目的を確認してから取り込んでください。音声は処理終了後に一時領域から削除されます。</p><p>顔写真は切り抜きだけをこのブラウザへ保存します。サンプルと実録音は別管理です。名前欄だけを自分のサーバーへ送りOCRで読み取ります。元のスクショは保存せず、顔写真はAPIや診断コピーに含めません。「顔写真」から削除できます。端末間の同期は未対応です。</p><a className="btn inline-block" href={APP.home}>ホームへ戻る</a></div></Modal>}
     {modal === 'release' && <Modal title="リリースノート" close={() => setModal(null)}>{RELEASE_NOTES.map(r => <article key={r.version}><p className="font-bold">v{r.version} <span className="text-xs font-normal text-[#879589] ml-3">{r.date}</span></p><ul className="text-sm list-disc pl-5 space-y-2 mt-4">{r.changes.map(c => <li key={c}>{c}</li>)}</ul><p className="text-xs mt-5 text-[#819080]">Phase 1：ローカルでは512MB・12時間まで対応。自動同期・異なる録音機間の重複統合は今後の対応です。</p></article>)}</Modal>}
-    {modal === 'feedback' && <Modal title="目安箱" close={() => setModal(null)}><form onSubmit={submitFeedback}><p className="text-sm mb-4">氏名、メールアドレス、電話番号、住所、アカウント情報などの個人情報や機密情報は入力しないでください。</p><label>ご意見・不具合<textarea required maxLength={2000} rows={5} value={feedback} onChange={e => setFeedback(e.target.value)} /></label><button className="btn primary mt-4" disabled={feedbackBusy}>{feedbackBusy ? '送信中…' : cloud ? '送信' : 'ローカルに保存'}</button>{notice && <p role="status" className="text-sm mt-3">{notice}</p>}</form></Modal>}
+    {modal === 'feedback' && <Modal title="目安箱" close={() => setModal(null)}><form onSubmit={submitFeedback}><p className="text-sm mb-4">氏名、メールアドレス、電話番号、住所、アカウント情報などの個人情報や機密情報は入力しないでください。</p><label>ご意見・不具合<textarea required maxLength={2000} rows={5} value={feedback} onChange={e => setFeedback(e.target.value)} /></label><button className="btn primary mt-4" disabled={previewOnly || feedbackBusy}>{feedbackBusy ? '送信中…' : cloud ? '送信' : 'ローカルに保存'}</button>{notice && <p role="status" className="text-sm mt-3">{notice}</p>}</form></Modal>}
     {modal === 'debug' && <Modal title="診断情報をコピー" close={() => setModal(null)}><p className="text-sm mb-4">自動コピーできませんでした。以下を選択してコピーしてください。</p><textarea aria-label="診断情報" readOnly rows={12} value={fallback} onFocus={e => e.target.select()} /></Modal>}
   </div>;
 }
