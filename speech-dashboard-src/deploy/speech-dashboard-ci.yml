@@ -1,0 +1,36 @@
+name: Speech dashboard CI
+on:
+  pull_request:
+    paths:
+      - 'speech-dashboard-src/**'
+      - 'public/speech-dashboard/**'
+      - '.github/workflows/speech-dashboard-ci.yml'
+  push:
+    branches: ['feat/speech-dashboard-mvp']
+    paths: ['speech-dashboard-src/**', 'public/speech-dashboard/**']
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: speech-dashboard-src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: speech-dashboard-src/package-lock.json
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg tesseract-ocr tesseract-ocr-jpn tesseract-ocr-eng
+      - run: npm ci
+      - run: npm test
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:ui
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: speech-dashboard-test-results
+          path: speech-dashboard-src/test-results/
