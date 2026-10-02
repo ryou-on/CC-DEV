@@ -74,18 +74,25 @@ function App() {
   async function analyze() {
     if (busy || !queue.length) return;
     setBusy(true); setDemo(false); resetFilters(); setNotice('区間を順番に分析しています。完了まで画面を開いたままお待ちください。');
+    const outcome = { complete: 0, partial: 0, failed: 0 }; let stopped = false;
     for (const row of queue.filter(q => q.status !== '保存済み')) {
+      edit(row.id, 'error', '');
       edit(row.id, 'status', '分析中');
       try {
-        const { file, id, status, ...metadata } = row;
+        const { file, id, status, error, ...metadata } = row;
         const form = new FormData(); form.set('file', file); form.set('metadata', JSON.stringify(metadata));
         const result = await request('/recordings', { method: 'POST', body: form });
         setRecords(previous => [...previous.filter(r => r.id !== result.recording.id), result.recording]);
         edit(row.id, 'status', result.recording.status === 'partial' ? '部分完了' : '保存済み');
+        outcome[result.recording.status === 'partial' ? 'partial' : 'complete']++;
+        if (result.recording.status === 'partial') edit(row.id, 'error', '発話量は保存済みですが、文字起こし・内容分析に未完了があります。API設定や接続を確認してください。');
         addLog(result.duplicate ? 'DUPLICATE_SKIPPED' : 'SAVED');
-      } catch (e) { edit(row.id, 'status', '失敗'); fail(e); }
+      } catch (e) {
+        outcome.failed++; edit(row.id, 'status', '失敗'); edit(row.id, 'error', MESSAGES[e.message] || '処理に失敗しました。診断情報をコピーしてください。'); addLog(e.message);
+        if (['RATE_LIMIT', 'BUSY', 'SERVER_UNAVAILABLE', 'AUTH_REQUIRED'].includes(e.message)) { stopped = true; break; }
+      }
     }
-    setBusy(false); setNotice('処理が終了しました。取り込み一覧の状態をご確認ください。部分完了はAPI設定後に再試行できます。');
+    setBusy(false); setNotice(`今回の結果：完了 ${outcome.complete}件・部分完了 ${outcome.partial}件・失敗 ${outcome.failed}件。${stopped ? '後続の処理を中断しました。' : ''}${outcome.failed ? '各ファイルの失敗理由をご確認ください。' : outcome.partial ? '発話量を保存しました。未完了の分析は各行をご確認ください。' : '分析結果を保存しました。'}`);
   }
   async function copyDebug() {
     const data = JSON.stringify({ appId: APP.id, version: APP.version, at: new Date().toISOString(), page: location.origin + location.pathname, screen: 'dashboard', mode: demo ? 'demo' : 'recordings', browser: /Firefox/.test(navigator.userAgent) ? 'Firefox' : /Chrome/.test(navigator.userAgent) ? 'Chromium' : 'Safari/Other', counts: { recordings: records.length, queued: queue.length }, logs: diagnostics.current }, null, 2);
@@ -115,6 +122,7 @@ function App() {
           <p className="text-xs text-[#6d7f72] mt-3">Mainの重複録音は代表1本を選んでください。同一参加者には全日を通して同じ参加者IDを使います。API未設定時も発話量を算出し、内容は未分析として保存します。</p>
           {!!queue.length && <div className="space-y-3 mt-5">{queue.map(row => <div key={row.id} className="rounded-lg border border-[#dde5df] p-4">
             <div className="flex justify-between gap-3 text-xs mb-4"><p className="break-all">{row.file.name} <span className="pill ml-2">{row.status}</span></p><div className="flex gap-3 shrink-0"><button disabled={busy || queue.length >= 20} onClick={() => setQueue(q => [...q, { ...row, id: crypto.randomUUID(), status: '待機' }])}>区間を追加</button><button disabled={busy} onClick={() => setQueue(q => q.filter(r => r.id !== row.id))}>削除</button></div></div>
+            {row.error && <p role="status" className="text-sm text-amber-900 bg-amber-50 rounded p-3 mb-4">{row.error}</p>}
             <fieldset disabled={busy || row.status === '保存済み'} className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
               <label>参加者ID<input aria-label="参加者ID" value={row.speaker} maxLength={80} onChange={e => edit(row.id, 'speaker', e.target.value)} /></label>
               <label>Day<select value={row.day} onChange={e => edit(row.id, 'day', e.target.value)}>{Array.from({ length: 30 }, (_, i) => <option key={i}>Day {i + 1}</option>)}</select></label>
