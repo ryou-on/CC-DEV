@@ -9,3 +9,18 @@ test('word counts normalize width/case and ignore particles, numbers and exclude
  assert.deepEqual(countWords([{text:''}]),[]);
  assert.ok(tokens('課題を確認').includes('課題'));
 });
+import { categoryFor } from '../src/wordCategories.js';
+import { layoutWords } from '../src/cloudLayout.js';
+test('compound dental, medical and training terms retain category and counts',()=>{
+ const result=countWords([{text:'歯周病、感染対策、KJ法、5S、PDCAと歯周病。'}]);
+ assert.equal(result.find(r=>r.word==='歯周病').count,2);
+ for(const [word,category] of [['歯周病','dental'],['感染対策','medical'],['kj法','training'],['5s','training'],['pdca','training'],['来週','general']]) assert.equal(categoryFor(word),category);
+});
+test('cloud packing stays within bounds without overlaps at desktop and mobile widths',()=>{
+ for(const width of [260,1200]) {
+  const rows=layoutWords(Array.from({length:60},(_,i)=>({word:`用語${i}`,count:60-i})),width,460,(word,size)=>word.length*size);
+  assert.ok(rows.length>10);
+  for(const p of rows) assert.ok(p.x>=0 && p.y>=0 && p.x+p.width<=width && p.y+p.height<=460);
+  rows.forEach((p,i)=>rows.slice(i+1).forEach(q=>assert.ok(p.x+p.width<=q.x || q.x+q.width<=p.x || p.y+p.height<=q.y || q.y+q.height<=p.y)));
+ }
+});
