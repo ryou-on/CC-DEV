@@ -96,7 +96,7 @@ function App() {
   }
   function edit(id, key, value) { setQueue(q => q.map(r => r.id === id ? { ...r, [key]: value, ...(key === 'kind' ? { room: value === 'Main' ? 'Main' : 'Room A' } : {}) } : r)); }
   async function analyze() {
-    if (busy || importing || !queue.length) return;
+    if (previewOnly || busy || importing || !queue.length) return;
     setBusy(true); setDemo(false); resetFilters(); setNotice('区間を順番に分析しています。完了まで画面を開いたままお待ちください。');
     const outcome = { complete: 0, partial: 0, failed: 0 }; let stopped = false;
     for (const row of queue.filter(q => q.status !== '保存済み')) {
@@ -173,7 +173,7 @@ function App() {
               <label>時刻補正秒<input type="number" step="0.1" value={row.offset} onChange={e => edit(row.id, 'offset', e.target.value)} /></label>
             </fieldset>
           </div>)}</div>}
-          <div className="flex flex-wrap justify-between gap-3 items-center mt-4"><p className="text-xs text-[#738276]">{health ? `接続済み · 文字起こし ${health.providers.openai ? '設定済み' : '未設定'} / Jev ${health.providers.jev ? '設定済み' : '未設定'}` : 'ローカルサーバーの起動が必要です。READMEをご確認ください。'}</p><button className="btn primary" disabled={busy || importing || !queue.some(r => r.status !== '保存済み') || (cloud && !user)} onClick={analyze}>{busy ? '分析中…' : '分析して保存'}</button></div>
+          <div className="flex flex-wrap justify-between gap-3 items-center mt-4"><p className="text-xs text-[#738276]">{previewOnly ? '本番の実録音分析は準備中です。' : health ? `接続済み · 文字起こし ${health.providers.openai ? '設定済み' : '未設定'} / Jev ${health.providers.jev ? '設定済み' : '未設定'}` : 'ローカルサーバーの起動が必要です。READMEをご確認ください。'}</p><button className="btn primary" disabled={previewOnly || busy || importing || !queue.some(r => r.status !== '保存済み') || (cloud && !user)} onClick={analyze}>{busy ? '分析中…' : '分析して保存'}</button></div>
         </div>
       </details>
       {!demo && <SyncPanel key={photoNamespace} attachments={attachments} records={records} disabled={busy} onSaved={record=>setRecords(prev=>prev.map(r=>r.id===record.id?record:r))}/>}
