@@ -83,3 +83,13 @@ test('background job saves result and exposes only owner status',async()=>{
   assert.equal((await fetch(`${base}/api/speech/jobs/${jobId}`,{headers:{'x-test-user':'other'}})).status,404);
  });}finally{await rm(directory,{recursive:true,force:true});}
 });
+test('subtitle sync persists, can be undone, and preserves measured duration',async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'speech-sync-'));
+ try {const store=createStore('local',directory);await store.put('local-user',{id:'sync-record',speaker:'山田',analysisMode:'volume',utterances:[{id:'u0',start:0,end:5,speechSeconds:5,text:'',analysis:null}]});
+ await serve(createApp({store}),async base=>{
+  const send=body=>fetch(`${base}/api/speech/recordings/sync-record/sync`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const res=await send({text:'1\n00:00:01,000 --> 00:00:03,000\n山田: 確認します',offset:0,sourceName:'one.srt'});assert.equal(res.status,200);assert.equal((await store.list())[0].utterances[0].syncedText,'確認します');assert.equal((await store.list())[0].utterances[0].speechSeconds,5);
+  assert.equal((await send({text:'no time',offset:0,sourceName:'x.txt'})).status,400);
+  assert.equal((await send({clear:true})).status,200);assert.equal((await store.list())[0].utterances[0].syncedText,undefined);
+ });}finally{await rm(directory,{recursive:true,force:true});}
+});

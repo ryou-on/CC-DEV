@@ -1,3 +1,4 @@
+import { uniquePerson } from './sync.js';
 import React, { useEffect, useRef, useState } from 'react';
 import { detectTiles, manualTiles, cropTile, nameStrip, makeNameSheet } from './gallery';
 import { request } from './api';
@@ -21,7 +22,7 @@ export default function BulkPhotos({ canvas, people, saveMany, onAdjust }) {
       setCandidates(rows.map((row, index) => {
         const label = result.labels?.find(item => item.index === index);
         const name = typeof label?.name === 'string' ? label.name.trim().slice(0, 80) : '';
-        return { ...row, name, rawName: name, confidence: Number(label?.confidence) || 0, selected: !!name };
+        return { ...row, name: uniquePerson(name,people) || name, rawName: name, confidence: Number(label?.confidence) || 0, selected: !!name };
       }));
       setMessage(`${tiles.length}枠を切り抜きました。カメラOFF・不要な枠を外し、全員の名前と写真を確認してください。`);
     } catch (e) { if (active.current && run === ticket.current) setMessage(e.message === 'BUSY' ? '別の処理中です。少し待って読み取りを再実行してください。' : e.message === 'INVALID_GRID' ? '範囲・行列数を確認してください（最大100枠）。' : '名前を読み取れませんでした。サーバー起動とOCR設定をご確認ください。枠が表示されていれば名前を入力して登録できます。'); }

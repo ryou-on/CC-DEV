@@ -22,6 +22,7 @@ test('bulk OCR requires review, supports edits/exclusions and blocks duplicate n
 });
 test('real OCR service reads synthetic gallery labels',async({page})=>{
  test.setTimeout(90000);
+ if(process.env.OCR_TEST_BASE) await page.route('**/api/speech/photo-names', async route => { const response=await route.fetch({url:process.env.OCR_TEST_BASE+'/api/speech/photo-names'}); await route.fulfill({response}); });
  await page.goto('./');await page.getByRole('button',{name:'顔写真',exact:true}).click();await loadGallery(page);
  await page.getByRole('button',{name:'参加者枠と名前を一括読み取り'}).click();
  await expect(page.getByLabel('候補 1 の名前',{exact:true})).toHaveValue(/ALICE/i,{timeout:65000});

@@ -1,4 +1,5 @@
 import express from 'express';
+import { parseSubtitles, attachSubtitles } from '../src/sync.js';
 import multer from 'multer';
 import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -20,7 +21,7 @@ export function createApp({ mode = process.env.APP_MODE || 'local', store, proce
   store ??= createStore(mode);
   if (mode === 'cloud') admin();
   const app = express();
-  app.disable('x-powered-by'); app.use(express.json({ limit: '12kb' }));
+  app.disable('x-powered-by'); app.use(express.json({ limit: '2mb' }));
   app.use((req, res, next) => {
     res.set({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' });
     const origin = req.headers.origin;
@@ -53,6 +54,25 @@ export function createApp({ mode = process.env.APP_MODE || 'local', store, proce
     if (mode !== 'local') return res.status(404).json({ code: 'NOT_FOUND' });
     try { res.json({ photos: JSON.parse(await readFile('.local-data/demo-photos.json', 'utf8')) }); }
     catch { res.json({ photos: {} }); }
+  });
+  app.post('/api/speech/recordings/:id/sync', async (req,res) => {
+    if(busy) return res.status(429).json({code:'BUSY'});
+    busy=true;
+    try {
+      const record=(await store.list(req.uid)).find(r=>r.id===req.params.id);
+      if(!record)return res.status(404).json({code:'NOT_FOUND'});
+      const {text,offset,sourceName,clear}=req.body || {};
+      let next;
+      if(clear===true) {const {syncedSource,...base}=record;next={...base,utterances:record.utterances.map(({syncedText,...u})=>u)};}
+      else {
+        if(typeof text!=='string' || text.length>1000000 || !Number.isFinite(offset) || Math.abs(offset)>86400 || typeof sourceName!=='string' || sourceName.length>255) return res.status(400).json({code:'INVALID_SYNC'});
+        const cues=parseSubtitles(text);if(!cues.length || cues.length>20000)return res.status(400).json({code:'INVALID_SYNC'});
+        const result=attachSubtitles(record,cues,offset);if(!result.matched)return res.status(400).json({code:'INVALID_SYNC'});
+        next={...record,utterances:result.utterances,syncedSource:{name:sourceName,offset,matched:result.matched,outside:result.outside,otherSpeaker:result.otherSpeaker}};
+      }
+      if(Buffer.byteLength(JSON.stringify(next))>(mode==='local'?50*1024*1024:750000))return res.status(413).json({code:'RESULT_TOO_LARGE'});
+      await store.put(req.uid,next);res.json({recording:next});
+    }catch{res.status(500).json({code:'SYNC_FAILED'});}finally{busy=false;}
   });
   const jobs = new Map();
   app.get('/api/speech/jobs/:id', (req,res) => {
@@ -87,7 +107,7 @@ export function createApp({ mode = process.env.APP_MODE || 'local', store, proce
       if (previous?.status === 'complete' && (meta.analysisMode === 'volume' || (previous.analysisMode || 'full') === 'full')) responseBody = { recording: previous, duplicate: true };
       else {
         const result = await processor(req.file.path, meta, directory, undefined, phase => { if(job)job.phase=phase; }, job ? 6*3600000 : 600000);
-        const recording = { ...result, id, updatedAt: new Date().toISOString() };
+        const recording = { ...result, sourceName: req.file.originalname.slice(0,255), id, updatedAt: new Date().toISOString() };
         if (Buffer.byteLength(JSON.stringify(recording)) > (mode === 'local' ? 50 * 1024 * 1024 : 750000)) throw new Error('RESULT_TOO_LARGE');
         await store.put(req.uid, recording);
         responseStatus = previous ? 200 : 201; responseBody = { recording };
@@ -104,10 +124,11 @@ export function createApp({ mode = process.env.APP_MODE || 'local', store, proce
     }
     if(job) {job.status=responseStatus<400?'complete':'failed';job.result=responseBody;job.phase=responseStatus<400?'保存完了':'処理失敗';} else res.status(responseStatus).json(responseBody);
   });
+  let ocrBusy = false;
   const uploadSheet = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024, files: 1, fields: 1, fieldSize: 16 } }).single('file');
   app.post('/api/speech/photo-names', async (req, res) => {
-    if (busy) return res.status(429).json({ code: 'BUSY' });
-    busy = true;
+    if (ocrBusy) return res.status(429).json({ code: 'BUSY' });
+    ocrBusy = true;
     let directory, status = 200, body;
     try {
       if (!(await store.limit(req.uid, 'ocr', 20, 3600000))) throw new Error('RATE_LIMIT');
@@ -121,7 +142,7 @@ export function createApp({ mode = process.env.APP_MODE || 'local', store, proce
       const code = error.code === 'LIMIT_FILE_SIZE' ? 'FILE_TOO_LARGE' : ['RATE_LIMIT', 'INVALID_OCR_IMAGE'].includes(error.message) ? error.message : 'OCR_UNAVAILABLE';
       status = code === 'RATE_LIMIT' ? 429 : code === 'FILE_TOO_LARGE' ? 413 : code === 'INVALID_OCR_IMAGE' ? 400 : 503;
       body = { code };
-    } finally { if (directory) await rm(directory, { recursive: true, force: true }).catch(() => {}); busy = false; }
+    } finally { if (directory) await rm(directory, { recursive: true, force: true }).catch(() => {}); ocrBusy = false; }
     res.status(status).json(body);
   });
   app.post('/api/speech/feedback', async (req, res) => {
