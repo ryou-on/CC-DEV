@@ -3,7 +3,7 @@ test('demo filters, chart axes, timeline and accessible modals', async ({ page }
   const errors = []; page.on('pageerror', e => errors.push(e.message));
   await page.goto('./');
   await expect(page.getByRole('heading', { name: '対話のかたちを、見える化。' })).toBeVisible();
-  for (const [button, title] of [['発話分析', '発話分析の使い方'], ['v0.1.0', 'リリースノート']]) {
+  for (const [button, title] of [['発話分析', '発話分析の使い方'], ['v0.2.0', 'リリースノート']]) {
     const trigger = page.getByRole('button', { name: button, exact: true });
     await trigger.click(); await expect(page.getByRole('dialog')).toBeVisible();
     await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible();

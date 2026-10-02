@@ -9,4 +9,4 @@ await db.runTransaction(async tx => {
   tx.set(app, { appId: APP.id, appName: APP.name, description: 'Zoom参加者別録音の発話量と発話内容を分析', phase: 1, version: APP.version, status: 'development', developmentAI: 'Codex', model: 'GPT-6', repository: 'https://github.com/ryou-on/CC-DEV', productionUrl: null, startedAt: current.data()?.startedAt || FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() });
   tx.set(log, { appId: APP.id, version: APP.version, type: 'start', AI: 'Codex', model: 'GPT-6', summary: RELEASE_NOTES[0].changes.join('。'), commit: process.env.GIT_COMMIT || null, timestamp: FieldValue.serverTimestamp() });
 });
-console.log('Registry updated: speech-dashboard 0.1.0');
+console.log(`Registry updated: ${APP.id} ${APP.version}`);

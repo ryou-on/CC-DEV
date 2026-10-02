@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { APP } from '../src/meta.js';
 import { initializeApp, getApps } from 'firebase-admin/app';
 import { getFirestore, FieldValue } from 'firebase-admin/firestore';
 export function admin() { if (!getApps().length) initializeApp({ projectId: process.env.GOOGLE_CLOUD_PROJECT || 'cc-dev-ps7' }); }
@@ -16,9 +17,9 @@ export function createStore(mode, dataDirectory = resolve('.local-data')) {
         return db.runTransaction(async tx => { const snap = await tx.get(ref), count = snap.data()?.count || 0; if (count >= cap) return false; tx.set(ref, { count: count + 1, expiresAt: new Date(Date.now() + period * 2) }); return true; });
       },
       async analytics(uid) {
-        const day = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' }), id = `${day}_speech-dashboard_0.1.0`;
+        const day = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' }), id = `${day}_${APP.id}_${APP.version}`;
         const seen = db.doc(`speechVisits/${id}_${uid}`), ref = db.doc(`analytics/${id}`);
-        await db.runTransaction(async tx => { const visit = await tx.get(seen); tx.set(ref, { date: day, appId: 'speech-dashboard', version: '0.1.0', views: FieldValue.increment(1), visitors: FieldValue.increment(visit.exists ? 0 : 1) }, { merge: true }); tx.set(seen, { expiresAt: new Date(Date.now() + 172800000) }); });
+        await db.runTransaction(async tx => { const visit = await tx.get(seen); tx.set(ref, { date: day, appId: APP.id, version: APP.version, views: FieldValue.increment(1), visitors: FieldValue.increment(visit.exists ? 0 : 1) }, { merge: true }); tx.set(seen, { expiresAt: new Date(Date.now() + 172800000) }); });
       }
     };
   }
