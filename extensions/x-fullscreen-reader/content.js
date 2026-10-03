@@ -1,4 +1,4 @@
-/* X Fullscreen Reader v0.4.1
+/* X Fullscreen Reader v0.4.2
  * 1記事1画面の全画面リーダー。Alt+R または右下の 📖 ボタンで起動。
  * ←→ 送り/戻り ／ fn+←→ リプライ ／ fn+↑↓ ブックマーク選択 ／ ↑↓ 長文スクロール ／ J K 移動 ／ X 選択 ／ Enter 決定 ／ Esc 閉じる
  */
@@ -7,7 +7,7 @@
   if (window.__xfrLoaded) return;
   window.__xfrLoaded = true;
 
-  const VERSION = '0.4.1';
+  const VERSION = '0.4.2';
   const DEFAULT_ENTRY = { name: 'ブックマーク（フォルダなし）', isDefault: true };
 
   // ---- 状態 ----
@@ -22,6 +22,8 @@
     busy: false,
     stack: [],          // スレッド進入前の {items,index,url,scrollY}
   };
+  // フォルダ名として扱わない行（見出し・ボタン・件数表示）
+  const SKIP_LABEL = /^(完了|キャンセル|閉じる|戻る|新しいブックマークフォルダ|新しいフォルダ|フォルダを(新規)?作成|フォルダに追加|ブックマークフォルダ|ブックマークに追加|Done|Cancel|Close|Back|New folder|Create|Add to Folders?|Bookmark Folders?|\d+\s*(件|posts?|items?))/i;
   const logs = [];
   const log = (...a) => { logs.push(a.map(String).join(' ')); console.log('[XFR]', ...a); };
 
@@ -32,7 +34,7 @@
         const r = await chrome.storage.local.get(['fontSize', 'light', 'folders']);
         if (r.fontSize) state.fontSize = r.fontSize;
         if (typeof r.light === 'boolean') state.light = r.light;
-        if (Array.isArray(r.folders)) state.folders = r.folders;
+        if (Array.isArray(r.folders)) state.folders = r.folders.filter((n) => n && !SKIP_LABEL.test(n));
       } catch (e) { log('storage load error', e); }
     },
     save() {
@@ -435,8 +437,6 @@
     return dialog;
   }
 
-  // フォルダ名として扱わない行（見出し・ボタン・件数表示）
-  const SKIP_LABEL = /^(完了|キャンセル|閉じる|戻る|新しいブックマークフォルダ|新しいフォルダ|フォルダを(新規)?作成|フォルダに追加|ブックマークフォルダ|ブックマークに追加|Done|Cancel|Close|Back|New folder|Create|Add to Folders?|Bookmark Folders?|\d+\s*(件|posts?|items?)\b)/i;
 
   // フォルダ行は role 属性が付かない場合があるため、ダイアログの表示テキスト行から拾う
   function folderNames(dialog) {
@@ -454,9 +454,27 @@
     return row && row !== dialog ? row : inner;
   }
 
+  // ダイアログ表示直後はフォルダ一覧が未ロード（見出しと作成ボタンだけ）のことがある。
+  // スピナーが消えて行数が変わらなくなるまで待ってから読む。
+  async function waitFolderList() {
+    let prev = -1, stable = 0, dialog = null;
+    const t = Date.now();
+    while (Date.now() - t < 6000) {
+      await sleep(250);
+      dialog = currentDialog(RE_FOLDER);
+      if (!dialog) continue;
+      const loading = dialog.querySelector('[role="progressbar"]');
+      const n = folderNames(dialog).length;
+      if (!loading && n === prev) { if (++stable >= 2) break; } else stable = 0;
+      prev = n;
+    }
+    return dialog;
+  }
+
   async function fetchFolders(article) {
-    const dialog = await openFolderDialog(article);
+    let dialog = await openFolderDialog(article);
     if (!dialog) return null;
+    dialog = (await waitFolderList()) || dialog;
     log('dialog lines:', (dialog.innerText || '').split('\n').map((s) => s.trim()).filter(Boolean).join(' | '));
     const names = folderNames(dialog);
     await dismissAll();
@@ -465,8 +483,9 @@
   }
 
   async function addToFolder(article, name) {
-    const dialog = await openFolderDialog(article);
+    let dialog = await openFolderDialog(article);
     if (!dialog) return false;
+    dialog = (await waitFolderList()) || dialog;
     const target = findFolderRow(dialog, name);
     if (!target) { log('folder row not found', name); await dismissAll(); return false; }
     log('click folder row', name, target.tagName, target.getAttribute('role') || '');
@@ -630,7 +649,7 @@
     };
     box.append(
       mk('📖 全画面で読む', 'Alt+R でも起動', () => (state.open ? closeReader() : openReader())),
-      mk(`v${VERSION}`, 'リリースノート', () => alert(`## v0.4.1 (2026-10-03)\n- fn+矢印が効かない環境向けにキー判定を強化、Shift+矢印でも同じ操作が可能に\n- 押したキーをヘッダーに表示\n\n## v0.4.0 (2026-10-03)\n- リプライ移動を fn+←→、ブックマーク選択を fn+↑↓ に変更\n- ↑↓ で長文をスクロール\n\n## v0.3.0 (2026-10-03)\n- リプライの送り/戻りを fn+↓ / fn+↑（PageDown / PageUp）に変更\n\n## v0.2.2 (2026-10-03)\n- 既存のブックマークフォルダが一覧に出ない問題を修正\n\n## v0.2.1 (2026-10-03)\n- リプライ表示・ブックマークフォルダ取得が動かない問題を修正\n\n## v0.2.0 (2026-10-03)\n- ⌘+←→でリプライの送り/戻りを追加\n\n## v0.1.0 (2026-10-03)\n- 初回リリース\n- 1記事1画面の全画面リーダー\n- ←→で送り/戻り、↑↓でブックマーク選択（J/K移動・X選択・Enter決定）`)),
+      mk(`v${VERSION}`, 'リリースノート', () => alert(`## v0.4.2 (2026-10-03)\n- ブックマークフォルダ一覧が空になる問題を修正（一覧の読み込み完了を待つ）\n\n## v0.4.1 (2026-10-03)\n- fn+矢印が効かない環境向けにキー判定を強化、Shift+矢印でも同じ操作が可能に\n- 押したキーをヘッダーに表示\n\n## v0.4.0 (2026-10-03)\n- リプライ移動を fn+←→、ブックマーク選択を fn+↑↓ に変更\n- ↑↓ で長文をスクロール\n\n## v0.3.0 (2026-10-03)\n- リプライの送り/戻りを fn+↓ / fn+↑（PageDown / PageUp）に変更\n\n## v0.2.2 (2026-10-03)\n- 既存のブックマークフォルダが一覧に出ない問題を修正\n\n## v0.2.1 (2026-10-03)\n- リプライ表示・ブックマークフォルダ取得が動かない問題を修正\n\n## v0.2.0 (2026-10-03)\n- ⌘+←→でリプライの送り/戻りを追加\n\n## v0.1.0 (2026-10-03)\n- 初回リリース\n- 1記事1画面の全画面リーダー\n- ←→で送り/戻り、↑↓でブックマーク選択（J/K移動・X選択・Enter決定）`)),
       mk('🐞', 'デバッグログをコピー', async () => {
         try { await navigator.clipboard.writeText(logs.join('\n') || '(ログなし)'); } catch (e) {}
       })
