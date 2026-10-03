@@ -65,26 +65,46 @@ bg = tuple(v * 0.22 for v in accent)                              # 背景はア
 colors = {"bg": hexc(bg), "fg": "#f7fafb", "accent": hexc(accent), "accent2": hexc(tuple(min(255, v * 0.5 + 128) for v in accent)), "sub": "#8a9aa3"}
 
 # ---- コピー ----
+def cut(s, n):
+    """n文字以内に収める。読点・空白で区切り、M&A のような英数字の語の途中では切らない"""
+    s = (s or "").strip()
+    if len(s) <= n: return s
+    isw = lambda c: c.isascii() and (c.isalnum() or c in "&+-./")
+    j = n
+    if isw(s[n - 1]) and isw(s[n]):                                 # 語の途中 → 語の終わりまで伸ばす（+4文字まで）
+        k = n
+        while k < len(s) and isw(s[k]): k += 1
+        if k - n <= 4: j = k
+        else:                                                       # 伸ばせないなら語の手前まで戻す
+            while j > 0 and isw(s[j - 1]): j -= 1
+    i = max(s.rfind(c, 0, j) for c in "、。 　,・/")
+    out = s[:j] if (j > n or i < max(3, n // 2)) else s[:i]
+    return out.rstrip("、。 　,・/&+-")
+
+LIMITS = {"l1a": 8, "l1b": 8, "l2a": 10, "l2b": 8, "tagline": 18, "sub": 32}
+def sanitize(c):                                                    # Claude生成・仮コピー共通：長すぎる文言を安全に切り詰める
+    for k, n in LIMITS.items():
+        if k in c: c[k] = cut(c[k], n)
+    for k, n in (("words", 10), ("words2", 10), ("points", 18)):
+        if k in c: c[k] = [cut(x, n) for x in c[k]]
+    return c
+
 copy = None
 key = os.environ.get("ANTHROPIC_API_KEY")
 if key:
     import anthropic
     prompt = f"""次のWebサイト情報から、15〜30秒の日本語CM（文字中心モーショングラフィック）用コピーをJSONのみで返してください。
-原文の言い回しを活かし、各項目は短く（l1a/l2aは8字以内、l1b/l2bは6字以内、words系は各9字以内、taglineは16字以内）。
+原文の言い回しを活かし、「M&A」「SEO」のような英字略語は途中で切らず、各項目は短く（l1a/l2aは8字以内、l1b/l2bは6字以内、words系は各9字以内、taglineは16字以内）。
 キー: l1a,l1b(問いかけ),l2a,l2b(強いメッセージ),words(3件),words2(3件),points(3件),tagline,sub,cta,url
 サイト名:{site} URL:{url}\nタイトル:{title}\n説明:{desc}\n見出し:{heads}"""
     r = anthropic.Anthropic(api_key=key).messages.create(model="claude-sonnet-4-6", max_tokens=1000, messages=[{"role": "user", "content": prompt}])
     copy = json.loads(re.search(r"\{[\s\S]*\}", r.content[0].text).group(0))
 if not copy:                                                        # 仮コピー（要手直し）
-    def cut(s, n):                                                  # 文の途中で切らず、読点・空白の位置で区切る
-        s = s.strip()
-        if len(s) <= n: return s
-        i = max(s.rfind(c, 0, n) for c in "、。 　,")
-        return s[:i].rstrip("、。 　,") if i >= max(3, n // 2) else s[:n]
     hs = [cut(h, 9) for h in heads] + [cut(desc, 9)] * 8
     copy = {"l1a": "それ、", "l1b": cut(heads[0] if heads else site, 6), "l2a": cut(site, 8) + "なら、", "l2b": cut(heads[1] if len(heads) > 1 else "変わる。", 6),
             "words": hs[2:5], "words2": hs[5:8], "points": [cut(h, 18) for h in (heads + [desc] * 8)[8:11]],
             "tagline": cut(desc or title, 16), "sub": cut((desc or title)[16:], 30), "cta": "詳しくは、こちら。", "url": urllib.parse.urlparse(url).netloc}
+copy = sanitize(copy)
 (OUT / "brand.json").write_text(json.dumps({"name": site, "slug": slug, "url": url, "colors": colors,
     "logo": {"full": "full.png"} if logo_img else {}, "logo_source": logo_url, "copy": copy,
     "needs_review": not key}, ensure_ascii=False, indent=2), encoding="utf8")
