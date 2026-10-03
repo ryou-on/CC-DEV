@@ -15,7 +15,7 @@ with sync_playwright() as p:
     browser = p.chromium.launch(executable_path=os.environ.get("CHROMIUM_PATH"))  # 環境変数で Chromium を指定可
     page = browser.new_page(viewport={"width": W, "height": H})
     page.goto((HERE / "index.html").resolve().as_uri())
-    page.wait_for_timeout(500)                        # フォント読み込み待ち
+    page.evaluate("window.READY")                     # ロゴ画像・フォント読み込み待ち
     total = int(page.evaluate("window.DURATION") * FPS)
     for i in range(total):
         # 指定時刻のフレームを描画させて canvas だけを PNG で取得

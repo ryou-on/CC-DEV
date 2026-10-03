@@ -26,8 +26,19 @@ const COPY = {
   words: ['つくる', 'つなぐ', 'ひろがる'],
   tagline: '動画を、もっと自由に。',
   cta: '今すぐ、はじめよう。',
+  url: 'sylavids.com',
 };
-const COLOR = { bg: '#0b0b0d', fg: '#f5f3ee', accent: '#ff4d00', sub: '#8a8a90' };
+const COLOR = { bg: '#0b1512', fg: '#f4f7f5', accent: '#2b917b', sub: '#7d8f89' };   // accent = ロゴのグリーン
+const LOGO = {
+  icon: Object.assign(new Image(), { src: 'logo-icon.png' }),
+  word: Object.assign(new Image(), { src: 'logo-wordmark.png' }),
+};
+// 画像とフォントの読み込み完了を待つ（書き出し・プレビュー共通）
+window.READY = Promise.all([
+  new Promise(r => { LOGO.icon.onload = r; LOGO.icon.onerror = r; }),
+  new Promise(r => { LOGO.word.onload = r; LOGO.word.onerror = r; }),
+  document.fonts ? document.fonts.ready : Promise.resolve(),
+]);
 const FONT = '"Noto Sans JP","Hiragino Sans","Yu Gothic","IPAGothic","Meiryo",sans-serif';
 const BPM = 120;
 const BEAT = 60 / BPM;
@@ -94,7 +105,7 @@ function scene2(b) {
   ctx.fillStyle = COLOR.accent;
   ctx.fillRect(0, 0, W * wipe, H);
   const out = prog(b, 7.5, 0.5);
-  maskedText(COPY.l2a, W / 2, 470, 150, prog(b, 4.6, 1), COLOR.bg, 'center', out);
+  maskedText(COPY.l2a, W / 2, 470, 150, prog(b, 4.6, 1), COLOR.fg, 'center', out);
   // 「待たない。」は一文字ずつ拍に合わせて出る
   setFont(260);
   ctx.textAlign = 'left';
@@ -136,59 +147,49 @@ function scene3(b) {
   });
 }
 
-// S4: 14〜26拍 ロゴ（文字）リビール＋タグライン
+// S4: 14〜26拍 白に反転 → アイコンがポップ → ワードマークがワイプ表示 → タグライン
 function scene4(b) {
   const bgP = outExpo(prog(b, 14, 0.8));
-  fillBg(COLOR.fg);
-  // 画面中央から黒い円が広がって反転
+  fillBg(COLOR.bg);
   ctx.save();
-  ctx.fillStyle = COLOR.bg;
+  ctx.fillStyle = COLOR.fg;
   ctx.beginPath();
   ctx.arc(W / 2, H / 2, Math.hypot(W, H) * 0.6 * bgP, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 
-  // ロゴ文字：1文字ずつバウンドしながら登場
-  const chars = [...COPY.brand];
-  setFont(300, 900);
-  ctx.textAlign = 'left';
-  const widths = chars.map(c => ctx.measureText(c).width);
-  const total = widths.reduce((a, c) => a + c, 0);
-  let x = W / 2 - total / 2;
-  const baseY = 560;
-  chars.forEach((ch, i) => {
-    const p = prog(b, 14.8 + i * 0.25, 0.8);
-    const lineH = 300 * 1.15;
-    // 登場後のゆるい呼吸（拍に同期した微小スケール）
-    const pulse = 1 + 0.015 * Math.sin((b - 16) * Math.PI) * clamp(b - 16, 0, 1);
-    ctx.save();
-    ctx.beginPath(); ctx.rect(0, baseY - 300, W, lineH); ctx.clip();
-    ctx.translate(x + widths[i] / 2, baseY);
-    ctx.scale(pulse, pulse);
-    ctx.fillStyle = i === 0 ? COLOR.accent : COLOR.fg;
-    ctx.textAlign = 'center';
-    ctx.fillText(ch, 0, (1 - outBack(p)) * lineH);
-    ctx.restore();
-    x += widths[i];
-  });
+  // アイコンがバウンドしながら登場 → 縮小フェードしてワードマークへ
+  const pop = outBack(prog(b, 14.8, 1.2));
+  const handoff = inOutCubic(prog(b, 17, 1.5));
+  const iconSize = 460 * pop * (1 - 0.25 * handoff);
+  ctx.globalAlpha = 1 - handoff;
+  ctx.drawImage(LOGO.icon, W / 2 - iconSize / 2, 470 - iconSize / 2, iconSize, iconSize);
+  ctx.globalAlpha = 1;
 
-  // アクセントライン
-  accentBar(W / 2 - total / 2, 610, total, 8, prog(b, 17.5, 1.5), COLOR.accent);
+  // ワードマークを中央から左右にワイプ
+  const ww = 1100, wh = ww * LOGO.word.height / LOGO.word.width;
+  const wipe = outExpo(prog(b, 17.2, 1.4));
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(W / 2 - (ww / 2) * wipe, 0, ww * wipe, H);
+  ctx.clip();
+  ctx.drawImage(LOGO.word, W / 2 - ww / 2, 470 - wh / 2, ww, wh);
+  ctx.restore();
+
   // タグライン
-  maskedText(COPY.tagline, W / 2, 740, 78, prog(b, 18.5, 1.2), COLOR.fg, 'center');
+  maskedText(COPY.tagline, W / 2, 760, 78, prog(b, 19.5, 1.2), COLOR.bg, 'center');
 }
 
-// S5: 26〜30拍 CTA → フェードアウト
+// S5: 26〜30拍 ロゴ＋CTA＋URL（白背景のまま）
 function scene5(b) {
-  // 背景はS4継続（黒）。ロゴを上に縮小して CTA を出す
-  fillBg(COLOR.bg);
+  fillBg(COLOR.fg);
+  const ww = 1100, wh = ww * LOGO.word.height / LOGO.word.width;
   const move = inOutCubic(prog(b, 26, 1));
-  setFont(300 - 140 * move, 900);
-  ctx.textAlign = 'center';
-  ctx.fillStyle = COLOR.fg;
-  ctx.fillText(COPY.brand, W / 2, 560 - 60 * move);
-  maskedText(COPY.cta, W / 2, 700, 100, prog(b, 27, 1.2), COLOR.accent, 'center');
-  accentBar(W / 2 - 160, 760, 320, 8, prog(b, 28, 1), COLOR.fg);
+  const sc = 1 - 0.35 * move;
+  ctx.drawImage(LOGO.word, W / 2 - ww * sc / 2, 470 - 80 * move - wh * sc / 2, ww * sc, wh * sc);
+  maskedText(COPY.cta, W / 2, 640, 96, prog(b, 27, 1.2), COLOR.bg, 'center');
+  maskedText(COPY.url, W / 2, 780, 70, prog(b, 27.6, 1.2), COLOR.accent, 'center');
+  accentBar(W / 2 - 160, 830, 320, 8, prog(b, 28, 1), COLOR.accent);
 }
 
 /* ---------- メイン：時刻 t のフレームを描画 ---------- */
@@ -203,17 +204,19 @@ window.seek = function (t) {
   else scene5(b);
   // 最終0.5秒でフェードアウト
   const fade = prog(t, 14.5, 0.5);
-  if (fade > 0) { ctx.fillStyle = `rgba(11,11,13,${fade})`; ctx.fillRect(0, 0, W, H); }
+  if (fade > 0) { ctx.fillStyle = `rgba(244,247,245,${fade})`; ctx.fillRect(0, 0, W, H); }
 };
 
 // ブラウザで開いた場合は実時間で再生プレビュー（書き出しには影響しない）
-if (!navigator.webdriver) {
-  const t0 = performance.now();
-  const loop = () => { window.seek(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); };
-  loop();
-} else {
-  window.seek(0);
-}
+window.READY.then(() => {
+  if (!navigator.webdriver) {
+    const t0 = performance.now();
+    const loop = () => { window.seek(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); };
+    loop();
+  } else {
+    window.seek(0);
+  }
+});
 </script>
 </body>
 </html>
