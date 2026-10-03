@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sylavids 15秒CM</title>
+<style>
+  html, body { margin: 0; background: #0b0b0d; height: 100%; }
+  body { display: flex; align-items: center; justify-content: center; }
+  canvas { max-width: 100vw; max-height: 100vh; aspect-ratio: 16 / 9; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script>
+/* ============================================================
+   Sylavids 15秒CM — 文字中心モーショングラフィック
+   全ての描画は seek(t) の純粋関数（Date.now / rAF 依存なし）
+   BPM120・4拍子 → 1拍 = 0.5秒、15秒 = 30拍
+   ※ コピーは COPY を書き換えるだけで差し替え可能
+   ============================================================ */
+const COPY = {
+  brand: 'Sylavids',
+  l1a: '動画って、', l1b: '見るだけ？',
+  l2a: 'もう、',     l2b: '待たない。',
+  words: ['つくる', 'つなぐ', 'ひろがる'],
+  tagline: '動画を、もっと自由に。',
+  cta: '今すぐ、はじめよう。',
+};
+const COLOR = { bg: '#0b0b0d', fg: '#f5f3ee', accent: '#ff4d00', sub: '#8a8a90' };
+const FONT = '"Noto Sans JP","Hiragino Sans","Yu Gothic","IPAGothic","Meiryo",sans-serif';
+const BPM = 120;
+const BEAT = 60 / BPM;
+
+window.DURATION = 15;
+const W = 1920, H = 1080;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+
+/* ---------- イージング ---------- */
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const prog = (b, s, d) => clamp((b - s) / d);            // 拍 b の区間 [s, s+d] の進行度
+const outCubic = x => 1 - Math.pow(1 - x, 3);
+const outExpo = x => (x === 1 ? 1 : 1 - Math.pow(2, -10 * x));
+const inOutCubic = x => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+const outBack = x => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
+const inCubic = x => x * x * x;
+
+/* ---------- 描画ヘルパー ---------- */
+function setFont(size, weight = 900) {
+  ctx.font = `${weight} ${size}px ${FONT}`;
+  ctx.textBaseline = 'alphabetic';
+}
+
+// マスク付きせり上がり文字（行の枠内でテキストが下から出る）
+function maskedText(text, cx, baseY, size, p, color, align = 'center', outP = 0) {
+  setFont(size);
+  ctx.textAlign = align;
+  const lineH = size * 1.15;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, baseY - size * 1.0, W, lineH);
+  ctx.clip();
+  const inY = (1 - outExpo(p)) * lineH;
+  const outY = -inCubic(outP) * lineH;
+  ctx.fillStyle = color;
+  ctx.fillText(text, cx, baseY + inY + outY);
+  ctx.restore();
+}
+
+function fillBg(color) { ctx.fillStyle = color; ctx.fillRect(0, 0, W, H); }
+
+// 拍に同期したアクセントの四角（背景のリズム装飾）
+function accentBar(x, y, w, h, p, color) {
+  ctx.fillStyle = color;
+  ctx.fillRect(x, y, w * outExpo(p), h);
+}
+
+/* ---------- シーン ---------- */
+// S1: 0〜4拍「動画って、見るだけ？」
+function scene1(b) {
+  fillBg(COLOR.bg);
+  const out = prog(b, 3.5, 0.5);
+  maskedText(COPY.l1a, W / 2, 470, 150, prog(b, 0, 1), COLOR.fg, 'center', out);
+  maskedText(COPY.l1b, W / 2, 680, 230, prog(b, 1, 1.2), COLOR.accent, 'center', out);
+  // 下線がのびる
+  accentBar(W / 2 - 360, 740, 720, 10, prog(b, 2, 1), COLOR.fg);
+}
+
+// S2: 4〜8拍「もう、待たない。」アクセント背景に反転
+function scene2(b) {
+  const wipe = outExpo(prog(b, 4, 0.7));           // 背景ワイプ
+  fillBg(COLOR.bg);
+  ctx.fillStyle = COLOR.accent;
+  ctx.fillRect(0, 0, W * wipe, H);
+  const out = prog(b, 7.5, 0.5);
+  maskedText(COPY.l2a, W / 2, 470, 150, prog(b, 4.6, 1), COLOR.bg, 'center', out);
+  // 「待たない。」は一文字ずつ拍に合わせて出る
+  setFont(260);
+  ctx.textAlign = 'left';
+  const chars = [...COPY.l2b];
+  const widths = chars.map(c => ctx.measureText(c).width);
+  const total = widths.reduce((a, c) => a + c, 0);
+  let x = W / 2 - total / 2;
+  chars.forEach((ch, i) => {
+    const p = prog(b, 5.2 + i * 0.35, 0.6);
+    const lineH = 260 * 1.15;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, 720 - 260, W, lineH); ctx.clip();
+    ctx.fillStyle = COLOR.fg;
+    ctx.fillText(ch, x, 720 + (1 - outBack(p)) * lineH + -inCubic(out) * lineH);
+    ctx.restore();
+    x += widths[i];
+  });
+}
+
+// S3: 8〜14拍 つくる / つなぐ / ひろがる を2拍ごとに積む
+function scene3(b) {
+  fillBg(COLOR.bg);
+  const out = prog(b, 13.5, 0.5);
+  const sizes = 190, gap = 240;
+  COPY.words.forEach((w, i) => {
+    const start = 8 + i * 2;
+    const p = prog(b, start, 1);
+    const y = 330 + i * gap;
+    // 左のアクセントバー
+    accentBar(240, y - 150, 24, 170, prog(b, start, 0.8), COLOR.accent);
+    maskedText(w, 320, y, sizes, p, i === 2 ? COLOR.accent : COLOR.fg, 'left', out);
+    // 右側に連番
+    setFont(60, 700);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = COLOR.sub;
+    ctx.globalAlpha = outCubic(p) * (1 - out);
+    ctx.fillText('0' + (i + 1), W - 240, y - 20);
+    ctx.globalAlpha = 1;
+  });
+}
+
+// S4: 14〜26拍 ロゴ（文字）リビール＋タグライン
+function scene4(b) {
+  const bgP = outExpo(prog(b, 14, 0.8));
+  fillBg(COLOR.fg);
+  // 画面中央から黒い円が広がって反転
+  ctx.save();
+  ctx.fillStyle = COLOR.bg;
+  ctx.beginPath();
+  ctx.arc(W / 2, H / 2, Math.hypot(W, H) * 0.6 * bgP, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  // ロゴ文字：1文字ずつバウンドしながら登場
+  const chars = [...COPY.brand];
+  setFont(300, 900);
+  ctx.textAlign = 'left';
+  const widths = chars.map(c => ctx.measureText(c).width);
+  const total = widths.reduce((a, c) => a + c, 0);
+  let x = W / 2 - total / 2;
+  const baseY = 560;
+  chars.forEach((ch, i) => {
+    const p = prog(b, 14.8 + i * 0.25, 0.8);
+    const lineH = 300 * 1.15;
+    // 登場後のゆるい呼吸（拍に同期した微小スケール）
+    const pulse = 1 + 0.015 * Math.sin((b - 16) * Math.PI) * clamp(b - 16, 0, 1);
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, baseY - 300, W, lineH); ctx.clip();
+    ctx.translate(x + widths[i] / 2, baseY);
+    ctx.scale(pulse, pulse);
+    ctx.fillStyle = i === 0 ? COLOR.accent : COLOR.fg;
+    ctx.textAlign = 'center';
+    ctx.fillText(ch, 0, (1 - outBack(p)) * lineH);
+    ctx.restore();
+    x += widths[i];
+  });
+
+  // アクセントライン
+  accentBar(W / 2 - total / 2, 610, total, 8, prog(b, 17.5, 1.5), COLOR.accent);
+  // タグライン
+  maskedText(COPY.tagline, W / 2, 740, 78, prog(b, 18.5, 1.2), COLOR.fg, 'center');
+}
+
+// S5: 26〜30拍 CTA → フェードアウト
+function scene5(b) {
+  // 背景はS4継続（黒）。ロゴを上に縮小して CTA を出す
+  fillBg(COLOR.bg);
+  const move = inOutCubic(prog(b, 26, 1));
+  setFont(300 - 140 * move, 900);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = COLOR.fg;
+  ctx.fillText(COPY.brand, W / 2, 560 - 60 * move);
+  maskedText(COPY.cta, W / 2, 700, 100, prog(b, 27, 1.2), COLOR.accent, 'center');
+  accentBar(W / 2 - 160, 760, 320, 8, prog(b, 28, 1), COLOR.fg);
+}
+
+/* ---------- メイン：時刻 t のフレームを描画 ---------- */
+window.seek = function (t) {
+  const b = t / BEAT;                       // 拍番号
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1;
+  if (b < 4) scene1(b);
+  else if (b < 8) scene2(b);
+  else if (b < 14) scene3(b);
+  else if (b < 26) scene4(b);
+  else scene5(b);
+  // 最終0.5秒でフェードアウト
+  const fade = prog(t, 14.5, 0.5);
+  if (fade > 0) { ctx.fillStyle = `rgba(11,11,13,${fade})`; ctx.fillRect(0, 0, W, H); }
+};
+
+// ブラウザで開いた場合は実時間で再生プレビュー（書き出しには影響しない）
+if (!navigator.webdriver) {
+  const t0 = performance.now();
+  const loop = () => { window.seek(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); };
+  loop();
+} else {
+  window.seek(0);
+}
+</script>
+</body>
+</html>
