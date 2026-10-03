@@ -1,4 +1,4 @@
-/* X Fullscreen Reader v0.4.0
+/* X Fullscreen Reader v0.4.1
  * 1記事1画面の全画面リーダー。Alt+R または右下の 📖 ボタンで起動。
  * ←→ 送り/戻り ／ fn+←→ リプライ ／ fn+↑↓ ブックマーク選択 ／ ↑↓ 長文スクロール ／ J K 移動 ／ X 選択 ／ Enter 決定 ／ Esc 閉じる
  */
@@ -7,7 +7,7 @@
   if (window.__xfrLoaded) return;
   window.__xfrLoaded = true;
 
-  const VERSION = '0.4.0';
+  const VERSION = '0.4.1';
   const DEFAULT_ENTRY = { name: 'ブックマーク（フォルダなし）', isDefault: true };
 
   // ---- 状態 ----
@@ -184,7 +184,7 @@
         .hint{margin-top:16px;color:var(--sub);font-size:20px}
       </style>
       <div class="wrap">
-        <header><b>📖 X Reader</b><span id="pos"></span><span id="bmstate"></span></header>
+        <header><b>📖 X Reader</b><span id="pos"></span><span id="bmstate"></span><span id="key" style="opacity:.6;font-size:16px"></span></header>
         <main id="main"></main>
         <footer>
           <span><kbd>←</kbd>戻る <kbd>→</kbd>次へ</span>
@@ -206,6 +206,7 @@
     el.main = root.getElementById('main');
     el.pos = root.getElementById('pos');
     el.bmstate = root.getElementById('bmstate');
+    el.key = root.getElementById('key');
     el.toast = root.getElementById('toast');
     el.picker = root.getElementById('picker');
     el.rows = root.getElementById('rows');
@@ -562,6 +563,17 @@
   // ---- キー操作 ----
   const isTyping = (t) => t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName));
 
+  // fn+矢印（Mac）は Home/End/PageUp/PageDown として届く。環境差を吸収するため key / code / keyCode を全部見る。
+  // 代替として Shift+矢印でも同じ動作にする。
+  function normKey(e) {
+    const k = e.key, c = e.code, n = e.keyCode;
+    if (k === 'PageUp' || c === 'PageUp' || n === 33 || (e.shiftKey && k === 'ArrowUp')) return 'PageUp';
+    if (k === 'PageDown' || c === 'PageDown' || n === 34 || (e.shiftKey && k === 'ArrowDown')) return 'PageDown';
+    if (k === 'End' || c === 'End' || n === 35 || (e.shiftKey && k === 'ArrowRight')) return 'End';
+    if (k === 'Home' || c === 'Home' || n === 36 || (e.shiftKey && k === 'ArrowLeft')) return 'Home';
+    return k;
+  }
+
   window.addEventListener('keydown', (e) => {
     if (!e.isTrusted) return; // 自動操作で発行したキーイベントは無視
     if (e.altKey && e.code === 'KeyR') {
@@ -572,8 +584,12 @@
     if (!state.open) return;
     // リーダー中はXのショートカットに渡さない
     e.preventDefault(); e.stopPropagation();
+    const k = normKey(e);
+    // 押したキーをヘッダーとログに出す（動作しないときの切り分け用）
+    const mods = [e.metaKey && '⌘', e.ctrlKey && 'ctrl', e.altKey && 'alt', e.shiftKey && 'shift'].filter(Boolean).join('+');
+    el.key.textContent = `key: ${mods ? mods + '+' : ''}${e.key} (${e.code}/${e.keyCode}) → ${k}`;
+    log('key', e.key, e.code, e.keyCode, mods, '->', k, state.busy ? '(busy)' : '');
     if (state.busy) return;
-    const k = e.key;
     const p = state.picker;
 
     if (p) {
@@ -614,7 +630,7 @@
     };
     box.append(
       mk('📖 全画面で読む', 'Alt+R でも起動', () => (state.open ? closeReader() : openReader())),
-      mk(`v${VERSION}`, 'リリースノート', () => alert(`## v0.4.0 (2026-10-03)\n- リプライ移動を fn+←→、ブックマーク選択を fn+↑↓ に変更\n- ↑↓ で長文をスクロール\n\n## v0.3.0 (2026-10-03)\n- リプライの送り/戻りを fn+↓ / fn+↑（PageDown / PageUp）に変更\n\n## v0.2.2 (2026-10-03)\n- 既存のブックマークフォルダが一覧に出ない問題を修正\n\n## v0.2.1 (2026-10-03)\n- リプライ表示・ブックマークフォルダ取得が動かない問題を修正\n\n## v0.2.0 (2026-10-03)\n- ⌘+←→でリプライの送り/戻りを追加\n\n## v0.1.0 (2026-10-03)\n- 初回リリース\n- 1記事1画面の全画面リーダー\n- ←→で送り/戻り、↑↓でブックマーク選択（J/K移動・X選択・Enter決定）`)),
+      mk(`v${VERSION}`, 'リリースノート', () => alert(`## v0.4.1 (2026-10-03)\n- fn+矢印が効かない環境向けにキー判定を強化、Shift+矢印でも同じ操作が可能に\n- 押したキーをヘッダーに表示\n\n## v0.4.0 (2026-10-03)\n- リプライ移動を fn+←→、ブックマーク選択を fn+↑↓ に変更\n- ↑↓ で長文をスクロール\n\n## v0.3.0 (2026-10-03)\n- リプライの送り/戻りを fn+↓ / fn+↑（PageDown / PageUp）に変更\n\n## v0.2.2 (2026-10-03)\n- 既存のブックマークフォルダが一覧に出ない問題を修正\n\n## v0.2.1 (2026-10-03)\n- リプライ表示・ブックマークフォルダ取得が動かない問題を修正\n\n## v0.2.0 (2026-10-03)\n- ⌘+←→でリプライの送り/戻りを追加\n\n## v0.1.0 (2026-10-03)\n- 初回リリース\n- 1記事1画面の全画面リーダー\n- ←→で送り/戻り、↑↓でブックマーク選択（J/K移動・X選択・Enter決定）`)),
       mk('🐞', 'デバッグログをコピー', async () => {
         try { await navigator.clipboard.writeText(logs.join('\n') || '(ログなし)'); } catch (e) {}
       })
