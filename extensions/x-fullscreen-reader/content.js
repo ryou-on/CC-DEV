@@ -1,4 +1,4 @@
-/* X Fullscreen Reader v0.2.1
+/* X Fullscreen Reader v0.2.2
  * 1記事1画面の全画面リーダー。Alt+R または右下の 📖 ボタンで起動。
  * ←→ 送り/戻り ／ ↑↓ ブックマーク選択 ／ J K 移動 ／ X 選択 ／ Enter 決定 ／ Esc 閉じる
  */
@@ -7,7 +7,7 @@
   if (window.__xfrLoaded) return;
   window.__xfrLoaded = true;
 
-  const VERSION = '0.2.1';
+  const VERSION = '0.2.2';
   const DEFAULT_ENTRY = { name: 'ブックマーク（フォルダなし）', isDefault: true };
 
   // ---- 状態 ----
@@ -433,22 +433,30 @@
     return dialog;
   }
 
-  const SKIP_LABEL = /^(完了|キャンセル|閉じる|戻る|新しいフォルダ|フォルダを作成|フォルダを新規作成|フォルダに追加|ブックマーク|Done|Cancel|Close|Back|New folder|Create|Add to Folder|Bookmark)/i;
-  function folderCandidates(dialog) {
-    let els = [...dialog.querySelectorAll('[role="button"], [role="menuitem"], [role="radio"], [role="checkbox"], [role="option"], [role="listitem"]')];
-    if (!els.length) els = [...dialog.querySelectorAll('[tabindex="0"]')];
-    // 入れ子になっている要素は外側（行）だけ残す。ただし巨大なコンテナは除外
-    els = els.filter((e) => e !== dialog && textOf(e).length < 200 && !els.some((o) => o !== e && o.contains(e)));
+  // フォルダ名として扱わない行（見出し・ボタン・件数表示）
+  const SKIP_LABEL = /^(完了|キャンセル|閉じる|戻る|新しいブックマークフォルダ|新しいフォルダ|フォルダを(新規)?作成|フォルダに追加|ブックマークフォルダ|ブックマークに追加|Done|Cancel|Close|Back|New folder|Create|Add to Folders?|Bookmark Folders?|\d+\s*(件|posts?|items?)\b)/i;
+
+  // フォルダ行は role 属性が付かない場合があるため、ダイアログの表示テキスト行から拾う
+  function folderNames(dialog) {
     const seen = new Set();
-    return els.map((e) => ({ name: firstLine(e), el: e }))
-      .filter((c) => c.name && c.name.length < 60 && !SKIP_LABEL.test(c.name) && !seen.has(c.name) && seen.add(c.name));
+    return (dialog.innerText || '').split('\n').map((s) => s.trim())
+      .filter((s) => s && s.length < 60 && !SKIP_LABEL.test(s) && !seen.has(s) && seen.add(s));
+  }
+
+  // 表示テキストが name と一致する最も内側の要素を探し、その行（クリック可能な祖先）を返す
+  function findFolderRow(dialog, name) {
+    const hits = [...dialog.querySelectorAll('*')].filter((e) => textOf(e) === name || firstLine(e) === name);
+    const inner = hits.find((e) => !hits.some((o) => o !== e && e.contains(o)));
+    if (!inner) return null;
+    const row = inner.closest('[role="button"], [role="menuitem"], [role="checkbox"], [role="radio"], [role="option"], button, label, [tabindex="0"]');
+    return row && row !== dialog ? row : inner;
   }
 
   async function fetchFolders(article) {
     const dialog = await openFolderDialog(article);
     if (!dialog) return null;
-    const names = folderCandidates(dialog).map((c) => c.name);
-    if (!names.length) log('no folder rows; dialog outline:', [...dialog.querySelectorAll('[role]')].map((e) => e.getAttribute('role') + ':' + firstLine(e).slice(0, 20)).join(' | '));
+    log('dialog lines:', (dialog.innerText || '').split('\n').map((s) => s.trim()).filter(Boolean).join(' | '));
+    const names = folderNames(dialog);
     await dismissAll();
     log('folders', names.join(','));
     return names;
@@ -457,9 +465,10 @@
   async function addToFolder(article, name) {
     const dialog = await openFolderDialog(article);
     if (!dialog) return false;
-    const target = folderCandidates(dialog).find((c) => c.name === name);
+    const target = findFolderRow(dialog, name);
     if (!target) { log('folder row not found', name); await dismissAll(); return false; }
-    target.el.click();
+    log('click folder row', name, target.tagName, target.getAttribute('role') || '');
+    target.click();
     await sleep(500);
     const done = currentDialog(RE_FOLDER);
     const doneBtn = done && findByText(done, '[role="button"], button', /^(完了|Done)$/i);
@@ -601,7 +610,7 @@
     };
     box.append(
       mk('📖 全画面で読む', 'Alt+R でも起動', () => (state.open ? closeReader() : openReader())),
-      mk(`v${VERSION}`, 'リリースノート', () => alert(`## v0.2.1 (2026-10-03)\n- リプライ表示・ブックマークフォルダ取得が動かない問題を修正\n\n## v0.2.0 (2026-10-03)\n- ⌘+←→でリプライの送り/戻りを追加\n\n## v0.1.0 (2026-10-03)\n- 初回リリース\n- 1記事1画面の全画面リーダー\n- ←→で送り/戻り、↑↓でブックマーク選択（J/K移動・X選択・Enter決定）`)),
+      mk(`v${VERSION}`, 'リリースノート', () => alert(`## v0.2.2 (2026-10-03)\n- 既存のブックマークフォルダが一覧に出ない問題を修正\n\n## v0.2.1 (2026-10-03)\n- リプライ表示・ブックマークフォルダ取得が動かない問題を修正\n\n## v0.2.0 (2026-10-03)\n- ⌘+←→でリプライの送り/戻りを追加\n\n## v0.1.0 (2026-10-03)\n- 初回リリース\n- 1記事1画面の全画面リーダー\n- ←→で送り/戻り、↑↓でブックマーク選択（J/K移動・X選択・Enter決定）`)),
       mk('🐞', 'デバッグログをコピー', async () => {
         try { await navigator.clipboard.writeText(logs.join('\n') || '(ログなし)'); } catch (e) {}
       })
