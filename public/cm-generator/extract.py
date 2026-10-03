@@ -76,10 +76,15 @@ if key:
     r = anthropic.Anthropic(api_key=key).messages.create(model="claude-sonnet-4-6", max_tokens=1000, messages=[{"role": "user", "content": prompt}])
     copy = json.loads(re.search(r"\{[\s\S]*\}", r.content[0].text).group(0))
 if not copy:                                                        # 仮コピー（要手直し）
-    hs = heads + [desc[:14]] * 6
-    copy = {"l1a": "それ、", "l1b": hs[0][:8], "l2a": site + "なら、", "l2b": (hs[1] or "変わる。")[:6],
-            "words": hs[2:5], "words2": hs[5:8], "points": hs[8:11],
-            "tagline": (desc or title)[:16], "sub": (desc or title)[16:46], "cta": "詳しくは、こちら。", "url": urllib.parse.urlparse(url).netloc}
+    def cut(s, n):                                                  # 文の途中で切らず、読点・空白の位置で区切る
+        s = s.strip()
+        if len(s) <= n: return s
+        i = max(s.rfind(c, 0, n) for c in "、。 　,")
+        return s[:i].rstrip("、。 　,") if i >= max(3, n // 2) else s[:n]
+    hs = [cut(h, 9) for h in heads] + [cut(desc, 9)] * 8
+    copy = {"l1a": "それ、", "l1b": cut(heads[0] if heads else site, 6), "l2a": cut(site, 8) + "なら、", "l2b": cut(heads[1] if len(heads) > 1 else "変わる。", 6),
+            "words": hs[2:5], "words2": hs[5:8], "points": [cut(h, 18) for h in (heads + [desc] * 8)[8:11]],
+            "tagline": cut(desc or title, 16), "sub": cut((desc or title)[16:], 30), "cta": "詳しくは、こちら。", "url": urllib.parse.urlparse(url).netloc}
 (OUT / "brand.json").write_text(json.dumps({"name": site, "slug": slug, "url": url, "colors": colors,
     "logo": {"full": "full.png"} if logo_img else {}, "logo_source": logo_url, "copy": copy,
     "needs_review": not key}, ensure_ascii=False, indent=2), encoding="utf8")
