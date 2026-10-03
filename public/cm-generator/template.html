@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8"><title>CM template</title>
+<style>html,body{margin:0;background:#000}canvas{display:block}</style></head>
+<body><canvas id="c"></canvas>
+<script>
+/* ============================================================
+   汎用CMテンプレート。window.BRAND(brand.json 展開済み) と window.CFG({duration:15|30, orient:'h'|'v'}) を
+   render.py が注入する。全描画は seek(t) の純粋関数。BPM120 → 1拍=0.5秒。
+   ============================================================ */
+const B = window.BRAND, C = window.CFG;
+const V = C.orient === 'v';
+const W = V ? 1080 : 1920, H = V ? 1920 : 1080;
+const LONG = C.duration >= 30;
+const BEAT = 0.5;
+window.DURATION = C.duration;
+const cv = document.getElementById('c'); cv.width = W; cv.height = H;
+const ctx = cv.getContext('2d');
+const COLOR = B.colors, COPY = B.copy;
+const FONT = '"Noto Sans JP","Hiragino Sans","Yu Gothic","IPAGothic","Meiryo",sans-serif';
+const U = V ? 0.8 : 1;                              // 縦のときの文字サイズ係数
+
+/* 画像（data URI）の読み込み */
+const IMG = {};
+['full', 'icon', 'text'].forEach(k => { if (B.logo && B.logo[k]) IMG[k] = Object.assign(new Image(), { src: B.logo[k] }); });
+window.READY = Promise.all([
+  ...Object.values(IMG).map(i => new Promise(r => { i.onload = r; i.onerror = r; })),
+  document.fonts ? document.fonts.ready : Promise.resolve(),
+]);
+const LOCKUP = !!(IMG.icon && IMG.text);           // アイコン＋文字が分かれているブランドか
+
+/* シーン開始拍（15秒=30拍 / 30秒=60拍） */
+const L = LONG ? { s2: 6, s3: 12, s4: 28, s5: 50 } : { s2: 4, s3: 8, s4: 14, s5: 26 };
+const PAGES = [COPY.words, LONG ? COPY.words2 : null].filter(Boolean);
+const S3LEN = L.s4 - L.s3;
+
+/* イージング */
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const prog = (b, s, d) => clamp((b - s) / d);
+const outCubic = x => 1 - Math.pow(1 - x, 3);
+const outExpo = x => (x === 1 ? 1 : 1 - Math.pow(2, -10 * x));
+const inOutCubic = x => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+const outBack = x => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
+const inCubic = x => x * x * x;
+
+/* 描画ヘルパー */
+const Y = (h, v) => H * (V ? v : h);                 // 縦横で別の高さ比率を使う
+function setFont(size, weight = 900) { ctx.font = `${weight} ${size}px ${FONT}`; ctx.textBaseline = 'alphabetic'; }
+function fit(text, size, weight = 900, maxW = W * 0.88) {   // 幅に収まる文字サイズ
+  setFont(100, weight);
+  return Math.min(size * U, maxW / ctx.measureText(text).width * 100);
+}
+function maskedText(text, x, baseY, size, p, color, align = 'center', outP = 0, weight = 900) {
+  const s = fit(text, size, weight, align === 'left' ? W * 0.80 : W * 0.88);
+  setFont(s, weight); ctx.textAlign = align;
+  const lineH = s * 1.15;
+  ctx.save(); ctx.beginPath(); ctx.rect(0, baseY - s, W, lineH); ctx.clip();
+  ctx.fillStyle = color;
+  ctx.fillText(text, x, baseY + (1 - outExpo(p)) * lineH - inCubic(outP) * lineH);
+  ctx.restore();
+}
+function fillBg(c) { ctx.fillStyle = c; ctx.fillRect(0, 0, W, H); }
+function bar(x, y, w, h, p, c) { ctx.fillStyle = c; ctx.fillRect(x, y, w * outExpo(p), h); }
+
+/* ロゴ：アイコン＋文字（分離あり）または単体ロゴ。cy=中心Y, scale, pop=登場, slide=配置移動, wipe=文字ワイプ */
+function drawLogo(cy, scale, pop, slide, wipe) {
+  if (!LOCKUP) {                                      // 単体ロゴ：ポップ＋中央から左右にワイプ
+    const im = IMG.full; if (!im) return;
+    const lw = (V ? W * 0.78 : W * 0.5) * scale, lh = lw * im.height / im.width;
+    const p = outBack(clamp(pop));
+    ctx.save();
+    ctx.beginPath(); ctx.rect(W / 2 - lw / 2 * Math.max(wipe, 0.0001), 0, lw * Math.max(wipe, 0.0001), H); ctx.clip();
+    ctx.translate(W / 2, cy); ctx.scale(0.8 + 0.2 * p, 0.8 + 0.2 * p);
+    ctx.globalAlpha = clamp(pop * 2); ctx.drawImage(im, -lw / 2, -lh / 2, lw, lh); ctx.restore(); ctx.globalAlpha = 1;
+    return;
+  }
+  const ar = IMG.text.width / IMG.text.height;
+  if (!V) {                                           // 横：アイコン左・文字右
+    const ih = 334 * scale, th = ih, tw = th * ar, gap = 56 * scale;
+    const left = W / 2 - (ih + gap + tw) / 2;
+    const iconCx = W / 2 + (left + ih / 2 - W / 2) * slide, s = ih * pop;
+    ctx.drawImage(IMG.icon, iconCx - s / 2, cy - s / 2, s, s);
+    if (wipe > 0) {
+      ctx.save(); ctx.beginPath(); ctx.rect(left + ih + gap, 0, tw * wipe, H); ctx.clip();
+      ctx.drawImage(IMG.text, left + ih + gap, cy - th / 2, tw, th); ctx.restore();
+    }
+  } else {                                            // 縦：アイコン上・文字下
+    const ih = 400 * scale, tw = W * 0.74 * scale, th = tw / ar, gap = 50 * scale;
+    const top = cy - (ih + gap + th) / 2;
+    const iconCy = cy + (top + ih / 2 - cy) * slide, s = ih * pop;
+    ctx.drawImage(IMG.icon, W / 2 - s / 2, iconCy - s / 2, s, s);
+    if (wipe > 0) {
+      const wx = W / 2 - tw / 2;
+      ctx.save(); ctx.beginPath(); ctx.rect(wx, 0, tw * wipe, H); ctx.clip();
+      ctx.drawImage(IMG.text, wx, top + ih + gap, tw, th); ctx.restore();
+    }
+  }
+}
+
+/* シーン */
+function scene1(b) {                                  // 問いかけ
+  fillBg(COLOR.bg);
+  const out = prog(b, L.s2 - 0.5, 0.5);
+  maskedText(COPY.l1a, W / 2, Y(0.435, 0.44), 150, prog(b, 0, 1), COLOR.fg, 'center', out);
+  maskedText(COPY.l1b, W / 2, Y(0.63, 0.52), 200, prog(b, 1, 1.2), COLOR.accent, 'center', out);
+  const uw = Math.min(720, W * 0.66);
+  bar(W / 2 - uw / 2, Y(0.685, 0.545), uw, 10, prog(b, 2, 1), COLOR.accent2);
+}
+function scene2(b) {                                  // 強いメッセージ（アクセント背景にワイプ）
+  const s0 = L.s2, out = prog(b, L.s3 - 0.5, 0.5);
+  fillBg(COLOR.bg);
+  ctx.fillStyle = COLOR.accent; ctx.fillRect(0, 0, W * outExpo(prog(b, s0, 0.7)), H);
+  maskedText(COPY.l2a, W / 2, Y(0.435, 0.44), 150, prog(b, s0 + 0.6, 1), COLOR.fg, 'center', out);
+  const size = fit(COPY.l2b, 260), by = Y(0.667, 0.53);
+  setFont(size); ctx.textAlign = 'left';
+  const chars = [...COPY.l2b], widths = chars.map(c => ctx.measureText(c).width);
+  let x = W / 2 - widths.reduce((a, c) => a + c, 0) / 2;
+  chars.forEach((ch, i) => {
+    const p = prog(b, s0 + 1.2 + i * 0.3, 0.6), lh = size * 1.15;
+    ctx.save(); ctx.beginPath(); ctx.rect(0, by - size, W, lh); ctx.clip();
+    ctx.fillStyle = COLOR.fg;
+    ctx.fillText(ch, x, by + (1 - outBack(p)) * lh - inCubic(out) * lh);
+    ctx.restore(); x += widths[i];
+  });
+}
+function scene3(b) {                                  // 3つのキーワード（ページ単位で積む。番号は付けない）
+  fillBg(COLOR.bg);
+  const pageLen = S3LEN / PAGES.length, pg = Math.min(PAGES.length - 1, Math.floor((b - L.s3) / pageLen));
+  const ps = L.s3 + pg * pageLen, out = prog(b, ps + pageLen - 0.5, 0.5);
+  const gap = V ? 300 : 240, y0 = V ? H * 0.34 : 330;
+  PAGES[pg].forEach((w, i) => {
+    const st = ps + i * 2, p = prog(b, st, 1), y = y0 + i * gap;
+    const size = fit(w, V ? 190 : 170, 900, W * 0.72);
+    bar(V ? W * 0.08 : 240, y - size * 0.88, V ? 18 : 24, size, prog(b, st, 0.8), COLOR.accent);
+    maskedText(w, V ? W * 0.08 + 56 : 320, y, 170, p, (i === 2 && pg === PAGES.length - 1) ? COLOR.accent2 : COLOR.fg, 'left', out);
+  });
+}
+function scene4(b) {                                  // 白に反転 → ロゴ → タグライン（30秒版は補足3行）
+  const s = L.s4, pts = LONG && COPY.points ? COPY.points : [];
+  fillBg(COLOR.bg);
+  ctx.save(); ctx.fillStyle = COLOR.fg; ctx.beginPath();
+  ctx.arc(W / 2, H / 2, Math.hypot(W, H) * 0.6 * outExpo(prog(b, s, 0.8)), 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  const cy = pts.length ? Y(0.30, 0.33) : Y(0.435, 0.38);
+  drawLogo(cy, 1, outBack(prog(b, s + 0.8, 1.2)), inOutCubic(prog(b, s + 3, 1.0)), outExpo(prog(b, s + 3.9, 1.3)));
+  const ty = pts.length ? Y(0.60, 0.63) : Y(0.70, 0.65);
+  maskedText(COPY.tagline, W / 2, ty, 78, prog(b, s + 5.5, 1.2), COLOR.bg, 'center');
+  maskedText(COPY.sub, W / 2, ty + (V ? 90 : 90), 44, prog(b, s + 7, 1.2), COLOR.sub === '#7fa3b0' ? '#4f7080' : COLOR.sub, 'center', 0, 700);
+  pts.forEach((t, i) => {
+    maskedText('・' + t, W / 2, ty + 210 + i * (V ? 110 : 90), 50, prog(b, s + 9.5 + i * 4, 1.2), COLOR.bg, 'center', 0, 700);
+  });
+}
+function scene5(b) {                                  // ロゴ縮小 → CTA → URL
+  const s = L.s5, pts = LONG && COPY.points && COPY.points.length;
+  fillBg(COLOR.fg);
+  const mv = inOutCubic(prog(b, s, 1)), cy0 = pts ? Y(0.30, 0.33) : Y(0.435, 0.38);
+  drawLogo(cy0 - 80 * mv, 1 - 0.35 * mv, 1, 1, 1);
+  const base = Y(0.59, 0.57);
+  maskedText(COPY.cta, W / 2, base, 96, prog(b, s + 1, 1.2), COLOR.bg, 'center');
+  maskedText(COPY.url, W / 2, base + 140, 70, prog(b, s + 1.6, 1.2), COLOR.accent, 'center');
+  bar(W / 2 - 160, base + 190, 320, 8, prog(b, s + 2, 1), COLOR.accent2);
+}
+
+window.seek = function (t) {
+  const b = t / BEAT;
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1;
+  if (b < L.s2) scene1(b); else if (b < L.s3) scene2(b); else if (b < L.s4) scene3(b);
+  else if (b < L.s5) scene4(b); else scene5(b);
+  const fade = prog(t, C.duration - 0.5, 0.5);        // 最終0.5秒でフェードアウト
+  if (fade > 0) { ctx.fillStyle = `rgba(247,250,251,${fade})`; ctx.fillRect(0, 0, W, H); }
+};
+window.READY.then(() => window.seek(0));
+</script></body></html>
