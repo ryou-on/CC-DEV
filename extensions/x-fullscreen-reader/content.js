@@ -1,4 +1,4 @@
-/* X Fullscreen Reader v0.1.0
+/* X Fullscreen Reader v0.2.0
  * 1記事1画面の全画面リーダー。Alt+R または右下の 📖 ボタンで起動。
  * ←→ 送り/戻り ／ ↑↓ ブックマーク選択 ／ J K 移動 ／ X 選択 ／ Enter 決定 ／ Esc 閉じる
  */
@@ -7,7 +7,7 @@
   if (window.__xfrLoaded) return;
   window.__xfrLoaded = true;
 
-  const VERSION = '0.1.0';
+  const VERSION = '0.2.0';
   const DEFAULT_ENTRY = { name: 'ブックマーク（フォルダなし）', isDefault: true };
 
   // ---- 状態 ----
@@ -20,6 +20,7 @@
     folders: [],        // キャッシュしたフォルダ名
     picker: null,       // {cursor, marked:Set, entries, loading}
     busy: false,
+    stack: [],          // スレッド進入前の {items,index,url,scrollY}
   };
   const logs = [];
   const log = (...a) => { logs.push(a.map(String).join(' ')); console.log('[XFR]', ...a); };
@@ -183,6 +184,7 @@
         <main id="main"></main>
         <footer>
           <span><kbd>←</kbd>戻る <kbd>→</kbd>次へ</span>
+          <span><kbd>⌘←</kbd><kbd>⌘→</kbd>リプライ</span>
           <span><kbd>↑</kbd><kbd>↓</kbd>ブックマーク</span>
           <span><kbd>+</kbd><kbd>-</kbd>文字サイズ</span>
           <span><kbd>T</kbd>白黒</span>
@@ -211,7 +213,7 @@
     const it = state.items[state.index];
     el.wrap.classList.toggle('light', state.light);
     el.wrap.style.setProperty('--fs', state.fontSize + 'px');
-    el.pos.textContent = it ? `${state.index + 1} / ${state.items.length}` : '';
+    el.pos.textContent = it ? `${state.stack.length ? '💬 スレッド ' : ''}${state.index + 1} / ${state.items.length}` : '';
     if (!it) { el.main.innerHTML = '<article><div class="txt">投稿が見つかりません</div></article>'; return; }
     el.main.innerHTML = `<article>
       ${it.context ? `<div class="ctx">${esc(it.context)}</div>` : ''}
@@ -254,12 +256,62 @@
     log('open index', state.index);
   }
 
-  function closeReader() {
+  async function closeReader() {
     closePicker();
+    while (state.stack.length) await exitThread();
     state.open = false;
     host.style.display = 'none';
     const it = state.items[state.index];
     if (it) window.scrollTo(0, Math.max(0, it.y - 70)); // 読んでいた位置にタイムラインを合わせる
+  }
+
+  // ---- リプライ（スレッド）移動 ----
+  async function enterThread() {
+    const it = state.items[state.index];
+    if (!it || state.busy) return;
+    state.busy = true;
+    toast('リプライを読み込み中…', 6000);
+    const a = await ensureArticle(it.id);
+    const link = a && articleLink(a);
+    if (!link) { state.busy = false; toast('元の投稿が見つかりません'); return; }
+    state.stack.push({ items: state.items, index: state.index, url: location.href, scrollY: window.scrollY });
+    link.click(); // SPA遷移で投稿詳細へ
+    const ok = await waitFor(() => location.pathname.includes('/status/' + it.id) && findArticle(it.id), 5000);
+    if (!ok) { const f = state.stack.pop(); state.items = f.items; state.index = f.index; state.busy = false; toast('リプライを開けませんでした'); return; }
+    await sleep(600);
+    state.items = [];
+    collect();
+    state.index = Math.max(0, state.items.findIndex((x) => x.id === it.id));
+    if (state.index + 1 >= state.items.length) await loadMore();
+    state.index = Math.min(state.index + 1, state.items.length - 1);
+    state.busy = false;
+    toast(state.index > 0 ? '💬 リプライ' : 'リプライはありません', 1500);
+    render();
+  }
+
+  async function exitThread() {
+    const f = state.stack.pop();
+    if (!f) return;
+    state.busy = true;
+    history.back();
+    await waitFor(() => location.href === f.url && document.querySelector('article[data-testid="tweet"]'), 5000);
+    await sleep(500);
+    state.items = f.items;
+    state.index = f.index;
+    collect();
+    window.scrollTo(0, f.scrollY);
+    state.busy = false;
+    render();
+  }
+
+  async function replyMove(delta) {
+    if (delta > 0) {
+      if (!state.stack.length) await enterThread();
+      else await go(1);
+    } else if (state.stack.length) {
+      if (state.index > 0) await go(-1);
+      else await exitThread();
+    }
   }
 
   // ---- 送り/戻り ----
@@ -450,6 +502,7 @@
       return;
     }
 
+    if ((e.metaKey || e.ctrlKey) && (k === 'ArrowRight' || k === 'ArrowLeft')) { replyMove(k === 'ArrowRight' ? 1 : -1); return; }
     if (k === 'ArrowRight') go(1);
     else if (k === 'ArrowLeft') go(-1);
     else if (k === 'ArrowUp' || k === 'ArrowDown') openPicker();
@@ -472,7 +525,7 @@
     };
     box.append(
       mk('📖 全画面で読む', 'Alt+R でも起動', () => (state.open ? closeReader() : openReader())),
-      mk(`v${VERSION}`, 'リリースノート', () => alert(`## v0.1.0 (2026-10-03)\n- 初回リリース\n- 1記事1画面の全画面リーダー\n- ←→で送り/戻り、↑↓でブックマーク選択（J/K移動・X選択・Enter決定）`)),
+      mk(`v${VERSION}`, 'リリースノート', () => alert(`## v0.2.0 (2026-10-03)\n- ⌘+←→でリプライの送り/戻りを追加\n\n## v0.1.0 (2026-10-03)\n- 初回リリース\n- 1記事1画面の全画面リーダー\n- ←→で送り/戻り、↑↓でブックマーク選択（J/K移動・X選択・Enter決定）`)),
       mk('🐞', 'デバッグログをコピー', async () => {
         try { await navigator.clipboard.writeText(logs.join('\n') || '(ログなし)'); } catch (e) {}
       })
