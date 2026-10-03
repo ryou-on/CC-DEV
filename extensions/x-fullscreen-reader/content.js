@@ -1,4 +1,4 @@
-/* X Fullscreen Reader v0.4.3
+/* X Fullscreen Reader v0.4.4
  * 1記事1画面の全画面リーダー。Alt+R または右下の 📖 ボタンで起動。
  * ←→ 送り/戻り ／ fn+←→ リプライ ／ fn+↑↓ ブックマーク選択 ／ ↑↓ 長文スクロール ／ J K 移動 ／ X 選択 ／ Enter 決定 ／ Esc 閉じる
  */
@@ -7,7 +7,7 @@
   if (window.__xfrLoaded) return;
   window.__xfrLoaded = true;
 
-  const VERSION = '0.4.3';
+  const VERSION = '0.4.4';
   const DEFAULT_ENTRY = { name: 'ブックマーク（フォルダなし）', isDefault: true };
 
   // ---- 状態 ----
@@ -178,7 +178,7 @@
         .picker{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center}
         .picker.on{display:flex}
         .box{background:var(--bar);color:inherit;border-radius:20px;padding:28px 36px;min-width:min(720px,90vw);max-height:85vh;display:flex;flex-direction:column}
-        #rows{overflow:auto;flex:1;min-height:0;overscroll-behavior:contain}
+        #rows{overflow:auto;flex:1;min-height:0;max-height:62vh;overscroll-behavior:contain}
         .box h2{margin:0 0 16px;font-size:30px;flex:none}
         .box h2 small{color:var(--sub);font-size:20px;margin-left:12px}
         .row{display:flex;align-items:center;gap:18px;padding:14px 20px;border-radius:12px;font-size:32px;border:3px solid transparent}
@@ -522,8 +522,13 @@
         <span class="chk">${p.marked.has(i) ? '✓' : ''}</span><span>${e.isDefault ? '🔖 ' : '📁 '}${esc(e.name)}</span>
       </div>`).join('') + (p.loading ? '<div class="hint">フォルダを取得中…</div>' : '');
     el.pickpos.textContent = `${p.cursor + 1} / ${entries().length}`;
-    // カーソル行が見切れないようにスクロール
-    el.rows.querySelector('.row.cur')?.scrollIntoView({ block: 'nearest' });
+    // カーソル行が見切れないようにスクロール（上下どちらにはみ出しても一覧内に収める）
+    const cur = el.rows.querySelector('.row.cur');
+    if (cur) {
+      const r = cur.getBoundingClientRect(), c = el.rows.getBoundingClientRect();
+      if (r.top < c.top) el.rows.scrollTop += r.top - c.top - 8;
+      else if (r.bottom > c.bottom) el.rows.scrollTop += r.bottom - c.bottom + 8;
+    }
   }
 
   async function openPicker() {
@@ -620,8 +625,8 @@
     if (p) {
       const n = entries().length;
       if (k === 'Escape') closePicker();
-      else if (k === 'ArrowDown' || k === 'j' || k === 'J') p.cursor = (p.cursor + 1) % n;
-      else if (k === 'ArrowUp' || k === 'k' || k === 'K') p.cursor = (p.cursor - 1 + n) % n;
+      else if (k === 'ArrowDown' || k === 'PageDown' || k === 'j' || k === 'J') p.cursor = (p.cursor + 1) % n;
+      else if (k === 'ArrowUp' || k === 'PageUp' || k === 'k' || k === 'K') p.cursor = (p.cursor - 1 + n) % n;
       else if (k === 'x' || k === 'X') p.marked.has(p.cursor) ? p.marked.delete(p.cursor) : p.marked.add(p.cursor);
       else if (k === 'r' || k === 'R') { refreshFolders(); return; }
       else if (k === 'Enter') { applyPicker(); return; }
@@ -655,7 +660,7 @@
     };
     box.append(
       mk('📖 全画面で読む', 'Alt+R でも起動', () => (state.open ? closeReader() : openReader())),
-      mk(`v${VERSION}`, 'リリースノート', () => alert(`## v0.4.3 (2026-10-03)\n- ブックマーク先が多いときに一覧がスクロールして見切れないように修正\n\n## v0.4.2 (2026-10-03)\n- ブックマークフォルダ一覧が空になる問題を修正（一覧の読み込み完了を待つ）\n\n## v0.4.1 (2026-10-03)\n- fn+矢印が効かない環境向けにキー判定を強化、Shift+矢印でも同じ操作が可能に\n- 押したキーをヘッダーに表示\n\n## v0.4.0 (2026-10-03)\n- リプライ移動を fn+←→、ブックマーク選択を fn+↑↓ に変更\n- ↑↓ で長文をスクロール\n\n## v0.3.0 (2026-10-03)\n- リプライの送り/戻りを fn+↓ / fn+↑（PageDown / PageUp）に変更\n\n## v0.2.2 (2026-10-03)\n- 既存のブックマークフォルダが一覧に出ない問題を修正\n\n## v0.2.1 (2026-10-03)\n- リプライ表示・ブックマークフォルダ取得が動かない問題を修正\n\n## v0.2.0 (2026-10-03)\n- ⌘+←→でリプライの送り/戻りを追加\n\n## v0.1.0 (2026-10-03)\n- 初回リリース\n- 1記事1画面の全画面リーダー\n- ←→で送り/戻り、↑↓でブックマーク選択（J/K移動・X選択・Enter決定）`)),
+      mk(`v${VERSION}`, 'リリースノート', () => alert(`## v0.4.4 (2026-10-03)\n- ブックマーク先の選択中、矢印・J K・Shift+↑↓ の移動に合わせて一覧が確実にスクロールするように修正\n\n## v0.4.3 (2026-10-03)\n- ブックマーク先が多いときに一覧がスクロールして見切れないように修正\n\n## v0.4.2 (2026-10-03)\n- ブックマークフォルダ一覧が空になる問題を修正（一覧の読み込み完了を待つ）\n\n## v0.4.1 (2026-10-03)\n- fn+矢印が効かない環境向けにキー判定を強化、Shift+矢印でも同じ操作が可能に\n- 押したキーをヘッダーに表示\n\n## v0.4.0 (2026-10-03)\n- リプライ移動を fn+←→、ブックマーク選択を fn+↑↓ に変更\n- ↑↓ で長文をスクロール\n\n## v0.3.0 (2026-10-03)\n- リプライの送り/戻りを fn+↓ / fn+↑（PageDown / PageUp）に変更\n\n## v0.2.2 (2026-10-03)\n- 既存のブックマークフォルダが一覧に出ない問題を修正\n\n## v0.2.1 (2026-10-03)\n- リプライ表示・ブックマークフォルダ取得が動かない問題を修正\n\n## v0.2.0 (2026-10-03)\n- ⌘+←→でリプライの送り/戻りを追加\n\n## v0.1.0 (2026-10-03)\n- 初回リリース\n- 1記事1画面の全画面リーダー\n- ←→で送り/戻り、↑↓でブックマーク選択（J/K移動・X選択・Enter決定）`)),
       mk('🐞', 'デバッグログをコピー', async () => {
         try { await navigator.clipboard.writeText(logs.join('\n') || '(ログなし)'); } catch (e) {}
       })
