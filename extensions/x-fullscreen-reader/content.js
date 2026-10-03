@@ -1,4 +1,4 @@
-/* X Fullscreen Reader v0.2.0
+/* X Fullscreen Reader v0.2.1
  * 1記事1画面の全画面リーダー。Alt+R または右下の 📖 ボタンで起動。
  * ←→ 送り/戻り ／ ↑↓ ブックマーク選択 ／ J K 移動 ／ X 選択 ／ Enter 決定 ／ Esc 閉じる
  */
@@ -7,7 +7,7 @@
   if (window.__xfrLoaded) return;
   window.__xfrLoaded = true;
 
-  const VERSION = '0.2.0';
+  const VERSION = '0.2.1';
   const DEFAULT_ENTRY = { name: 'ブックマーク（フォルダなし）', isDefault: true };
 
   // ---- 状態 ----
@@ -56,8 +56,12 @@
 
   function articleLink(article) {
     // 時刻を含むリンク = 投稿本体へのリンク（広告は存在しない）
-    const t = article.querySelector('a[href*="/status/"] time');
-    return t ? t.closest('a') : null;
+    const t = [...article.querySelectorAll('a[href*="/status/"] time')]
+      .find((x) => !x.closest('[role="link"]:not(a)')); // 引用ポスト内の時刻は除外
+    if (t) return t.closest('a');
+    // 詳細ページの本体ポストなど、時刻リンクが無い場合は status リンクを直接探す
+    return [...article.querySelectorAll('a[href*="/status/"]')]
+      .find((a) => /\/status\/\d+\/?$/.test(a.getAttribute('href') || '')) || null;
   }
 
   function parseArticle(article) {
@@ -275,17 +279,34 @@
     const link = a && articleLink(a);
     if (!link) { state.busy = false; toast('元の投稿が見つかりません'); return; }
     state.stack.push({ items: state.items, index: state.index, url: location.href, scrollY: window.scrollY });
+    const atDetail = () => location.pathname.includes('/status/' + it.id);
+    log('enterThread click', it.url);
     link.click(); // SPA遷移で投稿詳細へ
-    const ok = await waitFor(() => location.pathname.includes('/status/' + it.id) && findArticle(it.id), 5000);
-    if (!ok) { const f = state.stack.pop(); state.items = f.items; state.index = f.index; state.busy = false; toast('リプライを開けませんでした'); return; }
-    await sleep(600);
+    let navigated = await waitFor(atDetail, 1500);
+    if (!navigated) {
+      // クリックで遷移しない場合は履歴APIでXのルーターを直接動かす
+      log('enterThread fallback pushState');
+      history.pushState({}, '', it.url);
+      window.dispatchEvent(new PopStateEvent('popstate', { state: {} }));
+      navigated = await waitFor(atDetail, 3000);
+    }
+    const focal = navigated && await waitFor(() => findArticle(it.id), 6000);
+    log('enterThread navigated', !!navigated, 'focal', !!focal, 'path', location.pathname);
+    if (!focal) {
+      const f = state.stack.pop(); state.items = f.items; state.index = f.index; state.busy = false;
+      if (navigated) history.back();
+      toast('リプライを開けませんでした（🐞ログ参照）', 3000);
+      return;
+    }
+    await sleep(700);
     state.items = [];
     collect();
     state.index = Math.max(0, state.items.findIndex((x) => x.id === it.id));
     if (state.index + 1 >= state.items.length) await loadMore();
+    log('enterThread items', state.items.length, 'focalIndex', state.items.findIndex((x) => x.id === it.id));
     state.index = Math.min(state.index + 1, state.items.length - 1);
     state.busy = false;
-    toast(state.index > 0 ? '💬 リプライ' : 'リプライはありません', 1500);
+    toast(state.items.length > 1 ? '💬 リプライ' : 'リプライはありません', 1500);
     render();
   }
 
@@ -332,41 +353,94 @@
   }
 
   // ---- ブックマーク（Xの画面操作を代行） ----
-  const textOf = (e) => (e.innerText || e.textContent || '').trim();
+  const textOf = (e) => (e.innerText || e.textContent || '').replace(/\s+/g, ' ').trim();
+  const firstLine = (e) => (e.innerText || e.textContent || '').split('\n').map((s) => s.trim()).find(Boolean) || '';
   const findByText = (rootEl, sel, re) => [...rootEl.querySelectorAll(sel)].find((e) => re.test(textOf(e)));
+  const RE_FOLDER = /フォルダ|folder/i;
+
+  // Xのダイアログ（任意で本文の正規表現で絞り込む）
+  function currentDialog(re) {
+    return [...document.querySelectorAll('[data-testid="sheetDialog"], [role="dialog"]')]
+      .find((d) => !re || re.test(textOf(d))) || null;
+  }
+
+  // 開いているメニュー/ダイアログをすべて閉じる
+  async function dismissAll() {
+    for (let i = 0; i < 3; i++) {
+      const d = currentDialog() || document.querySelector('[role="menu"]');
+      if (!d) break;
+      const close = d.querySelector('[aria-label="閉じる"], [aria-label="Close"], [data-testid="app-bar-close"]');
+      const mask = document.querySelector('[data-testid="mask"]');
+      if (close) close.click();
+      else if (mask) mask.click();
+      else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }));
+      await sleep(250);
+    }
+  }
+
+  function bookmarkButton(article) {
+    return article.querySelector('[data-testid="bookmark"], [data-testid="removeBookmark"]');
+  }
+  const isBookmarked = (article) => !!article.querySelector('[data-testid="removeBookmark"]');
 
   async function openShareMenu(article) {
-    const share = [...article.querySelectorAll('button, [role="button"]')]
-      .find((b) => /^(共有|Share( post)?)$/i.test(b.getAttribute('aria-label') || ''));
-    if (!share) return null;
+    // aria-label は「共有」「ポストを共有」「Share post」など表記ゆれがある
+    let share = [...article.querySelectorAll('button, [role="button"]')]
+      .find((b) => /共有|share/i.test(b.getAttribute('aria-label') || ''));
+    if (!share) {
+      // 見つからなければアクションバー（返信/リポスト/いいね/…）の最後のボタン
+      const group = article.querySelector('[role="group"]');
+      const btns = group ? [...group.querySelectorAll('button')] : [];
+      share = btns[btns.length - 1] || null;
+      log('share button fallback', !!share);
+    }
+    if (!share) { log('share button not found'); return null; }
     share.click();
-    return await waitFor(() => document.querySelector('[role="menu"]'));
+    const menu = await waitFor(() => document.querySelector('[role="menu"]'));
+    if (menu) log('share menu:', [...menu.querySelectorAll('[role="menuitem"]')].map(textOf).join(' | '));
+    else log('share menu did not open');
+    return menu;
   }
 
-  async function openFolderDialog(article) {
+  async function openFolderDialog(article, retried) {
     const menu = await openShareMenu(article);
     if (!menu) return null;
-    const item = findByText(menu, '[role="menuitem"]', /フォルダに追加|Add to Folder/i);
-    if (!item) { dismiss(); return null; }
+    const item = findByText(menu, '[role="menuitem"]', RE_FOLDER);
+    if (!item) {
+      await dismissAll();
+      // 「フォルダに追加」はブックマーク済みの投稿にしか出ないことがある → 先にブックマークして再試行
+      if (!retried && !isBookmarked(article)) {
+        log('no folder item; bookmark first then retry');
+        bookmarkButton(article)?.click();
+        await sleep(800);
+        // ブックマーク直後のトースト内に「フォルダに追加」リンクがあればそれを使う
+        const toastLink = [...document.querySelectorAll('[data-testid="toast"] a, [data-testid="toast"] [role="button"]')]
+          .find((e) => RE_FOLDER.test(textOf(e)));
+        if (toastLink) {
+          toastLink.click();
+          const d = await waitFor(() => currentDialog(RE_FOLDER), 3000);
+          if (d) return d;
+        }
+        return openFolderDialog(article, true);
+      }
+      log('folder menu item not found');
+      return null;
+    }
     item.click();
-    return await waitFor(() => {
-      const d = document.querySelector('[data-testid="sheetDialog"], [role="dialog"]');
-      return d && d.querySelector('[role="button"], [role="menuitem"], [role="radio"], [role="checkbox"]') ? d : null;
-    });
+    const dialog = await waitFor(() => currentDialog(RE_FOLDER), 3000);
+    if (!dialog) log('folder dialog did not open');
+    else log('folder dialog text:', textOf(dialog).slice(0, 200));
+    return dialog;
   }
 
-  function dismiss() {
-    const d = document.querySelector('[data-testid="sheetDialog"], [role="dialog"]');
-    const close = d && d.querySelector('[aria-label="閉じる"], [aria-label="Close"]');
-    if (close) close.click();
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, bubbles: true }));
-  }
-
-  const SKIP_LABEL = /^(完了|キャンセル|閉じる|新しいフォルダ|フォルダを作成|Done|Cancel|Close|New folder|Create)/i;
+  const SKIP_LABEL = /^(完了|キャンセル|閉じる|戻る|新しいフォルダ|フォルダを作成|フォルダを新規作成|フォルダに追加|ブックマーク|Done|Cancel|Close|Back|New folder|Create|Add to Folder|Bookmark)/i;
   function folderCandidates(dialog) {
+    let els = [...dialog.querySelectorAll('[role="button"], [role="menuitem"], [role="radio"], [role="checkbox"], [role="option"], [role="listitem"]')];
+    if (!els.length) els = [...dialog.querySelectorAll('[tabindex="0"]')];
+    // 入れ子になっている要素は外側（行）だけ残す。ただし巨大なコンテナは除外
+    els = els.filter((e) => e !== dialog && textOf(e).length < 200 && !els.some((o) => o !== e && o.contains(e)));
     const seen = new Set();
-    return [...dialog.querySelectorAll('[role="button"], [role="menuitem"], [role="radio"], [role="checkbox"], [role="option"]')]
-      .map((e) => ({ name: textOf(e).split('\n')[0].trim(), el: e }))
+    return els.map((e) => ({ name: firstLine(e), el: e }))
       .filter((c) => c.name && c.name.length < 60 && !SKIP_LABEL.test(c.name) && !seen.has(c.name) && seen.add(c.name));
   }
 
@@ -374,8 +448,8 @@
     const dialog = await openFolderDialog(article);
     if (!dialog) return null;
     const names = folderCandidates(dialog).map((c) => c.name);
-    dismiss();
-    await sleep(250);
+    if (!names.length) log('no folder rows; dialog outline:', [...dialog.querySelectorAll('[role]')].map((e) => e.getAttribute('role') + ':' + firstLine(e).slice(0, 20)).join(' | '));
+    await dismissAll();
     log('folders', names.join(','));
     return names;
   }
@@ -384,19 +458,20 @@
     const dialog = await openFolderDialog(article);
     if (!dialog) return false;
     const target = folderCandidates(dialog).find((c) => c.name === name);
-    if (!target) { dismiss(); return false; }
+    if (!target) { log('folder row not found', name); await dismissAll(); return false; }
     target.el.click();
-    await sleep(400);
-    const done = document.querySelector('[data-testid="sheetDialog"], [role="dialog"]');
+    await sleep(500);
+    const done = currentDialog(RE_FOLDER);
     const doneBtn = done && findByText(done, '[role="button"], button', /^(完了|Done)$/i);
     if (doneBtn) doneBtn.click();
-    await sleep(200);
+    await sleep(300);
+    await dismissAll();
     return true;
   }
 
   async function bookmarkDefault(article) {
     // 未登録なら登録、登録済みなら解除（Xのブックマークボタンと同じトグル）
-    const btn = article.querySelector('[data-testid="bookmark"], [data-testid="removeBookmark"]');
+    const btn = bookmarkButton(article);
     if (!btn) return null;
     const was = btn.getAttribute('data-testid') === 'removeBookmark';
     btn.click();
@@ -434,12 +509,13 @@
     state.picker.loading = true; renderPicker();
     state.busy = true;
     const a = await ensureArticle(it.id);
+    if (!a) log('refreshFolders: article not found', it.id);
     const names = a ? await fetchFolders(a) : null;
     state.busy = false;
     if (state.picker) {
       state.picker.loading = false;
       if (names && names.length) { state.folders = names; store.save(); }
-      else toast('フォルダを取得できませんでした（未作成/Premium外の可能性）', 3500);
+      else toast('フォルダを取得できませんでした（🐞ログを送ってください）', 3500);
       renderPicker();
     }
   }
@@ -525,7 +601,7 @@
     };
     box.append(
       mk('📖 全画面で読む', 'Alt+R でも起動', () => (state.open ? closeReader() : openReader())),
-      mk(`v${VERSION}`, 'リリースノート', () => alert(`## v0.2.0 (2026-10-03)\n- ⌘+←→でリプライの送り/戻りを追加\n\n## v0.1.0 (2026-10-03)\n- 初回リリース\n- 1記事1画面の全画面リーダー\n- ←→で送り/戻り、↑↓でブックマーク選択（J/K移動・X選択・Enter決定）`)),
+      mk(`v${VERSION}`, 'リリースノート', () => alert(`## v0.2.1 (2026-10-03)\n- リプライ表示・ブックマークフォルダ取得が動かない問題を修正\n\n## v0.2.0 (2026-10-03)\n- ⌘+←→でリプライの送り/戻りを追加\n\n## v0.1.0 (2026-10-03)\n- 初回リリース\n- 1記事1画面の全画面リーダー\n- ←→で送り/戻り、↑↓でブックマーク選択（J/K移動・X選択・Enter決定）`)),
       mk('🐞', 'デバッグログをコピー', async () => {
         try { await navigator.clipboard.writeText(logs.join('\n') || '(ログなし)'); } catch (e) {}
       })
