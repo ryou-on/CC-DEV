@@ -1,4 +1,4 @@
-/* X Fullscreen Reader v0.4.4
+/* X Fullscreen Reader v0.5.0
  * 1記事1画面の全画面リーダー。Alt+R または右下の 📖 ボタンで起動。
  * ←→ 送り/戻り ／ fn+←→ リプライ ／ fn+↑↓ ブックマーク選択 ／ ↑↓ 長文スクロール ／ J K 移動 ／ X 選択 ／ Enter 決定 ／ Esc 閉じる
  */
@@ -7,7 +7,7 @@
   if (window.__xfrLoaded) return;
   window.__xfrLoaded = true;
 
-  const VERSION = '0.4.4';
+  const VERSION = '0.5.0';
   const DEFAULT_ENTRY = { name: 'ブックマーク（フォルダなし）', isDefault: true };
 
   // ---- 状態 ----
@@ -21,6 +21,7 @@
     picker: null,       // {cursor, marked:Set, entries, loading}
     busy: false,
     stack: [],          // スレッド進入前の {items,index,url,scrollY}
+    media: null,        // 動画再生中 {embed:boolean, timer}
   };
   // フォルダ名として扱わない行（見出し・ボタン・件数表示）
   const SKIP_LABEL = /^(完了|キャンセル|閉じる|戻る|新しいブックマークフォルダ|新しいフォルダ|フォルダを(新規)?作成|フォルダに追加|ブックマークフォルダ|ブックマークに追加|Done|Cancel|Close|Back|New folder|Create|Add to Folders?|Bookmark Folders?|\d+\s*(件|posts?|items?))/i;
@@ -186,6 +187,10 @@
         .chk{width:36px;height:36px;border:3px solid var(--sub);border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-size:28px;color:#fff}
         .row.on .chk{background:var(--accent);border-color:var(--accent)}
         .hint{margin-top:16px;color:var(--sub);font-size:20px;flex:none}
+        .media{position:fixed;inset:0;background:rgba(0,0,0,.9);display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px}
+        .media.on{display:flex}
+        .media iframe{width:550px;height:52vh;border:0;background:#000;border-radius:16px;transform:scale(1.5);transform-origin:center;margin:14vh 0}
+        .media .hint{color:#ccc}
       </style>
       <div class="wrap">
         <header><b>📖 X Reader</b><span id="pos"></span><span id="bmstate"></span><span id="key" style="opacity:.6;font-size:16px"></span></header>
@@ -197,6 +202,7 @@
           <span><kbd>↑</kbd><kbd>↓</kbd>スクロール</span>
           <span><kbd>+</kbd><kbd>-</kbd>文字サイズ</span>
           <span><kbd>T</kbd>白黒</span>
+          <span><kbd>Enter</kbd>動画再生</span>
           <span><kbd>Esc</kbd>閉じる</span>
         </footer>
         <div class="toast" id="toast"></div>
@@ -205,6 +211,7 @@
           <div id="rows"></div>
           <div class="hint"><kbd>↑↓</kbd>/<kbd>J K</kbd> 移動 ・ <kbd>X</kbd> 選択 ・ <kbd>Enter</kbd> 決定 ・ <kbd>R</kbd> フォルダ再取得 ・ <kbd>Esc</kbd> 取消</div>
         </div></div>
+        <div class="media" id="media"><iframe id="mframe" allow="autoplay; fullscreen" title="video"></iframe><div class="hint"><kbd>Esc</kbd> 閉じる</div></div>
       </div>`;
     el.wrap = root.querySelector('.wrap');
     el.main = root.getElementById('main');
@@ -215,6 +222,8 @@
     el.picker = root.getElementById('picker');
     el.rows = root.getElementById('rows');
     el.pickpos = root.getElementById('pickpos');
+    el.media = root.getElementById('media');
+    el.mframe = root.getElementById('mframe');
     document.documentElement.appendChild(host);
   }
 
@@ -232,7 +241,7 @@
       <div class="txt">${esc(it.text) || '<span style="opacity:.5">（本文なし）</span>'}</div>
       ${it.quote ? `<div class="quote">${esc(it.quote)}</div>` : ''}
       ${it.images.length ? `<div class="imgs">${it.images.map((s) => `<img src="${esc(s)}" alt="">`).join('')}</div>` : ''}
-      ${it.hasVideo ? '<div class="note">🎬 動画付きの投稿です（元の投稿で再生してください）</div>' : ''}
+      ${it.hasVideo ? '<div class="note">🎬 動画付きの投稿です — <b>Enter</b> または <b>V</b> で再生</div>' : ''}
       <div class="note"><a href="${esc(it.url)}" target="_blank" rel="noopener">元の投稿を開く ↗</a></div>
     </article>`;
     el.main.scrollTop = 0;
@@ -269,6 +278,7 @@
 
   async function closeReader() {
     closePicker();
+    closeMedia();
     while (state.stack.length) await exitThread();
     state.open = false;
     host.style.display = 'none';
@@ -339,6 +349,58 @@
     } else if (state.stack.length) {
       if (state.index > 0) await go(-1);
       else await exitThread();
+    }
+  }
+
+  // ---- 動画再生 ----
+  // 基本は X 自身のライトボックス（/status/ID/video/1 ルート）を開いて再生する。
+  // 開けなかった場合は X の埋め込みプレイヤーを iframe でモーダル表示する。
+  async function openMedia() {
+    const it = state.items[state.index];
+    if (!it || state.busy || state.media) return;
+    if (!it.hasVideo) { toast('この投稿に動画はありません'); return; }
+    state.media = { embed: false, timer: null };
+    host.style.display = 'none';
+    const target = it.url.replace(/\/$/, '') + '/video/1';
+    log('openMedia', target);
+    history.pushState({}, '', target);
+    window.dispatchEvent(new PopStateEvent('popstate', { state: {} }));
+    const lightbox = await waitFor(() => [...document.querySelectorAll('[role="dialog"], [aria-modal="true"]')].find((d) => d.querySelector('video')), 3000);
+    if (!lightbox) {
+      log('lightbox not opened; fallback to embed');
+      if (/\/video\/\d+/.test(location.pathname)) history.back();
+      await sleep(300);
+      showEmbed(it);
+      return;
+    }
+    const v = lightbox.querySelector('video');
+    try { v.muted = false; await v.play(); } catch (e) { log('autoplay blocked', e && e.message); }
+    // ライトボックスが閉じられる（URL から /video/ が消える）のを監視してリーダーを復帰
+    state.media.timer = setInterval(() => {
+      if (!/\/video\/\d+/.test(location.pathname)) closeMedia();
+    }, 200);
+  }
+
+  function showEmbed(it) {
+    state.media = { embed: true, timer: null };
+    host.style.display = 'block';
+    el.mframe.src = `https://platform.twitter.com/embed/Tweet.html?id=${it.id}&theme=${state.light ? 'light' : 'dark'}&dnt=true&hideThread=true`;
+    el.media.classList.add('on');
+    toast('埋め込みプレイヤーで表示（再生ボタンをクリック）', 3000);
+  }
+
+  function closeMedia() {
+    const m = state.media;
+    if (!m) return;
+    if (m.timer) clearInterval(m.timer);
+    state.media = null;
+    if (m.embed) {
+      el.mframe.src = 'about:blank'; // iframe はクローズ時に必ず破棄
+      el.media.classList.remove('on');
+    } else {
+      host.style.display = 'block';
+      collect();
+      render();
     }
   }
 
@@ -612,6 +674,13 @@
       return;
     }
     if (!state.open) return;
+    if (state.media) {
+      // X のライトボックス中はキーを X に渡す（Esc で X が閉じる → URL 監視で復帰）
+      if (!state.media.embed) return;
+      e.preventDefault(); e.stopPropagation();
+      if (e.key === 'Escape' || e.key === 'Enter' || /^[vV]$/.test(e.key)) closeMedia();
+      return;
+    }
     // リーダー中はXのショートカットに渡さない
     e.preventDefault(); e.stopPropagation();
     const k = normKey(e);
@@ -641,6 +710,7 @@
     if (k === 'ArrowRight') go(1);
     else if (k === 'ArrowLeft') go(-1);
     else if (k === 'ArrowUp' || k === 'ArrowDown') el.main.scrollBy({ top: (k === 'ArrowDown' ? 1 : -1) * state.fontSize * 3, behavior: 'smooth' }); // 長文のスクロール
+    else if (k === 'Enter' || k === 'v' || k === 'V') openMedia();
     else if (k === 'Escape') closeReader();
     else if (k === '+' || k === '=') { state.fontSize = Math.min(120, state.fontSize + 4); store.save(); render(); }
     else if (k === '-') { state.fontSize = Math.max(16, state.fontSize - 4); store.save(); render(); }
@@ -660,7 +730,7 @@
     };
     box.append(
       mk('📖 全画面で読む', 'Alt+R でも起動', () => (state.open ? closeReader() : openReader())),
-      mk(`v${VERSION}`, 'リリースノート', () => alert(`## v0.4.4 (2026-10-03)\n- ブックマーク先の選択中、矢印・J K・Shift+↑↓ の移動に合わせて一覧が確実にスクロールするように修正\n\n## v0.4.3 (2026-10-03)\n- ブックマーク先が多いときに一覧がスクロールして見切れないように修正\n\n## v0.4.2 (2026-10-03)\n- ブックマークフォルダ一覧が空になる問題を修正（一覧の読み込み完了を待つ）\n\n## v0.4.1 (2026-10-03)\n- fn+矢印が効かない環境向けにキー判定を強化、Shift+矢印でも同じ操作が可能に\n- 押したキーをヘッダーに表示\n\n## v0.4.0 (2026-10-03)\n- リプライ移動を fn+←→、ブックマーク選択を fn+↑↓ に変更\n- ↑↓ で長文をスクロール\n\n## v0.3.0 (2026-10-03)\n- リプライの送り/戻りを fn+↓ / fn+↑（PageDown / PageUp）に変更\n\n## v0.2.2 (2026-10-03)\n- 既存のブックマークフォルダが一覧に出ない問題を修正\n\n## v0.2.1 (2026-10-03)\n- リプライ表示・ブックマークフォルダ取得が動かない問題を修正\n\n## v0.2.0 (2026-10-03)\n- ⌘+←→でリプライの送り/戻りを追加\n\n## v0.1.0 (2026-10-03)\n- 初回リリース\n- 1記事1画面の全画面リーダー\n- ←→で送り/戻り、↑↓でブックマーク選択（J/K移動・X選択・Enter決定）`)),
+      mk(`v${VERSION}`, 'リリースノート', () => alert(`## v0.5.0 (2026-10-03)\n- 動画付き投稿で Enter / V を押すと動画を全画面モーダルで再生\n\n## v0.4.4 (2026-10-03)\n- ブックマーク先の選択中、矢印・J K・Shift+↑↓ の移動に合わせて一覧が確実にスクロールするように修正\n\n## v0.4.3 (2026-10-03)\n- ブックマーク先が多いときに一覧がスクロールして見切れないように修正\n\n## v0.4.2 (2026-10-03)\n- ブックマークフォルダ一覧が空になる問題を修正（一覧の読み込み完了を待つ）\n\n## v0.4.1 (2026-10-03)\n- fn+矢印が効かない環境向けにキー判定を強化、Shift+矢印でも同じ操作が可能に\n- 押したキーをヘッダーに表示\n\n## v0.4.0 (2026-10-03)\n- リプライ移動を fn+←→、ブックマーク選択を fn+↑↓ に変更\n- ↑↓ で長文をスクロール\n\n## v0.3.0 (2026-10-03)\n- リプライの送り/戻りを fn+↓ / fn+↑（PageDown / PageUp）に変更\n\n## v0.2.2 (2026-10-03)\n- 既存のブックマークフォルダが一覧に出ない問題を修正\n\n## v0.2.1 (2026-10-03)\n- リプライ表示・ブックマークフォルダ取得が動かない問題を修正\n\n## v0.2.0 (2026-10-03)\n- ⌘+←→でリプライの送り/戻りを追加\n\n## v0.1.0 (2026-10-03)\n- 初回リリース\n- 1記事1画面の全画面リーダー\n- ←→で送り/戻り、↑↓でブックマーク選択（J/K移動・X選択・Enter決定）`)),
       mk('🐞', 'デバッグログをコピー', async () => {
         try { await navigator.clipboard.writeText(logs.join('\n') || '(ログなし)'); } catch (e) {}
       })
