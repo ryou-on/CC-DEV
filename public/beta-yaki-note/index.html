@@ -145,6 +145,7 @@
     .segment { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
     .segment.two { grid-template-columns: repeat(2, 1fr); }
     .segment.three { grid-template-columns: repeat(3, 1fr); }
+    .segment.six { grid-template-columns: repeat(6, 1fr); }
     .segment button, .chip-button, .icon-button {
       min-height: 39px;
       border: 1px solid #cfc7b9;
@@ -521,7 +522,7 @@
     #feedback-modal .field input, #feedback-modal .field textarea, #feedback-modal .field select { color: #171714; background: #fff; }
     .feedback-caution { margin: 0; padding: 12px; color: #e6d9b9; background: rgba(216,180,91,.12); border-radius: 7px; font-size: .83rem; line-height: 1.55; }
 
-    /* v0.4.0 — 135 film geometry / darkroom contact print */
+    /* v0.5.0 — 135 / 120 film geometry and darkroom contact print */
     .contact-sheet {
       aspect-ratio: 8.5 / 11;
       --exposure: 1;
@@ -579,16 +580,22 @@
       left: 0;
       right: 0;
       height: 5.66%;
-      background: repeating-linear-gradient(90deg,
-        transparent 0 2.56%,
-        var(--perf-color, #fff) 2.56% 9.93%,
-        transparent 9.93% 12.5%);
+      background-image: linear-gradient(90deg,
+        transparent 0 20%,
+        var(--perf-color, #fff) 20% 80%,
+        transparent 80% 100%);
+      background-size: var(--perf-step, 2.0833%) 100%;
+      background-repeat: repeat-x;
       pointer-events: none;
     }
     .film-strip::before { top: 5.7%; }
     .film-strip::after { bottom: 5.7%; }
     .contact-sheet[data-view="contact"] .film-strip::before,
     .contact-sheet[data-view="contact"] .film-strip::after { opacity: 0; }
+    .contact-sheet[data-film-family="120"] .film-strip::before,
+    .contact-sheet[data-film-family="120"] .film-strip::after { display: none; }
+    .contact-sheet[data-film-family="120"] .drop-zone::before,
+    .contact-sheet[data-film-family="120"] .drop-zone::after { display: none; }
     .contact-sheet[data-view="negative"][data-film-tone="color"] .film-strip,
     .contact-sheet[data-view="negative"][data-film-tone="color"] .film-stock,
     .contact-sheet[data-view="negative"][data-film-tone="color"] .film-frame-code { background: #c97b4e; }
@@ -601,7 +608,7 @@
       display: grid;
       place-items: center;
       min-width: 0;
-      aspect-ratio: 38 / 35;
+      aspect-ratio: var(--cell-ratio, 38 / 35);
       padding: 0;
       border: 0;
       color: inherit;
@@ -615,7 +622,7 @@
     .photo-frame {
       position: relative;
       z-index: 1;
-      width: 94.737%;
+      width: var(--frame-width, 94.737%);
       aspect-ratio: var(--frame-ratio, 3 / 2);
       overflow: hidden;
       background: #24231f;
@@ -767,7 +774,7 @@
         <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
         <span>ベタ焼きノート</span>
       </button>
-      <button class="version-button" id="version-button" type="button" title="リリースノートを開く">v0.4.0</button>
+      <button class="version-button" id="version-button" type="button" title="リリースノートを開く">v0.5.0</button>
     </div>
     <div class="header-actions">
       <button class="header-button" id="feedback-button" type="button" title="目安箱を開く">✉ <span class="long-label">目安箱</span></button>
@@ -780,25 +787,30 @@
       <div class="control-panel-inner">
         <p class="panel-kicker">DIGITAL CONTACT SHEET</p>
         <h1 class="panel-title">写真を、見渡せる一枚に。</h1>
-        <p class="panel-copy">135フィルムの寸法と暗室工程に沿った、連続ストリップのコンタクトシートを作れます。</p>
+        <p class="panel-copy">135と120フィルムの寸法と暗室工程に沿った、連続ストリップのコンタクトシートを作れます。</p>
 
         <button class="import-button" id="import-button" type="button"><span aria-hidden="true">＋</span> 写真を選ぶ</button>
         <input id="file-input" type="file" accept="image/*" multiple aria-label="写真ファイルを選ぶ">
 
         <section class="control-group" aria-labelledby="layout-label">
           <span class="control-label" id="layout-label">1段の枚数</span>
-          <div class="segment" id="column-controls">
+          <div class="segment six" id="column-controls">
+            <button type="button" data-columns="2" aria-pressed="false">2</button>
             <button type="button" data-columns="3" aria-pressed="false">3</button>
             <button type="button" data-columns="4" aria-pressed="false">4</button>
             <button type="button" data-columns="5" aria-pressed="false">5</button>
             <button type="button" data-columns="6" aria-pressed="true">6</button>
+            <button type="button" data-columns="8" aria-pressed="false">8</button>
           </div>
           <label class="field">
-            <span>フィルム規格</span>
-            <select id="ratio-select">
-              <option value="3/2">35mm フルサイズ（3:2）</option>
-              <option value="4/3">35mm ハーフ（4:3）</option>
-              <option value="1/1">中判 6×6（1:1）</option>
+            <span>フィルム／画面フォーマット</span>
+            <select id="format-select">
+              <option value="135-full">135（35mm）フルサイズ — 36×24mm／36枚</option>
+              <option value="135-half">135（35mm）ハーフ — 18×24mm／72枚</option>
+              <option value="120-645">120 6×4.5 — 15〜16枚</option>
+              <option value="120-66">120 6×6 — 12枚</option>
+              <option value="120-67">120 6×7 — 10枚</option>
+              <option value="120-69">120 6×9 — 8枚</option>
             </select>
           </label>
           <label class="field">
@@ -861,7 +873,7 @@
               <output class="range-value" id="contrast-output" for="contrast-range">100</output>
             </div>
           </div>
-          <p class="authenticity-note">暗室モードはパーフォレーションを黒へ溶かし、全コマへ同じ露光・コントラストを適用します。</p>
+          <p class="authenticity-note">135はパーフォレーションを再現し、120は穴のない61.5mmロールフィルムとして表示します。暗室モードではフィルム外周を黒へ溶かします。</p>
         </section>
 
         <section class="control-group" aria-labelledby="paper-label">
@@ -957,7 +969,7 @@
         </section>
         <header class="sheet-heading">
           <input class="sheet-title" id="sheet-title" value="TOKYO WALK" maxlength="60" aria-label="コンタクトシートのタイトル">
-          <div class="sheet-meta" id="sheet-meta"><span id="sheet-date"></span><span aria-hidden="true">—</span><span id="sheet-count">0 FRAMES</span><span aria-hidden="true">—</span><span id="sheet-film">KODAK PORTRA 400</span></div>
+          <div class="sheet-meta" id="sheet-meta"><span id="sheet-date"></span><span aria-hidden="true">—</span><span id="sheet-count">0 FRAMES</span><span aria-hidden="true">—</span><span id="sheet-format">135 · 36×24</span><span aria-hidden="true">—</span><span id="sheet-film">KODAK PORTRA 400</span></div>
           <p class="sheet-note" id="sheet-note" hidden></p>
         </header>
 
@@ -1023,18 +1035,28 @@
       'use strict';
 
       const APP_ID = 'beta-yaki-note';
-      const APP_VERSION = '0.4.0';
+      const APP_VERSION = '0.5.0';
       const RELEASE_NOTES = [
+        { ver: 'v0.5.0', date: '2026-10-03', changes: ['120フィルムの6×4.5・6×6・6×7・6×9を追加', '各画面フォーマットの比率、1ロールの標準コマ数、コンタクトシートの段組みを再現', '135のパーフォレーションと、穴のない幅61.5mmの120フィルムを自動切り替え', '画面枠の縦横に合わせて写真の長辺方向を統一', 'JPEG書き出し、META、編集部台紙へ選択中のフォーマット情報を反映'] },
         { ver: 'v0.4.0', date: '2026-10-03', changes: ['写真カードを廃止し、135フィルム寸法に基づく6コマ連続ストリップへ刷新', '暗室ベタ焼き・ネガ原版・ポジ原版・20枚スライド台紙を追加', '暗室モードではパーフォレーションを黒へ溶かし、原版モードでは1コマ8穴を再現', '縦位置を横倒しで統一する忠実表示と、正立させる閲覧優先表示を追加', 'METAと編集部台紙を独立レイヤー化し、シート全体の露光・コントラスト調整を追加', '青いダーマトグラフとApple Pencil描画を追加'] },
         { ver: 'v0.3.0', date: '2026-09-27', changes: ['Apple Pencilの筆圧に対応した書き込みモードを追加', '赤・白のダーマットペン風テクスチャと芯の太さ調整を追加', '書き込みの元に戻す・全消去に対応', '手書き線をJPEG保存と印刷／PDFへ反映'] },
         { ver: 'v0.2.0', date: '2026-09-26', changes: ['35mmフィルムのパーフォレーションとエッジ印字を再現', 'ポジ・ネガ・META表示を追加', 'JPEGのEXIF情報表示に対応', '縦写真を自動回転し、全コマの長辺方向を統一'] },
         { ver: 'v0.1.0', date: '2026-09-26', changes: ['複数写真の読み込みと並べ替えに対応', '赤入れ、回転、レイアウト調整を追加', 'JPEG保存と印刷／PDF出力を追加', '使い方・リリースノート・目安箱を追加'] }
       ];
 
+      const FILM_FORMATS = Object.freeze({
+        '135-full': { label: '135 · 36×24', family: '135', frameWidth: 36, frameHeight: 24, filmWidth: 35, pitch: 38, perforations: 8, columns: 6, exposures: 36, edgeLabel: '135' },
+        '135-half': { label: '135 HALF · 18×24', family: '135', frameWidth: 18, frameHeight: 24, filmWidth: 35, pitch: 19, perforations: 4, columns: 8, exposures: 72, edgeLabel: '135 HALF' },
+        '120-645': { label: '120 · 6×4.5', family: '120', frameWidth: 42, frameHeight: 56, filmWidth: 61.5, pitch: 45, perforations: 0, columns: 5, exposures: '15–16', edgeLabel: '120 6×4.5' },
+        '120-66': { label: '120 · 6×6', family: '120', frameWidth: 56, frameHeight: 56, filmWidth: 61.5, pitch: 60, perforations: 0, columns: 4, exposures: 12, edgeLabel: '120 6×6' },
+        '120-67': { label: '120 · 6×7', family: '120', frameWidth: 69, frameHeight: 56, filmWidth: 61.5, pitch: 73, perforations: 0, columns: 3, exposures: 10, edgeLabel: '120 6×7' },
+        '120-69': { label: '120 · 6×9', family: '120', frameWidth: 84, frameHeight: 56, filmWidth: 61.5, pitch: 88, perforations: 0, columns: 2, exposures: 8, edgeLabel: '120 6×9' }
+      });
+
       const state = {
         photos: [],
         columns: 6,
-        ratio: '3/2',
+        format: '135-full',
         fit: 'cover',
         gap: 6,
         paper: 'white',
@@ -1073,7 +1095,8 @@
         sheetNote: document.getElementById('sheet-note'),
         sheetDate: document.getElementById('sheet-date'),
         sheetFilm: document.getElementById('sheet-film'),
-        ratioSelect: document.getElementById('ratio-select'),
+        sheetFormat: document.getElementById('sheet-format'),
+        formatSelect: document.getElementById('format-select'),
         fitSelect: document.getElementById('fit-select'),
         filmPreset: document.getElementById('film-preset'),
         filmNameInput: document.getElementById('film-name-input'),
@@ -1290,7 +1313,7 @@
 
       function displayFilmName() { return state.filmName.trim() || 'UNTITLED FILM'; }
 
-      function ratioCss(value) { return value.replace('/', ' / '); }
+      function currentFormat() { return FILM_FORMATS[state.format] || FILM_FORMATS['135-full']; }
 
       function formatExposure(value) {
         if (!Number.isFinite(value) || value <= 0) return '';
@@ -1395,18 +1418,24 @@
         }
       }
 
-      function effectiveRotation(photo) {
-        return ((photo.rotation || 0) + (state.orientation === 'film' && photo.isPortrait ? 90 : 0)) % 360;
+      function effectiveRotation(photo, format = currentFormat()) {
+        let alignment = 0;
+        if (state.orientation === 'film' && format.frameWidth !== format.frameHeight) {
+          const frameIsPortrait = format.frameHeight > format.frameWidth;
+          if (photo.isPortrait !== frameIsPortrait) alignment = 90;
+        }
+        return ((photo.rotation || 0) + alignment) % 360;
       }
 
       function render() {
         const hasPhotos = state.photos.length > 0;
         const filmName = displayFilmName();
+        const format = currentFormat();
         const renderColumns = state.view === 'slides' ? 4 : state.columns;
         setPressedGroup(document.getElementById('column-controls'), 'columns', state.columns);
         setPressedGroup(document.getElementById('paper-controls'), 'paper', state.paper);
         setPressedGroup(document.getElementById('view-controls'), 'view', state.view);
-        el.ratioSelect.value = state.ratio;
+        el.formatSelect.value = state.format;
         el.fitSelect.value = state.fit;
         el.orientationSelect.value = state.orientation;
         el.exposureRange.value = String(state.exposure);
@@ -1415,7 +1444,8 @@
         el.contrastOutput.value = String(state.contrast);
         if (document.activeElement !== el.filmNameInput) el.filmNameInput.value = state.filmName;
         el.sheetFilm.textContent = filmName;
-        el.agencyFilm.textContent = filmName;
+        el.sheetFormat.textContent = format.label;
+        el.agencyFilm.textContent = `${filmName} · ${format.label}`;
         el.agencyCaption.textContent = el.sheetTitle.value || 'UNTITLED STORY';
         el.gapRange.value = String(state.gap);
         el.gapOutput.value = String(state.gap);
@@ -1423,13 +1453,18 @@
         el.grid.hidden = !hasPhotos;
         el.grid.style.setProperty('--grid-columns', renderColumns);
         el.grid.style.setProperty('--grid-gap', state.gap + 'px');
-        el.grid.style.setProperty('--frame-ratio', ratioCss(state.ratio));
+        el.grid.style.setProperty('--frame-ratio', `${format.frameWidth} / ${format.frameHeight}`);
+        el.grid.style.setProperty('--cell-ratio', `${format.pitch} / ${format.filmWidth}`);
+        el.grid.style.setProperty('--frame-width', `${format.frameWidth / format.pitch * 100}%`);
+        el.grid.style.setProperty('--perf-step', `${format.perforations ? 100 / (renderColumns * format.perforations) : 100}%`);
         el.grid.style.setProperty('--photo-fit', state.fit);
         el.sheet.style.setProperty('--exposure', state.exposure / 100);
         el.sheet.style.setProperty('--contrast', state.contrast / 100);
         el.sheet.dataset.paper = state.paper;
         el.sheet.dataset.view = state.view;
         el.sheet.dataset.meta = String(state.showMeta);
+        el.sheet.dataset.filmFamily = format.family;
+        el.sheet.dataset.filmFormat = state.format;
         el.sheet.dataset.filmTone = /ILFORD|TRI-X|T-MAX|ACROS/i.test(filmName) ? 'bw' : 'color';
         el.agencyHeader.hidden = !state.showAgency;
         el.metaToggle.setAttribute('aria-pressed', String(state.showMeta));
@@ -1459,11 +1494,10 @@
           img.src = photo.url;
           img.alt = '';
           img.decoding = 'async';
-          const rotation = effectiveRotation(photo);
+          const rotation = effectiveRotation(photo, format);
           img.style.setProperty('--rotation', rotation + 'deg');
           const quarterTurn = Math.abs(rotation % 180) === 90;
-          const [ratioWidth, ratioHeight] = state.ratio.split('/').map(Number);
-          const frameRatio = ratioWidth / ratioHeight;
+          const frameRatio = format.frameWidth / format.frameHeight;
           img.style.setProperty('--image-width', quarterTurn ? `${100 / frameRatio}%` : '100%');
           img.style.setProperty('--image-height', quarterTurn ? `${100 * frameRatio}%` : '100%');
 
@@ -1484,7 +1518,7 @@
 
           const filmStock = document.createElement('span');
           filmStock.className = 'film-stock';
-          filmStock.textContent = `${filmName}  135`;
+          filmStock.textContent = `${filmName}  ${format.edgeLabel}`;
           const frameCode = document.createElement('span');
           frameCode.className = 'film-frame-code';
           frameCode.textContent = `◁ ${String(index + 1).padStart(2, '0')}`;
@@ -1497,7 +1531,7 @@
 
           const slideCaption = document.createElement('span');
           slideCaption.className = 'slide-caption';
-          slideCaption.textContent = `© CONTACT ARCHIVE\n${String(index + 1).padStart(2, '0')} · ${filmName}`;
+          slideCaption.textContent = `© CONTACT ARCHIVE\n${String(index + 1).padStart(2, '0')} · ${format.edgeLabel} · ${filmName}`;
           const slideDot = document.createElement('span');
           slideDot.className = 'slide-select-dot';
           slideDot.setAttribute('aria-hidden', 'true');
@@ -1523,7 +1557,7 @@
 
         const selected = selectedPhotos().length;
         el.photoCount.textContent = `${state.photos.length}枚`;
-        el.sheetCount.textContent = `${state.photos.length} FRAME${state.photos.length === 1 ? '' : 'S'}`;
+        el.sheetCount.textContent = `${state.photos.length} FRAME${state.photos.length === 1 ? '' : 'S'} · ${format.exposures} EXP ROLL`;
         el.selectedCount.textContent = String(selected);
         el.rotateSelected.disabled = selected === 0;
         el.unselectAll.disabled = selected === 0;
@@ -1668,6 +1702,7 @@
         el.exportButton.textContent = '作成中…';
         await new Promise(resolve => requestAnimationFrame(resolve));
         try {
+          const format = currentFormat();
           const width = 2000;
           const pad = 110;
           const contentWidth = width - pad * 2;
@@ -1677,10 +1712,9 @@
           const cellPitch = state.view === 'slides'
             ? (contentWidth - gap * (renderColumns - 1)) / renderColumns
             : contentWidth / renderColumns;
-          const [rw, rh] = state.ratio.split('/').map(Number);
-          const frameWidth = cellPitch * 36 / 38;
-          const frameHeight = frameWidth * rh / rw;
-          const stripHeight = Math.max(cellPitch * 35 / 38, frameHeight + cellPitch * 11 / 38);
+          const frameWidth = cellPitch * format.frameWidth / format.pitch;
+          const frameHeight = frameWidth * format.frameHeight / format.frameWidth;
+          const stripHeight = cellPitch * format.filmWidth / format.pitch;
           const filmEdge = (stripHeight - frameHeight) / 2;
           const cellHeight = state.view === 'slides' ? cellPitch : stripHeight;
           const rows = Math.ceil(state.photos.length / renderColumns);
@@ -1718,7 +1752,7 @@
             ctx.fillText('Story No.  001', splitX + 18, headingY + 44);
             ctx.fillText('Photographer  —', splitX + 18, headingY + 91);
             ctx.fillText('List No.   ROLL 01', splitX + 18, headingY + 138);
-            ctx.fillText(`Film       ${filmName.slice(0, 20)}`, splitX + 18, headingY + 185);
+            ctx.fillText(`Film       ${filmName.slice(0, 15)} · ${format.edgeLabel}`, splitX + 18, headingY + 185);
             ctx.restore();
             headingY += agencyHeight + 35;
           }
@@ -1729,7 +1763,7 @@
           ctx.globalAlpha = .62;
           ctx.font = '32px -apple-system, BlinkMacSystemFont, "Hiragino Sans", sans-serif';
           const modeNames = { contact: 'DARKROOM CONTACT', negative: 'COLOR NEGATIVE', reversal: 'REVERSAL FILM', slides: 'MOUNTED SLIDES' };
-          const meta = `${state.showDate ? today + '  —  ' : ''}${state.photos.length} FRAMES  —  ${filmName}  —  ${modeNames[state.view]}`;
+          const meta = `${state.showDate ? today + '  —  ' : ''}${state.photos.length} FRAMES  —  ${format.label}  —  ${filmName}  —  ${modeNames[state.view]}`;
           ctx.fillText(meta, pad, headingY + 132);
           ctx.globalAlpha = 1;
           if (!el.sheetNote.hidden) {
@@ -1746,16 +1780,16 @@
               const bwFilm = /ILFORD|TRI-X|T-MAX|ACROS/i.test(filmName);
               ctx.fillStyle = state.view === 'negative' ? (bwFilm ? '#b9b8b0' : '#c97b4e') : '#0d0d0c';
               ctx.fillRect(pad, stripY, contentWidth, stripHeight);
-              if (state.view !== 'contact') {
-                const perfW = cellPitch * 2.8 / 38;
+              if (state.view !== 'contact' && format.family === '135') {
+                const perfW = cellPitch * 2.8 / format.pitch;
                 const perfH = stripHeight * 1.98 / 35;
                 const perfTop = stripY + stripHeight * 2 / 35;
                 const perfBottom = stripY + stripHeight - perfTop + stripY - perfH;
                 ctx.fillStyle = paperColor();
                 for (let col = 0; col < renderColumns; col++) {
                   const cellX = pad + col * cellPitch;
-                  for (let hole = 0; hole < 8; hole++) {
-                    const holeX = cellX + (hole + .5) * cellPitch / 8 - perfW / 2;
+                  for (let hole = 0; hole < format.perforations; hole++) {
+                    const holeX = cellX + (hole + .5) * cellPitch / format.perforations - perfW / 2;
                     ctx.fillRect(holeX, perfTop, perfW, perfH);
                     ctx.fillRect(holeX, perfBottom, perfW, perfH);
                   }
@@ -1784,7 +1818,7 @@
               ctx.fillRect(cellX, cellY, cellPitch, cellPitch);
               ctx.strokeRect(cellX, cellY, cellPitch, cellPitch);
               drawWidth = cellPitch * .76;
-              drawHeight = drawWidth * rh / rw;
+              drawHeight = drawWidth * format.frameHeight / format.frameWidth;
               photoX = cellX + (cellPitch - drawWidth) / 2;
               photoY = cellY + cellPitch * .1;
               ctx.fillStyle = '#171715';
@@ -1801,7 +1835,7 @@
             } else {
               ctx.filter = `${state.view === 'reversal' || state.view === 'slides' ? 'saturate(1.06) ' : ''}brightness(${state.exposure}%) contrast(${state.contrast}%)`;
             }
-            drawCover(ctx, photo.img, photoX, photoY, drawWidth, drawHeight, effectiveRotation(photo), state.fit);
+            drawCover(ctx, photo.img, photoX, photoY, drawWidth, drawHeight, effectiveRotation(photo, format), state.fit);
             ctx.restore();
             if (state.view === 'negative' && !/ILFORD|TRI-X|T-MAX|ACROS/i.test(filmName)) {
               ctx.save();
@@ -1828,7 +1862,7 @@
               ctx.font = `600 ${Math.max(12, cellPitch * .034)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
               ctx.textAlign = 'center';
               ctx.fillText(`© CONTACT ARCHIVE · ${String(index + 1).padStart(2, '0')}`, cellX + cellPitch / 2, cellY + cellPitch * .77, cellPitch * .9);
-              ctx.fillText(filmName.slice(0, 28), cellX + cellPitch / 2, cellY + cellPitch * .84, cellPitch * .9);
+              ctx.fillText(`${format.edgeLabel} · ${filmName}`.slice(0, 32), cellX + cellPitch / 2, cellY + cellPitch * .84, cellPitch * .9);
               ctx.textAlign = 'left';
               if (photo.selected) {
                 ctx.fillStyle = '#f32264';
@@ -1839,7 +1873,7 @@
             } else {
               ctx.fillStyle = state.view === 'contact' ? '#d9d7cf' : (state.view === 'negative' ? (/ILFORD|TRI-X|T-MAX|ACROS/i.test(filmName) ? '#242421' : '#2d1d16') : '#d9ad55');
               ctx.font = `700 ${Math.max(10, cellPitch * .029)}px ui-monospace, SFMono-Regular, Menlo, monospace`;
-              ctx.fillText(`${filmName.slice(0, 23)}  135`, cellX + 8, cellY + stripHeight - 8, cellPitch - 55);
+              ctx.fillText(`${filmName.slice(0, 20)}  ${format.edgeLabel}`, cellX + 8, cellY + stripHeight - 8, cellPitch - 35);
               if (state.showNumbers) {
                 ctx.textAlign = 'right';
                 ctx.fillText(`◁ ${String(index + 1).padStart(2, '0')}`, cellX + cellPitch - 8, cellY + 18);
@@ -1893,12 +1927,13 @@
         el.modalBody.replaceChildren();
         const sections = [
           ['① 写真を読み込む', '「写真を選ぶ」またはドラッグ＆ドロップで追加します。初期値では6コマずつの連続した135フィルムとして配置します。'],
-          ['② 表現を選ぶ', '暗室は密着焼き、ネガは原版、ポジはリバーサル、スライドは2×2インチマウント20枚の保存台紙を再現します。'],
-          ['③ 向きと露光を決める', 'フィルム忠実では縦位置が同じ方向へ横倒しになります。閲覧優先では正立します。露光とコントラストは全コマへ一括適用します。'],
-          ['④ METAと編集部台紙', 'METAは独立表示で、JPEGのEXIFや画像サイズを重ねます。編集部台紙をオンにするとStory No.やCaptions欄を追加します。'],
-          ['⑤ Apple Pencilで書き込む', '「書き込みを開始」をオンにし、赤・白・青のダーマトグラフで囲みやメモを書きます。筆圧に合わせて蝋質の濃さと太さが変わり、指はスクロールに使えます。'],
-          ['⑥ 並びとセレクトを整える', '写真はドラッグで並べ替え、各コマの ↻ で回転できます。写真をタップすると暗室シートでは赤枠、スライド台紙では赤丸が付きます。'],
-          ['⑦ 保存する', '「JPEGで保存」で連続フィルム、エッジ印字、META、台紙、手書き線を1枚にまとめます。「印刷 / PDF」にも反映します。'],
+          ['② フォーマットを選ぶ', '135フル／ハーフと、120の6×4.5・6×6・6×7・6×9から選べます。選択すると画面比率、1ロールの標準コマ数、1段の枚数が連動します。'],
+          ['③ 表現を選ぶ', '暗室は密着焼き、ネガは原版、ポジはリバーサル、スライドはマウント保存台紙を再現します。135ではパーフォレーション、120では穴のないロールフィルムになります。'],
+          ['④ 向きと露光を決める', 'フィルム忠実では選択した画面枠の長辺方向へ写真を揃えます。正方形の6×6は回転しません。閲覧優先では元画像の向きを保ちます。'],
+          ['⑤ METAと編集部台紙', 'METAは独立表示で、JPEGのEXIFや画像サイズを重ねます。編集部台紙をオンにするとStory No.やCaptions欄を追加します。'],
+          ['⑥ Apple Pencilで書き込む', '「書き込みを開始」をオンにし、赤・白・青のダーマトグラフで囲みやメモを書きます。筆圧に合わせて蝋質の濃さと太さが変わり、指はスクロールに使えます。'],
+          ['⑦ 並びとセレクトを整える', '写真はドラッグで並べ替え、各コマの ↻ で回転できます。写真をタップすると暗室シートでは赤枠、スライド台紙では赤丸が付きます。'],
+          ['⑧ 保存する', '「JPEGで保存」で選択中のフィルム形状、エッジ印字、META、台紙、手書き線を1枚にまとめます。「印刷 / PDF」にも反映します。'],
           ['注意事項', '写真、EXIF情報、書き込みはブラウザ内だけで処理され、サーバーには送信されません。ページを閉じると作業中の内容は消えます。']
         ];
         sections.forEach(([heading, text]) => {
@@ -1950,17 +1985,17 @@
             description: '現在の写真枚数、赤入れ枚数、レイアウト設定を確認します。',
             inputSchema: { type: 'object', properties: {}, additionalProperties: false },
             annotations: { readOnlyHint: true, untrustedContentHint: false },
-            execute() { return { photoCount: state.photos.length, selectedCount: selectedPhotos().length, annotationCount: state.strokes.length, drawEnabled: state.drawEnabled, penColor: state.penColor, penSize: state.penSize, columns: state.columns, ratio: state.ratio, fit: state.fit, paper: state.paper, view: state.view, orientation: state.orientation, exposure: state.exposure, contrast: state.contrast, showMeta: state.showMeta, showAgency: state.showAgency, filmName: state.filmName }; }
+            execute() { return { photoCount: state.photos.length, selectedCount: selectedPhotos().length, annotationCount: state.strokes.length, drawEnabled: state.drawEnabled, penColor: state.penColor, penSize: state.penSize, columns: state.columns, format: state.format, fit: state.fit, paper: state.paper, view: state.view, orientation: state.orientation, exposure: state.exposure, contrast: state.contrast, showMeta: state.showMeta, showAgency: state.showAgency, filmName: state.filmName }; }
           },
           {
             name: 'configure_contact_sheet',
             title: 'ベタ焼きのレイアウトを変更',
-            description: '表示中のベタ焼きについて、列数、トリミング、暗室／原版／スライド表示、向き、露光、META、フィルム名をまとめて変更します。',
+            description: '表示中のベタ焼きについて、135／120の画面フォーマット、列数、トリミング、暗室／原版／スライド表示、向き、露光、META、フィルム名をまとめて変更します。',
             inputSchema: {
               type: 'object',
               properties: {
-                columns: { type: 'integer', enum: [3,4,5,6] },
-                ratio: { type: 'string', enum: ['3/2','4/3','1/1'] },
+                columns: { type: 'integer', enum: [2,3,4,5,6,8] },
+                format: { type: 'string', enum: ['135-full','135-half','120-645','120-66','120-67','120-69'] },
                 fit: { type: 'string', enum: ['cover','contain'] },
                 paper: { type: 'string', enum: ['white','warm','gray','dark'] },
                 view: { type: 'string', enum: ['contact','negative','reversal','slides'] },
@@ -1976,10 +2011,10 @@
             annotations: { readOnlyHint: false, untrustedContentHint: false },
             execute(input) {
               if (!input || typeof input !== 'object') throw new TypeError('設定値が必要です');
-              const allowedKeys = ['columns', 'ratio', 'fit', 'paper', 'view', 'orientation', 'exposure', 'contrast', 'showMeta', 'showAgency', 'filmName'];
+              const allowedKeys = ['columns', 'format', 'fit', 'paper', 'view', 'orientation', 'exposure', 'contrast', 'showMeta', 'showAgency', 'filmName'];
               if (Object.keys(input).some(key => !allowedKeys.includes(key))) throw new TypeError('未対応の設定項目があります');
-              if (input.columns !== undefined && ![3,4,5,6].includes(input.columns)) throw new TypeError('columnsは3〜6の選択肢から指定してください');
-              if (input.ratio !== undefined && !['3/2','4/3','1/1'].includes(input.ratio)) throw new TypeError('未対応のratioです');
+              if (input.columns !== undefined && ![2,3,4,5,6,8].includes(input.columns)) throw new TypeError('columnsは2・3・4・5・6・8から指定してください');
+              if (input.format !== undefined && !FILM_FORMATS[input.format]) throw new TypeError('未対応のformatです');
               if (input.fit !== undefined && !['cover','contain'].includes(input.fit)) throw new TypeError('未対応のfitです');
               if (input.paper !== undefined && !['white','warm','gray','dark'].includes(input.paper)) throw new TypeError('未対応のpaperです');
               if (input.view !== undefined && !['contact','negative','reversal','slides'].includes(input.view)) throw new TypeError('未対応のviewです');
@@ -1989,8 +2024,11 @@
               if (input.showMeta !== undefined && typeof input.showMeta !== 'boolean') throw new TypeError('showMetaは真偽値で指定してください');
               if (input.showAgency !== undefined && typeof input.showAgency !== 'boolean') throw new TypeError('showAgencyは真偽値で指定してください');
               if (input.filmName !== undefined && (typeof input.filmName !== 'string' || !input.filmName.trim() || input.filmName.length > 40)) throw new TypeError('filmNameは1〜40文字で指定してください');
+              if (input.format !== undefined) {
+                state.format = input.format;
+                if (input.columns === undefined) state.columns = currentFormat().columns;
+              }
               if (input.columns !== undefined) state.columns = input.columns;
-              if (input.ratio !== undefined) state.ratio = input.ratio;
               if (input.fit !== undefined) state.fit = input.fit;
               if (input.paper !== undefined) state.paper = input.paper;
               if (input.view !== undefined) state.view = input.view;
@@ -2001,7 +2039,7 @@
               if (input.showAgency !== undefined) state.showAgency = input.showAgency;
               if (input.filmName !== undefined) state.filmName = input.filmName.trim();
               render();
-              return { ok: true, columns: state.columns, ratio: state.ratio, fit: state.fit, paper: state.paper, view: state.view, orientation: state.orientation, exposure: state.exposure, contrast: state.contrast, showMeta: state.showMeta, showAgency: state.showAgency, filmName: state.filmName };
+              return { ok: true, columns: state.columns, format: state.format, fit: state.fit, paper: state.paper, view: state.view, orientation: state.orientation, exposure: state.exposure, contrast: state.contrast, showMeta: state.showMeta, showAgency: state.showAgency, filmName: state.filmName };
             }
           }
         ];
@@ -2024,7 +2062,11 @@
         const button = event.target.closest('[data-view]'); if (!button) return;
         state.view = button.dataset.view; render();
       });
-      el.ratioSelect.addEventListener('change', () => { state.ratio = el.ratioSelect.value; render(); });
+      el.formatSelect.addEventListener('change', () => {
+        state.format = el.formatSelect.value;
+        state.columns = currentFormat().columns;
+        render();
+      });
       el.fitSelect.addEventListener('change', () => { state.fit = el.fitSelect.value; render(); });
       el.orientationSelect.addEventListener('change', () => { state.orientation = el.orientationSelect.value; render(); });
       el.exposureRange.addEventListener('input', () => { state.exposure = Number(el.exposureRange.value); render(); });
@@ -2155,6 +2197,7 @@
           `time: ${new Date().toISOString()}`,
           `photos: ${state.photos.length}`,
           `selected: ${selectedPhotos().length}`,
+          `format: ${state.format}`,
           `annotations: ${state.strokes.length}`,
           `drawMode: ${state.drawEnabled}`,
           `viewport: ${innerWidth}x${innerHeight}`,
