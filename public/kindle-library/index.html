@@ -53,7 +53,8 @@
   .hero p { font-size: 13px; color: var(--sub); line-height: 1.7; margin: 0 0 20px; }
 
   .stats { font-size: 12px; color: var(--sub); margin: 0 0 14px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 18px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(var(--card-min, 160px), 1fr)); gap: 18px; }
+  .size-slider { width: 110px; accent-color: var(--accent-mid); cursor: pointer; }
 
   .book { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 10px; cursor: pointer; transition: box-shadow 0.15s, transform 0.15s; }
   .book:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.10); transform: translateY(-2px); }
@@ -75,7 +76,7 @@
   .book.group .cover { box-shadow: 3px -3px 0 -1px #eae8e6, 6px -6px 0 -2px #dedcda; }
 
   /* スクラップ */
-  .scrap-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 18px; }
+  .scrap-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(var(--card-min, 160px) + 40px), 1fr)); gap: 18px; }
   .scrap { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 10px; cursor: pointer; }
   .scrap img { width: 100%; border-radius: 8px; background: #f5f5f4; }
   .scrap .cap { font-size: 11px; color: var(--sub); margin-top: 6px; line-height: 1.4; }
@@ -121,9 +122,9 @@
     .hrow { gap: 8px; }
     .search { flex: 1; width: 110px; min-width: 110px; }
     main { padding: 12px; }
-    .grid { grid-template-columns: repeat(auto-fill, minmax(105px, 1fr)); gap: 12px; }
+    .grid { gap: 12px; }
     .book .title { font-size: 11px; }
-    .scrap-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+    .scrap-grid { gap: 12px; }
     #rdToolbar button { padding: 6px 8px; font-size: 12px; min-height: 30px; }
     #rdTitle { display: none; }
     .hero { margin: 40px auto; padding: 28px 20px; }
@@ -168,7 +169,7 @@
   <div class="hrow">
     <h1>
       <span class="app-name" onclick="openHowTo()" title="使い方を見る">📚 Kindleライブラリ</span>
-      <span class="ver" onclick="openReleaseNotes()" title="リリースノート">v0.7.1</span>
+      <span class="ver" onclick="openReleaseNotes()" title="リリースノート">v0.8.0</span>
       <span class="subtitle">kindle-capturerでスキャンした本のプレビュー</span>
     </h1>
     <div class="spacer"></div>
@@ -198,6 +199,7 @@
     <label style="font-size:12px; color:var(--sub); display:flex; align-items:center; gap:5px; cursor:pointer;">
       <input type="checkbox" id="groupToggle" checked style="accent-color:var(--accent);">グループ表示
     </label>
+    <span style="display:flex; align-items:center; gap:5px; color:var(--sub);" title="表紙の大きさ"><span style="font-size:10px;">🔳</span><input type="range" id="sizeSlider" class="size-slider" min="90" max="320" step="10"><span style="font-size:15px;">🔳</span></span>
     <button id="bulkGroupBtn" class="btn" title="検索・フィルタで表示中の本を、まとめて同じシリーズに設定">表示中をグループ化</button>
   </div>
 </header>
@@ -280,7 +282,7 @@
 
 <script>
 'use strict';
-var APP_VERSION = 'v0.7.1';
+var APP_VERSION = 'v0.8.0';
 
 // ===== 多言語対応（v0.6.0） =====
 var LANG = 'ja';
@@ -425,7 +427,8 @@ Object.assign(I18N.ja, {
   importing: function(i, n) { return 'PDFを取り込み中… ' + i + ' / ' + n; },
   importDone: function(n) { return n + '冊を取り込みました'; },
   importNone: '取り込めるPDFがありませんでした',
-  zoomNavHint: '🔍 ズーム中はタップ移動を無効化しています。ページ移動は左右端をダブルタップ（または◀▶ボタン）'
+  zoomNavHint: '🔍 ズーム中はタップ移動を無効化しています。ページ移動は左右端をダブルタップ（または◀▶ボタン）',
+  sizeSliderTitle: '表紙の大きさ'
 });
 Object.assign(I18N.en, {
   bmAdd: function(p) { return 'Bookmarked P.' + p; },
@@ -451,7 +454,8 @@ Object.assign(I18N.en, {
   importing: function(i, n) { return 'Importing PDFs… ' + i + ' / ' + n; },
   importDone: function(n) { return 'Imported ' + n + ' books'; },
   importNone: 'No importable PDFs found',
-  zoomNavHint: '🔍 Tap navigation is disabled while zoomed. Double-tap the left/right edge (or use ◀▶) to turn pages'
+  zoomNavHint: '🔍 Tap navigation is disabled while zoomed. Double-tap the left/right edge (or use ◀▶) to turn pages',
+  sizeSliderTitle: 'Cover size'
 });
 function t(k) {
   var v = I18N[LANG][k];
@@ -459,6 +463,13 @@ function t(k) {
 }
 
 var RELEASE_NOTES = [
+  { ver: 'v0.8.0', date: '2026-10-03',
+    changes: [
+      '表紙一覧の大きさをスライダーで変更できるように（フィルタ行の🔳スライダー。スクラップ一覧にも連動、設定は保存されます）'
+    ],
+    en: [
+      'Added a cover-size slider in the filter row (also scales the scrap grid; your setting is remembered)'
+    ]},
   { ver: 'v0.7.1', date: '2026-09-11',
     changes: [
       'ズーム中の誤ページ送りを修正 — ピンチズーム/拡大表示中はタップ・スワイプでのページ移動を無効化（パン操作と衝突しないように）',
@@ -1918,6 +1929,7 @@ function applyLang() {
   $('thumbBtn').textContent = t('thumbBtn');
   $('folderBtn').textContent = t('folderBtn');
   $('bulkGroupBtn').textContent = t('bulkGroup');
+  $('sizeSlider').parentNode.title = t('sizeSliderTitle');
   $('langBtn').textContent = LANG === 'ja' ? 'EN' : '日本語';
   var chipKeys = { all: 'chipAll', book: 'chipBook', manga: 'chipManga', magazine: 'chipMag', fav: 'chipFav', scrap: 'chipScrap' };
   document.querySelectorAll('#filterRow .chip').forEach(function(c) { c.textContent = t(chipKeys[c.dataset.view]); });
@@ -1941,6 +1953,26 @@ $('langBtn').onclick = function() {
   LANG = LANG === 'ja' ? 'en' : 'ja';
   try { localStorage.setItem('kl_lang', LANG); } catch (e) {}
   applyLang();
+};
+
+// ===== 表紙サイズスライダー =====
+// グリッドの最小カード幅をCSS変数で制御。保存して次回も維持。
+// 既定値はデスクトップ160px / モバイル105px（従来のレイアウトと同じ）
+var CARD_MIN_DEF = (window.innerWidth <= 640) ? 105 : 160;
+function applyCardSize(v) {
+  v = Math.max(90, Math.min(320, v || CARD_MIN_DEF));
+  document.documentElement.style.setProperty('--card-min', v + 'px');
+  $('sizeSlider').value = v;
+  return v;
+}
+(function() {
+  var saved = 0;
+  try { saved = parseInt(localStorage.getItem('kl_cardSize'), 10) || 0; } catch (e) {}
+  applyCardSize(saved || CARD_MIN_DEF);
+})();
+$('sizeSlider').oninput = function() {
+  var v = applyCardSize(parseInt(this.value, 10));
+  try { localStorage.setItem('kl_cardSize', String(v)); } catch (e) {}
 };
 
 // ===== イベント =====
