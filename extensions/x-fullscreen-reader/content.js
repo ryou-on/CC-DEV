@@ -1,13 +1,13 @@
-/* X Fullscreen Reader v0.2.2
+/* X Fullscreen Reader v0.3.0
  * 1記事1画面の全画面リーダー。Alt+R または右下の 📖 ボタンで起動。
- * ←→ 送り/戻り ／ ↑↓ ブックマーク選択 ／ J K 移動 ／ X 選択 ／ Enter 決定 ／ Esc 閉じる
+ * ←→ 送り/戻り ／ fn+↑↓ リプライ ／ ↑↓ ブックマーク選択 ／ J K 移動 ／ X 選択 ／ Enter 決定 ／ Esc 閉じる
  */
 (() => {
   'use strict';
   if (window.__xfrLoaded) return;
   window.__xfrLoaded = true;
 
-  const VERSION = '0.2.2';
+  const VERSION = '0.3.0';
   const DEFAULT_ENTRY = { name: 'ブックマーク（フォルダなし）', isDefault: true };
 
   // ---- 状態 ----
@@ -188,7 +188,7 @@
         <main id="main"></main>
         <footer>
           <span><kbd>←</kbd>戻る <kbd>→</kbd>次へ</span>
-          <span><kbd>⌘←</kbd><kbd>⌘→</kbd>リプライ</span>
+          <span><kbd>fn↑</kbd><kbd>fn↓</kbd>リプライ</span>
           <span><kbd>↑</kbd><kbd>↓</kbd>ブックマーク</span>
           <span><kbd>+</kbd><kbd>-</kbd>文字サイズ</span>
           <span><kbd>T</kbd>白黒</span>
@@ -587,7 +587,9 @@
       return;
     }
 
-    if ((e.metaKey || e.ctrlKey) && (k === 'ArrowRight' || k === 'ArrowLeft')) { replyMove(k === 'ArrowRight' ? 1 : -1); return; }
+    // fn+↓ = PageDown / fn+↑ = PageUp（Mac）。Windows は PageUp/PageDown キー
+    if (k === 'PageDown') { replyMove(1); return; }
+    if (k === 'PageUp') { replyMove(-1); return; }
     if (k === 'ArrowRight') go(1);
     else if (k === 'ArrowLeft') go(-1);
     else if (k === 'ArrowUp' || k === 'ArrowDown') openPicker();
@@ -610,7 +612,7 @@
     };
     box.append(
       mk('📖 全画面で読む', 'Alt+R でも起動', () => (state.open ? closeReader() : openReader())),
-      mk(`v${VERSION}`, 'リリースノート', () => alert(`## v0.2.2 (2026-10-03)\n- 既存のブックマークフォルダが一覧に出ない問題を修正\n\n## v0.2.1 (2026-10-03)\n- リプライ表示・ブックマークフォルダ取得が動かない問題を修正\n\n## v0.2.0 (2026-10-03)\n- ⌘+←→でリプライの送り/戻りを追加\n\n## v0.1.0 (2026-10-03)\n- 初回リリース\n- 1記事1画面の全画面リーダー\n- ←→で送り/戻り、↑↓でブックマーク選択（J/K移動・X選択・Enter決定）`)),
+      mk(`v${VERSION}`, 'リリースノート', () => alert(`## v0.3.0 (2026-10-03)\n- リプライの送り/戻りを fn+↓ / fn+↑（PageDown / PageUp）に変更\n\n## v0.2.2 (2026-10-03)\n- 既存のブックマークフォルダが一覧に出ない問題を修正\n\n## v0.2.1 (2026-10-03)\n- リプライ表示・ブックマークフォルダ取得が動かない問題を修正\n\n## v0.2.0 (2026-10-03)\n- ⌘+←→でリプライの送り/戻りを追加\n\n## v0.1.0 (2026-10-03)\n- 初回リリース\n- 1記事1画面の全画面リーダー\n- ←→で送り/戻り、↑↓でブックマーク選択（J/K移動・X選択・Enter決定）`)),
       mk('🐞', 'デバッグログをコピー', async () => {
         try { await navigator.clipboard.writeText(logs.join('\n') || '(ログなし)'); } catch (e) {}
       })
