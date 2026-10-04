@@ -186,16 +186,58 @@ export default function App() {
     return <div className="min-h-dvh flex items-center justify-center bg-stone-100"><Spinner /></div>
   }
 
+  const infoModals = <>
+      {showUsage && (
+        <Modal title="使い方" onClose={() => setShowUsage(false)}>
+          <a href="/" className="underline">ホームへ戻る</a><pre className="text-sm text-stone-700 whitespace-pre-wrap font-sans leading-relaxed">{USAGE_GUIDE}</pre>
+        </Modal>
+      )}
+      {showNotes && (
+        <Modal title="リリースノート" onClose={() => setShowNotes(false)}>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+              <p className="text-xs text-stone-600">
+                現在のバージョン: <b>{APP_VERSION}</b>
+                <span className="block text-[10px] text-stone-400 mt-0.5">
+                  ホーム画面に登録したアプリはここから更新できます
+                </span>
+              </p>
+              <button
+                className="shrink-0 inline-flex items-center gap-1.5 text-xs font-medium bg-amber-700 hover:bg-amber-800 text-white rounded-lg px-3 py-2"
+                onClick={() => {
+                  // キャッシュされたindex.htmlを確実に取り直す(?k=等の既存パラメータは維持)
+                  const url = new URL(window.location.href)
+                  url.searchParams.set('u', String(Date.now()))
+                  window.location.replace(url.toString())
+                }}
+              >
+                <RefreshCw size={13} /> 最新版に更新
+              </button>
+            </div>
+            {RELEASE_NOTES.map((n) => (
+              <div key={n.version}>
+                <h3 className="font-bold text-sm text-stone-800">{n.version} <span className="text-xs text-stone-400 font-normal">({n.date})</span></h3>
+                <ul className="list-disc list-inside text-sm text-stone-600 mt-1">
+                  {n.changes.map((c, i) => <li key={i}>{c}</li>)}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </Modal>
+      )}
+  </>
+
   // 未ログイン: link/公開モードで閲覧できる場合を除きログイン画面へ
   if (!user && role !== 'viewer') {
     return (
       <div className="min-h-dvh flex flex-col items-center justify-center bg-stone-100 px-6 text-center">
         <LibraryBig size={56} className="text-amber-700 mb-4" />
-        <h1 className="text-2xl font-bold text-stone-800 mb-1">本ドコ？</h1>
+        <h1 className="text-2xl font-bold text-stone-800 mb-1"><button onClick={() => setShowUsage(true)}>本ドコ？</button></h1>
         <p className="text-sm text-stone-500 mb-8">本棚の写真から蔵書を登録・検索できる家族用蔵書マップ</p>
         <button className={btnPrimary + ' !px-6 !py-3'} onClick={login}>Googleでログイン</button>
         {loginError && <p className="text-sm text-red-600 mt-4">{loginError}</p>}
-        <p className="text-xs text-stone-400 mt-10">{APP_VERSION}</p>
+        <button className="text-xs text-stone-400 mt-10" onClick={() => setShowNotes(true)}>{APP_VERSION}</button>
+        {infoModals}
       </div>
     )
   }
@@ -460,44 +502,7 @@ export default function App() {
           </div>
         </Modal>
       )}
-      {showUsage && (
-        <Modal title="使い方" onClose={() => setShowUsage(false)}>
-          <pre className="text-sm text-stone-700 whitespace-pre-wrap font-sans leading-relaxed">{USAGE_GUIDE}</pre>
-        </Modal>
-      )}
-      {showNotes && (
-        <Modal title="リリースノート" onClose={() => setShowNotes(false)}>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
-              <p className="text-xs text-stone-600">
-                現在のバージョン: <b>{APP_VERSION}</b>
-                <span className="block text-[10px] text-stone-400 mt-0.5">
-                  ホーム画面に登録したアプリはここから更新できます
-                </span>
-              </p>
-              <button
-                className="shrink-0 inline-flex items-center gap-1.5 text-xs font-medium bg-amber-700 hover:bg-amber-800 text-white rounded-lg px-3 py-2"
-                onClick={() => {
-                  // キャッシュされたindex.htmlを確実に取り直す(?k=等の既存パラメータは維持)
-                  const url = new URL(window.location.href)
-                  url.searchParams.set('u', String(Date.now()))
-                  window.location.replace(url.toString())
-                }}
-              >
-                <RefreshCw size={13} /> 最新版に更新
-              </button>
-            </div>
-            {RELEASE_NOTES.map((n) => (
-              <div key={n.version}>
-                <h3 className="font-bold text-sm text-stone-800">{n.version} <span className="text-xs text-stone-400 font-normal">({n.date})</span></h3>
-                <ul className="list-disc list-inside text-sm text-stone-600 mt-1">
-                  {n.changes.map((c, i) => <li key={i}>{c}</li>)}
-                </ul>
-              </div>
-            ))}
-          </div>
-        </Modal>
-      )}
+      {infoModals}
     </div>
   )
 }

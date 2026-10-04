@@ -1,0 +1,28 @@
+name: Cost safety tests
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+      - run: npm ci --ignore-scripts
+        working-directory: functions
+      - run: npm test
+        working-directory: functions
+      - run: python3 -m unittest discover -s scripts -p test_cost_guard.py -v
+      - name: Produce audit without deploying
+        run: python3 scripts/cost_guard.py --root . --json cost-audit.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cost-risk-findings
+          path: cost-audit.json

@@ -424,6 +424,7 @@ body.demo .hdr-in{padding-right:92px}
 .recap .srow{font-size:13px}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 </style>
+<script src="/shared/cost-access.js" defer></script>
 </head>
 <body>
 
@@ -906,9 +907,10 @@ function loadGLTFLoader(){
 /* ============================================================
    定数
    ============================================================ */
-const APP_VERSION = 'v0.2.0';
+const APP_VERSION = 'v0.3.0';
 
 const RELEASE_NOTES = [
+  {"ver": "v0.3.0", "date": "2026-10-05", "changes": ["有料機能にログイン・利用上限・安全停止を追加。 進捗の取得間隔を延ばし、エラー時の繰り返し通信を停止。"]},
   { ver: 'v0.2.0', date: '2026-07-31', changes: [
     'サービス名を「ちいさなじぶん」に確定しました（旧称 TINY ME）',
     '保育園団体プランの取り扱いを終了しました。料金表・FAQから該当項目を削除しています',
@@ -947,6 +949,7 @@ const RELEASE_NOTES = [
     '価格・納期はすべて税込・推定値です'
   ]}
 ];
+    window.COST_RELEASE_NOTES = RELEASE_NOTES;
 
 const HOW_TO_USE = [
   { heading: '① 写真を選ぶ', text: '正面・全身・明るい場所で撮影した写真を1枚アップロードします。JPEG / PNG / WebP、10MB以下、短辺512px以上が条件です。大きな写真は送信前に自動で縮小されます（長辺1600px / JPEG）。' },
@@ -957,6 +960,7 @@ const HOW_TO_USE = [
   { heading: '⑥ 発注', text: 'お届け先を入力して「決済に進む」でStripeの決済画面へ。店頭でチラシを見た方は紹介店舗コードもご入力ください。' },
   { heading: 'デモモードについて', text: 'バックエンドに接続できない環境では自動的にデモモードになります。URLに ?demo=1 を付けても強制的にデモモードで起動します。デモモードでは擬似的な3Dフィギュアが表示され、決済は行われません。' }
 ];
+window.COST_USAGE = HOW_TO_USE.map(x => x.heading + '\n' + x.text.replace(/<[^>]*>/g, '')).join('\n\n');
 
 const PLANS = { S:{label:'S / 40mm', price:7800}, M:{label:'M / 65mm', price:12800}, L:{label:'L / 100mm', price:19800} };
 const OPT_BASE_PRICE  = 1200;
@@ -977,7 +981,7 @@ const SENDABLE_MIME    = ['image/png', 'image/jpeg', 'image/webp'];
 
 const API_GENERATE = '/api/mini-me-generate';
 const API_CHECKOUT = '/api/mini-me-checkout';
-const POLL_INTERVAL = 3000;
+const POLL_INTERVAL = 10000;
 const POLL_TIMEOUT  = 10 * 60 * 1000;
 
 /* ============================================================
@@ -1321,16 +1325,12 @@ function infraError(msg){ const e = new Error(msg); e.infra = true; return e; }
 
 async function runRealGeneration(){
   try {
-    const res = await fetch(API_GENERATE, {
+    const res = await CostAccess.fetch(API_GENERATE, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ imageBase64: state.imageBase64, mimeType: state.mimeType })
     });
-    if (!res.ok) {
-      // 404 / 5xx はエンドポイント未配備・障害。写真を変えても直らないのでデモへ倒す。
-      if (res.status === 404 || res.status >= 500) throw infraError('generate ' + res.status);
-      throw new Error('generate failed: ' + res.status);
-    }
+    if (!res.ok) throw await CostAccess.error(res);
     const ct = res.headers.get('content-type') || '';
     if (!ct.includes('json')) throw infraError('non-json response');
     const data = await res.json();
@@ -1339,13 +1339,6 @@ async function runRealGeneration(){
     pollStatus();
   } catch (e) {
     if (state.aborted) return;
-    // fetch 自体の失敗（CORS / オフライン / DNS）は TypeError で来る。これもインフラ側。
-    const isInfra = !!(e && (e.infra || e.name === 'TypeError'));
-    if (isInfra) {
-      enableDemo();
-      runDemoGeneration();       // その場でデモ生成に切り替えて先へ進ませる
-      return;
-    }
     stopTicker();
     showGenError(
       '生成の開始に失敗しました。時間をおいて再度お試しください。（' + (e && e.message ? e.message : 'error') + '）',
@@ -1361,8 +1354,8 @@ function pollStatus(){
     showGenError('生成がタイムアウトしました（10分）。写真を変えて再度お試しください。', { offerDemo: true });
     return;
   }
-  fetch(API_GENERATE + '?taskId=' + encodeURIComponent(state.taskId))
-    .then(r => { if (!r.ok) throw new Error('status ' + r.status); return r.json(); })
+  CostAccess.fetch(API_GENERATE + '?taskId=' + encodeURIComponent(state.taskId))
+    .then(async r => { if (!r.ok) throw await CostAccess.error(r); return r.json(); })
     .then(data => {
       if (state.aborted) return;
       if (typeof data.progress === 'number') setProgress(data.progress);
@@ -1380,9 +1373,10 @@ function pollStatus(){
         state.polling = setTimeout(pollStatus, POLL_INTERVAL);
       }
     })
-    .catch(() => {
+    .catch(e => {
       if (state.aborted) return;
-      state.polling = setTimeout(pollStatus, POLL_INTERVAL);
+      stopPolling(); stopTicker();
+      showGenError('進捗確認を停止しました。生成をやり直すと別の処理になります。管理者に状況をご確認ください。 ' + e.message);
     });
 }
 
@@ -1874,21 +1868,8 @@ function enableDemo(){
 }
 
 async function probeBackend(){
-  const forced = new URLSearchParams(location.search).get('demo');
-  if (forced === '1') { enableDemo(); return; }
-  if (!apiReachable()) { enableDemo(); return; }
-  try {
-    const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    const timer = ctl ? setTimeout(() => ctl.abort(), 4000) : null;
-    const res = await fetch(API_GENERATE + '?taskId=__ping__', ctl ? { signal: ctl.signal } : undefined);
-    if (timer) clearTimeout(timer);
-    // 404 / 5xx はエンドポイント未配備とみなしデモへ
-    if (res.status === 404 || res.status >= 500) { enableDemo(); return; }
-    const ct = res.headers.get('content-type') || '';
-    if (!ct.includes('json')) { enableDemo(); return; }
-  } catch (e) {
-    enableDemo();
-  }
+  // Page views never call the generation API. Demo is an explicit user choice.
+  if (new URLSearchParams(location.search).get('demo') === '1' || !apiReachable()) enableDemo();
 }
 
 /* ============================================================
@@ -1906,7 +1887,8 @@ goStep(1);
 try { await probeBackend(); } catch (e) { enableDemo(); }
 state.probed = true;   // 何があっても必ず立てる（立たないと生成ボタンが永久にdisabledになる）
 updateGenButton();
-renderSummary();   // デモなら refreshQuote は即returnするので通信は発生しない
+renderSummary({ skipQuote: true }); // 初期表示ではサーバーに問い合わせない
 </script>
+<script src="/shared/info-dialog.js" data-name-target="#logoBtn" data-version-target="#verBtn" data-version="v0.3.0" data-manual="Googleでログインし、写真を選んで生成を開始します。生成には利用上限があります。進捗確認が止まった場合は再生成せず管理者へご連絡ください。?demo=1 では通信せずサンプルを確認できます。" data-changes="有料機能にログイン・利用上限・安全停止を追加。"></script>
 </body>
 </html>
