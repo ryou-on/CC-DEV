@@ -6,6 +6,7 @@
 #   1. 禁止ファイル混入（.DS_Store / *.wav / *.bak）→ ブロック
 #   2. Flight_Strip index.html 変更時に RELEASE_NOTES 未更新 → ブロック
 #   3. その他 public/<app>/index.html 変更時にバージョン表記らしき更新がない → 警告のみ
+#   4. コスト暴走防止チェック（scripts/cost-guard-check.js）→ エラーならブロック
 #
 # 手動実行: scripts/pre-push-check.sh --manual  （origin/main..HEAD を検査）
 set -u
@@ -74,6 +75,15 @@ else
       check_range "$remote_sha..$local_sha"
     fi
   done
+fi
+
+# 4. コスト暴走防止（robots.txt / maxInstances / 有料APIのガード / 秘密鍵 / 巨大ファイル）
+if command -v node >/dev/null 2>&1; then
+  if ! node "$REPO_ROOT/scripts/cost-guard-check.js"; then
+    FAIL=1
+  fi
+else
+  echo "⚠️  node が無いため cost-guard-check をスキップしました"
 fi
 
 if [ "$FAIL" -ne 0 ]; then

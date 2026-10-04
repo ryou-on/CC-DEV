@@ -71,6 +71,30 @@ Co-Authored-By トレーラーは実行中のエージェントの既定署名�
 
 ---
 
+## 💸 コスト暴走防止ルール（全アプリ必須・2026-10-04〜）
+
+> 「誰も見ていない公開サイトが AI クローラーに叩かれ続け、120万円請求」型の事故を防ぐ。詳細・診断結果は `docs/cost-guard.md`。
+> `scripts/cost-guard-check.js` が **CI（全 push/PR）と pre-push で自動検査**し、違反は赤／push 中止になる。
+
+新しいアプリ・関数を作る／公開するときは必ず守ること:
+
+1. **有料API（OpenAI / Anthropic / Meshy 等）をサーバー側の鍵で呼ぶ関数は、先頭で必ずガードを通す**
+   ```js
+   const costGuard = require('./cost-guard');
+   if (!(await costGuard.guardPaidRequest(req, res, { scope: 'myapp', perIp: 20, global: 100 }))) return;
+   ```
+   ログイン必須のアプリなら `verifyIdToken` ＋許可リストでも可。どちらも無い関数は CI が落とす（E3）。
+2. **`setGlobalOptions` の `maxInstances` を外さない**（E2）。個別に増やすときも上限値を明記する。
+3. **robots.txt を消さない・緩めない**。新しい Hosting サイトを足したら、その public 直下にも置く（E1）。
+4. **ページを開くたびに重い処理・大量データ取得をしない**。一覧データは事前生成した静的 JSON か、ページング／遅延読込にする。10MB超のファイルは置かない（E5）。
+5. **公開GETで Functions/Storage から重いファイルを配信するときは**、`costGuard.isAiCrawler(req)` で 403 し、`Cache-Control: s-maxage` で CDN キャッシュを効かせる。
+6. **Firestore を `allow write: if true` にしない**。やむを得ない場合はフィールド・サイズ制限を付ける（CI 警告 W6）。
+7. **APIキーをクライアントにハードコードしない**（E4）。ユーザー自身のキー入力方式か、Secret Manager／Worker 環境変数を使う。
+8. **友人テスト用に公開したまま放置しない**。使わなくなったアプリは `public/OLD/` へ移すか削除し、関数も `firebase functions:delete` する。
+9. **困ったら即停止**: Firestore `cost-guard/config` に `killSwitch: true` で有料API全停止（予算超過時は `budgetGuard` が自動で立てる）。
+
+---
+
 ## デプロイルール（Flight_Strip 限定・毎回厳守）
 
 > 2026-07-08 グローバル `~/.claude/CLAUDE.md` から移設（AI環境監査）。

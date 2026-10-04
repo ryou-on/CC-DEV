@@ -6,7 +6,12 @@
 const { onRequest } = require('firebase-functions/v2/https');
 const { setGlobalOptions } = require('firebase-functions/v2');
 
-setGlobalOptions({ region: 'asia-northeast1' });
+// maxInstances: 全関数のスケール上限。ボット/攻撃で無限にスケールして課金が膨らむのを防ぐ。
+// 個別に増やしたい関数は onRequest のオプションで maxInstances を上書きすること。
+setGlobalOptions({ region: 'asia-northeast1', maxInstances: 10 });
+
+// 従量課金の暴走防止（ボット拒否・キルスイッチ・Origin・日次上限）。詳細は cost-guard.js / docs/cost-guard.md
+const costGuard = require('./cost-guard');
 
 exports.anthropicProxy = onRequest({
   cors: true,   // Firebase Functions v2 の CORS 自動付与
@@ -21,6 +26,9 @@ exports.anthropicProxy = onRequest({
   if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
 
   if (req.method !== 'POST') { res.status(405).json({ error: 'POST only' }); return; }
+
+  // 自サイト以外からの踏み台利用・ボットを拒否（呼び出し課金の保護）
+  if (!(await costGuard.guardPaidRequest(req, res, { scope: 'anthropicProxy' }))) return;
 
   const apiKey = req.headers['x-api-key'];
   if (!apiKey) { res.status(400).json({ error: 'x-api-key header required' }); return; }
@@ -70,6 +78,15 @@ exports.realtimeToken = onRequest(
         .send('Content-Typeはapplication/sdpにしてください');
       return;
     }
+
+    // OpenAI Realtime は1セッションごとに実費が発生する。
+    // ボット・他サイト・curl を拒否し、IP/全体の日次セッション数に上限をかける。
+    if (!(await costGuard.guardPaidRequest(req, res, {
+      scope: 'realtime',
+      perIp: costGuard.envInt('COST_GUARD_REALTIME_PER_IP', 30),
+      global: costGuard.envInt('COST_GUARD_REALTIME_GLOBAL', 100),
+      json: false,
+    }))) return;
 
     try {
       const allowedVoices = new Set(['marin', 'cedar']);
@@ -191,12 +208,7 @@ exports.realtimeToken = onRequest(
 // realtimeToken(EN→JA固定)と違い、direction/voice/model をJSONで受けて
 // セッション設定をサーバ側で組み立てる。既存アプリとは独立。
 
-const ALLOWED_ORIGINS = new Set([
-  'https://cc-dev-ps7.web.app',
-  'https://cc-dev-ps7.firebaseapp.com',
-  'http://localhost:5000',
-  'http://localhost:5173',
-]);
+// 許可 Origin は cost-guard.js の ALLOWED_ORIGINS に集約
 
 const DUO_MODELS = new Set(['gpt-realtime', 'gpt-realtime-mini']);
 const DUO_VOICES = new Set(['marin', 'cedar', 'alloy', 'echo']);
@@ -226,12 +238,13 @@ exports.interpreterCall = onRequest(
       return;
     }
 
-    // 同一オリジン(rewrite経由)以外からの利用を拒否
-    const origin = req.get('origin');
-    if (origin && !ALLOWED_ORIGINS.has(origin)) {
-      res.status(403).json({ error: 'origin not allowed' });
-      return;
-    }
+    // ボット・他サイト・Origin無し(curl等)を拒否し、日次セッション数に上限をかける
+    // （realtimeToken と同じ 'realtime' 枠を共有＝合算で上限管理）
+    if (!(await costGuard.guardPaidRequest(req, res, {
+      scope: 'realtime',
+      perIp: costGuard.envInt('COST_GUARD_REALTIME_PER_IP', 30),
+      global: costGuard.envInt('COST_GUARD_REALTIME_GLOBAL', 100),
+    }))) return;
 
     const body = req.body || {};
     const { sdp, direction } = body;
@@ -349,6 +362,8 @@ const SERVE_MIME = {
 
 exports.assetServe = onRequest({ timeoutSeconds: 30, memory: '256MiB' }, async (req, res) => {
   try {
+    // AIクローラーに動画など重い素材を毎回ストリームさせない（Functions＋Storage の転送課金対策）
+    if (costGuard.isAiCrawler(req)) { res.status(403).send('Forbidden'); return; }
     const m = /^\/e\/([a-z0-9]{4,40})(\/(.*))?$/.exec((req.path || '').split('?')[0]);
     if (!m) { res.status(404).send('Not Found'); return; }
 
@@ -369,7 +384,9 @@ exports.assetServe = onRequest({ timeoutSeconds: 30, memory: '256MiB' }, async (
     const type = SERVE_MIME[ext] || meta.contentType || 'application/octet-stream';
 
     res.set('Content-Type', type);
-    res.set('Cache-Control', 'public, max-age=60, s-maxage=60');
+    // CDN に10分キャッシュさせ、同一素材への連打で Functions/Storage を毎回起動しない
+    res.set('Cache-Control', 'public, max-age=60, s-maxage=600');
+    res.set('X-Robots-Tag', 'noindex, nofollow');
     res.set('Access-Control-Allow-Origin', '*');
     res.set('X-Content-Type-Options', 'nosniff');
     // iFrame 埋め込み前提なので X-Frame-Options / CSP frame-ancestors は付けない
@@ -403,3 +420,41 @@ exports.hondokoAnalyze = hondoko.hondokoAnalyze;
 exports.hondokoAmazon = hondoko.hondokoAmazon;
 exports.hondokoCover = hondoko.hondokoCover;
 exports.hondokoNdl = hondoko.hondokoNdl;
+
+// ===== 予算アラート連動キルスイッチ =====
+// Cloud Billing の予算アラート → Pub/Sub トピック `billing-budget-alerts` → この関数。
+// 実費が予算の 100% に達したら Firestore cost-guard/config.killSwitch=true を立て、
+// cost-guard を通る有料API（realtime / anthropicProxy 等）を全て 503 で止める。
+// COST_GUARD_HARD_STOP=1 のときは予算の 150% で請求先アカウントを外し、プロジェクト全体を止める
+// （Hosting も停止し、復旧には手動で請求先の再リンクが必要。docs/cost-guard.md 参照）。
+const { onMessagePublished } = require('firebase-functions/v2/pubsub');
+
+exports.budgetGuard = onMessagePublished(
+  { topic: 'billing-budget-alerts', maxInstances: 1, timeoutSeconds: 60, memory: '256MiB' },
+  async (event) => {
+    const data = event.data && event.data.message && event.data.message.json;
+    if (!data) { console.warn('[budgetGuard] empty message'); return; }
+
+    const cost = Number(data.costAmount || 0);
+    const budget = Number(data.budgetAmount || 0);
+    if (!budget) return;
+    const ratio = cost / budget;
+    console.log(`[budgetGuard] ${data.budgetDisplayName}: ${cost}/${budget} (${(ratio * 100).toFixed(1)}%)`);
+
+    if (ratio >= 1) {
+      await costGuard.setKillSwitch(true, `budget ${data.budgetDisplayName}: ${cost}/${budget} ${data.currencyCode || ''}`);
+      console.error('[budgetGuard] 予算超過のためキルスイッチを ON にしました');
+    }
+
+    if (ratio >= 1.5 && process.env.COST_GUARD_HARD_STOP === '1') {
+      const projectId = process.env.GCLOUD_PROJECT || 'cc-dev-ps7';
+      const { access_token: token } = await admin.credential.applicationDefault().getAccessToken();
+      const r = await fetch(`https://cloudbilling.googleapis.com/v1/projects/${projectId}/billingInfo`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ billingAccountName: '' }),
+      });
+      console.error(`[budgetGuard] HARD STOP: 請求先アカウントの解除 status=${r.status}`, await r.text());
+    }
+  }
+);
