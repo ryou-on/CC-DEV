@@ -1,6 +1,6 @@
-# CC-DEV 800円停止ワークフロー（未適用）
+# CC-DEV 800円停止ワークフロー（稼働設定済み）
 
-`generate.py` は固定対象の非公開Google Cloud Workflows定義を生成する。公開アプリのデプロイゲートを迂回する仕組みではない。現在はIAM変更の承認待ちであり、クラウドでのコンパイル・dry-run・実行権限検証は未実施。Eventarcも未作成。**現時点で800円自動停止は稼働していない。**
+`generate.py` は固定対象の非公開Google Cloud Workflows定義を生成する。公開アプリのデプロイゲートを迂回する仕組みではない。2026-10-05にユーザー承認を受けて専用IAM・予算通知・Eventarc・Workflowsを接続した。**800円到達時の実停止は意図的に試験していない。**
 
 ## 固定の契約
 
@@ -11,14 +11,16 @@
 - 各停止先は独立して処理する。一部が失敗しても他を試行し、失敗はワークフロー失敗として記録。次の予算通知で再試行。自動復旧しない。
 - データ削除、課金アカウントの紐付け解除、外部通知送信を行わない。
 
-## 有効化前の作業
+## 稼働中の設定と検証
 
-1. 専用アカウントへのHosting Adminと限定カスタムロール付与について明示承認を得る。既定Hosting Adminには削除権限も含まれるがコードでは使用しない。Hostingは公式仕様上カスタムロールに非対応。
-2. 未公開のdeny Rulesetsを作成。`{"firestore":"projects/.../rulesets/...","storage":"projects/.../rulesets/..."}`を管理者限定の設定ファイルへ保存。
-3. `python3 infrastructure/cost-stop/generate.py <設定ファイル> > <workflows.json>`。Workflows APIに専用アカウントで登録し、構文とIAMを検証。公開エンドポイントを設けない。
-4. 有効通知の`dryRun:true`は`would_stop`、未達・誤ID・誤通貨・古い通知・未来・型異常は`ignored`となることを実際のWorkflows実行で確認。偽の超過通知を本番トピックにpublishしてはならない。
-5. Pub/Subからのみ実行できるEventarc配送アカウントを作成し、対象WorkflowsのInvoker権限だけを付与。トピックPublisherはGoogleの予算通知アカウントのみ。
-6. 最初の正規通知到着と実行結果を確認して証跡を更新する。
+1. Workflows `asia-northeast1/cc-dev-budget-stop` revision `000002-525` はACTIVE。実行主体は `cc-dev-cost-stop@cc-dev-ps7.iam.gserviceaccount.com`。Hosting Adminと、Rulesリリース更新・Cloud Run IAM更新・Firestoreバックアップ保存だけのカスタムロールを付与。Hosting Adminには削除権限も含まれるがコードでは使用しない。Hostingは公式仕様上カスタムロールに非対応。
+2. 未公開のdeny Rulesetsは `deny-rulesets.json` に記録。通常のFirestore/Storageリリースは変更していない。
+3. Eventarcトリガー `asia-northeast1/cc-dev-budget-stop` は `cc-dev-budget-alerts` トピックからこのWorkflowsへ配送。配送アカウント `cc-dev-budget-trigger@cc-dev-ps7.iam.gserviceaccount.com` にInvokerを付与。予算通知アカウントにトピックPublisherを付与。
+4. 800円の手動 `dryRun:true` が `would_stop`。799円、誤予算ID・課金アカウント・通貨・送信元、古い通知、前月分は `ignored`（計8ケース）。さらに本番Pub/Subトピックへ799円の模擬通知を1件送信し、Eventarc経由の実行 `8ae7bbb4-ea16-4228-a715-49d266a34fd6` が `SUCCEEDED / ignored`。この試験でサイトは停止していない。
+5. 同じ実行主体の一時的な読み取り専用Workflowsで、4 Hostingサイト、9 Cloud Runサービス、Firestore/Storageリリースの計15件のGETがすべて成功。一時Workflowsは削除済み。
+6. 実際の予算通知が届き800円以上で処理された際は、その実行結果と全停止先を照合する。実停止パスの成功を事前に断定しない。予算通知は遅延・重複・順序逆転があり得る。
+
+再生成時は `python3 infrastructure/cost-stop/generate.py infrastructure/cost-stop/deny-rulesets.json` を使う。予算ID・課金アカウントID・対象サイト/サービスを変更した場合は検証条件と一覧を同時に更新する。権限・トリガー等のクラウド設定はソース生成だけでは再作成されない。
 
 ## 手動復旧
 
