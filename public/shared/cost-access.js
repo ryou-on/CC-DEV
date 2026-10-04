@@ -42,6 +42,7 @@
     return startup;
   }
   async function headers() {
+    if (window.CCDEV_SHARED_AUTH) { await window.requireCCDevLogin(); return window.ccDevSharedHeaders(); }
     await ready();
     if (!auth.currentUser) throw Error(messages.SIGN_IN_REQUIRED);
     if (!check) throw Error('安全設定の準備中です。管理者にご連絡ください。');
@@ -64,6 +65,7 @@
     return new Error(messages[code] || (response.status === 403 ? '利用権限またはアプリの安全確認に失敗しました。' : '処理できませんでした。時間をおいてお試しください。'));
   }
   function mount() {
+    if (window.CCDEV_SHARED_AUTH) return;
     if (document.getElementById('cost-access-bar')) return;
     const bar = document.createElement('div');
     bar.id = 'cost-access-bar';

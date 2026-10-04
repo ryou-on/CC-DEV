@@ -7,6 +7,7 @@ const { armExpiry, expireCall, callIdFromLocation } = require('../realtime-cost'
 const NOW = Date.parse('2026-10-05T01:00:00Z');
 function fakeDb(service = 'miniGenerate') {
   const records = new Map([[`costControls/${service}`, { enabled: true, allowedUids: ['u1', 'u2'], expiresAtMs: NOW + 86400000, expiryQueueVerified: true }]]);
+  records.set("costControls/global", {enabled:true});
   let queue = Promise.resolve();
   function snap(path) { return { exists: records.has(path), data: () => records.get(path) }; }
   return {
@@ -51,7 +52,7 @@ test('unauthenticated, invalid and unverified accounts never reach quota storage
   ]) {
     const {db, guard} = fixture('miniGenerate', overrides);
     await assert.rejects(guard.authorize(request(headers), 'miniGenerate'), e => e.code === code);
-    assert.equal(db.records.size, 1);
+    assert.equal(db.records.size, 2);
   }
 });
 
@@ -67,7 +68,7 @@ test('valid request reserves all five quotas before paid operation', async () =>
   const {db, guard} = fixture();
   const a = await guard.authorize(request(), 'miniGenerate');
   await guard.reserve(a);
-  assert.equal(db.records.size, 6);
+  assert.equal(db.records.size, 7);
   for (const [key, value] of db.records) if (key.startsWith('costCounters/')) assert.equal(value.count, 1);
 });
 
@@ -146,3 +147,18 @@ test('durable deadline is five minutes and expiration is idempotent', async () =
 });
 
 module.exports = { fakeDb, fixture, request, NOW };
+
+// A budget stop remains latched across quota windows until an administrator restores it.
+test('budget stop blocks every paid service before counter writes, including malformed latch', async () => {
+  for (const service of Object.keys(LIMITS)) {
+    for (const value of [undefined, false, null, 'true']) {
+      const {db, guard}=fixture(service);
+      if(value===undefined)db.records.delete('costControls/global');
+      else db.records.set('costControls/global',{enabled:value});
+      let calls=0;
+      await assert.rejects(async()=>{await guard.reserve({...actor,service});calls++;},e=>e.code==='SERVICE_PAUSED');
+      assert.equal(calls,0);
+      assert.equal([...db.records.keys()].filter(k=>k.startsWith('costCounters/')).length,0);
+    }
+  }
+});

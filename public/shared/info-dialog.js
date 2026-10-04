@@ -17,7 +17,7 @@
     const open=(kind)=>{
       title.textContent=kind==='manual'?'使い方':'リリースノート';
       body.textContent=kind==='manual'?[cfg.manual,window.COST_USAGE].filter(Boolean).join('\n\n'):
-        (window.COST_RELEASE_NOTES || [{version:cfg.version,date:'2026-10-05',changes:[cfg.changes]}]).map(n=>`${n.version||n.ver||n.v}（${n.date}）\n${n.changes.join('\n')}`).join('\n\n');
+        (window.COST_RELEASE_NOTES || [{version:cfg.version,date:'2026-10-05',changes:[cfg.changes]}]).map(n=>`${n.version||n.ver||n.v}（${n.date}）\n${(n.changes || n.items || n.ja || []).join('\n')}`).join('\n\n');
       if(kind==='manual' && cfg.manualLink){const a=document.createElement('a');a.href=cfg.manualLink;a.textContent='詳しい取扱説明書';body.append(document.createElement('br'),a);}
       previous=document.body.style.overflow;document.body.style.overflow='hidden';dialog.showModal();
     };
@@ -26,8 +26,8 @@
       for(const el of document.querySelectorAll(selector)) {if(attached.has(el))continue;attached.add(el);
       el.setAttribute('role','button');el.setAttribute('tabindex','0');
       // Capture intercepts old handlers, retaining existing markup and navigation elsewhere.
-      el.addEventListener('click',e=>{e.preventDefault();e.stopImmediatePropagation();open(kind);},true);
-      el.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();open(kind);}});
+      el.addEventListener('click',e=>{if(kind==='manual' && e.target.closest(cfg.versionTarget))return;e.preventDefault();e.stopImmediatePropagation();open(kind);},true);
+      el.addEventListener('keydown',e=>{if(kind==='manual' && e.target.closest(cfg.versionTarget))return;if(e.key==='Enter'||e.key===' '){e.preventDefault();e.stopPropagation();open(kind);}});
       }
     }};
     attach();

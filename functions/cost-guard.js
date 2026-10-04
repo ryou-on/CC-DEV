@@ -71,7 +71,8 @@ function createGuard({ db, verifyIdToken, verifyAppCheck, now = Date.now }) {
     try {
       await db.runTransaction(async tx => {
         // Every read precedes every write; parallel requests cannot exceed a cap.
-        const [config, ...snapshots] = await tx.getAll(policyRef, ...entries.map(e => e[0]));
+        const [global, config, ...snapshots] = await tx.getAll(db.doc("costControls/global"), policyRef, ...entries.map(e => e[0]));
+        if (!global.exists || global.data()?.enabled !== true) throw new CostError(503, "SERVICE_PAUSED");
         const p = config.data();
         if (!config.exists || p?.enabled !== true || !Number.isSafeInteger(p.expiresAtMs) || p.expiresAtMs <= at) {
           throw new CostError(503, 'SERVICE_PAUSED');
