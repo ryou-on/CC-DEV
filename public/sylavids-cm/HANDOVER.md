@@ -1,4 +1,8 @@
-# HANDOVER.md - Sylavids 15秒CM / hihaho 15秒CM
+# HANDOVER.md - Sylavids 15秒CM（単体版）
+
+> **後継プロジェクト: `public/cm-generator/HANDOVER.md` を参照。** URL から 15/30秒 × 横/縦を自動生成する汎用ツール。hihaho 版も完成済み（`public/hihaho-cm/`）。
+> このファイルは Sylavids 単体版（15秒・横）の記録として残す。「次にやること」は完了済みなので、続きの作業は cm-generator 側で行う。
+
 
 ## 基本情報
 - バージョン: v0.1.0（CM素材。アプリ本体ではない）
@@ -8,17 +12,7 @@
 
 ## 目的
 1. **Sylavids 15秒CM**（文字中心モーショングラフィック）— 完成済み。
-2. **hihaho 15秒CM** — 未着手。**これが次の作業。** 同じ構成・同じ仕組みで、題材を hihaho（インタラクティブ動画プラットフォーム）に差し替える。
-
-## 次にやること（新セッションでの最初の作業）
-1. ネットワーク許可の確認（このファイルを書いた時点では未確認）
-   - `curl -sS -m 15 -o /dev/null -w "%{http_code}\n" https://hihaho.com/` が `200` 系なら許可済み。`403` / `000` なら未許可。
-   - 許可ドメイン（Custom）: `hihaho.com` `*.hihaho.com` `sylavids.com` `*.sylavids.com` `splineglobal.com` `*.splineglobal.com`
-   - 未許可なら、ユーザーに環境設定の Allowed domains 追加を依頼する。もしくはロゴ画像（SVG/PNG）とトップページ文言の貼り付けを依頼する。
-2. hihaho の公式サイト（https://hihaho.com/ja/ など）から、**キャッチコピー・見出し・主な機能・ブランドカラー・ロゴ**を取得する。コピーは原文の文言を拾って再構成する（Sylavids のときもサイト文言準拠で作り直した）。
-3. `public/hihaho-cm/` を新規作成し、`public/sylavids-cm/` の `index.html` と `render.py` をコピーして題材を差し替える。
-4. 30fps で MP4 を書き出し、代表フレームを確認 → ブラウザ再生用プレビュー（Artifact）を作る。
-5. コミット・push（ブランチは上記）。`main` への反映（＝本番デプロイ）はユーザーの指示があるまでしない。
+2. **hihaho 15秒CM** — 完成（`public/hihaho-cm/`）。
 
 ## 仕組み（Sylavids CM で確立済み）
 - `index.html` に `window.DURATION`（15）と `window.seek(t)` を定義。全描画は `t` の純粋関数（`Date.now` / rAF / CSS transition に依存しない）。
@@ -73,12 +67,13 @@ public/sylavids-cm/
 - [x] MP4 書き出し・代表フレーム確認
 - [x] ブラウザ再生プレビュー（Artifact）
 - [x] ブランチへ push
-- [ ] hihaho 公式サイトからの文言・ロゴ取得（ネットワーク許可待ち）
-- [ ] hihaho 15秒CM 作成・書き出し・プレビュー
+- [x] hihaho 公式サイトからの文言・ロゴ取得（hihaho.com/video-interactive-jp/）
+- [x] hihaho 15秒CM 作成・書き出し・プレビュー（`public/hihaho-cm/`、プレビュー: https://claude.ai/artifact/WMLVv9fygCifDfHaaczAjN ）
 - [ ] main へのマージ・本番デプロイ（ユーザー指示待ち）
 
 ## 既知の問題・注意事項
-- この環境ではネットワークが Trusted（許可リスト制）で、任意サイトは遮断される。環境設定の変更は**新しいセッションにのみ**反映される。
+- hihaho 版メモ: 元ロゴ(primary)はアイコン込みのため文字部分だけ `logo-text.png` に切り出し、アイコン＋文字のロックアップで描画。配色は ネイビー`#043348` / ピンク`#fc167b` / シアン`#2ed6e3`。
+- （旧）この環境ではネットワークが Trusted（許可リスト制）で、任意サイトは遮断される。環境設定の変更は**新しいセッションにのみ**反映される。
 - サーバーのフォントは IPAGothic（太字なし）。Mac で再書き出しすると Hiragino の太字になる。
 - アイコン → ワードマークの切り替え瞬間に、薄れていくアイコンがワードマークの一部に重なる（軽微。必要なら調整）。
 - 音声（BGM/ビート）は未実装。入れる場合は ffmpeg に `-i audio.wav` を追加。
