@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>hihaho リリースノート v3.40.0</title>
+<style>
+  html, body { margin: 0; background: #043348; height: 100%; }
+  body { display: flex; align-items: center; justify-content: center; }
+  canvas { max-width: 100vw; max-height: 100vh; aspect-ratio: 16 / 9; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script>
+/* ============================================================
+   hihaho リリースノート 2026年8月（v3.40.0）— 文字中心モーショングラフィック（84秒）
+   出典: hihaho-kb-content/releases/hihahoリリースノート 2026年8月（v3.40.0）.md（hihahoナレッジベース）
+   全ての描画は seek(t) の純粋関数。BPM120 → 1拍 = 0.5秒、84秒 = 168拍
+   構成: イントロ12拍 / 主な変更5本 × 28拍 / アウトロ16拍
+   ============================================================ */
+const COLOR = {
+  navy: '#043348', light: '#f6f8fa', muted: '#5d7482', white: '#ffffff',
+  pink: '#fb1a7c', cyan: '#2ed6e3', green: '#2cae6c', orange: '#fba37c',
+};
+const FEATURES = [
+  { name: 'LTI 1.3対応（LMS連携）', head: ['LMSから、', 'LTI 1.3で起動。'],
+    lines: ['LMSから動画を直接起動し、組み込みピッカーで選択', '学習者は再ログインなしで視聴', 'スコアは成績表の正しい列に自動反映'],
+    color: COLOR.pink, ink: COLOR.white },
+  { name: 'すべての動画にテキスト版（.md）', head: ['すべての動画に、', 'テキスト版。'],
+    lines: ['動画URLの末尾に .md を付けるだけ', 'タイトル・チャプター・文字起こし・質問を一覧', '正解は含まれないので、自由に共有できる'],
+    color: COLOR.cyan, ink: COLOR.navy },
+  { name: 'OSのアクセシビリティ設定に追従', head: ['OSの設定に、', 'プレイヤーが追従。'],
+    lines: ['「視差効果を減らす」でアニメーションがほぼ瞬時に', '「コントラストを上げる」でコントロールに境界線', '設定は不要。読みにくい配色はテーマ作成時に警告'],
+    color: COLOR.green, ink: COLOR.white },
+  { name: '視聴カウントの精度向上', head: ['視聴カウントが、', 'より正確に。'],
+    lines: ['再生が始まって初めて視聴1回とカウント', 'リンクプレビューやメールスキャナの水増しを排除', 'フォルダのエクスポートも統計ページと一致'],
+    color: COLOR.orange, ink: COLOR.navy },
+  { name: 'AIの精度と安定性が向上', head: ['AIの精度と、', '安定性が向上。'],
+    lines: ['長時間のAIジョブが1分で止まらない', '自動字幕は新しい音声認識モデルへ移行', '生成される問題文も、より読みやすく'],
+    color: COLOR.navy, ink: COLOR.white },
+];
+const FONT = '"Noto Sans JP","Noto Sans CJK JP","Hiragino Sans","Yu Gothic","IPAGothic","Meiryo",sans-serif';
+const BPM = 120, BEAT = 60 / BPM;
+const INTRO = 12, FEAT = 28, OUTRO_AT = INTRO + FEAT * 5;      // 12 / 28 / 152 拍
+window.DURATION = 84;
+const W = 1920, H = 1080;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const LOGO = Object.assign(new Image(), { src: 'logo-primary.png' });
+window.READY = Promise.all([
+  new Promise(r => { LOGO.onload = r; LOGO.onerror = r; }),
+  document.fonts ? document.fonts.ready : Promise.resolve(),
+]);
+
+/* ---------- イージング・ヘルパー ---------- */
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const prog = (b, s, d) => clamp((b - s) / d);
+const outCubic = x => 1 - Math.pow(1 - x, 3);
+const outExpo = x => (x >= 1 ? 1 : 1 - Math.pow(2, -10 * x));
+const inOutCubic = x => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+const outBack = x => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
+let T = 0;                                                      // 現在の絶対秒（波形・ゆらぎ用）
+
+function setFont(size, weight = 700) { ctx.font = `${weight} ${size}px ${FONT}`; ctx.textBaseline = 'alphabetic'; }
+function fillBg(c) { ctx.fillStyle = c; ctx.fillRect(0, 0, W, H); }
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function fillRR(x, y, w, h, r, fill, stroke, lw = 4) {
+  rr(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+}
+function sk(x, y, w, h, color) { fillRR(x, y, Math.max(0, w), h, h / 2, color); }   // スケルトン行
+function popAt(cx, cy, p, fn) {                                  // 中心基準でバウンド登場
+  if (p <= 0) return;
+  ctx.save(); ctx.translate(cx, cy);
+  const s = Math.max(0.0001, outBack(p)); ctx.scale(s, s); ctx.translate(-cx, -cy);
+  ctx.globalAlpha = clamp(p * 3); fn(); ctx.restore();
+}
+function star(cx, cy, r, color) {                                // 4点スパークル
+  ctx.beginPath(); ctx.moveTo(cx, cy - r);
+  ctx.quadraticCurveTo(cx, cy, cx + r, cy); ctx.quadraticCurveTo(cx, cy, cx, cy + r);
+  ctx.quadraticCurveTo(cx, cy, cx - r, cy); ctx.quadraticCurveTo(cx, cy, cx, cy - r);
+  ctx.fillStyle = color; ctx.fill();
+}
+// マスク付きせり上がり文字（maxW 指定で自動縮小）
+function maskedText(text, x, baseY, size, p, color, align = 'left', maxW = 0) {
+  if (p <= 0) return;
+  setFont(size);
+  let s = size;
+  if (maxW) { const w = ctx.measureText(text).width; if (w > maxW) { s = size * maxW / w; setFont(s); } }
+  ctx.textAlign = align; ctx.fillStyle = color;
+  const lineH = s * 1.3;
+  ctx.save(); ctx.beginPath(); ctx.rect(0, baseY - s * 1.05, W, lineH); ctx.clip();
+  ctx.fillText(text, x, baseY + (1 - outExpo(p)) * lineH);
+  ctx.restore();
+}
+function bar(x, y, w, h, p, color) { ctx.fillStyle = color; ctx.fillRect(x, y, w * outExpo(p), h); }
+function logoAt(cx, cy, w, wipeP) {                              // 中央から左右にワイプ
+  const h = w * LOGO.height / LOGO.width;
+  ctx.save(); ctx.beginPath();
+  ctx.rect(cx - (w / 2) * wipeP - 2, cy - h, w * wipeP + 4, h * 2); ctx.clip();
+  ctx.drawImage(LOGO, cx - w / 2, cy - h / 2, w, h); ctx.restore();
+}
+
+/* ---------- 共通クローム（ロゴ・進行インジケータ） ---------- */
+function chrome(fi) {
+  logoAt(160 + 118, 88, 236, 1);
+  const x0 = W - 160 - 5 * 70 + 10;
+  setFont(30, 700); ctx.textAlign = 'right'; ctx.fillStyle = COLOR.muted;
+  ctx.fillText(`0${fi + 1} / 05`, x0 - 24, 100);
+  for (let i = 0; i < 5; i++) {
+    ctx.fillStyle = i === fi ? FEATURES[i].color : (i < fi ? COLOR.muted : '#d3dce2');
+    ctx.fillRect(x0 + i * 70, 84, 60, 12);
+  }
+}
+
+/* ---------- 各機能のモチーフ ---------- */
+function check(cx, cy, size, color, p) {                         // チェックマーク
+  ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = size * 0.28; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.beginPath(); ctx.moveTo(cx - size * 0.5, cy);
+  if (p < 0.5) ctx.lineTo(cx - size * 0.5 + (size * 0.25) * (p / 0.5), cy + size * 0.35 * (p / 0.5));
+  else { ctx.lineTo(cx - size * 0.25, cy + size * 0.35); const q = (p - 0.5) / 0.5; ctx.lineTo(cx - size * 0.25 + size * 0.75 * q, cy + size * 0.35 - size * 0.85 * q); }
+  ctx.stroke(); ctx.restore();
+}
+function motif1(lb) {                                            // LTI 1.3：LMS ↔ hihaho → 成績表
+  popAt(1270, 420, prog(lb, 8, 1.1), () => { fillRR(1160, 320, 220, 200, 24, COLOR.navy); setFont(54, 900); ctx.textAlign = 'center'; ctx.fillStyle = COLOR.white; ctx.fillText('LMS', 1270, 438); });
+  popAt(1660, 420, prog(lb, 9, 1.1), () => {
+    fillRR(1550, 320, 220, 200, 24, COLOR.white, COLOR.navy, 5);
+    ctx.beginPath(); ctx.moveTo(1632, 375); ctx.lineTo(1632, 465); ctx.lineTo(1696, 420); ctx.closePath(); ctx.fillStyle = COLOR.pink; ctx.fill();
+  });
+  const lp = outCubic(prog(lb, 10.5, 1.5));
+  if (lp > 0) { ctx.strokeStyle = COLOR.pink; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(1380, 420); ctx.lineTo(1380 + 170 * lp, 420); ctx.stroke(); }
+  popAt(1465, 420, prog(lb, 11.5, 1), () => { fillRR(1420, 394, 90, 52, 26, COLOR.pink); setFont(26, 900); ctx.textAlign = 'center'; ctx.fillStyle = COLOR.white; ctx.fillText('LTI', 1465, 430); });
+  const ap = prog(lb, 15, 0.8);
+  if (ap > 0) { ctx.save(); ctx.globalAlpha = ap; ctx.translate(0, Math.sin(T * 5) * 4); ctx.beginPath(); ctx.moveTo(1640, 548); ctx.lineTo(1680, 548); ctx.lineTo(1660, 580); ctx.closePath(); ctx.fillStyle = COLOR.pink; ctx.fill(); ctx.restore(); }
+  popAt(1465, 700, prog(lb, 14, 1.2), () => {
+    fillRR(1160, 600, 610, 220, 22, COLOR.white, COLOR.navy, 4);
+    sk(1190, 628, 120, 12, 'rgba(4,51,72,.35)'); sk(1630, 628, 80, 12, 'rgba(4,51,72,.35)');
+    [0, 1, 2].forEach(i => { sk(1190, 674 + i * 52, 280 - i * 40, 14, 'rgba(4,51,72,.25)'); });
+    fillRR(1176, 714, 578, 46, 12, '#d8f3e4');
+    sk(1190, 730, 240, 14, 'rgba(4,51,72,.55)');
+  });
+  if (lb > 16.5) check(1690, 738, 30, COLOR.green, outCubic(prog(lb, 16.5, 1.2)));
+}
+function motif2(lb) {                                            // テキスト版：URL末尾に .md
+  popAt(1465, 362, prog(lb, 8, 1.1), () => { fillRR(1160, 320, 610, 84, 42, COLOR.white, COLOR.navy, 4); sk(1196, 354, 300, 16, 'rgba(4,51,72,.4)'); });
+  popAt(1665, 362, prog(lb, 10, 1), () => { fillRR(1560, 334, 180, 56, 28, COLOR.pink); setFont(36, 900); ctx.textAlign = 'center'; ctx.fillStyle = COLOR.white; ctx.fillText('.md', 1650, 374); });
+  const ap = prog(lb, 12, 0.8);
+  if (ap > 0) { ctx.save(); ctx.globalAlpha = ap; ctx.translate(0, Math.sin(T * 5) * 4); ctx.beginPath(); ctx.moveTo(1445, 428); ctx.lineTo(1485, 428); ctx.lineTo(1465, 460); ctx.closePath(); ctx.fillStyle = COLOR.cyan; ctx.fill(); ctx.restore(); }
+  popAt(1465, 640, prog(lb, 12.5, 1.1), () => { fillRR(1160, 490, 610, 300, 24, COLOR.white, COLOR.navy, 4); });
+  ['タイトル', 'チャプター', '文字起こし', '質問・インタラクティブ要素'].forEach((t, i) => {
+    const p = prog(lb, 13.5 + i * 1.1, 1), y = 510 + i * 66;
+    if (p <= 0) return;
+    ctx.save(); ctx.globalAlpha = outCubic(p); ctx.translate((1 - outExpo(p)) * 40, 0);
+    fillRR(1184, y, 562, 54, 14, '#e6f9fb'); ctx.fillStyle = COLOR.cyan; ctx.fillRect(1184, y + 8, 8, 38);
+    setFont(28); ctx.textAlign = 'left'; ctx.fillStyle = COLOR.navy; ctx.fillText(t, 1212, y + 37, 520); ctx.restore();
+  });
+  popAt(1550, 862, prog(lb, 19, 1.1), () => { fillRR(1330, 832, 440, 64, 32, COLOR.green); setFont(32); ctx.textAlign = 'center'; ctx.fillStyle = COLOR.white; ctx.fillText('正解は含まれない', 1550, 874); });
+}
+function motif3(lb) {                                            // アクセシビリティ：OS設定に追従
+  popAt(1460, 420, prog(lb, 8, 1.1), () => { fillRR(1140, 300, 640, 240, 24, COLOR.white, COLOR.navy, 4); });
+  const sw = (y, label, onAt) => {
+    const p = prog(lb, 8.5, 1);
+    if (p <= 0) return;
+    const k = outCubic(prog(lb, onAt, 0.6));
+    ctx.save(); ctx.globalAlpha = p;
+    setFont(36); ctx.textAlign = 'left'; ctx.fillStyle = COLOR.navy; ctx.fillText(label, 1180, y + 42, 400);
+    fillRR(1620, y, 120, 60, 30, k > 0.5 ? COLOR.green : '#cbd6dc');
+    ctx.beginPath(); ctx.arc(1650 + 60 * k, y + 30, 24, 0, 7); ctx.fillStyle = COLOR.white; ctx.fill(); ctx.restore();
+  };
+  sw(335, '視差効果を減らす', 12); sw(435, 'コントラストを上げる', 16);
+  popAt(1460, 690, prog(lb, 10, 1.1), () => {
+    fillRR(1140, 580, 640, 220, 24, '#eef3f6');
+    const hi = lb >= 16.3;                                       // コントラスト強調：太い境界線
+    ctx.beginPath(); ctx.arc(1230, 690, 46, 0, 7); ctx.fillStyle = COLOR.white; ctx.fill();
+    ctx.lineWidth = hi ? 10 : 2; ctx.strokeStyle = hi ? COLOR.navy : '#b8c6ce'; ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(1218, 668); ctx.lineTo(1218, 712); ctx.lineTo(1250, 690); ctx.closePath(); ctx.fillStyle = COLOR.navy; ctx.fill();
+    fillRR(1310, 684, 420, 12, 6, hi ? COLOR.navy : '#c9d5db');
+    const cyc = (lb % 4) / 4, pos = lb >= 12 ? (cyc < 0.5 ? 0 : 1) : outCubic(cyc);   // 視差効果オフ：動きが瞬時
+    ctx.beginPath(); ctx.arc(1330 + 380 * pos, 690, 20, 0, 7); ctx.fillStyle = COLOR.green; ctx.fill();
+  });
+}
+function motif4(lb) {                                            // 視聴カウント：再生開始のみカウント
+  popAt(1300, 395, prog(lb, 8, 1.1), () => {
+    fillRR(1160, 320, 280, 150, 22, '#eef3f6', COLOR.navy, 4); setFont(28); ctx.textAlign = 'center'; ctx.fillStyle = COLOR.navy;
+    ctx.fillText('リンクプレビュー', 1300, 385, 250); setFont(24, 500); ctx.fillText('メールスキャナ', 1300, 425, 250);
+  });
+  popAt(1680, 460, prog(lb, 9, 1.1), () => {
+    fillRR(1590, 360, 180, 200, 24, COLOR.navy); setFont(28); ctx.textAlign = 'center'; ctx.fillStyle = COLOR.white; ctx.fillText('視聴', 1680, 408);
+    setFont(100, 900); ctx.fillText(lb >= 17.5 ? '1' : '0', 1680, 520);
+  });
+  const dp = outCubic(prog(lb, 10.5, 1.5));
+  if (dp > 0) {                                                  // 点線＋✕：カウントされない
+    ctx.save(); ctx.strokeStyle = COLOR.pink; ctx.lineWidth = 5; ctx.setLineDash([14, 12]); ctx.beginPath(); ctx.moveTo(1440, 395); ctx.lineTo(1440 + 150 * dp, 425); ctx.stroke(); ctx.restore();
+    popAt(1515, 410, prog(lb, 12, 0.8), () => { ctx.beginPath(); ctx.arc(1515, 410, 24, 0, 7); ctx.fillStyle = COLOR.pink; ctx.fill(); ctx.strokeStyle = COLOR.white; ctx.lineWidth = 6; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(1506, 401); ctx.lineTo(1524, 419); ctx.moveTo(1524, 401); ctx.lineTo(1506, 419); ctx.stroke(); });
+  }
+  popAt(1300, 655, prog(lb, 13.5, 1.1), () => {
+    fillRR(1160, 580, 280, 150, 22, COLOR.white, COLOR.green, 5);
+    ctx.beginPath(); ctx.moveTo(1282, 620); ctx.lineTo(1282, 690); ctx.lineTo(1336, 655); ctx.closePath(); ctx.fillStyle = COLOR.green; ctx.fill();
+  });
+  const gp = outCubic(prog(lb, 15, 2));
+  if (gp > 0) {                                                  // 実線：再生開始 → カウント
+    ctx.strokeStyle = COLOR.green; ctx.lineWidth = 7; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(1440, 655);
+    ctx.lineTo(1440 + 240 * Math.min(1, gp * 1.6), 655);
+    if (gp > 0.62) ctx.lineTo(1680, 655 - 95 * ((gp - 0.62) / 0.38));
+    ctx.stroke();
+  }
+  popAt(1680, 330, prog(lb, 17.5, 1), () => { fillRR(1630, 300, 100, 54, 27, COLOR.green); setFont(34, 900); ctx.textAlign = 'center'; ctx.fillStyle = COLOR.white; ctx.fillText('+1', 1680, 338); });
+}
+function motif5(lb) {                                            // AI：長時間ジョブ／新音声認識／問題文
+  const panel = (y, label, at, fn) => popAt(1465, y + 70, prog(lb, at, 1.1), () => {
+    fillRR(1160, y, 610, 150, 24, COLOR.white, COLOR.navy, 4);
+    setFont(28); ctx.textAlign = 'left'; ctx.fillStyle = COLOR.muted; ctx.fillText(label, 1190, y + 42); fn(y);
+  });
+  panel(310, 'AIジョブ', 8, y => {
+    fillRR(1190, y + 78, 550, 24, 12, '#e3ebf0');
+    const pr = outCubic(prog(lb, 9.5, 5));
+    fillRR(1190, y + 78, 550 * pr, 24, 12, COLOR.cyan);
+    ctx.fillStyle = COLOR.pink; ctx.fillRect(1190 + 550 * 0.25 - 2, y + 66, 4, 48);
+    setFont(24, 500); ctx.textAlign = 'center'; ctx.fillStyle = COLOR.muted; ctx.fillText('1分', 1190 + 550 * 0.25, y + 140);
+    if (lb > 14.5) check(1708, y + 44, 26, COLOR.green, outCubic(prog(lb, 14.5, 1)));
+  });
+  panel(490, '自動字幕', 12.5, y => {
+    for (let i = 0; i < 14; i++) { const h = 10 + 36 * Math.abs(Math.sin(i * 0.7 + T * 3)); fillRR(1196 + i * 17, y + 96 - h / 2, 10, h, 5, COLOR.cyan); }
+    ctx.beginPath(); ctx.moveTo(1450, y + 80); ctx.lineTo(1480, y + 96); ctx.lineTo(1450, y + 112); ctx.closePath(); ctx.fillStyle = COLOR.navy; ctx.fill();
+    sk(1510, y + 72, 220, 14, 'rgba(4,51,72,.6)'); sk(1510, y + 98, 170, 14, 'rgba(4,51,72,.4)'); sk(1510, y + 124, 110, 14, 'rgba(4,51,72,.25)');
+    fillRR(1655, y + 14, 90, 36, 18, COLOR.pink); setFont(22, 900); ctx.textAlign = 'center'; ctx.fillStyle = COLOR.white; ctx.fillText('NEW', 1700, y + 40);
+  });
+  panel(670, '生成される問題', 17, y => {
+    fillRR(1190, y + 66, 60, 60, 16, COLOR.navy); setFont(30, 900); ctx.textAlign = 'center'; ctx.fillStyle = COLOR.white; ctx.fillText('Q1', 1220, y + 106);
+    sk(1272, y + 74, 380, 16, 'rgba(4,51,72,.65)'); sk(1272, y + 102, 300, 16, 'rgba(4,51,72,.4)');
+    star(1706, y + 96, 20 + Math.sin(T * 5) * 2, COLOR.orange);
+  });
+}
+const MOTIFS = [motif1, motif2, motif3, motif4, motif5];
+
+/* ---------- シーン ---------- */
+function intro(b) {                                              // 0〜12拍（以降は保持）
+  fillBg(COLOR.light);
+  logoAt(960, 270, 860, outExpo(prog(b, 0.5, 2.5)));
+  maskedText('リリースノート', 960, 540, 72, prog(b, 3, 1.2), COLOR.muted, 'center');
+  maskedText('v3.40.0', 960, 760, 200, prog(b, 4, 1.4), COLOR.navy, 'center');
+  bar(960 - 300, 800, 600, 14, prog(b, 6, 1.5), COLOR.pink);
+  maskedText('2026年8月アップデート ・ 主な変更5つ', 960, 900, 52, prog(b, 7.5, 1.2), COLOR.navy, 'center', 1500);
+}
+function featureContent(fi, lb) {                                // lb は 28 超でも最終状態を保持
+  const F = FEATURES[fi];
+  fillBg(COLOR.light);
+  chrome(fi);
+  maskedText(F.head[0], 160, 440, 96, prog(lb, 6.2, 1.2), COLOR.navy, 'left', 900);
+  maskedText(F.head[1], 160, 560, 96, prog(lb, 6.8, 1.2), COLOR.navy, 'left', 900);
+  bar(160, 596, 160, 14, prog(lb, 9, 1.2), F.color === COLOR.navy ? COLOR.pink : F.color);
+  F.lines.forEach((ln, i) => {
+    const s = 10 + i * 4;
+    ctx.fillStyle = F.color === COLOR.navy ? COLOR.pink : F.color;
+    ctx.globalAlpha = outCubic(prog(lb, s, 0.8)); ctx.fillRect(160, 700 + i * 76 - 24, 16, 16); ctx.globalAlpha = 1;
+    maskedText(ln, 200, 700 + i * 76, 38, prog(lb, s, 1.2), COLOR.navy, 'left', 880);
+  });
+  MOTIFS[fi](lb);
+}
+function chapterCard(fi, lb) {                                   // 章扉：アクセント色の全面カード
+  const F = FEATURES[fi];
+  let y = 0;
+  if (lb < 1.2) y = (1 - inOutCubic(lb / 1.2)) * H;
+  else if (lb > 4.6) y = -inOutCubic(prog(lb, 4.6, 1.2)) * H;
+  if (lb > 5.8) return;
+  ctx.save(); ctx.translate(0, y);
+  fillBg(F.color);
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '8px';
+  maskedText(`FEATURE 0${fi + 1} / 05`, 160, 200, 40, prog(lb, 1.2, 1), F.ink, 'left');
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+  maskedText(`0${fi + 1}`, 140, 720, 560, prog(lb, 1.2, 1.3), F.ink, 'left');
+  maskedText(F.name, 160, 900, 92, prog(lb, 2, 1.3), F.ink, 'left', 1600);
+  ctx.restore();
+}
+function outro(o) {
+  if (o < 1.2) featureContent(4, FEAT + o);
+  else if (o >= 8) {                                             // 白背景のエンドカード
+    fillBg(COLOR.light);
+    logoAt(960, 380, 860, outExpo(prog(o, 8.8, 1.8)));
+    maskedText('splineinteractive.com', 960, 700, 96, prog(o, 10.2, 1.3), COLOR.navy, 'center', 1500);
+    bar(960 - 380, 740, 760, 14, prog(o, 11.5, 1.5), COLOR.pink);
+    ctx.save(); ctx.globalAlpha = outCubic(prog(o, 12.5, 1.5));
+    setFont(28, 500); ctx.textAlign = 'center'; ctx.fillStyle = COLOR.muted;
+    ctx.fillText('出典: hihahoリリースノート 2026年8月（v3.40.0）／hihahoナレッジベース', 960, 960); ctx.restore();
+  }
+  let y = 0;
+  if (o < 1.2) y = (1 - inOutCubic(o / 1.2)) * H;
+  else if (o >= 8) y = -inOutCubic(prog(o, 8, 1.2)) * H;
+  if (o > 9.2) return;
+  ctx.save(); ctx.translate(0, y);
+  fillBg(COLOR.navy);
+  maskedText('今回の主な変更', 240, 170, 52, prog(o, 0.8, 1), COLOR.cyan, 'left');
+  FEATURES.forEach((F, i) => {
+    const p = prog(o, 1.4 + i * 0.9, 1.1), by = 330 + i * 130;
+    maskedText(`0${i + 1}`, 240, by, 72, p, F.color === COLOR.navy ? COLOR.pink : F.color, 'left');
+    maskedText(F.name, 400, by, 76, p, COLOR.white, 'left', 1320);
+  });
+  ctx.restore();
+}
+
+/* ---------- メイン：時刻 t のフレームを描画 ---------- */
+window.seek = function (t) {
+  T = t;
+  const b = t / BEAT;
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1;
+  if (b >= OUTRO_AT) outro(b - OUTRO_AT);
+  else if (b >= INTRO) {
+    const fi = Math.floor((b - INTRO) / FEAT), lb = b - INTRO - fi * FEAT;
+    if (lb < 1.2) { if (fi === 0) intro(INTRO + lb); else featureContent(fi - 1, FEAT + lb); }
+    if (lb >= 5.8 || lb >= 0) { if (lb >= 1.2) featureContent(fi, lb); }
+    chapterCard(fi, lb);
+  } else intro(b);
+  const fade = prog(t, 83.5, 0.5);                                // 最後0.5秒でフェードアウト
+  if (fade > 0) { ctx.fillStyle = `rgba(246,248,250,${fade})`; ctx.fillRect(0, 0, W, H); }
+};
+
+// ブラウザで開いた場合は実時間で再生プレビュー（書き出しには影響しない）
+window.READY.then(() => {
+  if (!navigator.webdriver) {
+    const t0 = performance.now();
+    const loop = () => { window.seek(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); };
+    loop();
+  } else { window.seek(0); }
+});
+</script>
+</body>
+</html>
