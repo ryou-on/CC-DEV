@@ -20,6 +20,28 @@ GitHub Actions により `main` への push で自動デプロイされる。
 
 ---
 
+## 🔒 Webアプリケーションセキュリティ標準（必須・2026-10-05〜）
+
+**全Webアプリ・API・管理画面・外部連携の新規作成／改修では、[`docs/standards/kikaku7-web-application-security-standard.md`](docs/standards/kikaku7-web-application-security-standard.md)（v1.0.0）に従うこと。**
+実装前に該当章を読み、完了報告前に「7. 完了の定義」をチェックする。
+
+### CC-DEV で特に厳守する点（要約。詳細は本文）
+
+- **クライアント側はセキュリティ境界にしない**: 非表示ボタン・JS内パスワード・`?admin=1` は「入口を隠す」だけ。ユーザーデータの閲覧・編集・削除を伴う管理画面は Firebase Auth（＋Custom Claims 等）と Firestore/Storage Rules でサーバー側判定する
+- **Firestore / Storage Rules は Deny by Default**: `request.auth != null` だけで許可しない。所有者・Role・Field・状態遷移まで検証し、Emulator で正・負両方をテスト
+- **秘密情報をソース・公開バンドルに置かない**: Claude API キー等は Cloud Functions + Secret Manager 経由。Firebase の Web 設定値（apiKey 等）と Service Account Key / API Secret を区別する
+- **XSS**: 利用者入力・Firestore の値・外部API応答・AI出力を `innerHTML` / `dangerouslySetInnerHTML` に直接入れない（`textContent` / React の標準エスケープを使う）。HTML表示が必要なら DOMPurify 等で明示Policy
+- **外部リンク**: Protocol（`https:` 等）を検証し、`target="_blank"` には `rel="noopener noreferrer"`
+- **ファイルアップロード**: 拡張子・MIME を信用せず、サイズ・件数を制限。画像は再エンコードして保存
+- **AI機能**: モデル出力を HTML / URL / 権限判断として未検証で実行しない。Tool は最小権限・回数／費用上限付き
+- **デバッグボタン**: コピーされるログにトークン・パスワード・個人情報を含めない
+- **ログ**: パスワード・Token・Cookie・Authorization ヘッダーを記録しない
+- **Firebase Hosting のヘッダー**（CSP・`nosniff`・`frame-ancestors` 等）は本番URLで実際の値を確認する
+- **デプロイ停止条件**: 認証・認可の欠落、秘密漏えい、実行可能な Injection、Rules の過剰許可、高リスクの未確認事項がある場合は push しない
+- 未対応・未確認事項と残存リスクは `summary.md` 等へ明記する
+
+---
+
 ## 本番URL一覧
 
 **原則: `public/<ディレクトリ名>/` → `https://cc-dev-ps7.web.app/<ディレクトリ名>/`**
