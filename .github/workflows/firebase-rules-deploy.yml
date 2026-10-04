@@ -19,12 +19,26 @@ on:
       - storage.rules
       - firestore.indexes.json
       - firebase.json
+      - tests/firestore-rules/**
   workflow_dispatch:
 jobs:
   deploy_rules:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # ルールの Emulator テストが通らなければデプロイしない（既存アプリの書き込みが本番で弾かれるのを防ぐ）
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Test Firestore rules (emulator)
+        working-directory: tests/firestore-rules
+        run: |
+          npm ci
+          npm test
       - name: Deploy Firebase Storage & Firestore rules
         env:
           FIREBASE_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_CC_DEV_PS7 }}

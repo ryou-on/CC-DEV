@@ -11,6 +11,21 @@ service cloud.firestore {
       );
     }
 
+    // 認証なし書き込みの共通ヘルパー
+    // 書き込み前のデータ（作成時は空 map）
+    function prevData() {
+      return resource == null ? {} : resource.data;
+    }
+    // 今回の書き込みで値が変わるキー（作成時は全キー）
+    // 値の検証は変更キーだけに掛ける → 既存ドキュメントの古いフィールドで更新が弾かれない
+    function changedKeys() {
+      return request.resource.data.diff(prevData()).affectedKeys();
+    }
+    // 0 以上の数値（再生数・閲覧数など）
+    function isCount(v) {
+      return v is number && v >= 0 && v < 10000000000;
+    }
+
     // プレイリスト：読み取りは公開（hihaho-view / hihaho-player が匿名で読む）・書き込みは編集者のみ
     match /playlists/{id} {
       allow read: if true;
@@ -45,9 +60,28 @@ service cloud.firestore {
       allow read, write: if request.auth != null;
     }
 
-    // App Dashboard: 読み書き許可
+    // App Dashboard: ログインなしの管理画面（public/app-dashboard）
+    // フィールドは submitForm()/_rate() が書くものだけ。削除は画面の削除ボタンが使うため許可
+    function appFieldsOk(d, ch) {
+      return d.keys().hasOnly(['name','type','version','status','url','icon','env','releaseNote','docs','rating','updatedAt'])
+        && (!ch.hasAny(['name'])        || (d.name is string && d.name.size() > 0 && d.name.size() <= 200))
+        && (!ch.hasAny(['type'])        || (d.type is string && d.type.size() <= 20))
+        && (!ch.hasAny(['version'])     || (d.version is string && d.version.size() <= 50))
+        && (!ch.hasAny(['status'])      || (d.status is string && d.status.size() <= 20))
+        && (!ch.hasAny(['url'])         || (d.url is string && d.url.size() <= 2000))
+        && (!ch.hasAny(['icon'])        || (d.icon is string && d.icon.size() <= 2000))
+        && (!ch.hasAny(['env'])         || (d.env is list && d.env.size() <= 30))
+        && (!ch.hasAny(['releaseNote']) || (d.releaseNote is string && d.releaseNote.size() <= 50000))
+        && (!ch.hasAny(['docs'])        || (d.docs is list && d.docs.size() <= 50))
+        && (!ch.hasAny(['rating'])      || (d.rating is int && d.rating >= 0 && d.rating <= 5))
+        && (!ch.hasAny(['updatedAt'])   || d.updatedAt == request.time);
+    }
     match /apps/{id} {
-      allow read, write: if true;
+      allow read: if true;
+      allow create: if request.resource.data.keys().hasAll(['name','updatedAt'])
+        && appFieldsOk(request.resource.data, changedKeys());
+      allow update: if appFieldsOk(request.resource.data, changedKeys());
+      allow delete: if true;
     }
 
     // ともえホーム: アプリリスト共有（認証不要）
@@ -62,19 +96,56 @@ service cloud.firestore {
     // おうち巴寿司: 家族コードを知っている人同士で音声・画像を共有
     // ouchi-hamasushi/{familyCode}/assets/{assetKey}
     // assetKey は voice_otousan_まぐろ / image_avatar_okasan などの形式
+    // cloud-store.js の setAsset()/removeAsset() が書くキー・フィールドだけ受け付け
+    function isOuchiAssetPath(familyCode, assetKey) {
+      return familyCode.size() <= 64
+        && assetKey.size() <= 200
+        && assetKey.matches('(voice|image)_.+');
+    }
     match /ouchi-hamasushi/{familyCode}/assets/{assetKey} {
       allow read: if true;
-      // data URI 1件 <= 950KB、mimeType/size/updatedAt のみ受け付け
-      allow create, update: if
-        request.resource.data.keys().hasOnly(['data','mimeType','size','updatedAt']) &&
-        request.resource.data.data is string &&
-        request.resource.data.data.size() <= 950000;
-      allow delete: if true;
+      // data URI 1件 <= 950KB（クライアント上限 900KB）
+      allow create, update: if isOuchiAssetPath(familyCode, assetKey)
+        && request.resource.data.keys().hasOnly(['data','mimeType','size','updatedAt'])
+        && request.resource.data.keys().hasAll(['data','mimeType','size','updatedAt'])
+        && request.resource.data.data is string
+        && request.resource.data.data.size() > 0
+        && request.resource.data.data.size() <= 950000
+        && request.resource.data.mimeType is string
+        && request.resource.data.mimeType.size() <= 100
+        && request.resource.data.size is int
+        && request.resource.data.size >= 0
+        && request.resource.data.size <= 950000
+        && request.resource.data.updatedAt == request.time;
+      // 管理画面の録音・画像の削除ボタンが使う
+      allow delete: if isOuchiAssetPath(familyCode, assetKey);
     }
 
     // note-analytics: 個人分析ツール（パスワード不要・userId ベースのアクセス）
+    // 書き込みは saveSnapshot() の note-analytics/{userId}/snapshots/{YYYYMMDD} のみ
     match /note-analytics/{userId}/{document=**} {
-      allow read, write: if true;
+      allow read: if true;
+    }
+    function noteSnapshotOk(d, ch, snapId) {
+      return ch.hasOnly(['weekStart','views','likes','followers','comments','articles','source','createdAt','updatedAt'])
+        && d.weekStart is string
+        && d.weekStart.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+        && d.weekStart.replace('-', '') == snapId
+        && (!ch.hasAny(['views'])     || isCount(d.views))
+        && (!ch.hasAny(['likes'])     || isCount(d.likes))
+        && (!ch.hasAny(['followers']) || isCount(d.followers))
+        && (!ch.hasAny(['comments'])  || isCount(d.comments))
+        && (!ch.hasAny(['articles'])  || isCount(d.articles))
+        && (!ch.hasAny(['source'])    || d.source in ['manual', 'screenshot', 'chrome-auto'])
+        && (!ch.hasAny(['createdAt']) || d.createdAt == request.time)
+        && (!ch.hasAny(['updatedAt']) || d.updatedAt == request.time);
+    }
+    match /note-analytics/{userId}/snapshots/{snapId} {
+      allow create, update: if userId.size() <= 100
+        && snapId.matches('[0-9]{8}')
+        && noteSnapshotOk(request.resource.data, changedKeys(), snapId);
+      // 一覧表の削除ボタンが使う
+      allow delete: if snapId.matches('[0-9]{8}');
     }
 
     // COCO-ITTA: 家族でグループ共有（ログインユーザーのみ）
@@ -129,14 +200,79 @@ service cloud.firestore {
       }
     }
 
-    // hihaho アナリティクス: プレイリスト表示・動画再生カウント（認証なし書き込み可）
+    // hihaho アナリティクス: プレイリスト表示・動画再生カウント（hihaho-view が認証なしで +1 する）
+    // カウンタは +1 のみ・時刻はサーバー時刻のみ・削除は編集者のみ
     match /playlist_analytics/{id} {
       allow read: if true;
-      allow write: if true;
+      // trackPlaylistView(): { viewCount: increment(1), lastViewed: serverTimestamp() }
+      allow create: if request.resource.data.keys().hasOnly(['viewCount','lastViewed'])
+        && request.resource.data.viewCount == 1
+        && request.resource.data.lastViewed == request.time
+        && exists(/databases/$(database)/documents/playlists/$(id));
+      allow update: if changedKeys().hasOnly(['viewCount','lastViewed'])
+        && request.resource.data.viewCount == resource.data.viewCount + 1
+        && request.resource.data.lastViewed == request.time;
+      allow delete: if isHihahoEditor();
+    }
+
+    // trackVideoPlay(): set({ playCount: increment(1), lastPlayed: serverTimestamp(), videoId,
+    //   'playlists.<playlistId>': increment(1) }, { merge: true })
+    // set() はドット入りキーをパス解釈しないため、'playlists.<id>' はトップレベルのフィールド名になる。
+    // キー名が動的なので、今回変わったプレイリストキー（最大1つ）を次の方法で特定して +1 か検証する
+    //   新規キー: keys().removeAll(既存キー) で取り出す
+    //   既存キー: 既存キーのリストを二分探索（slice + hasAny）で絞り込む（最大 128 キー）
+    // ルールは 1 リクエスト 1000 式までなので、キーを 1 つずつ走査する書き方は 20 キー程度で上限に達する
+    function vaHas(pk, ex, lo, hi) {
+      return lo < pk.size() && ex.hasAny(pk[lo:(hi < pk.size() ? hi : pk.size())]);
+    }
+    function vaFind1(pk, ex, lo, nd, od) {
+      return vaHas(pk, ex, lo, lo + 1)
+        && pk[lo] != 'playCount' && pk[lo] != 'lastPlayed' && pk[lo] != 'videoId'
+        && nd[pk[lo]] == od[pk[lo]] + 1;
+    }
+    function vaFind2(pk, ex, lo, nd, od) {
+      return vaHas(pk, ex, lo, lo + 1) ? vaFind1(pk, ex, lo, nd, od) : vaFind1(pk, ex, lo + 1, nd, od);
+    }
+    function vaFind4(pk, ex, lo, nd, od) {
+      return vaHas(pk, ex, lo, lo + 2) ? vaFind2(pk, ex, lo, nd, od) : vaFind2(pk, ex, lo + 2, nd, od);
+    }
+    function vaFind8(pk, ex, lo, nd, od) {
+      return vaHas(pk, ex, lo, lo + 4) ? vaFind4(pk, ex, lo, nd, od) : vaFind4(pk, ex, lo + 4, nd, od);
+    }
+    function vaFind16(pk, ex, lo, nd, od) {
+      return vaHas(pk, ex, lo, lo + 8) ? vaFind8(pk, ex, lo, nd, od) : vaFind8(pk, ex, lo + 8, nd, od);
+    }
+    function vaFind32(pk, ex, lo, nd, od) {
+      return vaHas(pk, ex, lo, lo + 16) ? vaFind16(pk, ex, lo, nd, od) : vaFind16(pk, ex, lo + 16, nd, od);
+    }
+    function vaFind64(pk, ex, lo, nd, od) {
+      return vaHas(pk, ex, lo, lo + 32) ? vaFind32(pk, ex, lo, nd, od) : vaFind32(pk, ex, lo + 32, nd, od);
+    }
+    function vaFind128(pk, ex, nd, od) {
+      return pk.size() <= 128
+        && (vaHas(pk, ex, 0, 64) ? vaFind64(pk, ex, 0, nd, od) : vaFind64(pk, ex, 64, nd, od));
+    }
+    function videoAnalyticsOk(uuid, d, prev) {
+      let extra = d.diff(prev).affectedKeys().difference(['playCount', 'lastPlayed', 'videoId'].toSet());
+      let added = d.keys().removeAll(prev.keys()).removeAll(['playCount', 'lastPlayed', 'videoId']);
+      return uuid.matches('[0-9A-Fa-f-]{8,64}')
+        && d.keys().hasAll(['playCount', 'lastPlayed', 'videoId'])
+        && d.keys().size() <= 128
+        && d.playCount == prev.get('playCount', 0) + 1
+        && d.lastPlayed == request.time
+        && (d.videoId is int || (d.videoId is string && d.videoId.size() <= 40))
+        && d.videoId == prev.get('videoId', d.videoId)
+        && extra.size() <= 1
+        && (extra.size() == 0
+            || (added.size() == 1
+                && added[0].matches('playlists[.][A-Za-z0-9_-]{1,64}')
+                && d[added[0]] == 1)
+            || (added.size() == 0 && vaFind128(prev.keys(), extra, d, prev)));
     }
     match /video_analytics/{uuid} {
       allow read: if true;
-      allow write: if true;
+      allow create, update: if videoAnalyticsOk(uuid, request.resource.data, prevData());
+      allow delete: if isHihahoEditor();
     }
 
     // Meet Knowledge: チームコードを知っている人同士でQ&Aナレッジを共有
