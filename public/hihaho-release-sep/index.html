@@ -14,10 +14,10 @@
 <canvas id="c" width="1920" height="1080"></canvas>
 <script>
 /* ============================================================
-   hihaho リリースノート 2026年9月 / Release notes September 2026 — 文字中心モーショングラフィック（84秒・日英）
+   hihaho リリースノート 2026年9月 / Release notes September 2026 — 文字中心モーショングラフィック（129秒・日英・BGM/効果音つき）
    出典: hihaho 公式リリースノート（ユーザー提供の英語原文）。言語は ?lang=ja|en で切替
-   全ての描画は seek(t) の純粋関数。BPM120 → 1拍 = 0.5秒、84秒 = 168拍
-   構成: イントロ12拍 / ハイライト5本 × 28拍 / アウトロ16拍
+   全ての描画は seek(t) の純粋関数。BPM120 → 1拍 = 0.5秒。効果音のタイミングは window.SFX() が同じ拍定数から生成
+   構成: イントロ12拍 / 全体像10拍 / ハイライト5本 × 44拍 / アウトロ16拍（計258拍 = 129秒）
    ============================================================ */
 let LANG = new URLSearchParams(location.search).get('lang') === 'en' ? 'en' : 'ja';
 window.setLang = l => { LANG = l === 'en' ? 'en' : 'ja'; };
@@ -29,35 +29,35 @@ const COLOR = {
 const DATA = [
   { color: COLOR.pink, ink: COLOR.white,
     ja: { name: 'ビデオフロー', head: ['動画のつながりが、', 'ひと目でわかる。'],
-      lines: ['フォルダ内の動画が、終了時アクションでどう繋がるかを可視化', '動画を選ぶと、つながるものをすべてハイライト', 'どこからも到達できない動画も見つかる'] },
+      lines: ['動画どうしのつながりが見える', '選ぶと、つながる先が光る', '到達できない動画も見つかる'] },
     en: { name: 'Video flow', head: ['See how your', 'videos connect.'],
-      lines: ['See how videos in a folder link through end-of-video actions', 'Select a video to highlight everything connected to it', 'Spot videos a viewer can never reach'] } },
+      lines: ['See how videos link together', 'Select a video to see its links', 'Spot videos nobody can reach'] } },
   { color: COLOR.cyan, ink: COLOR.navy,
     ja: { name: 'すべての人に使いやすいプレイヤー', head: ['誰にとっても、', '使いやすいプレイヤー。'],
-      lines: ['キーボード操作: K 再生/停止、C 字幕、J・L スキップ、? 一覧', 'スクリーンリーダーがボタン名・結果・最終スコアを読み上げ', '画像の説明文も、インタラクションや問題で読み上げ'] },
+      lines: ['キーボードだけで操作できる', 'ボタン名・結果を音声で案内', '画像の説明文も読み上げ'] },
     en: { name: 'Accessible player', head: ['A player', 'for everyone.'],
-      lines: ['Keyboard: K play/pause, C subtitles, J / L skip, ? shortcuts', 'Screen readers name every button and announce results', 'Image descriptions are read out in interactions and questions'] } },
+      lines: ['Fully usable by keyboard', 'Buttons and results are spoken', 'Image descriptions are read out'] } },
   { color: COLOR.green, ink: COLOR.white,
     ja: { name: 'セッション結果の新デザイン', head: ['視聴者の旅路を、', 'たどれる。'],
-      lines: ['合否・スコア・到達度が、タイルでひと目でわかる', '視聴・再視聴・スキップ・クリックをタイムラインで確認', '前後のセッションへ、一覧に戻らず移動'] },
+      lines: ['合否・スコア・到達度が一目で', '視聴の流れをタイムラインで', '前後のセッションへすぐ移動'] },
     en: { name: 'Session results', head: ['Follow each', "viewer's journey."],
-      lines: ['Tiles show pass, score and progress at a glance', 'A timeline of what they watched, rewatched, skipped, clicked', 'Step to the previous or next session without going back'] } },
+      lines: ['Pass, score and progress', 'See the whole viewing timeline', 'Jump to the next session'] } },
   { color: COLOR.orange, ink: COLOR.navy,
     ja: { name: '問題タイマー（ベータ）', head: ['問題タイマーが、', '全員に開放。'],
-      lines: ['問題エディタの「評価」タブでカウントダウンを設定', 'リング表示、または隅や送信ボタン上のピル表示', '最大30分。動画やフォルダ単位でデフォルト設定も可能'] },
+      lines: ['問題にカウントダウンを設定', 'リングやピルで残り時間を表示', '最大30分・全員が利用可能（β）'] },
     en: { name: 'Question timer (beta)', head: ['The question timer,', 'now for everyone.'],
-      lines: ['Add a countdown in the Assessment tab of the question editor', 'A ring, or a pill in the corner or on the submit button', 'Up to 30 minutes · set a default per video or folder'] } },
+      lines: ['Add a countdown to a question', 'Show it as a ring or a pill', 'Up to 30 min · beta for all'] } },
   { color: COLOR.navy, ink: COLOR.white,
     ja: { name: 'AIで問題を作成・採点', head: ['目的と学習目標を、', 'AIに伝える。'],
-      lines: ['動画に目的（形成的・総括的など）と学習目標を設定', 'AIがそれに合わせて問題を作成し、自由記述を採点', 'AI音声合成プランなら、プレイヤーが問題を読み上げ'] },
+      lines: ['動画に目的と学習目標を設定', 'AIが問題を作成して採点', 'AI音声なら問題も読み上げ'] },
     en: { name: 'AI questions', head: ['Give your video', 'a purpose.'],
-      lines: ['Give a video a purpose and a learning objective', 'AI writes and judges questions to match', 'With AI text-to-speech, the player reads questions aloud'] } },
+      lines: ['Set a purpose and learning goal', 'AI writes and judges questions', 'AI voice reads questions aloud'] } },
 ];
 const FEATURES = DATA.map(d => ({ color: d.color, ink: d.ink, get name() { return d[LANG].name; }, get head() { return d[LANG].head; }, get lines() { return d[LANG].lines; } }));
 const FONT = '"Noto Sans JP","Noto Sans CJK JP","Hiragino Sans","Yu Gothic","IPAGothic","Meiryo",sans-serif';
 const BPM = 120, BEAT = 60 / BPM;
-const INTRO = 12, FEAT = 28, OUTRO_AT = INTRO + FEAT * 5;      // 12 / 28 / 152 拍
-window.DURATION = 84;
+const INTRO = 12, AGENDA = 10, FEAT0 = INTRO + AGENDA, FEAT = 44, OUTRO_AT = FEAT0 + FEAT * 5;   // 12 / 10 / 22 / 44 / 242 拍
+window.DURATION = (OUTRO_AT + 16) * BEAT;                          // 129秒
 const W = 1920, H = 1080;
 const cv = document.getElementById('c');
 const ctx = cv.getContext('2d');
@@ -180,7 +180,7 @@ function motif1(lb) {                                            // ビデオフ
     rr(NODES[5][0] - 8, NODES[5][1] - 8, 166, 112, 22); ctx.stroke(); ctx.setLineDash([]);
     ctx.beginPath(); ctx.arc(NODES[5][0] + 150, NODES[5][1], 22, 0, 7); ctx.fillStyle = COLOR.pink; ctx.fill();
     label('!', NODES[5][0] + 150, NODES[5][1] + 11, 32, COLOR.white);
-    label(tr('到達不可', 'Unreachable'), NODES[5][0] + 75, NODES[5][1] + 146, 26, COLOR.navy, 'center', 200);
+    label(tr('到達不可', 'Unreachable'), NODES[5][0] + 75, NODES[5][1] + 150, 32, COLOR.navy, 'center', 200);
     ctx.restore();
   }
 }
@@ -201,10 +201,10 @@ function motif2(lb) {                                            // アクセシ
       const y = pressed ? 656 : 650;
       fillRR(x, y, 104, 104, 20, pressed ? COLOR.pink : COLOR.white, COLOR.navy, 4);
       label(k, x + 52, y + 68, 52, pressed ? COLOR.white : COLOR.navy, 'center', 0, 900);
-      label(name, x + 52, 800, 22, COLOR.muted, 'center', 118, 500);
+      label(name, x + 52, 804, 26, COLOR.muted, 'center', 120, 500);
     });
   });
-  popAt(1465, 862, prog(lb, 21, 1.1), () => { fillRR(1160, 832, 610, 60, 30, COLOR.cyan); label(tr('スクリーンリーダー対応', 'Screen reader support'), 1465, 872, 30, COLOR.navy); });
+  popAt(1465, 862, prog(lb, 20.3, 1.1), () => { fillRR(1160, 832, 610, 60, 30, COLOR.cyan); label(tr('スクリーンリーダー対応', 'Screen reader support'), 1465, 872, 30, COLOR.navy); });
 }
 function motif3(lb) {                                            // セッション結果：タイル＋タイムライン
   const tiles = [[1160, tr('合格', 'Passed')], [1370, tr('スコア', 'Score')], [1580, tr('到達度', 'Progress')]];
@@ -214,7 +214,7 @@ function motif3(lb) {                                            // セッショ
       if (i === 0) check(x + 95, 385, 44, COLOR.green, outCubic(prog(lb, 10, 1)));
       if (i === 1) { ctx.lineWidth = 12; ctx.strokeStyle = '#e3ebf0'; ctx.beginPath(); ctx.arc(x + 95, 385, 36, 0, 7); ctx.stroke(); ctx.strokeStyle = COLOR.green; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(x + 95, 385, 36, -Math.PI / 2, -Math.PI / 2 + Math.PI * 1.6 * outCubic(prog(lb, 10.5, 2))); ctx.stroke(); }
       if (i === 2) { fillRR(x + 30, 380, 130, 16, 8, '#e3ebf0'); fillRR(x + 30, 380, 130 * 0.7 * outCubic(prog(lb, 11, 2)), 16, 8, COLOR.cyan); }
-      label(name, x + 95, 452, 26, COLOR.navy, 'center', 170, 500);
+      label(name, x + 95, 456, 30, COLOR.navy, 'center', 176, 700);
     });
   });
   popAt(1465, 615, prog(lb, 12, 1.1), () => { fillRR(1160, 500, 610, 230, 22, COLOR.white, COLOR.navy, 4); });
@@ -231,7 +231,7 @@ function motif3(lb) {                                            // セッショ
     });
   });
   const press = prog(lb, 20, 0.6), sc = 1 - 0.08 * Math.sin(press * Math.PI);
-  label(tr('前後のセッションへ', 'Previous / next session'), 1160, 800, 26, COLOR.muted, 'left', 400, 500);
+  label(tr('前後のセッションへ', 'Previous / next session'), 1160, 802, 30, COLOR.muted, 'left', 400, 500);
   popAt(1630, 780, prog(lb, 18, 1), () => { fillRR(1580, 752, 80, 56, 28, COLOR.navy); label('‹', 1620, 792, 44, COLOR.white); });
   popAt(1730, 780, prog(lb, 18.4, 1), () => { ctx.save(); ctx.translate(1730, 780); ctx.scale(sc, sc); ctx.translate(-1730, -780); fillRR(1690, 752, 80, 56, 28, COLOR.pink); label('›', 1730, 792, 44, COLOR.white); ctx.restore(); });
 }
@@ -242,16 +242,16 @@ function motif4(lb) {                                            // 問題タイ
     ctx.lineWidth = 22 * pulse; ctx.lineCap = 'round'; ctx.strokeStyle = '#e3ebf0'; ctx.beginPath(); ctx.arc(1320, 520, 130, 0, 7); ctx.stroke();
     ctx.strokeStyle = low ? COLOR.pink : COLOR.cyan; ctx.beginPath(); ctx.arc(1320, 520, 130, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * rem); ctx.stroke();
     label(txt, 1320, 548, 78, COLOR.navy, 'center', 0, 900);
-    label(tr('リング', 'Ring'), 1320, 720, 26, COLOR.muted, 'center', 200, 500);
+    label(tr('リング', 'Ring'), 1320, 722, 30, COLOR.muted, 'center', 200, 500);
   });
   popAt(1650, 380, prog(lb, 10, 1.1), () => {
     fillRR(1510, 310, 260, 160, 22, COLOR.white, COLOR.navy, 4); sk(1534, 360, 150, 14, 'rgba(4,51,72,.5)'); sk(1534, 392, 190, 14, 'rgba(4,51,72,.3)');
     fillRR(1666, 322, 92, 40, 20, rem < 0.25 ? COLOR.pink : COLOR.cyan); label(txt, 1712, 351, 24, rem < 0.25 ? COLOR.white : COLOR.navy);
-    label(tr('隅のピル', 'Corner pill'), 1640, 500, 26, COLOR.muted, 'center', 240, 500);
+    label(tr('隅のピル', 'Corner pill'), 1640, 504, 30, COLOR.muted, 'center', 240, 500);
   });
   popAt(1640, 600, prog(lb, 12, 1.1), () => {
     fillRR(1510, 560, 260, 76, 38, COLOR.navy); label(tr('送信 ', 'Submit ') + txt, 1640, 610, 30, COLOR.white, 'center', 230);
-    label(tr('送信ボタン上', 'On the submit button'), 1640, 676, 26, COLOR.muted, 'center', 250, 500);
+    label(tr('送信ボタン上', 'On the submit button'), 1640, 680, 28, COLOR.muted, 'center', 250, 500);
   });
   popAt(1310, 790, prog(lb, 15, 1.1), () => { fillRR(1160, 752, 300, 64, 32, COLOR.cyan); label(tr('最大30分', 'Up to 30 min'), 1310, 794, 30, COLOR.navy, 'center', 270); });
   popAt(1640, 790, prog(lb, 17, 1.1), () => { fillRR(1510, 752, 120, 64, 32, COLOR.pink); label('beta', 1570, 794, 30, COLOR.white); });
@@ -296,34 +296,59 @@ function intro(b) {                                              // 0〜12拍（
   bar(960 - 300, 800, 600, 14, prog(b, 6, 1.5), COLOR.pink);
   maskedText(tr('主なハイライト5つ', 'Five highlights'), 960, 900, 52, prog(b, 7.5, 1.2), COLOR.navy, 'center', 1500);
 }
-function featureContent(fi, lb) {                                // lb は 28 超でも最終状態を保持
-  const F = FEATURES[fi];
+const LINE_T = [[8, 22, 34], [8, 28, 38], [8, 22, 34], [8, 13, 24], [8, 22, 34]];   // 各ハイライトで説明行が出る拍
+const MOTIF_SPEED = 0.45;                                          // 図解の進行をゆっくりにする（説明を読む時間を確保）
+const warp = lb => (lb < 8 ? lb : 8 + (lb - 8) * MOTIF_SPEED);
+function featureContent(fi, lb) {                                // lb は 44 超でも最終状態を保持
+  const F = FEATURES[fi], accent = F.color === COLOR.navy ? COLOR.pink : F.color;
   fillBg(COLOR.light);
   chrome(fi);
-  maskedText(F.head[0], 160, 440, 96, prog(lb, 6.2, 1.2), COLOR.navy, 'left', 900);
-  maskedText(F.head[1], 160, 560, 96, prog(lb, 6.8, 1.2), COLOR.navy, 'left', 900);
-  bar(160, 596, 160, 14, prog(lb, 9, 1.2), F.color === COLOR.navy ? COLOR.pink : F.color);
-  F.lines.forEach((ln, i) => {
-    const s = 10 + i * 4;
-    ctx.fillStyle = F.color === COLOR.navy ? COLOR.pink : F.color;
-    ctx.globalAlpha = outCubic(prog(lb, s, 0.8)); ctx.fillRect(160, 700 + i * 76 - 24, 16, 16); ctx.globalAlpha = 1;
-    maskedText(ln, 200, 700 + i * 76, 38, prog(lb, s, 1.2), COLOR.navy, 'left', 880);
+  maskedText(F.head[0], 160, 330, 100, prog(lb, 5, 1.2), COLOR.navy, 'left', 880);
+  maskedText(F.head[1], 160, 450, 100, prog(lb, 5.6, 1.2), COLOR.navy, 'left', 880);
+  bar(160, 490, 180, 16, prog(lb, 7, 1.2), accent);
+  F.lines.forEach((ln, i) => {                                   // 1行ずつ大きく表示。次の行が出たら前の行は少し薄く
+    const s = LINE_T[fi][i], next = i + 1 < F.lines.length ? LINE_T[fi][i + 1] : 999, y = 650 + i * 110;
+    ctx.save(); ctx.globalAlpha = lb >= next ? 0.5 : 1;
+    ctx.fillStyle = accent; ctx.fillRect(160, y - 34, 24, 24 * outCubic(prog(lb, s, 0.8)));
+    maskedText(ln, 208, y, 54, prog(lb, s, 1.2), COLOR.navy, 'left', 850);
+    ctx.restore();
   });
-  MOTIFS[fi](lb);
+  ctx.save();                                                    // 図解は1.25倍に拡大して見やすく
+  ctx.translate(1465, 590); ctx.scale(1.25, 1.25); ctx.translate(-1465, -590);
+  MOTIFS[fi](warp(lb));
+  ctx.restore();
 }
 function chapterCard(fi, lb) {                                   // 章扉：アクセント色の全面カード
   const F = FEATURES[fi];
   let y = 0;
-  if (lb < 1.2) y = (1 - inOutCubic(lb / 1.2)) * H;
-  else if (lb > 4.6) y = -inOutCubic(prog(lb, 4.6, 1.2)) * H;
-  if (lb > 5.8) return;
+  if (lb < 1) y = (1 - inOutCubic(lb)) * H;
+  else if (lb > 3.4) y = -inOutCubic(prog(lb, 3.4, 1.2)) * H;
+  if (lb > 4.7) return;
   ctx.save(); ctx.translate(0, y);
   fillBg(F.color);
   if ('letterSpacing' in ctx) ctx.letterSpacing = '8px';
-  maskedText(`HIGHLIGHT 0${fi + 1} / 05`, 160, 200, 40, prog(lb, 1.2, 1), F.ink, 'left');
+  maskedText(`HIGHLIGHT 0${fi + 1} / 05`, 160, 200, 40, prog(lb, 0.8, 0.9), F.ink, 'left');
   if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
-  maskedText(`0${fi + 1}`, 140, 720, 560, prog(lb, 1.2, 1.3), F.ink, 'left');
-  maskedText(F.name, 160, 900, 92, prog(lb, 2, 1.3), F.ink, 'left', 1600);
+  maskedText(`0${fi + 1}`, 140, 720, 560, prog(lb, 0.8, 1.2), F.ink, 'left');
+  maskedText(F.name, 160, 900, 92, prog(lb, 1.4, 1.2), F.ink, 'left', 1600);
+  ctx.restore();
+}
+function agenda(o) {                                             // 全体像：これから見る5つを先に提示
+  if (o < 1.2) intro(INTRO + o);
+  const y = o < 1.2 ? (1 - inOutCubic(o / 1.2)) * H : 0;
+  ctx.save(); ctx.translate(0, y);
+  fillBg(COLOR.navy);
+  maskedText(tr('今回の5つのポイント', 'Five highlights'), 240, 170, 60, prog(o, 0.8, 1), COLOR.cyan, 'left');
+  FEATURES.forEach((F, i) => {
+    const p = prog(o, 1.4 + i * 1.2, 1.1), by = 340 + i * 140;
+    if (p > 0) {
+      ctx.save(); ctx.globalAlpha = outCubic(p);
+      ctx.beginPath(); ctx.arc(290, by - 24, 42, 0, 7); ctx.fillStyle = F.color === COLOR.navy ? COLOR.pink : F.color; ctx.fill();
+      label(`${i + 1}`, 290, by - 4, 52, (F.color === COLOR.cyan || F.color === COLOR.orange) ? COLOR.navy : COLOR.white, 'center', 0, 900);
+      ctx.restore();
+    }
+    maskedText(F.name, 380, by, 70, p, COLOR.white, 'left', 1400);
+  });
   ctx.restore();
 }
 function outro(o) {
@@ -358,14 +383,41 @@ window.seek = function (t) {
   const b = t / BEAT;
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1;
   if (b >= OUTRO_AT) outro(b - OUTRO_AT);
-  else if (b >= INTRO) {
-    const fi = Math.floor((b - INTRO) / FEAT), lb = b - INTRO - fi * FEAT;
-    if (lb < 1.2) { if (fi === 0) intro(INTRO + lb); else featureContent(fi - 1, FEAT + lb); }
-    if (lb >= 5.8 || lb >= 0) { if (lb >= 1.2) featureContent(fi, lb); }
+  else if (b >= FEAT0) {
+    const fi = Math.floor((b - FEAT0) / FEAT), lb = b - FEAT0 - fi * FEAT;
+    if (lb < 1) { if (fi === 0) agenda(AGENDA + lb); else featureContent(fi - 1, FEAT + lb); }
+    else featureContent(fi, lb);
     chapterCard(fi, lb);
-  } else intro(b);
-  const fade = prog(t, 83.5, 0.5);                                // 最後0.5秒でフェードアウト
+  } else if (b >= INTRO) agenda(b - INTRO);
+  else intro(b);
+  const fade = prog(t, DURATION - 0.5, 0.5);                       // 最後0.5秒でフェードアウト
   if (fade > 0) { ctx.fillStyle = `rgba(246,248,250,${fade})`; ctx.fillRect(0, 0, W, H); }
+};
+
+/* ---------- 効果音イベント（拍定数から生成。render.py が audio.py に渡す） ---------- */
+const MOTIF_SFX = [
+  [[8, 'pop'], [8.5, 'pop'], [9, 'pop'], [9.5, 'pop'], [10, 'pop'], [10.5, 'pop'], [10.5, 'tick'], [11.2, 'tick'], [11.9, 'tick'], [12.6, 'tick'], [13.3, 'tick'], [15, 'click'], [19, 'warn']],
+  [[8, 'pop'], [9, 'pop'], [9.4, 'pop'], [9.8, 'pop'], [12, 'key'], [14, 'key'], [16, 'key'], [17.5, 'key'], [19.5, 'key'], [20.3, 'ding']],
+  [[8, 'pop'], [8.7, 'pop'], [9.4, 'pop'], [10, 'ding'], [12, 'pop'], [13, 'tick'], [13.9, 'tick'], [14.8, 'tick'], [15.7, 'tick'], [18, 'pop'], [18.4, 'pop'], [20, 'click']],
+  [[8, 'pop'], [9, 'tick'], [10, 'pop'], [10, 'tick'], [11, 'tick'], [12, 'pop'], [12, 'tick'], [13, 'tick'], [14, 'tick'], [15, 'pop'], [15.2, 'beep'], [15.7, 'beep'], [16.2, 'beep'], [16.7, 'beep'], [17, 'pop']],
+  [[8, 'pop'], [8.5, 'pop'], [9, 'pop'], [10, 'pop'], [10.5, 'click'], [14, 'tick'], [14.5, 'ding'], [15.8, 'ding'], [18.5, 'pop']],
+];
+window.SFX = function () {
+  const ev = [], at = (beat, type, v = 1) => ev.push({ t: +(beat * BEAT).toFixed(3), type, v });
+  at(0.5, 'chime'); at(3, 'pop'); at(4, 'pop'); at(6, 'tick'); at(7.5, 'pop', 0.7);          // イントロ
+  at(INTRO, 'whoosh'); at(INTRO + 0.8, 'pop');                                                 // 全体像
+  for (let i = 0; i < 5; i++) at(INTRO + 1.4 + i * 1.2, 'blip');
+  for (let fi = 0; fi < 5; fi++) {
+    const c0 = FEAT0 + fi * FEAT;
+    at(c0, 'whoosh'); at(c0 + 1, 'thud'); at(c0 + 3.4, 'whoosh', 0.6);                          // 章扉
+    at(c0 + 5, 'pop'); at(c0 + 5.6, 'pop'); at(c0 + 7, 'tick');                                 // 見出し
+    LINE_T[fi].forEach(lt => at(c0 + lt, 'blip'));                                              // 説明行
+    MOTIF_SFX[fi].forEach(([lbm, type]) => at(c0 + 8 + (lbm - 8) / MOTIF_SPEED, type, 0.8));    // 図解
+  }
+  at(OUTRO_AT, 'whoosh'); at(OUTRO_AT + 0.8, 'pop');                                            // まとめ
+  for (let i = 0; i < 5; i++) at(OUTRO_AT + 1.4 + i * 0.9, 'blip');
+  at(OUTRO_AT + 8, 'whoosh'); at(OUTRO_AT + 8.8, 'chime'); at(OUTRO_AT + 10.2, 'pop');          // エンドカード
+  return { duration: DURATION, events: ev.sort((x, y) => x.t - y.t) };
 };
 
 // ブラウザで開いた場合は実時間で再生プレビュー（書き出しには影響しない）
