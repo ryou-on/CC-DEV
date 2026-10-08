@@ -1,5 +1,5 @@
 import { getDownloadURL, ref as storageRef, uploadString } from 'firebase/storage'
-import { auth, storage, AMAZON_ENDPOINT, ANALYZE_ENDPOINT, COVER_ENDPOINT, NDL_ENDPOINT } from '../firebase'
+import { paidApiHeaders, auth, storage, AMAZON_ENDPOINT, ANALYZE_ENDPOINT, COVER_ENDPOINT, NDL_ENDPOINT } from '../firebase'
 import type { AnalyzeResult, MapMatchPayload } from '../types'
 import { rectifyImage } from './rectify'
 
@@ -100,13 +100,9 @@ export async function resizeImageToBase64(file: File, maxEdge = 2400, straighten
 export async function analyzePhoto(base64Jpeg: string, map?: MapMatchPayload): Promise<AnalyzeResult> {
   const user = auth.currentUser
   if (!user) throw new Error('ログインが必要です')
-  const idToken = await user.getIdToken()
   const res = await fetch(ANALYZE_ENDPOINT, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${idToken}`,
-    },
+    headers: { 'Content-Type': 'application/json', ...await paidApiHeaders() },
     body: JSON.stringify({ image: base64Jpeg, mediaType: 'image/jpeg', ...(map ? { map } : {}) }),
   })
   const data = await res.json().catch(() => ({}))
@@ -145,10 +141,9 @@ export async function locateBook(
 ): Promise<{ x: number; y: number; w: number; h: number } | null> {
   const user = auth.currentUser
   if (!user) throw new Error('ログインが必要です')
-  const idToken = await user.getIdToken()
   const res = await fetch(ANALYZE_ENDPOINT, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+    headers: { 'Content-Type': 'application/json', ...await paidApiHeaders() },
     body: JSON.stringify({
       mode: 'locate_book',
       image: base64Jpeg,
@@ -166,10 +161,9 @@ export async function locateBook(
 export async function detectRegions(base64Jpeg: string): Promise<{ x: number; y: number; w: number; h: number }[]> {
   const user = auth.currentUser
   if (!user) throw new Error('ログインが必要です')
-  const idToken = await user.getIdToken()
   const res = await fetch(ANALYZE_ENDPOINT, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+    headers: { 'Content-Type': 'application/json', ...await paidApiHeaders() },
     body: JSON.stringify({ mode: 'detect_regions', image: base64Jpeg, mediaType: 'image/jpeg' }),
   })
   const data = await res.json().catch(() => ({}))
