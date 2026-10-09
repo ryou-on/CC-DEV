@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>hihahoとは？ What is hihaho?</title>
+<style>
+  html, body { margin: 0; background: #043348; height: 100%; }
+  body { display: flex; align-items: center; justify-content: center; }
+  canvas { max-width: 100vw; max-height: 100vh; aspect-ratio: 16 / 9; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script>
+/* ============================================================
+   hihahoとは？ / What is hihaho? — 文字中心モーショングラフィック（129秒・日英・BGM/効果音つき）
+   出典: hihahoナレッジベース『サービス資料5.0』（hihaho-kb-content/service/）、hihaho/Sylavids/スプライングローバル コンテキスト資料
+   全ての描画は seek(t) の純粋関数。BPM120 → 1拍 = 0.5秒。効果音のタイミングは window.SFX() が同じ拍定数から生成
+   構成: イントロ12拍 / 全体像10拍 / ポイント5本 × 44拍 / アウトロ16拍（計258拍 = 129秒）
+   ============================================================ */
+let LANG = new URLSearchParams(location.search).get('lang') === 'en' ? 'en' : 'ja';
+window.setLang = l => { LANG = l === 'en' ? 'en' : 'ja'; };
+const tr = (ja, en) => (LANG === 'en' ? en : ja);
+const COLOR = {
+  navy: '#043348', light: '#f6f8fa', muted: '#5d7482', white: '#ffffff',
+  pink: '#fb1a7c', cyan: '#2ed6e3', green: '#2cae6c', orange: '#fba37c',
+};
+const DATA = [
+  { color: COLOR.pink, ink: COLOR.white,
+    ja: { name: 'インタラクティブ動画とは', head: ['見るだけの動画から、', '触れる動画へ。'],
+      lines: ['従来の動画は、見て終わり', '動画の上に、操作の層を重ねる', 'ボタン・質問・フォームで行動へ'] },
+    en: { name: 'What is interactive video', head: ['From watching', 'to touching.'],
+      lines: ['Regular video ends at watching', 'Add a layer of interaction on top', 'Buttons, quizzes, forms drive action'] } },
+  { color: COLOR.cyan, ink: COLOR.navy,
+    ja: { name: '16種類のインタラクション', head: ['動画の上に、', '16種類の機能を。'],
+      lines: ['テキスト・画像・ホットスポット', '質問・フォーム・動画リンク', '目次・ジャンプ・サウンドなど'] },
+    en: { name: '16 interactions', head: ['16 interactions,', 'on top of your video.'],
+      lines: ['Text, images, hotspots', 'Questions, forms, video links', 'Contents, jumps, sounds and more'] } },
+  { color: COLOR.green, ink: COLOR.white,
+    ja: { name: 'ブラウザだけで4ステップ', head: ['ブラウザだけで、', '4ステップで完成。'],
+      lines: ['インストール不要、ブラウザだけ', 'YouTube・Vimeoなどと連携', '分析まで一気通貫で改善'] },
+    en: { name: 'Four steps in a browser', head: ['Just a browser,', 'four steps.'],
+      lines: ['No install, just a browser', 'Works with YouTube, Vimeo and more', 'From making to analysing'] } },
+  { color: COLOR.orange, ink: COLOR.navy,
+    ja: { name: 'どんな場面で使える？', head: ['動画 ＋ 何か で、', '広がる使い道。'],
+      lines: ['学び・買い物・サポートなどに', '観光ガイドや営業研修にも', '見て終わりから、行動へ'] },
+    en: { name: 'Where it works', head: ['Video plus something', 'opens new uses.'],
+      lines: ['Learning, shopping, support', 'Tourism guides, sales training', 'From watching to acting'] } },
+  { color: COLOR.navy, ink: COLOR.white,
+    ja: { name: '日本での導入', head: ['日本語で、', '導入まで伴走。'],
+      lines: ['日本総代理店・スプライングローバル', '日本語サポートと制作・伴走', 'まずは無料プランから試せる'] },
+    en: { name: 'Getting started in Japan', head: ['In Japan,', 'with local support.'],
+      lines: ['Distributor: Spline Global', 'Japanese support and coaching', 'Start with the free plan'] } },
+];
+const FEATURES = DATA.map(d => ({ color: d.color, ink: d.ink, get name() { return d[LANG].name; }, get head() { return d[LANG].head; }, get lines() { return d[LANG].lines; } }));
+const FONT = '"Noto Sans JP","Noto Sans CJK JP","Hiragino Sans","Yu Gothic","IPAGothic","Meiryo",sans-serif';
+const BPM = 120, BEAT = 60 / BPM;
+const INTRO = 12, AGENDA = 10, FEAT0 = INTRO + AGENDA, FEAT = 44, OUTRO_AT = FEAT0 + FEAT * 5;   // 12 / 10 / 22 / 44 / 242 拍
+window.DURATION = (OUTRO_AT + 16) * BEAT;                          // 129秒
+const W = 1920, H = 1080;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const LOGO = Object.assign(new Image(), { src: 'logo-primary.png' });
+window.READY = Promise.all([
+  new Promise(r => { LOGO.onload = r; LOGO.onerror = r; }),
+  document.fonts ? document.fonts.ready : Promise.resolve(),
+]);
+
+/* ---------- イージング・ヘルパー ---------- */
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const prog = (b, s, d) => clamp((b - s) / d);
+const outCubic = x => 1 - Math.pow(1 - x, 3);
+const outExpo = x => (x >= 1 ? 1 : 1 - Math.pow(2, -10 * x));
+const inOutCubic = x => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+const outBack = x => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
+let T = 0;                                                      // 現在の絶対秒（波形・ゆらぎ用）
+
+function setFont(size, weight = 700) { ctx.font = `${weight} ${size}px ${FONT}`; ctx.textBaseline = 'alphabetic'; }
+function fillBg(c) { ctx.fillStyle = c; ctx.fillRect(0, 0, W, H); }
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function fillRR(x, y, w, h, r, fill, stroke, lw = 4) {
+  rr(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+}
+function sk(x, y, w, h, color) { fillRR(x, y, Math.max(0, w), h, h / 2, color); }   // スケルトン行
+function popAt(cx, cy, p, fn) {                                  // 中心基準でバウンド登場
+  if (p <= 0) return;
+  ctx.save(); ctx.translate(cx, cy);
+  const s = Math.max(0.0001, outBack(p)); ctx.scale(s, s); ctx.translate(-cx, -cy);
+  ctx.globalAlpha = clamp(p * 3); fn(); ctx.restore();
+}
+function star(cx, cy, r, color) {                                // 4点スパークル
+  ctx.beginPath(); ctx.moveTo(cx, cy - r);
+  ctx.quadraticCurveTo(cx, cy, cx + r, cy); ctx.quadraticCurveTo(cx, cy, cx, cy + r);
+  ctx.quadraticCurveTo(cx, cy, cx - r, cy); ctx.quadraticCurveTo(cx, cy, cx, cy - r);
+  ctx.fillStyle = color; ctx.fill();
+}
+// マスク付きせり上がり文字（maxW 指定で自動縮小）
+function maskedText(text, x, baseY, size, p, color, align = 'left', maxW = 0) {
+  if (p <= 0) return;
+  setFont(size);
+  let s = size;
+  if (maxW) { const w = ctx.measureText(text).width; if (w > maxW) { s = size * maxW / w; setFont(s); } }
+  ctx.textAlign = align; ctx.fillStyle = color;
+  const lineH = s * 1.3;
+  ctx.save(); ctx.beginPath(); ctx.rect(0, baseY - s * 1.05, W, lineH); ctx.clip();
+  ctx.fillText(text, x, baseY + (1 - outExpo(p)) * lineH);
+  ctx.restore();
+}
+function bar(x, y, w, h, p, color) { ctx.fillStyle = color; ctx.fillRect(x, y, w * outExpo(p), h); }
+function logoAt(cx, cy, w, wipeP) {                              // 中央から左右にワイプ
+  const h = w * LOGO.height / LOGO.width;
+  ctx.save(); ctx.beginPath();
+  ctx.rect(cx - (w / 2) * wipeP - 2, cy - h, w * wipeP + 4, h * 2); ctx.clip();
+  ctx.drawImage(LOGO, cx - w / 2, cy - h / 2, w, h); ctx.restore();
+}
+
+/* ---------- 共通クローム（ロゴ・進行インジケータ） ---------- */
+function chrome(fi) {
+  logoAt(160 + 118, 88, 236, 1);
+  const x0 = W - 160 - 5 * 70 + 10;
+  setFont(30, 700); ctx.textAlign = 'right'; ctx.fillStyle = COLOR.muted;
+  ctx.fillText(`0${fi + 1} / 05`, x0 - 24, 100);
+  for (let i = 0; i < 5; i++) {
+    ctx.fillStyle = i === fi ? FEATURES[i].color : (i < fi ? COLOR.muted : '#d3dce2');
+    ctx.fillRect(x0 + i * 70, 84, 60, 12);
+  }
+}
+
+/* ---------- 各ポイントの図解 ---------- */
+const COLS = [COLOR.pink, COLOR.cyan, COLOR.green, COLOR.orange];
+function check(cx, cy, size, color, p) {                         // チェックマーク
+  ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = size * 0.28; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.beginPath(); ctx.moveTo(cx - size * 0.5, cy);
+  if (p < 0.5) ctx.lineTo(cx - size * 0.5 + (size * 0.25) * (p / 0.5), cy + size * 0.35 * (p / 0.5));
+  else { ctx.lineTo(cx - size * 0.25, cy + size * 0.35); const q = (p - 0.5) / 0.5; ctx.lineTo(cx - size * 0.25 + size * 0.75 * q, cy + size * 0.35 - size * 0.85 * q); }
+  ctx.stroke(); ctx.restore();
+}
+function playTri(x, y, s, color) { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + s * 1.4); ctx.lineTo(x + s * 1.2, y + s * 0.7); ctx.closePath(); ctx.fillStyle = color; ctx.fill(); }
+function label(text, x, y, size, color, align = 'center', maxW = 0, weight = 700) { setFont(size, weight); ctx.textAlign = align; ctx.fillStyle = color; if (maxW) ctx.fillText(text, x, y, maxW); else ctx.fillText(text, x, y); }
+function cursor(x, y) {                                          // マウスカーソル
+  ctx.save(); ctx.translate(x, y); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 44); ctx.lineTo(12, 34); ctx.lineTo(20, 52); ctx.lineTo(28, 48); ctx.lineTo(20, 31); ctx.lineTo(34, 30); ctx.closePath();
+  ctx.fillStyle = COLOR.navy; ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = COLOR.white; ctx.stroke(); ctx.restore();
+}
+
+function motif1(lb) {                                            // 触れる動画：動画の上にインタラクティブ層
+  popAt(1465, 500, prog(lb, 8, 1.1), () => {
+    fillRR(1160, 330, 610, 340, 24, COLOR.navy);
+    playTri(1440, 440, 44, COLOR.white); sk(1190, 630, 400, 12, 'rgba(255,255,255,.35)');
+  });
+  const lp = outCubic(prog(lb, 10, 1.5));
+  if (lp > 0) {
+    ctx.save(); ctx.globalAlpha = lp; ctx.translate(-30 * (1 - lp), 24 * (1 - lp));
+    ctx.setLineDash([14, 10]); fillRR(1180, 350, 570, 300, 18, 'rgba(251,26,124,.12)', COLOR.pink, 5); ctx.setLineDash([]); ctx.restore();
+    ctx.save(); ctx.globalAlpha = lp; label(tr('インタラクティブ層', 'Interactive layer'), 1160, 312, 28, COLOR.pink, 'left', 400); ctx.restore();
+  }
+  const clicked = lb >= 16;
+  [[tr('ボタン', 'Button'), 1200, 560, COLOR.pink, 11], [tr('質問', 'Quiz'), 1470, 380, COLOR.cyan, 12], [tr('フォーム', 'Form'), 1600, 560, COLOR.green, 13]].forEach(([t, x, y, c, at], i) => {
+    popAt(x + 75, y + 30, prog(lb, at, 1), () => {
+      const hot = i === 0 && clicked;
+      fillRR(x, y, 150, 60, 30, hot ? COLOR.pink : COLOR.white, c, 4); label(t, x + 75, y + 41, 30, hot ? COLOR.white : COLOR.navy, 'center', 130);
+    });
+  });
+  const cp = inOutCubic(prog(lb, 14, 2));
+  if (cp > 0 && lb < 18.5) cursor(1710 + (1290 - 1710) * cp, 340 + (590 - 340) * cp);
+  const rp = prog(lb, 16, 1.2);
+  if (rp > 0 && rp < 1) { ctx.save(); ctx.globalAlpha = 0.6 * (1 - rp); ctx.strokeStyle = COLOR.pink; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(1290, 590, 30 + 90 * outCubic(rp), 0, 7); ctx.stroke(); ctx.restore(); }
+  popAt(1305, 772, prog(lb, 18, 1.1), () => { fillRR(1160, 740, 290, 64, 32, null, COLOR.navy, 4); label(tr('従来：見て終わり', 'Before: just watch'), 1305, 782, 28, COLOR.navy, 'center', 260, 500); });
+  popAt(1625, 772, prog(lb, 18.6, 1.1), () => { fillRR(1480, 740, 290, 64, 32, COLOR.green); label(tr('hihaho：触れて行動', 'hihaho: touch & act'), 1625, 782, 28, COLOR.white, 'center', 260); });
+}
+const FUNCS = [['テキスト', 'Text'], ['画像', 'Image'], ['メニュー', 'Menu'], ['目次', 'Contents'], ['ホットスポット', 'Hotspot'], ['スクロール', 'Scroll'], ['透明リンク', 'Link'], ['フォーム', 'Form'],
+  ['動画リンク', 'Video link'], ['ハイライト', 'Highlight'], ['ズーム', 'Zoom'], ['評価', 'Rating'], ['質問', 'Question'], ['ジャンプ', 'Jump'], ['一時停止', 'Pause'], ['サウンド', 'Sound']];
+function motif2(lb) {                                            // 16種類のインタラクション
+  FUNCS.forEach(([ja, en], i) => {
+    const col = i % 3, row = Math.floor(i / 3), c = COLS[(col + row) % 4];
+    const x = i === 15 ? 1160 + 207 : 1160 + col * 207, y = 316 + row * 80;
+    popAt(x + 98, y + 33, prog(lb, 8 + i * 0.4, 0.9), () => {
+      fillRR(x, y, 196, 66, 18, c + '30', c, 4); label(tr(ja, en), x + 98, y + 44, 28, COLOR.navy, 'center', 176);
+    });
+  });
+  popAt(1465, 842, prog(lb, 16, 1.1), () => { fillRR(1160, 812, 610, 60, 30, COLOR.navy); label(tr('毎月、機能が追加されています', 'New features every month'), 1465, 852, 30, COLOR.white, 'center', 570); });
+  const np = prog(lb, 18, 1);
+  if (np > 0) { ctx.save(); ctx.globalAlpha = np; label(tr('※ 利用できる機能はプランにより異なります', '* Available features vary by plan'), 1465, 906, 26, COLOR.muted, 'center', 610, 500); ctx.restore(); }
+}
+const STEPS = [[tr('選択', 'Select'), tr('動画を', 'Pick a'), tr('選ぶ', 'video')], [tr('作成', 'Create'), tr('操作を', 'Add'), tr('追加', 'interactions')],
+  [tr('公開', 'Publish'), tr('URL・埋込', 'Share by'), tr('SNSで公開', 'URL, embed')], [tr('分析', 'Analyse'), tr('視聴データを', 'Review'), tr('確認', 'viewing data')]];
+function motif3(lb) {                                            // ブラウザだけで4ステップ
+  STEPS.forEach(([name, l1, l2], i) => {
+    const x = 1160 + i * 157, y = 380, done = lb >= 8.5 + i * 1.5, c = COLS[i];
+    popAt(x + 71, y + 100, prog(lb, 8 + i * 0.9, 1), () => {
+      fillRR(x, y, 142, 200, 22, done ? c + '30' : COLOR.white, done ? c : COLOR.navy, 4);
+      ctx.beginPath(); ctx.arc(x + 71, y + 44, 26, 0, 7); ctx.fillStyle = done ? c : COLOR.navy; ctx.fill();
+      label(String(i + 1), x + 71, y + 55, 32, (done && (c === COLOR.cyan || c === COLOR.orange)) ? COLOR.navy : COLOR.white, 'center', 0, 900);
+      label(name, x + 71, y + 114, 38, COLOR.navy, 'center', 124, 900);
+      label(l1, x + 71, y + 152, 24, COLOR.muted, 'center', 126, 500); label(l2, x + 71, y + 180, 24, COLOR.muted, 'center', 126, 500);
+    });
+    if (i < 3 && prog(lb, 8 + (i + 1) * 0.9, 1) > 0) { ctx.beginPath(); ctx.moveTo(x + 146, y + 90); ctx.lineTo(x + 146, y + 110); ctx.lineTo(x + 156, y + 100); ctx.closePath(); ctx.fillStyle = COLOR.navy; ctx.fill(); }
+  });
+  const pp = prog(lb, 13.5, 1);
+  if (pp > 0) { ctx.save(); ctx.globalAlpha = pp; label(tr('今の動画プラットフォームとも連携', 'Works with your video platform'), 1160, 640, 28, COLOR.navy, 'left', 610); ctx.restore(); }
+  ['YouTube', 'Vimeo', 'Panopto', 'Kaltura', 'Mediasite', 'Qumu', 'JW Player', tr('ほか', 'more')].forEach((t, i) => {
+    const x = 1160 + (i % 4) * 155, y = 660 + Math.floor(i / 4) * 66;
+    popAt(x + 72, y + 27, prog(lb, 14 + i * 0.3, 0.9), () => { fillRR(x, y, 145, 54, 27, '#e6f9fb', COLOR.cyan, 3); label(t, x + 72, y + 36, 24, COLOR.navy, 'center', 128, 500); });
+  });
+  const lp = outCubic(prog(lb, 18, 1.8));                        // 分析 → 改善 → 作成 のループ
+  if (lp > 0) {
+    const xa = 1160 + 3 * 157 + 71, xb = 1160 + 1 * 157 + 71;
+    ctx.save(); ctx.strokeStyle = COLOR.pink; ctx.lineWidth = 6; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(xa, 372);
+    const t = lp, cx = (xa + xb) / 2; ctx.bezierCurveTo(xa, 372 - 70 * t, xb, 372 - 70 * t, xa + (xb - xa) * t, 372 - 0 * t); ctx.stroke(); ctx.restore();
+    if (lp > 0.95) { ctx.beginPath(); ctx.moveTo(xb - 10, 346); ctx.lineTo(xb + 14, 350); ctx.lineTo(xb + 2, 372); ctx.closePath(); ctx.fillStyle = COLOR.pink; ctx.fill(); }
+    popAt((xa + xb) / 2, 318, prog(lb, 19, 1), () => { fillRR((xa + xb) / 2 - 50, 296, 100, 44, 22, COLOR.pink); label(tr('改善', 'Improve'), (xa + xb) / 2, 327, 28, COLOR.white, 'center', 90); });
+  }
+}
+const USES = [[tr('学び', 'Learning'), tr('自己採点つき教材', 'Self-graded lessons')], [tr('買い物', 'Shopping'), tr('その場で買える動画', 'Buy in the video')],
+  [tr('サポート', 'Support'), tr('24時間の自己解決', '24/7 self-service')], [tr('観光', 'Tourism'), tr('セルフガイド・予約', 'Guides & booking')]];
+function motif4(lb) {                                            // 動画＋何か＝使い道
+  USES.forEach(([w, res], i) => {
+    const y = 316 + i * 120, c = COLS[i];
+    popAt(1465, y + 45, prog(lb, 8 + i * 2.5, 1.1), () => {
+      fillRR(1150, y, 630, 100, 24, COLOR.white, COLOR.navy, 4);
+      fillRR(1164, y + 20, 100, 60, 30, COLOR.navy); label(tr('動画', 'Video'), 1214, y + 61, 28, COLOR.white, 'center', 88);
+      label('＋', 1286, y + 62, 34, COLOR.navy, 'center', 0, 900);
+      fillRR(1308, y + 20, 150, 60, 30, c + '40', c, 4); label(w, 1383, y + 61, 28, COLOR.navy, 'center', 130);
+      label('＝', 1482, y + 62, 34, COLOR.navy, 'center', 0, 900);
+      label(res, 1504, y + 61, 28, COLOR.navy, 'left', 268);
+    });
+  });
+  popAt(1465, 842, prog(lb, 18, 1.1), () => { fillRR(1150, 804, 630, 64, 32, COLOR.pink); label(tr('見て終わりから、行動へ', 'From watching to acting'), 1465, 846, 32, COLOR.white, 'center', 590); });
+}
+function motif5(lb) {                                            // 日本での導入：総代理店・サポート・無料プラン
+  popAt(1465, 368, prog(lb, 8, 1.1), () => {
+    fillRR(1160, 320, 610, 96, 24, COLOR.navy);
+    label(tr('スプライングローバル', 'Spline Global'), 1190, 366, 40, COLOR.white, 'left', 560, 900); label(tr('hihaho 日本総代理店', 'hihaho distributor in Japan'), 1190, 400, 24, COLOR.cyan, 'left', 560, 500);
+  });
+  [[tr('日本語', 'Japanese'), tr('サポート', 'support')], [tr('制作', 'Production'), tr('サービス', 'service')], [tr('活用', 'Coaching'), tr('伴走支援', '& follow-up')]].forEach(([l1, l2], i) => {
+    const x = 1160 + i * 210;
+    popAt(x + 95, 520, prog(lb, 10 + i * 0.8, 1), () => {
+      fillRR(x, 436, 190, 168, 22, COLOR.white, COLS[i], 5); ctx.fillStyle = COLS[i]; ctx.fillRect(x + 20, 456, 60, 8);
+      label(l1, x + 95, 520, 32, COLOR.navy, 'center', 168, 900); label(l2, x + 95, 566, 32, COLOR.navy, 'center', 168, 900);
+    });
+  });
+  const PL = [['Free', tr('0円', '¥0')], ['Starter', ''], ['Standard', ''], ['Enterprise', '']];
+  PL.forEach(([n, sub], i) => {
+    const x = 1160 + i * 157, h = [84, 112, 140, 168][i], free = i === 0;
+    popAt(x + 71, 860 - h / 2, prog(lb, 14 + i * 0.8, 1), () => {
+      fillRR(x, 860 - h, 142, h, 16, free ? COLOR.green : '#e3ebf0');
+      label(n, x + 71, 860 - h + 36, 28, free ? COLOR.white : COLOR.navy, 'center', 124, 900);
+      if (sub) label(sub, x + 71, 860 - h + 68, 30, COLOR.white, 'center', 124, 900);
+    });
+  });
+  label(tr('月額プラン制', 'Monthly plans'), 1160, 664, 28, COLOR.muted, 'left', 400, 500);
+  popAt(1231, 744, prog(lb, 18, 1.1), () => { fillRR(1146, 716, 170, 54, 27, COLOR.pink); label(tr('まず試せる', 'Try it first'), 1231, 753, 28, COLOR.white, 'center', 150); });
+}
+const MOTIFS = [motif1, motif2, motif3, motif4, motif5];
+
+/* ---------- シーン ---------- */
+function intro(b) {                                              // 0〜12拍（以降は保持）
+  fillBg(COLOR.light);
+  logoAt(960, 270, 860, outExpo(prog(b, 0.5, 2.5)));
+  maskedText(tr('インタラクティブ動画プラットフォーム', 'Interactive video platform'), 960, 540, 72, prog(b, 3, 1.2), COLOR.muted, 'center', 1500);
+  maskedText(tr('ひはほとは？', 'What is hihaho?'), 960, 760, 200, prog(b, 4, 1.4), COLOR.navy, 'center', 1500);
+  bar(960 - 300, 800, 600, 14, prog(b, 6, 1.5), COLOR.pink);
+  maskedText(tr('見る動画から、触れる動画へ（世界4,000社が導入）', 'From watching to touching (used by 4,000+ companies)'), 960, 900, 52, prog(b, 7.5, 1.2), COLOR.navy, 'center', 1500);
+}
+const LINE_T = [[8, 13, 26], [8, 16, 26], [8, 20, 30], [8, 16, 26], [8, 13, 26]];   // 各ポイントで説明行が出る拍
+const MOTIF_SPEED = 0.45;                                          // 図解の進行をゆっくりにする（説明を読む時間を確保）
+const warp = lb => (lb < 8 ? lb : 8 + (lb - 8) * MOTIF_SPEED);
+function featureContent(fi, lb) {                                // lb は 44 超でも最終状態を保持
+  const F = FEATURES[fi], accent = F.color === COLOR.navy ? COLOR.pink : F.color;
+  fillBg(COLOR.light);
+  chrome(fi);
+  maskedText(F.head[0], 160, 330, 100, prog(lb, 5, 1.2), COLOR.navy, 'left', 880);
+  maskedText(F.head[1], 160, 450, 100, prog(lb, 5.6, 1.2), COLOR.navy, 'left', 880);
+  bar(160, 490, 180, 16, prog(lb, 7, 1.2), accent);
+  F.lines.forEach((ln, i) => {                                   // 1行ずつ大きく表示。次の行が出たら前の行は少し薄く
+    const s = LINE_T[fi][i], next = i + 1 < F.lines.length ? LINE_T[fi][i + 1] : 999, y = 650 + i * 110;
+    ctx.save(); ctx.globalAlpha = lb >= next ? 0.5 : 1;
+    ctx.fillStyle = accent; ctx.fillRect(160, y - 34, 24, 24 * outCubic(prog(lb, s, 0.8)));
+    maskedText(ln, 208, y, 54, prog(lb, s, 1.2), COLOR.navy, 'left', 850);
+    ctx.restore();
+  });
+  ctx.save();                                                    // 図解は1.25倍に拡大して見やすく
+  ctx.translate(1465, 590); ctx.scale(1.25, 1.25); ctx.translate(-1465, -590);
+  MOTIFS[fi](warp(lb));
+  ctx.restore();
+}
+function chapterCard(fi, lb) {                                   // 章扉：アクセント色の全面カード
+  const F = FEATURES[fi];
+  let y = 0;
+  if (lb < 1) y = (1 - inOutCubic(lb)) * H;
+  else if (lb > 3.4) y = -inOutCubic(prog(lb, 3.4, 1.2)) * H;
+  if (lb > 4.7) return;
+  ctx.save(); ctx.translate(0, y);
+  fillBg(F.color);
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '8px';
+  maskedText(`HIGHLIGHT 0${fi + 1} / 05`, 160, 200, 40, prog(lb, 0.8, 0.9), F.ink, 'left');
+  if ('letterSpacing' in ctx) ctx.letterSpacing = '0px';
+  maskedText(`0${fi + 1}`, 140, 720, 560, prog(lb, 0.8, 1.2), F.ink, 'left');
+  maskedText(F.name, 160, 900, 92, prog(lb, 1.4, 1.2), F.ink, 'left', 1600);
+  ctx.restore();
+}
+function agenda(o) {                                             // 全体像：これから見る5つを先に提示
+  if (o < 1.2) intro(INTRO + o);
+  const y = o < 1.2 ? (1 - inOutCubic(o / 1.2)) * H : 0;
+  ctx.save(); ctx.translate(0, y);
+  fillBg(COLOR.navy);
+  maskedText(tr('これから見る5つのポイント', 'Five things to know'), 240, 170, 60, prog(o, 0.8, 1), COLOR.cyan, 'left');
+  FEATURES.forEach((F, i) => {
+    const p = prog(o, 1.4 + i * 1.2, 1.1), by = 340 + i * 140;
+    if (p > 0) {
+      ctx.save(); ctx.globalAlpha = outCubic(p);
+      ctx.beginPath(); ctx.arc(290, by - 24, 42, 0, 7); ctx.fillStyle = F.color === COLOR.navy ? COLOR.pink : F.color; ctx.fill();
+      label(`${i + 1}`, 290, by - 4, 52, (F.color === COLOR.cyan || F.color === COLOR.orange) ? COLOR.navy : COLOR.white, 'center', 0, 900);
+      ctx.restore();
+    }
+    maskedText(F.name, 380, by, 70, p, COLOR.white, 'left', 1400);
+  });
+  ctx.restore();
+}
+function outro(o) {
+  if (o < 1.2) featureContent(4, FEAT + o);
+  else if (o >= 8) {                                             // 白背景のエンドカード
+    fillBg(COLOR.light);
+    logoAt(960, 380, 860, outExpo(prog(o, 8.8, 1.8)));
+    maskedText(tr('splineinteractive.com', 'hihaho.com'), 960, 690, 96, prog(o, 10.2, 1.3), COLOR.navy, 'center', 1500);
+    bar(960 - 380, 722, 760, 14, prog(o, 11.5, 1.5), COLOR.pink);
+    maskedText(tr('まずは、無料プランから。', 'Start with the free plan.'), 960, 840, 60, prog(o, 12, 1.2), COLOR.navy, 'center', 1500);
+    ctx.save(); ctx.globalAlpha = outCubic(prog(o, 12.5, 1.5));
+    setFont(28, 500); ctx.textAlign = 'center'; ctx.fillStyle = COLOR.muted;
+    ctx.fillText(tr('出典: hihahoナレッジベース『サービス資料5.0』', 'Source: hihaho service guide 5.0 (knowledge base)'), 960, 970); ctx.restore();
+  }
+  let y = 0;
+  if (o < 1.2) y = (1 - inOutCubic(o / 1.2)) * H;
+  else if (o >= 8) y = -inOutCubic(prog(o, 8, 1.2)) * H;
+  if (o > 9.2) return;
+  ctx.save(); ctx.translate(0, y);
+  fillBg(COLOR.navy);
+  maskedText(tr('まとめ', 'Recap'), 240, 170, 52, prog(o, 0.8, 1), COLOR.cyan, 'left');
+  FEATURES.forEach((F, i) => {
+    const p = prog(o, 1.4 + i * 0.9, 1.1), by = 330 + i * 130;
+    maskedText(`0${i + 1}`, 240, by, 72, p, F.color === COLOR.navy ? COLOR.pink : F.color, 'left');
+    maskedText(F.name, 400, by, 76, p, COLOR.white, 'left', 1320);
+  });
+  ctx.restore();
+}
+
+/* ---------- メイン：時刻 t のフレームを描画 ---------- */
+window.seek = function (t) {
+  T = t;
+  const b = t / BEAT;
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1;
+  if (b >= OUTRO_AT) outro(b - OUTRO_AT);
+  else if (b >= FEAT0) {
+    const fi = Math.floor((b - FEAT0) / FEAT), lb = b - FEAT0 - fi * FEAT;
+    if (lb < 1) { if (fi === 0) agenda(AGENDA + lb); else featureContent(fi - 1, FEAT + lb); }
+    else featureContent(fi, lb);
+    chapterCard(fi, lb);
+  } else if (b >= INTRO) agenda(b - INTRO);
+  else intro(b);
+  const fade = prog(t, DURATION - 0.5, 0.5);                       // 最後0.5秒でフェードアウト
+  if (fade > 0) { ctx.fillStyle = `rgba(246,248,250,${fade})`; ctx.fillRect(0, 0, W, H); }
+};
+
+/* ---------- 効果音イベント（拍定数から生成。render.py が audio.py に渡す） ---------- */
+const MOTIF_SFX = [
+  [[8, 'pop'], [10, 'whoosh'], [11, 'pop'], [12, 'pop'], [13, 'pop'], [15.8, 'tick'], [16, 'click'], [18, 'pop'], [18.6, 'ding']],
+  ...[0].map(() => FUNCS.map((_, i) => [8 + i * 0.4, 'tick']).concat([[16, 'pop'], [18, 'ding']])),
+  [[8, 'pop'], [8.9, 'pop'], [9.8, 'pop'], [10.7, 'pop'], [9, 'click'], [10.5, 'click'], [12, 'click'], [13.5, 'click'], [14, 'tick'], [14.3, 'tick'], [14.6, 'tick'], [14.9, 'tick'], [15.2, 'tick'], [15.5, 'tick'], [15.8, 'tick'], [16.1, 'tick'], [18, 'whoosh'], [19, 'ding']],
+  [[8, 'pop'], [10.5, 'pop'], [13, 'pop'], [15.5, 'pop'], [9.4, 'ding'], [11.9, 'ding'], [14.4, 'ding'], [16.9, 'ding'], [18, 'pop']],
+  [[8, 'pop'], [10, 'pop'], [10.8, 'pop'], [11.6, 'pop'], [14, 'tick'], [14.8, 'tick'], [15.6, 'tick'], [16.4, 'tick'], [18, 'ding']],
+];
+window.SFX = function () {
+  const ev = [], at = (beat, type, v = 1) => ev.push({ t: +(beat * BEAT).toFixed(3), type, v });
+  at(0.5, 'chime'); at(3, 'pop'); at(4, 'pop'); at(6, 'tick'); at(7.5, 'pop', 0.7);          // イントロ
+  at(INTRO, 'whoosh'); at(INTRO + 0.8, 'pop');                                                 // 全体像
+  for (let i = 0; i < 5; i++) at(INTRO + 1.4 + i * 1.2, 'blip');
+  for (let fi = 0; fi < 5; fi++) {
+    const c0 = FEAT0 + fi * FEAT;
+    at(c0, 'whoosh'); at(c0 + 1, 'thud'); at(c0 + 3.4, 'whoosh', 0.6);                          // 章扉
+    at(c0 + 5, 'pop'); at(c0 + 5.6, 'pop'); at(c0 + 7, 'tick');                                 // 見出し
+    LINE_T[fi].forEach(lt => at(c0 + lt, 'blip'));                                              // 説明行
+    MOTIF_SFX[fi].forEach(([lbm, type]) => at(c0 + 8 + (lbm - 8) / MOTIF_SPEED, type, 0.8));    // 図解
+  }
+  at(OUTRO_AT, 'whoosh'); at(OUTRO_AT + 0.8, 'pop');                                            // まとめ
+  for (let i = 0; i < 5; i++) at(OUTRO_AT + 1.4 + i * 0.9, 'blip');
+  at(OUTRO_AT + 8, 'whoosh'); at(OUTRO_AT + 8.8, 'chime'); at(OUTRO_AT + 10.2, 'pop');          // エンドカード
+  return { duration: DURATION, events: ev.sort((x, y) => x.t - y.t) };
+};
+
+// ブラウザで開いた場合は実時間で再生プレビュー（書き出しには影響しない）
+window.READY.then(() => {
+  if (!navigator.webdriver) {
+    const t0 = performance.now();
+    const loop = () => { window.seek(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); };
+    loop();
+  } else { window.seek(0); }
+});
+</script>
+</body>
+</html>
