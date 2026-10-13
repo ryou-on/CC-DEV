@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>hihahoの魅力 Why hihaho</title>
+<style>
+  html, body { margin: 0; background: #043348; height: 100%; }
+  body { display: flex; align-items: center; justify-content: center; }
+  canvas { max-width: 100vw; max-height: 100vh; aspect-ratio: 16 / 9; }
+</style>
+</head>
+<body>
+<canvas id="c" width="1920" height="1080"></canvas>
+<script>/* ============================================================
+   hihahoの魅力 / Why hihaho — 文字中心のプロモーション・モーショングラフィック（約48秒・日英・BGM/効果音つき）
+   出典: hihahoナレッジベース『サービス資料5.0』（hihaho-kb-content/service/）の記載のみを使用
+   全ての描画は seek(t) の純粋関数。BPM120 → 1拍 = 0.5秒（96拍 = 48秒）。効果音は window.SFX() が同じ拍定数から生成
+   ============================================================ */
+let LANG = new URLSearchParams(location.search).get('lang') === 'en' ? 'en' : 'ja';
+window.setLang = l => { LANG = l === 'en' ? 'en' : 'ja'; };
+const tr = (ja, en) => (LANG === 'en' ? en : ja);
+const COLOR = {
+  navy: '#043348', light: '#f6f8fa', muted: '#5d7482', white: '#ffffff',
+  pink: '#fb1a7c', cyan: '#2ed6e3', green: '#2cae6c', orange: '#fba37c',
+};
+const COLS = [COLOR.pink, COLOR.cyan, COLOR.green, COLOR.orange];
+const FONT = '"Noto Sans JP","Noto Sans CJK JP","Hiragino Sans","Yu Gothic","IPAGothic","Meiryo",sans-serif';
+const BPM = 120, BEAT = 60 / BPM;
+const W = 1920, H = 1080;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+const LOGO = Object.assign(new Image(), { src: 'logo-primary.png' });
+window.READY = Promise.all([
+  new Promise(r => { LOGO.onload = r; LOGO.onerror = r; }),
+  document.fonts ? document.fonts.ready : Promise.resolve(),
+]);
+/* ---------- イージング・ヘルパー ---------- */
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const prog = (b, s, d) => clamp((b - s) / d);
+const outCubic = x => 1 - Math.pow(1 - x, 3);
+const outExpo = x => (x >= 1 ? 1 : 1 - Math.pow(2, -10 * x));
+const inOutCubic = x => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+const outBack = x => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
+let T = 0;                                                      // 現在の絶対秒（波形・ゆらぎ用）
+
+function setFont(size, weight = 700) { ctx.font = `${weight} ${size}px ${FONT}`; ctx.textBaseline = 'alphabetic'; }
+function fillBg(c) { ctx.fillStyle = c; ctx.fillRect(0, 0, W, H); }
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+function fillRR(x, y, w, h, r, fill, stroke, lw = 4) {
+  rr(x, y, w, h, r);
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lw; ctx.stroke(); }
+}
+function sk(x, y, w, h, color) { fillRR(x, y, Math.max(0, w), h, h / 2, color); }   // スケルトン行
+function popAt(cx, cy, p, fn) {                                  // 中心基準でバウンド登場
+  if (p <= 0) return;
+  ctx.save(); ctx.translate(cx, cy);
+  const s = Math.max(0.0001, outBack(p)); ctx.scale(s, s); ctx.translate(-cx, -cy);
+  ctx.globalAlpha = clamp(p * 3); fn(); ctx.restore();
+}
+function star(cx, cy, r, color) {                                // 4点スパークル
+  ctx.beginPath(); ctx.moveTo(cx, cy - r);
+  ctx.quadraticCurveTo(cx, cy, cx + r, cy); ctx.quadraticCurveTo(cx, cy, cx, cy + r);
+  ctx.quadraticCurveTo(cx, cy, cx - r, cy); ctx.quadraticCurveTo(cx, cy, cx, cy - r);
+  ctx.fillStyle = color; ctx.fill();
+}
+// マスク付きせり上がり文字（maxW 指定で自動縮小）
+function maskedText(text, x, baseY, size, p, color, align = 'left', maxW = 0) {
+  if (p <= 0) return;
+  setFont(size);
+  let s = size;
+  if (maxW) { const w = ctx.measureText(text).width; if (w > maxW) { s = size * maxW / w; setFont(s); } }
+  ctx.textAlign = align; ctx.fillStyle = color;
+  const lineH = s * 1.3;
+  ctx.save(); ctx.beginPath(); ctx.rect(0, baseY - s * 1.05, W, lineH); ctx.clip();
+  ctx.fillText(text, x, baseY + (1 - outExpo(p)) * lineH);
+  ctx.restore();
+}
+function bar(x, y, w, h, p, color) { ctx.fillStyle = color; ctx.fillRect(x, y, w * outExpo(p), h); }
+function logoAt(cx, cy, w, wipeP) {                              // 中央から左右にワイプ
+  const h = w * LOGO.height / LOGO.width;
+  ctx.save(); ctx.beginPath();
+  ctx.rect(cx - (w / 2) * wipeP - 2, cy - h, w * wipeP + 4, h * 2); ctx.clip();
+  ctx.drawImage(LOGO, cx - w / 2, cy - h / 2, w, h); ctx.restore();
+}
+
+
+function label(text, x, y, size, color, align = 'center', maxW = 0, weight = 700) { setFont(size, weight); ctx.textAlign = align; ctx.fillStyle = color; if (maxW) ctx.fillText(text, x, y, maxW); else ctx.fillText(text, x, y); }
+function check(cx, cy, size, color, p) {                         // チェックマーク
+  ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = size * 0.28; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.beginPath(); ctx.moveTo(cx - size * 0.5, cy);
+  if (p < 0.5) ctx.lineTo(cx - size * 0.5 + (size * 0.25) * (p / 0.5), cy + size * 0.35 * (p / 0.5));
+  else { ctx.lineTo(cx - size * 0.25, cy + size * 0.35); const q = (p - 0.5) / 0.5; ctx.lineTo(cx - size * 0.25 + size * 0.75 * q, cy + size * 0.35 - size * 0.85 * q); }
+  ctx.stroke(); ctx.restore();
+}
+function playTri(x, y, s, color) { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + s * 1.4); ctx.lineTo(x + s * 1.2, y + s * 0.7); ctx.closePath(); ctx.fillStyle = color; ctx.fill(); }
+function textW(text, size, weight = 700) { setFont(size, weight); return ctx.measureText(text).width; }
+
+/* ---------- シーン（s = そのシーン内の拍） ---------- */
+function s0(s) {                                                 // 導入：ふつうの動画は、見て終わり
+  maskedText(tr('ふつうの動画は、', 'Most videos'), 960, 420, 110, prog(s, 0.5, 1.1), COLOR.navy, 'center', 1700);
+  const big = tr('見て終わり。', 'end at watching.'), sz = tr(230, 160);
+  maskedText(big, 960, 660, sz, prog(s, 1.5, 1.2), COLOR.navy, 'center', 1700);
+  const p = prog(s, 4.4, 1.0), w = Math.min(1700, textW(big, sz));
+  if (p > 0) { ctx.fillStyle = COLOR.pink; ctx.fillRect(960 - w / 2, 560, w * outExpo(p), 26); }
+}
+function s1(s) {                                                 // 反転：hihahoなら、触れて、動く
+  maskedText(tr('hihahoなら、', 'With hihaho,'), 960, 380, 120, prog(s, 0.6, 1), COLOR.white, 'center', 1700);
+  maskedText(tr('触れて、動く。', 'touch and act.'), 960, 640, tr(230, 170), prog(s, 1.5, 1.2), COLOR.white, 'center', 1700);
+  [tr('ボタン', 'Button'), tr('質問', 'Quiz'), tr('フォーム', 'Form')].forEach((t, i) => {
+    const x = 415 + i * 370;
+    popAt(x + 165, 845, prog(s, 4 + i * 0.6, 1), () => { fillRR(x, 790, 330, 110, 55, COLOR.white); label(t, x + 165, 862, 56, COLOR.navy, 'center', 290); });
+  });
+}
+function s2(s) {                                                 // 驚くほど簡単：ブラウザだけ・4ステップ
+  maskedText(tr('驚くほど簡単。', 'Surprisingly simple.'), 960, 440, tr(200, 150), prog(s, 0.6, 1.2), COLOR.navy, 'center', 1700);
+  maskedText(tr('ブラウザだけ。インストール不要。', 'Just a browser. No install.'), 960, 580, 68, prog(s, 3, 1.1), COLOR.navy, 'center', 1700);
+  const names = [tr('選択', 'Select'), tr('作成', 'Create'), tr('公開', 'Publish'), tr('分析', 'Analyse')];
+  names.forEach((n, i) => {
+    const x = 195 + i * 390, at = 5 + i * 1.2, on = s >= at + 0.5;
+    popAt(x + 180, 785, prog(s, at, 1), () => {
+      fillRR(x, 700, 360, 170, 28, on ? COLOR.white : COLOR.white, on ? COLOR.pink : COLOR.navy, on ? 8 : 5);
+      ctx.beginPath(); ctx.arc(x + 60, 785, 32, 0, 7); ctx.fillStyle = on ? COLOR.pink : COLOR.navy; ctx.fill();
+      label(String(i + 1), x + 60, 798, 40, COLOR.white, 'center', 0, 900); label(n, x + 220, 806, 66, COLOR.navy, 'center', 200, 900);
+    });
+    if (i < 3 && s >= at + 0.8) { ctx.beginPath(); ctx.moveTo(x + 366, 770); ctx.lineTo(x + 366, 800); ctx.lineTo(x + 384, 785); ctx.closePath(); ctx.fillStyle = COLOR.navy; ctx.fill(); }
+  });
+}
+const FUNCS = [['テキスト', 'Text'], ['画像', 'Image'], ['メニュー', 'Menu'], ['目次', 'Contents'], ['ホットスポット', 'Hotspot'], ['スクロール', 'Scroll'], ['透明リンク', 'Link'], ['フォーム', 'Form'],
+  ['動画リンク', 'Video link'], ['ハイライト', 'Highlight'], ['ズーム', 'Zoom'], ['評価', 'Rating'], ['質問', 'Question'], ['ジャンプ', 'Jump'], ['一時停止', 'Pause'], ['サウンド', 'Sound']];
+function s3(s) {                                                 // 16種類の機能：数がカウントアップ
+  const n = Math.round(16 * outCubic(prog(s, 0.8, 3)));
+  maskedText(tr(`${n}種類の機能。`, `${n} interactions.`), 960, 430, 200, prog(s, 0.5, 1), COLOR.white, 'center', 1700);
+  maskedText(tr('ボタン・質問・フォーム・動画リンク…', 'Buttons, quizzes, forms, video links…'), 960, 545, 58, prog(s, 2, 1), '#cfe0e8', 'center', 1700);
+  FUNCS.forEach(([ja, en], i) => {
+    const col = i % 4, row = Math.floor(i / 4), c = COLS[(col + row) % 4], x = 116 + col * 426, y = 630 + row * 94;
+    popAt(x + 205, y + 40, prog(s, 3 + i * 0.35, 0.8), () => { fillRR(x, y, 410, 80, 22, c + '38', c, 4); label(tr(ja, en), x + 205, y + 56, 44, COLOR.white, 'center', 380); });
+  });
+}
+function s4(s) {                                                 // 行動へ：申し込み・購入・予約
+  maskedText(tr('見て終わりから、', 'From watching'), 960, 330, 110, prog(s, 0.5, 1), COLOR.navy, 'center', 1700);
+  maskedText(tr('行動へ。', 'to acting.'), 960, 590, tr(260, 200), prog(s, 1.3, 1.2), COLOR.navy, 'center', 1700);
+  maskedText(tr('申し込み・購入・予約へ、そのまま。', 'Sign up, buy, book. Right there.'), 960, 722, 60, prog(s, 3, 1.1), COLOR.navy, 'center', 1700);
+  popAt(430, 895, prog(s, 4.5, 1), () => { fillRR(300, 820, 260, 150, 24, COLOR.navy); playTri(405, 860, 30, COLOR.white); });
+  const lp = outCubic(prog(s, 5.5, 1.4));
+  if (lp > 0) { ctx.strokeStyle = COLOR.navy; ctx.lineWidth = 8; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(590, 895); ctx.lineTo(590 + 180 * lp, 895); ctx.stroke(); if (lp > 0.95) { ctx.beginPath(); ctx.moveTo(760, 875); ctx.lineTo(790, 895); ctx.lineTo(760, 915); ctx.closePath(); ctx.fillStyle = COLOR.navy; ctx.fill(); } }
+  [tr('申し込み', 'Sign up'), tr('購入', 'Buy'), tr('予約', 'Book')].forEach((t, i) => {
+    const x = 820 + i * 290, at = 6 + i * 0.6;
+    popAt(x + 130, 895, prog(s, at, 1), () => { fillRR(x, 845, 260, 100, 50, COLOR.white); label(t, x + 110, 912, 50, COLOR.navy, 'center', 160); });
+    if (s >= at + 0.8) check(x + 218, 896, 30, COLOR.green, outCubic(prog(s, at + 0.8, 0.6)));
+  });
+}
+function s5(s) {                                                 // 視聴データ：分析して改善し続ける
+  maskedText(tr('視聴データで、', 'Grow it with'), 960, 330, 110, prog(s, 0.5, 1), COLOR.navy, 'center', 1700);
+  maskedText(tr('育てる。', 'viewing data.'), 960, 590, tr(260, 170), prog(s, 1.3, 1.2), COLOR.navy, 'center', 1700);
+  maskedText(tr('分析して、改善し続ける。', 'Analyse. Improve. Repeat.'), 960, 705, 60, prog(s, 3, 1.1), COLOR.muted, 'center', 1700);
+  const hs = [50, 80, 70, 120, 140, 180, 220], pts = [];
+  hs.forEach((h, i) => {
+    const g = outCubic(prog(s, 4.5 + i * 0.5, 0.9)), x = 525 + i * 130, top = 1010 - h * g;
+    if (g > 0) fillRR(x, top, 90, h * g, 12, i === 6 ? COLOR.pink : COLOR.cyan);
+    if (g > 0.05) pts.push([x + 45, top - 24]);
+  });
+  if (pts.length > 1) { ctx.strokeStyle = COLOR.green; ctx.lineWidth = 8; ctx.lineJoin = 'round'; ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.stroke(); }
+  pts.forEach(([x, y]) => { ctx.beginPath(); ctx.arc(x, y, 12, 0, 7); ctx.fillStyle = COLOR.green; ctx.fill(); });
+}
+function s6(s) {                                                 // 世界で選ばれる：4,000社
+  const n = Math.round(4000 * outCubic(prog(s, 0.8, 3.2)));
+  maskedText(tr(`${n.toLocaleString('en-US')}社`, `${n.toLocaleString('en-US')} companies`), 960, 530, tr(330, 200), prog(s, 0.5, 1), COLOR.white, 'center', 1700);
+  maskedText(tr('世界で導入されています。', 'use hihaho worldwide.'), 960, 745, 90, prog(s, 1.5, 1.2), COLOR.white, 'center', 1700);
+  maskedText(tr('12言語対応・日本語サポート・毎月アップデート', '12 languages · Japanese support · monthly updates'), 960, 880, 58, prog(s, 3.5, 1.2), COLOR.white, 'center', 1750);
+}
+function s7(s) {                                                 // フィナーレ：ロゴ・キャッチ・無料プラン
+  logoAt(960, 330, 1100, outExpo(prog(s, 0.6, 2)));
+  maskedText(tr('見る動画から、触れる動画へ。', 'From watching to touching.'), 960, 640, 100, prog(s, 3, 1.3), COLOR.navy, 'center', 1700);
+  popAt(960, 810, prog(s, 6, 1.2), () => { fillRR(400, 750, 1120, 120, 60, COLOR.pink); label(tr('まずは、無料プランから。', 'Start with the free plan.'), 960, 830, 68, COLOR.white, 'center', 1040); });
+  maskedText(tr('splineinteractive.com', 'hihaho.com'), 960, 975, 60, prog(s, 8.5, 1.2), COLOR.navy, 'center', 1700);
+  ctx.save(); ctx.globalAlpha = outCubic(prog(s, 10, 1.5)) * 0.8;
+  label(tr('出典: hihahoナレッジベース『サービス資料5.0』', 'Source: hihaho service guide 5.0 (knowledge base)'), 960, 1048, 24, COLOR.muted, 'center', 1500, 500); ctx.restore();
+}
+const SCENES = [
+  { dur: 8, bg: COLOR.light, fn: s0 }, { dur: 8, bg: COLOR.pink, fn: s1 }, { dur: 12, bg: COLOR.cyan, fn: s2 }, { dur: 12, bg: COLOR.navy, fn: s3 },
+  { dur: 12, bg: COLOR.orange, fn: s4 }, { dur: 12, bg: COLOR.light, fn: s5 }, { dur: 12, bg: COLOR.green, fn: s6 }, { dur: 20, bg: COLOR.light, fn: s7 },
+];
+let ACC = 0; SCENES.forEach(c => { c.start = ACC; ACC += c.dur; });
+window.DURATION = ACC * BEAT;                                    // 48秒
+const TR = 1.0;                                                   // シーン転換（1拍でスライド）
+
+/* ---------- メイン：時刻 t のフレームを描画 ---------- */
+function drawScene(i, s) { fillBg(SCENES[i].bg); SCENES[i].fn(s); }
+window.seek = function (t) {
+  T = t;
+  const b = Math.min(t / BEAT, ACC - 1e-6);
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1;
+  let i = SCENES.length - 1; while (i > 0 && b < SCENES[i].start) i--;
+  const s = b - SCENES[i].start;
+  if (i > 0 && s < TR) drawScene(i - 1, SCENES[i - 1].dur + s);   // 転換中は前のシーンを下に残す
+  ctx.save();
+  if (i > 0 && s < TR) ctx.translate(0, (1 - inOutCubic(s / TR)) * H);
+  drawScene(i, s);
+  ctx.restore();
+  const fade = prog(t, DURATION - 1, 1);                          // 最後1秒でフェードアウト
+  if (fade > 0) { ctx.fillStyle = `rgba(246,248,250,${fade})`; ctx.fillRect(0, 0, W, H); }
+};
+
+/* ---------- 効果音イベント（拍定数から生成。render.py が audio.py に渡す） ---------- */
+const ticks = (from, to, step, type = 'tick') => { const a = []; for (let x = from; x <= to + 1e-9; x += step) a.push([+x.toFixed(3), type]); return a; };
+const SCENE_SFX = [
+  [[0.5, 'pop'], [1.5, 'pop'], [4.4, 'whoosh', 0.5]],
+  [[0.6, 'pop'], [1.5, 'pop'], [4, 'pop'], [4.6, 'pop'], [5.2, 'pop'], [6, 'ding']],
+  [[0.6, 'pop'], [3, 'blip'], [5, 'pop', 0.9], [6.2, 'pop', 0.9], [7.4, 'pop', 0.9], [8.6, 'pop', 0.9], [5.6, 'click'], [6.8, 'click'], [8, 'click'], [9.2, 'click'], [10, 'ding']],
+  [[0.5, 'pop'], ...ticks(0.8, 3.8, 0.25), [2, 'blip'], ...ticks(3, 8.25, 0.35), [9.5, 'ding']],
+  [[0.5, 'pop'], [1.5, 'pop'], [3, 'blip'], [4.5, 'pop'], [5.5, 'whoosh', 0.5], [6, 'pop'], [6.6, 'pop'], [7.2, 'pop'], [6.8, 'ding'], [7.4, 'ding'], [8, 'ding']],
+  [[0.5, 'pop'], [1.5, 'pop'], [3, 'blip'], ...ticks(4.5, 7.5, 0.5), [8.5, 'ding']],
+  [[0.5, 'pop'], ...ticks(0.8, 4, 0.25), [1.5, 'pop'], [3.5, 'blip'], [6, 'ding']],
+  [[0.6, 'chime'], [3, 'pop'], [6, 'pop'], [6.6, 'ding'], [8.5, 'pop']],
+];
+window.SFX = function () {
+  const ev = [], at = (beat, type, v = 1) => ev.push({ t: +(beat * BEAT).toFixed(3), type, v });
+  SCENES.forEach((c, i) => {
+    if (i > 0) at(c.start, 'whoosh');
+    SCENE_SFX[i].forEach(([s, type, v]) => at(c.start + s, type, v === undefined ? 1 : v));
+  });
+  return { duration: DURATION, events: ev.sort((x, y) => x.t - y.t), bgm: { arp: 4, bass: 8, drums: 16 } };
+};
+
+window.READY.then(() => {                                        // ブラウザで開いた場合は実時間で再生プレビュー
+  if (!navigator.webdriver) {
+    const t0 = performance.now();
+    const loop = () => { window.seek(((performance.now() - t0) / 1000) % DURATION); requestAnimationFrame(loop); };
+    loop();
+  } else { window.seek(0); }
+});
+</script>
+</body>
+</html>
