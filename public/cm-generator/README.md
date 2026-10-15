@@ -8,13 +8,15 @@ cd public/cm-generator
 pip install playwright pillow anthropic   # 初回のみ
 
 # 1) URL からロゴ・配色・文言を取得 → brands/<slug>/brand.json
-export ANTHROPIC_API_KEY=sk-ant-...        # あれば Claude がコピーを自動生成（無ければ仮コピー）
+export ANTHROPIC_API_KEY=sk-ant-...        # あれば Claude が下書きする（無ければ仮コピー）
 python3 extract.py https://example.com example
+#    自動生成でも仮コピーでも needs_review は true のまま
 
-# 2) brand.json のコピーを確認・手直し（needs_review: true の間は必須）
+# 2) brand.json のコピー・権利・表示を確認し、問題なければ needs_review を false にする
 
 # 3) 15/30秒 × 横/縦 の4本を書き出し → out/<slug>-15s-h.mp4 など
 python3 render.py brands/example/brand.json
+#   needs_review が true の間は書き出さない。意図して出すときだけ --force
 #   絞る場合: --durations 15 --orients v --fps 30
 ```
 サーバーで実行する場合は `CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome` を付ける。
@@ -39,7 +41,8 @@ python3 render.py brands/example/brand.json
 - 縦は文字を画面幅に自動フィットし、ロゴはアイコン上・文字下に積む
 
 ## 既知の制約
-- `extract.py` の仮コピーは原文の切り出しなので粗い。実運用は ANTHROPIC_API_KEY で自動生成するか手直しする
+- `extract.py` の仮コピーは原文の切り出しなので粗い。API の下書きも、人間が `needs_review` を外すまで書き出さない
+- 受託品質の課題と改善計画: [docs/受託品質-課題と改善計画.md](docs/受託品質-課題と改善計画.md)
 - ロゴは SVG 非対応（PNG/JPG のみ）。JSで描画されるサイトは取得できない場合がある
 - 取得元が許可リスト外のドメインだとサーバーからは取れない（環境設定の Allowed domains に追加）
 - 音声なし
