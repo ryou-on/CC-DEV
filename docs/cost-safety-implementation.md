@@ -13,6 +13,7 @@
 - 公開ナレッジJSONのDate.nowキャッシュ破棄を削除。静的HTMLに共有キャッシュ300秒、KB JSONに3600秒を設定。個人データ/APIは共有キャッシュしない。
 - assetServeはGET/HEAD限定、Storageメタデータ照会を1回に減らしETag/304とCDNキャッシュを追加。
 - 全6対象のFirebase predeploy、公開CIに検査を接続。未確認のまま検査を通す例外は追加していない。
+- Flight Strip の目安箱は有料APIではない。`submitFstFeedback` / `updateFstFeedback` が App Check と確認済みアカウントを要求し、クライアントの Firestore 直書きは拒否する。回数は利用者あたり1分5件・1日50件で、失敗時は保存しない。詳細は `docs/fst-feedback-api.md`。
 
 ## 回数の初期上限
 
@@ -24,7 +25,7 @@
 | Anthropicプロキシ | 20 | 100 | 40 | 200 |
 | 本ドコAI解析（全モード合算） | 10 | 40 | 20 | 80 |
 
-目安箱 `fstFeedbackSubmit`（`/api/fst-feedback`）は有料 API を呼ばない。`authorize()` のバイト上限（8192）と App Check・確認済みアカウントだけを使い、`reserve()` は呼ばない。そのため `costControls/fstFeedback` の許可 UID は不要。送信の直前に `costControls/global.enabled === true` を読む。文書がない、または false なら `SERVICE_PAUSED` で拒否する（予算 800 円の停止ラッチと同じゲート）。回数は `fstRateLimits` にサーバーだけが書く。初期値はユーザー 1 時間 5 回・1 日 20 回、IP 1 時間 30 回・1 日 100 回。失敗しても枠は戻さない。
+目安箱 `fstFeedbackSubmit`（`/api/fst-feedback`）と `updateFstFeedback`（`/api/fst-feedback-update`）は有料 API を呼ばない。`authorize()` のバイト上限（16384）と App Check・確認済みアカウントだけを使い、`reserve()` は呼ばない。そのため `costControls/fstFeedback` の許可 UID は不要。送信と状態変更の直前に `costControls/global.enabled === true` を読む。文書がない、または false なら `SERVICE_PAUSED` で拒否する（予算 800 円の停止ラッチと同じゲート）。回数は `fstRateLimits` にサーバーだけが書く。初期値はユーザー 1 分 5 回・日本時間で 1 日 50 回、同じ内容は 10 分再送不可。IP は生値を保存せず、短命ハッシュで 1 分 30 回・1 日 100 回。状態変更は編集者のみで、クライアントからの作成・更新・削除はルールで拒否する。失敗しても枠は戻さない。
 
 日付は日本時間。失敗も1回に数えます。これらは仮の保守的な回数制限であり、円建て予算ではありません。並行トランザクションの再試行や認証、拒否時のFunctions/DB読み取りにも費用は発生し得ます。
 

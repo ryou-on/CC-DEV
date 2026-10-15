@@ -48,3 +48,7 @@ await db.doc("admins/" + uid).set({
 管理者とは別に、`scripts/manage-share-grants.cjs` が `accessGrants/{collection}__{tenant}` の readers / writers を更新します。既定は dry-run です。`--apply` は本番データへの書き込みなので、ルール公開後に人間が実行します。
 
 hihaho の編集者判定（`@splineglobal.com` と既存の許可メール）と本ドコのオーナーメールは、プレイリストやナレッジの編集に残しています。これはプラットフォーム管理者の UID ではなく、製品の編集者条件です。どちらも `email_verified == true` かつ匿名以外のログインが必要です。未確認の同じメールアドレスは拒否します。
+
+明友社の共有パスワードアカウントも同じ `email_verified` を要求します。本番 Auth の確認と、未確認だった場合の手順は `docs/meiyusha-email-verification.md` です。このリポジトリの作業では本番 Auth を読んでいません。
+
+共有アプリの許可を本番へ入れる手順と、利用者へ出す案内は `docs/access-grants-migration.md` と `docs/access-grants-announcement.md` です。許可と案内が終わるまで、ルールを main へマージしません。

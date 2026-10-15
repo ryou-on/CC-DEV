@@ -87,6 +87,12 @@
           email: payload.email || '',
           message: payload.message,
           build: payload.build,
+          appId: payload.appId,
+          version: payload.version,
+          url: payload.url,
+          type: payload.type,
+          faxNumber: payload.faxNumber || '',
+          openedAtMs: payload.openedAtMs,
         }),
       });
       const body = await res.json().catch(function () { return {}; });
@@ -99,10 +105,35 @@
           SERVICE_PAUSED: '予算停止中のため送信できません',
           INVALID_FEEDBACK: '入力内容を確認してください',
           SIGN_IN_REQUIRED: 'ログインしてください',
+          EDITOR_REQUIRED: 'この操作は編集者だけが実行できます',
         };
         throw new Error(messages[body.error] || '送信に失敗しました');
       }
       return body;
+    };
+    window.updateFstFeedback = async function (payload) {
+        const user = firebase.auth().currentUser;
+        if (!user || user.isAnonymous || user.emailVerified !== true) {
+          throw new Error('確認済みのアカウントでログインしてください');
+        }
+        const appCheckToken = (await firebase.appCheck().getToken(false)).token;
+        const res = await fetch('/api/fst-feedback-update', {
+          method: 'POST',
+          cache: 'no-store',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer ' + await user.getIdToken(),
+            'X-Firebase-AppCheck': appCheckToken,
+          },
+          body: JSON.stringify({
+            fbId: payload.fbId,
+            status: payload.status,
+            replyText: payload.replyText,
+          }),
+        });
+        const body = await res.json().catch(function () { return {}; });
+        if (!res.ok) throw new Error(body.error === 'EDITOR_REQUIRED' ? 'この操作は編集者だけが実行できます' : '状態を更新できませんでした');
+        return body;
     };
   </script>
 
@@ -345,7 +376,7 @@
     // リリースノート
     // ======================================================
     const RELEASE_NOTES = [
-      { version: "v0.5.17", date: "2026-10-15", changes: ["目安箱の送信を Cloud Functions 経由にした。クライアントから fst_feedback へ直接書き込まない。状態は unreviewed で登録し、返信と状態変更は編集者のみ"] },
+      { version: "v0.5.17", date: "2026-10-15", changes: ["フィードバックはサーバーで受け付け、未確認として保存します。ブラウザからデータベースへは直接書き込めません。", "送信前に、個人情報を本文へ書かない案内を表示します。メッセージは2,000文字まで送れます。"] },
       { version: "v0.5.16", date: "2026-10-05", changes: ["共通基盤：月額1,000円予算の800円停止通知と停止ワークフローを接続。安全試験と復旧手順を確認（Flight Stripの画面変更なし）"] },
       { version: "v0.5.15", date: "2026-10-05", changes: ["共通基盤：共有データのアクセス権限と予算設定を更新。ログイン・利用許可の検証を追加"] },
       { version: "v0.5.14", date: "2026-10-05", changes: ["共通基盤：有料APIの認証・利用上限・停止処理と公開前の課金リスク検査を追加"] },
@@ -576,16 +607,23 @@
       const [sending, setSending] = useState(false);
       const [sent,    setSent]    = useState(false);
       const [error,   setError]   = useState('');
+      const openedAtMs = useRef(Date.now());
+      const faxRef = useRef(null);
 
       const handleSubmit = async () => {
         if (!subject.trim()) { setError('件名を入力してください'); return; }
         if (!message.trim()) { setError('メッセージを入力してください'); return; }
-        if (subject.trim().length > 100) { setError('件名は100文字以内です'); return; }
-        if (message.length > 200) { setError('メッセージは200文字以内です'); return; }
+        if (subject.trim().length > 200) { setError('件名は200文字以内です'); return; }
+        if (message.trim().length > 2000) { setError('メッセージは2,000文字以内です'); return; }
         setSending(true); setError('');
         try {
           const saved = await window.submitFstFeedback({
             subject: subject.trim(), email: email.trim(), message: message.trim(), build,
+            appId: 'flight-strip-todo',
+            version: '0.5.17',
+            url: location.origin + location.pathname,
+            faxNumber: faxRef.current ? faxRef.current.value : '',
+            openedAtMs: openedAtMs.current,
           });
           const fbId = saved.fbId;
           if (EMAILJS_CONFIG.publicKey && EMAILJS_CONFIG.serviceId && email.trim() && fbId) {
@@ -621,9 +659,12 @@
                 <button onClick={onClose} style={{ marginTop:"20px", background:`${T.accent}18`, border:`1px solid ${T.accent}44`, color:T.accent, padding:"8px 24px", borderRadius:"4px", cursor:"pointer", fontSize:"11px", fontFamily:"inherit" }}>閉じる</button>
               </div>
             ) : (<>
+              <p style={{ fontSize:"10px", color:T.textDim, lineHeight:1.6, marginBottom:"14px" }}>氏名、メールアドレス、電話番号、住所、アカウント情報などの個人情報や機密情報は入力しないでください。</p>
+              <input ref={faxRef} tabIndex={-1} autoComplete="off" aria-hidden="true" name="faxNumber" defaultValue=""
+                style={{ position:"absolute", left:"-9999px", height:"1px", width:"1px" }} />
               <div style={{ marginBottom:"14px" }}>
                 <label style={{ fontSize:"9px", color:T.textDim, letterSpacing:"0.15em", display:"block", marginBottom:"5px" }}>件名 *</label>
-                <input value={subject} onChange={e=>setSubject(e.target.value)} maxLength={100}
+                <input value={subject} onChange={e=>setSubject(e.target.value)} maxLength={200}
                   style={{ width:"100%", background:T.bgCard, border:`1px solid ${T.border2}`, borderRadius:"3px", padding:"8px 10px", color:T.text, fontSize:"12px", fontFamily:"inherit", outline:"none", boxSizing:"border-box" }}
                   placeholder="例：タスク追加時の不具合について" />
               </div>
@@ -636,9 +677,9 @@
               <div style={{ marginBottom:"16px" }}>
                 <div style={{ display:"flex", justifyContent:"space-between", marginBottom:"5px" }}>
                   <label style={{ fontSize:"9px", color:T.textDim, letterSpacing:"0.15em" }}>メッセージ *</label>
-                  <span style={{ fontSize:"9px", color: message.length > 180 ? "#ff6666" : T.textMuted }}>{message.length} / 200</span>
+                  <span style={{ fontSize:"9px", color: message.length > 1800 ? "#ff6666" : T.textMuted }}>{message.length} / 2000</span>
                 </div>
-                <textarea value={message} onChange={e=>setMessage(e.target.value)} maxLength={200} rows={5}
+                <textarea value={message} onChange={e=>setMessage(e.target.value)} maxLength={2000} rows={5}
                   style={{ width:"100%", background:T.bgCard, border:`1px solid ${T.border2}`, borderRadius:"3px", padding:"8px 10px", color:T.text, fontSize:"12px", fontFamily:"inherit", resize:"vertical", outline:"none", boxSizing:"border-box" }}
                   placeholder="ご意見・ご要望・不具合報告など" />
               </div>
@@ -2520,6 +2561,6 @@
       fn();
     })();
   </script>
-<script src="/shared/info-dialog.js" data-name-target="[data-cost-name]" data-version-target="[data-cost-version]" data-version="v0.5.17" data-manual="Googleでログインしてタスクを作成し、ストリップを移動して進捗を管理します。J/Kで移動、Nで新規作成、?でショートカットを表示します。詳しい操作は下の取扱説明書をご覧ください。" data-manual-link="manual.html" data-changes="目安箱の送信をサーバー経由にした。"></script>
+<script src="/shared/info-dialog.js" data-name-target="[data-cost-name]" data-version-target="[data-cost-version]" data-version="v0.5.17" data-manual="Googleでログインしてタスクを作成し、ストリップを移動して進捗を管理します。J/Kで移動、Nで新規作成、?でショートカットを表示します。詳しい操作は下の取扱説明書をご覧ください。" data-manual-link="manual.html" data-changes="フィードバックをサーバー経由の未確認受付に変更。"></script>
 </body>
 </html>

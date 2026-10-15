@@ -12,7 +12,7 @@ const LIMITS = Object.freeze({
   hondokoAnalyze: { minute: 2, userDay: 10, userMonth: 40, globalDay: 20, globalMonth: 80, bytes: 8_000_000 },
   // Suggestion box. authorize() uses the byte cap. The handler checks the budget latch
   // itself and does not call reserve(), so ordinary verified users are not UID-allowlisted.
-  fstFeedback: { minute: 5, userDay: 20, userMonth: 100, globalDay: 200, globalMonth: 2000, bytes: 8192 },
+  fstFeedback: { minute: 5, userDay: 50, userMonth: 100, globalDay: 200, globalMonth: 2000, bytes: 16384 },
 });
 const ORIGINS = new Set(['https://cc-dev-ps7.web.app', 'https://cc-dev-ps7.firebaseapp.com']);
 

@@ -431,8 +431,6 @@ exports.miniMeWebhook = miniMe.miniMeWebhook;
 // ===== hondoko (本ドコ？): 蔵書管理 =====
 // 実装は functions/hondoko.js。エンドポイント: /api/hondoko-analyze
 const hondoko = require('./hondoko');
-const fstFeedback = require('./fst-feedback');
-exports.fstFeedbackSubmit = fstFeedback.fstFeedbackSubmit;
 exports.hondokoAnalyze = hondoko.hondokoAnalyze;
 exports.hondokoAmazon = hondoko.hondokoAmazon;
 exports.hondokoCover = hondoko.hondokoCover;
@@ -446,3 +444,9 @@ exports.expireRealtimeCall = onTaskDispatched({
   retryConfig: { maxAttempts: 5, minBackoffSeconds: 5, maxBackoffSeconds: 30 },
   rateLimits: { maxConcurrentDispatches: 2, maxDispatchesPerSecond: 2 },
 }, async req => expireCall({ data: req.data, db: admin.firestore(), apiKey: openaiApiKey.value() }));
+
+// Flight Strip 目安箱。実装は functions/fst-feedback.js。
+// Hosting: /api/fst-feedback と /api/fst-feedback-update。
+const fstFeedback = require('./fst-feedback');
+exports.fstFeedbackSubmit = fstFeedback.fstFeedbackSubmit;
+exports.updateFstFeedback = fstFeedback.updateFstFeedback;

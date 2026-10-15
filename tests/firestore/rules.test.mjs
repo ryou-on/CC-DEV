@@ -294,7 +294,7 @@ describe('anonymous sign-in cannot use shared Flight Strip or coco-itta data', (
     await assertFails(setDoc(doc(writer(), 'users/stranger/tasks/t'), { title: '他人' }));
   });
 
-  test('clients cannot create feedback; a server-written entry is editor-managed', async () => {
+  test('clients cannot create or update feedback, the counter, or rate-limit state', async () => {
     const stored = { ...feedback, status: 'unreviewed', uid: 'writer' };
     await assertFails(setDoc(doc(anonAuth(), 'fst_feedback_meta/counter'), { count: 1 }));
     await assertFails(setDoc(doc(writer(), 'fst_feedback_meta/counter'), { count: 1 }));
@@ -313,16 +313,15 @@ describe('anonymous sign-in cannot use shared Flight Strip or coco-itta data', (
     await assertSucceeds(getDocs(query(collection(editor(), 'fst_feedback'))));
     await assertFails(getDocs(query(collection(anonAuth(), 'fst_feedback'))));
     await assertFails(getDocs(query(collection(unverifiedEditor(), 'fst_feedback'))));
-    await assertFails(updateDoc(doc(writer(), 'fst_feedback/FB_0001'), { status: 'read' }));
+    await assertFails(updateDoc(doc(writer(), 'fst_feedback/FB_0001'), { status: 'reviewed' }));
     await assertFails(updateDoc(doc(writer(), 'fst_feedback/FB_0001'), { replySent: true }));
-    await assertSucceeds(updateDoc(doc(editor(), 'fst_feedback/FB_OLD'), { status: 'unreviewed' }));
-    await assertSucceeds(updateDoc(doc(editor(), 'fst_feedback/FB_0001'), { status: 'read' }));
-    await assertSucceeds(updateDoc(doc(editor(), 'fst_feedback/FB_0001'), {
-      status: 'replied', replyText: '返信', repliedAt: serverTimestamp(),
+    await assertFails(updateDoc(doc(editor(), 'fst_feedback/FB_OLD'), { status: 'unreviewed' }));
+    await assertFails(updateDoc(doc(editor(), 'fst_feedback/FB_0001'), { status: 'reviewed' }));
+    await assertFails(updateDoc(doc(editor(), 'fst_feedback/FB_0001'), {
+      status: 'resolved', replyText: '返信',
     }));
-    await assertFails(updateDoc(doc(editor(), 'fst_feedback/FB_0001'), { status: 'new' }));
-    await assertFails(updateDoc(doc(editor(), 'fst_feedback/FB_0001'), { message: '改ざん' }));
     await assertFails(deleteDoc(doc(editor(), 'fst_feedback/FB_0001')));
+    await assertFails(getDoc(doc(editor(), 'fstRateLimits/user-hour')));
   });
 
   test('coco-itta groups reject anonymous auth and keep join-by-id for verified users', async () => {
