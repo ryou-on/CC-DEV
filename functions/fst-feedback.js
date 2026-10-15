@@ -2,301 +2,124 @@
 
 const crypto = require('node:crypto');
 const { onRequest } = require('firebase-functions/v2/https');
+const { getGuard, sendCostError, CostError, periodKeys } = require('./cost-guard');
 
-// Flight Strip の目安箱。クライアントの Firestore 直書きは受けない。
-// 有料APIの costControls 許可リストとは別で、確認済み利用者なら送れる。
-const ORIGINS = new Set(['https://cc-dev-ps7.web.app', 'https://cc-dev-ps7.firebaseapp.com']);
-const APPS = new Set(['flight-strip-todo', 'flight-strip-todo-dev']);
-const TYPES = new Set(['request', 'bug', 'question', 'other']);
-const STATUSES = new Set(['unreviewed', 'reviewed', 'in_progress', 'resolved']);
-const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]{1,20})?$/;
-const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,120}$/;
-const MINUTE_LIMIT = 5;
-const DAY_LIMIT = 50;
-const DUP_WINDOW_MS = 10 * 60 * 1000;
-const MIN_FILL_MS = 1500;
-const MAX_BODY = 16000;
-const SUBMIT_FIELDS = new Set(['appId', 'version', 'url', 'subject', 'message', 'email', 'type', 'build', 'faxNumber', 'openedAtMs']);
-const UPDATE_FIELDS = new Set(['feedbackId', 'status', 'replyText', 'replySent']);
+const DEFAULT_LIMITS = Object.freeze({
+  userHour: 5,
+  userDay: 20,
+  ipHour: 30,
+  ipDay: 100,
+});
 
-class FeedbackError extends Error {
-  constructor(status, code) {
-    super(code);
-    this.name = 'FeedbackError';
-    this.httpStatus = status;
-    this.code = code;
-  }
+function hashId(value) {
+  return crypto.createHash('sha256').update(String(value)).digest('hex').slice(0, 32);
 }
 
-function editorEmail(email) {
-  const value = String(email || '').toLowerCase();
-  return value === 'junpei.omote@gmail.com' || value.endsWith('@splineglobal.com');
+function clientIp(req) {
+  const forwarded = req.get('x-forwarded-for') || '';
+  const first = forwarded.split(',')[0].trim();
+  const ip = first || req.ip || 'missing';
+  return ip.slice(0, 200);
 }
 
-function hasOwn(body, key) {
-  return Object.prototype.hasOwnProperty.call(body, key);
-}
-
-function rejectUnknown(body, allowed) {
-  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new FeedbackError(400, 'INVALID_BODY');
-  for (const key of Object.keys(body)) {
-    if (!allowed.has(key)) throw new FeedbackError(400, 'UNKNOWN_FIELD');
-  }
-}
-
-function requireText(value, min, max, code) {
-  if (typeof value !== 'string') throw new FeedbackError(400, code);
+function cleanText(value, max) {
+  if (typeof value !== 'string') return null;
   const text = value.trim();
-  if (text.length < min || text.length > max) throw new FeedbackError(400, code);
+  if (!text || text.length > max) return null;
   return text;
 }
 
-function normalizeUrl(raw) {
-  let url;
-  try { url = new URL(raw); }
-  catch { throw new FeedbackError(400, 'INVALID_URL'); }
-  if (url.protocol !== 'https:' || !ORIGINS.has(url.origin)) throw new FeedbackError(400, 'INVALID_URL');
-  url.search = '';
-  url.hash = '';
-  const out = url.toString();
-  if (out.length > 2048) throw new FeedbackError(400, 'INVALID_URL');
-  return out;
-}
-
-function validateSubmission(body, now) {
-  rejectUnknown(body, SUBMIT_FIELDS);
-  if (hasOwn(body, 'faxNumber') && body.faxNumber !== '') throw new FeedbackError(400, 'REJECTED');
-  if (!Number.isSafeInteger(body.openedAtMs)) throw new FeedbackError(400, 'INVALID_TIMING');
-  const elapsed = now - body.openedAtMs;
-  if (elapsed < MIN_FILL_MS || elapsed > 24 * 60 * 60 * 1000) throw new FeedbackError(400, 'INVALID_TIMING');
-  if (!APPS.has(body.appId)) throw new FeedbackError(400, 'INVALID_APP');
-  const version = requireText(body.version, 1, 50, 'INVALID_VERSION');
-  if (!SEMVER.test(version)) throw new FeedbackError(400, 'INVALID_VERSION');
-  const url = normalizeUrl(body.url);
-  const subject = requireText(body.subject, 1, 200, 'INVALID_SUBJECT');
-  const message = requireText(body.message, 1, 2000, 'INVALID_MESSAGE');
-  let email = '';
-  if (hasOwn(body, 'email') && body.email !== '') {
-    email = requireText(body.email, 3, 200, 'INVALID_EMAIL');
-    if (!EMAIL.test(email)) throw new FeedbackError(400, 'INVALID_EMAIL');
+function parseInput(body) {
+  const subject = cleanText(body && body.subject, 100);
+  const message = cleanText(body && body.message, 200);
+  const build = body && body.build;
+  const rawEmail = body && typeof body.email === 'string' ? body.email.trim() : '';
+  if (!subject || !message || (build !== 'stable' && build !== 'dev')) {
+    throw new CostError(400, 'INVALID_FEEDBACK');
   }
-  let type;
-  if (hasOwn(body, 'type')) {
-    if (!TYPES.has(body.type)) throw new FeedbackError(400, 'INVALID_TYPE');
-    type = body.type;
+  if (rawEmail.length > 200 || (rawEmail && !/^[^\s@]+@[^\s@]+$/.test(rawEmail))) {
+    throw new CostError(400, 'INVALID_FEEDBACK');
   }
-  if (body.build !== 'stable' && body.build !== 'dev') throw new FeedbackError(400, 'INVALID_BUILD');
-  if ((body.appId === 'flight-strip-todo') !== (body.build === 'stable')) throw new FeedbackError(400, 'INVALID_BUILD');
-  return { appId: body.appId, version, url, subject, message, email, type, build: body.build };
+  return { subject, message, build, email: rawEmail };
 }
 
-function validateUpdate(body) {
-  rejectUnknown(body, UPDATE_FIELDS);
-  const feedbackId = requireText(body.feedbackId, 7, 20, 'INVALID_ID');
-  if (!/^FB_\d{4,6}$/.test(feedbackId)) throw new FeedbackError(400, 'INVALID_ID');
-  if (!STATUSES.has(body.status)) throw new FeedbackError(400, 'INVALID_STATUS');
-  const patch = { status: body.status };
-  if (hasOwn(body, 'replyText')) {
-    if (typeof body.replyText !== 'string' || body.replyText.length > 2000) throw new FeedbackError(400, 'INVALID_REPLY');
-    patch.replyText = body.replyText.trim();
-  }
-  if (hasOwn(body, 'replySent')) {
-    if (typeof body.replySent !== 'boolean') throw new FeedbackError(400, 'INVALID_REPLY');
-    patch.replySent = body.replySent;
-  }
-  return { feedbackId, patch };
+async function assertBudgetOpen(db) {
+  const global = await db.doc('costControls/global').get();
+  if (!global.exists || global.data()?.enabled !== true) throw new CostError(503, 'SERVICE_PAUSED');
 }
 
-function periodKeys(now) {
-  const jst = new Date(now + 9 * 60 * 60 * 1000).toISOString();
-  return { minute: Math.floor(now / 60000), day: jst.slice(0, 10) };
+async function consume(db, id, limit, now) {
+  const ref = db.doc(`fstRateLimits/${id}`);
+  await db.runTransaction(async tx => {
+    const snap = await tx.get(ref);
+    const data = snap.exists ? snap.data() : null;
+    const count = data && Number.isSafeInteger(data.count) && data.count >= 0 ? data.count : (data ? null : 0);
+    if (count === null) throw new CostError(503, 'INVALID_QUOTA_STATE');
+    if (count >= limit) throw new CostError(429, 'USAGE_LIMIT');
+    tx.set(ref, { count: count + 1, updatedAtMs: now });
+  });
 }
 
-function contentHash(message) {
-  return crypto.createHash('sha256').update(message.replace(/\s+/g, ' ').trim()).digest('hex');
-}
-
-function nextRate(prev, now, hash) {
-  const keys = periodKeys(now);
-  const minuteCount = prev && prev.minuteKey === keys.minute && Number.isSafeInteger(prev.minuteCount) ? prev.minuteCount : 0;
-  const dayCount = prev && prev.dayKey === keys.day && Number.isSafeInteger(prev.dayCount) ? prev.dayCount : 0;
-  if (minuteCount >= MINUTE_LIMIT || dayCount >= DAY_LIMIT) throw new FeedbackError(429, 'RATE_LIMIT');
-  if (prev && prev.lastHash === hash && Number.isSafeInteger(prev.lastAtMs) && now - prev.lastAtMs < DUP_WINDOW_MS) {
-    throw new FeedbackError(429, 'DUPLICATE');
-  }
-  return {
-    minuteKey: keys.minute,
-    minuteCount: minuteCount + 1,
-    dayKey: keys.day,
-    dayCount: dayCount + 1,
-    lastHash: hash,
-    lastAtMs: now,
-    expiresAt: new Date(now + 3 * 24 * 60 * 60 * 1000),
-  };
-}
-
-function uidHash(uid) {
-  return crypto.createHash('sha256').update(String(uid)).digest('hex');
-}
-
-async function authorize(req, deps, editor) {
-  const size = Buffer.isBuffer(req.rawBody) ? req.rawBody.length : Buffer.byteLength(JSON.stringify(req.body || {}));
-  if (size > MAX_BODY) throw new FeedbackError(413, 'BODY_TOO_LARGE');
-  const type = req.get('content-type') || '';
-  if (!type.includes('application/json')) throw new FeedbackError(415, 'INVALID_CONTENT_TYPE');
-  const origin = req.get('origin');
-  if (origin && !ORIGINS.has(origin)) throw new FeedbackError(403, 'ORIGIN_DENIED');
-  const bearer = req.get('authorization') || '';
-  if (!/^Bearer [^\s]{1,8192}$/.test(bearer)) throw new FeedbackError(401, 'SIGN_IN_REQUIRED');
-  let user;
-  try { user = await deps.verifyIdToken(bearer.slice(7)); }
-  catch { throw new FeedbackError(401, 'INVALID_ID_TOKEN'); }
-  if (!user || !user.uid || user.email_verified !== true || user.firebase?.sign_in_provider === 'anonymous') {
-    throw new FeedbackError(403, 'VERIFIED_ACCOUNT_REQUIRED');
-  }
-  if (editor && !editorEmail(user.email)) throw new FeedbackError(403, 'EDITOR_REQUIRED');
-  const attestation = req.get('x-firebase-appcheck');
-  if (!attestation || attestation.length > 8192) throw new FeedbackError(403, 'APP_CHECK_REQUIRED');
-  try { await deps.verifyAppCheck(attestation); }
-  catch { throw new FeedbackError(403, 'INVALID_APP_CHECK'); }
-  return { uid: user.uid, email: String(user.email || '').toLowerCase() };
-}
-
-function rethrow(error) {
-  if (error instanceof FeedbackError) throw error;
-  throw new FeedbackError(503, 'UNAVAILABLE');
-}
-
-function createFeedbackApi(deps) {
-  const now = deps.now || Date.now;
-  const stamp = deps.timestamp || (at => new Date(at));
-
-  async function submit(req) {
-    const actor = await authorize(req, deps, false);
-    const at = now();
-    const input = validateSubmission(req.body, at);
-    const hash = contentHash(input.message);
-    const rateRef = deps.db.doc('fst_feedback_limits/' + uidHash(actor.uid));
-    const counterRef = deps.db.doc('fst_feedback_meta/counter');
-    let feedbackId;
+function createFstFeedbackHandler({ authorize, db, now = Date.now, serverTimestamp, limits = DEFAULT_LIMITS }) {
+  return async function fstFeedbackSubmit(req, res) {
+    if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+    if (req.method !== 'POST') { res.status(405).json({ error: 'POST only' }); return; }
     try {
-      await deps.db.runTransaction(async tx => {
-        const [rateSnap, counterSnap] = await tx.getAll(rateRef, counterRef);
-        const rate = nextRate(rateSnap.exists ? rateSnap.data() : null, at, hash);
-        const count = counterSnap.exists ? counterSnap.data()?.count : 0;
-        if (!Number.isSafeInteger(count) || count < 0 || count >= 999999) throw new FeedbackError(503, 'COUNTER_UNAVAILABLE');
-        const next = count + 1;
-        feedbackId = 'FB_' + String(next).padStart(4, '0');
-        const doc = {
-          feedbackId,
-          fbId: feedbackId,
-          appId: input.appId,
-          version: input.version,
-          url: input.url,
+      const actor = await authorize(req);
+      const input = parseInput(req.body);
+      await assertBudgetOpen(db);
+      const at = now();
+      const keys = periodKeys(at);
+      const hour = Math.floor(at / 3600000);
+      const user = hashId(actor.uid);
+      const ip = hashId(clientIp(req));
+      await consume(db, `u_${user}_h_${hour}`, limits.userHour, at);
+      await consume(db, `u_${user}_d_${keys.day}`, limits.userDay, at);
+      await consume(db, `ip_${ip}_h_${hour}`, limits.ipHour, at);
+      await consume(db, `ip_${ip}_d_${keys.day}`, limits.ipDay, at);
+      const saved = await db.runTransaction(async tx => {
+        const counterRef = db.doc('fst_feedback_meta/counter');
+        const counter = await tx.get(counterRef);
+        const current = counter.exists ? counter.data()?.count : 0;
+        if (counter.exists && (!Number.isSafeInteger(current) || current < 0)) {
+          throw new CostError(503, 'INVALID_QUOTA_STATE');
+        }
+        const n = (Number.isSafeInteger(current) ? current : 0) + 1;
+        const fbId = `FB_${String(n).padStart(4, '0')}`;
+        const ref = db.doc(`fst_feedback/${fbId}`);
+        tx.set(counterRef, { count: n, updatedAtMs: at });
+        tx.set(ref, {
+          fbId,
           subject: input.subject,
-          message: input.message,
           email: input.email,
+          message: input.message,
           build: input.build,
           uid: actor.uid,
           status: 'unreviewed',
           replySent: false,
-          createdAt: stamp(at),
-        };
-        if (input.type) doc.type = input.type;
-        tx.set(rateRef, rate);
-        tx.set(counterRef, { count: next });
-        tx.set(deps.db.doc('fst_feedback/' + feedbackId), doc);
+          createdAt: serverTimestamp(),
+        });
+        return { fbId };
       });
-    } catch (error) { rethrow(error); }
-    return { ok: true, feedbackId };
-  }
-
-  async function update(req) {
-    const actor = await authorize(req, deps, true);
-    const { feedbackId, patch } = validateUpdate(req.body || {});
-    const ref = deps.db.doc('fst_feedback/' + feedbackId);
-    try {
-      await deps.db.runTransaction(async tx => {
-        const snap = await tx.get(ref);
-        if (!snap.exists) throw new FeedbackError(404, 'NOT_FOUND');
-        const current = snap.data() || {};
-        const keep = {};
-        for (const key of ['uid', 'message', 'appId', 'email', 'subject']) {
-          if (current[key] !== undefined) keep[key] = current[key];
-        }
-        tx.update(ref, { ...patch, updatedAt: stamp(now()), updatedBy: uidHash(actor.uid), ...keep });
-      });
-    } catch (error) { rethrow(error); }
-    return { ok: true, feedbackId };
-  }
-
-  return { submit, update };
-}
-
-function sendJson(res, status, body, requestId) {
-  res.set('Cache-Control', 'no-store');
-  res.set('X-Content-Type-Options', 'nosniff');
-  res.set('X-Request-Id', requestId);
-  if (status === 429) res.set('Retry-After', '60');
-  res.status(status).json(body);
-}
-
-function createHttpHandler(api, action) {
-  return async (req, res) => {
-    const requestId = crypto.randomBytes(8).toString('hex');
-    const origin = req.get('origin');
-    if (origin && ORIGINS.has(origin)) {
-      res.set('Access-Control-Allow-Origin', origin);
-      res.set('Vary', 'Origin');
-      res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Firebase-AppCheck');
-      res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    }
-    if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
-    if (req.method !== 'POST') { sendJson(res, 405, { error: 'METHOD_NOT_ALLOWED' }, requestId); return; }
-    try {
-      const result = await api[action](req);
-      sendJson(res, 200, result, requestId);
+      res.set('Cache-Control', 'no-store');
+      res.status(201).json({ ok: true, fbId: saved.fbId, status: 'unreviewed' });
     } catch (error) {
-      const status = error instanceof FeedbackError ? error.httpStatus : 503;
-      const code = error instanceof FeedbackError ? error.code : 'UNAVAILABLE';
-      console.error(JSON.stringify({ action, result: code, status, requestId }));
-      sendJson(res, status, { error: code }, requestId);
+      sendCostError(res, error);
     }
   };
 }
 
-function productionApi() {
+exports.createFstFeedbackHandler = createFstFeedbackHandler;
+exports.fstFeedbackSubmit = onRequest({
+  cors: ['https://cc-dev-ps7.web.app', 'https://cc-dev-ps7.firebaseapp.com'],
+  timeoutSeconds: 20,
+  memory: '256MiB',
+}, (req, res) => {
   const admin = require('firebase-admin');
   if (!admin.apps.length) admin.initializeApp();
-  return createFeedbackApi({
+  return createFstFeedbackHandler({
+    authorize: request => getGuard().authorize(request, 'fstFeedback'),
     db: admin.firestore(),
-    verifyIdToken: token => admin.auth().verifyIdToken(token, true),
-    verifyAppCheck: token => admin.appCheck().verifyToken(token),
-    timestamp: () => admin.firestore.FieldValue.serverTimestamp(),
-  });
-}
-
-let singleton;
-function apiOnce() {
-  if (!singleton) singleton = productionApi();
-  return singleton;
-}
-
-const endpoint = { cors: false, timeoutSeconds: 20, memory: '256MiB', maxInstances: 2, concurrency: 8 };
-exports.submitFstFeedback = onRequest(endpoint, (req, res) => createHttpHandler(apiOnce(), 'submit')(req, res));
-exports.updateFstFeedback = onRequest(endpoint, (req, res) => createHttpHandler(apiOnce(), 'update')(req, res));
-
-module.exports = {
-  FeedbackError,
-  validateSubmission,
-  validateUpdate,
-  nextRate,
-  contentHash,
-  createFeedbackApi,
-  createHttpHandler,
-  editorEmail,
-  MINUTE_LIMIT,
-  DAY_LIMIT,
-  submitFstFeedback: exports.submitFstFeedback,
-  updateFstFeedback: exports.updateFstFeedback,
-};
+    serverTimestamp: () => admin.firestore.FieldValue.serverTimestamp(),
+  })(req, res);
+});

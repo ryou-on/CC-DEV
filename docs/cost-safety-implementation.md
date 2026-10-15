@@ -25,6 +25,8 @@
 | Anthropicプロキシ | 20 | 100 | 40 | 200 |
 | 本ドコAI解析（全モード合算） | 10 | 40 | 20 | 80 |
 
+目安箱 `fstFeedbackSubmit`（`/api/fst-feedback`）は有料 API を呼ばない。`authorize()` のバイト上限（8192）と App Check・確認済みアカウントだけを使い、`reserve()` は呼ばない。そのため `costControls/fstFeedback` の許可 UID は不要。送信の直前に `costControls/global.enabled === true` を読む。文書がない、または false なら `SERVICE_PAUSED` で拒否する（予算 800 円の停止ラッチと同じゲート）。回数は `fstRateLimits` にサーバーだけが書く。初期値はユーザー 1 時間 5 回・1 日 20 回、IP 1 時間 30 回・1 日 100 回。失敗しても枠は戻さない。
+
 日付は日本時間。失敗も1回に数えます。これらは仮の保守的な回数制限であり、円建て予算ではありません。並行トランザクションの再試行や認証、拒否時のFunctions/DB読み取りにも費用は発生し得ます。
 
 ## 本番有効化の前提（未確認）

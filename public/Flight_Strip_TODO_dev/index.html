@@ -12,6 +12,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-check-compat.js"></script>
 
   <!-- React + Babel + Tailwind -->
   <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
@@ -68,8 +69,59 @@
     firebase.initializeApp(firebaseConfig);
     window._auth = firebase.auth();
     window._db   = firebase.firestore();
+    window.submitFstFeedback = async function (payload) {
+      const user = firebase.auth().currentUser;
+      if (!user || user.isAnonymous || user.emailVerified !== true) {
+        throw new Error('確認済みのアカウントでログインしてください');
+      }
+      let appCheckToken = '';
+      try {
+        const cfgRes = await fetch('/shared/cost-access-config.json', { cache: 'no-store' });
+        if (!cfgRes.ok) throw new Error('missing');
+        const cfg = await cfgRes.json();
+        const siteKey = cfg && cfg.recaptchaEnterpriseSiteKey;
+        if (!siteKey) throw new Error('missing');
+        if (!window._fstAppCheckReady) {
+          firebase.appCheck().activate(new firebase.appCheck.ReCaptchaEnterpriseProvider(siteKey), true);
+          window._fstAppCheckReady = true;
+        }
+        appCheckToken = (await firebase.appCheck().getToken(false)).token;
+        if (!appCheckToken) throw new Error('token');
+      } catch (err) {
+        throw new Error(err && err.message === 'missing' ? 'App Check の設定がないため送信できません' : 'App Check を確認できませんでした');
+      }
+      const idToken = await user.getIdToken();
+      const res = await fetch('/api/fst-feedback', {
+        method: 'POST',
+        cache: 'no-store',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + idToken,
+          'X-Firebase-AppCheck': appCheckToken,
+        },
+        body: JSON.stringify({
+          subject: payload.subject,
+          email: payload.email || '',
+          message: payload.message,
+          build: payload.build,
+        }),
+      });
+      const body = await res.json().catch(function () { return {}; });
+      if (!res.ok) {
+        const messages = {
+          APP_CHECK_REQUIRED: 'App Check がありません',
+          INVALID_APP_CHECK: 'App Check を確認できませんでした',
+          VERIFIED_ACCOUNT_REQUIRED: '確認済みアカウントが必要です',
+          USAGE_LIMIT: '送信回数の上限です。時間をおいて再試行してください',
+          SERVICE_PAUSED: '予算停止中のため送信できません',
+          INVALID_FEEDBACK: '入力内容を確認してください',
+          SIGN_IN_REQUIRED: 'ログインしてください',
+        };
+        throw new Error(messages[body.error] || '送信に失敗しました');
+      }
+      return body;
+    };
   </script>
-  <script src="/shared/fst-feedback-client.js"></script>
 
   <!-- React アプリ（JSX） -->
   <script id="jsx-source" type="text/plain">
@@ -471,9 +523,8 @@
       {
         version: "v0.10.30-dev", date: "2026-10-15",
         changes: [
-          "フィードバックはサーバーで受け付け、未確認として保存します。ブラウザからデータベースへは直接書き込めません。",
-          "送信前に、個人情報を本文へ書かない案内を表示します。メッセージは2,000文字まで送れます。",
-          "受信箱の状態変更もサーバー経由です。未確認、確認済み、対応中、対応済みの4つに更新できます。",
+          "目安箱の送信を Cloud Functions 経由にした。クライアントから fst_feedback へ直接書き込まない",
+          "登録状態は unreviewed。既存の new は未読として扱い、状態の書き戻しは unreviewed / read / replied",
         ],
       },
       {
@@ -893,8 +944,9 @@
         ],
       },
       {
-        version: "v0.6.0-dev", date: "2026-10-05",
+        version: "v0.6.0-dev", date: "2026-10-15",
         changes: [
+          "目安箱の送信を Cloud Functions 経由にした。状態は unreviewed。返信と状態変更は編集者のみ",
           "共通基盤：800円停止ワークフローと予算通知を接続。安全試験と復旧手順を確認（Flight Stripの画面変更なし）",
           "共通基盤：月額1,000円の予算設定・800円停止方針、共有権限移行とApp Check登録を追加",
           "共通基盤：有料APIの認証・利用上限・停止処理と公開前の課金リスク検査を追加",
@@ -1773,29 +1825,17 @@ HAVE A NICE TRIP！
 
       // 送信済みトグル（Firestore + ローカル state）
       const handleToggleSent = async (item) => {
-        const done = item.status === 'replied' || item.status === 'resolved';
-        const newStatus = done ? 'unreviewed' : 'resolved';
-        try {
-          await window.FstFeedback.update({
-            feedbackId: item.docId,
-            status: newStatus,
-            replySent: newStatus === 'resolved',
-          });
-          setInboxItems(list => list.map(it =>
-            it.docId === item.docId ? { ...it, status: newStatus } : it
-          ));
-          if (newStatus === 'resolved') { setReplyOpenId(null); setReplyText(''); }
-        } catch (sendError) {
-          setReplyError(sendError.message || '状態を更新できませんでした。');
-        }
-      };
-      const handleSetStatus = async (item, status) => {
-        try {
-          await window.FstFeedback.update({ feedbackId: item.docId, status, replySent: status === 'resolved' });
-          setInboxItems(list => list.map(it => it.docId === item.docId ? { ...it, status } : it));
-        } catch (sendError) {
-          setReplyError(sendError.message || '状態を更新できませんでした。');
-        }
+        const newStatus = item.status === 'replied' ? 'unreviewed' : 'replied';
+        await db2.collection('fst_feedback').doc(item.docId).update({
+          status: newStatus,
+          ...(newStatus === 'replied'
+            ? { replyText: replyText.trim() || item.replyText || '', repliedAt: firebase.firestore.FieldValue.serverTimestamp() }
+            : { repliedAt: null }),
+        }).catch(() => {});
+        setInboxItems(list => list.map(it =>
+          it.docId === item.docId ? { ...it, status: newStatus } : it
+        ));
+        if (newStatus === 'replied') { setReplyOpenId(null); setReplyText(''); }
       };
 
       // フィードバックへの返信送信（Firestoreへの保存 + mailto起動）
@@ -1804,14 +1844,13 @@ HAVE A NICE TRIP！
         setReplySending(true); setReplyError('');
         try {
           handleOpenMailto(item);
-          await window.FstFeedback.update({
-            feedbackId: item.docId,
+          await db2.collection('fst_feedback').doc(item.docId).update({
             replyText: replyText.trim(),
-            replySent: true,
-            status: 'resolved',
+            repliedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            status: 'replied',
           });
           setInboxItems(list => list.map(it =>
-            it.docId === item.docId ? { ...it, replyText: replyText.trim(), status: 'resolved' } : it
+            it.docId === item.docId ? { ...it, replyText: replyText.trim(), status: 'replied' } : it
           ));
           setReplyOpenId(null);
           setReplyText('');
@@ -2211,8 +2250,7 @@ HAVE A NICE TRIP！
                     <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
                       {inboxItems.map(item => {
                         const isRegistered = item._registered || localStorage.getItem(`fst_fb_er_registered_${item.docId}`) === '1';
-                        const isReplied = item.status === 'replied' || item.status === 'resolved';
-                        const statusValue = ['unreviewed','reviewed','in_progress','resolved'].includes(item.status) ? item.status : (isReplied ? 'resolved' : 'unreviewed');
+                        const isReplied = item.status === 'replied';
                         const isReplyOpen = replyOpenId === item.docId;
                         return (
                           <div key={item.docId} style={{ padding:'12px 14px', border:`1px solid ${isReplied ? '#44aa7744' : T.border2}`, borderRadius:'3px', background: isReplied ? 'rgba(68,170,119,0.05)' : 'transparent' }}>
@@ -2255,13 +2293,6 @@ HAVE A NICE TRIP！
                                     {isReplyOpen ? '✕ 閉じる' : isReplied ? '↩ 再返信' : '↩ 返信'}
                                   </button>
                                 )}
-                                <select value={statusValue} aria-label="対応状態" onChange={e => handleSetStatus(item, e.target.value)}
-                                  style={{ padding:'4px', fontSize:'9px', fontFamily:"'JetBrains Mono',monospace", background:T.bgInput, color:T.text, border:`1px solid ${T.border2}` }}>
-                                  <option value="unreviewed">未確認</option>
-                                  <option value="reviewed">確認済み</option>
-                                  <option value="in_progress">対応中</option>
-                                  <option value="resolved">対応済み</option>
-                                </select>
                                 {/* 送信済みトグル */}
                                 <button onClick={() => handleToggleSent(item)}
                                   style={{ padding:'4px 10px', borderRadius:'2px', cursor:'pointer', fontSize:'9px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace",
@@ -4245,42 +4276,31 @@ HAVE A NICE TRIP！
       const [sending, setSending] = useState(false);
       const [sent,    setSent]    = useState(false);
       const [error,   setError]   = useState('');
-      const [company, setCompany] = useState('');
-      const [kind, setKind] = useState('other');
-      const openedAtMs = useRef(Date.now());
 
       const handleSubmit = async () => {
         if (!subject.trim()) { setError('件名を入力してください'); return; }
         if (!message.trim()) { setError('メッセージを入力してください'); return; }
-        if (message.length > 2000) { setError('メッセージは2,000文字以内です'); return; }
+        if (subject.trim().length > 100) { setError('件名は100文字以内です'); return; }
+        if (message.length > 200) { setError('メッセージは200文字以内です'); return; }
         setSending(true); setError('');
         try {
-          const result = await window.FstFeedback.submit({
-            appId: 'flight-strip-todo-dev',
-            version: APP_VERSION.replace(/^v/, ''),
-            url: location.origin + location.pathname,
-            subject: subject.trim(),
-            message: message.trim(),
-            email: email.trim(),
-            type: kind,
-            build: 'dev',
-            faxNumber: company,
-            openedAtMs: openedAtMs.current,
+          const saved = await window.submitFstFeedback({
+            subject: subject.trim(), email: email.trim(), message: message.trim(), build,
           });
-          if (EMAILJS_CONFIG.publicKey && EMAILJS_CONFIG.serviceId && email.trim()) {
+          const fbId = saved.fbId;
+          if (EMAILJS_CONFIG.publicKey && EMAILJS_CONFIG.serviceId && email.trim() && fbId) {
             try {
               await window.emailjs.send(
                 EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateId,
-                { to_email: email.trim(), fb_id: result.feedbackId,
+                { to_email: email.trim(), fb_id: fbId,
                   subject: subject.trim(), message: message.trim() },
                 EMAILJS_CONFIG.publicKey
               );
-            } catch (sendError) { console.warn('Auto-reply failed'); }
+            } catch(e) { console.warn('Auto-reply failed:', e); }
           }
           setSent(true);
-        } catch (sendError) {
-          setError(sendError && sendError.message ? sendError.message : '送信できませんでした。時間をおいてお試しください。');
-        } finally { setSending(false); }
+        } catch(e) { setError(e.message || '送信に失敗しました'); }
+        finally { setSending(false); }
       };
 
       return (
@@ -4303,22 +4323,12 @@ HAVE A NICE TRIP！
             ) : (<>
               <div style={{ marginBottom:"14px" }}>
                 <label style={{ fontSize:"9px", color:T.textDim, letterSpacing:"0.15em", display:"block", marginBottom:"5px" }}>件名 *</label>
-                <input value={subject} onChange={e=>setSubject(e.target.value)} maxLength={200}
+                <input value={subject} onChange={e=>setSubject(e.target.value)} maxLength={100}
                   style={{ width:"100%", background:T.bgCard, border:`1px solid ${T.border2}`, borderRadius:"3px", padding:"8px 10px", color:T.text, fontSize:"12px", fontFamily:"inherit", outline:"none", boxSizing:"border-box" }}
                   placeholder="例：タスク追加時の不具合について" />
               </div>
               <div style={{ marginBottom:"14px" }}>
-                <label style={{ fontSize:"9px", color:T.textDim, letterSpacing:"0.15em", display:"block", marginBottom:"5px" }}>種別</label>
-                <select value={kind} onChange={e=>setKind(e.target.value)}
-                  style={{ width:"100%", background:T.bgCard, border:`1px solid ${T.border2}`, borderRadius:"3px", padding:"8px 10px", color:T.text, fontSize:"12px", fontFamily:"inherit" }}>
-                  <option value="request">要望</option>
-                  <option value="bug">不具合</option>
-                  <option value="question">質問</option>
-                  <option value="other">その他</option>
-                </select>
-              </div>
-              <div style={{ marginBottom:"14px" }}>
-                <label style={{ fontSize:"9px", color:T.textDim, letterSpacing:"0.15em", display:"block", marginBottom:"5px" }}>メールアドレス（返信先・任意）</label>
+                <label style={{ fontSize:"9px", color:T.textDim, letterSpacing:"0.15em", display:"block", marginBottom:"5px" }}>メールアドレス（返信先）</label>
                 <input value={email} onChange={e=>setEmail(e.target.value)} type="email"
                   style={{ width:"100%", background:T.bgCard, border:`1px solid ${T.border2}`, borderRadius:"3px", padding:"8px 10px", color:T.text, fontSize:"12px", fontFamily:"inherit", outline:"none", boxSizing:"border-box" }}
                   placeholder="reply@example.com" />
@@ -4326,15 +4336,12 @@ HAVE A NICE TRIP！
               <div style={{ marginBottom:"16px" }}>
                 <div style={{ display:"flex", justifyContent:"space-between", marginBottom:"5px" }}>
                   <label style={{ fontSize:"9px", color:T.textDim, letterSpacing:"0.15em" }}>メッセージ *</label>
-                  <span style={{ fontSize:"9px", color: message.length > 1800 ? "#ff6666" : T.textMuted }}>{message.length} / 2000</span>
+                  <span style={{ fontSize:"9px", color: message.length > 180 ? "#ff6666" : T.textMuted }}>{message.length} / 200</span>
                 </div>
-                <textarea value={message} onChange={e=>setMessage(e.target.value)} maxLength={2000} rows={5}
+                <textarea value={message} onChange={e=>setMessage(e.target.value)} maxLength={200} rows={5}
                   style={{ width:"100%", background:T.bgCard, border:`1px solid ${T.border2}`, borderRadius:"3px", padding:"8px 10px", color:T.text, fontSize:"12px", fontFamily:"inherit", resize:"vertical", outline:"none", boxSizing:"border-box" }}
                   placeholder="ご意見・ご要望・不具合報告など" />
               </div>
-              <input value={company} onChange={e=>setCompany(e.target.value)} autoComplete="off" tabIndex={-1} aria-hidden="true"
-                style={{ position:"absolute", left:"-9999px", height:0, width:0, opacity:0 }} />
-              <p style={{ fontSize:"10px", color:T.textDim, lineHeight:1.6, marginBottom:"12px" }}>氏名、メールアドレス、電話番号、住所、アカウント情報などの個人情報や機密情報は入力しないでください。</p>
               {error && <div style={{ fontSize:"10px", color:"#ff6666", marginBottom:"12px" }}>{error}</div>}
               <div style={{ display:"flex", justifyContent:"flex-end", gap:"8px" }}>
                 <button onClick={onClose} style={{ background:"transparent", border:`1px solid ${T.border2}`, color:T.textDim, padding:"8px 16px", borderRadius:"3px", cursor:"pointer", fontSize:"11px", fontFamily:"inherit" }}>キャンセル</button>
@@ -7711,6 +7718,6 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
     })();
   </script>
 
-<script src="/shared/info-dialog.js" data-name-target="[data-cost-name]" data-version-target="[data-cost-version]" data-version="v0.10.30-dev" data-manual="Googleでログインしてタスクを作成し、ストリップを移動して進捗を管理します。J/Kで移動、Nで新規作成、?でショートカットを表示します。詳しい操作は下の取扱説明書をご覧ください。" data-manual-link="manual.html" data-changes="フィードバックをサーバー経由の未確認受付に変更。"></script>
+<script src="/shared/info-dialog.js" data-name-target="[data-cost-name]" data-version-target="[data-cost-version]" data-version="v0.10.30-dev" data-manual="Googleでログインしてタスクを作成し、ストリップを移動して進捗を管理します。J/Kで移動、Nで新規作成、?でショートカットを表示します。詳しい操作は下の取扱説明書をご覧ください。" data-manual-link="manual.html" data-changes="目安箱の送信をサーバー経由にした。"></script>
 </body>
 </html>

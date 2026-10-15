@@ -78,16 +78,23 @@ service cloud.firestore {
       allow create: if verifiedAccount() && fstAnalyticsOk(request.resource.data);
       allow update, delete: if isHihahoEditor();
     }
-    // 目安箱は Cloud Functions だけが書く。クライアントの作成・更新・削除は拒否する。
-    // 読み取りは確認済みの編集者、または自分の uid の文書だけ。
     match /fst_feedback/{docId} {
       allow read: if isHihahoEditor() || (verifiedAccount() && resource.data.uid == request.auth.uid);
-      allow create, update, delete: if false;
+      allow create: if false;
+      allow update: if isHihahoEditor()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','replyText','repliedAt'])
+        && request.resource.data.status in ['unreviewed','read','replied']
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.subject == resource.data.subject
+        && request.resource.data.message == resource.data.message
+        && (!request.resource.data.keys().hasAny(['replyText'])
+            || (request.resource.data.replyText is string && request.resource.data.replyText.size() <= 5000));
+      allow delete: if false;
     }
     match /fst_feedback_meta/{docId} {
       allow read, write: if false;
     }
-    match /fst_feedback_limits/{docId} {
+    match /fstRateLimits/{id} {
       allow read, write: if false;
     }
 
