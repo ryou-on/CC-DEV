@@ -136,6 +136,37 @@ def validate_policy(policy, digest, today):
     return errors
 
 
+ERROR_RULES = {'PUBLIC_WRITE', 'QUOTA_FAIL_OPEN', 'CACHE_BUSTER', 'EMPTY_SCAN'}
+
+
+def accept_reviews(findings, policy):
+    """Review findings need a recorded decision. Decisions cannot clear errors."""
+    raw = policy.get('reviewDecisions') if isinstance(policy, dict) else None
+    index = {}
+    if isinstance(raw, list):
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            if item.get('rule') in ERROR_RULES:
+                continue
+            if item.get('disposition') not in ('accepted', 'false_positive', 'fixed'):
+                continue
+            evidence = item.get('evidence')
+            if not isinstance(evidence, str) or len(evidence.strip()) < 20:
+                continue
+            index[(item.get('rule'), item.get('path'), item.get('line'))] = item
+    accepted, unresolved = [], []
+    for finding in findings:
+        if finding['level'] != 'review':
+            continue
+        decision = index.get((finding['rule'], finding['path'], finding['line']))
+        if decision:
+            accepted.append({**finding, 'disposition': decision['disposition'], 'evidence': decision['evidence'].strip()})
+        else:
+            unresolved.append(finding)
+    return accepted, unresolved
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--root', type=Path, default=Path(__file__).resolve().parent.parent)
@@ -156,17 +187,25 @@ def main():
             raise ValueError('cost-safety.json must be an object')
         today = dt.datetime.now(dt.timezone(dt.timedelta(hours=9))).date()
         errors = validate_policy(policy, digest, today)
-        blocked = bool(errors) or any(f['level'] == 'error' for f in findings)
+        accepted, unresolved = accept_reviews(findings, policy)
+        blocked = bool(errors) or any(f['level'] == 'error' for f in findings) or bool(unresolved)
         report = dict(version=VERSION, files=checked, sourceSha256=digest, blocked=blocked,
-                      policyErrors=errors, findings=findings,
+                      policyErrors=errors, findings=findings, acceptedReviews=accepted,
+                      unresolvedReviews=unresolved,
                       limitation='静的検査と手動証跡。クラウド設定の自動検証・稼働中サービスの停止はしません。')
         if args.json:
             args.json.write_text(json.dumps(report, ensure_ascii=False, indent=2) + '\n')
         print(f'Cost guard {VERSION}: {checked} files; source SHA256 {digest}')
         for f in findings:
-            print(f"{f['level'].upper()} {f['rule']} {f['path']}:{f['line']} {f['message']}")
+            if f['level'] == 'review' and (f['rule'], f['path'], f['line']) in {(a['rule'], a['path'], a['line']) for a in accepted}:
+                decision = next(a for a in accepted if a['rule'] == f['rule'] and a['path'] == f['path'] and a['line'] == f['line'])
+                print(f"ACCEPTED {decision['disposition']} {f['rule']} {f['path']}:{f['line']} {f['message']}")
+            else:
+                print(f"{f['level'].upper()} {f['rule']} {f['path']}:{f['line']} {f['message']}")
         for e in errors:
             print('BLOCK POLICY ' + e)
+        if unresolved:
+            print(f'BLOCK REVIEW 未判定の要確認が{len(unresolved)}件')
         print('BLOCKED — 公開不可' if blocked else 'PASS — 証跡の対象範囲で公開可（費用上限の保証ではありません）')
         return 1 if args.check and blocked else 0
     except (OSError, ValueError, TypeError) as e:

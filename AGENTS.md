@@ -188,6 +188,7 @@ cd "$HOME/Library/Mobile Documents/com~apple~CloudDocs/#git/cc-DEV"
 
 - 有料処理は本人確認・利用許可・App Check・原子的な利用者別/全体の日次/月次上限を確認してから実行する。確認失敗は停止する。
 - `functions/cost-guard.js` と `docs/cost-safety-implementation.md` を参照し、新しい有料APIにも同じガードと拒否試験を追加する。
+- プラットフォーム管理者はルールへ UID を直書きしない。カスタムクレーム `admin` か `admins/{uid}` を使う。手順は `docs/admin-access.md`。
 - コードを表示できたことだけで公開しない。`python3 scripts/cost_guard.py --root . --check` の成功を実際のデプロイ直前に必須にする。全Firebase対象のpredeployとCIを保持する。
 - `cost-safety.json` の未確認項目・予算未設定・残存リスクは実際に解消する。検査を消す、免除する、証拠なしで確認済みに変更することは禁止。
 - ページ初期表示で有料APIを呼ばない。無制限の再試行、毎回のキャッシュ破棄、全件取得、公開DB書き込みを新設しない。

@@ -1,6 +1,9 @@
 """Build a private, fixed-scope Workflows definition. No user URLs or resource IDs."""
 import json
 from pathlib import Path
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from decision import BUDGET_ID, BUDGET_JPY, STOP_JPY, SITES as SITE_LIST, RUN as RUN_LIST
 E=lambda s:'${'+s+'}'
 def step(name,**kw):return {name.replace('-', '_'):kw}
 def http(name,method,url,body=None,result=None):
@@ -12,17 +15,17 @@ def http(name,method,url,body=None,result=None):
  return step(name,**{'try':call,'retry':E(policy)})
 PROJECT='cc-dev-ps7'
 DB='https://firestore.googleapis.com/v1/projects/cc-dev-ps7/databases/(default)/documents/'
-BUDGET='5629c6af-5042-4d68-926e-e76a5b0b4a26'
-SITES=['cc-dev-ps7','lobby-personal','ps7-corporate','yt-log-ps7']
-RUN=['hondokondl','hondokocover','hondokoamazon','hondokoanalyze','minimegenerate','assetserve','interpretercall','anthropicproxy','realtimetoken']
+BUDGET=BUDGET_ID
+SITES=list(SITE_LIST)
+RUN=list(RUN_LIST)
 
 def build(deny):
  checks=[
   'event.type == "google.cloud.pubsub.topic.v1.messagePublished"',
   'event.source == "//pubsub.googleapis.com/projects/cc-dev-ps7/topics/cc-dev-budget-alerts"',
   'attrs.billingAccountId == "018CD7-29C438-31FEC4"',f'attrs.budgetId == "{BUDGET}"', 'attrs.schemaVersion == "1.0"',
-  'payload.currencyCode == "JPY"','payload.budgetAmount == 1000','payload.budgetAmountType == "SPECIFIED_AMOUNT"',
-  'get_type(payload.costAmount) in ["integer", "double"]','payload.costAmount >= 800',
+  'payload.currencyCode == "JPY"',f'payload.budgetAmount == {BUDGET_JPY}','payload.budgetAmountType == "SPECIFIED_AMOUNT"',
+  'get_type(payload.costAmount) in ["integer", "double"]',f'payload.costAmount >= {STOP_JPY}',
   'time.parse(event.data.message.publishTime) <= sys.now() + 300','time.parse(event.data.message.publishTime) >= sys.now() - 86400',
   'text.substring(time.format(time.parse(payload.costIntervalStart), "America/Los_Angeles"), 0, 10) == text.substring(time.format(sys.now(), "America/Los_Angeles"), 0, 7) + "-01"'
  ]
@@ -34,7 +37,7 @@ def build(deny):
  def attempt(name,steps):
   main.append(step(name,try_={'steps':steps},except_={'as':'e','steps':[step('record_'+name,assign=[{'failures':E('list.concat(failures, "'+name+'")')}])]}))
   v=main[-1][name];v['try']=v.pop('try_');v['except']=v.pop('except_')
- attempt('latch',[http('pause','patch',DB+'costControls/global?updateMask.fieldPaths=enabled&updateMask.fieldPaths=reason',{'fields':{'enabled':{'booleanValue':False},'reason':{'stringValue':'budget-800JPY'}}})])
+ attempt('latch',[http('pause','patch',DB+'costControls/global?updateMask.fieldPaths=enabled&updateMask.fieldPaths=reason',{'fields':{'enabled':{'booleanValue':False},'reason':{'stringValue':f'budget-{STOP_JPY}JPY'}}})])
  for site in SITES:
   base='https://firebasehosting.googleapis.com/v1beta1/sites/'+site+'/releases'
   attempt('site_'+site.replace('-','_'),[http('read_'+site,'get',base+'?pageSize=1',result='snapshot'),step('save_'+site,call='backup',args={'id':E('"hosting_'+site+'_" + month'),'value':E('snapshot.body')}),http('stop_'+site,'post',base,{'type':'SITE_DISABLE','message':'CC-DEV 800 JPY budget stop; manual restart only'})])
@@ -50,7 +53,7 @@ def build(deny):
   {'done':{'return':{'status':'stopped','manualRestartRequired':True}}},
   {'failure':{'raise':{'message':'Cost stop partially failed','resources':E('failures')}}},
   {'ignored':{'return':'ignored'}},
-  {'dry_run_result':{'return':{'status':'would_stop','sites':SITES,'services':RUN,'thresholdJPY':800}}},
+  {'dry_run_result':{'return':{'status':'would_stop','sites':SITES,'services':RUN,'thresholdJPY':STOP_JPY,'budgetJPY':BUDGET_JPY}}},
  ]
  backup=[step('create',try_={'steps':[http('write','post',E('"'+DB+'costStopBackups?documentId=" + id'),{'fields':{'snapshot':{'stringValue':E('json.encode_to_string(value)')},'createdAt':{'timestampValue':E('time.format(sys.now())')}}})]},except_={'as':'e','steps':[
    step('only_duplicate',switch=[{'condition':E('map.get(e, "code") == 409'),'next':'already'}]),

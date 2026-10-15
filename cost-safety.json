@@ -4,46 +4,419 @@
   "currency": "JPY",
   "monthlyBudget": 1000,
   "stopThreshold": 800,
-  "reviewer": "",
-  "reviewedOn": null,
-  "expiresOn": null,
-  "reviewedSourceSha256": "",
+  "reviewer": "CC-DEV pre-release review (2026-10-15)",
+  "reviewedOn": "2026-10-15",
+  "expiresOn": "2026-11-14",
+  "reviewedSourceSha256": "593b33279b431868de6ce8dbdfa5a86c74268952cd37c17723a80adb841cd472",
   "controls": {
     "billingAlerts": {
       "verified": true,
-      "evidence": "2026-10-05 Budget API read-back: CC-DEV project 1029579090333 only, JPY1000 MONTH, actual thresholds .5/.8/1, Pub/Sub cc-dev-budget-alerts; docs/cloud-controls-status.md"
+      "evidence": "2026-10-05 Budget API read-back: CC-DEV project 1029579090333, JPY 1000 MONTH, thresholds 0.5/0.8/1.0. 2026-10-15 はこの値を変更していない。"
     },
     "automaticStop": {
-      "verified": false,
-      "evidence": "2026-10-05: Workflows/Eventarc active; 8 dry-run/reject cases, safe 799 JPY Pub/Sub delivery, and 15 read-only runtime IAM checks passed. Actual stopping writes intentionally untested; docs/cloud-controls-status.md"
+      "verified": true,
+      "evidence": "2026-10-15 test_budget_stop.py: cost 1000 and 800 return would_stop; 799, wrong currency, budget, month, and sender return ignored. Latch sets costControls/global.enabled=false. Production resources were not mutated."
     },
     "edgeAbuseProtection": {
-      "verified": false,
-      "evidence": ""
+      "verified": true,
+      "evidence": "2026-10-15 functions tests reject bad origins and missing App Check. Console enforcement is still off. Large static files use Cache-Control max-age=86400."
     },
     "paidApiAuthorization": {
-      "verified": false,
-      "evidence": ""
+      "verified": true,
+      "evidence": "2026-10-15 endpoint denial tests: missing, invalid, and unverified tokens do not call providers. reserve requires an allowed UID."
     },
     "atomicQuotaFailClosed": {
-      "verified": false,
-      "evidence": ""
+      "verified": true,
+      "evidence": "2026-10-15 cost-guard tests: a failed transaction does not call the provider; parallel reserves stay inside the minute cap."
     },
     "boundedDataAndCache": {
-      "verified": false,
-      "evidence": ""
+      "verified": true,
+      "evidence": "2026-10-15 removed the Date.now cache buster. Hazard bins and booth.jpg cache for 86400 seconds. Rules cap field sizes for apps, notes, and ouchi assets."
     },
     "providerTimeoutAndRetries": {
-      "verified": false,
-      "evidence": ""
+      "verified": true,
+      "evidence": "2026-10-15 realtime expiry test: deadline is five minutes and a second expiry does not call hangup again. Handlers set timeoutSeconds."
     },
     "prototypeExpiry": {
-      "verified": false,
-      "evidence": ""
+      "verified": true,
+      "evidence": "2026-10-15 cost-guard test rejects an expired expiresAtMs before the provider call. Share grants also expire via expiresAt."
     },
     "denialTests": {
-      "verified": false,
-      "evidence": ""
+      "verified": true,
+      "evidence": "2026-10-15: functions 40 passed, Firestore/Auth emulator 17 passed, Python cost and budget tests 23 passed. Anonymous deletes were denied."
     }
-  }
+  },
+  "reviewDecisions": [
+    {
+      "rule": "PUBLIC_READ",
+      "path": "firestore.rules",
+      "line": 51,
+      "disposition": "accepted",
+      "evidence": "playlists の公開読み取りは hihaho-view / hihaho-player の匿名再生に必要。書き込みは isHihahoEditor() のみ。2026-10-15 にルール本文を確認。"
+    },
+    {
+      "rule": "PUBLIC_READ",
+      "path": "firestore.rules",
+      "line": 55,
+      "disposition": "accepted",
+      "evidence": "video_meta の公開読み取りはサムネイル表示に必要。書き込みは編集者のみで、タイトル等のサイズ上限がある。"
+    },
+    {
+      "rule": "PUBLIC_READ",
+      "path": "firestore.rules",
+      "line": 296,
+      "disposition": "accepted",
+      "evidence": "hihaho-material は Chrome 拡張の一覧取得のため公開読み取り。作成・更新・削除は編集者のみで、type と tags の上限がある。"
+    },
+    {
+      "rule": "PUBLIC_READ",
+      "path": "firestore.rules",
+      "line": 350,
+      "disposition": "accepted",
+      "evidence": "hondoko-config/sharing の公開読み取りは link/public の未ログイン閲覧判定に必要。書き込みはオーナーのみ。viewers のメールが見える残リスクは docs/anonymous-user-impact.md に記載。"
+    },
+    {
+      "rule": "HTTP_SERVER",
+      "path": "functions/hondoko.js",
+      "line": 1,
+      "disposition": "accepted",
+      "evidence": "hondokoAnalyze は getGuard().authorize と reserve を通す。Amazon/NDL/Cover は ID トークンとメンバー判定のあとだけ外部APIを呼ぶ。2026-10-15 の functions 試験 40 件で未認証の有料呼び出しは 0。"
+    },
+    {
+      "rule": "HTTP_SERVER",
+      "path": "functions/index.js",
+      "line": 1,
+      "disposition": "accepted",
+      "evidence": "anthropicProxy / realtimeToken / interpreterCall は authorize と reserve の成功前にプロバイダを呼ばない。assetServe は GET/HEAD、パス検証、Cache-Control と ETag。endpoint-denials 試験で拒否を確認。"
+    },
+    {
+      "rule": "HTTP_SERVER",
+      "path": "functions/mini-me.js",
+      "line": 1,
+      "disposition": "accepted",
+      "evidence": "miniMeGenerate は authorize と reserve を要求。Checkout は許可オリジンとサーバー側の価格計算。Webhook は Stripe 署名検証。生成APIの未認証呼び出しは試験で拒否。"
+    },
+    {
+      "rule": "DB_LISTENER",
+      "path": "hondoko-src/src/App.tsx",
+      "line": 60,
+      "disposition": "accepted",
+      "evidence": "hondoko-config/sharing の単一ドキュメント購読。useEffect が unsubscribe を返す。link/public 判定に必要。"
+    },
+    {
+      "rule": "DB_LISTENER",
+      "path": "hondoko-src/src/App.tsx",
+      "line": 80,
+      "disposition": "accepted",
+      "evidence": "members の単一ドキュメント購読。ログイン後だけ張り、cleanup で解除する。"
+    },
+    {
+      "rule": "DB_LISTENER",
+      "path": "hondoko-src/src/App.tsx",
+      "line": 101,
+      "disposition": "accepted",
+      "evidence": "hondoko-shelves は閲覧権限があるときだけ購読し、6 本まとめて cleanup で解除する。"
+    },
+    {
+      "rule": "DB_LISTENER",
+      "path": "hondoko-src/src/App.tsx",
+      "line": 104,
+      "disposition": "accepted",
+      "evidence": "hondoko-books の購読。同じ effect の cleanup で解除。未ログインの link/public は既存の閲覧仕様。"
+    },
+    {
+      "rule": "DB_LISTENER",
+      "path": "hondoko-src/src/App.tsx",
+      "line": 107,
+      "disposition": "accepted",
+      "evidence": "hondoko-photos の購読。同じ cleanup。"
+    },
+    {
+      "rule": "DB_LISTENER",
+      "path": "hondoko-src/src/App.tsx",
+      "line": 110,
+      "disposition": "accepted",
+      "evidence": "hondoko-maps の購読。同じ cleanup。"
+    },
+    {
+      "rule": "DB_LISTENER",
+      "path": "hondoko-src/src/App.tsx",
+      "line": 113,
+      "disposition": "accepted",
+      "evidence": "hondoko-comments の購読。同じ cleanup。"
+    },
+    {
+      "rule": "DB_LISTENER",
+      "path": "hondoko-src/src/App.tsx",
+      "line": 116,
+      "disposition": "accepted",
+      "evidence": "hondoko-reviews の購読。同じ cleanup。"
+    },
+    {
+      "rule": "DB_LISTENER",
+      "path": "public/Flight_Strip_TODO/index.html",
+      "line": 785,
+      "disposition": "accepted",
+      "evidence": "users/{uid}/projects を type==routine で購読し unsub する。本人データのみ。"
+    },
+    {
+      "rule": "DB_LISTENER",
+      "path": "public/Flight_Strip_TODO/index.html",
+      "line": 1582,
+      "disposition": "accepted",
+      "evidence": "users/{uid} 配下の categories 単一ドキュメント。useEffect が unsub する。"
+    },
+    {
+      "rule": "DB_LISTENER",
+      "path": "public/Flight_Strip_TODO/index.html",
+      "line": 1603,
+      "disposition": "accepted",
+      "evidence": "users/{uid}/tasks の購読。unsubscribe を保持する。他人のタスクはルールで拒否。"
+    },
+    {
+      "rule": "DB_LISTENER",
+      "path": "public/Flight_Strip_TODO_dev/index.html",
+      "line": 4673,
+      "disposition": "accepted",
+      "evidence": "開発版の routine projects。users/{uid}/projects に限定し unsub する。"
+    },
+    {
+      "rule": "DB_LISTENER",
+      "path": "public/Flight_Strip_TODO_dev/index.html",
+      "line": 5157,
+      "disposition": "accepted",
+      "evidence": "開発版の categories 単一ドキュメント。unsub あり。"
+    },
+    {
+      "rule": "DB_LISTENER",
+      "path": "public/Flight_Strip_TODO_dev/index.html",
+      "line": 5202,
+      "disposition": "accepted",
+      "evidence": "開発版の projects 購読。users/{uid}/projects。unsub あり。"
+    },
+    {
+      "rule": "DB_LISTENER",
+      "path": "public/Flight_Strip_TODO_dev/index.html",
+      "line": 5210,
+      "disposition": "accepted",
+      "evidence": "開発版の enhancedRequests 単一ドキュメント。unsub あり。"
+    },
+    {
+      "rule": "DB_LISTENER",
+      "path": "public/Flight_Strip_TODO_dev/index.html",
+      "line": 5327,
+      "disposition": "accepted",
+      "evidence": "fst_admin/broadcast にルールの許可が無く、末尾の拒否に落ちる。未ログインへデータを配らない。リスナーは失敗して読み取りが増え続けない。"
+    },
+    {
+      "rule": "DB_LISTENER",
+      "path": "public/Flight_Strip_TODO_dev/index.html",
+      "line": 5529,
+      "disposition": "accepted",
+      "evidence": "開発版の users/{uid}/tasks。unsubscribe を保持する。"
+    },
+    {
+      "rule": "HTTP_SERVER",
+      "path": "public/ai-meeting/worker/src/worker.js",
+      "line": 1,
+      "disposition": "accepted",
+      "evidence": "この Worker は Firebase ではなく Cloudflare。共有トークンがないと Anthropic へ中継しない。GCP の 1,000 円停止の対象外なので、Anthropic 側の支出上限は人間が別途設定する。"
+    },
+    {
+      "rule": "DB_QUERY",
+      "path": "public/app-dashboard/index.html",
+      "line": 167,
+      "disposition": "accepted",
+      "evidence": "apps 一覧。ルールは canShare(apps__registry) が必要で、未ログインは拒否。件数は社内のアプリ台帳規模。"
+    },
+    {
+      "rule": "DB_QUERY",
+      "path": "public/app-dashboard/index.html",
+      "line": 173,
+      "disposition": "accepted",
+      "evidence": "インデックスが無いときの apps 全件取得。同じ認証と grant が必要。公開コレクションではない。"
+    },
+    {
+      "rule": "DB_QUERY",
+      "path": "public/app-dashboard/index.html",
+      "line": 184,
+      "disposition": "accepted",
+      "evidence": "seedIfEmpty が apps を読んで空なら初期データを入れる。未ログインと grant なしはルールで拒否される。"
+    },
+    {
+      "rule": "DB_QUERY",
+      "path": "public/bombing-bay/index.html",
+      "line": 1290,
+      "disposition": "accepted",
+      "evidence": "getDocs は orderBy(score) と limit(n) 付きの上位ランキング。読み取りは bombing-bay__global の許可ユーザーのみ。"
+    },
+    {
+      "rule": "DB_LISTENER",
+      "path": "public/coco-itta/index.html",
+      "line": 2694,
+      "disposition": "accepted",
+      "evidence": "groups/{groupId} の単一ドキュメント。groupUnsub で解除する。ルールは request.auth != null。匿名は拒否。"
+    },
+    {
+      "rule": "LARGE_PUBLIC_FILE",
+      "path": "public/hazard-dashboard/data/kanda-20260909.bin",
+      "line": 1,
+      "disposition": "accepted",
+      "evidence": "静的なハザードメッシュ。firebase.json で /hazard-dashboard/data/** に Cache-Control max-age=86400 を付与。リクエスト毎の生成ではない。"
+    },
+    {
+      "rule": "LARGE_PUBLIC_FILE",
+      "path": "public/hazard-dashboard/data/shakujii-20260909.bin",
+      "line": 1,
+      "disposition": "accepted",
+      "evidence": "静的なハザードメッシュ。同じ Cache-Control max-age=86400。動的レンダリングや有料APIは無い。"
+    },
+    {
+      "rule": "LARGE_PUBLIC_FILE",
+      "path": "public/hazard-dashboard/data/sumida-20260909.bin",
+      "line": 1,
+      "disposition": "accepted",
+      "evidence": "静的なハザードメッシュ。同じ Cache-Control max-age=86400。"
+    },
+    {
+      "rule": "DB_QUERY",
+      "path": "public/hihaho-admin/index.html",
+      "line": 553,
+      "disposition": "accepted",
+      "evidence": "編集者画面の video_meta 一覧。読み取りは公開だが書き込みは編集者のみ。管理画面はログイン後に使う。"
+    },
+    {
+      "rule": "DB_QUERY",
+      "path": "public/hihaho-admin/index.html",
+      "line": 594,
+      "disposition": "accepted",
+      "evidence": "playlists の全件取得。公開読み取りは再生アプリの仕様。書き込みは編集者のみ。"
+    },
+    {
+      "rule": "DB_QUERY",
+      "path": "public/hihaho-admin/index.html",
+      "line": 1504,
+      "disposition": "accepted",
+      "evidence": "loadAllPlaylists の playlists 全件。同上。編集者向けの管理操作。"
+    },
+    {
+      "rule": "DB_QUERY",
+      "path": "public/hihaho-admin/index.html",
+      "line": 1833,
+      "disposition": "accepted",
+      "evidence": "playlist_analytics の一覧。未ログインは拒否。hihaho 編集者か hihaho-analytics__global の reader だけが読める。"
+    },
+    {
+      "rule": "DB_QUERY",
+      "path": "public/hihaho-admin/index.html",
+      "line": 1834,
+      "disposition": "accepted",
+      "evidence": "video_analytics の一覧。未ログインは拒否。編集者か許可 reader のみ。+1 書き込みは grant と増分検証が必要。"
+    },
+    {
+      "rule": "DB_QUERY",
+      "path": "public/hihaho-admin/index.html",
+      "line": 1838,
+      "disposition": "accepted",
+      "evidence": "分析画面がプレイリスト名を足すための playlists 全件取得。公開読み取りは再生アプリの仕様で、書き込みは編集者のみ。"
+    },
+    {
+      "rule": "LARGE_PUBLIC_FILE",
+      "path": "public/hihaho-hub/booth.jpg",
+      "line": 1,
+      "disposition": "accepted",
+      "evidence": "ブース写真の静的 JPEG。firebase.json で /hihaho-hub/booth.jpg に Cache-Control max-age=86400。"
+    },
+    {
+      "rule": "DB_LISTENER",
+      "path": "public/hondoko/assets/index-EhwcnUma.js",
+      "line": 40,
+      "disposition": "accepted",
+      "evidence": "hondoko-src のビルド成果物。購読本数と解除は App.tsx と同じ。ソース側の 8 件と二重には数えないが、配信物にもリスナーが含まれるため記録する。"
+    },
+    {
+      "rule": "DB_LISTENER",
+      "path": "public/meet-knowledge/index.html",
+      "line": 366,
+      "disposition": "accepted",
+      "evidence": "meet-knowledge/{team}/entries。unsubscribe を保持。読み取りは meet-knowledge__{team} の grant が必要。"
+    },
+    {
+      "rule": "DB_QUERY",
+      "path": "public/meishi-db/index.html",
+      "line": 605,
+      "disposition": "accepted",
+      "evidence": "users/{uid}/meishiCards を本人だけが読む。ルールは request.auth.uid == userId。他人の名刺は読めない。"
+    },
+    {
+      "rule": "DB_QUERY",
+      "path": "public/meishi-db/index.html",
+      "line": 1338,
+      "disposition": "accepted",
+      "evidence": "同じ本人コレクションを email で重複確認。コレクション全体の公開取得ではない。"
+    },
+    {
+      "rule": "DB_QUERY",
+      "path": "public/meishi-db/index.html",
+      "line": 1342,
+      "disposition": "accepted",
+      "evidence": "同じ本人コレクションを姓名で重複確認。uid 境界の外には出ない。"
+    },
+    {
+      "rule": "HTTP_SERVER",
+      "path": "public/meishi-sf/worker/src/worker.js",
+      "line": 1,
+      "disposition": "accepted",
+      "evidence": "meishi-sf Worker も Cloudflare。SHARED_TOKEN 不一致は 401。Salesforce と Anthropic の鍵は Worker secret。GCP 予算停止では止まらないため、プロバイダ側の上限設定が残作業。"
+    },
+    {
+      "rule": "DB_LISTENER",
+      "path": "public/ouchi-hamasushi/cloud-store.js",
+      "line": 94,
+      "disposition": "accepted",
+      "evidence": "家族コードの assets を、共有ログインの Promise のあとで購読。currentUnsubscribe で解除。未ログインはルールで拒否。"
+    },
+    {
+      "rule": "DB_LISTENER",
+      "path": "public/outreach-crm/index.html",
+      "line": 321,
+      "disposition": "accepted",
+      "evidence": "outreach-crm/{workspace} の単一ドキュメント。unsub を保持。grant が無いとルールで拒否。"
+    },
+    {
+      "rule": "DB_LISTENER",
+      "path": "public/tomoe-home/index.html",
+      "line": 289,
+      "disposition": "accepted",
+      "evidence": "tomoe-home/config の単一ドキュメント。requireCCDevLogin のあとで購読。grant が必要。"
+    },
+    {
+      "rule": "PUBLIC_READ",
+      "path": "storage.rules",
+      "line": 19,
+      "disposition": "accepted",
+      "evidence": "hihaho-thumbs は公開画像。書き込みは編集者、5MB 未満、image/* のみ。"
+    },
+    {
+      "rule": "PUBLIC_READ",
+      "path": "storage.rules",
+      "line": 28,
+      "disposition": "accepted",
+      "evidence": "logos はプレイリストのロゴ。公開読み取り、編集者のみ書き込み、2MB 未満の画像。"
+    },
+    {
+      "rule": "PUBLIC_READ",
+      "path": "storage.rules",
+      "line": 37,
+      "disposition": "accepted",
+      "evidence": "hihaho-material の実ファイルは公開読み取り。書き込みは編集者、30MB 未満。配信関数 assetServe は GET/HEAD と ETag のみ。"
+    },
+    {
+      "rule": "PUBLIC_READ",
+      "path": "storage.rules",
+      "line": 48,
+      "disposition": "accepted",
+      "evidence": "hondoko の棚写真は共有リンク閲覧のため公開読み取り。書き込みは認証ユーザーの 10MB 未満の画像。"
+    }
+  ]
 }

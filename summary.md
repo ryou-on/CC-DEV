@@ -1,26 +1,28 @@
-# 作業記録（2026-10-05 追記）
+# 課金事故対策と Firestore ルールの公開前仕上げ
+
+日付: 2026-10-15。本番への merge と deploy はしていない。
 
 ## 完了した作業
-- 本番の既存月額予算を1,000円へ更新、500/800/1,000円の実績通知とPub/Sub接続を設定・APIで再確認。
-- App Checkを既存4 Webアプリに登録。ドメイン制限されたreCAPTCHA Enterpriseキーを設定。
-- ユーザーの明示承認後、800円停止用IAM、未公開deny Rulesets、Workflows、Pub/Sub/Eventarcを接続。8件の拒否/dry-run試験、799円通知の実配送、停止用アカウントによる15件の読み取り検証を完了。
-- 匿名Firestore共有の権限移行を実装（本番未適用）。既存データパス維持、Googleログイン・期限・reader/writer分離。管理用grantスクリプトを追加。
-- 共有アプリの認証UIとApp Check初期化、匿名解析書き込み停止、使い方・リリースノートを更新。
-- 有料APIの全体停止ラッチを追加。欠落・不正な設定も停止。
-- Firestore14件・Functions40件・公開前チェッカー15件の試験、および対象12画面のブラウザー検証。
 
-## URL
-- ドラフトPR: https://github.com/ryou-on/CC-DEV/pull/3
-- Actions: https://github.com/ryou-on/CC-DEV/actions
-- 本番: https://cc-dev-ps7.web.app/ （アプリコード・Rulesの今回の変更は未デプロイ）
+- PR #3 のブランチで、Firestore を認証必須に統一し、PR #4 のフィールド検証とルール試験を取り込んだ。
+- `apps`、note-analytics の snapshots、ouchi-hamasushi の assets から、誰でも削除できる条件を除いた。
+- 管理者 UID の直書きをやめ、カスタムクレーム `admin` と `admins/{uid}` にした。手順は `docs/admin-access.md`。
+- 公開前検査のキャッシュ破棄エラーを修正し、要確認 53 件に根拠を記録した。
+- 予算 1,000 円の停止判定をローカルで模擬した。800 円以上で停止、799 円では停止しない。
+- Auth エミュレーターで Google ログインから Firestore の許可・拒否まで確認した。
 
-## バージョン
-Flight Strip安定版v0.5.16、開発版v0.6.0-devエントリ更新。App Dashboard/ともえホーム/Meet Knowledge/Outreach CRM v0.2.0、ともえプレイヤーv0.10.0、視聴ダッシュボードv0.8.0、note分析v0.4.0、Bombing Bay v0.4.0、おうち巴寿司v1.5.0、hihaho-view v1.5.1。
+## 検証
 
-## 残課題・注意
-- 800円停止ワークフローと通知配送は稼働設定済み。ただし実際の停止変更は試験していないため、最初の本物の超過通知後に全対象の結果を照合する必要がある。
-- App Check登録は完了したが強制適用はOFF。既存アプリ・拡張の互換性と実トークンの検証が必要。
-- 本番Firestoreルールには匿名アクセスが残る。公開ゲート未合格のため、権限移行コード・クライアント変更はPRで保管し未公開。
-- 公開前検査を無効化したり、未確認事項を確認済みに変更していない。
-- 課金通知に遅延があり、800円/1,000円の厳密な請求上限は保証できない。
-- 詳細と復旧方針: docs/cloud-controls-status.md、infrastructure/cost-stop/README.md。
+- `python3 -m unittest discover -s scripts -p 'test_*.py'` 23 件成功
+- `npm test --prefix functions` 40 件成功
+- Firestore / Auth エミュレーター `tests/firestore` 17 件成功（プロジェクト ID は `demo-cc-dev-cost`）
+
+## 本番URL
+
+未デプロイ。本番は https://cc-dev-ps7.web.app/ 。GitHub Actions は https://github.com/ryou-on/CC-DEV/actions 。
+
+## 残課題
+
+- 本番の課金停止書き込み、App Check 強制、ルール公開、共有許可の付与は人間が行う。
+- 未ログイン利用者への案内は `docs/anonymous-user-impact.md`。
+- Hosting のプレビューは、リポジトリ変数 `ALLOW_HOSTING_PREVIEW=true` を人間が付けるまで作らない。

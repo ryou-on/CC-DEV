@@ -33,7 +33,7 @@
 3. Googleログインを確認し、使用を許可するUIDを管理者が決める。クライアントからcostControls / costCounters / costRealtimeCallsを変更できないRulesを維持する（現状は末尾の拒否規則で拒否）。既存mini-meタスクにはownerUidがないため、管理者が所有者を確認して移行するまで閲覧拒否される。
 4. Realtimeのprivateタスク関数をデプロイするためCloud Tasks API、enqueue権限、タスク呼び出しサービスアカウントのInvoker権限を最小権限で設定。切断・再試行・失敗通知をステージングで実証する。`expiryQueueVerified` は実証後だけtrueにする。
 5. サーバー管理経路で `costControls/realtime`、`miniGenerate`、`anthropicProxy`、`hondokoAnalyze` を作成。各文書は `{enabled:false, allowedUids:[], expiresAtMs:0}` から開始。試験成功後にUID、有効期限（試作は14日以内）を入れて有効化。miniStatusはminiGenerateの許可設定を共有する。停止時はenabled:false。
-6. 既存の匿名Firestore共有の設計を解消する。現状の `/apps`、`/note-analytics`、分析ログなどの公開書き込みはこの変更では未修正。おうち巴寿司の大容量Firestore購読も移行が必要。ログイン・所有者/家族単位の権限と既存データの移行を合わせて設計し、Rulesをエミュレーターで検証する。
+6. 既存の匿名Firestore共有は、このブランチのルールで認証と accessGrants に限定した。`apps`、note-analytics の snapshots、おうち巴寿司の assets の削除は未ログインでは拒否する。影響と案内は `docs/anonymous-user-impact.md`。本番ルールは未公開。
 7. 大量リクエストをFunctions/Firestoreまで到達させないエッジ対策と、公開静的ファイルの転送対策を確認する。robots.txtだけでは強制停止できない。
 8. 本番と一致するランタイム・ステージングで認証/App Check/実クォータ/停止予約を実証し、cost-safety.jsonに予算と検証証跡・ソースハッシュ・期限を記録。残存検出事項がある限り公開不可。
 

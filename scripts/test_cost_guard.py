@@ -102,6 +102,41 @@ class CostGateTest(unittest.TestCase):
         r = subprocess.run([sys.executable, str(Path(guard.__file__)), '--root', str(self.root), '--check'], capture_output=True)
         self.assertEqual(2, r.returncode)
 
+    def test_unresolved_review_blocks_and_evidence_clears_it(self):
+        self.put('public/app.js', 'db.onSnapshot(function(){})')
+        p = self.policy()
+        today = dt.datetime.now(dt.timezone(dt.timedelta(hours=9))).date()
+        p.update(reviewedOn=today.isoformat(), expiresOn=today.isoformat())
+        self.put('cost-safety.json', json.dumps(p))
+        cmd = [sys.executable, str(Path(guard.__file__)), '--root', str(self.root), '--check']
+        blocked = subprocess.run(cmd, capture_output=True, text=True)
+        self.assertEqual(1, blocked.returncode)
+        findings = guard.scan(self.root)[0]
+        review = next(f for f in findings if f['rule'] == 'DB_LISTENER')
+        p['reviewDecisions'] = [{
+            'rule': review['rule'], 'path': review['path'], 'line': review['line'],
+            'disposition': 'accepted',
+            'evidence': 'Single-document listener with unsubscribe in the fixture.',
+        }]
+        self.put('cost-safety.json', json.dumps(p))
+        # Policy hash was captured before the decision file, and decisions live outside the scan.
+        cleared = subprocess.run(cmd, capture_output=True, text=True)
+        self.assertEqual(0, cleared.returncode, cleared.stdout + cleared.stderr)
+
+    def test_review_decision_cannot_waive_an_error(self):
+        self.put('public/app.js', "fetch('data.json?v=' + Date.now())")
+        findings = guard.scan(self.root)[0]
+        error = next(f for f in findings if f['rule'] == 'CACHE_BUSTER')
+        p = self.policy()
+        today = dt.datetime.now(dt.timezone(dt.timedelta(hours=9))).date()
+        p.update(reviewedOn=today.isoformat(), expiresOn=today.isoformat(), reviewDecisions=[{
+            'rule': error['rule'], 'path': error['path'], 'line': error['line'],
+            'disposition': 'false_positive', 'evidence': 'This text is long enough but errors stay blocking.',
+        }])
+        self.put('cost-safety.json', json.dumps(p))
+        r = subprocess.run([sys.executable, str(Path(guard.__file__)), '--root', str(self.root), '--check'], capture_output=True)
+        self.assertEqual(1, r.returncode)
+
     def test_errors_cannot_be_waived_by_review(self):
         self.put('firestore.rules', 'allow write: if true;')
         p = self.policy()

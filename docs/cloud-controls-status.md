@@ -10,6 +10,14 @@
 - reCAPTCHA EnterpriseのSCOREサイトキーを作成。cc-dev-ps7.web.app / cc-dev-ps7.firebaseapp.com に限定。既存4 WebアプリをApp Checkに登録、トークンTTL1時間。キーは公開用サイトキーであり秘密鍵ではない。
 - 800円停止用のWorkflows `cc-dev-budget-stop` とEventarcトリガーを作成して接続。停止用サービスアカウントにHosting AdminとRules/Run/Firestoreの限定カスタムロール、配送用サービスアカウントにWorkflows Invokerを付与。停止用deny Rulesetsは未公開のまま作成済み。
 
+## 2026-10-15 のブランチ検証（本番未反映）
+
+- Firestore ルールは認証必須に統一し、`allow delete: if true` は apps / note-analytics snapshots / ouchi-hamasushi assets から除去した。管理者 UID の直書きも除去し、カスタムクレーム `admin` または `admins/{uid}` に置き換えた。
+- エミュレーター試験 17 件が成功。旧 UID は拒否、クレームと admins ドキュメントは許可、未ログインの削除は拒否、125 個の再生回数キーでも +1 だけ通る。
+- Auth エミュレーターで Google ログインし、許可前は拒否、`admins/{uid}` 作成後に読み取りと削除が成功した。本番の Google ログインは未実施。
+- 予算アラートの判定をローカルで模擬し、1,000 円と 800 円は停止、799 円と予算・通貨・月・送信元の不一致は無視。本番の停止書き込みは未実施。
+- 公開前検査の CACHE_BUSTER 1 件は、ライブ統計ウィジェットの `Date.now()` 付き fetch を止めて解消した。残る要確認 53 件は `cost-safety.json` の reviewDecisions に根拠を記録した。エラーの免除はできない。
+
 ## 未適用（稼働中の保護と混同しない）
 
 - **800円の実停止処理は未試験。** 設定と配送経路は稼働しているが、実際に4サイト・9サービス・Rulesを止める通知は送っていない。停止成功の断定や厳密な請求上限の保証はできない。
