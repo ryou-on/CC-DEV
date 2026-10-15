@@ -27,6 +27,7 @@ function harness(file) {
     if(name==='firebase-functions/v2/tasks') return {onTaskDispatched:(_opts,fn)=>fn};
     if(name==='./cost-guard') return {getGuard:()=>guard, CostError, sendCostError};
     if(name==='./mini-me'||name==='./hondoko') return {};
+    if(name==='./fst-feedback') return { submitFstFeedback() {}, updateFstFeedback() {} };
     if(name==='./realtime-cost') return require('../realtime-cost');
     return require(name);
   }, console, Buffer, process, URL, URLSearchParams, AbortSignal, FormData,

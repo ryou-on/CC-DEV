@@ -37,6 +37,7 @@
   window._auth = firebase.auth();
   window._db   = firebase.firestore();
 </script>
+<script src="/shared/fst-feedback-client.js"></script>
 <script id="jsx-source" type="text/plain">
   const { useState, useEffect, useMemo } = React;
   const auth = window._auth;
@@ -232,21 +233,32 @@
     }, []);
 
     const markRead = async (f) => {
-      if (f.status !== 'new') return;
-      await db.collection('fst_feedback').doc(f.docId).update({ status: 'read' }).catch(()=>{});
-      setFeedbacks(prev => prev.map(x => x.docId === f.docId ? { ...x, status: 'read' } : x));
+      if (f.status !== 'new' && f.status !== 'unreviewed') return;
+      try {
+        await window.FstFeedback.update({ feedbackId: f.docId, status: 'reviewed' });
+        setFeedbacks(prev => prev.map(x => x.docId === f.docId ? { ...x, status: 'reviewed' } : x));
+      } catch (_) {}
     };
 
     const handleToggleSent = async (f) => {
-      const newStatus = f.status === 'replied' ? 'new' : 'replied';
-      await db.collection('fst_feedback').doc(f.docId).update({
-        status: newStatus,
-        ...(newStatus === 'replied'
-          ? { replyText: replyText.trim() || f.replyText || '', repliedAt: firebase.firestore.FieldValue.serverTimestamp() }
-          : { repliedAt: null }),
-      }).catch(()=>{});
-      setFeedbacks(prev => prev.map(x => x.docId === f.docId ? { ...x, status: newStatus } : x));
-      if (newStatus === 'replied') { setReplyOpenId(null); setReplyText(''); }
+      const done = f.status === 'replied' || f.status === 'resolved';
+      const newStatus = done ? 'unreviewed' : 'resolved';
+      try {
+        await window.FstFeedback.update({
+          feedbackId: f.docId,
+          status: newStatus,
+          replySent: newStatus === 'resolved',
+          ...(replyText.trim() ? { replyText: replyText.trim() } : {}),
+        });
+        setFeedbacks(prev => prev.map(x => x.docId === f.docId ? { ...x, status: newStatus } : x));
+        if (newStatus === 'resolved') { setReplyOpenId(null); setReplyText(''); }
+      } catch (sendError) { setReplyError(sendError.message || '状態を更新できませんでした。'); }
+    };
+    const handleSetStatus = async (f, status) => {
+      try {
+        await window.FstFeedback.update({ feedbackId: f.docId, status, replySent: status === 'resolved' });
+        setFeedbacks(prev => prev.map(x => x.docId === f.docId ? { ...x, status } : x));
+      } catch (sendError) { setReplyError(sendError.message || '状態を更新できませんでした。'); }
     };
 
     const handleOpenMailto = (f) => {
@@ -261,12 +273,13 @@
       setReplySending(true); setReplyError('');
       try {
         handleOpenMailto(f);
-        await db.collection('fst_feedback').doc(f.docId).update({
+        await window.FstFeedback.update({
+          feedbackId: f.docId,
           replyText: replyText.trim(),
-          repliedAt: firebase.firestore.FieldValue.serverTimestamp(),
-          status: 'replied',
+          replySent: true,
+          status: 'resolved',
         });
-        setFeedbacks(prev => prev.map(x => x.docId === f.docId ? { ...x, replyText: replyText.trim(), status: 'replied' } : x));
+        setFeedbacks(prev => prev.map(x => x.docId === f.docId ? { ...x, replyText: replyText.trim(), status: 'resolved' } : x));
         setReplyOpenId(null); setReplyText('');
       } catch(e) { setReplyError('送信に失敗しました: ' + e.message); }
       finally { setReplySending(false); }
@@ -362,7 +375,7 @@ HAVE A NICE TRIP！
       finally { setAiLoading(false); }
     };
 
-    const unreadCount = feedbacks.filter(f => f.status === 'new').length;
+    const unreadCount = feedbacks.filter(f => f.status === 'new' || f.status === 'unreviewed').length;
 
     if (loading) return <div style={{ textAlign:'center', padding:'40px', color:DIM, fontSize:'11px' }}>読み込み中...</div>;
 
@@ -410,8 +423,9 @@ HAVE A NICE TRIP！
         ) : (
           <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
             {feedbacks.map(f => {
-              const isNew     = f.status === 'new';
-              const isReplied = f.status === 'replied';
+              const isNew     = f.status === 'new' || f.status === 'unreviewed';
+              const isReplied = f.status === 'replied' || f.status === 'resolved';
+              const statusValue = ['unreviewed','reviewed','in_progress','resolved'].includes(f.status) ? f.status : (isReplied ? 'resolved' : 'unreviewed');
               const buildColor = f.build === 'dev' ? DEV : STABLE;
               const date = f.createdAt?.toDate ? f.createdAt.toDate().toLocaleString('ja-JP') : '---';
               const isOpen = replyOpenId === f.docId;
@@ -452,6 +466,13 @@ HAVE A NICE TRIP！
                       }}>
                       {isOpen ? '✕ 閉じる' : '↩ 返信'}
                     </button>
+                    <select value={statusValue} aria-label="対応状態" onChange={e => handleSetStatus(f, e.target.value)}
+                      style={{ fontSize:'10px', background:'#fff', color:'#1a2a3a', border:'1px solid #ccddee', borderRadius:'3px', padding:'3px 6px' }}>
+                      <option value="unreviewed">未確認</option>
+                      <option value="reviewed">確認済み</option>
+                      <option value="in_progress">対応中</option>
+                      <option value="resolved">対応済み</option>
+                    </select>
                     <button style={{ ...btnStyle(isReplied ? '#2277cc' : '#889999'), fontSize:'10px' }}
                       onClick={() => handleToggleSent(f)}>
                       {isReplied ? '✓ 送信済み' : '○ 未返信'}

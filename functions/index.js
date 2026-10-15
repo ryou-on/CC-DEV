@@ -444,3 +444,9 @@ exports.expireRealtimeCall = onTaskDispatched({
   retryConfig: { maxAttempts: 5, minBackoffSeconds: 5, maxBackoffSeconds: 30 },
   rateLimits: { maxConcurrentDispatches: 2, maxDispatchesPerSecond: 2 },
 }, async req => expireCall({ data: req.data, db: admin.firestore(), apiKey: openaiApiKey.value() }));
+
+// Flight Strip 目安箱。実装は functions/fst-feedback.js。
+// Hosting: /api/fst-feedback と /api/fst-feedback-update。
+const fstFeedback = require('./fst-feedback');
+exports.submitFstFeedback = fstFeedback.submitFstFeedback;
+exports.updateFstFeedback = fstFeedback.updateFstFeedback;

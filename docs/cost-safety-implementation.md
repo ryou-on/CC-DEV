@@ -13,6 +13,7 @@
 - 公開ナレッジJSONのDate.nowキャッシュ破棄を削除。静的HTMLに共有キャッシュ300秒、KB JSONに3600秒を設定。個人データ/APIは共有キャッシュしない。
 - assetServeはGET/HEAD限定、Storageメタデータ照会を1回に減らしETag/304とCDNキャッシュを追加。
 - 全6対象のFirebase predeploy、公開CIに検査を接続。未確認のまま検査を通す例外は追加していない。
+- Flight Strip の目安箱は有料APIではない。`submitFstFeedback` / `updateFstFeedback` が App Check と確認済みアカウントを要求し、クライアントの Firestore 直書きは拒否する。回数は利用者あたり1分5件・1日50件で、失敗時は保存しない。詳細は `docs/fst-feedback-api.md`。
 
 ## 回数の初期上限
 

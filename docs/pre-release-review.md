@@ -1,15 +1,15 @@
 # 公開前検査の判定
 
-検査日: 2026-10-15。エラーは免除していない。判定は ERROR 1 件（修正済み）と REVIEW 57 件（受理）です。
+検査日: 2026-10-15。エラーは免除していない。判定は ERROR 1 件（修正済み）と REVIEW 58 件（受理）です。目安箱 Function を追加したあとも ERROR は 0 件で、新しい HTTP_SERVER 1 件を受理した。
 
 | # | レベル | ルール | 場所 | 判定 | 根拠 |
 |---:|---|---|---|---|---|
 | 0 | ERROR | CACHE_BUSTER | public/hihaho-widgets/live_stats_overlay3.html:157 | fixed | Date.now() を付けた fetch をやめ、同じ URL を cache: no-cache で 30 秒ごとに再検証する。再スキャンで ERROR は 0 件。 |
 | 1 | REVIEW | PUBLIC_READ | firestore.rules:51 | accepted | playlists の公開読み取りは hihaho-view / hihaho-player の匿名再生に必要。書き込みは isHihahoEditor() のみ。2026-10-15 にルール本文を確認。 |
 | 2 | REVIEW | PUBLIC_READ | firestore.rules:55 | accepted | video_meta の公開読み取りはサムネイル表示に必要。書き込みは編集者のみで、タイトル等のサイズ上限がある。 |
-| 3 | REVIEW | PUBLIC_READ | firestore.rules:364 | accepted | hihaho-material は Chrome 拡張の一覧取得のため公開読み取り。作成・更新・削除は確認済みの編集者のみで、type と tags の上限がある。 |
-| 4 | REVIEW | PUBLIC_READ | firestore.rules:418 | accepted | hondoko-config/sharing の公開読み取りは link/public の未ログイン閲覧判定に必要。書き込みは確認済みオーナーのみ。viewers のメールが見える残リスクは docs/anonymous-user-impact.md に記載。 |
-| 5 | REVIEW | HTTP_SERVER | functions/hondoko.js:1 | accepted | hondokoAnalyze は getGuard().authorize と reserve を通す。Amazon/NDL/Cover は ID トークンとメンバー判定のあとだけ外部APIを呼ぶ。2026-10-15 の functions 試験 40 件で未認証の有料呼び出しは 0。 |
+| 3 | REVIEW | PUBLIC_READ | firestore.rules:341 | accepted | hihaho-material は Chrome 拡張の一覧取得のため公開読み取り。作成・更新・削除は確認済みの編集者のみで、type と tags の上限がある。 |
+| 4 | REVIEW | PUBLIC_READ | firestore.rules:395 | accepted | hondoko-config/sharing の公開読み取りは link/public の未ログイン閲覧判定に必要。書き込みは確認済みオーナーのみ。viewers のメールが見える残リスクは docs/anonymous-user-impact.md に記載。 |
+| 5 | REVIEW | HTTP_SERVER | functions/hondoko.js:1 | accepted | hondokoAnalyze は getGuard().authorize と reserve を通す。Amazon/NDL/Cover は ID トークンとメンバー判定のあとだけ外部APIを呼ぶ。2026-10-15 の functions 試験で未認証の有料呼び出しは 0。 |
 | 6 | REVIEW | HTTP_SERVER | functions/index.js:1 | accepted | anthropicProxy / realtimeToken / interpreterCall は authorize と reserve の成功前にプロバイダを呼ばない。assetServe は GET/HEAD、パス検証、Cache-Control と ETag。endpoint-denials 試験で拒否を確認。 |
 | 7 | REVIEW | HTTP_SERVER | functions/mini-me.js:1 | accepted | miniMeGenerate は authorize と reserve を要求。Checkout は許可オリジンとサーバー側の価格計算。Webhook は Stripe 署名検証。生成APIの未認証呼び出しは試験で拒否。 |
 | 8 | REVIEW | DB_LISTENER | hondoko-src/src/App.tsx:60 | accepted | hondoko-config/sharing の単一ドキュメント購読。useEffect が unsubscribe を返す。link/public 判定に必要。 |
@@ -20,15 +20,15 @@
 | 13 | REVIEW | DB_LISTENER | hondoko-src/src/App.tsx:110 | accepted | hondoko-maps の購読。同じ cleanup。 |
 | 14 | REVIEW | DB_LISTENER | hondoko-src/src/App.tsx:113 | accepted | hondoko-comments の購読。同じ cleanup。 |
 | 15 | REVIEW | DB_LISTENER | hondoko-src/src/App.tsx:116 | accepted | hondoko-reviews の購読。同じ cleanup。 |
-| 16 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO/index.html:785 | accepted | users/{uid}/projects を type==routine で購読し unsub する。本人データのみ。 |
-| 17 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO/index.html:1582 | accepted | users/{uid} 配下の categories 単一ドキュメント。useEffect が unsub する。 |
-| 18 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO/index.html:1603 | accepted | users/{uid}/tasks の購読。unsubscribe を保持する。他人のタスクはルールで拒否。 |
-| 19 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO_dev/index.html:4673 | accepted | 開発版の routine projects。users/{uid}/projects に限定し unsub する。 |
-| 20 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO_dev/index.html:5157 | accepted | 開発版の categories 単一ドキュメント。unsub あり。 |
-| 21 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO_dev/index.html:5202 | accepted | 開発版の projects 購読。users/{uid}/projects。unsub あり。 |
-| 22 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO_dev/index.html:5210 | accepted | 開発版の enhancedRequests 単一ドキュメント。unsub あり。 |
-| 23 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO_dev/index.html:5327 | accepted | fst_admin/broadcast にルールの許可が無く、末尾の拒否に落ちる。未ログインへデータを配らない。リスナーは失敗して読み取りが増え続けない。 |
-| 24 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO_dev/index.html:5529 | accepted | 開発版の users/{uid}/tasks。unsubscribe を保持する。 |
+| 16 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO/index.html:801 | accepted | users/{uid}/projects を type==routine で購読し unsub する。本人データのみ。 |
+| 17 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO/index.html:1598 | accepted | users/{uid} 配下の categories 単一ドキュメント。useEffect が unsub する。 |
+| 18 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO/index.html:1619 | accepted | users/{uid}/tasks の購読。unsubscribe を保持する。他人のタスクはルールで拒否。 |
+| 19 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO_dev/index.html:4714 | accepted | 開発版の routine projects。users/{uid}/projects に限定し unsub する。 |
+| 20 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO_dev/index.html:5198 | accepted | 開発版の categories 単一ドキュメント。unsub あり。 |
+| 21 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO_dev/index.html:5243 | accepted | 開発版の projects 購読。users/{uid}/projects。unsub あり。 |
+| 22 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO_dev/index.html:5251 | accepted | 開発版の enhancedRequests 単一ドキュメント。unsub あり。 |
+| 23 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO_dev/index.html:5368 | accepted | fst_admin/broadcast にルールの許可が無く、末尾の拒否に落ちる。未ログインへデータを配らない。リスナーは失敗して読み取りが増え続けない。 |
+| 24 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO_dev/index.html:5570 | accepted | 開発版の users/{uid}/tasks。unsubscribe を保持する。 |
 | 25 | REVIEW | HTTP_SERVER | public/ai-meeting/worker/src/worker.js:1 | accepted | この Worker は Firebase ではなく Cloudflare。共有トークンがないと Anthropic へ中継しない。GCP の 1,000 円停止の対象外なので、Anthropic 側の支出上限は人間が別途設定する。 |
 | 26 | REVIEW | DB_QUERY | public/app-dashboard/index.html:167 | accepted | apps 一覧。ルールは canShare(apps__registry) が必要で、未ログインは拒否。件数は社内のアプリ台帳規模。 |
 | 27 | REVIEW | DB_QUERY | public/app-dashboard/index.html:173 | accepted | インデックスが無いときの apps 全件取得。同じ認証と grant が必要。公開コレクションではない。 |
@@ -62,3 +62,4 @@
 | 55 | REVIEW | PUBLIC_READ | storage.rules:38 | accepted | logos はプレイリストのロゴ。公開読み取り、確認済み編集者のみ書き込み、2MB 未満の画像。 |
 | 56 | REVIEW | PUBLIC_READ | storage.rules:47 | accepted | hihaho-material の実ファイルは公開読み取り。書き込みは確認済み編集者、30MB 未満。配信関数 assetServe は GET/HEAD と ETag のみ。 |
 | 57 | REVIEW | PUBLIC_READ | storage.rules:56 | accepted | hondoko の棚写真は共有リンク閲覧のため公開読み取り。書き込みは確認済みアカウントの 10MB 未満の画像。 |
+| 58 | REVIEW | HTTP_SERVER | functions/fst-feedback.js:1 | accepted | 目安箱の submit / update は確認済みアカウントと App Check を要求する。1分5件・1日50件はトランザクションで数え、失敗時は保存しない。有料APIは呼ばない。クライアントの Firestore 直書きはルールで拒否。 |

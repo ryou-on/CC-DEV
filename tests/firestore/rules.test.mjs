@@ -294,17 +294,29 @@ describe('anonymous sign-in cannot use shared Flight Strip or coco-itta data', (
     await assertFails(setDoc(doc(writer(), 'users/stranger/tasks/t'), { title: '他人' }));
   });
 
-  test('feedback and the counter stay inside the verified account', async () => {
-    await assertFails(setDoc(doc(anonAuth(), 'fst_feedback_meta/counter'), { count: 1 }));
-    await assertSucceeds(setDoc(doc(writer(), 'fst_feedback_meta/counter'), { count: 1 }));
-    await assertSucceeds(updateDoc(doc(writer(), 'fst_feedback_meta/counter'), { count: 2 }));
-    await assertFails(updateDoc(doc(writer(), 'fst_feedback_meta/counter'), { count: 9 }));
-    await assertFails(setDoc(doc(anonAuth(), 'fst_feedback/FB_0001'), { ...feedback, uid: 'anon-user' }));
-    await assertSucceeds(setDoc(doc(writer(), 'fst_feedback/FB_0001'), feedback));
-    await assertSucceeds(updateDoc(doc(writer(), 'fst_feedback/FB_0001'), { replySent: true }));
+  test('clients cannot write feedback, the counter, or rate-limit state', async () => {
+    await env.withSecurityRulesDisabled(async (c) => {
+      const db = c.firestore();
+      await setDoc(doc(db, 'fst_feedback/FB_0001'), { ...feedback, status: 'unreviewed' });
+      await setDoc(doc(db, 'fst_feedback_meta/counter'), { count: 1 });
+      await setDoc(doc(db, 'fst_feedback_limits/abc'), { minuteCount: 1 });
+    });
+    for (const db of [anon(), anonAuth(), writer(), editor(), unverifiedEditor()]) {
+      await assertFails(setDoc(doc(db, 'fst_feedback/FB_0002'), { ...feedback, status: 'unreviewed' }));
+      await assertFails(updateDoc(doc(db, 'fst_feedback/FB_0001'), { status: 'resolved', replySent: true }));
+      await assertFails(deleteDoc(doc(db, 'fst_feedback/FB_0001')));
+      await assertFails(setDoc(doc(db, 'fst_feedback_meta/counter'), { count: 2 }));
+      await assertFails(updateDoc(doc(db, 'fst_feedback_meta/counter'), { count: 2 }));
+      await assertFails(setDoc(doc(db, 'fst_feedback_limits/abc'), { minuteCount: 2 }));
+    }
     await assertFails(getDocs(query(collection(anonAuth(), 'fst_feedback'))));
-    await assertSucceeds(getDocs(query(collection(editor(), 'fst_feedback'))));
     await assertFails(getDocs(query(collection(unverifiedEditor(), 'fst_feedback'))));
+    await assertSucceeds(getDocs(query(collection(editor(), 'fst_feedback'))));
+    await assertSucceeds(getDoc(doc(writer(), 'fst_feedback/FB_0001')));
+    await assertFails(getDoc(doc(stranger(), 'fst_feedback/FB_0001')));
+    await assertFails(getDoc(doc(anonAuth(), 'fst_feedback/FB_0001')));
+    await assertFails(getDoc(doc(writer(), 'fst_feedback_meta/counter')));
+    await assertFails(getDoc(doc(editor(), 'fst_feedback_limits/abc')));
   });
 
   test('coco-itta groups reject anonymous auth and keep join-by-id for verified users', async () => {
@@ -341,6 +353,19 @@ describe('email checks require a verified address', () => {
     await assertFails(getDoc(doc(unverifiedEditor(), 'meiyusha-estimate/prices')));
     await assertFails(getDoc(doc(anonAuth(), 'meiyusha-estimate/prices')));
     await assertSucceeds(getDoc(doc(editor(), 'meiyusha-estimate/prices')));
+    const meiyusha = env.authenticatedContext('meiyusha-shared', {
+      email: 'meiyusha@meiyusha-estimate.app',
+      email_verified: true,
+      firebase: { sign_in_provider: 'password' },
+    }).firestore();
+    const meiyushaUnverified = env.authenticatedContext('meiyusha-unverified', {
+      email: 'meiyusha@meiyusha-estimate.app',
+      email_verified: false,
+      firebase: { sign_in_provider: 'password' },
+    }).firestore();
+    await assertSucceeds(getDoc(doc(meiyusha, 'meiyusha-estimate/prices')));
+    await assertFails(getDoc(doc(meiyushaUnverified, 'meiyusha-estimate/prices')));
+    await assertFails(setDoc(doc(meiyusha, 'meiyusha-estimate/prices'), { unit: 2 }));
   });
 
   test('hondoko owner and member checks ignore unverified email', async () => {
