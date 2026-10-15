@@ -2,66 +2,73 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // hihaho 編集者 = @splineglobal.com ドメイン or 許可リストのGoogleアカウント
-    // （hihaho-admin / hihaho-kb-admin / hihaho-material 共通）
+    // 共有データは確認済みのログインと accessGrants が必要。共有コードだけでは通さない。
+    // プラットフォーム管理者はカスタムクレーム admin=true、または Admin SDK だけが書ける admins/{uid}。
+    // UID をルールへ直書きしない。手順は docs/admin-access.md。
+    function verifiedAccount() {
+      return request.auth != null && request.auth.token.email_verified == true
+        && request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
+    function isPlatformAdmin() {
+      return verifiedAccount() && (
+        request.auth.token.admin == true ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+    function canShare(scope, write) {
+      let path = /databases/$(database)/documents/accessGrants/$(scope);
+      return verifiedAccount() && (isPlatformAdmin() ||
+        (exists(path) && get(path).data.enabled == true &&
+         get(path).data.expiresAt > request.time &&
+         (request.auth.uid in get(path).data.writers ||
+          (!write && request.auth.uid in get(path).data.readers))));
+    }
+    match /admins/{uid} {
+      allow read, write: if false;
+    }
+    match /accessGrants/{scope} {
+      allow read: if isPlatformAdmin();
+      allow write: if false;
+    }
+
     function isHihahoEditor() {
       return request.auth != null && (
         request.auth.token.email.matches('.*@splineglobal[.]com') ||
         request.auth.token.email == 'junpei.omote@gmail.com'
       );
     }
-
-    // 認証なし書き込みの共通ヘルパー
-    // 書き込み前のデータ（作成時は空 map）
     function prevData() {
       return resource == null ? {} : resource.data;
     }
-    // 今回の書き込みで値が変わるキー（作成時は全キー）
-    // 値の検証は変更キーだけに掛ける → 既存ドキュメントの古いフィールドで更新が弾かれない
     function changedKeys() {
       return request.resource.data.diff(prevData()).affectedKeys();
     }
-    // 0 以上の数値（再生数・閲覧数など）
     function isCount(v) {
       return v is number && v >= 0 && v < 10000000000;
     }
 
-    // プレイリスト：読み取りは公開（hihaho-view / hihaho-player が匿名で読む）・書き込みは編集者のみ
     match /playlists/{id} {
       allow read: if true;
       allow write: if isHihahoEditor();
     }
-
-    // サムネイルメタ：読み取りは公開・書き込みは編集者のみ（hihaho-admin からのみ更新）
     match /video_meta/{id} {
       allow read: if true;
       allow write: if isHihahoEditor();
     }
 
-    // Flight Strip TODO: ユーザー自身のデータのみ（tasks + meta 配下すべて）
     match /users/{userId}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
-
-    // Flight Strip TODO Analytics: 認証ユーザーは読み書き可
     match /fst_analytics/{docId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
+      allow read, write: if request.auth != null;
     }
-
-    // フィードバック: 認証ユーザーは書き込み可、読み取りは認証ユーザーのみ
     match /fst_feedback/{docId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
+      allow read, write: if request.auth != null;
     }
-
-    // フィードバック連番カウンター
     match /fst_feedback_meta/{docId} {
       allow read, write: if request.auth != null;
     }
 
-    // App Dashboard: ログインなしの管理画面（public/app-dashboard）
-    // フィールドは submitForm()/_rate() が書くものだけ。削除は画面の削除ボタンが使うため許可
     function appFieldsOk(d, ch) {
       return d.keys().hasOnly(['name','type','version','status','url','icon','env','releaseNote','docs','rating','updatedAt'])
         && (!ch.hasAny(['name'])        || (d.name is string && d.name.size() > 0 && d.name.size() <= 200))
@@ -77,35 +84,32 @@ service cloud.firestore {
         && (!ch.hasAny(['updatedAt'])   || d.updatedAt == request.time);
     }
     match /apps/{id} {
-      allow read: if true;
-      allow create: if request.resource.data.keys().hasAll(['name','updatedAt'])
+      allow read: if canShare('apps__registry', false);
+      allow create: if canShare('apps__registry', true)
+        && request.resource.data.keys().hasAll(['name','updatedAt'])
         && appFieldsOk(request.resource.data, changedKeys());
-      allow update: if appFieldsOk(request.resource.data, changedKeys());
-      allow delete: if true;
+      allow update: if canShare('apps__registry', true)
+        && appFieldsOk(request.resource.data, changedKeys());
+      allow delete: if canShare('apps__registry', true);
     }
 
-    // ともえホーム: アプリリスト共有（認証不要）
     match /tomoe-home/{docId} {
-      allow read: if true;
-      allow write: if
+      allow read: if canShare('tomoe-home__' + docId, false);
+      allow write: if canShare('tomoe-home__' + docId, true) &&
         request.resource.data.keys().hasOnly(['apps']) &&
         request.resource.data.apps is list &&
         request.resource.data.apps.size() <= 50;
     }
 
-    // おうち巴寿司: 家族コードを知っている人同士で音声・画像を共有
-    // ouchi-hamasushi/{familyCode}/assets/{assetKey}
-    // assetKey は voice_otousan_まぐろ / image_avatar_okasan などの形式
-    // cloud-store.js の setAsset()/removeAsset() が書くキー・フィールドだけ受け付け
     function isOuchiAssetPath(familyCode, assetKey) {
       return familyCode.size() <= 64
         && assetKey.size() <= 200
         && assetKey.matches('(voice|image)_.+');
     }
     match /ouchi-hamasushi/{familyCode}/assets/{assetKey} {
-      allow read: if true;
-      // data URI 1件 <= 950KB（クライアント上限 900KB）
-      allow create, update: if isOuchiAssetPath(familyCode, assetKey)
+      allow read: if canShare('ouchi-hamasushi__' + familyCode, false);
+      allow create, update: if canShare('ouchi-hamasushi__' + familyCode, true)
+        && isOuchiAssetPath(familyCode, assetKey)
         && request.resource.data.keys().hasOnly(['data','mimeType','size','updatedAt'])
         && request.resource.data.keys().hasAll(['data','mimeType','size','updatedAt'])
         && request.resource.data.data is string
@@ -117,14 +121,13 @@ service cloud.firestore {
         && request.resource.data.size >= 0
         && request.resource.data.size <= 950000
         && request.resource.data.updatedAt == request.time;
-      // 管理画面の録音・画像の削除ボタンが使う
-      allow delete: if isOuchiAssetPath(familyCode, assetKey);
+      allow delete: if canShare('ouchi-hamasushi__' + familyCode, true)
+        && isOuchiAssetPath(familyCode, assetKey);
     }
 
-    // note-analytics: 個人分析ツール（パスワード不要・userId ベースのアクセス）
-    // 書き込みは saveSnapshot() の note-analytics/{userId}/snapshots/{YYYYMMDD} のみ
     match /note-analytics/{userId}/{document=**} {
-      allow read: if true;
+      allow read: if canShare('note-analytics__' + userId, false);
+      allow write: if false;
     }
     function noteSnapshotOk(d, ch, snapId) {
       return ch.hasOnly(['weekStart','views','likes','followers','comments','articles','source','createdAt','updatedAt'])
@@ -141,25 +144,22 @@ service cloud.firestore {
         && (!ch.hasAny(['updatedAt']) || d.updatedAt == request.time);
     }
     match /note-analytics/{userId}/snapshots/{snapId} {
-      allow create, update: if userId.size() <= 100
+      allow read: if canShare('note-analytics__' + userId, false);
+      allow create, update: if canShare('note-analytics__' + userId, true)
+        && userId.size() <= 100
         && snapId.matches('[0-9]{8}')
         && noteSnapshotOk(request.resource.data, changedKeys(), snapId);
-      // 一覧表の削除ボタンが使う
-      allow delete: if snapId.matches('[0-9]{8}');
+      allow delete: if canShare('note-analytics__' + userId, true)
+        && snapId.matches('[0-9]{8}');
     }
 
-    // COCO-ITTA: 家族でグループ共有（ログインユーザーのみ）
-    // groupId はランダム6文字コードで共有。認証必須で読み書き許可
     match /groups/{groupId} {
       allow read, write: if request.auth != null;
     }
 
-    // BOMBING BAY: 匿名ランキング＆プレイログ（認証なし・作成のみ・改ざん不可）
-    // bombing-bay/global/plays/{id}   … 1プレイ=1ドキュメント
-    // bombing-bay/global/players/{pid} … 1端末=1ドキュメント（人数カウント用）
     match /bombing-bay/global/plays/{id} {
-      allow read: if true;
-      allow create: if
+      allow read: if canShare('bombing-bay__global', false);
+      allow create: if canShare('bombing-bay__global', true) &&
         request.resource.data.keys().hasOnly(['pid','name','map','score','destroyed','timeSec','result','startedAt','ua','endedAt']) &&
         request.resource.data.pid is string && request.resource.data.pid.size() <= 32 &&
         request.resource.data.name is string && request.resource.data.name.size() <= 10 &&
@@ -170,23 +170,20 @@ service cloud.firestore {
       allow update, delete: if false;
     }
     match /bombing-bay/global/players/{pid} {
-      allow read: if true;
-      allow create: if request.resource.data.keys().hasOnly(['createdAt', 'ua']);
+      allow read: if canShare('bombing-bay__global', false);
+      allow create: if canShare('bombing-bay__global', true) && request.resource.data.keys().hasOnly(['createdAt', 'ua']);
       allow update, delete: if false;
     }
 
-    // ともえプレイヤー: YouTube 動画リスト共有（認証不要・最大100本）
     match /tomoe-player/{listId} {
-      allow read: if true;
-      allow write: if
+      allow read: if canShare('tomoe-player__' + listId, false);
+      allow write: if canShare('tomoe-player__' + listId, true) &&
         request.resource.data.keys().hasOnly(['videos','sources','updatedAt','name']) &&
         request.resource.data.videos is list &&
         request.resource.data.videos.size() <= 100;
-
-      // 視聴ログ: 1再生=1ドキュメント（認証不要・フィールド検証あり・削除は保護者向けに許可）
       match /sessions/{sessionId} {
-        allow read: if true;
-        allow create, update: if
+        allow read: if canShare('tomoe-player__' + listId, false);
+        allow create, update: if canShare('tomoe-player__' + listId, true) &&
           request.resource.data.keys().hasOnly(['videoId','title','startedAt','day','dow','hour','watchSec','maxPos','duration','completed','endReason','endedAt','device','startReason']) &&
           request.resource.data.videoId is string && request.resource.data.videoId.size() <= 20 &&
           request.resource.data.title is string && request.resource.data.title.size() <= 200 &&
@@ -196,32 +193,24 @@ service cloud.firestore {
           request.resource.data.hour is number && request.resource.data.hour >= 0 && request.resource.data.hour <= 23 &&
           request.resource.data.watchSec is number && request.resource.data.watchSec >= 0 && request.resource.data.watchSec <= 86400 &&
           request.resource.data.completed is bool;
-        allow delete: if true;
+        allow delete: if canShare('tomoe-player__' + listId, true);
       }
     }
 
-    // hihaho アナリティクス: プレイリスト表示・動画再生カウント（hihaho-view が認証なしで +1 する）
-    // カウンタは +1 のみ・時刻はサーバー時刻のみ・削除は編集者のみ
     match /playlist_analytics/{id} {
-      allow read: if true;
-      // trackPlaylistView(): { viewCount: increment(1), lastViewed: serverTimestamp() }
-      allow create: if request.resource.data.keys().hasOnly(['viewCount','lastViewed'])
+      allow read: if canShare('hihaho-analytics__global', false) || isHihahoEditor();
+      allow create: if canShare('hihaho-analytics__global', true)
+        && request.resource.data.keys().hasOnly(['viewCount','lastViewed'])
         && request.resource.data.viewCount == 1
         && request.resource.data.lastViewed == request.time
         && exists(/databases/$(database)/documents/playlists/$(id));
-      allow update: if changedKeys().hasOnly(['viewCount','lastViewed'])
+      allow update: if canShare('hihaho-analytics__global', true)
+        && changedKeys().hasOnly(['viewCount','lastViewed'])
         && request.resource.data.viewCount == resource.data.viewCount + 1
         && request.resource.data.lastViewed == request.time;
       allow delete: if isHihahoEditor();
     }
 
-    // trackVideoPlay(): set({ playCount: increment(1), lastPlayed: serverTimestamp(), videoId,
-    //   'playlists.<playlistId>': increment(1) }, { merge: true })
-    // set() はドット入りキーをパス解釈しないため、'playlists.<id>' はトップレベルのフィールド名になる。
-    // キー名が動的なので、今回変わったプレイリストキー（最大1つ）を次の方法で特定して +1 か検証する
-    //   新規キー: keys().removeAll(既存キー) で取り出す
-    //   既存キー: 既存キーのリストを二分探索（slice + hasAny）で絞り込む（最大 128 キー）
-    // ルールは 1 リクエスト 1000 式までなので、キーを 1 つずつ走査する書き方は 20 キー程度で上限に達する
     function vaHas(pk, ex, lo, hi) {
       return lo < pk.size() && ex.hasAny(pk[lo:(hi < pk.size() ? hi : pk.size())]);
     }
@@ -270,21 +259,20 @@ service cloud.firestore {
             || (added.size() == 0 && vaFind128(prev.keys(), extra, d, prev)));
     }
     match /video_analytics/{uuid} {
-      allow read: if true;
-      allow create, update: if videoAnalyticsOk(uuid, request.resource.data, prevData());
+      allow read: if canShare('hihaho-analytics__global', false) || isHihahoEditor();
+      allow create, update: if canShare('hihaho-analytics__global', true)
+        && videoAnalyticsOk(uuid, request.resource.data, prevData());
       allow delete: if isHihahoEditor();
     }
 
-    // Meet Knowledge: チームコードを知っている人同士でQ&Aナレッジを共有
-    // meet-knowledge/{teamCode}/entries/{entryId}
     match /meet-knowledge/{teamCode}/entries/{entryId} {
-      allow read: if true;
-      allow create, update: if
+      allow read: if canShare('meet-knowledge__' + teamCode, false);
+      allow create, update: if canShare('meet-knowledge__' + teamCode, true) &&
         request.resource.data.keys().hasOnly(['question','answer','keywords','category','createdAt','updatedAt','hits','source']) &&
         request.resource.data.question is string && request.resource.data.question.size() <= 500 &&
         request.resource.data.answer is string && request.resource.data.answer.size() <= 5000 &&
         request.resource.data.keywords is list && request.resource.data.keywords.size() <= 20;
-      allow delete: if true;
+      allow delete: if canShare('meet-knowledge__' + teamCode, true);
     }
 
     // hihaho ナレッジベース
@@ -410,8 +398,8 @@ service cloud.firestore {
     // outreach-crm: ワークスペースコードを知っている端末間でリード/成約データを共有
     // outreach-crm/{workspaceCode} 単一ドキュメントに leads 配列を保持
     match /outreach-crm/{workspaceCode} {
-      allow read: if true;
-      allow write: if request.resource.data.keys().hasOnly(['leads','updatedAt'])
+      allow read: if canShare('outreach-crm__' + workspaceCode, false);
+      allow write: if canShare('outreach-crm__' + workspaceCode, true) && request.resource.data.keys().hasOnly(['leads','updatedAt'])
                    && request.resource.data.leads is list
                    && request.resource.data.leads.size() <= 20000;
     }

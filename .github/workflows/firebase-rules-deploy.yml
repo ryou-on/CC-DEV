@@ -19,14 +19,16 @@ on:
       - storage.rules
       - firestore.indexes.json
       - firebase.json
-      - tests/firestore-rules/**
+      - tests/firestore/**
+      - firebase.rules-test.json
   workflow_dispatch:
 jobs:
   deploy_rules:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # ルールの Emulator テストが通らなければデプロイしない（既存アプリの書き込みが本番で弾かれるのを防ぐ）
+      - name: Block unsafe deployment
+        run: python3 scripts/cost_guard.py --root . --check
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -34,11 +36,10 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - name: Test Firestore rules (emulator)
-        working-directory: tests/firestore-rules
+      - name: Test Firestore rules (auth required, emulator only)
         run: |
-          npm ci
-          npm test
+          npm ci --ignore-scripts --prefix tests/firestore
+          npx --yes firebase-tools@15.23.0 emulators:exec --only auth,firestore --project demo-cc-dev-cost --config firebase.rules-test.json "npm --prefix tests/firestore test"
       - name: Deploy Firebase Storage & Firestore rules
         env:
           FIREBASE_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_CC_DEV_PS7 }}

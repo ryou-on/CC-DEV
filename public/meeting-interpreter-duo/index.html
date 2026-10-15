@@ -34,6 +34,7 @@
   .release-ver-tag { font-size:13px; font-weight:700; color:#c9a84c; white-space:nowrap; }
   .release-ver-date { font-size:11px; color:#666; white-space:nowrap; }
 </style>
+<script src="/shared/cost-access.js" defer></script>
 </head>
 <body>
 
@@ -44,7 +45,7 @@
   <div class="flex flex-wrap justify-between items-center gap-3 mb-5">
     <h1 class="text-2xl lg:text-3xl font-bold">
       <span onclick="openHowTo()" style="cursor:pointer;" title="使い方を見る">🎧 Meeting Interpreter Duo</span>
-      <span onclick="openReleaseNotes()" style="cursor:pointer;font-size:12px;color:#c9a84c;font-weight:400;margin-left:8px;opacity:0.85;" title="リリースノート">v0.2.0</span>
+      <span onclick="openReleaseNotes()" style="cursor:pointer;font-size:12px;color:#c9a84c;font-weight:400;margin-left:8px;opacity:0.85;" title="リリースノート">v0.3.0</span>
       <span style="font-weight:400;font-size:13px;color:rgba(255,255,255,0.55);margin-left:10px;">双方向リアルタイム会議通訳</span>
     </h1>
     <div class="flex items-center gap-2">
@@ -199,9 +200,10 @@
 "use strict";
 
 /* ================= version / meta ================= */
-var APP_VERSION = 'v0.2.0';
+var APP_VERSION = 'v0.3.0';
 
 var RELEASE_NOTES = [
+  {"ver": "v0.3.0", "date": "2026-10-05", "changes": ["有料機能にログイン・利用上限・安全停止を追加。 通訳は1回5分を目安に自動停止します。"]},
   { ver: 'v0.2.0', date: '2026-08-12', changes: [
     '接続が切れたとき自動で再接続（最大3回）',
     '通訳中は画面スリープを防止（Wake Lock）',
@@ -221,6 +223,7 @@ var RELEASE_NOTES = [
     '音声ルーティング設定ガイド内蔵'
   ]}
 ];
+    window.COST_RELEASE_NOTES = RELEASE_NOTES;
 
 var HOW_TO_USE = [
   { heading: '① 事前準備（初回のみ）', text: 'BlackHole 2ch / 16ch をインストールし、Audio MIDI設定で「複数出力装置」（イヤホン + BlackHole 2ch）を作成します。詳細は右上の「🔊 音声ルーティング設定ガイド」を参照。' },
@@ -231,6 +234,7 @@ var HOW_TO_USE = [
   { heading: '⑥ 便利機能', text: '接続が切れても自動で再接続します。通訳中は画面スリープしません。訳の区切りが早すぎる/遅すぎるときは「話し終わり判定」を調整してください。長く話すときは「クリック切替モード」が便利です。' },
   { heading: '⚠️ 注意', text: '会議参加者へAI通訳の利用を伝えてください。OpenAI APIの従量課金が発生します（gpt-realtime-miniで大幅節約可）。' }
 ];
+window.COST_USAGE = HOW_TO_USE.map(x => x.heading + '\n' + x.text.replace(/<[^>]*>/g, '')).join('\n\n');
 
 /* ================= state ================= */
 var els = {};
@@ -568,9 +572,11 @@ function scheduleReconnect(s) {
 
 /* ================= connect / disconnect ================= */
 async function startSession(s, isReconnect) {
-  if (s.running) return;
+  if (s.running || s.connecting) return;
   if (!checkDevices(s)) return;
+  s.connecting = true;
   try {
+    await CostAccess.headers();
     s.userStopped = false;
     if (!isReconnect) s.reconnectAttempts = 0;
     setStatus(s, '接続中...', false, false);
@@ -657,7 +663,7 @@ async function startSession(s, isReconnect) {
     var offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
 
-    var response = await fetch('/api/interpreter-call', {
+    var response = await CostAccess.fetch('/api/interpreter-call', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -669,17 +675,21 @@ async function startSession(s, isReconnect) {
         vad: els.silenceMode.value ? { silence_ms: Number(els.silenceMode.value) } : undefined
       })
     });
-    if (!response.ok) throw new Error(await response.text());
+    if (!response.ok) throw await CostAccess.error(response);
+    var expires = Number(response.headers.get("X-Session-Expires-At"));
+    if (!Number.isSafeInteger(expires) || expires <= Date.now()) throw Error("通訳の停止時刻を確認できませんでした。");
+    s.expiryTimer = setTimeout(function(){ stopSession(s); }, Math.min(300000, expires - Date.now()));
     await pc.setRemoteDescription({ type: 'answer', sdp: await response.text() });
   } catch (e) {
     addLog('接続エラー(' + s.direction + ')', e.message);
     setStatus(s, 'エラー', false, true);
     stopSession(s, false);
     alert('接続できませんでした。\n\n' + e.message);
-  }
+  } finally { s.connecting = false; }
 }
 
 function stopSession(s, updateStatus, forReconnect) {
+  clearTimeout(s.expiryTimer);
   if (updateStatus === undefined) updateStatus = true;
   if (!forReconnect) s.userStopped = true;
   if (s.dc) s.dc.close();
@@ -911,5 +921,6 @@ if (!localStorage.getItem(seenKey)) {
   isUpgrade ? openReleaseNotes() : openHowTo();
 }
 </script>
+<script src="/shared/info-dialog.js" data-name-target="[title=&quot;使い方を見る&quot;]" data-version-target="[title=&quot;リリースノート&quot;]" data-version="v0.3.0" data-manual="Googleでログインし、音声の入出力を設定します。「聞く」は英語から日本語、「話す」は日本語から英語です。各通訳は1回5分を目安に自動停止します。停止後の再開は手動で行ってください。" data-changes="有料機能にログイン・利用上限・安全停止を追加。"></script>
 </body>
 </html>

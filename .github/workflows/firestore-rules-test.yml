@@ -1,30 +1,28 @@
 # firestore.rules の Emulator テスト（PR 時）
-# main への push 時は firebase-rules-deploy.yml がデプロイ前に同じテストを実行する
+# 認証必須の統一スイートは tests/firestore。匿名書き込みを成功させる古い期待は使わない。
 name: Firestore rules test
 on:
   pull_request:
     paths:
       - firestore.rules
-      - tests/firestore-rules/**
+      - tests/firestore/**
+      - firebase.rules-test.json
       - .github/workflows/firestore-rules-test.yml
 permissions:
   contents: read
 jobs:
   test:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: tests/firestore-rules
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: tests/firestore-rules/package-lock.json
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 21
-      - run: npm ci
-      - run: npm test
+      - name: Test Firestore rules (emulator only)
+        run: |
+          npm ci --ignore-scripts --prefix tests/firestore
+          npx --yes firebase-tools@15.23.0 emulators:exec --only auth,firestore --project demo-cc-dev-cost --config firebase.rules-test.json "npm --prefix tests/firestore test"

@@ -6,17 +6,32 @@
 const { onRequest } = require('firebase-functions/v2/https');
 const { setGlobalOptions } = require('firebase-functions/v2');
 
-setGlobalOptions({ region: 'asia-northeast1' });
+setGlobalOptions({ region: 'asia-northeast1', minInstances: 0, maxInstances: 2, concurrency: 8 });
+const { getGuard, sendCostError } = require('./cost-guard');
+const { armExpiry, expireCall } = require('./realtime-cost');
+const { getFunctions } = require('firebase-admin/functions');
+const { onTaskDispatched } = require('firebase-functions/v2/tasks');
+async function protectRealtimeResponse(response, actor, res) {
+  const admin = require('firebase-admin');
+  const expiry = await armExpiry({
+    location: response.headers.get('location'), uid: actor.uid, db: admin.firestore(),
+    enqueue: (data, options) => getFunctions().taskQueue('locations/asia-northeast1/functions/expireRealtimeCall').enqueue(data, options),
+    apiKey: openaiApiKey.value(),
+  });
+  res.set('Cache-Control', 'no-store');
+  res.set('X-Session-Expires-At', String(expiry.expiresAtMs));
+}
+
 
 exports.anthropicProxy = onRequest({
-  cors: true,   // Firebase Functions v2 の CORS 自動付与
+  cors: ['https://cc-dev-ps7.web.app', 'https://cc-dev-ps7.firebaseapp.com'],
   timeoutSeconds: 60,
   memory: '256MiB',
 }, async (req, res) => {
 
   // preflight
-  res.set('Access-Control-Allow-Origin', '*');
-  res.set('Access-Control-Allow-Headers', 'Content-Type, x-api-key, anthropic-version');
+  // CORS is handled by onRequest; authentication is enforced separately.
+  res.set('Access-Control-Allow-Headers', 'Content-Type, x-api-key, anthropic-version, Authorization, X-Firebase-AppCheck');
   res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
   if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
 
@@ -26,6 +41,14 @@ exports.anthropicProxy = onRequest({
   if (!apiKey) { res.status(400).json({ error: 'x-api-key header required' }); return; }
 
   try {
+    const guard = getGuard();
+    const actor = await guard.authorize(req, 'anthropicProxy');
+    const body = req.body || {};
+    if (body.model !== 'claude-sonnet-4-6' || !Array.isArray(body.messages) || body.messages.length > 8 || body.tools ||
+        !Number.isSafeInteger(body.max_tokens) || body.max_tokens < 1 || body.max_tokens > 4096 || body.stream === true) {
+      res.status(400).json({ error: 'INVALID_OUTPUT_LIMIT' }); return;
+    }
+    await guard.reserve(actor);
     const upstream = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -34,13 +57,14 @@ exports.anthropicProxy = onRequest({
         'content-type':     'application/json',
       },
       body: JSON.stringify(req.body),
+      signal: AbortSignal.timeout(45000),
     });
 
     const data = await upstream.json();
+    res.set('Cache-Control', 'no-store');
     res.status(upstream.status).json(data);
   } catch (err) {
-    console.error('proxy error:', err);
-    res.status(500).json({ error: err.message });
+    sendCostError(res, err);
   }
 });
 // ===== Meeting Interpreter: OpenAI Realtime API =====
@@ -72,6 +96,11 @@ exports.realtimeToken = onRequest(
     }
 
     try {
+      const guard = getGuard();
+      const actor = await guard.authorize(req, 'realtime');
+      if (!req.rawBody || !req.rawBody.toString('utf8').startsWith('v=')) {
+        res.status(400).json({ error: 'INVALID_SDP' }); return;
+      }
       const allowedVoices = new Set(['marin', 'cedar']);
       const requestedVoice = req.get('x-meeting-voice');
 
@@ -104,6 +133,7 @@ exports.realtimeToken = onRequest(
       const session = {
         type: 'realtime',
         model: 'gpt-realtime',
+        max_output_tokens: 512,
         instructions,
         audio: {
           input: {
@@ -138,6 +168,7 @@ exports.realtimeToken = onRequest(
         JSON.stringify(session)
       );
 
+      await guard.reserve(actor);
       const openaiResponse = await fetch(
         'https://api.openai.com/v1/realtime/calls',
         {
@@ -146,6 +177,7 @@ exports.realtimeToken = onRequest(
             Authorization: `Bearer ${openaiApiKey.value()}`,
           },
           body: form,
+          signal: AbortSignal.timeout(20000),
         }
       );
 
@@ -154,16 +186,17 @@ exports.realtimeToken = onRequest(
       if (!openaiResponse.ok) {
         console.error(
           'OpenAI Realtime API error:',
-          responseBody
+          openaiResponse.status
         );
 
         res
           .status(openaiResponse.status)
-          .send(responseBody);
+          .send('UPSTREAM_ERROR');
 
         return;
       }
 
+      await protectRealtimeResponse(openaiResponse, actor, res);
       res.set(
         'Content-Type',
         'application/sdp'
@@ -173,16 +206,7 @@ exports.realtimeToken = onRequest(
         .status(200)
         .send(responseBody);
     } catch (error) {
-      console.error(
-        'realtimeToken error:',
-        error
-      );
-
-      res
-        .status(500)
-        .send(
-          error.message || 'サーバーエラー'
-        );
+      sendCostError(res, error);
     }
   }
 );
@@ -270,6 +294,7 @@ exports.interpreterCall = onRequest(
 
     const session = {
       type: 'realtime',
+      max_output_tokens: 512,
       model,
       instructions,
       audio: {
@@ -292,10 +317,13 @@ exports.interpreterCall = onRequest(
     };
 
     try {
+      const guard = getGuard();
+      const actor = await guard.authorize(req, 'realtime');
       const form = new FormData();
       form.set('sdp', sdp);
       form.set('session', JSON.stringify(session));
 
+      await guard.reserve(actor);
       const openaiResponse = await fetch(
         'https://api.openai.com/v1/realtime/calls',
         {
@@ -304,22 +332,23 @@ exports.interpreterCall = onRequest(
             Authorization: `Bearer ${openaiApiKey.value()}`,
           },
           body: form,
+          signal: AbortSignal.timeout(20000),
         }
       );
 
       const responseBody = await openaiResponse.text();
 
       if (!openaiResponse.ok) {
-        console.error('interpreterCall OpenAI error:', responseBody);
-        res.status(openaiResponse.status).send(responseBody);
+        console.error('interpreterCall OpenAI error:', openaiResponse.status);
+        res.status(502).send('UPSTREAM_ERROR');
         return;
       }
 
+      await protectRealtimeResponse(openaiResponse, actor, res);
       res.set('Content-Type', 'application/sdp');
       res.status(200).send(responseBody);
     } catch (error) {
-      console.error('interpreterCall error:', error);
-      res.status(500).json({ error: error.message || 'サーバーエラー' });
+      sendCostError(res, error);
     }
   }
 );
@@ -348,6 +377,7 @@ const SERVE_MIME = {
 };
 
 exports.assetServe = onRequest({ timeoutSeconds: 30, memory: '256MiB' }, async (req, res) => {
+  if (!['GET', 'HEAD'].includes(req.method)) { res.set('Allow', 'GET, HEAD'); res.status(405).end(); return; }
   try {
     const m = /^\/e\/([a-z0-9]{4,40})(\/(.*))?$/.exec((req.path || '').split('?')[0]);
     if (!m) { res.status(404).send('Not Found'); return; }
@@ -361,15 +391,17 @@ exports.assetServe = onRequest({ timeoutSeconds: 30, memory: '256MiB' }, async (
     if (sub.includes('..') || sub.startsWith('/')) { res.status(400).send('Bad Request'); return; }
 
     const file = admin.storage().bucket(ASSET_BUCKET).file(`hihaho-material/${id}/${sub}`);
-    const [exists] = await file.exists();
-    if (!exists) { res.status(404).send('Not Found'); return; }
-
-    const [meta] = await file.getMetadata();
+    let meta;
+    try { [meta] = await file.getMetadata(); }
+    catch (e) { if (e.code === 404) { res.status(404).send('Not Found'); return; } throw e; }
     const ext = (sub.match(/\.([A-Za-z0-9]+)$/) || [, ''])[1].toLowerCase();
     const type = SERVE_MIME[ext] || meta.contentType || 'application/octet-stream';
 
     res.set('Content-Type', type);
-    res.set('Cache-Control', 'public, max-age=60, s-maxage=60');
+    res.set('Cache-Control', 'public, max-age=60, s-maxage=300');
+    const etag = `"${meta.generation}"`;
+    res.set('ETag', etag);
+    if (req.get('if-none-match') === etag) { res.status(304).end(); return; }
     res.set('Access-Control-Allow-Origin', '*');
     res.set('X-Content-Type-Options', 'nosniff');
     // iFrame 埋め込み前提なので X-Frame-Options / CSP frame-ancestors は付けない
@@ -403,3 +435,12 @@ exports.hondokoAnalyze = hondoko.hondokoAnalyze;
 exports.hondokoAmazon = hondoko.hondokoAmazon;
 exports.hondokoCover = hondoko.hondokoCover;
 exports.hondokoNdl = hondoko.hondokoNdl;
+
+
+// Private Cloud Tasks handler. Must be deployed and smoke-tested before enabling realtime.
+exports.expireRealtimeCall = onTaskDispatched({
+  region: 'asia-northeast1', secrets: [openaiApiKey], invoker: 'private',
+  timeoutSeconds: 30, maxInstances: 1, concurrency: 1,
+  retryConfig: { maxAttempts: 5, minBackoffSeconds: 5, maxBackoffSeconds: 30 },
+  rateLimits: { maxConcurrentDispatches: 2, maxDispatchesPerSecond: 2 },
+}, async req => expireCall({ data: req.data, db: admin.firestore(), apiKey: openaiApiKey.value() }));

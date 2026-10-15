@@ -9,6 +9,7 @@
 const { onRequest } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
 const admin = require('firebase-admin');
+const { getGuard, sendCostError } = require('./cost-guard');
 // @anthropic-ai/sdk はデプロイ時のコード解析タイムアウト回避のため遅延読み込み
 
 if (!admin.apps.length) admin.initializeApp();
@@ -317,12 +318,13 @@ exports.hondokoCover = onRequest({
 
 exports.hondokoAnalyze = onRequest({
   cors: true,
-  timeoutSeconds: 540,
+  timeoutSeconds: 180,
+  minInstances: 0, maxInstances: 2, concurrency: 2,
   memory: '1GiB',
   secrets: [anthropicApiKey],
 }, async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Firebase-AppCheck');
   res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
   if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
   if (req.method !== 'POST') { res.status(405).json({ error: 'POST only' }); return; }
@@ -343,20 +345,31 @@ exports.hondokoAnalyze = onRequest({
       res.status(403).json({ error: 'このアプリの利用が許可されていません' }); return;
     }
 
+    const actor = await getGuard().authorize(req, 'hondokoAnalyze');
+
     // --- 入力 ---
     const { image, mediaType, map, mode } = req.body || {};
     if (!image || typeof image !== 'string') {
       res.status(400).json({ error: 'image (base64) が必要です' }); return;
     }
-    if (image.length > 12_000_000) {
+    if (image.length > 6_000_000) {
       res.status(413).json({ error: '画像が大きすぎます。クライアント側でリサイズしてください' }); return;
     }
+    if (map && (typeof map.image !== 'string' || map.image.length > 1_500_000 ||
+        !Array.isArray(map.regions) || map.regions.length > 200)) {
+      res.status(413).json({ error: 'MAP_TOO_LARGE' }); return;
+    }
+    if (mode === 'locate_book' && (typeof req.body.title !== 'string' || req.body.title.length > 300 ||
+        (req.body.author && (typeof req.body.author !== 'string' || req.body.author.length > 200)))) {
+      res.status(400).json({ error: 'INVALID_BOOK_INPUT' }); return;
+    }
+    await getGuard().reserve(actor);
     const mt = ['image/jpeg', 'image/png', 'image/webp'].includes(mediaType) ? mediaType : 'image/jpeg';
 
     // --- モード: マップ写真から段の矩形を自動検出 ---
     if (mode === 'detect_regions') {
       const Anthropic = require('@anthropic-ai/sdk');
-      const client = new Anthropic({ apiKey: anthropicApiKey.value() });
+      const client = new Anthropic({ apiKey: anthropicApiKey.value(), maxRetries: 0, timeout: 150000 });
       const t0 = Date.now();
       const response = await client.messages.create({
         model: 'claude-opus-5',
@@ -424,7 +437,7 @@ exports.hondokoAnalyze = onRequest({
         res.status(400).json({ error: 'title が必要です' }); return;
       }
       const Anthropic = require('@anthropic-ai/sdk');
-      const client = new Anthropic({ apiKey: anthropicApiKey.value() });
+      const client = new Anthropic({ apiKey: anthropicApiKey.value(), maxRetries: 0, timeout: 150000 });
       const t0 = Date.now();
       const response = await client.messages.create({
         model: 'claude-sonnet-5',
@@ -502,11 +515,11 @@ exports.hondokoAnalyze = onRequest({
 
     // --- Claude Vision 解析 (長い出力に備えてストリーミングで受ける) ---
     const Anthropic = require('@anthropic-ai/sdk');
-    const client = new Anthropic({ apiKey: anthropicApiKey.value() });
+    const client = new Anthropic({ apiKey: anthropicApiKey.value(), maxRetries: 0, timeout: 150000 });
     const t0 = Date.now();
     const stream = client.messages.stream({
       model: 'claude-opus-5',
-      max_tokens: 32000,
+      max_tokens: 8000,
       system: ANALYZE_SYSTEM,
       output_config: { format: { type: 'json_schema', schema: RESULT_SCHEMA } },
       messages: [{ role: 'user', content }],
@@ -538,7 +551,8 @@ exports.hondokoAnalyze = onRequest({
       },
     });
   } catch (err) {
-    console.error('hondokoAnalyze error:', err);
+    if (err.httpStatus) { sendCostError(res, err); return; }
+    console.error('hondokoAnalyze error:', err.status || 'UPSTREAM_ERROR');
     const status = err.status === 429 ? 429 : 500;
     const msg = err.status === 429
       ? 'APIのレート制限に達しました。少し待ってからお試しください'

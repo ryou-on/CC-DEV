@@ -26,7 +26,7 @@ export function Modal({
       >
         <div className="flex items-center justify-between px-4 py-3 border-b border-stone-200 shrink-0">
           <h2 className="font-bold text-stone-800 text-base truncate">{title}</h2>
-          <button onClick={onClose} className="p-1.5 rounded-full hover:bg-stone-100 text-stone-500">
+          <button aria-label="閉じる" onClick={onClose} className="p-1.5 rounded-full hover:bg-stone-100 text-stone-500">
             <X size={20} />
           </button>
         </div>

@@ -901,7 +901,7 @@ header {
     <div class="logo-bar"></div>
     <img id="logoImg" src="https://hihaho.com/favicon.ico" class="hihaho-logo-img" onerror="this.style.display='none'" alt="hihaho">
     <span id="logoText" onclick="showHowTo()" title="使い方" style="cursor:pointer;border-bottom:1px dotted #9ca3af">hihaho Player</span>
-    <span class="ver-badge" onclick="showReleaseNotes()" title="リリースノート">v1.5.0</span>
+    <span class="ver-badge" onclick="showReleaseNotes()" title="リリースノート">v1.5.1</span>
   </div>
   <div class="search-wrap">
     <span class="search-icon">🔍</span>
@@ -1336,32 +1336,9 @@ function playCountOverlay(videoId) {
 let _analyticsDb = null;
 let _analyticsPlaylistId = null;
 
-function trackPlaylistView(db, playlistId) {
-  if (!playlistId) return;
-  _analyticsDb = db;
-  _analyticsPlaylistId = playlistId;
-  try {
-    db.collection('playlist_analytics').doc(playlistId).set({
-      viewCount: firebase.firestore.FieldValue.increment(1),
-      lastViewed: firebase.firestore.FieldValue.serverTimestamp()
-    }, { merge: true });
-  } catch(e) { /* 無視 */ }
-}
-
-function trackVideoPlay(uuid, videoId) {
-  if (!_analyticsDb || !uuid) return;
-  try {
-    const data = {
-      playCount: firebase.firestore.FieldValue.increment(1),
-      lastPlayed: firebase.firestore.FieldValue.serverTimestamp(),
-      videoId: videoId
-    };
-    if (_analyticsPlaylistId) {
-      data[`playlists.${_analyticsPlaylistId}`] = firebase.firestore.FieldValue.increment(1);
-    }
-    _analyticsDb.collection('video_analytics').doc(uuid).set(data, { merge: true });
-  } catch(e) { /* 無視 */ }
-}
+// 集計書き込みは認証・上限制御したサーバー経由へ移行するまで停止。
+function trackPlaylistView() {}
+function trackVideoPlay() {}
 
 // =========================================================
 // 初期化
@@ -1755,6 +1732,7 @@ function toggleLang() { setLang(_currentLang==='ja'?'en':'ja'); }
 // リリースノート
 // =========================================================
 const RELEASE_NOTES = [
+  {ver:'v1.5.1',date:'2026-10-05',type:'player',ja:['匿名アクセスによる集計データの書き込みを停止しました。'],en:['Disabled anonymous analytics writes.']},
   { ver:'v1.5.0', date:'2026-05-20', type:'player',
     ja:['CTAボタン（お問い合わせ・面談申し込み）を画面上部のヘッダーに移設',
         '解説テキスト内のURLをクリックできるリンクに自動変換',
@@ -2316,5 +2294,7 @@ function closeMeeting() {
     <iframe class="meeting-iframe" id="meetingIframe" src="" loading="lazy" allow="camera; microphone"></iframe>
   </div>
 </div>
+<script>window.COST_RELEASE_NOTES = RELEASE_NOTES;</script>
+<script src="/shared/info-dialog.js" data-name-target="#logoText" data-version-target=".ver-badge" data-version="v1.5.1" data-manual="動画を選んで再生します。課金事故を防ぐため、匿名のアクセス集計の保存を停止しました。" data-changes="匿名アクセスによる集計データの書き込みを停止しました。"></script>
 </body>
 </html>
