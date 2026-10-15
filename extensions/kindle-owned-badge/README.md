@@ -2,8 +2,8 @@
 
 Amazon.co.jp の商品サムネイルに、購入済み・Kindle Unlimited利用済みの「済」バッジを重ねて表示するChrome拡張。
 
-- バージョン: v0.6.1
-- 最終更新: 2026-08-09
+- バージョン: v0.7.0
+- 最終更新: 2026-10-16
 - 配置場所: `extensions/kindle-owned-badge/`（Firebase Hostingへはデプロイされないローカル拡張）
 
 ## 仕組み
@@ -17,7 +17,7 @@ Amazon.co.jp の商品サムネイルに、購入済み・Kindle Unlimited利用
    - 🟦 ティール「済」= Kindle Unlimited / コミックUnlimited / Prime Reading で利用済み
    - 🟣 紫「済」= Kindle Auto Capturer でキャプチャ済み（購入/KUより優先表示。アーカイブ確保済みの意味）
 
-検索結果・カルーセル（おすすめ枠）・商品詳細ページ・Kindleストア本棚ページ（`/kindle-dbs/hz/bookshelf`）に対応。
+検索結果・カルーセル（おすすめ枠）・商品詳細ページ・Kindleストア本棚ページ（`/kindle-dbs/hz/bookshelf`）・Web版Kindleリーダー末尾の「続けて読む」パネル（read.amazon.co.jp）に対応。v0.7.0からバッジスクリプトは `all_frames: true` で動作し、ストア内容を埋め込むiframe内のサムネイルにも付与される。
 
 KindleストアページはShadow DOM（web components）で構築されているため、shadow rootを再帰的にたどってスキャンする。CSSはshadow root内へ届かないためバッジのスタイルは全てインライン指定。書影が `<bds-book-cover-image>` などさらに内側のshadow rootにある場合はアンカー要素自体にバッジを付ける。動的追加へは MutationObserver（通常DOM）＋3秒間隔の定期再スキャン（shadow DOM）で追従する。
 

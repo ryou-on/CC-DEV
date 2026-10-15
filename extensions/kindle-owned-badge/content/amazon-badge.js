@@ -1,4 +1,6 @@
-// Amazon.co.jp の商品サムネイル（検索結果・カルーセル・商品詳細）に所有バッジを重ねる
+// Amazon.co.jp / read.amazon.co.jp の商品サムネイル（検索結果・カルーセル・商品詳細・
+// リーダー末尾の「続けて読む」パネル）に所有バッジを重ねる。
+// all_frames: true で動くため、ストア内容を埋め込むiframe内でも実行される。
 // Kindleストア系ページは Shadow DOM（web components）で構築されているため、
 // shadow root を再帰的にたどってスキャンする。CSSはshadow root内に届かないので全てインラインで指定する。
 'use strict';
@@ -187,7 +189,8 @@ const observer = new MutationObserver(() => {
 chrome.storage.local.get(['ownedItems', 'kuHistoryItems', 'capturedItems']).then((data) => {
   rebuildOwnedMap(data);
   scanAll();
-  observer.observe(document.body, { childList: true, subtree: true });
+  // iframe内（リーダー末尾の「続けて読む」パネル等）ではbody未生成のことがある
+  if (document.body) observer.observe(document.body, { childList: true, subtree: true });
   setInterval(() => {
     if (!document.hidden) scanAll();
   }, 3000);
