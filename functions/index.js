@@ -431,8 +431,6 @@ exports.miniMeWebhook = miniMe.miniMeWebhook;
 // ===== hondoko (本ドコ？): 蔵書管理 =====
 // 実装は functions/hondoko.js。エンドポイント: /api/hondoko-analyze
 const hondoko = require('./hondoko');
-const fstFeedback = require('./fst-feedback');
-exports.fstFeedbackSubmit = fstFeedback.fstFeedbackSubmit;
 exports.hondokoAnalyze = hondoko.hondokoAnalyze;
 exports.hondokoAmazon = hondoko.hondokoAmazon;
 exports.hondokoCover = hondoko.hondokoCover;
@@ -450,5 +448,5 @@ exports.expireRealtimeCall = onTaskDispatched({
 // Flight Strip 目安箱。実装は functions/fst-feedback.js。
 // Hosting: /api/fst-feedback と /api/fst-feedback-update。
 const fstFeedback = require('./fst-feedback');
-exports.submitFstFeedback = fstFeedback.submitFstFeedback;
+exports.fstFeedbackSubmit = fstFeedback.fstFeedbackSubmit;
 exports.updateFstFeedback = fstFeedback.updateFstFeedback;

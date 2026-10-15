@@ -8,6 +8,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-check-compat.js"></script>
   <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone@7.23.10/babel.min.js"></script>
@@ -36,6 +37,34 @@
   firebase.initializeApp(firebaseConfig);
   window._auth = firebase.auth();
   window._db   = firebase.firestore();
+  window.updateFstFeedback = async function (payload) {
+    const user = firebase.auth().currentUser;
+    if (!user || user.isAnonymous || user.emailVerified !== true) {
+      throw new Error('確認済みのアカウントでログインしてください');
+    }
+    if (!window._fstAppCheckReady) {
+      const cfgRes = await fetch('/shared/cost-access-config.json', { cache: 'no-store' });
+      if (!cfgRes.ok) throw new Error('App Check の設定がないため更新できません');
+      const cfg = await cfgRes.json();
+      if (!cfg || !cfg.recaptchaEnterpriseSiteKey) throw new Error('App Check の設定がないため更新できません');
+      firebase.appCheck().activate(new firebase.appCheck.ReCaptchaEnterpriseProvider(cfg.recaptchaEnterpriseSiteKey), true);
+      window._fstAppCheckReady = true;
+    }
+    const appCheckToken = (await firebase.appCheck().getToken(false)).token;
+    const res = await fetch('/api/fst-feedback-update', {
+      method: 'POST',
+      cache: 'no-store',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer ' + await user.getIdToken(),
+        'X-Firebase-AppCheck': appCheckToken,
+      },
+      body: JSON.stringify({ fbId: payload.fbId, status: payload.status, replyText: payload.replyText }),
+    });
+    const body = await res.json().catch(function () { return {}; });
+    if (!res.ok) throw new Error('状態を更新できませんでした');
+    return body;
+  };
 </script>
 <script id="jsx-source" type="text/plain">
   const { useState, useEffect, useMemo } = React;
@@ -235,20 +264,20 @@
 
     const markRead = async (f) => {
       if (!isUnread(f.status)) return;
-      await db.collection('fst_feedback').doc(f.docId).update({ status: 'read' }).catch(()=>{});
-      setFeedbacks(prev => prev.map(x => x.docId === f.docId ? { ...x, status: 'read' } : x));
+      await window.updateFstFeedback({ fbId: f.fbId || f.docId, status: 'reviewed', replyText: f.replyText || '' });
+      setFeedbacks(prev => prev.map(x => x.docId === f.docId ? { ...x, status: 'reviewed' } : x));
     };
 
     const handleToggleSent = async (f) => {
-      const newStatus = f.status === 'replied' ? 'unreviewed' : 'replied';
-      await db.collection('fst_feedback').doc(f.docId).update({
+      const done = f.status === 'replied' || f.status === 'resolved';
+      const newStatus = done ? 'unreviewed' : 'resolved';
+      await window.updateFstFeedback({
+        fbId: f.fbId || f.docId,
         status: newStatus,
-        ...(newStatus === 'replied'
-          ? { replyText: replyText.trim() || f.replyText || '', repliedAt: firebase.firestore.FieldValue.serverTimestamp() }
-          : { repliedAt: null }),
-      }).catch(()=>{});
+        replyText: newStatus === 'resolved' ? (replyText.trim() || f.replyText || '') : (f.replyText || ''),
+      });
       setFeedbacks(prev => prev.map(x => x.docId === f.docId ? { ...x, status: newStatus } : x));
-      if (newStatus === 'replied') { setReplyOpenId(null); setReplyText(''); }
+      if (newStatus === 'resolved') { setReplyOpenId(null); setReplyText(''); }
     };
 
     const handleOpenMailto = (f) => {
@@ -263,12 +292,12 @@
       setReplySending(true); setReplyError('');
       try {
         handleOpenMailto(f);
-        await db.collection('fst_feedback').doc(f.docId).update({
+        await window.updateFstFeedback({
+          fbId: f.fbId || f.docId,
+          status: 'resolved',
           replyText: replyText.trim(),
-          repliedAt: firebase.firestore.FieldValue.serverTimestamp(),
-          status: 'replied',
         });
-        setFeedbacks(prev => prev.map(x => x.docId === f.docId ? { ...x, replyText: replyText.trim(), status: 'replied' } : x));
+        setFeedbacks(prev => prev.map(x => x.docId === f.docId ? { ...x, replyText: replyText.trim(), status: 'resolved' } : x));
         setReplyOpenId(null); setReplyText('');
       } catch(e) { setReplyError('送信に失敗しました: ' + e.message); }
       finally { setReplySending(false); }
@@ -413,7 +442,7 @@ HAVE A NICE TRIP！
           <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
             {feedbacks.map(f => {
               const isNew     = f.status === 'new' || f.status === 'unreviewed';
-              const isReplied = f.status === 'replied';
+              const isReplied = f.status === 'replied' || f.status === 'resolved';
               const buildColor = f.build === 'dev' ? DEV : STABLE;
               const date = f.createdAt?.toDate ? f.createdAt.toDate().toLocaleString('ja-JP') : '---';
               const isOpen = replyOpenId === f.docId;

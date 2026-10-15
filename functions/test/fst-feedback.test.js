@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createGuard } = require('../cost-guard');
-const { createFstFeedbackHandler } = require('../fst-feedback');
+const { createFstFeedbackHandler, createFstFeedbackUpdateHandler } = require('../fst-feedback');
 
 const NOW = Date.parse('2026-10-15T01:00:00Z');
 
@@ -15,10 +15,7 @@ function memoryDb(initial = {}) {
   return {
     records,
     doc(path) {
-      return {
-        path,
-        get: async () => snap(path),
-      };
+      return { path, get: async () => snap(path) };
     },
     runTransaction(fn) {
       const run = queue.then(async () => {
@@ -26,6 +23,7 @@ function memoryDb(initial = {}) {
         const result = await fn({
           get: async ref => snap(ref.path),
           set: (ref, value) => writes.push([ref.path, value]),
+          update: (ref, value) => writes.push([ref.path, { ...records.get(ref.path), ...value }]),
         });
         writes.forEach(([path, value]) => records.set(path, value));
         return result;
@@ -65,14 +63,27 @@ function request(body, headers = {}) {
   };
 }
 
+const payload = {
+  subject: '件名',
+  email: 'user@example.test',
+  message: '本文 <b>そのまま</b>',
+  build: 'stable',
+  appId: 'flight-strip-todo',
+  version: '0.5.17',
+  url: 'https://cc-dev-ps7.web.app/Flight_Strip_TODO/?token=secret#part',
+  faxNumber: '',
+  openedAtMs: NOW - 5000,
+};
+
 function setup(overrides = {}) {
   const db = memoryDb({ 'costControls/global': { enabled: true }, ...overrides.records });
+  const users = overrides.users || { valid: { uid: 'user-1', email: 'user@example.test', email_verified: true, firebase: { sign_in_provider: 'google.com' } } };
   const guard = createGuard({
     db,
     now: () => NOW,
     verifyIdToken: async token => {
-      if (token !== 'valid') throw Error('bad');
-      return { uid: 'user-1', email: 'user@example.test', email_verified: true, firebase: { sign_in_provider: 'google.com' } };
+      if (!users[token]) throw Error('bad');
+      return users[token];
     },
     verifyAppCheck: async token => { if (token !== 'appcheck') throw Error('bad'); },
     ...overrides.guard,
@@ -84,10 +95,13 @@ function setup(overrides = {}) {
     serverTimestamp: () => 'server-time',
     limits: overrides.limits,
   });
-  return { db, handler };
+  const update = createFstFeedbackUpdateHandler({
+    authorize: req => guard.authorize(req, 'fstFeedback'),
+    db,
+    now: () => NOW,
+  });
+  return { db, handler, update };
 }
-
-const payload = { subject: '件名', email: 'user@example.test', message: '本文', build: 'stable', status: 'new' };
 
 test('a verified App Check request is stored as unreviewed and the counter stays on the server', async () => {
   const { db, handler } = setup();
@@ -96,11 +110,25 @@ test('a verified App Check request is stored as unreviewed and the counter stays
   assert.equal(first.statusCode, 201);
   assert.equal(first.body.status, 'unreviewed');
   assert.equal(first.body.fbId, 'FB_0001');
-  assert.equal(db.records.get('fst_feedback/FB_0001').status, 'unreviewed');
-  assert.equal(db.records.get('fst_feedback/FB_0001').uid, 'user-1');
+  assert.equal(first.body.feedbackId, 'FB_0001');
+  const saved = db.records.get('fst_feedback/FB_0001');
+  assert.equal(saved.status, 'unreviewed');
+  assert.equal(saved.uid, 'user-1');
+  assert.equal(saved.message, '本文 <b>そのまま</b>');
+  assert.equal(saved.url, 'https://cc-dev-ps7.web.app/Flight_Strip_TODO/');
+  assert.equal(saved.appId, 'flight-strip-todo');
+  assert.equal(saved.version, '0.5.17');
   assert.equal(db.records.get('fst_feedback_meta/counter').count, 1);
+  assert.equal(JSON.stringify([...db.records.values()]).includes('203.0.113.10'), false);
   const second = response();
-  await handler(request({ ...payload, message: '二つ目', build: 'dev' }), second);
+  await handler(request({
+    ...payload,
+    message: '二つ目',
+    build: 'dev',
+    appId: 'flight-strip-todo-dev',
+    version: '0.10.30-dev',
+    url: 'https://cc-dev-ps7.web.app/Flight_Strip_TODO_dev/',
+  }), second);
   assert.equal(second.body.fbId, 'FB_0002');
   assert.equal(db.records.get('fst_feedback_meta/counter').count, 2);
 });
@@ -121,13 +149,26 @@ test('missing App Check, anonymous auth, and a closed budget do not write feedba
   }
 });
 
-test('oversized text and the per-user rate limit are rejected', async () => {
-  const { db, handler } = setup({ limits: { userHour: 2, userDay: 20, ipHour: 30, ipDay: 100 } });
-  const bad = response();
-  await handler(request({ ...payload, message: 'あ'.repeat(201) }), bad);
-  assert.equal(bad.statusCode, 400);
-  assert.equal(bad.body.error, 'INVALID_FEEDBACK');
+test('unknown fields, honeypot, timing, and overlong text are rejected before a write', async () => {
+  const { db, handler } = setup();
+  for (const body of [
+    { ...payload, status: 'resolved' },
+    { ...payload, faxNumber: 'bot' },
+    { ...payload, openedAtMs: NOW },
+    { ...payload, message: 'あ'.repeat(2001) },
+    { ...payload, url: 'http://cc-dev-ps7.web.app/Flight_Strip_TODO/' },
+    { ...payload, appId: 'flight-strip-todo-dev' },
+  ]) {
+    const res = response();
+    await handler(request(body), res);
+    assert.equal(res.statusCode, 400);
+    assert.equal(res.body.error, 'INVALID_FEEDBACK');
+  }
   assert.equal(db.records.has('fst_feedback/FB_0001'), false);
+});
+
+test('oversized text and the per-user rate limit are rejected', async () => {
+  const { db, handler } = setup({ limits: { userMinute: 2, userDay: 50, ipMinute: 30, ipDay: 100 } });
   const ok = response();
   await handler(request(payload), ok);
   await handler(request({ ...payload, message: '二つ目' }), response());
@@ -135,8 +176,19 @@ test('oversized text and the per-user rate limit are rejected', async () => {
   await handler(request({ ...payload, message: '三つ目' }), limited);
   assert.equal(limited.statusCode, 429);
   assert.equal(limited.body.error, 'USAGE_LIMIT');
+  assert.equal(limited.headers['Retry-After'], '60');
   assert.equal(db.records.has('fst_feedback/FB_0003'), false);
   assert.equal(ok.statusCode, 201);
+});
+
+test('the same content does not create a second feedback id', async () => {
+  const { db, handler } = setup();
+  await handler(request(payload), response());
+  const again = response();
+  await handler(request(payload), again);
+  assert.equal(again.statusCode, 429);
+  assert.equal(db.records.has('fst_feedback/FB_0002'), false);
+  assert.equal(db.records.get('fst_feedback_meta/counter').count, 1);
 });
 
 test('a shared IP is limited across users', async () => {
@@ -153,7 +205,7 @@ test('a shared IP is limited across users', async () => {
     db,
     now: () => NOW,
     serverTimestamp: () => 'server-time',
-    limits: { userHour: 10, userDay: 20, ipHour: 2, ipDay: 100 },
+    limits: { userMinute: 10, userDay: 50, ipMinute: 2, ipDay: 100 },
   });
   await handler(request(payload), response());
   uid = 'user-b';
@@ -163,4 +215,27 @@ test('a shared IP is limited across users', async () => {
   await handler(request({ ...payload, message: '三人目' }), limited);
   assert.equal(limited.statusCode, 429);
   assert.equal(db.records.has('fst_feedback/FB_0003'), false);
+});
+
+test('only an editor can change status, and the message stays', async () => {
+  const { db, handler, update } = setup({
+    users: {
+      valid: { uid: 'user-1', email: 'user@example.test', email_verified: true, firebase: { sign_in_provider: 'google.com' } },
+      editor: { uid: 'editor', email: 'junpei.omote@gmail.com', email_verified: true, firebase: { sign_in_provider: 'google.com' } },
+    },
+  });
+  await handler(request(payload), response());
+  const denied = response();
+  await update(request({ fbId: 'FB_0001', status: 'reviewed' }), denied);
+  assert.equal(denied.statusCode, 403);
+  assert.equal(db.records.get('fst_feedback/FB_0001').status, 'unreviewed');
+  const changed = response();
+  await update(request({ fbId: 'FB_0001', status: 'resolved', replyText: '対応しました' }, { authorization: 'Bearer editor' }), changed);
+  assert.equal(changed.statusCode, 200);
+  assert.equal(db.records.get('fst_feedback/FB_0001').status, 'resolved');
+  assert.equal(db.records.get('fst_feedback/FB_0001').message, payload.message);
+  const old = response();
+  await update(request({ fbId: 'FB_0001', status: 'replied' }, { authorization: 'Bearer editor' }), old);
+  assert.equal(old.statusCode, 400);
+  assert.equal(db.records.get('fst_feedback/FB_0001').status, 'resolved');
 });

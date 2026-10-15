@@ -1,11 +1,11 @@
 # Flight Strip 目安箱 API
 
-クライアントから `fst_feedback`、`fst_feedback_meta`、`fst_feedback_limits` へ書くことはルールで拒否します。受付と状態変更は Cloud Functions だけが Admin SDK で行います。
+クライアントから `fst_feedback`、`fst_feedback_meta`、`fstRateLimits` へ書くことはルールで拒否します。受付と状態変更は Cloud Functions だけが Admin SDK で行います。
 
 ## 守るデータ
 
 - 本文、件名、任意の返信先メール、送信者 uid、状態
-- レート制限用の uid ハッシュ、分・日の回数、直近本文のハッシュ。生 IP は保存しない
+- レート制限用の uid ハッシュ、分・日の回数、直近本文のハッシュ、IP の短命ハッシュ。生 IP は保存しない
 - App Check トークンと ID トークンは保存しない
 
 ## 主体
@@ -24,10 +24,10 @@
 
 | Method | URL | 認証 | 副作用 |
 |---|---|---|---|
-| POST | `/api/fst-feedback` | 確認済みアカウント + App Check | `fst_feedback/FB_xxxx` を `unreviewed` で作成。カウンタとレート制限を同じトランザクションで更新 |
+| POST | `/api/fst-feedback` | 確認済みアカウント + App Check | `fst_feedback/FB_xxxx` を `unreviewed` で作成。回数を先に記録し、その後カウンタと本文を保存する |
 | POST | `/api/fst-feedback-update` | 確認済み編集者 + App Check | 状態、任意の返信文、`replySent` だけ更新 |
 
-成功時は `{ "ok": true, "feedbackId": "FB_0001" }` です。失敗時は `{ "error": "コード" }` だけで、本文やスタックは返しません。`Cache-Control: no-store` です。
+成功時は `{ "ok": true, "fbId": "FB_0001", "feedbackId": "FB_0001", "status": "unreviewed" }` です。失敗時は `{ "error": "コード" }` だけで、本文やスタックは返しません。`Cache-Control: no-store` です。
 
 ### 投稿の入力
 
@@ -63,7 +63,9 @@
 
 ## 画面
 
-安定版 `v0.5.17` と開発版 `v0.10.30-dev` は、`public/shared/fst-feedback-client.js` から上記 API を呼びます。送信前に、個人情報を本文へ書かない案内を出します。返信先メールは任意です。
+安定版 `v0.5.17` と開発版 `v0.10.30-dev`、開発版の分析画面は、各 HTML の `submitFstFeedback` / `updateFstFeedback` から上記 API を呼びます。送信前に、個人情報を本文へ書かない案内を出します。返信先メールは任意です。件名は既存の受信箱と返信テンプレートが使うため、標準の必須項目（本文）に加えて必須にしています。
+
+予算停止ラッチ `costControls/global.enabled` が true でないときも送信と状態変更を拒否します。目安箱は有料 API の許可 UID 一覧には入れません。通常の確認済み利用者が送れなくなるためです。
 
 受信箱の状態変更も同じ更新 API です。古い `new` / `replied` は表示上だけ未確認 / 対応済みとして扱います。
 
