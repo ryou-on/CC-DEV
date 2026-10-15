@@ -12,6 +12,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-check-compat.js"></script>
 
   <!-- React + Babel + Tailwind -->
   <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
@@ -51,6 +52,58 @@
     firebase.initializeApp(firebaseConfig);
     window._auth = firebase.auth();
     window._db   = firebase.firestore();
+    window.submitFstFeedback = async function (payload) {
+      const user = firebase.auth().currentUser;
+      if (!user || user.isAnonymous || user.emailVerified !== true) {
+        throw new Error('確認済みのアカウントでログインしてください');
+      }
+      let appCheckToken = '';
+      try {
+        const cfgRes = await fetch('/shared/cost-access-config.json', { cache: 'no-store' });
+        if (!cfgRes.ok) throw new Error('missing');
+        const cfg = await cfgRes.json();
+        const siteKey = cfg && cfg.recaptchaEnterpriseSiteKey;
+        if (!siteKey) throw new Error('missing');
+        if (!window._fstAppCheckReady) {
+          firebase.appCheck().activate(new firebase.appCheck.ReCaptchaEnterpriseProvider(siteKey), true);
+          window._fstAppCheckReady = true;
+        }
+        appCheckToken = (await firebase.appCheck().getToken(false)).token;
+        if (!appCheckToken) throw new Error('token');
+      } catch (err) {
+        throw new Error(err && err.message === 'missing' ? 'App Check の設定がないため送信できません' : 'App Check を確認できませんでした');
+      }
+      const idToken = await user.getIdToken();
+      const res = await fetch('/api/fst-feedback', {
+        method: 'POST',
+        cache: 'no-store',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + idToken,
+          'X-Firebase-AppCheck': appCheckToken,
+        },
+        body: JSON.stringify({
+          subject: payload.subject,
+          email: payload.email || '',
+          message: payload.message,
+          build: payload.build,
+        }),
+      });
+      const body = await res.json().catch(function () { return {}; });
+      if (!res.ok) {
+        const messages = {
+          APP_CHECK_REQUIRED: 'App Check がありません',
+          INVALID_APP_CHECK: 'App Check を確認できませんでした',
+          VERIFIED_ACCOUNT_REQUIRED: '確認済みアカウントが必要です',
+          USAGE_LIMIT: '送信回数の上限です。時間をおいて再試行してください',
+          SERVICE_PAUSED: '予算停止中のため送信できません',
+          INVALID_FEEDBACK: '入力内容を確認してください',
+          SIGN_IN_REQUIRED: 'ログインしてください',
+        };
+        throw new Error(messages[body.error] || '送信に失敗しました');
+      }
+      return body;
+    };
   </script>
 
   <!-- React アプリ（JSX） -->
@@ -258,7 +311,7 @@
         <div style={{ minHeight:"100vh", background:T.bgGrad, display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'JetBrains Mono',monospace" }}>
           <div style={{ position:"fixed", inset:0, backgroundImage:`linear-gradient(${T.grid} 1px,transparent 1px),linear-gradient(90deg,${T.grid} 1px,transparent 1px)`, backgroundSize:"40px 40px", pointerEvents:"none" }} />
           <div style={{ background:T.bgModal, border:`1px solid ${T.accent}33`, borderRadius:"8px", padding:"48px 40px", textAlign:"center", maxWidth:"360px", width:"90%", boxShadow:`0 0 60px ${T.accent}18`, position:"relative", zIndex:1 }}>
-            <div data-cost-name style={{ fontSize:"26px", fontWeight:800, color:T.accent, letterSpacing:"0.15em", marginBottom:"6px", textShadow:`0 0 20px ${T.accent}44` }}>◈ FLIGHT STRIP</div><button data-cost-version type="button">v0.5.16</button>
+            <div data-cost-name style={{ fontSize:"26px", fontWeight:800, color:T.accent, letterSpacing:"0.15em", marginBottom:"6px", textShadow:`0 0 20px ${T.accent}44` }}>◈ FLIGHT STRIP</div><button data-cost-version type="button">v0.5.17</button>
             <div style={{ fontSize:"10px", color:T.textMuted, letterSpacing:"0.3em", marginBottom:"40px" }}>ATC TASK MANAGEMENT SYSTEM</div>
             <button onClick={handleGoogleLogin} disabled={loading} style={{ width:"100%", background:loading?"transparent":`${T.accent}18`, border:`1px solid ${loading?T.border:T.accent}55`, color:loading?T.textMuted:T.accent, padding:"12px 24px", borderRadius:"4px", cursor:loading?"not-allowed":"pointer", fontSize:"12px", fontWeight:700, letterSpacing:"0.1em", fontFamily:"'JetBrains Mono',monospace", display:"flex", alignItems:"center", justifyContent:"center", gap:"10px", transition:"all 0.15s" }}>
               {loading ? <><span style={{ animation:"spin 1s linear infinite", display:"inline-block" }}>◌</span> AUTHENTICATING...</> : <><span style={{ fontFamily:"sans-serif", fontWeight:700, fontSize:"14px" }}>G</span> SIGN IN WITH GOOGLE</>}
@@ -292,6 +345,7 @@
     // リリースノート
     // ======================================================
     const RELEASE_NOTES = [
+      { version: "v0.5.17", date: "2026-10-15", changes: ["目安箱の送信を Cloud Functions 経由にした。クライアントから fst_feedback へ直接書き込まない。状態は unreviewed で登録し、返信と状態変更は編集者のみ"] },
       { version: "v0.5.16", date: "2026-10-05", changes: ["共通基盤：月額1,000円予算の800円停止通知と停止ワークフローを接続。安全試験と復旧手順を確認（Flight Stripの画面変更なし）"] },
       { version: "v0.5.15", date: "2026-10-05", changes: ["共通基盤：共有データのアクセス権限と予算設定を更新。ログイン・利用許可の検証を追加"] },
       { version: "v0.5.14", date: "2026-10-05", changes: ["共通基盤：有料APIの認証・利用上限・停止処理と公開前の課金リスク検査を追加"] },
@@ -526,24 +580,15 @@
       const handleSubmit = async () => {
         if (!subject.trim()) { setError('件名を入力してください'); return; }
         if (!message.trim()) { setError('メッセージを入力してください'); return; }
+        if (subject.trim().length > 100) { setError('件名は100文字以内です'); return; }
         if (message.length > 200) { setError('メッセージは200文字以内です'); return; }
         setSending(true); setError('');
         try {
-          const counterRef = db.collection('fst_feedback_meta').doc('counter');
-          let fbId;
-          await db.runTransaction(async tx => {
-            const doc = await tx.get(counterRef);
-            const n = (doc.exists ? (doc.data().count || 0) : 0) + 1;
-            tx.set(counterRef, { count: n }, { merge: true });
-            fbId = `FB_${String(n).padStart(4, '0')}`;
+          const saved = await window.submitFstFeedback({
+            subject: subject.trim(), email: email.trim(), message: message.trim(), build,
           });
-          await db.collection('fst_feedback').doc(fbId).set({
-            fbId, subject: subject.trim(), email: email.trim(),
-            message: message.trim(), build,
-            uid: user?.uid || null, status: 'new', replySent: false,
-            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-          });
-          if (EMAILJS_CONFIG.publicKey && EMAILJS_CONFIG.serviceId && email.trim()) {
+          const fbId = saved.fbId;
+          if (EMAILJS_CONFIG.publicKey && EMAILJS_CONFIG.serviceId && email.trim() && fbId) {
             try {
               await window.emailjs.send(
                 EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateId,
@@ -551,11 +596,10 @@
                   subject: subject.trim(), message: message.trim() },
                 EMAILJS_CONFIG.publicKey
               );
-              await db.collection('fst_feedback').doc(fbId).update({ replySent: true });
             } catch(e) { console.warn('Auto-reply failed:', e); }
           }
           setSent(true);
-        } catch(e) { setError('送信に失敗しました: ' + e.message); }
+        } catch(e) { setError(e.message || '送信に失敗しました'); }
         finally { setSending(false); }
       };
 
@@ -1541,7 +1585,7 @@
             month: now.toISOString().slice(0,7),
             hour:  now.getHours(),
             dow:   now.getDay(),
-            version: 'v0.5.16',
+            version: 'v0.5.17',
             build:   'stable',
             createdAt: firebase.firestore.FieldValue.serverTimestamp(),
           }).catch(() => {});
@@ -2073,7 +2117,7 @@
                 <div style={{ fontSize:"9px", color:T.textMuted, letterSpacing:"0.3em", marginTop:"4px" }}>
                   <span data-cost-version onClick={() => setShowRelease(true)} style={{ cursor:"pointer", color:T.textDim, borderBottom:`1px solid ${T.border2}`, paddingBottom:"1px", transition:"color 0.15s" }}
                     onMouseEnter={e=>e.target.style.color=T.accent} onMouseLeave={e=>e.target.style.color=T.textDim}>
-                    ATC-SYS v0.5.16
+                    ATC-SYS v0.5.17
                   </span>
                   &nbsp;· <span style={{ color:syncColor, animation:syncStatus==="connecting"?"blink 1s infinite":"none" }}>{syncLabel}</span>
                   &nbsp;· <span style={{ color:T.textMuted }}>? でショートカット</span>
@@ -2405,7 +2449,7 @@
 
             {/* フッター */}
             <footer style={{ marginTop:"20px", paddingTop:"10px", borderTop:`1px solid ${T.border}`, display:"flex", justifyContent:"space-between", alignItems:"center", color:T.textMuted, fontSize:"9px", letterSpacing:"0.1em" }}>
-              <span>FLIGHT STRIP TODO · ATC-SYS v0.5.16</span>
+              <span>FLIGHT STRIP TODO · ATC-SYS v0.5.17</span>
               <div style={{ display:"flex", gap:"8px", alignItems:"center" }}>
                 <span>{currentTime.toLocaleDateString("ja-JP")} · STRIPS: {tasks.length}</span>
                 <button onClick={handleConsoleCopy} style={{ background:`${T.accent}10`, border:`1px solid ${T.accent}22`, color:T.textDim, padding:"2px 10px", borderRadius:"2px", cursor:"pointer", fontSize:"8px", fontFamily:"'JetBrains Mono',monospace", letterSpacing:"0.05em" }}>📋 CONSOLE COPY</button>
@@ -2476,6 +2520,6 @@
       fn();
     })();
   </script>
-<script src="/shared/info-dialog.js" data-name-target="[data-cost-name]" data-version-target="[data-cost-version]" data-version="v0.5.16" data-manual="Googleでログインしてタスクを作成し、ストリップを移動して進捗を管理します。J/Kで移動、Nで新規作成、?でショートカットを表示します。詳しい操作は下の取扱説明書をご覧ください。" data-manual-link="manual.html" data-changes="月額予算の停止ワークフローを接続。"></script>
+<script src="/shared/info-dialog.js" data-name-target="[data-cost-name]" data-version-target="[data-cost-version]" data-version="v0.5.17" data-manual="Googleでログインしてタスクを作成し、ストリップを移動して進捗を管理します。J/Kで移動、Nで新規作成、?でショートカットを表示します。詳しい操作は下の取扱説明書をご覧ください。" data-manual-link="manual.html" data-changes="目安箱の送信をサーバー経由にした。"></script>
 </body>
 </html>

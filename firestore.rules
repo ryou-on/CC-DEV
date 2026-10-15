@@ -78,40 +78,24 @@ service cloud.firestore {
       allow create: if verifiedAccount() && fstAnalyticsOk(request.resource.data);
       allow update, delete: if isHihahoEditor();
     }
-    function fstFeedbackOk(d) {
-      return d.keys().hasOnly(['fbId','subject','email','message','build','uid','status','replySent','createdAt'])
-        && d.keys().hasAll(['fbId','subject','email','message','build','uid','status','replySent','createdAt'])
-        && d.uid == request.auth.uid
-        && d.fbId is string && d.fbId.size() <= 20
-        && d.subject is string && d.subject.size() > 0 && d.subject.size() <= 200
-        && d.email is string && d.email.size() <= 200
-        && d.message is string && d.message.size() > 0 && d.message.size() <= 200
-        && d.build is string && d.build.size() <= 40
-        && d.status == 'new'
-        && d.replySent == false
-        && d.createdAt == request.time;
-    }
     match /fst_feedback/{docId} {
       allow read: if isHihahoEditor() || (verifiedAccount() && resource.data.uid == request.auth.uid);
-      allow create: if verifiedAccount() && fstFeedbackOk(request.resource.data);
-      allow update: if isHihahoEditor() || (
-        verifiedAccount() && resource.data.uid == request.auth.uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['replySent'])
-        && request.resource.data.replySent == true
-      );
-      allow delete: if isHihahoEditor();
+      allow create: if false;
+      allow update: if isHihahoEditor()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status','replyText','repliedAt'])
+        && request.resource.data.status in ['unreviewed','read','replied']
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.subject == resource.data.subject
+        && request.resource.data.message == resource.data.message
+        && (!request.resource.data.keys().hasAny(['replyText'])
+            || (request.resource.data.replyText is string && request.resource.data.replyText.size() <= 5000));
+      allow delete: if false;
     }
     match /fst_feedback_meta/{docId} {
-      allow read: if verifiedAccount() && docId == 'counter';
-      allow create: if verifiedAccount() && docId == 'counter'
-        && request.resource.data.keys().hasOnly(['count'])
-        && request.resource.data.count == 1;
-      allow update: if verifiedAccount() && docId == 'counter'
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['count'])
-        && request.resource.data.count is int
-        && resource.data.count is int
-        && request.resource.data.count == resource.data.count + 1;
-      allow delete: if false;
+      allow read, write: if false;
+    }
+    match /fstRateLimits/{id} {
+      allow read, write: if false;
     }
 
     function appFieldsOk(d, ch) {

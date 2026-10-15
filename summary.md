@@ -1,21 +1,25 @@
-# 課金事故対策と Firestore ルールの公開前仕上げ
+# 目安箱のサーバー登録と公開前検査
 
 日付: 2026-10-15。本番への merge と deploy はしていない。
 
 ## 完了した作業
 
-- PR #3 のブランチで、Firestore を認証必須に統一し、PR #4 のフィールド検証とルール試験を取り込んだ。
-- `apps`、note-analytics の snapshots、ouchi-hamasushi の assets から、誰でも削除できる条件を除いた。
-- 管理者 UID の直書きをやめ、カスタムクレーム `admin` と `admins/{uid}` にした。手順は `docs/admin-access.md`。
-- 公開前検査のキャッシュ破棄エラー 1 件を修正し、REVIEW 57 件に根拠を記録した。
-- 予算 1,000 円の停止判定をローカルで模擬した。800 円以上で停止、799 円では停止しない。
-- Auth エミュレーターで Google ログインから Firestore の許可・拒否まで確認した。
+- Flight Strip の目安箱を、クライアントの Firestore 直書きから `fstFeedbackSubmit`（`/api/fst-feedback`）に移した。
+- 関数は App Check、確認済みの非匿名アカウント、入力長、ユーザーと IP の回数制限、`costControls/global.enabled` を要求する。状態は `unreviewed`。カウンタはサーバーだけが増やす。
+- `fst_feedback` の作成・削除と、編集者以外の更新をルールで拒否した。返信と状態変更は確認済みの編集者だけ。
+- 明友社の共有パスワードアカウントは、メール確認済みのときだけ単価を読める。本番 Auth は変更していない。手順は `docs/meiyusha-estimate-auth.md`。
+- Storage ルールのエミュレーター試験を追加し、CI のエミュレーター起動に storage を含めた。
 
 ## 検証
 
 - `python3 -m unittest discover -s scripts -p 'test_*.py'` 24 件成功
-- `npm test --prefix functions` 40 件成功
-- Firestore / Auth エミュレーター `tests/firestore` 22 件成功（プロジェクト ID は `demo-cc-dev-cost`）
+- `npm test --prefix functions` 44 件成功
+- Firestore / Storage / Auth エミュレーター `tests/firestore` 27 件成功（プロジェクト ID は `demo-cc-dev-cost`）
+
+## バージョン
+
+- Flight Strip 安定版 v0.5.17
+- Flight Strip 開発版 v0.10.30-dev（v0.6.0-dev の日付と変更も更新）
 
 ## 本番URL
 
@@ -24,5 +28,6 @@
 ## 残課題
 
 - 本番の課金停止書き込み、App Check 強制、ルール公開、共有許可の付与は人間が行う。
-- 未ログイン利用者への案内は `docs/anonymous-user-impact.md`。
+- 目安箱は `costControls/global.enabled` が true でないと送れない。サイトキー未設定でも送れない。
+- ルール公開前に `meiyusha@meiyusha-estimate.app` を Auth コンソールでメール確認済みにする。
 - Hosting のプレビューは、リポジトリ変数 `ALLOW_HOSTING_PREVIEW=true` を人間が付けるまで作らない。
