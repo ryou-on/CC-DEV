@@ -45,16 +45,20 @@
 | 38 | REVIEW | DB_QUERY | public/hihaho-admin/index.html:1834 | accepted | video_analytics の一覧。未ログインは拒否。編集者か許可 reader のみ。+1 書き込みは grant と増分検証が必要。 |
 | 39 | REVIEW | DB_QUERY | public/hihaho-admin/index.html:1838 | accepted | 分析画面がプレイリスト名を足すための playlists 全件取得。公開読み取りは再生アプリの仕様で、書き込みは編集者のみ。 |
 | 40 | REVIEW | LARGE_PUBLIC_FILE | public/hihaho-hub/booth.jpg:1 | accepted | ブース写真の静的 JPEG。firebase.json で /hihaho-hub/booth.jpg に Cache-Control max-age=86400。 |
-| 41 | REVIEW | DB_LISTENER | public/hondoko/assets/index-EhwcnUma.js:40 | accepted | hondoko-src のビルド成果物。購読本数と解除は App.tsx と同じ。ソース側の 8 件と二重には数えないが、配信物にもリスナーが含まれるため記録する。 |
-| 42 | REVIEW | DB_LISTENER | public/meet-knowledge/index.html:366 | accepted | meet-knowledge/{team}/entries。unsubscribe を保持。読み取りは meet-knowledge__{team} の grant が必要。 |
-| 43 | REVIEW | DB_QUERY | public/meishi-db/index.html:605 | accepted | users/{uid}/meishiCards を本人だけが読む。ルールは request.auth.uid == userId。他人の名刺は読めない。 |
-| 44 | REVIEW | DB_QUERY | public/meishi-db/index.html:1338 | accepted | 同じ本人コレクションを email で重複確認。コレクション全体の公開取得ではない。 |
-| 45 | REVIEW | DB_QUERY | public/meishi-db/index.html:1342 | accepted | 同じ本人コレクションを姓名で重複確認。uid 境界の外には出ない。 |
-| 46 | REVIEW | HTTP_SERVER | public/meishi-sf/worker/src/worker.js:1 | accepted | meishi-sf Worker も Cloudflare。SHARED_TOKEN 不一致は 401。Salesforce と Anthropic の鍵は Worker secret。GCP 予算停止では止まらないため、プロバイダ側の上限設定が残作業。 |
-| 47 | REVIEW | DB_LISTENER | public/ouchi-hamasushi/cloud-store.js:94 | accepted | 家族コードの assets を、共有ログインの Promise のあとで購読。currentUnsubscribe で解除。未ログインはルールで拒否。 |
-| 48 | REVIEW | DB_LISTENER | public/outreach-crm/index.html:321 | accepted | outreach-crm/{workspace} の単一ドキュメント。unsub を保持。grant が無いとルールで拒否。 |
-| 49 | REVIEW | DB_LISTENER | public/tomoe-home/index.html:289 | accepted | tomoe-home/config の単一ドキュメント。requireCCDevLogin のあとで購読。grant が必要。 |
-| 50 | REVIEW | PUBLIC_READ | storage.rules:19 | accepted | hihaho-thumbs は公開画像。書き込みは編集者、5MB 未満、image/* のみ。 |
-| 51 | REVIEW | PUBLIC_READ | storage.rules:28 | accepted | logos はプレイリストのロゴ。公開読み取り、編集者のみ書き込み、2MB 未満の画像。 |
-| 52 | REVIEW | PUBLIC_READ | storage.rules:37 | accepted | hihaho-material の実ファイルは公開読み取り。書き込みは編集者、30MB 未満。配信関数 assetServe は GET/HEAD と ETag のみ。 |
-| 53 | REVIEW | PUBLIC_READ | storage.rules:48 | accepted | hondoko の棚写真は共有リンク閲覧のため公開読み取り。書き込みは認証ユーザーの 10MB 未満の画像。 |
+| 41 | REVIEW | LARGE_PUBLIC_FILE | public/hihaho-release-2609/hihaho-release-2609.mp4:1 | accepted | 2026年9月リリースの静的な解説動画。リクエスト毎の生成ではない。firebase.json の /hihaho-release-*/**/*.mp4 に Cache-Control max-age=86400。 |
+| 42 | REVIEW | LARGE_PUBLIC_FILE | public/hihaho-release-sep/hihaho-release-sep-en.mp4:1 | accepted | 9月リリースノート英語版の静的動画。同じ Cache-Control max-age=86400。有料APIは呼ばない。 |
+| 43 | REVIEW | LARGE_PUBLIC_FILE | public/hihaho-release-sep/hihaho-release-sep-ja.mp4:1 | accepted | 9月リリースノート日本語版の静的動画。同じ Cache-Control max-age=86400。有料APIは呼ばない。 |
+| 44 | REVIEW | LARGE_PUBLIC_FILE | public/hihaho-release-v3400/hihaho-release-v3400.mp4:1 | accepted | v3.40.0 リリースノートの静的動画。同じ Cache-Control max-age=86400。有料APIは呼ばない。 |
+| 45 | REVIEW | DB_LISTENER | public/hondoko/assets/index-EhwcnUma.js:40 | accepted | hondoko-src のビルド成果物。購読本数と解除は App.tsx と同じ。ソース側の 8 件と二重には数えないが、配信物にもリスナーが含まれるため記録する。 |
+| 46 | REVIEW | DB_LISTENER | public/meet-knowledge/index.html:366 | accepted | meet-knowledge/{team}/entries。unsubscribe を保持。読み取りは meet-knowledge__{team} の grant が必要。 |
+| 47 | REVIEW | DB_QUERY | public/meishi-db/index.html:605 | accepted | users/{uid}/meishiCards を本人だけが読む。ルールは request.auth.uid == userId。他人の名刺は読めない。 |
+| 48 | REVIEW | DB_QUERY | public/meishi-db/index.html:1338 | accepted | 同じ本人コレクションを email で重複確認。コレクション全体の公開取得ではない。 |
+| 49 | REVIEW | DB_QUERY | public/meishi-db/index.html:1342 | accepted | 同じ本人コレクションを姓名で重複確認。uid 境界の外には出ない。 |
+| 50 | REVIEW | HTTP_SERVER | public/meishi-sf/worker/src/worker.js:1 | accepted | meishi-sf Worker も Cloudflare。SHARED_TOKEN 不一致は 401。Salesforce と Anthropic の鍵は Worker secret。GCP 予算停止では止まらないため、プロバイダ側の上限設定が残作業。 |
+| 51 | REVIEW | DB_LISTENER | public/ouchi-hamasushi/cloud-store.js:94 | accepted | 家族コードの assets を、共有ログインの Promise のあとで購読。currentUnsubscribe で解除。未ログインはルールで拒否。 |
+| 52 | REVIEW | DB_LISTENER | public/outreach-crm/index.html:321 | accepted | outreach-crm/{workspace} の単一ドキュメント。unsub を保持。grant が無いとルールで拒否。 |
+| 53 | REVIEW | DB_LISTENER | public/tomoe-home/index.html:289 | accepted | tomoe-home/config の単一ドキュメント。requireCCDevLogin のあとで購読。grant が必要。 |
+| 54 | REVIEW | PUBLIC_READ | storage.rules:19 | accepted | hihaho-thumbs は公開画像。書き込みは編集者、5MB 未満、image/* のみ。 |
+| 55 | REVIEW | PUBLIC_READ | storage.rules:28 | accepted | logos はプレイリストのロゴ。公開読み取り、編集者のみ書き込み、2MB 未満の画像。 |
+| 56 | REVIEW | PUBLIC_READ | storage.rules:37 | accepted | hihaho-material の実ファイルは公開読み取り。書き込みは編集者、30MB 未満。配信関数 assetServe は GET/HEAD と ETag のみ。 |
+| 57 | REVIEW | PUBLIC_READ | storage.rules:48 | accepted | hondoko の棚写真は共有リンク閲覧のため公開読み取り。書き込みは認証ユーザーの 10MB 未満の画像。 |

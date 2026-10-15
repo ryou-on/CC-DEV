@@ -68,6 +68,12 @@ class CostGateTest(unittest.TestCase):
         self.put('public/image.bin', 'changed')
         self.assertNotEqual(before, guard.scan(self.root)[1])
 
+    def test_emulator_debug_log_is_not_part_of_the_source_hash(self):
+        before = guard.scan(self.root)[1]
+        self.put('firestore-debug.log', 'timestamped emulator output')
+        self.put('firebase-debug.log', 'timestamped emulator output')
+        self.assertEqual(before, guard.scan(self.root)[1])
+
     def test_valid_review(self):
         self.assertEqual([], self.check(self.policy()))
 
