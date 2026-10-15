@@ -43,7 +43,21 @@ const reader = () => env.authenticatedContext('reader', token).firestore();
 const anon = () => env.unauthenticatedContext().firestore();
 const stranger = () => env.authenticatedContext('stranger', token).firestore();
 const adminClaim = () => env.authenticatedContext('platform-admin', { ...token, admin: true, email: 'admin@example.test' }).firestore();
-const editor = () => env.authenticatedContext('editor', { email: 'someone@splineglobal.com' }).firestore();
+const editorToken = { email: 'someone@splineglobal.com', email_verified: true, firebase: { sign_in_provider: 'google.com' } };
+const editor = () => env.authenticatedContext('editor', editorToken).firestore();
+const anonAuth = () => env.authenticatedContext('anon-user', { firebase: { sign_in_provider: 'anonymous' } }).firestore();
+const unverifiedEditor = () => env.authenticatedContext('unverified-editor', {
+  email: 'someone@splineglobal.com', email_verified: false, firebase: { sign_in_provider: 'google.com' },
+}).firestore();
+const owner = () => env.authenticatedContext('hondoko-owner', {
+  email: 'junpei.omote@gmail.com', email_verified: true, firebase: { sign_in_provider: 'google.com' },
+}).firestore();
+const unverifiedOwner = () => env.authenticatedContext('hondoko-owner-unverified', {
+  email: 'junpei.omote@gmail.com', email_verified: false, firebase: { sign_in_provider: 'google.com' },
+}).firestore();
+const joiner = () => env.authenticatedContext('joiner', {
+  email: 'joiner@example.test', email_verified: true, firebase: { sign_in_provider: 'google.com' },
+}).firestore();
 
 function appData(extra = {}) {
   return {
@@ -254,6 +268,92 @@ describe('shared collections stay closed to anonymous users', () => {
     await assertFails(setDoc(doc(anon(), 'bombing-bay/global/plays/new'), play));
     await assertSucceeds(setDoc(doc(writer(), 'bombing-bay/global/plays/new'), play));
     await assertFails(updateDoc(doc(writer(), 'bombing-bay/global/plays/new'), { score: 10 }));
+  });
+});
+
+describe('anonymous sign-in cannot use shared Flight Strip or coco-itta data', () => {
+  const session = {
+    uidHash: 'abc', date: '2026-10-15', month: '2026-10', hour: 9, dow: 4,
+    version: 'v0.5.16', build: 'stable', createdAt: serverTimestamp(),
+  };
+  const feedback = {
+    fbId: 'FB_0001', subject: '件名', email: 'member@example.test', message: '本文',
+    build: 'stable', uid: 'writer', status: 'new', replySent: false, createdAt: serverTimestamp(),
+  };
+
+  test('anonymous auth is denied and a verified user can record a session', async () => {
+    await assertFails(setDoc(doc(anonAuth(), 'fst_analytics/s1'), session));
+    await assertFails(setDoc(doc(unverifiedEditor(), 'fst_analytics/s1'), session));
+    await assertSucceeds(setDoc(doc(writer(), 'fst_analytics/s1'), session));
+    await assertFails(getDoc(doc(writer(), 'fst_analytics/s1')));
+    await assertFails(getDoc(doc(anonAuth(), 'fst_analytics/s1')));
+    await assertSucceeds(getDoc(doc(editor(), 'fst_analytics/s1')));
+    await assertFails(getDoc(doc(unverifiedEditor(), 'fst_analytics/s1')));
+    await assertSucceeds(setDoc(doc(writer(), 'users/writer/tasks/t'), { title: '自分のタスク' }));
+    await assertFails(setDoc(doc(anonAuth(), 'users/anon-user/tasks/t'), { title: '匿名' }));
+    await assertFails(setDoc(doc(writer(), 'users/stranger/tasks/t'), { title: '他人' }));
+  });
+
+  test('feedback and the counter stay inside the verified account', async () => {
+    await assertFails(setDoc(doc(anonAuth(), 'fst_feedback_meta/counter'), { count: 1 }));
+    await assertSucceeds(setDoc(doc(writer(), 'fst_feedback_meta/counter'), { count: 1 }));
+    await assertSucceeds(updateDoc(doc(writer(), 'fst_feedback_meta/counter'), { count: 2 }));
+    await assertFails(updateDoc(doc(writer(), 'fst_feedback_meta/counter'), { count: 9 }));
+    await assertFails(setDoc(doc(anonAuth(), 'fst_feedback/FB_0001'), { ...feedback, uid: 'anon-user' }));
+    await assertSucceeds(setDoc(doc(writer(), 'fst_feedback/FB_0001'), feedback));
+    await assertSucceeds(updateDoc(doc(writer(), 'fst_feedback/FB_0001'), { replySent: true }));
+    await assertFails(getDocs(query(collection(anonAuth(), 'fst_feedback'))));
+    await assertSucceeds(getDocs(query(collection(editor(), 'fst_feedback'))));
+    await assertFails(getDocs(query(collection(unverifiedEditor(), 'fst_feedback'))));
+  });
+
+  test('coco-itta groups reject anonymous auth and keep join-by-id for verified users', async () => {
+    const created = {
+      name: '我が家', createdBy: 'member@example.test', createdAt: serverTimestamp(),
+      members: [{ email: 'member@example.test', role: 'owner' }],
+      memberNames: [], pins: [], routes: [], routeSettings: {},
+    };
+    await assertFails(setDoc(doc(anonAuth(), 'groups/FAMILY'), created));
+    await assertSucceeds(setDoc(doc(writer(), 'groups/FAMILY'), created));
+    await assertFails(getDocs(collection(writer(), 'groups')));
+    await assertFails(getDoc(doc(anonAuth(), 'groups/FAMILY')));
+    await assertSucceeds(getDoc(doc(joiner(), 'groups/FAMILY')));
+    await assertFails(updateDoc(doc(joiner(), 'groups/FAMILY'), { pins: [{ id: 'p' }] }));
+    await assertSucceeds(updateDoc(doc(joiner(), 'groups/FAMILY'), {
+      members: [
+        { email: 'member@example.test', role: 'owner' },
+        { email: 'joiner@example.test', role: 'member' },
+      ],
+    }));
+    await assertSucceeds(updateDoc(doc(joiner(), 'groups/FAMILY'), { pins: [{ id: 'p' }] }));
+    await assertFails(deleteDoc(doc(joiner(), 'groups/FAMILY')));
+    await assertSucceeds(deleteDoc(doc(writer(), 'groups/FAMILY')));
+  });
+});
+
+describe('email checks require a verified address', () => {
+  test('an unverified editor email cannot write playlists or read estimates', async () => {
+    await assertFails(setDoc(doc(unverifiedEditor(), 'playlists/pl2'), { name: 'x' }));
+    await assertSucceeds(setDoc(doc(editor(), 'playlists/pl2'), { name: 'x' }));
+    await env.withSecurityRulesDisabled(async (c) => {
+      await setDoc(doc(c.firestore(), 'meiyusha-estimate/prices'), { unit: 1 });
+    });
+    await assertFails(getDoc(doc(unverifiedEditor(), 'meiyusha-estimate/prices')));
+    await assertFails(getDoc(doc(anonAuth(), 'meiyusha-estimate/prices')));
+    await assertSucceeds(getDoc(doc(editor(), 'meiyusha-estimate/prices')));
+  });
+
+  test('hondoko owner and member checks ignore unverified email', async () => {
+    await env.withSecurityRulesDisabled(async (c) => {
+      const db = c.firestore();
+      await setDoc(doc(db, 'hondoko-config/members'), { emails: ['member@example.test'] });
+      await setDoc(doc(db, 'hondoko-config/sharing'), { mode: 'private', viewers: [] });
+      await setDoc(doc(db, 'hondoko-shelves/s1'), { name: '棚' });
+    });
+    await assertFails(getDoc(doc(unverifiedEditor(), 'hondoko-shelves/s1')));
+    await assertSucceeds(getDoc(doc(writer(), 'hondoko-shelves/s1')));
+    await assertFails(setDoc(doc(unverifiedOwner(), 'hondoko-config/sharing'), { mode: 'link', viewers: [] }));
+    await assertSucceeds(setDoc(doc(owner(), 'hondoko-config/sharing'), { mode: 'link', viewers: [] }));
   });
 });
 

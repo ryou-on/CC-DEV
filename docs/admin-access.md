@@ -47,4 +47,4 @@ await db.doc("admins/" + uid).set({
 
 管理者とは別に、`scripts/manage-share-grants.cjs` が `accessGrants/{collection}__{tenant}` の readers / writers を更新します。既定は dry-run です。`--apply` は本番データへの書き込みなので、ルール公開後に人間が実行します。
 
-hihaho の編集者判定（`@splineglobal.com` と既存の許可メール）は、プレイリストやナレッジの編集に残しています。これはプラットフォーム管理者の UID ではなく、製品の編集者条件です。
+hihaho の編集者判定（`@splineglobal.com` と既存の許可メール）と本ドコのオーナーメールは、プレイリストやナレッジの編集に残しています。これはプラットフォーム管理者の UID ではなく、製品の編集者条件です。どちらも `email_verified == true` かつ匿名以外のログインが必要です。未確認の同じメールアドレスは拒否します。
