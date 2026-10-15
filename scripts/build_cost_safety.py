@@ -28,6 +28,10 @@ EVIDENCE = {
     ('LARGE_PUBLIC_FILE', 'public/hazard-dashboard/data/shakujii-20260909.bin', 1): ('accepted', '静的なハザードメッシュ。同じ Cache-Control max-age=86400。動的レンダリングや有料APIは無い。'),
     ('LARGE_PUBLIC_FILE', 'public/hazard-dashboard/data/sumida-20260909.bin', 1): ('accepted', '静的なハザードメッシュ。同じ Cache-Control max-age=86400。'),
     ('LARGE_PUBLIC_FILE', 'public/hihaho-hub/booth.jpg', 1): ('accepted', 'ブース写真の静的 JPEG。firebase.json で /hihaho-hub/booth.jpg に Cache-Control max-age=86400。'),
+    ('LARGE_PUBLIC_FILE', 'public/hihaho-release-2609/hihaho-release-2609.mp4', 1): ('accepted', '2026年9月リリースの静的な解説動画。リクエスト毎の生成ではない。firebase.json の /hihaho-release-*/**/*.mp4 に Cache-Control max-age=86400。'),
+    ('LARGE_PUBLIC_FILE', 'public/hihaho-release-sep/hihaho-release-sep-en.mp4', 1): ('accepted', '9月リリースノート英語版の静的動画。同じ Cache-Control max-age=86400。有料APIは呼ばない。'),
+    ('LARGE_PUBLIC_FILE', 'public/hihaho-release-sep/hihaho-release-sep-ja.mp4', 1): ('accepted', '9月リリースノート日本語版の静的動画。同じ Cache-Control max-age=86400。有料APIは呼ばない。'),
+    ('LARGE_PUBLIC_FILE', 'public/hihaho-release-v3400/hihaho-release-v3400.mp4', 1): ('accepted', 'v3.40.0 リリースノートの静的動画。同じ Cache-Control max-age=86400。有料APIは呼ばない。'),
     ('DB_QUERY', 'public/app-dashboard/index.html', 167): ('accepted', 'apps 一覧。ルールは canShare(apps__registry) が必要で、未ログインは拒否。件数は社内のアプリ台帳規模。'),
     ('DB_QUERY', 'public/app-dashboard/index.html', 173): ('accepted', 'インデックスが無いときの apps 全件取得。同じ認証と grant が必要。公開コレクションではない。'),
     ('DB_QUERY', 'public/app-dashboard/index.html', 184): ('accepted', 'seedIfEmpty が apps を読んで空なら初期データを入れる。未ログインと grant なしはルールで拒否される。'),
@@ -120,7 +124,7 @@ def main():
             },
             'boundedDataAndCache': {
                 'verified': True,
-                'evidence': '2026-10-15 removed the Date.now cache buster. Hazard bins and booth.jpg cache for 86400 seconds. Rules cap field sizes for apps, notes, and ouchi assets.',
+                'evidence': '2026-10-15 removed the Date.now cache buster. Hazard bins, booth.jpg, and hihaho release mp4s cache for 86400 seconds. Rules cap field sizes for apps, notes, and ouchi assets.',
             },
             'providerTimeoutAndRetries': {
                 'verified': True,

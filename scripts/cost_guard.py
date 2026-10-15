@@ -26,7 +26,9 @@ CONTROLS = ("billingAlerts", "automaticStop", "edgeAbuseProtection",
 def walk(root):
     # Scan build outputs too. Never follow symlinks out of the repository.
     for p in sorted(root.iterdir()):
-        if p.name in SKIP or p.name.startswith('.env'):
+        # Emulator logs are local artifacts. Their timestamps would change the
+        # source hash after a rules test and block the gate for a non-source file.
+        if p.name in SKIP or p.name.startswith('.env') or p.name.endswith('-debug.log'):
             continue
         if p.is_symlink():
             raise ValueError(f"symlink requires explicit review: {p}")
