@@ -13,12 +13,12 @@ SPEC.loader.exec_module(guard)
 EVIDENCE = {
     ('PUBLIC_READ', 'firestore.rules', 51): ('accepted', 'playlists の公開読み取りは hihaho-view / hihaho-player の匿名再生に必要。書き込みは isHihahoEditor() のみ。2026-10-15 にルール本文を確認。'),
     ('PUBLIC_READ', 'firestore.rules', 55): ('accepted', 'video_meta の公開読み取りはサムネイル表示に必要。書き込みは編集者のみで、タイトル等のサイズ上限がある。'),
-    ('PUBLIC_READ', 'firestore.rules', 296): ('accepted', 'hihaho-material は Chrome 拡張の一覧取得のため公開読み取り。作成・更新・削除は編集者のみで、type と tags の上限がある。'),
-    ('PUBLIC_READ', 'firestore.rules', 350): ('accepted', 'hondoko-config/sharing の公開読み取りは link/public の未ログイン閲覧判定に必要。書き込みはオーナーのみ。viewers のメールが見える残リスクは docs/anonymous-user-impact.md に記載。'),
-    ('PUBLIC_READ', 'storage.rules', 19): ('accepted', 'hihaho-thumbs は公開画像。書き込みは編集者、5MB 未満、image/* のみ。'),
-    ('PUBLIC_READ', 'storage.rules', 28): ('accepted', 'logos はプレイリストのロゴ。公開読み取り、編集者のみ書き込み、2MB 未満の画像。'),
-    ('PUBLIC_READ', 'storage.rules', 37): ('accepted', 'hihaho-material の実ファイルは公開読み取り。書き込みは編集者、30MB 未満。配信関数 assetServe は GET/HEAD と ETag のみ。'),
-    ('PUBLIC_READ', 'storage.rules', 48): ('accepted', 'hondoko の棚写真は共有リンク閲覧のため公開読み取り。書き込みは認証ユーザーの 10MB 未満の画像。'),
+    ('PUBLIC_READ', 'firestore.rules', 364): ('accepted', 'hihaho-material は Chrome 拡張の一覧取得のため公開読み取り。作成・更新・削除は確認済みの編集者のみで、type と tags の上限がある。'),
+    ('PUBLIC_READ', 'firestore.rules', 418): ('accepted', 'hondoko-config/sharing の公開読み取りは link/public の未ログイン閲覧判定に必要。書き込みは確認済みオーナーのみ。viewers のメールが見える残リスクは docs/anonymous-user-impact.md に記載。'),
+    ('PUBLIC_READ', 'storage.rules', 29): ('accepted', 'hihaho-thumbs は公開画像。書き込みは確認済み編集者、5MB 未満、image/* のみ。'),
+    ('PUBLIC_READ', 'storage.rules', 38): ('accepted', 'logos はプレイリストのロゴ。公開読み取り、確認済み編集者のみ書き込み、2MB 未満の画像。'),
+    ('PUBLIC_READ', 'storage.rules', 47): ('accepted', 'hihaho-material の実ファイルは公開読み取り。書き込みは確認済み編集者、30MB 未満。配信関数 assetServe は GET/HEAD と ETag のみ。'),
+    ('PUBLIC_READ', 'storage.rules', 56): ('accepted', 'hondoko の棚写真は共有リンク閲覧のため公開読み取り。書き込みは確認済みアカウントの 10MB 未満の画像。'),
     ('HTTP_SERVER', 'functions/hondoko.js', 1): ('accepted', 'hondokoAnalyze は getGuard().authorize と reserve を通す。Amazon/NDL/Cover は ID トークンとメンバー判定のあとだけ外部APIを呼ぶ。2026-10-15 の functions 試験 40 件で未認証の有料呼び出しは 0。'),
     ('HTTP_SERVER', 'functions/index.js', 1): ('accepted', 'anthropicProxy / realtimeToken / interpreterCall は authorize と reserve の成功前にプロバイダを呼ばない。assetServe は GET/HEAD、パス検証、Cache-Control と ETag。endpoint-denials 試験で拒否を確認。'),
     ('HTTP_SERVER', 'functions/mini-me.js', 1): ('accepted', 'miniMeGenerate は authorize と reserve を要求。Checkout は許可オリジンとサーバー側の価格計算。Webhook は Stripe 署名検証。生成APIの未認証呼び出しは試験で拒否。'),
@@ -63,7 +63,7 @@ EVIDENCE = {
     ('DB_LISTENER', 'public/Flight_Strip_TODO_dev/index.html', 5210): ('accepted', '開発版の enhancedRequests 単一ドキュメント。unsub あり。'),
     ('DB_LISTENER', 'public/Flight_Strip_TODO_dev/index.html', 5327): ('accepted', 'fst_admin/broadcast にルールの許可が無く、末尾の拒否に落ちる。未ログインへデータを配らない。リスナーは失敗して読み取りが増え続けない。'),
     ('DB_LISTENER', 'public/Flight_Strip_TODO_dev/index.html', 5529): ('accepted', '開発版の users/{uid}/tasks。unsubscribe を保持する。'),
-    ('DB_LISTENER', 'public/coco-itta/index.html', 2694): ('accepted', 'groups/{groupId} の単一ドキュメント。groupUnsub で解除する。ルールは request.auth != null。匿名は拒否。'),
+    ('DB_LISTENER', 'public/coco-itta/index.html', 2694): ('accepted', 'groups/{groupId} の単一ドキュメント。groupUnsub で解除する。確認済みアカウントの get だけを許し、匿名サインインと全件 list は拒否。ピン更新は members の人だけ。'),
     ('DB_LISTENER', 'public/meet-knowledge/index.html', 366): ('accepted', 'meet-knowledge/{team}/entries。unsubscribe を保持。読み取りは meet-knowledge__{team} の grant が必要。'),
     ('DB_LISTENER', 'public/ouchi-hamasushi/cloud-store.js', 94): ('accepted', '家族コードの assets を、共有ログインの Promise のあとで購読。currentUnsubscribe で解除。未ログインはルールで拒否。'),
     ('DB_LISTENER', 'public/outreach-crm/index.html', 321): ('accepted', 'outreach-crm/{workspace} の単一ドキュメント。unsub を保持。grant が無いとルールで拒否。'),
@@ -82,7 +82,7 @@ def main():
     if missing or extra:
         raise SystemExit(f'missing={len(missing)} extra={len(extra)} ' + json.dumps(missing + [{'extra': list(extra)}], ensure_ascii=False))
     decisions = []
-    lines = ['# 公開前検査の判定', '', '検査日: 2026-10-15。エラーは免除していない。', '', '| # | レベル | ルール | 場所 | 判定 | 根拠 |', '|---:|---|---|---|---|---|', '| 0 | ERROR | CACHE_BUSTER | public/hihaho-widgets/live_stats_overlay3.html:157 | fixed | Date.now() を付けた fetch をやめ、同じ URL を cache: no-cache で 30 秒ごとに再検証する。再スキャンで ERROR は 0 件。 |']
+    lines = ['# 公開前検査の判定', '', f'検査日: 2026-10-15。エラーは免除していない。判定は ERROR 1 件（修正済み）と REVIEW {len(reviews)} 件（受理）です。', '', '| # | レベル | ルール | 場所 | 判定 | 根拠 |', '|---:|---|---|---|---|---|', '| 0 | ERROR | CACHE_BUSTER | public/hihaho-widgets/live_stats_overlay3.html:157 | fixed | Date.now() を付けた fetch をやめ、同じ URL を cache: no-cache で 30 秒ごとに再検証する。再スキャンで ERROR は 0 件。 |']
     for index, finding in enumerate(reviews, start=1):
         disposition, evidence = EVIDENCE[(finding['rule'], finding['path'], finding['line'])]
         decisions.append({
@@ -112,7 +112,7 @@ def main():
             },
             'edgeAbuseProtection': {
                 'verified': True,
-                'evidence': '2026-10-15 functions tests reject bad origins and missing App Check. Console enforcement is still off. Large static files use Cache-Control max-age=86400.',
+                'evidence': 'verified here means unit tests only: functions tests reject a missing App Check token and a bad origin. Firebase console App Check enforcement is OFF, so production traffic is not blocked by App Check. Large static files use Cache-Control max-age=86400.',
             },
             'paidApiAuthorization': {
                 'verified': True,
@@ -136,7 +136,7 @@ def main():
             },
             'denialTests': {
                 'verified': True,
-                'evidence': '2026-10-15: functions 40 passed, Firestore/Auth emulator 17 passed, Python cost and budget tests 23 passed. Anonymous deletes were denied.',
+                'evidence': '2026-10-15: functions 40 passed, Firestore/Auth emulator 22 passed, Python cost and budget tests 24 passed. Anonymous sign-in was denied for analytics, feedback, groups, and deletes.',
             },
         },
         'reviewDecisions': decisions,

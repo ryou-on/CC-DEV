@@ -167,12 +167,12 @@ cd "$HOME/Library/Mobile Documents/com~apple~CloudDocs/#git/cc-DEV"
   cd "$HOME/Library/Mobile Documents/com~apple~CloudDocs/#git/cc-DEV"
   npx firebase deploy --only firestore:rules
   ```
-- firestore.rules を変えたら `tests/firestore-rules/` の Emulator テストを更新・実行する（Java 11+ 必須）。PR と自動デプロイ前に CI でも走り、失敗するとデプロイされない:
+- firestore.rules を変えたら `tests/firestore/` の Emulator テストを更新・実行する（Java 11+ 必須）。PR と自動デプロイ前に CI でも走り、失敗するとデプロイされない:
   ```bash
-  cd "$HOME/Library/Mobile Documents/com~apple~CloudDocs/#git/cc-DEV/tests/firestore-rules"
-  npm ci && npm test
+  cd "$HOME/Library/Mobile Documents/com~apple~CloudDocs/#git/cc-DEV"
+  npx firebase emulators:exec --only auth,firestore --project demo-cc-dev-cost --config firebase.rules-test.json "npm --prefix tests/firestore test"
   ```
-- 認証なしで書き込めるコレクション（apps / note-analytics / playlist_analytics / video_analytics / ouchi-hamasushi 等）は、クライアントが書くフィールド・型・サイズに合わせてルールを絞っている。クライアントの書き込みフィールドを増やすときは firestore.rules とテストも同時に更新すること
+- 共有コレクションの書き込みは確認済みアカウントと、アプリごとの許可または編集者条件に合わせている。クライアントの書き込みフィールドを増やすときは firestore.rules と `tests/firestore/rules.test.mjs` も同時に更新すること
 
 ### localStorage キー規約（Firestore doc ID と同一）
 - `voice_{prefix}_{name}` — カスタム音声（prefix: otousan / okasan / confirm / order / checkout）

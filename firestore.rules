@@ -32,7 +32,7 @@ service cloud.firestore {
     }
 
     function isHihahoEditor() {
-      return request.auth != null && (
+      return verifiedAccount() && (
         request.auth.token.email.matches('.*@splineglobal[.]com') ||
         request.auth.token.email == 'junpei.omote@gmail.com'
       );
@@ -57,16 +57,61 @@ service cloud.firestore {
     }
 
     match /users/{userId}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read, write: if verifiedAccount() && request.auth.uid == userId;
+    }
+    function fstAnalyticsOk(d) {
+      return d.keys().hasOnly(['uidHash','date','month','hour','dow','version','build','createdAt','device','type'])
+        && d.keys().hasAll(['uidHash','date','version','build','createdAt'])
+        && d.uidHash is string && d.uidHash.size() > 0 && d.uidHash.size() <= 32
+        && d.date is string && d.date.size() == 10
+        && d.version is string && d.version.size() <= 40
+        && d.build is string && d.build.size() <= 20
+        && d.createdAt == request.time
+        && (!d.keys().hasAny(['type']) || d.type in ['session', 'task_created', 'task_completed'])
+        && (!d.keys().hasAny(['month']) || (d.month is string && d.month.size() == 7))
+        && (!d.keys().hasAny(['hour']) || (d.hour is int && d.hour >= 0 && d.hour <= 23))
+        && (!d.keys().hasAny(['dow']) || (d.dow is int && d.dow >= 0 && d.dow <= 6))
+        && (!d.keys().hasAny(['device']) || (d.device is string && d.device.size() <= 20));
     }
     match /fst_analytics/{docId} {
-      allow read, write: if request.auth != null;
+      allow read: if isHihahoEditor();
+      allow create: if verifiedAccount() && fstAnalyticsOk(request.resource.data);
+      allow update, delete: if isHihahoEditor();
+    }
+    function fstFeedbackOk(d) {
+      return d.keys().hasOnly(['fbId','subject','email','message','build','uid','status','replySent','createdAt'])
+        && d.keys().hasAll(['fbId','subject','email','message','build','uid','status','replySent','createdAt'])
+        && d.uid == request.auth.uid
+        && d.fbId is string && d.fbId.size() <= 20
+        && d.subject is string && d.subject.size() > 0 && d.subject.size() <= 200
+        && d.email is string && d.email.size() <= 200
+        && d.message is string && d.message.size() > 0 && d.message.size() <= 200
+        && d.build is string && d.build.size() <= 40
+        && d.status == 'new'
+        && d.replySent == false
+        && d.createdAt == request.time;
     }
     match /fst_feedback/{docId} {
-      allow read, write: if request.auth != null;
+      allow read: if isHihahoEditor() || (verifiedAccount() && resource.data.uid == request.auth.uid);
+      allow create: if verifiedAccount() && fstFeedbackOk(request.resource.data);
+      allow update: if isHihahoEditor() || (
+        verifiedAccount() && resource.data.uid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['replySent'])
+        && request.resource.data.replySent == true
+      );
+      allow delete: if isHihahoEditor();
     }
     match /fst_feedback_meta/{docId} {
-      allow read, write: if request.auth != null;
+      allow read: if verifiedAccount() && docId == 'counter';
+      allow create: if verifiedAccount() && docId == 'counter'
+        && request.resource.data.keys().hasOnly(['count'])
+        && request.resource.data.count == 1;
+      allow update: if verifiedAccount() && docId == 'counter'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['count'])
+        && request.resource.data.count is int
+        && resource.data.count is int
+        && request.resource.data.count == resource.data.count + 1;
+      allow delete: if false;
     }
 
     function appFieldsOk(d, ch) {
@@ -153,8 +198,31 @@ service cloud.firestore {
         && snapId.matches('[0-9]{8}');
     }
 
+    function cocoRole(email, role) {
+      return {'email': email, 'role': role};
+    }
+    function cocoIsMember(data) {
+      return data.keys().hasAny(['members']) && data.members is list && data.members.hasAny([
+        cocoRole(request.auth.token.email, 'owner'),
+        cocoRole(request.auth.token.email, 'member')
+      ]);
+    }
     match /groups/{groupId} {
-      allow read, write: if request.auth != null;
+      allow get: if verifiedAccount();
+      allow list: if false;
+      allow create: if verifiedAccount()
+        && request.resource.data.createdBy == request.auth.token.email
+        && cocoIsMember(request.resource.data)
+        && request.resource.data.members.hasAny([cocoRole(request.auth.token.email, 'owner')]);
+      allow update: if verifiedAccount() && (
+        cocoIsMember(resource.data) ||
+        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
+         && request.resource.data.members.hasAll(resource.data.members)
+         && request.resource.data.members.size() == resource.data.members.size() + 1
+         && request.resource.data.members.hasAny([cocoRole(request.auth.token.email, 'member')]))
+      );
+      allow delete: if verifiedAccount()
+        && resource.data.members.hasAny([cocoRole(request.auth.token.email, 'owner')]);
     }
 
     match /bombing-bay/global/plays/{id} {
@@ -303,7 +371,7 @@ service cloud.firestore {
 
     // 明友社向け見積もりシミュレーター: 単価設定は許可アカウントのみ読める・書き込みは管理者のみ（Admin/REST経由）
     match /meiyusha-estimate/{docId} {
-      allow read: if request.auth != null && (
+      allow read: if verifiedAccount() && (
         request.auth.token.email == 'meiyusha@meiyusha-estimate.app' ||
         request.auth.token.email.matches('.*@splineglobal[.]com') ||
         request.auth.token.email == 'junpei.omote@gmail.com'
@@ -315,10 +383,10 @@ service cloud.firestore {
     // 編集 = メンバー(オーナー + hondoko-config/members)のみ
     // 閲覧 = メンバー + 公開設定(hondoko-config/sharing)に応じたビューワー
     function isHondokoOwner() {
-      return request.auth != null && request.auth.token.email == 'junpei.omote@gmail.com';
+      return verifiedAccount() && request.auth.token.email == 'junpei.omote@gmail.com';
     }
     function isHondokoMember() {
-      return request.auth != null && (
+      return verifiedAccount() && (
         isHondokoOwner() ||
         (exists(/databases/$(database)/documents/hondoko-config/members) &&
          request.auth.token.email in get(/databases/$(database)/documents/hondoko-config/members).data.emails)
@@ -332,7 +400,7 @@ service cloud.firestore {
       return exists(/databases/$(database)/documents/hondoko-config/sharing) && (
         hondokoSharing().mode == 'public' ||
         hondokoSharing().mode == 'link' ||
-        (request.auth != null &&
+        (verifiedAccount() &&
          hondokoSharing().mode == 'viewers' &&
          request.auth.token.email in hondokoSharing().viewers)
       );
@@ -369,7 +437,7 @@ service cloud.firestore {
     // ユーザーごとの評価・メモ(相互に閲覧可、書き込みは本人のみ)
     match /hondoko-reviews/{docId} {
       allow read: if canHondokoRead();
-      allow create, update: if request.auth != null
+      allow create, update: if verifiedAccount()
         && request.resource.data.by == request.auth.token.email
         && request.resource.data.rating is int
         && request.resource.data.rating >= 0
@@ -379,11 +447,11 @@ service cloud.firestore {
         && (isHondokoMember() ||
             (isHondokoViewer() && hondokoSharing().allowComments == true));
       allow delete: if isHondokoOwner() ||
-        (request.auth != null && resource.data.by == request.auth.token.email);
+        (verifiedAccount() && resource.data.by == request.auth.token.email);
     }
     match /hondoko-comments/{docId} {
       allow read: if canHondokoRead();
-      allow create: if request.auth != null
+      allow create: if verifiedAccount()
         && request.resource.data.by == request.auth.token.email
         && request.resource.data.text is string
         && request.resource.data.text.size() > 0
@@ -392,7 +460,7 @@ service cloud.firestore {
             (isHondokoViewer() && hondokoSharing().allowComments == true));
       allow update: if false;
       allow delete: if isHondokoOwner() ||
-        (request.auth != null && resource.data.by == request.auth.token.email);
+        (verifiedAccount() && resource.data.by == request.auth.token.email);
     }
 
     // outreach-crm: ワークスペースコードを知っている端末間でリード/成約データを共有
