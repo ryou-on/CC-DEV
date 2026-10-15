@@ -231,14 +231,16 @@
         .catch(() => setLoading(false));
     }, []);
 
+    const isUnread = (status) => status === 'new' || status === 'unreviewed';
+
     const markRead = async (f) => {
-      if (f.status !== 'new') return;
+      if (!isUnread(f.status)) return;
       await db.collection('fst_feedback').doc(f.docId).update({ status: 'read' }).catch(()=>{});
       setFeedbacks(prev => prev.map(x => x.docId === f.docId ? { ...x, status: 'read' } : x));
     };
 
     const handleToggleSent = async (f) => {
-      const newStatus = f.status === 'replied' ? 'new' : 'replied';
+      const newStatus = f.status === 'replied' ? 'unreviewed' : 'replied';
       await db.collection('fst_feedback').doc(f.docId).update({
         status: newStatus,
         ...(newStatus === 'replied'
@@ -362,7 +364,7 @@ HAVE A NICE TRIP！
       finally { setAiLoading(false); }
     };
 
-    const unreadCount = feedbacks.filter(f => f.status === 'new').length;
+    const unreadCount = feedbacks.filter(f => f.status === 'new' || f.status === 'unreviewed').length;
 
     if (loading) return <div style={{ textAlign:'center', padding:'40px', color:DIM, fontSize:'11px' }}>読み込み中...</div>;
 
@@ -410,7 +412,7 @@ HAVE A NICE TRIP！
         ) : (
           <div style={{ display:'flex', flexDirection:'column', gap:'10px' }}>
             {feedbacks.map(f => {
-              const isNew     = f.status === 'new';
+              const isNew     = f.status === 'new' || f.status === 'unreviewed';
               const isReplied = f.status === 'replied';
               const buildColor = f.build === 'dev' ? DEV : STABLE;
               const date = f.createdAt?.toDate ? f.createdAt.toDate().toLocaleString('ja-JP') : '---';

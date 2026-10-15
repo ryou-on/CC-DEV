@@ -431,6 +431,8 @@ exports.miniMeWebhook = miniMe.miniMeWebhook;
 // ===== hondoko (本ドコ？): 蔵書管理 =====
 // 実装は functions/hondoko.js。エンドポイント: /api/hondoko-analyze
 const hondoko = require('./hondoko');
+const fstFeedback = require('./fst-feedback');
+exports.fstFeedbackSubmit = fstFeedback.fstFeedbackSubmit;
 exports.hondokoAnalyze = hondoko.hondokoAnalyze;
 exports.hondokoAmazon = hondoko.hondokoAmazon;
 exports.hondokoCover = hondoko.hondokoCover;

@@ -12,6 +12,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-check-compat.js"></script>
 
   <!-- React + Babel + Tailwind -->
   <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
@@ -52,7 +53,7 @@
   </style>
 </head>
 <body>
-  <div id="dev-banner">⚠ DEV BUILD — v0.10.29-dev — NOT FOR PRODUCTION ⚠</div>
+  <div id="dev-banner">⚠ DEV BUILD — v0.10.30-dev — NOT FOR PRODUCTION ⚠</div>
   <div id="root" style="padding-top:22px;"></div>
 
   <!-- Firebase 初期化 -->
@@ -68,6 +69,58 @@
     firebase.initializeApp(firebaseConfig);
     window._auth = firebase.auth();
     window._db   = firebase.firestore();
+    window.submitFstFeedback = async function (payload) {
+      const user = firebase.auth().currentUser;
+      if (!user || user.isAnonymous || user.emailVerified !== true) {
+        throw new Error('確認済みのアカウントでログインしてください');
+      }
+      let appCheckToken = '';
+      try {
+        const cfgRes = await fetch('/shared/cost-access-config.json', { cache: 'no-store' });
+        if (!cfgRes.ok) throw new Error('missing');
+        const cfg = await cfgRes.json();
+        const siteKey = cfg && cfg.recaptchaEnterpriseSiteKey;
+        if (!siteKey) throw new Error('missing');
+        if (!window._fstAppCheckReady) {
+          firebase.appCheck().activate(new firebase.appCheck.ReCaptchaEnterpriseProvider(siteKey), true);
+          window._fstAppCheckReady = true;
+        }
+        appCheckToken = (await firebase.appCheck().getToken(false)).token;
+        if (!appCheckToken) throw new Error('token');
+      } catch (err) {
+        throw new Error(err && err.message === 'missing' ? 'App Check の設定がないため送信できません' : 'App Check を確認できませんでした');
+      }
+      const idToken = await user.getIdToken();
+      const res = await fetch('/api/fst-feedback', {
+        method: 'POST',
+        cache: 'no-store',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + idToken,
+          'X-Firebase-AppCheck': appCheckToken,
+        },
+        body: JSON.stringify({
+          subject: payload.subject,
+          email: payload.email || '',
+          message: payload.message,
+          build: payload.build,
+        }),
+      });
+      const body = await res.json().catch(function () { return {}; });
+      if (!res.ok) {
+        const messages = {
+          APP_CHECK_REQUIRED: 'App Check がありません',
+          INVALID_APP_CHECK: 'App Check を確認できませんでした',
+          VERIFIED_ACCOUNT_REQUIRED: '確認済みアカウントが必要です',
+          USAGE_LIMIT: '送信回数の上限です。時間をおいて再試行してください',
+          SERVICE_PAUSED: '予算停止中のため送信できません',
+          INVALID_FEEDBACK: '入力内容を確認してください',
+          SIGN_IN_REQUIRED: 'ログインしてください',
+        };
+        throw new Error(messages[body.error] || '送信に失敗しました');
+      }
+      return body;
+    };
   </script>
 
   <!-- React アプリ（JSX） -->
@@ -464,9 +517,16 @@
     // ======================================================
     // リリースノート
     // ======================================================
-    const APP_VERSION = 'v0.10.29-dev';
+    const APP_VERSION = 'v0.10.30-dev';
 
     const RELEASE_NOTES = [
+      {
+        version: "v0.10.30-dev", date: "2026-10-15",
+        changes: [
+          "目安箱の送信を Cloud Functions 経由にした。クライアントから fst_feedback へ直接書き込まない",
+          "登録状態は unreviewed。既存の new は未読として扱い、状態の書き戻しは unreviewed / read / replied",
+        ],
+      },
       {
         version: "v0.10.29-dev", date: "2026-05-18",
         changes: [
@@ -884,8 +944,9 @@
         ],
       },
       {
-        version: "v0.6.0-dev", date: "2026-10-05",
+        version: "v0.6.0-dev", date: "2026-10-15",
         changes: [
+          "目安箱の送信を Cloud Functions 経由にした。状態は unreviewed。返信と状態変更は編集者のみ",
           "共通基盤：800円停止ワークフローと予算通知を接続。安全試験と復旧手順を確認（Flight Stripの画面変更なし）",
           "共通基盤：月額1,000円の予算設定・800円停止方針、共有権限移行とApp Check登録を追加",
           "共通基盤：有料APIの認証・利用上限・停止処理と公開前の課金リスク検査を追加",
@@ -1764,7 +1825,7 @@ HAVE A NICE TRIP！
 
       // 送信済みトグル（Firestore + ローカル state）
       const handleToggleSent = async (item) => {
-        const newStatus = item.status === 'replied' ? 'new' : 'replied';
+        const newStatus = item.status === 'replied' ? 'unreviewed' : 'replied';
         await db2.collection('fst_feedback').doc(item.docId).update({
           status: newStatus,
           ...(newStatus === 'replied'
@@ -4219,27 +4280,15 @@ HAVE A NICE TRIP！
       const handleSubmit = async () => {
         if (!subject.trim()) { setError('件名を入力してください'); return; }
         if (!message.trim()) { setError('メッセージを入力してください'); return; }
+        if (subject.trim().length > 100) { setError('件名は100文字以内です'); return; }
         if (message.length > 200) { setError('メッセージは200文字以内です'); return; }
         setSending(true); setError('');
         try {
-          // トランザクションで FB_XXXX 連番取得
-          const counterRef = db.collection('fst_feedback_meta').doc('counter');
-          let fbId;
-          await db.runTransaction(async tx => {
-            const doc = await tx.get(counterRef);
-            const n = (doc.exists ? (doc.data().count || 0) : 0) + 1;
-            tx.set(counterRef, { count: n }, { merge: true });
-            fbId = `FB_${String(n).padStart(4, '0')}`;
+          const saved = await window.submitFstFeedback({
+            subject: subject.trim(), email: email.trim(), message: message.trim(), build,
           });
-          // Firestore に保存
-          await db.collection('fst_feedback').doc(fbId).set({
-            fbId, subject: subject.trim(), email: email.trim(),
-            message: message.trim(), build,
-            uid: user?.uid || null, status: 'new', replySent: false,
-            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-          });
-          // EmailJS で自動返信
-          if (EMAILJS_CONFIG.publicKey && EMAILJS_CONFIG.serviceId && email.trim()) {
+          const fbId = saved.fbId;
+          if (EMAILJS_CONFIG.publicKey && EMAILJS_CONFIG.serviceId && email.trim() && fbId) {
             try {
               await window.emailjs.send(
                 EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateId,
@@ -4247,11 +4296,10 @@ HAVE A NICE TRIP！
                   subject: subject.trim(), message: message.trim() },
                 EMAILJS_CONFIG.publicKey
               );
-              await db.collection('fst_feedback').doc(fbId).update({ replySent: true });
             } catch(e) { console.warn('Auto-reply failed:', e); }
           }
           setSent(true);
-        } catch(e) { setError('送信に失敗しました: ' + e.message); }
+        } catch(e) { setError(e.message || '送信に失敗しました'); }
         finally { setSending(false); }
       };
 
@@ -7670,6 +7718,6 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
     })();
   </script>
 
-<script src="/shared/info-dialog.js" data-name-target="[data-cost-name]" data-version-target="[data-cost-version]" data-version="v0.6.0-dev" data-manual="Googleでログインしてタスクを作成し、ストリップを移動して進捗を管理します。J/Kで移動、Nで新規作成、?でショートカットを表示します。詳しい操作は下の取扱説明書をご覧ください。" data-manual-link="manual.html" data-changes="共通基盤の課金対策を追加。"></script>
+<script src="/shared/info-dialog.js" data-name-target="[data-cost-name]" data-version-target="[data-cost-version]" data-version="v0.10.30-dev" data-manual="Googleでログインしてタスクを作成し、ストリップを移動して進捗を管理します。J/Kで移動、Nで新規作成、?でショートカットを表示します。詳しい操作は下の取扱説明書をご覧ください。" data-manual-link="manual.html" data-changes="目安箱の送信をサーバー経由にした。"></script>
 </body>
 </html>

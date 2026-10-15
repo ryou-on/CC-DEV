@@ -10,6 +10,9 @@ const LIMITS = Object.freeze({
   miniStatus: { minute: 15, userDay: 600, userMonth: 1800, globalDay: 1800, globalMonth: 6000, bytes: 1024 },
   anthropicProxy: { minute: 3, userDay: 20, userMonth: 100, globalDay: 40, globalMonth: 200, bytes: 2_000_000 },
   hondokoAnalyze: { minute: 2, userDay: 10, userMonth: 40, globalDay: 20, globalMonth: 80, bytes: 8_000_000 },
+  // Suggestion box. authorize() uses the byte cap. The handler checks the budget latch
+  // itself and does not call reserve(), so ordinary verified users are not UID-allowlisted.
+  fstFeedback: { minute: 5, userDay: 20, userMonth: 100, globalDay: 200, globalMonth: 2000, bytes: 8192 },
 });
 const ORIGINS = new Set(['https://cc-dev-ps7.web.app', 'https://cc-dev-ps7.firebaseapp.com']);
 
