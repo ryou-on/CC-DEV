@@ -10,7 +10,7 @@
 - 描画: HTML Canvas（`seek(t)` の純粋関数）+ Playwright で全フレーム撮影
 - 書き出し: ffmpeg（H.264 / yuv420p / crf 18 / 30fps / 音声なし）
 - 取得: Python（urllib + Pillow）。コピー自動生成は Claude API（任意）
-- Hosting: 未デプロイ（生成物は MP4。サイトに載せる場合のみ `public/cm-generator/`）
+- Hosting: ソースはリポジトリに残す。Firebase Hosting の main ターゲットは `firebase.json` の `ignore`（`cm-generator/**` と `sylavids-cm/**`、公開ディレクトリ基準）でこのディレクトリをデプロイしない（2026-10-16 承認）。ignore を外すと再び無認証で公開される。`public/hihaho-cm/` は別アプリとして公開のまま
 
 ## ファイル構成
 ```
@@ -88,6 +88,9 @@ python3 render.py brands/example/brand.json        # 4本を一括書き出し
 - hihaho 15秒 ブラウザプレビュー（Artifact）: https://claude.ai/artifact/WMLVv9fygCifDfHaaczAjN
 - MP4: `public/cm-generator/out/hihaho-{15,30}s-{h,v}.mp4` / `public/hihaho-cm/hihaho-cm.mp4`
 
-## デプロイ先（main にマージした場合）
-- GitHub Actions: https://github.com/ryou-on/CC-DEV/actions
-- 本番URL: https://cc-dev-ps7.web.app/cm-generator/ （hihaho 単体版: `/hihaho-cm/` / Sylavids: `/sylavids-cm/`）
+## デプロイ
+- ソースは `public/cm-generator/` に残す（ローカル生成用）。Hosting の公開対象には含めない。
+- `firebase.json` の main ターゲット `ignore` に `cm-generator/**` がある。削除しないこと。
+- `sylavids-cm` も同じく `sylavids-cm/**` で Hosting 対象外。
+- `hihaho-cm` は別ディレクトリで、Hosting 公開のまま: https://cc-dev-ps7.web.app/hihaho-cm/
+- main への push で GitHub Actions が Hosting を更新する: https://github.com/ryou-on/CC-DEV/actions
