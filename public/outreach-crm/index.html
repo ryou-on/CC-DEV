@@ -258,8 +258,9 @@
    outreach-crm — コールドメール成約ファネル測定CRM
    単一HTML / Firestore(compat) + localStorage キャッシュ
    ============================================================ */
-var APP_VERSION = 'v0.1.0';
+var APP_VERSION = 'v0.2.0';
 var RELEASE_NOTES = [
+  {"version": "v0.2.0", "ver": "v0.2.0", "date": "2026-10-05", "changes": ["クラウド共有にGoogleログインと管理者による利用許可が必要になりました。共有コードだけでは接続できません。"]},
   { ver:'v0.1.0', date:'2026-08-14', changes:[
     'リード管理（追加・編集・CSVインポート・検索・業種/状態フィルタ）',
     'アクション記録（送信/開封/クリック/返信/商談/成約/失注）とタイムライン表示',
@@ -308,7 +309,8 @@ var firebaseConfig = {
 function initFirebase(){ try{ firebase.initializeApp(firebaseConfig); db=firebase.firestore(); log('firebase init ok'); }catch(e){ log('firebase init fail '+e.message); } }
 function wsDocRef(){ return db.collection('outreach-crm').doc(workspace); }
 
-function connectCloud(code){
+async function connectCloud(code){
+  try { await requireCCDevLogin(); } catch { setCloud("#ef4444","ログイン設定を確認してください"); return; }
   if(!db){ setCloud('#ef4444','Firebase未初期化'); return; }
   workspace=code; localStorage.setItem(LS_WS, code);
   if(unsub){ unsub(); unsub=null; }
@@ -328,7 +330,7 @@ function connectCloud(code){
 }
 var pushTimer=null;
 function pushCloud(){
-  if(!db||!workspace) return;
+  if(!db||!workspace||!firebase.auth?.().currentUser) return;
   clearTimeout(pushTimer);
   pushTimer=setTimeout(function(){
     wsDocRef().set({ leads:state.leads, updatedAt:Date.now() }).then(function(){ log('pushed '+state.leads.length); })
@@ -687,3 +689,8 @@ var savedWs=localStorage.getItem(LS_WS);
 if(savedWs){ connectCloud(savedWs); } else { setCloud('#666','ローカルのみ'); }
 log('boot done, '+state.leads.length+' leads');
 </script>
+
+<script>window.COST_RELEASE_NOTES = RELEASE_NOTES;</script>
+<script src="/shared/info-dialog.js" data-name-target="h1" data-version-target="#verLabel" data-version="v0.2.0" data-manual="リードと対応履歴を管理します。端末内保存はそのまま使えます。クラウド共有にはGoogleログインと利用許可が必要です。" data-changes="クラウド共有にGoogleログインと管理者の許可が必要になりました。"></script>
+</body>
+</html>

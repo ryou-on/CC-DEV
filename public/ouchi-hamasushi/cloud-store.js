@@ -19,7 +19,9 @@ const firebaseConfig = {
   appId: "1:1029579090333:web:c699eb13e9279f467f2774"
 };
 
+import { connectFirebase } from "/shared/firebase-access.js";
 const app = initializeApp(firebaseConfig);
+const sharingReady = connectFirebase(app, {sdkVersion:"10.13.0"});
 const db = getFirestore(app);
 
 // このファミリーのデフォルト家族コード。新しいブラウザでプレイヤーを開くと
@@ -85,7 +87,11 @@ function subscribe(familyCode, onUpdate, onError) {
 
   let firstLoad = true;
   const col = collection(db, 'ouchi-hamasushi', familyCode, 'assets');
-  currentUnsubscribe = onSnapshot(col, (snap) => {
+  let cancelled = false, stop = null;
+  currentUnsubscribe = () => { cancelled = true; if (stop) stop(); };
+  sharingReady.then(() => {
+    if (cancelled) return;
+    stop = onSnapshot(col, (snap) => {
     let changes = 0;
     snap.docChanges().forEach(change => {
       const key = change.doc.id;
@@ -117,6 +123,7 @@ function subscribe(familyCode, onUpdate, onError) {
     }
   });
 
+  }).catch(err => { if (!cancelled && typeof onError === "function") onError(err); });
   return currentUnsubscribe;
 }
 
@@ -134,6 +141,7 @@ function wipeLocalAssets() {
 }
 
 async function setAsset(familyCode, assetKey, dataUri, mimeType) {
+  await sharingReady;
   if (!dataUri || typeof dataUri !== 'string') {
     throw new Error('データが空です');
   }
@@ -154,6 +162,7 @@ async function setAsset(familyCode, assetKey, dataUri, mimeType) {
 }
 
 async function removeAsset(familyCode, assetKey) {
+  await sharingReady;
   localStorage.removeItem(assetKey);
   const ref = doc(db, 'ouchi-hamasushi', familyCode, 'assets', assetKey);
   await deleteDoc(ref);

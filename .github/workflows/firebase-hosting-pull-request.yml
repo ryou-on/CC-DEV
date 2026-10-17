@@ -13,7 +13,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Block unsafe deployment
+        run: python3 scripts/cost_guard.py --root . --check
+      # Preview channels are created on the production project cc-dev-ps7.
+      # Keep them off unless a human sets the repository variable ALLOW_HOSTING_PREVIEW=true.
+      - name: Hosting preview is withheld
+        if: ${{ vars.ALLOW_HOSTING_PREVIEW != 'true' }}
+        run: echo "Skipping Firebase Hosting preview. Set repository variable ALLOW_HOSTING_PREVIEW=true to publish a preview channel."
       - uses: FirebaseExtended/action-hosting-deploy@v0
+        if: ${{ vars.ALLOW_HOSTING_PREVIEW == 'true' }}
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_CC_DEV_PS7 }}
