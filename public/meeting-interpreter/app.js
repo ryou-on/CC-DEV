@@ -329,11 +329,13 @@
   }
 
   async function startInterpreter() {
-    if (state.running) {
+    if (state.running || state.connecting) {
       return;
     }
 
+    state.connecting = true;
     try {
+      await CostAccess.headers();
       setStatus("接続準備中");
 
       addLog("接続開始");
@@ -475,7 +477,7 @@
         offer
       );
 
-      const response = await fetch(
+      const response = await CostAccess.fetch(
         apiEndpoint,
         {
           method: "POST",
@@ -498,11 +500,12 @@
       );
 
       if (!response.ok) {
-        throw new Error(
-          await response.text()
-        );
+        throw await CostAccess.error(response);
       }
 
+      const expires = Number(response.headers.get("X-Session-Expires-At"));
+      if (!Number.isSafeInteger(expires) || expires <= Date.now()) throw Error("通訳の停止時刻を確認できませんでした。");
+      state.expiryTimer = setTimeout(() => stopInterpreter(), Math.min(300000, expires - Date.now()));
       await pc.setRemoteDescription({
         type: "answer",
         sdp: await response.text()
@@ -524,12 +527,14 @@
       alert(
         `接続できませんでした。\n\n${error.message}`
       );
-    }
+    } finally { state.connecting = false; }
   }
 
   function stopInterpreter(
     updateStatus = true
   ) {
+    clearTimeout(state.expiryTimer);
+    state.connecting = false;
     state.dc?.close();
     state.pc?.close();
 

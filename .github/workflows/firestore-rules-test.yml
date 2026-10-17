@@ -1,0 +1,29 @@
+# firestore.rules の Emulator テスト（PR 時）
+# 認証必須の統一スイートは tests/firestore。匿名書き込みを成功させる古い期待は使わない。
+name: Firestore rules test
+on:
+  pull_request:
+    paths:
+      - firestore.rules
+      - storage.rules
+      - tests/firestore/**
+      - firebase.rules-test.json
+      - .github/workflows/firestore-rules-test.yml
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Test Firestore rules (emulator only)
+        run: |
+          npm ci --ignore-scripts --prefix tests/firestore
+          npx --yes firebase-tools@15.23.0 emulators:exec --only auth,firestore,storage --project demo-cc-dev-cost --config firebase.rules-test.json "npm --prefix tests/firestore test"
