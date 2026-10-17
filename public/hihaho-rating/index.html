@@ -15,8 +15,8 @@
 <script>/* ============================================================
    評価インタラクションを体験する — note記事用の約12秒モーショングラフィック（BGM・効果音つき）
    記事: 動画の感想を見たその場で集める「評価」インタラクションとフォーム・質問の使い分け
-   最後の場面は、hihahoの「評価」インタラクションを重ねる前提で下側を空けてある（?end=stars で星の確認用モックを表示）
-   全ての描画は seek(t) の純粋関数。BPM120 → 1拍 = 0.5秒（24拍 = 12秒）
+   最後から2番目のスライドで「次の場面で評価してください」と伝え、最後の場面（紺一色）に hihaho の「評価」インタラクションを重ねる前提
+   全ての描画は seek(t) の純粋関数。BPM120 → 1拍 = 0.5秒（27拍 = 13.5秒）
    ============================================================ */
 let LANG = new URLSearchParams(location.search).get('lang') === 'en' ? 'en' : 'ja';
 window.setLang = l => { LANG = l === 'en' ? 'en' : 'ja'; };
@@ -98,7 +98,6 @@ function check(cx, cy, size, color, p) {                         // チェック
 function playTri(x, y, s, color) { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + s * 1.4); ctx.lineTo(x + s * 1.2, y + s * 0.7); ctx.closePath(); ctx.fillStyle = color; ctx.fill(); }
 function textW(text, size, weight = 700) { setFont(size, weight); return ctx.measureText(text).width; }
 
-const END_STARS = new URLSearchParams(location.search).get('end') === 'stars';   // 星入りの確認用モック
 function starPath(cx, cy, r) {                                   // 5角の星
   ctx.beginPath();
   for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rad = i % 2 === 0 ? r : r * 0.42, x = cx + Math.cos(a) * rad, y = cy + Math.sin(a) * rad; if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y); }
@@ -114,9 +113,9 @@ function starRow(cx, cy, r, gap, filled, fill, stroke, show = 1) {  // 星5つ�
     });
   }
 }
-function arrowDown(x, y, color, bob) {                           // 下向きの矢印
-  ctx.save(); ctx.translate(0, bob); ctx.fillStyle = color;
-  ctx.fillRect(x - 10, y - 40, 20, 40); ctx.beginPath(); ctx.moveTo(x - 36, y); ctx.lineTo(x + 36, y); ctx.lineTo(x, y + 42); ctx.closePath(); ctx.fill(); ctx.restore();
+function arrowRight(x, y, color, bob) {                          // 右向きの矢印（次の場面へ）
+  ctx.save(); ctx.translate(bob, 0); ctx.fillStyle = color;
+  ctx.fillRect(x - 60, y - 10, 60, 20); ctx.beginPath(); ctx.moveTo(x, y - 36); ctx.lineTo(x, y + 36); ctx.lineTo(x + 42, y); ctx.closePath(); ctx.fill(); ctx.restore();
 }
 
 /* ---------- シーン（s = そのシーン内の拍） ---------- */
@@ -152,23 +151,21 @@ function s2(s) {                                                 // 使い分け
     });
   });
 }
-function s3(s) {                                                 // 締め：この動画、いかがでしたか？（評価インタラクションを置く場面）
-  maskedText('この動画、', 960, 320, 90, prog(s, 0.4, 1), COLOR.navy, 'center', 1700);
-  maskedText('いかがでしたか？', 960, 530, 170, prog(s, 1.0, 1.2), COLOR.navy, 'center', 1700);
-  maskedText('いま、この場で評価してください', 960, 650, 56, prog(s, 2.2, 1.1), COLOR.muted, 'center', 1700);
+function s3(s) {                                                 // この動画、いかがでしたか？ → 次の場面で評価
+  maskedText('この動画、', 960, 340, 90, prog(s, 0.4, 1), COLOR.navy, 'center', 1700);
+  maskedText('いかがでしたか？', 960, 550, 170, prog(s, 1.0, 1.2), COLOR.navy, 'center', 1700);
+  maskedText('次の場面で評価してください', 960, 700, 66, prog(s, 2.2, 1.1), COLOR.pink, 'center', 1700);
   const a = prog(s, 3.0, 0.6);
-  if (a > 0 && (!END_STARS || s < 3.5)) { ctx.save(); ctx.globalAlpha = a; arrowDown(960, 770, COLOR.pink, Math.sin(T * 6) * 8); ctx.restore(); }
-  if (END_STARS) {                                               // 確認用：星を選ぶ動き
-    const filled = s < 5.5 ? 0 : Math.min(5, Math.floor((s - 5.5) / 0.45) + 1);
-    starRow(960, 890, 64, 34, filled, COLOR.pink, COLOR.navy, prog(s, 3.5, 0.8));
-    maskedText('ありがとうございました', 960, 1020, 52, prog(s, 7.6, 0.4), COLOR.navy, 'center', 1700);
-  }
+  if (a > 0) { ctx.save(); ctx.globalAlpha = a; arrowRight(1500, 700, COLOR.pink, Math.sin(T * 6) * 8); ctx.restore(); }
+}
+function s4(s) {                                                 // 評価の場面：hihahoの「評価」インタラクションを中央に重ねる（紺一色）
+  maskedText('評価をお願いします', 960, 200, 64, prog(s, 0.4, 1), COLOR.white, 'center', 1700);
 }
 const SCENES = [
-  { dur: 5, bg: COLOR.light, fn: s0 }, { dur: 5, bg: COLOR.pink, fn: s1 }, { dur: 6, bg: COLOR.cyan, fn: s2 }, { dur: 8, bg: COLOR.light, fn: s3 },
+  { dur: 5, bg: COLOR.light, fn: s0 }, { dur: 5, bg: COLOR.pink, fn: s1 }, { dur: 6, bg: COLOR.cyan, fn: s2 }, { dur: 5, bg: COLOR.light, fn: s3 }, { dur: 6, bg: COLOR.navy, fn: s4 },
 ];
 let ACC = 0; SCENES.forEach(c => { c.start = ACC; ACC += c.dur; });
-window.DURATION = ACC * BEAT;                                    // 12秒（最後の4秒は評価を置くための待ち時間）
+window.DURATION = ACC * BEAT;                                    // 13.5秒（最後の3秒は評価を置くための場面）
 const TR = 1.0;                                                   // シーン転換（1拍でスライド）
 
 /* ---------- メイン：時刻 t のフレームを描画（最後はフェードアウトせず静止して待つ） ---------- */
@@ -192,7 +189,8 @@ const SCENE_SFX = [
   [[0.4, 'pop'], [1.2, 'pop'], [1.8, 'pop'], [2.6, 'tick'], [3.4, 'pop']],
   [[0.4, 'pop'], [1.0, 'pop'], [2.0, 'blip'], ...ticks(2.8, 4.2, 0.35), [4.5, 'ding']],
   [[0.4, 'pop'], [1.0, 'pop'], [2.2, 'pop'], [3.2, 'pop'], [4.2, 'pop']],
-  [[0.4, 'pop'], [1.0, 'pop'], [2.2, 'blip'], [3.0, 'tick'], ...(END_STARS ? [[3.5, 'pop'], ...ticks(5.5, 7.3, 0.45), [7.6, 'ding']] : [[3.6, 'chime']])],
+  [[0.4, 'pop'], [1.0, 'pop'], [2.2, 'blip'], [3.0, 'tick']],
+  [[0.3, 'chime'], [0.6, 'pop']],
 ];
 window.SFX = function () {
   const ev = [], at = (beat, type, v = 1) => ev.push({ t: +(beat * BEAT).toFixed(3), type, v });
