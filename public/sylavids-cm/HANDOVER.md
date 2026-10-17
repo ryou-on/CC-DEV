@@ -58,9 +58,10 @@ public/sylavids-cm/
 - Sylavids 版: https://claude.ai/artifact/6G1suxHPqu4NZikFfJbd2Y
 - 作り方: `index.html` のスクリプトに、ロゴを base64 の data URI で埋め込み、再生/一時停止・シークバー・シーン別ジャンプの UI を付けた1枚の HTML として公開（外部 fetch は CSP でブロックされるため画像は必ず埋め込む）。フォントは Google Fonts の Noto Sans JP を読み込み、`document.fonts.load` 完了後に描画開始。
 
-## デプロイ先（main にマージした場合）
-- GitHub Actions: https://github.com/ryou-on/CC-DEV/actions
-- 本番URL: https://cc-dev-ps7.web.app/sylavids-cm/ （hihaho 版は `/hihaho-cm/`）
+## デプロイ
+- ソースは `public/sylavids-cm/` に残す。Firebase Hosting の main ターゲットは `firebase.json` の `ignore`（`sylavids-cm/**`、公開ディレクトリ基準）でこのディレクトリをデプロイしない（2026-10-16 承認）。ignore を外すと再び無認証で公開される。
+- `hihaho-cm` は別ディレクトリで、Hosting 公開のまま: https://cc-dev-ps7.web.app/hihaho-cm/
+- main への push で GitHub Actions が Hosting を更新する: https://github.com/ryou-on/CC-DEV/actions
 
 ## 進捗チェックリスト
 - [x] Sylavids 15秒CM（シーン設計・ロゴ適用・サイト文言準拠のコピー）
