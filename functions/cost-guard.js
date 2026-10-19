@@ -13,6 +13,8 @@ const LIMITS = Object.freeze({
   // Suggestion box. authorize() uses the byte cap. The handler checks the budget latch
   // itself and does not call reserve(), so ordinary verified users are not UID-allowlisted.
   fstFeedback: { minute: 5, userDay: 50, userMonth: 100, globalDay: 200, globalMonth: 2000, bytes: 16384 },
+  // Usage events. authorize() uses the byte cap only. Not on the paid-API UID allowlist.
+  fstAnalytics: { minute: 30, userDay: 400, userMonth: 4000, globalDay: 2000, globalMonth: 20000, bytes: 4096 },
 });
 const ORIGINS = new Set(['https://cc-dev-ps7.web.app', 'https://cc-dev-ps7.firebaseapp.com']);
 

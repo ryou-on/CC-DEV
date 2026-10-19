@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const { onRequest } = require('firebase-functions/v2/https');
 const { getGuard, sendCostError, CostError, periodKeys } = require('./cost-guard');
+const { isEditorEmail } = require('./editor-policy');
 
 const DEFAULT_LIMITS = Object.freeze({
   userMinute: 5,
@@ -101,7 +102,7 @@ function parseUpdate(body) {
 }
 
 function isEditor(actor) {
-  return actor.email.endsWith('@splineglobal.com') || actor.email === 'junpei.omote@gmail.com';
+  return isEditorEmail(actor.email);
 }
 
 async function assertBudgetOpen(db) {

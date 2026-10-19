@@ -31,6 +31,7 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // 編集者のメールは functions/editor-policy.json が正本。Rules は import できないため、検査がこの関数と照合する。
     function isHihahoEditor() {
       return verifiedAccount() && (
         request.auth.token.email.matches('.*@splineglobal[.]com') ||
@@ -59,24 +60,9 @@ service cloud.firestore {
     match /users/{userId}/{document=**} {
       allow read, write: if verifiedAccount() && request.auth.uid == userId;
     }
-    function fstAnalyticsOk(d) {
-      return d.keys().hasOnly(['uidHash','date','month','hour','dow','version','build','createdAt','device','type'])
-        && d.keys().hasAll(['uidHash','date','version','build','createdAt'])
-        && d.uidHash is string && d.uidHash.size() > 0 && d.uidHash.size() <= 32
-        && d.date is string && d.date.size() == 10
-        && d.version is string && d.version.size() <= 40
-        && d.build is string && d.build.size() <= 20
-        && d.createdAt == request.time
-        && (!d.keys().hasAny(['type']) || d.type in ['session', 'task_created', 'task_completed'])
-        && (!d.keys().hasAny(['month']) || (d.month is string && d.month.size() == 7))
-        && (!d.keys().hasAny(['hour']) || (d.hour is int && d.hour >= 0 && d.hour <= 23))
-        && (!d.keys().hasAny(['dow']) || (d.dow is int && d.dow >= 0 && d.dow <= 6))
-        && (!d.keys().hasAny(['device']) || (d.device is string && d.device.size() <= 20));
-    }
     match /fst_analytics/{docId} {
       allow read: if isHihahoEditor();
-      allow create: if verifiedAccount() && fstAnalyticsOk(request.resource.data);
-      allow update, delete: if isHihahoEditor();
+      allow create, update, delete: if false;
     }
     match /fst_feedback/{docId} {
       allow read: if isHihahoEditor() || (verifiedAccount() && resource.data.uid == request.auth.uid);

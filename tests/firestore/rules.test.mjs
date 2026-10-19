@@ -281,13 +281,19 @@ describe('anonymous sign-in cannot use shared Flight Strip or coco-itta data', (
     build: 'stable', uid: 'writer', status: 'new', replySent: false, createdAt: serverTimestamp(),
   };
 
-  test('anonymous auth is denied and a verified user can record a session', async () => {
+  test('anonymous auth is denied and clients cannot write analytics', async () => {
     await assertFails(setDoc(doc(anonAuth(), 'fst_analytics/s1'), session));
     await assertFails(setDoc(doc(unverifiedEditor(), 'fst_analytics/s1'), session));
-    await assertSucceeds(setDoc(doc(writer(), 'fst_analytics/s1'), session));
+    await assertFails(setDoc(doc(writer(), 'fst_analytics/s1'), session));
+    await assertFails(setDoc(doc(editor(), 'fst_analytics/s1'), session));
+    await env.withSecurityRulesDisabled(async (c) => {
+      await setDoc(doc(c.firestore(), 'fst_analytics/s1'), session);
+    });
     await assertFails(getDoc(doc(writer(), 'fst_analytics/s1')));
     await assertFails(getDoc(doc(anonAuth(), 'fst_analytics/s1')));
     await assertSucceeds(getDoc(doc(editor(), 'fst_analytics/s1')));
+    await assertFails(updateDoc(doc(editor(), 'fst_analytics/s1'), { hour: 1 }));
+    await assertFails(deleteDoc(doc(editor(), 'fst_analytics/s1')));
     await assertFails(getDoc(doc(unverifiedEditor(), 'fst_analytics/s1')));
     await assertSucceeds(setDoc(doc(writer(), 'users/writer/tasks/t'), { title: '自分のタスク' }));
     await assertFails(setDoc(doc(anonAuth(), 'users/anon-user/tasks/t'), { title: '匿名' }));
