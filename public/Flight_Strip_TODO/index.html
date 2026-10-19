@@ -135,6 +135,38 @@
         if (!res.ok) throw new Error(body.error === 'EDITOR_REQUIRED' ? 'この操作は編集者だけが実行できます' : '状態を更新できませんでした');
         return body;
     };
+    window.recordFstAnalytics = async function (payload) {
+      try {
+        const user = firebase.auth().currentUser;
+        if (!user || user.isAnonymous || user.emailVerified !== true) return;
+        if (!window._fstAppCheckReady) {
+          const cfgRes = await fetch('/shared/cost-access-config.json', { cache: 'no-store' });
+          if (!cfgRes.ok) return;
+          const cfg = await cfgRes.json();
+          if (!cfg || !cfg.recaptchaEnterpriseSiteKey) return;
+          firebase.appCheck().activate(new firebase.appCheck.ReCaptchaEnterpriseProvider(cfg.recaptchaEnterpriseSiteKey), true);
+          window._fstAppCheckReady = true;
+        }
+        const appCheckToken = (await firebase.appCheck().getToken(false)).token;
+        if (!appCheckToken) return;
+        await fetch('/api/fst-analytics', {
+          method: 'POST',
+          cache: 'no-store',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer ' + await user.getIdToken(),
+            'X-Firebase-AppCheck': appCheckToken,
+          },
+          body: JSON.stringify({
+            appId: payload.appId,
+            version: payload.version,
+            build: payload.build,
+            type: payload.type,
+            device: payload.device,
+          }),
+        });
+      } catch (e) {}
+    };
   </script>
 
   <!-- React アプリ（JSX） -->
@@ -376,7 +408,7 @@
     // リリースノート
     // ======================================================
     const RELEASE_NOTES = [
-      { version: "v0.5.17", date: "2026-10-15", changes: ["フィードバックはサーバーで受け付け、未確認として保存します。ブラウザからデータベースへは直接書き込めません。", "送信前に、個人情報を本文へ書かない案内を表示します。メッセージは2,000文字まで送れます。"] },
+      { version: "v0.5.17", date: "2026-10-15", changes: ["フィードバックはサーバーで受け付け、未確認として保存します。ブラウザからデータベースへは直接書き込めません。", "送信前に、個人情報を本文へ書かない案内を表示します。メッセージは2,000文字まで送れます。", "利用統計もサーバー経由で記録します。ブラウザから fst_analytics へは書けません。"] },
       { version: "v0.5.16", date: "2026-10-05", changes: ["共通基盤：月額1,000円予算の800円停止通知と停止ワークフローを接続。安全試験と復旧手順を確認（Flight Stripの画面変更なし）"] },
       { version: "v0.5.15", date: "2026-10-05", changes: ["共通基盤：共有データのアクセス権限と予算設定を更新。ログイン・利用許可の検証を追加"] },
       { version: "v0.5.14", date: "2026-10-05", changes: ["共通基盤：有料APIの認証・利用上限・停止処理と公開前の課金リスク検査を追加"] },
@@ -1616,21 +1648,10 @@
 
       // セッション記録（Analytics用）
       useEffect(() => {
-        try {
-          const now = new Date();
-          const uidHash = btoa(user.uid).replace(/[^a-zA-Z0-9]/g,'').slice(0,12);
-          const sessionId = `${now.toISOString().slice(0,10)}_${uidHash}_${now.getTime()}`;
-          db.collection('fst_analytics').doc(sessionId).set({
-            uidHash,
-            date:  now.toISOString().slice(0,10),
-            month: now.toISOString().slice(0,7),
-            hour:  now.getHours(),
-            dow:   now.getDay(),
-            version: 'v0.5.17',
-            build:   'stable',
-            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-          }).catch(() => {});
-        } catch(e) {}
+        const device = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? 'mobile' : 'desktop';
+        window.recordFstAnalytics({
+          appId: 'flight-strip-todo', version: '0.5.17', build: 'stable', type: 'session', device,
+        });
       }, []);
 
       // 毎日1回目起動時: 昨日のサマリーを表示
@@ -2561,6 +2582,6 @@
       fn();
     })();
   </script>
-<script src="/shared/info-dialog.js" data-name-target="[data-cost-name]" data-version-target="[data-cost-version]" data-version="v0.5.17" data-manual="Googleでログインしてタスクを作成し、ストリップを移動して進捗を管理します。J/Kで移動、Nで新規作成、?でショートカットを表示します。詳しい操作は下の取扱説明書をご覧ください。" data-manual-link="manual.html" data-changes="フィードバックをサーバー経由の未確認受付に変更。"></script>
+<script src="/shared/info-dialog.js" data-name-target="[data-cost-name]" data-version-target="[data-cost-version]" data-version="v0.5.17" data-manual="Googleでログインしてタスクを作成し、ストリップを移動して進捗を管理します。J/Kで移動、Nで新規作成、?でショートカットを表示します。詳しい操作は下の取扱説明書をご覧ください。" data-manual-link="manual.html" data-changes="フィードバックと利用統計をサーバー経由に変更。"></script>
 </body>
 </html>

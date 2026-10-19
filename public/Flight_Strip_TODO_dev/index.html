@@ -152,6 +152,38 @@
         if (!res.ok) throw new Error(body.error === 'EDITOR_REQUIRED' ? 'この操作は編集者だけが実行できます' : '状態を更新できませんでした');
         return body;
     };
+    window.recordFstAnalytics = async function (payload) {
+      try {
+        const user = firebase.auth().currentUser;
+        if (!user || user.isAnonymous || user.emailVerified !== true) return;
+        if (!window._fstAppCheckReady) {
+          const cfgRes = await fetch('/shared/cost-access-config.json', { cache: 'no-store' });
+          if (!cfgRes.ok) return;
+          const cfg = await cfgRes.json();
+          if (!cfg || !cfg.recaptchaEnterpriseSiteKey) return;
+          firebase.appCheck().activate(new firebase.appCheck.ReCaptchaEnterpriseProvider(cfg.recaptchaEnterpriseSiteKey), true);
+          window._fstAppCheckReady = true;
+        }
+        const appCheckToken = (await firebase.appCheck().getToken(false)).token;
+        if (!appCheckToken) return;
+        await fetch('/api/fst-analytics', {
+          method: 'POST',
+          cache: 'no-store',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer ' + await user.getIdToken(),
+            'X-Firebase-AppCheck': appCheckToken,
+          },
+          body: JSON.stringify({
+            appId: payload.appId,
+            version: payload.version,
+            build: payload.build,
+            type: payload.type,
+            device: payload.device,
+          }),
+        });
+      } catch (e) {}
+    };
   </script>
 
   <!-- React アプリ（JSX） -->
@@ -557,6 +589,7 @@
           "フィードバックはサーバーで受け付け、未確認として保存します。ブラウザからデータベースへは直接書き込めません。",
           "送信前に、個人情報を本文へ書かない案内を表示します。メッセージは2,000文字まで送れます。",
           "受信箱の状態変更もサーバー経由です。未確認、確認済み、対応中、対応済みの4つに更新できます。",
+          "利用統計もサーバー経由で記録します。ブラウザから fst_analytics へは書けません。",
         ],
       },
       {
@@ -5393,23 +5426,14 @@ HAVE A NICE TRIP！
 
       // アナリティクス: セッション記録（起動時1回）
       useEffect(() => {
-        try {
-          const now = new Date();
-          const uidHash = btoa(user.uid).replace(/[^a-zA-Z0-9]/g,'').slice(0,12);
-          const sessionId = `${now.toISOString().slice(0,10)}_${uidHash}_${now.getTime()}`;
-          const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-          db.collection('fst_analytics').doc(sessionId).set({
-            uidHash,
-            date:    now.toISOString().slice(0,10),
-            month:   now.toISOString().slice(0,7),
-            hour:    now.getHours(),
-            dow:     now.getDay(),
-            version: APP_VERSION,
-            build:   'dev',
-            device:  isMobileDevice ? 'mobile' : 'desktop',
-            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-          }).catch(()=>{});
-        } catch(e){}
+        const device = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ? 'mobile' : 'desktop';
+        window.recordFstAnalytics({
+          appId: 'flight-strip-todo-dev',
+          version: APP_VERSION.replace(/^v/, ''),
+          build: 'dev',
+          type: 'session',
+          device,
+        });
       }, []); // eslint-disable-line
 
       // ER-0063: ブロードキャスト監視（onSnapshot）
@@ -5757,37 +5781,17 @@ HAVE A NICE TRIP！
           status = await safeNextAsync();
         }
         tasksRef.add({ ...t, status, createdAt:ts(), updatedAt:ts() });
-        // タスク作成イベントを記録
-        try {
-          const uidHash = btoa(user.uid).replace(/[^a-zA-Z0-9]/g,'').slice(0,12);
-          const today = new Date().toISOString().slice(0,10);
-          db.collection('fst_analytics').add({
-            type: 'task_created',
-            uidHash,
-            date: today,
-            version: APP_VERSION,
-            build: 'dev',
-            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-          }).catch(()=>{});
-        } catch(e){}
+        window.recordFstAnalytics({
+          appId: 'flight-strip-todo-dev', version: APP_VERSION.replace(/^v/, ''), build: 'dev', type: 'task_created',
+        });
       }, [tasksRef, user.uid]);
       // ER-0061: 次タスク追加ハンドラー
       const handleAddNextTask  = useCallback(async ({ title, priority, category }) => {
         const status = await safeNextAsync();
         tasksRef.add({ stripId:`FS${String(Date.now()).slice(-4)}`, title, status, priority: priority||'normal', category: category||'work', createdAt:ts(), updatedAt:ts(), sortOrder:Date.now() });
-        // タスク作成イベントを記録
-        try {
-          const uidHash = btoa(user.uid).replace(/[^a-zA-Z0-9]/g,'').slice(0,12);
-          const today = new Date().toISOString().slice(0,10);
-          db.collection('fst_analytics').add({
-            type: 'task_created',
-            uidHash,
-            date: today,
-            version: APP_VERSION,
-            build: 'dev',
-            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-          }).catch(()=>{});
-        } catch(e){}
+        window.recordFstAnalytics({
+          appId: 'flight-strip-todo-dev', version: APP_VERSION.replace(/^v/, ''), build: 'dev', type: 'task_created',
+        });
       }, [tasksRef, user.uid]);
       const handleDelete       = useCallback(id => {
         if (!window.confirm("このストリップを削除しますか？")) return;
@@ -5868,18 +5872,9 @@ HAVE A NICE TRIP！
         }
         // タスク完了イベントを記録
         if (['completed','cleared','lost'].includes(s)) {
-          try {
-            const uidHash = btoa(user.uid).replace(/[^a-zA-Z0-9]/g,'').slice(0,12);
-            const today = new Date().toISOString().slice(0,10);
-            db.collection('fst_analytics').add({
-              type: 'task_completed',
-              uidHash,
-              date: today,
-              version: APP_VERSION,
-              build: 'dev',
-              createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-            }).catch(()=>{});
-          } catch(e){}
+          window.recordFstAnalytics({
+            appId: 'flight-strip-todo-dev', version: APP_VERSION.replace(/^v/, ''), build: 'dev', type: 'task_completed',
+          });
         }
       }, [tasks, tasksRef, user.uid]);
       // handleDone用: 常に最新のhandleStatusChangeを参照するref
@@ -7760,6 +7755,6 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
     })();
   </script>
 
-<script src="/shared/info-dialog.js" data-name-target="[data-cost-name]" data-version-target="[data-cost-version]" data-version="v0.10.30-dev" data-manual="Googleでログインしてタスクを作成し、ストリップを移動して進捗を管理します。J/Kで移動、Nで新規作成、?でショートカットを表示します。詳しい操作は下の取扱説明書をご覧ください。" data-manual-link="manual.html" data-changes="フィードバックをサーバー経由の未確認受付に変更。"></script>
+<script src="/shared/info-dialog.js" data-name-target="[data-cost-name]" data-version-target="[data-cost-version]" data-version="v0.10.30-dev" data-manual="Googleでログインしてタスクを作成し、ストリップを移動して進捗を管理します。J/Kで移動、Nで新規作成、?でショートカットを表示します。詳しい操作は下の取扱説明書をご覧ください。" data-manual-link="manual.html" data-changes="フィードバックと利用統計をサーバー経由に変更。"></script>
 </body>
 </html>

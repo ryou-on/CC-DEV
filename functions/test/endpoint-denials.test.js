@@ -26,7 +26,7 @@ function harness(file) {
     if(name==='firebase-admin/functions') return {getFunctions:()=>{throw Error('unexpected queue')}};
     if(name==='firebase-functions/v2/tasks') return {onTaskDispatched:(_opts,fn)=>fn};
     if(name==='./cost-guard') return {getGuard:()=>guard, CostError, sendCostError};
-    if(name==='./mini-me'||name==='./hondoko'||name==='./fst-feedback') return {};
+    if(name==='./mini-me'||name==='./hondoko'||name==='./fst-feedback'||name==='./fst-analytics') return {};
     if(name==='./realtime-cost') return require('../realtime-cost');
     return require(name);
   }, console, Buffer, process, URL, URLSearchParams, AbortSignal, FormData,

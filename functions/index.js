@@ -450,3 +450,5 @@ exports.expireRealtimeCall = onTaskDispatched({
 const fstFeedback = require('./fst-feedback');
 exports.fstFeedbackSubmit = fstFeedback.fstFeedbackSubmit;
 exports.updateFstFeedback = fstFeedback.updateFstFeedback;
+const fstAnalytics = require('./fst-analytics');
+exports.recordFstAnalytics = fstAnalytics.recordFstAnalytics;

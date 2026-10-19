@@ -27,6 +27,10 @@
 
 目安箱 `fstFeedbackSubmit`（`/api/fst-feedback`）と `updateFstFeedback`（`/api/fst-feedback-update`）は有料 API を呼ばない。`authorize()` のバイト上限（16384）と App Check・確認済みアカウントだけを使い、`reserve()` は呼ばない。そのため `costControls/fstFeedback` の許可 UID は不要。送信と状態変更の直前に `costControls/global.enabled === true` を読む。文書がない、または false なら `SERVICE_PAUSED` で拒否する（予算 800 円の停止ラッチと同じゲート）。回数は `fstRateLimits` にサーバーだけが書く。初期値はユーザー 1 分 5 回・日本時間で 1 日 50 回、同じ内容は 10 分再送不可。IP は生値を保存せず、短命ハッシュで 1 分 30 回・1 日 100 回。状態変更は編集者のみで、クライアントからの作成・更新・削除はルールで拒否する。失敗しても枠は戻さない。
 
+利用統計 `recordFstAnalytics`（`/api/fst-analytics`）も有料 API を呼ばず、`reserve()` は呼ばない。確認済みアカウントと App Check が必要で、`costControls/global.enabled` が true でないと拒否する。回数は利用者 1 分 30 回・1 日 400 回。目安箱の 1 分 5 回より広いのは、タスク作成と完了のたびに記録するため。日付・時刻はサーバーの日本時間、利用者識別子は uid のハッシュだけ。生 IP と生 uid は保存しない。クライアントからの作成・更新・削除はルールで拒否する。
+
+編集者判定の正本は `functions/editor-policy.json`。Functions はそれを読む。Firestore / Storage の Rules は JSON を import できないので、同じドメインとメールが `isHihahoEditor` に書かれていることを `functions/test/editor-policy.test.js` が照合する。Rules は大文字小文字を変換できない。
+
 日付は日本時間。失敗も1回に数えます。これらは仮の保守的な回数制限であり、円建て予算ではありません。並行トランザクションの再試行や認証、拒否時のFunctions/DB読み取りにも費用は発生し得ます。
 
 ## 本番有効化の前提（未確認）
