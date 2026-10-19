@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sylavids PR動画（確認版）</title>
+<style>
+  /* 書き出し用のサブセットフォント（Noto Sans JP） */
+  @font-face { font-family: 'SylaJP'; font-weight: 500; src: url(fonts/NotoSansJP-500.ttf); }
+  @font-face { font-family: 'SylaJP'; font-weight: 700; src: url(fonts/NotoSansJP-700.ttf); }
+  @font-face { font-family: 'SylaJP'; font-weight: 900; src: url(fonts/NotoSansJP-900.ttf); }
+  html, body { margin: 0; background: #0f1714; color: #e8f0ed; font-family: 'SylaJP', sans-serif; }
+  body { min-height: 100vh; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 16px; box-sizing: border-box; }
+  header button { background: none; border: 0; color: inherit; font: 700 18px 'SylaJP', sans-serif; cursor: pointer; }
+  canvas { width: min(100%, 1280px); aspect-ratio: 16 / 9; background: #f6fbf9; border-radius: 6px; }
+  .bar { width: min(100%, 1280px); display: flex; gap: 12px; align-items: center; }
+  .bar input { flex: 1; accent-color: #2b927d; }
+  .bar button { background: #2b927d; color: #fff; border: 0; border-radius: 6px; padding: 6px 14px; font: 700 14px 'SylaJP', sans-serif; cursor: pointer; }
+  .bar span { font-variant-numeric: tabular-nums; min-width: 92px; text-align: right; font-size: 14px; }
+  .fixed { position: fixed; right: 12px; bottom: 10px; display: flex; gap: 8px; }
+  .fixed button { background: rgba(255,255,255,.12); color: #e8f0ed; border: 0; border-radius: 4px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
+  dialog { max-width: 560px; border: 0; border-radius: 10px; padding: 20px 24px; white-space: pre-wrap; line-height: 1.7; font-size: 14px; }
+  [data-render] header, [data-render] .bar, [data-render] .fixed { display: none; }
+  /* 書き出し時は等倍 1920×1080 で撮影する */
+  [data-render] body { padding: 0; }
+  [data-render] canvas { width: 1920px; height: 1080px; border-radius: 0; }
+</style>
+</head>
+<body>
+<header><button id="helpBtn">Sylavids PR動画（確認版・音声なし）</button></header>
+<canvas id="c" width="1920" height="1080"></canvas>
+<div class="bar">
+  <button id="playBtn">一時停止</button>
+  <input id="scrub" type="range" min="0" max="30" step="0.0333" value="0">
+  <span id="time">0.00 / 30.00</span>
+</div>
+<div class="fixed">
+  <button id="debugBtn">ログをコピー</button>
+  <button id="verBtn">v0.1.0</button>
+</div>
+<dialog id="dlg"></dialog>
+<script>
+/* ============================================================
+   Sylavids プロモーション動画 30秒（確認版・音声なし）
+   - 全描画は seek(t) の純粋関数（Date.now / rAF に依存しない）
+   - 6シーン × 5秒。コピーは COPY、配色は COLOR、画面素材は SCREENS を書き換える
+   - 実画面（assets/*.png）が無い場合は「差し込み予定」の枠を描く（架空UIは描かない）
+   ============================================================ */
+const VERSION = 'v0.1.0';
+const RELEASE_NOTES = `## v0.1.0 (2026-10-19)
+- 30秒の確認版（音声なし）を作成
+- 6シーン構成：問いかけ／資料を説明動画に／読み上げから説明へ／差分だけ更新／営業・研修／ロゴとURL`;
+
+const COPY = {
+  s1: '同じ説明を、何度も？',
+  s1cards: ['営業説明', '新人研修', '製品紹介', '社内周知'],
+  s2: 'いつもの資料を、説明動画に。',
+  s2src: 'PowerPoint / PDF',
+  s2sub: '資料のデザインはそのまま。原稿・音声・字幕を付けて。',
+  s3: '「読み上げ」から「説明」へ。',
+  s3items: ['問い', '理由', '具体例'],
+  s3sub: 'AIの原稿は下書き。仕上げは、あなたが確認。',
+  s4: '変わったところだけ、直す。',
+  s4steps: ['原稿を更新', '音声を再生成'],
+  s4sub: '変更したスライドの原稿と音声だけを、作り直し。',
+  s5a: '営業にも。', s5b: '研修にも。',
+  s5items: ['営業説明', '新人研修', '規程研修'],
+  s6: 'その説明、今日、動画に。',
+  url: 'sylavids.com',
+  concept: '概念図',
+};
+const COLOR = {
+  bg: '#f6fbf9',      // ごく淡いミント
+  mint: '#e4f3ee',    // 面の塗り
+  line: '#cfe4dc',    // 罫線
+  accent: '#2b927d',  // 正式ロゴの緑
+  ink: '#1c2a26',     // 本文
+  sub: '#5b6d67',     // 補足
+  white: '#ffffff',
+};
+// シーンごとの実画面（ファイルを assets/ に置くと自動で差し替わる）
+const SCREENS = { s2: 'editor.png', s3: 'import.png', s5: 'play.png' };
+
+const FONT = '"SylaJP","Noto Sans JP","Hiragino Sans","Yu Gothic",sans-serif';
+const W = 1920, H = 1080, SCENE = 5;
+window.DURATION = 30;
+
+/* ---------- 画像読み込み ---------- */
+function loadImg(src) {
+  const img = new Image();
+  const p = new Promise(r => { img.onload = () => { img.ok = true; r(); }; img.onerror = () => { img.ok = false; r(); }; });
+  img.src = src;
+  return { img, p };
+}
+const IMG = {};
+const loads = [];
+[['icon', 'assets/logo-icon.png'], ['word', 'assets/logo-wordmark.png'],
+ ...Object.entries(SCREENS).map(([k, f]) => [k, 'assets/' + f])].forEach(([k, src]) => {
+  const { img, p } = loadImg(src); IMG[k] = img; loads.push(p);
+});
+// フォント3ウェイトの読み込みを明示的に待つ（canvas はフォントを自動ロードしないため）
+const fontLoads = document.fonts ? [500, 700, 900].map(w => document.fonts.load(`${w} 40px SylaJP`, 'あ')) : [];
+window.READY = Promise.all([...loads, ...fontLoads]).then(() => console.log('素材読み込み完了', Object.fromEntries(Object.entries(SCREENS).map(([k, f]) => [f, IMG[k].ok]))));
+
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+
+/* ---------- イージング・補助 ---------- */
+const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+const seg = (t, s, d) => clamp((t - s) / d);           // 区間 [s, s+d] の進行度
+const out3 = x => 1 - Math.pow(1 - x, 3);
+const inOut = x => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+// フェード＋軽い位置移動（0.5秒）。a=不透明度, dy=ずらし量
+const appear = (t, s, d = 0.5, dist = 24) => { const a = out3(seg(t, s, d)); return { a, dy: (1 - a) * dist }; };
+
+function text(str, x, y, size, { weight = 900, color = COLOR.ink, align = 'left', alpha = 1, dy = 0 } = {}) {
+  if (alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.font = `${weight} ${size}px ${FONT}`;
+  ctx.textAlign = align;
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = color;
+  ctx.fillText(str, x, y + dy);
+  ctx.restore();
+}
+function rrect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+function shadowed(fn, blur = 30, oy = 10, a = 0.10) {
+  ctx.save();
+  ctx.shadowColor = `rgba(28,42,38,${a})`;
+  ctx.shadowBlur = blur; ctx.shadowOffsetY = oy;
+  fn();
+  ctx.restore();
+}
+
+// 概念図用の資料カード（実画面ではない抽象的なスライド）
+function slideCard(x, y, w, h, { label = '', alpha = 1, accent = false, dim = false } = {}) {
+  if (alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha *= alpha * (dim ? 0.4 : 1);
+  shadowed(() => { rrect(x, y, w, h, 14); ctx.fillStyle = COLOR.white; ctx.fill(); });
+  rrect(x, y, w, h, 14);
+  ctx.lineWidth = accent ? 6 : 2;
+  ctx.strokeStyle = accent ? COLOR.accent : COLOR.line;
+  ctx.stroke();
+  // 見出し帯と本文の線
+  const pad = w * 0.08;
+  ctx.fillStyle = accent ? COLOR.accent : COLOR.mint;
+  rrect(x + pad, y + pad, w * 0.45, h * 0.11, 6); ctx.fill();
+  ctx.fillStyle = COLOR.line;
+  for (let i = 0; i < 3; i++) { rrect(x + pad, y + h * (0.38 + i * 0.15), w * (0.84 - i * 0.18), h * 0.06, 4); ctx.fill(); }
+  ctx.restore();
+  if (label) text(label, x + pad, y + h - pad * 0.7, Math.round(h * 0.11), { weight: 700, color: COLOR.sub, alpha });
+}
+
+// 実画面の枠。画像があれば比率を保って収め、無ければ差し込み予定の表示
+function screenFrame(key, x, y, w, h, alpha = 1, dy = 0) {
+  if (alpha <= 0) return;
+  const img = IMG[key];
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  y += dy;
+  if (img && img.ok) {
+    const s = Math.min(w / img.naturalWidth, h / img.naturalHeight);
+    const iw = img.naturalWidth * s, ih = img.naturalHeight * s;
+    const ix = x + (w - iw) / 2, iy = y + (h - ih) / 2;
+    shadowed(() => { rrect(ix, iy, iw, ih, 12); ctx.fillStyle = COLOR.white; ctx.fill(); }, 40, 14, 0.14);
+    ctx.save(); rrect(ix, iy, iw, ih, 12); ctx.clip();
+    ctx.drawImage(img, ix, iy, iw, ih);
+    ctx.restore();
+    rrect(ix, iy, iw, ih, 12); ctx.lineWidth = 2; ctx.strokeStyle = COLOR.line; ctx.stroke();
+  } else {
+    rrect(x, y, w, h, 12); ctx.fillStyle = COLOR.mint; ctx.fill();
+    ctx.setLineDash([14, 10]); ctx.lineWidth = 3; ctx.strokeStyle = COLOR.accent; ctx.stroke(); ctx.setLineDash([]);
+    text('実画面 差し込み予定', x + w / 2, y + h / 2 - 6, 40, { weight: 700, color: COLOR.accent, align: 'center' });
+    text(`assets/${SCREENS[key]}`, x + w / 2, y + h / 2 + 48, 30, { weight: 500, color: COLOR.sub, align: 'center' });
+  }
+  ctx.restore();
+}
+
+// 「概念図」タグ
+function conceptTag(x, y, alpha) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha *= alpha;
+  ctx.font = `700 24px ${FONT}`;
+  const w = ctx.measureText(COPY.concept).width + 28;
+  rrect(x, y, w, 40, 20); ctx.strokeStyle = COLOR.sub; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.restore();
+  text(COPY.concept, x + 14, y + 29, 24, { weight: 700, color: COLOR.sub, alpha });
+}
+
+// 矢印（進行度 p で伸びる）
+function arrow(x1, y1, x2, y2, p, color = COLOR.accent) {
+  if (p <= 0) return;
+  const x = x1 + (x2 - x1) * p, y = y1 + (y2 - y1) * p;
+  ctx.save();
+  ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 6; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x, y); ctx.stroke();
+  const ang = Math.atan2(y2 - y1, x2 - x1);
+  ctx.globalAlpha *= clamp(p * 3 - 2);
+  ctx.beginPath();
+  ctx.moveTo(x + 6 * Math.cos(ang), y + 6 * Math.sin(ang));
+  ctx.lineTo(x - 22 * Math.cos(ang - 0.5), y - 22 * Math.sin(ang - 0.5));
+  ctx.lineTo(x - 22 * Math.cos(ang + 0.5), y - 22 * Math.sin(ang + 0.5));
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+// ラベルのピル
+function pill(str, x, y, { alpha = 1, dy = 0, size = 40, fill = COLOR.white, color = COLOR.ink, border = COLOR.accent } = {}) {
+  if (alpha <= 0) return 0;
+  ctx.save(); ctx.globalAlpha *= alpha;
+  ctx.font = `700 ${size}px ${FONT}`;
+  const w = ctx.measureText(str).width + size * 1.4, h = size * 1.9;
+  rrect(x, y + dy, w, h, h / 2); ctx.fillStyle = fill; ctx.fill();
+  ctx.lineWidth = 3; ctx.strokeStyle = border; ctx.stroke();
+  ctx.restore();
+  text(str, x + size * 0.7, y + dy + h * 0.66, size, { weight: 700, color, alpha });
+  return w;
+}
+
+// チェックマーク
+function check(cx, cy, r, p) {
+  if (p <= 0) return;
+  ctx.save();
+  ctx.globalAlpha *= p;
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fillStyle = COLOR.accent; ctx.fill();
+  ctx.strokeStyle = COLOR.white; ctx.lineWidth = r * 0.22; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.beginPath(); ctx.moveTo(cx - r * 0.45, cy); ctx.lineTo(cx - r * 0.1, cy + r * 0.35); ctx.lineTo(cx + r * 0.5, cy - r * 0.35); ctx.stroke();
+  ctx.restore();
+}
+
+/* ---------- シーン（t はシーン内の時刻 0〜5秒） ---------- */
+// S1 0–5秒：説明資料のカードが重なり、問いへ視線を誘導
+function scene1(t) {
+  const cw = 560, ch = 330;
+  // 同じ資料が何枚も重なる（ラベルは重なって欠けるため表示しない）
+  COPY.s1cards.forEach((label, i) => {
+    const { a, dy } = appear(t, 0.2 + i * 0.35, 0.5, 30);
+    const x = 960 - cw / 2 + (i - 1.5) * 70, y = 190 + i * 34;
+    ctx.save();
+    ctx.translate(x + cw / 2, y + ch / 2 + dy);
+    ctx.rotate([-4, 2.5, -1.5, 3][i] * Math.PI / 180);
+    slideCard(-cw / 2, -ch / 2, cw, ch, { alpha: a });
+    ctx.restore();
+  });
+  conceptTag(1300, 150, appear(t, 1.6).a);
+  const q = appear(t, 1.8, 0.6);
+  text(COPY.s1, 960, 880, 100, { align: 'center', alpha: q.a, dy: q.dy });
+}
+
+// S2 5–10秒：PowerPoint/PDF の資料から実編集画面へ
+function scene2(t) {
+  const h1 = appear(t, 0.1);
+  text(COPY.s2, 140, 190, 88, { alpha: h1.a, dy: h1.dy });
+  const c = appear(t, 0.5);
+  slideCard(140, 390 + c.dy, 520, 310, { alpha: c.a });
+  pill(COPY.s2src, 140, 740, { alpha: c.a, dy: c.dy, size: 32 });
+  conceptTag(140, 330, c.a);
+  arrow(710, 545, 830, 545, out3(seg(t, 1.1, 0.5)));
+  const s = appear(t, 1.4, 0.6);
+  screenFrame('s2', 880, 300, 900, 540, s.a, s.dy);
+  const sub = appear(t, 2.2);
+  text(COPY.s2sub, 140, 960, 40, { weight: 700, color: COLOR.sub, alpha: sub.a, dy: sub.dy });
+}
+
+// S3 10–15秒：問い・理由・具体例を順に表示、実画面を併置
+function scene3(t) {
+  const h1 = appear(t, 0.1);
+  text(COPY.s3, 140, 190, 88, { alpha: h1.a, dy: h1.dy });
+  COPY.s3items.forEach((label, i) => {
+    const { a, dy } = appear(t, 0.8 + i * 0.5);
+    const y = 330 + i * 160;
+    ctx.save(); ctx.globalAlpha = a;
+    rrect(140, y + dy, 560, 120, 16); ctx.fillStyle = COLOR.white; ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = COLOR.line; ctx.stroke();
+    ctx.fillStyle = COLOR.accent; rrect(140, y + dy, 14, 120, 7); ctx.fill();
+    ctx.restore();
+    text(String(i + 1), 200, y + 82, 44, { weight: 900, color: COLOR.accent, alpha: a, dy });
+    text(label, 270, y + 84, 60, { alpha: a, dy });
+  });
+  const s = appear(t, 0.6, 0.6);
+  screenFrame('s3', 800, 300, 980, 580, s.a, s.dy);
+  const sub = appear(t, 2.4);
+  text(COPY.s3sub, 140, 990, 40, { weight: 700, color: COLOR.sub, alpha: sub.a, dy: sub.dy });
+}
+
+// S4 15–20秒：複数スライドのうち1枚だけ強調し、原稿→音声の更新を示す
+function scene4(t) {
+  const h1 = appear(t, 0.1);
+  text(COPY.s4, 140, 190, 88, { alpha: h1.a, dy: h1.dy });
+  conceptTag(140, 250, appear(t, 0.4).a);
+  const focus = inOut(seg(t, 1.0, 0.6));
+  const tw = 288, th = 170, gap = 40, x0 = 140, y0 = 320;
+  for (let i = 0; i < 5; i++) {
+    const { a, dy } = appear(t, 0.3 + i * 0.1);
+    const hit = i === 2;
+    const lift = hit ? -18 * focus : 0;
+    ctx.save();
+    ctx.globalAlpha = hit ? 1 : 1 - 0.6 * focus;
+    slideCard(x0 + i * (tw + gap), y0 + dy + lift, tw, th, { alpha: a, accent: hit && focus > 0.5 });
+    ctx.restore();
+  }
+  // 強調スライドから下の更新フローへ
+  const cx = x0 + 2 * (tw + gap) + tw / 2;
+  arrow(cx, y0 + th + 10, cx, 600, out3(seg(t, 1.5, 0.4)));
+  const bw = 400, bh = 120, by = 620;
+  const boxes = [cx - bw - 60, cx + 60];
+  COPY.s4steps.forEach((label, i) => {
+    const { a, dy } = appear(t, 1.8 + i * 0.6);
+    const bx = boxes[i];
+    ctx.save(); ctx.globalAlpha = a;
+    shadowed(() => { rrect(bx, by + dy, bw, bh, 16); ctx.fillStyle = COLOR.white; ctx.fill(); });
+    rrect(bx, by + dy, bw, bh, 16); ctx.lineWidth = 3; ctx.strokeStyle = COLOR.accent; ctx.stroke();
+    ctx.restore();
+    text(label, bx + 40, by + dy + 78, 44, { weight: 700, alpha: a });
+    check(bx + bw - 56, by + dy + bh / 2, 26, appear(t, 2.1 + i * 0.6, 0.4).a);
+  });
+  arrow(boxes[0] + bw + 10, by + bh / 2, boxes[1] - 14, by + bh / 2, out3(seg(t, 2.2, 0.3)));
+  const sub = appear(t, 2.8);
+  text(COPY.s4sub, 960, 900, 40, { weight: 700, color: COLOR.sub, align: 'center', alpha: sub.a, dy: sub.dy });
+}
+
+// S5 20–25秒：営業説明・新人研修・規程研修のラベルを順に表示
+function scene5(t) {
+  const a1 = appear(t, 0.1), a2 = appear(t, 0.6);
+  text(COPY.s5a, 140, 330, 100, { alpha: a1.a, dy: a1.dy });
+  text(COPY.s5b, 140, 470, 100, { color: COLOR.accent, alpha: a2.a, dy: a2.dy });
+  COPY.s5items.forEach((label, i) => {
+    const { a, dy } = appear(t, 1.3 + i * 0.5);
+    pill(label, 140, 590 + i * 110, { alpha: a, dy, size: 38 });
+  });
+  const s = appear(t, 0.8, 0.6);
+  screenFrame('s5', 820, 250, 960, 600, s.a, s.dy);
+}
+
+// S6 25–30秒：正式ロゴとCTAを静かに定着（最後まで保持）
+function scene6(t) {
+  const h1 = appear(t, 0.2, 0.6);
+  text(COPY.s6, 960, 330, 92, { align: 'center', alpha: h1.a, dy: h1.dy });
+  const lg = appear(t, 0.8, 0.6);
+  const word = IMG.word;
+  if (word.ok) {
+    const ww = 760, wh = ww * word.naturalHeight / word.naturalWidth;
+    ctx.save(); ctx.globalAlpha = lg.a;
+    ctx.drawImage(word, 960 - ww / 2, 560 - wh / 2 + lg.dy, ww, wh);
+    ctx.restore();
+  }
+  const u = appear(t, 1.4, 0.6);
+  text(COPY.url, 960, 820, 64, { weight: 700, color: COLOR.accent, align: 'center', alpha: u.a, dy: u.dy });
+  ctx.save(); ctx.globalAlpha = u.a; ctx.fillStyle = COLOR.accent;
+  const lw = 380 * out3(seg(t, 1.6, 0.6));
+  ctx.fillRect(960 - lw / 2, 852, lw, 5);
+  ctx.restore();
+}
+
+const SCENES = [scene1, scene2, scene3, scene4, scene5, scene6];
+
+/* ---------- メイン：時刻 t のフレームを描画 ---------- */
+window.seek = function (t) {
+  t = clamp(t, 0, window.DURATION - 1e-6);
+  const i = Math.floor(t / SCENE), lt = t - i * SCENE;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = COLOR.bg; ctx.fillRect(0, 0, W, H);
+  // 最終シーン以外は末尾0.4秒でフェードアウト
+  const outA = i < SCENES.length - 1 ? 1 - inOut(seg(lt, SCENE - 0.4, 0.4)) : 1;
+  ctx.save();
+  ctx.globalAlpha = outA;
+  SCENES[i](lt);
+  ctx.restore();
+};
+
+/* ---------- プレビュー用UI（書き出し時は非表示） ---------- */
+const logs = [];
+['log', 'warn', 'error'].forEach(k => { const o = console[k]; console[k] = (...a) => { logs.push(`[${k}] ${a.map(x => typeof x === 'object' ? JSON.stringify(x) : x).join(' ')}`); o.apply(console, a); }; });
+const dlg = document.getElementById('dlg');
+const openDlg = s => { dlg.textContent = s + '\n\n（クリックで閉じる）'; dlg.showModal(); };
+dlg.onclick = () => dlg.close();
+document.getElementById('verBtn').onclick = () => openDlg(RELEASE_NOTES);
+document.getElementById('helpBtn').onclick = () => openDlg(
+`Sylavids PR動画 確認版（30秒・1920×1080・音声なし）
+・再生／一時停止：下の「一時停止」ボタン
+・シークバー：任意の時刻のフレームを確認
+・実画面は assets/editor.png・import.png・play.png を置くと自動で差し替え
+・MP4 書き出し：python3 render.py`);
+document.getElementById('debugBtn').onclick = async () => {
+  try { await navigator.clipboard.writeText(logs.join('\n')); alert('ログをコピーしました'); } catch (e) { alert('コピー失敗: ' + e); }
+};
+
+if (navigator.webdriver) document.documentElement.dataset.render = '1';
+window.READY.then(() => {
+  if (navigator.webdriver) { window.seek(0); return; }
+  // 実時間プレビュー（書き出しには影響しない）
+  const scrub = document.getElementById('scrub'), time = document.getElementById('time'), playBtn = document.getElementById('playBtn');
+  let playing = true, base = performance.now(), pos = 0;
+  const show = t => { window.seek(t); scrub.value = t; time.textContent = `${t.toFixed(2)} / ${window.DURATION.toFixed(2)}`; };
+  playBtn.onclick = () => { playing = !playing; playBtn.textContent = playing ? '一時停止' : '再生'; base = performance.now() - pos * 1000; };
+  scrub.oninput = () => { pos = +scrub.value; base = performance.now() - pos * 1000; show(pos); };
+  const loop = () => { if (playing) { pos = ((performance.now() - base) / 1000) % window.DURATION; show(pos); } requestAnimationFrame(loop); };
+  loop();
+});
+</script>
+</body>
+</html>
