@@ -325,8 +325,17 @@ test('a closed budget and the minute cap stop answers', async () => {
   await paused.handler(request({ surveyId: SURVEY, answer: 'はい' }), closed);
   assert.equal(closed.statusCode, 503);
   assert.equal(closed.body.error, 'SERVICE_PAUSED');
+  assert.equal(closed.headers['Retry-After'], '60');
   assert.equal([...paused.db.records.keys()].some(key => key.startsWith('fst_survey_answers/')), false);
-  assert.equal([...paused.db.records.keys()].some(key => key.startsWith('fstRateLimits/')), false);
+  const pausedUser = [...paused.db.records.entries()].find(([name]) => name.includes('/ans_u_'));
+  assert.equal(pausedUser[1].dayCount, 1);
+  assert.equal([...paused.db.records.keys()].some(key => key.includes('ans_g_')), false);
+  const pausedSeen = watch(paused.db);
+  const held = response();
+  await paused.handler(request({ surveyId: SURVEY, answer: 'もう一度' }), held);
+  assert.equal(held.statusCode, 429);
+  assert.equal(pausedSeen.gets, 0);
+  assert.equal(pausedSeen.transactions, 0);
 
   const other = 'SV_' + 'b'.repeat(16);
   const { db, handler } = setup(createFstSurveyAnswerHandler, {

@@ -48,7 +48,8 @@
       log = code;
       errorCode = '';
     }
-    if (status !== 429 && !(status === 503 && errorCode === 'COST_GUARD_UNAVAILABLE')) return false;
+    if (status === 503 && errorCode === 'SERVICE_PAUSED') return false;
+    if (status !== 429 && status !== 503) return false;
     (log || console.warn)('混み合ったときは統計が実際より少なく出ることがある');
     return true;
   }

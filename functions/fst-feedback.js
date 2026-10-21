@@ -3,7 +3,8 @@
 const crypto = require('node:crypto');
 const { onRequest } = require('firebase-functions/v2/https');
 const {
-  getGuard, sendCostError, CostError, periodKeys, rateOf, reserveFst, consumeUserAttempt, rejectIfFstHeld, holdFstRejection,
+  getGuard, sendCostError, CostError, periodKeys, rateOf, reserveFst, consumeUserAttempt, holdFstRejection,
+  rejectIfServicePaused, browserOrigins,
 } = require('./cost-guard');
 const { sourceRev } = require('./fst-rev');
 const { isEditorEmail } = require('./editor-policy');
@@ -34,7 +35,9 @@ function cleanUrl(value) {
   if (typeof value !== 'string' || value.length > 2048) return null;
   let url;
   try { url = new URL(value); } catch { return null; }
-  if (url.protocol !== 'https:' || !HOSTS.has(url.hostname)) return null;
+  const e2eHost = process.env.FUNCTIONS_EMULATOR === 'true' && process.env.FST_E2E_EMULATOR === '1'
+    && url.protocol === 'http:' && (url.hostname === '127.0.0.1' || url.hostname === 'localhost');
+  if (!e2eHost && (url.protocol !== 'https:' || !HOSTS.has(url.hostname))) return null;
   url.search = '';
   url.hash = '';
   const out = url.toString();
@@ -95,11 +98,6 @@ function isEditor(actor) {
   return isEditorEmail(actor.email);
 }
 
-async function assertBudgetOpen(db) {
-  const global = await db.doc('costControls/global').get();
-  if (!global.exists || global.data()?.enabled !== true) throw new CostError(503, 'SERVICE_PAUSED');
-}
-
 function createFstFeedbackHandler({
   authorize, db, now = Date.now, serverTimestamp, limits = rateOf('fstFeedback'), holdScope = '',
 }) {
@@ -111,11 +109,10 @@ function createFstFeedbackHandler({
       const at = now();
       const input = parseInput(req.body, at);
       const holdKey = `${holdScope}fb\0${actor.uid}`;
-      rejectIfFstHeld(holdScope, holdKey, at);
-      await assertBudgetOpen(db);
+      const user = hashId(actor.uid);
+      await rejectIfServicePaused(db, holdScope, holdKey, at, `u_${user}`, limits);
       const keys = periodKeys(at);
       const minute = Math.floor(at / 60000);
-      const user = hashId(actor.uid);
       try {
         await consumeUserAttempt(db, `u_${user}`, limits, at);
       } catch (error) {
@@ -179,7 +176,9 @@ function createFstFeedbackHandler({
   };
 }
 
-function createFstFeedbackUpdateHandler({ authorize, db, now = Date.now }) {
+function createFstFeedbackUpdateHandler({
+  authorize, db, now = Date.now, limits = rateOf('fstFeedback'), holdScope = '',
+}) {
   return async function fstFeedbackUpdate(req, res) {
     if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
     if (req.method !== 'POST') { res.status(405).json({ error: 'POST only' }); return; }
@@ -187,8 +186,9 @@ function createFstFeedbackUpdateHandler({ authorize, db, now = Date.now }) {
       const actor = await authorize(req);
       if (!isEditor(actor)) throw new CostError(403, 'EDITOR_REQUIRED');
       const input = parseUpdate(req.body || {});
-      await assertBudgetOpen(db);
       const at = now();
+      const holdKey = `${holdScope}fbu\0${actor.uid}`;
+      await rejectIfServicePaused(db, holdScope, holdKey, at, `u_${hashId(actor.uid)}`, limits);
       await db.runTransaction(async tx => {
         const ref = db.doc(`fst_feedback/${input.fbId}`);
         const snap = await tx.get(ref);
@@ -210,7 +210,7 @@ function createFstFeedbackUpdateHandler({ authorize, db, now = Date.now }) {
 
 const REQUEST_OPTIONS = {
   region: 'asia-northeast1',
-  cors: ['https://cc-dev-ps7.web.app', 'https://cc-dev-ps7.firebaseapp.com'],
+  cors: browserOrigins(),
   timeoutSeconds: 20,
   memory: '256MiB',
   maxInstances: 1,

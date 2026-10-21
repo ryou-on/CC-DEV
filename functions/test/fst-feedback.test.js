@@ -197,7 +197,16 @@ test('a closed budget returns 503 before feedback is stored', async () => {
   await handler(request(payload), res);
   assert.equal(res.statusCode, 503);
   assert.equal(res.body.error, 'SERVICE_PAUSED');
+  assert.equal(res.headers['Retry-After'], '60');
   assert.equal([...db.records.keys()].some(key => key.startsWith('fst_feedback/')), false);
+  const user = [...db.records.entries()].find(([name]) => name.startsWith('fstRateLimits/u_'));
+  assert.equal(user[1].dayCount, 1);
+  const seen = watch(db);
+  const again = response();
+  await handler(request(payload), again);
+  assert.equal(again.statusCode, 429);
+  assert.equal(seen.gets, 0);
+  assert.equal(seen.transactions, 0);
 });
 
 test('oversized text and the per-user rate limit are rejected', async () => {

@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createGuard, LIMITS, periodKeys, rateOf, retryAfterSeconds, clearFstHolds, sweepFstHolds, rememberFstHold, rejectIfFstHeld, FST_HOLD_MAX } = require('../cost-guard');
+const { createGuard, LIMITS, periodKeys, rateOf, retryAfterSeconds, clearFstHolds, sweepFstHolds, rememberFstHold, rejectIfFstHeld, FST_HOLD_MAX, debugAppCheckAccepted } = require('../cost-guard');
 const { armExpiry, expireCall, callIdFromLocation } = require('../realtime-cost');
 
 const NOW = Date.parse('2026-10-05T01:00:00Z');
@@ -171,6 +171,29 @@ test('a flight strip reserve does not write an unused monthly global counter', a
     const counters = [...db.records.keys()].filter(key => key.startsWith('costCounters/'));
     assert.equal(counters.length, 4);
     assert.equal(counters.some(key => key.includes('_g_M_')), false);
+  }
+});
+
+test('the app check debug token is accepted only inside the emulator e2e flag', () => {
+  const saved = {
+    FUNCTIONS_EMULATOR: process.env.FUNCTIONS_EMULATOR,
+    FST_E2E_EMULATOR: process.env.FST_E2E_EMULATOR,
+    FST_APPCHECK_DEBUG_TOKEN: process.env.FST_APPCHECK_DEBUG_TOKEN,
+  };
+  delete process.env.FUNCTIONS_EMULATOR;
+  delete process.env.FST_E2E_EMULATOR;
+  delete process.env.FST_APPCHECK_DEBUG_TOKEN;
+  assert.equal(debugAppCheckAccepted('debug-token'), false);
+  process.env.FST_APPCHECK_DEBUG_TOKEN = 'debug-token';
+  assert.equal(debugAppCheckAccepted('debug-token'), false);
+  process.env.FUNCTIONS_EMULATOR = 'true';
+  assert.equal(debugAppCheckAccepted('debug-token'), false);
+  process.env.FST_E2E_EMULATOR = '1';
+  assert.equal(debugAppCheckAccepted('debug-token'), true);
+  assert.equal(debugAppCheckAccepted('other'), false);
+  for (const [key, value] of Object.entries(saved)) {
+    if (value == null) delete process.env[key];
+    else process.env[key] = value;
   }
 });
 

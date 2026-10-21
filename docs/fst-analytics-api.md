@@ -24,7 +24,7 @@
 
 受理する項目は `appId`、`version`、`build`、`type`、任意の `device` だけです。`uidHash` や日付をクライアントが指定すると拒否します。`appId` は `flight-strip-todo` または `flight-strip-todo-dev` で、`build` の `stable` / `dev` と一致させます。
 
-成功時は `{ "ok": true }` だけです。失敗しても画面のタスク操作は止めません。429 と、503 の `COST_GUARD_UNAVAILABLE` のときは画面が `console.warn` を出し、その操作は集計に入りません。`SERVICE_PAUSED` では出しません。混み合ったときは統計が実際より少なく出ることがある。
+成功時は `{ "ok": true }` だけです。失敗しても画面のタスク操作は止めません。429 と、503 の `COST_GUARD_UNAVAILABLE`、それに Cloud Run 自身が `Retry-After` なしで返す 429 と 503 のときは画面が `console.warn` を出し、その操作は集計に入りません。`SERVICE_PAUSED` では出しません。混み合ったときは統計が実際より少なく出ることがある。
 
 回数は利用者 1 分 30 回、日本時間で 1 日 400 回です。全体は 1 分 60 回、1 日 2,000 回です。数値の正本は `functions/cost-guard.js` の `LIMITS.fstAnalytics` です。IP ごとの枠はありません。Hosting の書き換えでは利用者本人の IP を信頼できる形で取れないためです。根拠は [Cloud Functions のヘッダ](https://docs.cloud.google.com/functions/docs/reference/headers)、[Hosting から Functions への書き換え](https://firebase.google.com/docs/hosting/functions)、[Hosting の rewrite 設定](https://firebase.google.com/docs/hosting/full-config#rewrite-functions) です。書き換えが関数へ渡すと書かれているのは、元のパスとクエリだけです。目安箱より広いのは、起動に加えてタスクの作成と完了でも送るためです。予算停止ラッチが閉じているときは記録しません。
 
