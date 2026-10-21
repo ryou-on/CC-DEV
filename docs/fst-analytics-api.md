@@ -26,7 +26,7 @@
 
 成功時は `{ "ok": true }` だけです。失敗しても画面のタスク操作は止めません。
 
-回数は利用者 1 分 30 回、日本時間で 1 日 400 回です。全体は 1 分 2,000 回、1 日 50,000 回です。IP ごとの枠はありません。Hosting の書き換えでは利用者本人の IP を信頼できる形で取れないためです。根拠は [Cloud Functions のヘッダ](https://docs.cloud.google.com/functions/docs/reference/headers)、[Hosting から Functions への書き換え](https://firebase.google.com/docs/hosting/functions)、[Hosting の rewrite 設定](https://firebase.google.com/docs/hosting/full-config#rewrite-functions) です。書き換えが関数へ渡すと書かれているのは、元のパスとクエリだけです。目安箱より広いのは、起動に加えてタスクの作成と完了でも送るためです。予算停止ラッチが閉じているときは記録しません。
+回数は利用者 1 分 30 回、日本時間で 1 日 400 回です。全体は 1 分 60 回、1 日 2,000 回です。数値の正本は `functions/cost-guard.js` の `LIMITS.fstAnalytics` です。IP ごとの枠はありません。Hosting の書き換えでは利用者本人の IP を信頼できる形で取れないためです。根拠は [Cloud Functions のヘッダ](https://docs.cloud.google.com/functions/docs/reference/headers)、[Hosting から Functions への書き換え](https://firebase.google.com/docs/hosting/functions)、[Hosting の rewrite 設定](https://firebase.google.com/docs/hosting/full-config#rewrite-functions) です。書き換えが関数へ渡すと書かれているのは、元のパスとクエリだけです。目安箱より広いのは、起動に加えてタスクの作成と完了でも送るためです。予算停止ラッチが閉じているときは記録しません。
 
 ## デプロイ順
 

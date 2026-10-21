@@ -12,17 +12,36 @@ const LIMITS = Object.freeze({
   hondokoAnalyze: { minute: 2, userDay: 10, userMonth: 40, globalDay: 20, globalMonth: 80, bytes: 8_000_000 },
   // Suggestion box. authorize() uses the byte cap. The handler checks the budget latch
   // itself and does not call reserve(), so ordinary verified users are not UID-allowlisted.
-  fstFeedback: { minute: 5, userDay: 50, userMonth: 100, globalDay: 200, globalMonth: 2000, bytes: 16384 },
+  // globalDay 200 and globalMinute 10 are the only global caps. Handlers read them via rateOf().
+  fstFeedback: { minute: 5, globalMinute: 10, userDay: 50, userMonth: 100, globalDay: 200, globalMonth: 2000, bytes: 16384 },
   // Usage events. authorize() uses the byte cap only. Not on the paid-API UID allowlist.
-  fstAnalytics: { minute: 30, userDay: 400, userMonth: 4000, globalDay: 2000, globalMonth: 20000, bytes: 4096 },
-  // Dev broadcast, surveys, and answers. authorize() uses the byte cap only.
-  fstDevAdmin: { minute: 10, userDay: 100, userMonth: 1000, globalDay: 500, globalMonth: 5000, bytes: 8192 },
-  fstSurveyAnswer: { minute: 5, userDay: 30, userMonth: 300, globalDay: 500, globalMonth: 5000, bytes: 8192 },
+  fstAnalytics: { minute: 30, globalMinute: 60, userDay: 400, userMonth: 4000, globalDay: 2000, globalMonth: 20000, bytes: 4096 },
+  // Broadcast and force-update. Survey create and setActive have their own rows so they do not share a counter.
+  fstDevAdmin: { minute: 10, globalMinute: 20, userDay: 100, userMonth: 1000, globalDay: 500, globalMonth: 5000, bytes: 8192 },
+  // Together these two daily caps equal the old shared survey-admin cap of 500.
+  // Giving each 500 would push the capped writes over the Firestore free tier.
+  fstSurveyCreate: { minute: 10, globalMinute: 10, userDay: 100, userMonth: 1000, globalDay: 250, globalMonth: 2500, bytes: 8192 },
+  fstSurveySetActive: { minute: 10, globalMinute: 10, userDay: 100, userMonth: 1000, globalDay: 250, globalMonth: 2500, bytes: 8192 },
+  fstSurveyAnswer: { minute: 5, globalMinute: 20, userDay: 30, userMonth: 300, globalDay: 500, globalMonth: 5000, bytes: 8192 },
 });
 const ORIGINS = new Set(['https://cc-dev-ps7.web.app', 'https://cc-dev-ps7.firebaseapp.com']);
 
 class CostError extends Error {
   constructor(status, code) { super(code); this.httpStatus = status; this.code = code; }
+}
+
+function rateOf(service) {
+  const row = LIMITS[service];
+  if (!row || !Number.isSafeInteger(row.minute) || !Number.isSafeInteger(row.globalMinute)
+      || !Number.isSafeInteger(row.userDay) || !Number.isSafeInteger(row.globalDay)) {
+    throw new CostError(503, 'UNKNOWN_SERVICE');
+  }
+  return {
+    userMinute: row.minute,
+    userDay: row.userDay,
+    globalMinute: row.globalMinute,
+    globalDay: row.globalDay,
+  };
 }
 
 function periodKeys(now) {
@@ -131,4 +150,4 @@ function getGuard() {
   return singleton;
 }
 
-module.exports = { createGuard, getGuard, CostError, sendCostError, periodKeys, LIMITS };
+module.exports = { createGuard, getGuard, CostError, sendCostError, periodKeys, rateOf, LIMITS };
