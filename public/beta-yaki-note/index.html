@@ -223,6 +223,12 @@
     .status-text strong { color: var(--ink); }
     .toolbar-row { gap: 7px; flex-wrap: wrap; justify-content: flex-end; }
     .chip-button { padding: 7px 10px; font-size: .8rem; }
+    #loupe-toggle[aria-pressed="true"] {
+      color: #fff;
+      background: #6f5420;
+      border-color: #6f5420;
+      box-shadow: 0 0 0 3px rgba(216, 180, 91, .22);
+    }
 
     .contact-sheet {
       position: relative;
@@ -253,6 +259,67 @@
       touch-action: pan-x pan-y pinch-zoom;
     }
     .contact-sheet.is-drawing .annotation-canvas { pointer-events: auto; cursor: crosshair; }
+    body.loupe-mode .photo-frame { cursor: zoom-in; }
+    .photo-loupe {
+      position: fixed;
+      z-index: 70;
+      left: 0;
+      top: 0;
+      width: clamp(180px, 22vw, 248px);
+      aspect-ratio: 1;
+      overflow: hidden;
+      border: 5px solid #f2ead8;
+      border-radius: 50%;
+      background: #11100e;
+      box-shadow: 0 18px 48px rgba(0, 0, 0, .42), inset 0 0 0 1px rgba(0, 0, 0, .72);
+      pointer-events: none;
+      transform: translate3d(0, 0, 0);
+      will-change: left, top;
+    }
+    .photo-loupe[hidden] { display: none !important; }
+    .loupe-stage { position: absolute; inset: 0; overflow: hidden; border-radius: 50%; }
+    .loupe-card {
+      position: absolute;
+      left: 0;
+      top: 0;
+      display: block;
+      min-width: 0;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      box-shadow: none;
+      transform-origin: 0 0;
+    }
+    .photo-loupe .photo-frame {
+      width: 100% !important;
+      height: 100% !important;
+      margin: 0 !important;
+      aspect-ratio: auto !important;
+    }
+    .photo-loupe .meta-overlay { display: none !important; }
+    .photo-loupe::before,
+    .photo-loupe::after {
+      position: absolute;
+      z-index: 2;
+      content: "";
+      background: rgba(242, 234, 216, .58);
+      pointer-events: none;
+    }
+    .photo-loupe::before { left: 50%; top: 0; width: 1px; height: 100%; }
+    .photo-loupe::after { left: 0; top: 50%; width: 100%; height: 1px; }
+    .loupe-badge {
+      position: absolute;
+      z-index: 3;
+      right: 13px;
+      bottom: 11px;
+      padding: 3px 7px;
+      border-radius: 999px;
+      color: #f7f0df;
+      background: rgba(17, 16, 14, .78);
+      font: 700 .68rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: .04em;
+    }
 
     .sheet-heading { padding-bottom: 24px; border-bottom: 1px solid currentColor; opacity: .98; }
     .sheet-title {
@@ -755,7 +822,7 @@
 
     @media print {
       body { background: white; }
-      .app-header, .control-panel, .workspace-toolbar, .drop-hint, .toast, .card-actions { display: none !important; }
+      .app-header, .control-panel, .workspace-toolbar, .drop-hint, .toast, .card-actions, .photo-loupe { display: none !important; }
       .app-shell { display: block; min-height: 0; }
       .workspace { padding: 0; }
       .contact-sheet { width: 100%; min-height: 0; padding: 12mm; border: 0; box-shadow: none; }
@@ -774,7 +841,7 @@
         <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
         <span>ベタ焼きノート</span>
       </button>
-      <button class="version-button" id="version-button" type="button" title="リリースノートを開く">v0.5.0</button>
+      <button class="version-button" id="version-button" type="button" title="リリースノートを開く">v0.6.0</button>
     </div>
     <div class="header-actions">
       <button class="header-button" id="feedback-button" type="button" title="目安箱を開く">✉ <span class="long-label">目安箱</span></button>
@@ -950,6 +1017,7 @@
           <button class="chip-button" id="date-toggle" type="button" aria-pressed="true">日付</button>
           <button class="chip-button" id="meta-toggle" type="button" aria-pressed="false">META</button>
           <button class="chip-button" id="agency-toggle" type="button" aria-pressed="false">編集部台紙</button>
+          <button class="chip-button" id="loupe-toggle" type="button" aria-pressed="false" aria-keyshortcuts="Q" title="Qキーで切り替え">Q ルーペ</button>
         </div>
       </div>
 
@@ -985,6 +1053,10 @@
         <div class="photo-grid" id="photo-grid" hidden aria-live="polite"></div>
         <div class="drop-hint" aria-hidden="true">写真を追加</div>
         <canvas class="annotation-canvas" id="annotation-canvas" aria-label="ダーマットペンの書き込みレイヤー"></canvas>
+        <div class="photo-loupe" id="photo-loupe" hidden aria-hidden="true">
+          <div class="loupe-stage" id="loupe-stage"></div>
+          <span class="loupe-badge">2.5×</span>
+        </div>
       </article>
     </section>
   </main>
@@ -1035,8 +1107,9 @@
       'use strict';
 
       const APP_ID = 'beta-yaki-note';
-      const APP_VERSION = '0.5.0';
+      const APP_VERSION = '0.6.0';
       const RELEASE_NOTES = [
+        { ver: 'v0.6.0', date: '2026-10-21', changes: ['Qキーでオン／オフできるルーペモードを追加', '写真上のポインター位置を2.5倍で追従表示', 'ツールバーからも切り替えでき、Escapeで終了可能', '文字入力中はショートカットを無効化し、書き込みモードとの競合を防止'] },
         { ver: 'v0.5.0', date: '2026-10-03', changes: ['120フィルムの6×4.5・6×6・6×7・6×9を追加', '各画面フォーマットの比率、1ロールの標準コマ数、コンタクトシートの段組みを再現', '135のパーフォレーションと、穴のない幅61.5mmの120フィルムを自動切り替え', '画面枠の縦横に合わせて写真の長辺方向を統一', 'JPEG書き出し、META、編集部台紙へ選択中のフォーマット情報を反映'] },
         { ver: 'v0.4.0', date: '2026-10-03', changes: ['写真カードを廃止し、135フィルム寸法に基づく6コマ連続ストリップへ刷新', '暗室ベタ焼き・ネガ原版・ポジ原版・20枚スライド台紙を追加', '暗室モードではパーフォレーションを黒へ溶かし、原版モードでは1コマ8穴を再現', '縦位置を横倒しで統一する忠実表示と、正立させる閲覧優先表示を追加', 'METAと編集部台紙を独立レイヤー化し、シート全体の露光・コントラスト調整を追加', '青いダーマトグラフとApple Pencil描画を追加'] },
         { ver: 'v0.3.0', date: '2026-09-27', changes: ['Apple Pencilの筆圧に対応した書き込みモードを追加', '赤・白のダーマットペン風テクスチャと芯の太さ調整を追加', '書き込みの元に戻す・全消去に対応', '手書き線をJPEG保存と印刷／PDFへ反映'] },
@@ -1069,6 +1142,7 @@
         showDate: true,
         showMeta: false,
         showAgency: false,
+        loupeEnabled: false,
         drawEnabled: false,
         penColor: '#e3483a',
         penSize: 8,
@@ -1118,6 +1192,9 @@
         dateToggle: document.getElementById('date-toggle'),
         metaToggle: document.getElementById('meta-toggle'),
         agencyToggle: document.getElementById('agency-toggle'),
+        loupeToggle: document.getElementById('loupe-toggle'),
+        loupe: document.getElementById('photo-loupe'),
+        loupeStage: document.getElementById('loupe-stage'),
         agencyHeader: document.getElementById('agency-header'),
         agencyCaption: document.getElementById('agency-caption'),
         agencyFilm: document.getElementById('agency-film'),
@@ -1148,6 +1225,8 @@
       }
 
       let annotationFrame = 0;
+      let loupeCard = null;
+      let loupeFrameId = null;
 
       function roughNoise(seed) {
         const value = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
@@ -1245,6 +1324,69 @@
         el.undoStroke.disabled = state.strokes.length === 0;
         el.clearStrokes.disabled = state.strokes.length === 0;
         el.clearButton.disabled = state.photos.length === 0 && state.strokes.length === 0;
+      }
+
+      function hideLoupe(clear = false) {
+        el.loupe.hidden = true;
+        el.loupe.setAttribute('aria-hidden', 'true');
+        if (clear) {
+          el.loupeStage.replaceChildren();
+          loupeCard = null;
+          loupeFrameId = null;
+        }
+      }
+
+      function syncLoupeControls() {
+        el.loupeToggle.setAttribute('aria-pressed', String(state.loupeEnabled));
+        document.body.classList.toggle('loupe-mode', state.loupeEnabled);
+        if (!state.loupeEnabled) hideLoupe(true);
+      }
+
+      function setLoupeEnabled(enabled, notify = true) {
+        state.loupeEnabled = Boolean(enabled);
+        if (state.loupeEnabled && state.drawEnabled) {
+          state.drawEnabled = false;
+          syncDrawingControls();
+        }
+        syncLoupeControls();
+        if (notify) showToast(state.loupeEnabled ? 'ルーペモード：写真上で2.5倍表示' : 'ルーペモードを終了しました');
+      }
+
+      function showLoupeAt(frame, clientX, clientY) {
+        if (!state.loupeEnabled || state.drawEnabled || !frame) { hideLoupe(); return; }
+        const rect = frame.getBoundingClientRect();
+        if (!rect.width || !rect.height) { hideLoupe(); return; }
+        const card = frame.closest('.photo-card');
+        const frameId = card?.dataset.id || '';
+        if (!loupeCard || loupeFrameId !== frameId) {
+          const wrapper = document.createElement('div');
+          wrapper.className = 'loupe-card';
+          wrapper.append(frame.cloneNode(true));
+          el.loupeStage.replaceChildren(wrapper);
+          loupeCard = wrapper;
+          loupeFrameId = frameId;
+        }
+
+        el.loupe.hidden = false;
+        el.loupe.setAttribute('aria-hidden', 'false');
+        const diameter = el.loupe.offsetWidth || 220;
+        const zoom = 2.5;
+        const localX = Math.min(rect.width, Math.max(0, clientX - rect.left));
+        const localY = Math.min(rect.height, Math.max(0, clientY - rect.top));
+        loupeCard.style.width = `${rect.width}px`;
+        loupeCard.style.height = `${rect.height}px`;
+        loupeCard.style.transform = `translate(${diameter / 2 - localX * zoom}px, ${diameter / 2 - localY * zoom}px) scale(${zoom})`;
+
+        let left = clientX + 22;
+        if (left + diameter > innerWidth - 8) left = clientX - diameter - 22;
+        left = Math.max(8, Math.min(left, innerWidth - diameter - 8));
+        const top = Math.max(8, Math.min(clientY - diameter / 2, innerHeight - diameter - 8));
+        el.loupe.style.left = `${left}px`;
+        el.loupe.style.top = `${top}px`;
+      }
+
+      function isEditableTarget(target) {
+        return target instanceof Element && Boolean(target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])'));
       }
 
       function pointerPoint(event, rect) {
@@ -1428,6 +1570,7 @@
       }
 
       function render() {
+        hideLoupe(true);
         const hasPhotos = state.photos.length > 0;
         const filmName = displayFilmName();
         const format = currentFormat();
@@ -1567,6 +1710,7 @@
         el.printButton.disabled = !hasPhotos;
         el.clearButton.disabled = !hasPhotos && state.strokes.length === 0;
         syncDrawingControls();
+        syncLoupeControls();
         requestAnnotationRender();
       }
 
@@ -1622,6 +1766,7 @@
         state.strokes = [];
         state.activeStroke = null;
         state.drawEnabled = false;
+        state.loupeEnabled = false;
         render();
         showToast('写真と書き込みをすべて消去しました');
       }
@@ -1931,9 +2076,10 @@
           ['③ 表現を選ぶ', '暗室は密着焼き、ネガは原版、ポジはリバーサル、スライドはマウント保存台紙を再現します。135ではパーフォレーション、120では穴のないロールフィルムになります。'],
           ['④ 向きと露光を決める', 'フィルム忠実では選択した画面枠の長辺方向へ写真を揃えます。正方形の6×6は回転しません。閲覧優先では元画像の向きを保ちます。'],
           ['⑤ METAと編集部台紙', 'METAは独立表示で、JPEGのEXIFや画像サイズを重ねます。編集部台紙をオンにするとStory No.やCaptions欄を追加します。'],
-          ['⑥ Apple Pencilで書き込む', '「書き込みを開始」をオンにし、赤・白・青のダーマトグラフで囲みやメモを書きます。筆圧に合わせて蝋質の濃さと太さが変わり、指はスクロールに使えます。'],
-          ['⑦ 並びとセレクトを整える', '写真はドラッグで並べ替え、各コマの ↻ で回転できます。写真をタップすると暗室シートでは赤枠、スライド台紙では赤丸が付きます。'],
-          ['⑧ 保存する', '「JPEGで保存」で選択中のフィルム形状、エッジ印字、META、台紙、手書き線を1枚にまとめます。「印刷 / PDF」にも反映します。'],
+          ['⑥ Qキーでルーペを使う', 'Qキー、またはツールバーの「Q ルーペ」で切り替えます。写真上のポインター位置を2.5倍で確認でき、Escapeで終了します。文字入力中はQキーに反応しません。'],
+          ['⑦ Apple Pencilで書き込む', '「書き込みを開始」をオンにし、赤・白・青のダーマトグラフで囲みやメモを書きます。筆圧に合わせて蝋質の濃さと太さが変わり、指はスクロールに使えます。'],
+          ['⑧ 並びとセレクトを整える', '写真はドラッグで並べ替え、各コマの ↻ で回転できます。写真をタップすると暗室シートでは赤枠、スライド台紙では赤丸が付きます。'],
+          ['⑨ 保存する', '「JPEGで保存」で選択中のフィルム形状、エッジ印字、META、台紙、手書き線を1枚にまとめます。「印刷 / PDF」にも反映します。'],
           ['注意事項', '写真、EXIF情報、書き込みはブラウザ内だけで処理され、サーバーには送信されません。ページを閉じると作業中の内容は消えます。']
         ];
         sections.forEach(([heading, text]) => {
@@ -1985,12 +2131,12 @@
             description: '現在の写真枚数、赤入れ枚数、レイアウト設定を確認します。',
             inputSchema: { type: 'object', properties: {}, additionalProperties: false },
             annotations: { readOnlyHint: true, untrustedContentHint: false },
-            execute() { return { photoCount: state.photos.length, selectedCount: selectedPhotos().length, annotationCount: state.strokes.length, drawEnabled: state.drawEnabled, penColor: state.penColor, penSize: state.penSize, columns: state.columns, format: state.format, fit: state.fit, paper: state.paper, view: state.view, orientation: state.orientation, exposure: state.exposure, contrast: state.contrast, showMeta: state.showMeta, showAgency: state.showAgency, filmName: state.filmName }; }
+            execute() { return { photoCount: state.photos.length, selectedCount: selectedPhotos().length, annotationCount: state.strokes.length, drawEnabled: state.drawEnabled, loupeEnabled: state.loupeEnabled, penColor: state.penColor, penSize: state.penSize, columns: state.columns, format: state.format, fit: state.fit, paper: state.paper, view: state.view, orientation: state.orientation, exposure: state.exposure, contrast: state.contrast, showMeta: state.showMeta, showAgency: state.showAgency, filmName: state.filmName }; }
           },
           {
             name: 'configure_contact_sheet',
             title: 'ベタ焼きのレイアウトを変更',
-            description: '表示中のベタ焼きについて、135／120の画面フォーマット、列数、トリミング、暗室／原版／スライド表示、向き、露光、META、フィルム名をまとめて変更します。',
+            description: '表示中のベタ焼きについて、135／120の画面フォーマット、列数、トリミング、暗室／原版／スライド表示、向き、露光、META、ルーペ、フィルム名をまとめて変更します。',
             inputSchema: {
               type: 'object',
               properties: {
@@ -2004,6 +2150,7 @@
                 contrast: { type: 'integer', minimum: 70, maximum: 140 },
                 showMeta: { type: 'boolean' },
                 showAgency: { type: 'boolean' },
+                loupeEnabled: { type: 'boolean' },
                 filmName: { type: 'string', minLength: 1, maxLength: 40 }
               },
               additionalProperties: false
@@ -2011,7 +2158,7 @@
             annotations: { readOnlyHint: false, untrustedContentHint: false },
             execute(input) {
               if (!input || typeof input !== 'object') throw new TypeError('設定値が必要です');
-              const allowedKeys = ['columns', 'format', 'fit', 'paper', 'view', 'orientation', 'exposure', 'contrast', 'showMeta', 'showAgency', 'filmName'];
+              const allowedKeys = ['columns', 'format', 'fit', 'paper', 'view', 'orientation', 'exposure', 'contrast', 'showMeta', 'showAgency', 'loupeEnabled', 'filmName'];
               if (Object.keys(input).some(key => !allowedKeys.includes(key))) throw new TypeError('未対応の設定項目があります');
               if (input.columns !== undefined && ![2,3,4,5,6,8].includes(input.columns)) throw new TypeError('columnsは2・3・4・5・6・8から指定してください');
               if (input.format !== undefined && !FILM_FORMATS[input.format]) throw new TypeError('未対応のformatです');
@@ -2023,6 +2170,7 @@
               if (input.contrast !== undefined && (!Number.isInteger(input.contrast) || input.contrast < 70 || input.contrast > 140)) throw new TypeError('contrastは70〜140で指定してください');
               if (input.showMeta !== undefined && typeof input.showMeta !== 'boolean') throw new TypeError('showMetaは真偽値で指定してください');
               if (input.showAgency !== undefined && typeof input.showAgency !== 'boolean') throw new TypeError('showAgencyは真偽値で指定してください');
+              if (input.loupeEnabled !== undefined && typeof input.loupeEnabled !== 'boolean') throw new TypeError('loupeEnabledは真偽値で指定してください');
               if (input.filmName !== undefined && (typeof input.filmName !== 'string' || !input.filmName.trim() || input.filmName.length > 40)) throw new TypeError('filmNameは1〜40文字で指定してください');
               if (input.format !== undefined) {
                 state.format = input.format;
@@ -2037,9 +2185,13 @@
               if (input.contrast !== undefined) state.contrast = input.contrast;
               if (input.showMeta !== undefined) state.showMeta = input.showMeta;
               if (input.showAgency !== undefined) state.showAgency = input.showAgency;
+              if (input.loupeEnabled !== undefined) {
+                state.loupeEnabled = input.loupeEnabled;
+                if (state.loupeEnabled) state.drawEnabled = false;
+              }
               if (input.filmName !== undefined) state.filmName = input.filmName.trim();
               render();
-              return { ok: true, columns: state.columns, format: state.format, fit: state.fit, paper: state.paper, view: state.view, orientation: state.orientation, exposure: state.exposure, contrast: state.contrast, showMeta: state.showMeta, showAgency: state.showAgency, filmName: state.filmName };
+              return { ok: true, columns: state.columns, format: state.format, fit: state.fit, paper: state.paper, view: state.view, orientation: state.orientation, exposure: state.exposure, contrast: state.contrast, showMeta: state.showMeta, showAgency: state.showAgency, loupeEnabled: state.loupeEnabled, filmName: state.filmName };
             }
           }
         ];
@@ -2085,7 +2237,9 @@
       el.sheetTitle.addEventListener('input', () => updateTitle(el.sheetTitle.value));
       el.noteInput.addEventListener('input', () => updateNote(el.noteInput.value));
       el.drawToggle.addEventListener('click', () => {
-        state.drawEnabled = !state.drawEnabled;
+        const next = !state.drawEnabled;
+        if (next && state.loupeEnabled) setLoupeEnabled(false, false);
+        state.drawEnabled = next;
         syncDrawingControls();
         showToast(state.drawEnabled ? 'Apple Pencilで書き込めます' : '書き込みモードを終了しました');
       });
@@ -2135,6 +2289,7 @@
       });
       el.grid.addEventListener('dragstart', event => {
         const card = event.target.closest('.photo-card'); if (!card) return;
+        hideLoupe();
         state.draggingId = card.dataset.id; card.classList.add('dragging'); event.dataTransfer.effectAllowed = 'move';
       });
       el.grid.addEventListener('dragover', event => { const card = event.target.closest('.photo-card'); if (!card) return; event.preventDefault(); card.classList.add('drag-target'); });
@@ -2170,6 +2325,24 @@
       el.dateToggle.addEventListener('click', () => { state.showDate = !state.showDate; el.dateToggle.setAttribute('aria-pressed', String(state.showDate)); el.sheetDate.hidden = !state.showDate; render(); });
       el.metaToggle.addEventListener('click', () => { state.showMeta = !state.showMeta; render(); });
       el.agencyToggle.addEventListener('click', () => { state.showAgency = !state.showAgency; render(); });
+      el.loupeToggle.addEventListener('click', () => setLoupeEnabled(!state.loupeEnabled));
+
+      el.grid.addEventListener('pointermove', event => {
+        const frame = event.target.closest('.photo-frame');
+        if (frame) showLoupeAt(frame, event.clientX, event.clientY);
+        else hideLoupe();
+      });
+      el.grid.addEventListener('pointerleave', () => hideLoupe());
+      el.grid.addEventListener('focusin', event => {
+        if (!state.loupeEnabled) return;
+        const frame = event.target.closest('.photo-card')?.querySelector('.photo-frame');
+        if (!frame) return;
+        const rect = frame.getBoundingClientRect();
+        showLoupeAt(frame, rect.left + rect.width / 2, rect.top + rect.height / 2);
+      });
+      el.grid.addEventListener('focusout', () => requestAnimationFrame(() => {
+        if (!el.grid.contains(document.activeElement)) hideLoupe();
+      }));
 
       document.getElementById('manual-button').addEventListener('click', event => openHowTo(event.currentTarget));
       document.getElementById('version-button').addEventListener('click', event => openReleaseNotes(event.currentTarget));
@@ -2200,6 +2373,7 @@
           `format: ${state.format}`,
           `annotations: ${state.strokes.length}`,
           `drawMode: ${state.drawEnabled}`,
+          `loupeMode: ${state.loupeEnabled}`,
           `viewport: ${innerWidth}x${innerHeight}`,
           `userAgent: ${navigator.userAgent.replace(/[\r\n]/g, ' ').slice(0, 240)}`
         ].join('\n');
@@ -2208,8 +2382,15 @@
 
       document.addEventListener('keydown', event => {
         const modal = document.querySelector('.modal-overlay.open');
+        if (!modal && !event.isComposing && !event.repeat && !event.metaKey && !event.ctrlKey && !event.altKey &&
+            (event.code === 'KeyQ' || event.key.toLowerCase() === 'q') && !isEditableTarget(event.target)) {
+          event.preventDefault();
+          setLoupeEnabled(!state.loupeEnabled);
+          return;
+        }
         if (event.key === 'Escape' && modal) { closeOverlay(modal); return; }
         if (event.key === 'Escape' && state.drawEnabled) { state.drawEnabled = false; syncDrawingControls(); showToast('書き込みモードを終了しました'); return; }
+        if (event.key === 'Escape' && state.loupeEnabled) { setLoupeEnabled(false); return; }
         if (event.key === 'Tab' && modal) {
           const items = modalFocusable(modal); if (!items.length) return;
           const first = items[0], last = items[items.length - 1];
@@ -2219,7 +2400,8 @@
       });
 
       window.addEventListener('beforeunload', () => state.photos.forEach(photo => URL.revokeObjectURL(photo.url)));
-      window.addEventListener('resize', requestAnnotationRender);
+      window.addEventListener('scroll', () => hideLoupe(), true);
+      window.addEventListener('resize', () => { hideLoupe(); requestAnnotationRender(); });
       window.addEventListener('beforeprint', renderAnnotationCanvas);
       if ('ResizeObserver' in window) new ResizeObserver(requestAnnotationRender).observe(el.sheet);
       registerWebMcp();

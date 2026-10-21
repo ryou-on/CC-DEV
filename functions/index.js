@@ -328,11 +328,12 @@ exports.interpreterCall = onRequest(
 // ===== hihaho 素材ライブラリ: /e/{id}/... を Storage からプロキシ配信 =====
 // Hosting rewrite で /e/** を受け、Cloud Storage の hihaho-material/{id}/... を返す。
 // Storage 直リンクだと相対パス（./style.css 等）が解決できないためプロキシしている。
-const admin = require('firebase-admin');
-if (!admin.apps.length) admin.initializeApp();
+const { initializeApp, getApps } = require('firebase-admin/app');
+const { getStorage } = require('firebase-admin/storage');
+if (!getApps().length) initializeApp();
 
 // このプロジェクトのバケットは .firebasestorage.app 形式。
-// admin.storage().bucket() は FIREBASE_CONFIG 次第で .appspot.com に解決されることがあるため明示する。
+// getStorage().bucket() は FIREBASE_CONFIG 次第で .appspot.com に解決されることがあるため明示する。
 const ASSET_BUCKET = 'cc-dev-ps7.firebasestorage.app';
 
 const SERVE_MIME = {
@@ -360,7 +361,7 @@ exports.assetServe = onRequest({ timeoutSeconds: 30, memory: '256MiB' }, async (
     if (sub === '' || sub.endsWith('/')) sub += 'index.html';
     if (sub.includes('..') || sub.startsWith('/')) { res.status(400).send('Bad Request'); return; }
 
-    const file = admin.storage().bucket(ASSET_BUCKET).file(`hihaho-material/${id}/${sub}`);
+    const file = getStorage().bucket(ASSET_BUCKET).file(`hihaho-material/${id}/${sub}`);
     const [exists] = await file.exists();
     if (!exists) { res.status(404).send('Not Found'); return; }
 

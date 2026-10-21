@@ -19,11 +19,12 @@
 
 const { onRequest } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
-const admin = require('firebase-admin');
+const { initializeApp, getApps } = require('firebase-admin/app');
+const { getFirestore, FieldValue } = require('firebase-admin/firestore');
 const crypto = require('crypto');
 
 // index.js 側で初期化済みの場合があるので二重初期化を避ける
-if (!admin.apps.length) admin.initializeApp();
+if (!getApps().length) initializeApp();
 
 // ---------------------------------------------------------------------------
 // Secrets（Firebase Functions v2）
@@ -157,7 +158,7 @@ function originAllowedStrict(req) {
 }
 
 function db() {
-  return admin.firestore();
+  return getFirestore();
 }
 
 /** クライアントIP（Firebase Hosting 経由なので X-Forwarded-For の先頭が実クライアント） */
@@ -172,8 +173,8 @@ function utcDayKey(d = new Date()) {
 
 /**
  * 生成リクエストの日次レート制限。IP単位とサービス全体の2本を同一トランザクションで加算する。
- * 超過時は httpStatus 429 の例外を投げる。Firestore が使えない場合は「止めない」側に倒す
- * （課金保護は上位の Cloud Billing 予算アラートにも二重で用意すること／README §8）。
+ * 超過時は httpStatus 429 の例外を投げる。Firestore が使えない場合も503で停止し、
+ * クォータを記録できない状態で有料APIを呼ばない（fail closed）。
  */
 async function consumeGenerateQuota(req) {
   const day = utcDayKey();
@@ -195,15 +196,21 @@ async function consumeGenerateQuota(req) {
         throw Object.assign(new Error('生成のご利用が集中しています。しばらくしてからお試しください。'), { httpStatus: 429 });
       }
 
-      const stamp = admin.firestore.FieldValue.serverTimestamp();
+      const stamp = FieldValue.serverTimestamp();
       tx.set(ipRef, { count: ipCount + 1, day, updatedAt: stamp }, { merge: true });
       tx.set(globalRef, { count: gCount + 1, day, updatedAt: stamp }, { merge: true });
     });
   } catch (e) {
     if (e && e.httpStatus === 429) throw e;
-    // レート制限の記録自体に失敗しただけならリクエストは通す（可用性優先）
     console.error('[mini-me] rate limit bookkeeping failed', e);
+    throw Object.assign(new Error('生成クォータを確認できません。時間をおいてお試しください。'), { httpStatus: 503 });
   }
+}
+
+/** クォータ確認に成功した場合だけ有料処理を実行する。拒否試験で呼び出し順を固定する。 */
+async function runPaidOperation(quotaCheck, paidOperation) {
+  await quotaCheck();
+  return paidOperation();
 }
 
 /** ログ/レスポンスに秘匿値が混ざらないよう、外部エラー文字列を短く丸める */
@@ -527,7 +534,7 @@ exports.miniMeGenerate = onRequest(
         await snap.ref.set({
           status: result.status,
           progress: result.progress,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
           ...(result.modelUrl ? { modelUrl: result.modelUrl } : {}),
           ...(result.printUrl ? { printUrl: result.printUrl } : {}),
         }, { merge: true }).catch((e) => console.error('[mini-me] task update failed', e));
@@ -595,15 +602,16 @@ exports.miniMeGenerate = onRequest(
 
     try {
       // 実費を伴う外部API呼び出しの直前でクォータを消費する
-      await consumeGenerateQuota(req);
-
-      const { providerTaskId } = await provider.createTask({ dataUri, mimeType: normalizedMime });
+      const { providerTaskId } = await runPaidOperation(
+        () => consumeGenerateQuota(req),
+        () => provider.createTask({ dataUri, mimeType: normalizedMime })
+      );
 
       // クライアントへ返す ID は自前で発行し、プロバイダのIDは内部に留める
       const taskId = `mm_${crypto.randomUUID().replace(/-/g, '')}`;
 
       await db().collection(TASKS_COL).doc(taskId).set({
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
         status: NORMALIZED.PENDING,
         meshyTaskId: providerTaskId,   // 仕様どおりのフィールド名（プロバイダ問わずこの名前で保持）
         provider: provider.id,
@@ -966,8 +974,8 @@ exports.miniMeWebhook = onRequest(
           sessionId: s.id,
           // 同一セッションで complete → async_payment_succeeded と複数イベントが届くので、
           // 初回だけ createdAt を打ち、以降は updatedAt を更新する
-          ...(prevSnap.exists ? {} : { createdAt: admin.firestore.FieldValue.serverTimestamp() }),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          ...(prevSnap.exists ? {} : { createdAt: FieldValue.serverTimestamp() }),
+          updatedAt: FieldValue.serverTimestamp(),
           paymentStatus: s.payment_status || null,
           amountTotal: s.amount_total ?? null,   // JPY はゼロ decimal（円そのまま）
           currency: s.currency || 'jpy',
@@ -994,7 +1002,7 @@ exports.miniMeWebhook = onRequest(
         if (paid && !failed && md.taskId && TASK_ID_RE.test(md.taskId)) {
           await db().collection(TASKS_COL).doc(md.taskId).set({
             orderedSessionId: s.id,
-            orderedAt: admin.firestore.FieldValue.serverTimestamp(),
+            orderedAt: FieldValue.serverTimestamp(),
           }, { merge: true }).catch((e) => console.error('[mini-me] task order flag failed', e));
         }
 
@@ -1014,4 +1022,12 @@ exports.miniMeWebhook = onRequest(
 // 名前を指定して結線しているので（spread ではない）、下記のテスト用エクスポートが
 // そのまま Cloud Function として登録されることはない。
 // firebase deploy 時に誤検出されないよう、関数以外の1オブジェクトにまとめてぶら下げる。
-exports.__test__ = { priceOrder, PLANS, OPTIONS, MAX_TOTAL_QTY, SHIPPING_FEE, FREE_SHIPPING_THRESHOLD };
+exports.__test__ = {
+  priceOrder,
+  runPaidOperation,
+  PLANS,
+  OPTIONS,
+  MAX_TOTAL_QTY,
+  SHIPPING_FEE,
+  FREE_SHIPPING_THRESHOLD,
+};

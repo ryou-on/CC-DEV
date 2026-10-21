@@ -8,10 +8,12 @@
 
 const { onRequest } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
-const admin = require('firebase-admin');
+const { initializeApp, getApps } = require('firebase-admin/app');
+const { getAuth } = require('firebase-admin/auth');
+const { getFirestore } = require('firebase-admin/firestore');
 // @anthropic-ai/sdk はデプロイ時のコード解析タイムアウト回避のため遅延読み込み
 
-if (!admin.apps.length) admin.initializeApp();
+if (!getApps().length) initializeApp();
 
 const anthropicApiKey = defineSecret('ANTHROPIC_API_KEY');
 
@@ -21,7 +23,7 @@ async function isMember(email) {
   if (!email) return false;
   if (email === OWNER_EMAIL) return true;
   try {
-    const snap = await admin.firestore().doc('hondoko-config/members').get();
+    const snap = await getFirestore().doc('hondoko-config/members').get();
     const emails = (snap.exists && snap.data().emails) || [];
     return emails.includes(email);
   } catch (e) {
@@ -175,7 +177,7 @@ exports.hondokoAmazon = onRequest({
     if (!idToken) { res.status(401).json({ error: '認証が必要です' }); return; }
     let decoded;
     try {
-      decoded = await admin.auth().verifyIdToken(idToken);
+      decoded = await getAuth().verifyIdToken(idToken);
     } catch (e) {
       res.status(401).json({ error: 'トークンが無効です' }); return;
     }
@@ -239,7 +241,7 @@ exports.hondokoNdl = onRequest({
     if (!idToken) { res.status(401).json({ error: '認証が必要です' }); return; }
     let decoded;
     try {
-      decoded = await admin.auth().verifyIdToken(idToken);
+      decoded = await getAuth().verifyIdToken(idToken);
     } catch (e) {
       res.status(401).json({ error: 'トークンが無効です' }); return;
     }
@@ -283,7 +285,7 @@ exports.hondokoCover = onRequest({
     if (!idToken) { res.status(401).json({ error: '認証が必要です' }); return; }
     let decoded;
     try {
-      decoded = await admin.auth().verifyIdToken(idToken);
+      decoded = await getAuth().verifyIdToken(idToken);
     } catch (e) {
       res.status(401).json({ error: 'トークンが無効です' }); return;
     }
@@ -335,7 +337,7 @@ exports.hondokoAnalyze = onRequest({
 
     let decoded;
     try {
-      decoded = await admin.auth().verifyIdToken(idToken);
+      decoded = await getAuth().verifyIdToken(idToken);
     } catch (e) {
       res.status(401).json({ error: 'トークンが無効です' }); return;
     }

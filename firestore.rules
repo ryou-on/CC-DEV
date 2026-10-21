@@ -45,9 +45,10 @@ service cloud.firestore {
       allow read, write: if request.auth != null;
     }
 
-    // App Dashboard: 読み書き許可
+    // App Dashboard: 一覧は公開、編集は許可済みGoogleアカウントのみ
     match /apps/{id} {
-      allow read, write: if true;
+      allow read: if true;
+      allow write: if isHihahoEditor();
     }
 
     // ともえホーム: アプリリスト共有（認証不要）
@@ -69,12 +70,13 @@ service cloud.firestore {
         request.resource.data.keys().hasOnly(['data','mimeType','size','updatedAt']) &&
         request.resource.data.data is string &&
         request.resource.data.data.size() <= 950000;
-      allow delete: if true;
+      // 共有コードだけでは削除を認可しない。管理用バックエンド経由へ移行するまで拒否。
+      allow delete: if false;
     }
 
-    // note-analytics: 個人分析ツール（パスワード不要・userId ベースのアクセス）
+    // note-analytics: 個人分析ツール。userIdだけを認証の代わりにしない。
     match /note-analytics/{userId}/{document=**} {
-      allow read, write: if true;
+      allow read, write: if isHihahoEditor();
     }
 
     // COCO-ITTA: 家族でグループ共有（ログインユーザーのみ）
@@ -125,18 +127,19 @@ service cloud.firestore {
           request.resource.data.hour is number && request.resource.data.hour >= 0 && request.resource.data.hour <= 23 &&
           request.resource.data.watchSec is number && request.resource.data.watchSec >= 0 && request.resource.data.watchSec <= 86400 &&
           request.resource.data.completed is bool;
-        allow delete: if true;
+        // 共有コードだけでは削除を認可しない。
+        allow delete: if false;
       }
     }
 
-    // hihaho アナリティクス: プレイリスト表示・動画再生カウント（認証なし書き込み可）
+    // hihaho アナリティクス: 閲覧は編集者のみ。集計書き込みはApp Check付きFunctionsへ移行するまで拒否。
     match /playlist_analytics/{id} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if isHihahoEditor();
+      allow write: if false;
     }
     match /video_analytics/{uuid} {
-      allow read: if true;
-      allow write: if true;
+      allow read: if isHihahoEditor();
+      allow write: if false;
     }
 
     // Meet Knowledge: チームコードを知っている人同士でQ&Aナレッジを共有
@@ -148,7 +151,8 @@ service cloud.firestore {
         request.resource.data.question is string && request.resource.data.question.size() <= 500 &&
         request.resource.data.answer is string && request.resource.data.answer.size() <= 5000 &&
         request.resource.data.keywords is list && request.resource.data.keywords.size() <= 20;
-      allow delete: if true;
+      // チームコードだけでは削除を認可しない。
+      allow delete: if false;
     }
 
     // hihaho ナレッジベース
