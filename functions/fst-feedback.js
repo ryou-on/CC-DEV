@@ -3,15 +3,16 @@
 const crypto = require('node:crypto');
 const { onRequest } = require('firebase-functions/v2/https');
 const { getGuard, sendCostError, CostError, periodKeys } = require('./cost-guard');
-const { clientIp } = require('./client-ip');
 const { sourceRev } = require('./fst-rev');
 const { isEditorEmail } = require('./editor-policy');
 
+// Hosting の書き換えでは利用者本人の IP を信頼できないため、IP ごとの枠は置かない。
+// 利用者ごと 1 分 5 件・1 日 50 件。全体は 1 分 300 件・1 日 5,000 件。
 const DEFAULT_LIMITS = Object.freeze({
   userMinute: 5,
   userDay: 50,
-  ipMinute: 30,
-  ipDay: 100,
+  globalMinute: 300,
+  globalDay: 5000,
 });
 const APPS = Object.freeze({
   'flight-strip-todo': 'stable',
@@ -147,11 +148,10 @@ function createFstFeedbackHandler({ authorize, db, now = Date.now, serverTimesta
       const keys = periodKeys(at);
       const minute = Math.floor(at / 60000);
       const user = hashId(actor.uid);
-      const ip = hashId(clientIp(req));
       await consume(db, `u_${user}_m_${minute}`, limits.userMinute, at);
       await consume(db, `u_${user}_d_${keys.day}`, limits.userDay, at);
-      await consume(db, `ip_${ip}_m_${minute}`, limits.ipMinute, at);
-      await consume(db, `ip_${ip}_d_${keys.day}`, limits.ipDay, at);
+      await consume(db, `g_m_${minute}`, limits.globalMinute, at);
+      await consume(db, `g_d_${keys.day}`, limits.globalDay, at);
       const content = hashId(`${input.appId}\0${input.subject}\0${input.message}`);
       await rejectDuplicate(db, `dup_${user}_${content}`, at);
       const saved = await db.runTransaction(async tx => {

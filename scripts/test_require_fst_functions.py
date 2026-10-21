@@ -65,6 +65,16 @@ class RequireFstFunctionsTest(unittest.TestCase):
         self.assertIn('cloudfunctions.functions.get', str(caught.exception))
         self.assertIn('status=403', str(caught.exception))
 
+    def test_empty_forbidden_body_still_names_the_required_role(self):
+        for label, body in (('none', None), ('dict', {}), ('text', '')):
+            with self.subTest(label):
+                with self.assertRaises(SystemExit) as caught:
+                    gate.require_active(('recordFstAnalytics',), lambda name: (403, body), REV)
+                message = str(caught.exception)
+                self.assertIn('cloudfunctions.functions.get', message)
+                self.assertIn('status=403', message)
+                self.assertNotIn('empty-response', message)
+
     def test_network_failure_empty_response_and_forbidden_all_stop(self):
         cases = [
             ('network', lambda name: (_ for _ in ()).throw(urllib.error.URLError('timed out'))),

@@ -7,13 +7,15 @@ const path = require('node:path');
 // デプロイ時にラベル fst-rev へ入れる。ゲートは同じファイル列の SHA-256 先頭32桁と照合する。
 // このファイル自身は含めない。含めると、照合方法の変更と中身の変更が分かれる。
 const FILES = Object.freeze([
-  'client-ip.js',
   'cost-guard.js',
   'editor-policy.js',
   'editor-policy.json',
   'fst-analytics.js',
   'fst-dev-admin.js',
   'fst-feedback.js',
+  'index.js',
+  'package-lock.json',
+  'package.json',
 ]);
 
 function sourceRev(dir = __dirname) {

@@ -262,7 +262,7 @@ test('a closed budget and the minute cap stop answers', async () => {
 
   const { db, handler } = setup(createFstSurveyAnswerHandler, {
     records: { [`fst_surveys/${SURVEY}`]: { active: true, type: 'text' } },
-    limits: { userMinute: 1, userDay: 30, ipMinute: 20, ipDay: 100 },
+    limits: { userMinute: 1, userDay: 30, globalMinute: 500, globalDay: 10000 },
   });
   await handler(request({ surveyId: SURVEY, answer: '1' }), response());
   const limited = response();
@@ -272,22 +272,42 @@ test('a closed budget and the minute cap stop answers', async () => {
   assert.equal(db.records.get(`fst_survey_answers/${SURVEY}_${uidHash('user-1')}`).answer, '1');
 });
 
-test('the trusted address is the last forwarded hop', async () => {
-  const { db, handler } = setup(createFstSurveyAnswerHandler, {
-    records: { [`fst_surveys/${SURVEY}`]: { active: true, type: 'text' } },
-    limits: { userMinute: 5, userDay: 30, ipMinute: 1, ipDay: 100 },
+test('the global cap is shared and does not read the forwarded address', async () => {
+  const db = memoryDb({
+    'costControls/global': { enabled: true },
+    [`fst_surveys/${SURVEY}`]: { active: true, type: 'text' },
+  });
+  let uid = 'user-1';
+  const guard = createGuard({
+    db,
+    now: () => NOW,
+    verifyIdToken: async () => ({ uid, email: 'user@example.test', email_verified: true, firebase: { sign_in_provider: 'google.com' } }),
+    verifyAppCheck: async () => ({}),
+  });
+  const handler = createFstSurveyAnswerHandler({
+    authorize: req => guard.authorize(req, 'fstSurveyAnswer'),
+    db,
+    now: () => NOW,
+    serverTimestamp: () => 'server-time',
+    limits: { userMinute: 5, userDay: 30, globalMinute: 1, globalDay: 10000 },
   });
   await handler(request(
     { surveyId: SURVEY, answer: '1' },
     { 'x-forwarded-for': '1.1.1.1, 203.0.113.50' },
   ), response());
-  const sameHop = response();
+  uid = 'user-2';
+  const limited = response();
   await handler(request(
     { surveyId: SURVEY, answer: '2' },
-    { 'x-forwarded-for': '9.9.9.9, 203.0.113.50' },
-  ), sameHop);
-  assert.equal(sameHop.statusCode, 429);
+    { 'x-forwarded-for': '9.9.9.9, 198.51.100.8' },
+  ), limited);
+  assert.equal(limited.statusCode, 429);
+  assert.equal(limited.body.error, 'USAGE_LIMIT');
   assert.equal(db.records.get(`fst_survey_answers/${SURVEY}_${uidHash('user-1')}`).answer, '1');
+  assert.equal(db.records.has(`fst_survey_answers/${SURVEY}_${uidHash('user-2')}`), false);
+  const keys = [...db.records.keys()].join('\n');
+  assert.equal(keys.includes('203.0.113.50'), false);
+  assert.equal(keys.includes('_ip_'), false);
 });
 
 test('one of two simultaneous answers is stored', async () => {

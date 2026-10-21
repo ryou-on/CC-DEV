@@ -3,10 +3,11 @@
 const crypto = require('node:crypto');
 const { onRequest } = require('firebase-functions/v2/https');
 const { getGuard, sendCostError, CostError, periodKeys } = require('./cost-guard');
-const { clientIp } = require('./client-ip');
 const { sourceRev } = require('./fst-rev');
 
-const LIMITS = Object.freeze({ userMinute: 30, userDay: 400, ipMinute: 60, ipDay: 800 });
+// Hosting の書き換えでは利用者本人の IP を信頼できないため、IP ごとの枠は置かない。
+// 利用者ごと 1 分 30 回・1 日 400 回。全体は 1 分 2,000 回・1 日 50,000 回。
+const LIMITS = Object.freeze({ userMinute: 30, userDay: 400, globalMinute: 2000, globalDay: 50000 });
 const APPS = Object.freeze({
   'flight-strip-todo': 'stable',
   'flight-strip-todo-dev': 'dev',
@@ -80,11 +81,10 @@ function createFstAnalyticsHandler({ authorize, db, now = Date.now, serverTimest
       const keys = periodKeys(at);
       const minute = Math.floor(at / 60000);
       const user = hashId(actor.uid);
-      const ip = hashId(clientIp(req));
       await consume(db, `an_u_${user}_m_${minute}`, limits.userMinute, at);
       await consume(db, `an_u_${user}_d_${keys.day}`, limits.userDay, at);
-      await consume(db, `an_ip_${ip}_m_${minute}`, limits.ipMinute, at);
-      await consume(db, `an_ip_${ip}_d_${keys.day}`, limits.ipDay, at);
+      await consume(db, `an_g_m_${minute}`, limits.globalMinute, at);
+      await consume(db, `an_g_d_${keys.day}`, limits.globalDay, at);
       const id = `AN_${hashId(actor.uid + '\0' + at + '\0' + Math.random()).slice(0, 16)}`;
       const when = jstParts(at);
       const row = {

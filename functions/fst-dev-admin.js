@@ -4,11 +4,13 @@ const crypto = require('node:crypto');
 const { onRequest } = require('firebase-functions/v2/https');
 const { getGuard, sendCostError, CostError, periodKeys } = require('./cost-guard');
 const { isEditorEmail } = require('./editor-policy');
-const { clientIp } = require('./client-ip');
 const { sourceRev } = require('./fst-rev');
 
-const ADMIN_LIMITS = Object.freeze({ userMinute: 10, userDay: 100, ipMinute: 20, ipDay: 200 });
-const ANSWER_LIMITS = Object.freeze({ userMinute: 5, userDay: 30, ipMinute: 20, ipDay: 100 });
+// Hosting の書き換えでは利用者本人の IP を信頼できないため、IP ごとの枠は置かない。
+// 管理は利用者ごと 1 分 10 回・1 日 100 回、全体は 1 分 200 回・1 日 2,000 回。
+// 回答は利用者ごと 1 分 5 回・1 日 30 回、全体は 1 分 500 回・1 日 10,000 回。
+const ADMIN_LIMITS = Object.freeze({ userMinute: 10, userDay: 100, globalMinute: 200, globalDay: 2000 });
+const ANSWER_LIMITS = Object.freeze({ userMinute: 5, userDay: 30, globalMinute: 500, globalDay: 10000 });
 const ADMIN_FIELDS = new Set(['kind', 'active', 'title', 'message', 'enabled', 'minVersion', 'targetBuild']);
 const SURVEY_FIELDS = new Set(['kind', 'title', 'question', 'type', 'options', 'surveyId', 'active']);
 const ANSWER_FIELDS = new Set(['surveyId', 'answer']);
@@ -87,15 +89,14 @@ async function consume(db, id, limit, now) {
   });
 }
 
-async function limitActor(db, actor, req, prefix, limits, now) {
+async function limitActor(db, actor, prefix, limits, now) {
   const keys = periodKeys(now);
   const minute = Math.floor(now / 60000);
   const user = hashId(actor.uid);
-  const ip = hashId(clientIp(req));
   await consume(db, `${prefix}_u_${user}_m_${minute}`, limits.userMinute, now);
   await consume(db, `${prefix}_u_${user}_d_${keys.day}`, limits.userDay, now);
-  await consume(db, `${prefix}_ip_${ip}_m_${minute}`, limits.ipMinute, now);
-  await consume(db, `${prefix}_ip_${ip}_d_${keys.day}`, limits.ipDay, now);
+  await consume(db, `${prefix}_g_m_${minute}`, limits.globalMinute, now);
+  await consume(db, `${prefix}_g_d_${keys.day}`, limits.globalDay, now);
 }
 
 function requireEditor(actor) {
@@ -135,7 +136,7 @@ function createFstDevAdminHandler({ authorize, db, now = Date.now, serverTimesta
         throw new CostError(400, 'INVALID_ADMIN');
       }
       await assertBudgetOpen(db);
-      await limitActor(db, actor, req, 'adm', limits, now());
+      await limitActor(db, actor, 'adm', limits, now());
       await ref.set(row);
       res.set('Cache-Control', 'no-store');
       res.status(200).json({ ok: true });
@@ -171,7 +172,7 @@ function createFstSurveyHandler({ authorize, db, now = Date.now, serverTimestamp
         if (type === 'text' && clean.length !== 0) throw new CostError(400, 'INVALID_SURVEY');
         if (type === 'options' && clean.length === 0) throw new CostError(400, 'INVALID_SURVEY');
         await assertBudgetOpen(db);
-        await limitActor(db, actor, req, 'sv', limits, at);
+        await limitActor(db, actor, 'sv', limits, at);
         const id = `SV_${hashId(actor.uid + '\0' + at + '\0' + Math.random()).slice(0, 16)}`;
         await db.doc(`fst_surveys/${id}`).set({
           title, question, type, options: clean, active: false, createdAt: serverTimestamp(),
@@ -186,7 +187,7 @@ function createFstSurveyHandler({ authorize, db, now = Date.now, serverTimestamp
           throw new CostError(400, 'INVALID_SURVEY');
         }
         await assertBudgetOpen(db);
-        await limitActor(db, actor, req, 'sv', limits, at);
+        await limitActor(db, actor, 'sv', limits, at);
         const ref = db.doc(`fst_surveys/${surveyId}`);
         await db.runTransaction(async tx => {
           const snap = await tx.get(ref);
@@ -223,7 +224,7 @@ function createFstSurveyAnswerHandler({ authorize, db, now = Date.now, serverTim
       } else if (data.type !== 'text') {
         throw new CostError(400, 'INVALID_ANSWER');
       }
-      await limitActor(db, actor, req, 'ans', limits, now());
+      await limitActor(db, actor, 'ans', limits, now());
       const hash = uidHash(actor.uid);
       const ref = db.doc(`fst_survey_answers/${surveyId}_${hash}`);
       await db.runTransaction(async tx => {
