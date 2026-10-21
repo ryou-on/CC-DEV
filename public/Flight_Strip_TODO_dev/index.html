@@ -184,6 +184,30 @@
         });
       } catch (e) {}
     };
+    window.postFst = async function (path, payload) {
+      const user = firebase.auth().currentUser;
+      if (!user || user.isAnonymous || user.emailVerified !== true) throw new Error('SIGN_IN_REQUIRED');
+      if (!window._fstAppCheckReady) {
+        const cfgRes = await fetch('/shared/cost-access-config.json', { cache: 'no-store' });
+        if (!cfgRes.ok) throw new Error('APP_CHECK_REQUIRED');
+        const cfg = await cfgRes.json();
+        if (!cfg || !cfg.recaptchaEnterpriseSiteKey) throw new Error('APP_CHECK_REQUIRED');
+        firebase.appCheck().activate(new firebase.appCheck.ReCaptchaEnterpriseProvider(cfg.recaptchaEnterpriseSiteKey), true);
+        window._fstAppCheckReady = true;
+      }
+      const appCheckToken = (await firebase.appCheck().getToken(false)).token;
+      const res = await fetch(path, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + await user.getIdToken(),
+          'X-Firebase-AppCheck': appCheckToken,
+        },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error('FST_API');
+    };
   </script>
 
   <!-- React アプリ（JSX） -->
@@ -590,6 +614,7 @@
           "送信前に、個人情報を本文へ書かない案内を表示します。メッセージは2,000文字まで送れます。",
           "受信箱の状態変更もサーバー経由です。未確認、確認済み、対応中、対応済みの4つに更新できます。",
           "利用統計もサーバー経由で記録します。ブラウザから fst_analytics へは書けません。",
+          "告知、強制更新、アンケートの作成と回答もサーバー経由です。回答者の識別子はサーバーが認証情報から作り、ブラウザからそれらのコレクションへは書けません。",
         ],
       },
       {
@@ -1552,26 +1577,25 @@
     };
 
     // アンケートポップアップ
-    const SurveyPopup = ({ survey, uidHash, onClose }) => {
+    const SurveyPopup = ({ survey, onClose }) => {
       const T = useT();
-      const db2 = firebase.firestore();
       const [selected, setSelected] = useState('');
       const [text, setText] = useState('');
       const [submitted, setSubmitted] = useState(false);
+      const [submitError, setSubmitError] = useState('');
       const isText = survey.type === 'text';
 
       const handleSubmit = async () => {
         const answer = isText ? text : selected;
         if (!answer) return;
-        const docId = `${survey.id}_${uidHash}`;
-        await db2.collection('fst_survey_answers').doc(docId).set({
-          surveyId: survey.id,
-          uidHash,
-          answer,
-          answeredAt: firebase.firestore.FieldValue.serverTimestamp(),
-        }).catch(() => {});
-        localStorage.setItem('fst_survey_answered_' + survey.id, '1');
-        setSubmitted(true);
+        setSubmitError('');
+        try {
+          await window.postFst('/api/fst-survey-answer', { surveyId: survey.id, answer });
+          localStorage.setItem('fst_survey_answered_' + survey.id, '1');
+          setSubmitted(true);
+        } catch (e) {
+          setSubmitError('送信できませんでした');
+        }
       };
 
       return (
@@ -1596,6 +1620,7 @@
                     ))}
                   </div>
                 )}
+                {submitError ? <div style={{ fontSize:'11px', color:'#ff6666', marginTop:'8px' }}>{submitError}</div> : null}
                 <div style={{ display:'flex', gap:'8px', marginTop:'16px' }}>
                   <button onClick={handleSubmit} style={{ background:`${T.accent}22`, border:`1px solid ${T.accent}66`, color:T.accent, padding:'6px 20px', borderRadius:'2px', cursor:'pointer', fontSize:'11px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace" }}>送信</button>
                   <button onClick={onClose} style={{ background:'transparent', border:`1px solid ${T.border2}`, color:T.textDim, padding:'6px 14px', borderRadius:'2px', cursor:'pointer', fontSize:'11px', fontFamily:"'JetBrains Mono',monospace" }}>スキップ</button>
@@ -1708,38 +1733,37 @@
       // Broadcast配信開始
       const handleBcStart = async () => {
         setBcLoading(true);
-        await db2.collection('fst_admin').doc('broadcast').set({
-          active: true, title: bcTitle, message: bcMsg,
-          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-        }).catch(()=>{});
-        setBcStatus({ active: true, title: bcTitle, message: bcMsg });
+        try {
+          await window.postFst('/api/fst-admin', { kind: 'broadcast', active: true, title: bcTitle, message: bcMsg });
+          setBcStatus({ active: true, title: bcTitle, message: bcMsg });
+        } catch (e) {}
         setBcLoading(false);
       };
       const handleBcStop = async () => {
-        await db2.collection('fst_admin').doc('broadcast').set({
-          active: false, title: bcTitle, message: bcMsg,
-          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-        }).catch(()=>{});
-        setBcStatus(s => s ? { ...s, active: false } : null);
+        try {
+          await window.postFst('/api/fst-admin', { kind: 'broadcast', active: false, title: bcTitle, message: bcMsg });
+          setBcStatus(s => s ? { ...s, active: false } : null);
+        } catch (e) {}
       };
 
       // Survey作成
       const handleSvCreate = async () => {
         if (!svTitle || !svQuestion) return;
         const opts = svType === 'options' ? svOptions.split('\n').map(s=>s.trim()).filter(Boolean) : [];
-        await db2.collection('fst_surveys').add({
-          title: svTitle, question: svQuestion, type: svType,
-          options: opts, active: false,
-          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-        }).catch(()=>{});
+        try {
+          await window.postFst('/api/fst-survey', {
+            kind: 'create', title: svTitle, question: svQuestion, type: svType, options: opts,
+          });
+        } catch (e) { return; }
         setSvTitle(''); setSvQuestion(''); setSvOptions('');
-        // リロード
         const snap = await db2.collection('fst_surveys').orderBy('createdAt','desc').limit(20).get().catch(()=>null);
         if (snap) setSurveys(snap.docs.map(d => ({ id: d.id, ...d.data() })));
       };
       const handleSvToggle = async (sv) => {
-        await db2.collection('fst_surveys').doc(sv.id).update({ active: !sv.active }).catch(()=>{});
-        setSurveys(list => list.map(s => s.id===sv.id ? { ...s, active: !s.active } : s));
+        try {
+          await window.postFst('/api/fst-survey', { kind: 'setActive', surveyId: sv.id, active: !sv.active });
+          setSurveys(list => list.map(s => s.id===sv.id ? { ...s, active: !s.active } : s));
+        } catch (e) {}
       };
       const handleSvAnswers = async (svId) => {
         if (svExpanded === svId) { setSvExpanded(null); return; }
@@ -1750,13 +1774,13 @@
 
       // ForceUpdate保存
       const handleFuSave = async () => {
-        await db2.collection('fst_admin').doc('forceUpdate').set({
-          enabled: fuEnabled, minVersion: fuMinVer, message: fuMsg,
-          targetBuild: fuTarget,
-          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
-        }).catch(()=>{});
-        setFuSaved(true);
-        setTimeout(()=>setFuSaved(false), 2000);
+        try {
+          await window.postFst('/api/fst-admin', {
+            kind: 'forceUpdate', enabled: fuEnabled, minVersion: fuMinVer, message: fuMsg, targetBuild: fuTarget,
+          });
+          setFuSaved(true);
+          setTimeout(()=>setFuSaved(false), 2000);
+        } catch (e) {}
       };
 
       // INBOX読み込み
@@ -6914,7 +6938,7 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
             document.body
           )}
           {broadcastMsg && <BroadcastPopup title={broadcastMsg.title} message={broadcastMsg.message} onClose={() => setBroadcastMsg(null)} />}
-          {activeSurvey && <SurveyPopup survey={activeSurvey} uidHash={btoa(user.uid).replace(/[^a-zA-Z0-9]/g,'').slice(0,12)} onClose={() => setActiveSurvey(null)} />}
+          {activeSurvey && <SurveyPopup survey={activeSurvey} onClose={() => setActiveSurvey(null)} />}
           {forceUpdateMsg && (
             <div style={{ position:'fixed', inset:0, zIndex:9999, background:'rgba(0,0,0,0.95)', display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:'16px', fontFamily:"'JetBrains Mono',monospace" }}>
               <span style={{ color:'#ff4444', fontSize:'20px', fontWeight:700 }}>⚠ アップデートが必要です</span>
@@ -7755,6 +7779,6 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
     })();
   </script>
 
-<script src="/shared/info-dialog.js" data-name-target="[data-cost-name]" data-version-target="[data-cost-version]" data-version="v0.10.30-dev" data-manual="Googleでログインしてタスクを作成し、ストリップを移動して進捗を管理します。J/Kで移動、Nで新規作成、?でショートカットを表示します。詳しい操作は下の取扱説明書をご覧ください。" data-manual-link="manual.html" data-changes="フィードバックと利用統計をサーバー経由に変更。"></script>
+<script src="/shared/info-dialog.js" data-name-target="[data-cost-name]" data-version-target="[data-cost-version]" data-version="v0.10.30-dev" data-manual="Googleでログインしてタスクを作成し、ストリップを移動して進捗を管理します。J/Kで移動、Nで新規作成、?でショートカットを表示します。詳しい操作は下の取扱説明書をご覧ください。" data-manual-link="manual.html" data-changes="フィードバック、利用統計、告知、アンケートをサーバー経由に変更。"></script>
 </body>
 </html>

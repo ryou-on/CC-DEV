@@ -49,6 +49,6 @@ CONFIRM_PRODUCTION_WRITE=access-grants node scripts/access-grants-migration.cjs 
 1. 上の表の、実際に使っている scope について、許可する Google アカウントが `accessGrants` に入っている。
 2. `docs/access-grants-announcement.md` の案内を、対象の利用者へ送った。
 3. 明友社の共有アカウントは `docs/meiyusha-email-verification.md` のとおり、ロビーが本番 Auth を確認した。
-4. デプロイ順は Functions を先、その後に Firestore Rules と Hosting です。先に出す関数は `fstFeedbackSubmit`、`updateFstFeedback`、`recordFstAnalytics` です。Rules や Hosting を先に出すと、直書きは拒否され、画面は未デプロイの `/api/fst-analytics`（2026-10-21 時点で本番は 404）を呼びます。
+4. デプロイ順は Functions を先、その後に Firestore Rules と Hosting です。先に出す関数は `fstFeedbackSubmit`、`updateFstFeedback`、`recordFstAnalytics`、`recordFstDevAdmin`、`recordFstSurvey`、`submitFstSurveyAnswer` です。Hosting と Rules のワークフローは、この6つが本番で ACTIVE でなければ止まります。Rules や Hosting を先に出すと、直書きは拒否され、画面は未デプロイの `/api/fst-analytics`（2026-10-21 時点で本番は 404）を呼びます。
 
 この PR の作業では、1〜3 の本番操作はしていません。

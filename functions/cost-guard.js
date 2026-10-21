@@ -15,6 +15,9 @@ const LIMITS = Object.freeze({
   fstFeedback: { minute: 5, userDay: 50, userMonth: 100, globalDay: 200, globalMonth: 2000, bytes: 16384 },
   // Usage events. authorize() uses the byte cap only. Not on the paid-API UID allowlist.
   fstAnalytics: { minute: 30, userDay: 400, userMonth: 4000, globalDay: 2000, globalMonth: 20000, bytes: 4096 },
+  // Dev broadcast, surveys, and answers. authorize() uses the byte cap only.
+  fstDevAdmin: { minute: 10, userDay: 100, userMonth: 1000, globalDay: 500, globalMonth: 5000, bytes: 8192 },
+  fstSurveyAnswer: { minute: 5, userDay: 30, userMonth: 300, globalDay: 500, globalMonth: 5000, bytes: 8192 },
 });
 const ORIGINS = new Set(['https://cc-dev-ps7.web.app', 'https://cc-dev-ps7.firebaseapp.com']);
 
