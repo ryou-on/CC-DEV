@@ -3,7 +3,7 @@
 const crypto = require('node:crypto');
 const { onRequest } = require('firebase-functions/v2/https');
 const {
-  getGuard, sendCostError, CostError, periodKeys, rateOf, reserveFst, rejectIfFstHeld, holdFstRejection,
+  getGuard, sendCostError, CostError, periodKeys, rateOf, reserveFst, consumeUserAttempt, rejectIfFstHeld, holdFstRejection,
 } = require('./cost-guard');
 const { isEditorEmail } = require('./editor-policy');
 const { sourceRev } = require('./fst-rev');
@@ -74,20 +74,23 @@ async function assertBudgetOpen(db) {
 
 async function withLimit(db, actor, prefix, limits, now, write, holdScope) {
   const holdKey = `${holdScope}${prefix}\0${actor.uid}`;
-  rejectIfFstHeld(holdKey, now);
+  rejectIfFstHeld(holdScope, holdKey, now);
   await assertBudgetOpen(db);
-  const keys = periodKeys(now);
-  const minute = Math.floor(now / 60000);
   const user = hashId(actor.uid);
   try {
+    await consumeUserAttempt(db, `${prefix}_u_${user}`, limits, now);
+  } catch (error) {
+    holdFstRejection(holdScope, holdKey, now, error);
+  }
+  const keys = periodKeys(now);
+  const minute = Math.floor(now / 60000);
+  try {
     return await reserveFst(db, [
-      { id: `${prefix}_u_${user}_m_${minute}`, limit: limits.userMinute },
-      { id: `${prefix}_u_${user}_d_${keys.day}`, limit: limits.userDay },
       { id: `${prefix}_g_m_${minute}`, limit: limits.globalMinute },
       { id: `${prefix}_g_d_${keys.day}`, limit: limits.globalDay },
     ], now, write);
   } catch (error) {
-    holdFstRejection(holdKey, now, error);
+    holdFstRejection(holdScope, holdKey, now, error);
   }
 }
 

@@ -3,7 +3,7 @@
 const crypto = require('node:crypto');
 const { onRequest } = require('firebase-functions/v2/https');
 const {
-  getGuard, sendCostError, CostError, periodKeys, rateOf, reserveFst, rejectIfFstHeld, holdFstRejection,
+  getGuard, sendCostError, CostError, periodKeys, rateOf, reserveFst, consumeUserAttempt, rejectIfFstHeld, holdFstRejection,
 } = require('./cost-guard');
 const { sourceRev } = require('./fst-rev');
 const APPS = Object.freeze({
@@ -65,11 +65,16 @@ function createFstAnalyticsHandler({
       const input = parseInput(req.body);
       const at = now();
       const holdKey = `${holdScope}an\0${actor.uid}`;
-      rejectIfFstHeld(holdKey, at);
+      rejectIfFstHeld(holdScope, holdKey, at);
       await assertBudgetOpen(db);
       const keys = periodKeys(at);
       const minute = Math.floor(at / 60000);
       const user = hashId(actor.uid);
+      try {
+        await consumeUserAttempt(db, `an_u_${user}`, limits, at);
+      } catch (error) {
+        holdFstRejection(holdScope, holdKey, at, error);
+      }
       const id = `AN_${hashId(actor.uid + '\0' + at + '\0' + Math.random()).slice(0, 16)}`;
       const when = jstParts(at);
       const row = {
@@ -87,15 +92,13 @@ function createFstAnalyticsHandler({
       if (input.device) row.device = input.device;
       try {
         await reserveFst(db, [
-          { id: `an_u_${user}_m_${minute}`, limit: limits.userMinute },
-          { id: `an_u_${user}_d_${keys.day}`, limit: limits.userDay },
           { id: `an_g_m_${minute}`, limit: limits.globalMinute },
           { id: `an_g_d_${keys.day}`, limit: limits.globalDay },
         ], at, async tx => {
           tx.set(db.doc(`fst_analytics/${id}`), row);
         });
       } catch (error) {
-        holdFstRejection(holdKey, at, error);
+        holdFstRejection(holdScope, holdKey, at, error);
       }
       res.set('Cache-Control', 'no-store');
       res.status(201).json({ ok: true });

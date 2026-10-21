@@ -222,6 +222,10 @@ test('the same content does not create a second feedback id', async () => {
   assert.equal(again.statusCode, 429);
   assert.equal(db.records.has('fst_feedback/FB_0002'), false);
   assert.equal(db.records.get('fst_feedback_meta/counter').count, 1);
+  const user = [...db.records.entries()].find(([name]) => name.includes('/u_'));
+  const globalDay = [...db.records.entries()].find(([name]) => name.includes('/g_d_'));
+  assert.equal(user[1].dayCount, 2);
+  assert.equal(globalDay[1].count, 1);
 });
 
 test('the global minute cap returns 429 across callers', async () => {
@@ -270,18 +274,21 @@ test('a rejected feedback call writes nothing and a repeat does not read', async
   assert.equal(first.statusCode, 429);
   assert.equal(first.headers['Retry-After'], String(retryAfterSeconds(NOW, slot)));
   assert.equal(Number(first.headers['Retry-After']) > 60, true);
-  assert.equal(JSON.stringify([...db.records.entries()]), before);
   assert.equal([...db.records.keys()].some(name => name.startsWith('fst_feedback/')), false);
-  assert.equal([...db.records.keys()].some(name => name.includes('u_')), false);
+  assert.equal(db.records.get(key).count, limits.globalDay);
+  const user = [...db.records.entries()].find(([name]) => name.includes('/u_'));
+  assert.equal(user[1].dayCount, 1);
   const gets = seen.gets;
   const transactions = seen.transactions;
-  assert.equal(transactions, 1);
+  assert.equal(transactions, 2);
+  const held = JSON.stringify([...db.records.entries()]);
   const second = response();
   await handler(request(payload), second);
   assert.equal(second.statusCode, 429);
   assert.equal(seen.gets, gets);
   assert.equal(seen.transactions, transactions);
-  assert.equal(JSON.stringify([...db.records.entries()]), before);
+  assert.equal(JSON.stringify([...db.records.entries()]), held);
+  assert.notEqual(held, before);
 });
 
 test('only an editor can change status, and the message stays', async () => {

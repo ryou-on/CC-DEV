@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createGuard, LIMITS, periodKeys, rateOf, retryAfterSeconds } = require('../cost-guard');
+const { createGuard, LIMITS, periodKeys, rateOf, retryAfterSeconds, clearFstHolds, sweepFstHolds, rememberFstHold, rejectIfFstHeld, FST_HOLD_MAX } = require('../cost-guard');
 const { armExpiry, expireCall, callIdFromLocation } = require('../realtime-cost');
 
 const NOW = Date.parse('2026-10-05T01:00:00Z');
@@ -180,6 +180,25 @@ test('retry-after waits until the blocked window opens', () => {
   assert.equal(minute, 60);
   assert.equal(day, 50400);
   assert.equal(day > minute, true);
+});
+
+test('expired holds are swept and the map stays capped', () => {
+  clearFstHolds();
+  const now = 1_700_000_000_000;
+  rememberFstHold('sweep', 'old', now, 1);
+  rememberFstHold('sweep', 'fresh', now, 60);
+  rememberFstHold('other', 'keep', now, 1);
+  sweepFstHolds(now + 1000, 'sweep');
+  assert.doesNotThrow(() => rejectIfFstHeld('sweep', 'old', now + 1000));
+  assert.throws(() => rejectIfFstHeld('sweep', 'fresh', now + 1000), error => error.httpStatus === 429);
+  assert.throws(() => rejectIfFstHeld('other', 'keep', now + 500), error => error.httpStatus === 429);
+  clearFstHolds();
+  for (let i = 0; i < FST_HOLD_MAX; i += 1) rememberFstHold('cap', `k${i}`, now, 60);
+  rememberFstHold('cap', 'overflow', now, 60);
+  assert.doesNotThrow(() => rejectIfFstHeld('cap', 'k0', now));
+  assert.throws(() => rejectIfFstHeld('cap', 'overflow', now), error => error.httpStatus === 429);
+  assert.throws(() => rejectIfFstHeld('cap', `k${FST_HOLD_MAX - 1}`, now), error => error.httpStatus === 429);
+  clearFstHolds();
 });
 
 test('budget stop blocks every paid service before counter writes, including malformed latch', async () => {
