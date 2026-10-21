@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const { onRequest } = require('firebase-functions/v2/https');
 const { getGuard, sendCostError, CostError, periodKeys } = require('./cost-guard');
+const { clientIp } = require('./client-ip');
 
 const LIMITS = Object.freeze({ userMinute: 30, userDay: 400, ipMinute: 60, ipDay: 800 });
 const APPS = Object.freeze({
@@ -28,12 +29,6 @@ function jstParts(now) {
     hour: shifted.getUTCHours(),
     dow: shifted.getUTCDay(),
   };
-}
-
-function clientIp(req) {
-  const forwarded = req.get('x-forwarded-for') || '';
-  const first = forwarded.split(',')[0].trim();
-  return (first || req.ip || 'missing').slice(0, 200);
 }
 
 function parseInput(body) {

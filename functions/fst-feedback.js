@@ -3,6 +3,7 @@
 const crypto = require('node:crypto');
 const { onRequest } = require('firebase-functions/v2/https');
 const { getGuard, sendCostError, CostError, periodKeys } = require('./cost-guard');
+const { clientIp } = require('./client-ip');
 const { isEditorEmail } = require('./editor-policy');
 
 const DEFAULT_LIMITS = Object.freeze({
@@ -25,12 +26,6 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 function hashId(value) {
   return crypto.createHash('sha256').update(String(value)).digest('hex').slice(0, 32);
-}
-
-function clientIp(req) {
-  const forwarded = req.get('x-forwarded-for') || '';
-  const first = forwarded.split(',')[0].trim();
-  return (first || req.ip || 'missing').slice(0, 200);
 }
 
 function cleanText(value, max) {

@@ -30,7 +30,7 @@
 
 ## デプロイ順
 
-Functions を先にデプロイし、その後に Firestore Rules と Hosting をデプロイします。対象は `recordFstAnalytics`、`fstFeedbackSubmit`、`updateFstFeedback`、`recordFstDevAdmin`、`recordFstSurvey`、`submitFstSurveyAnswer` です。`firebase-hosting-merge.yml` と `firebase-rules-deploy.yml` は、この6つが本番で ACTIVE でなければデプロイを止めます。Rules や Hosting を先に出すと、直書きは拒否され、画面はまだ無い `/api/fst-analytics` を呼びます。
+Functions を先にデプロイし、その後に Firestore Rules と Hosting をデプロイします。対象は `recordFstAnalytics`、`fstFeedbackSubmit`、`updateFstFeedback`、`recordFstDevAdmin`、`recordFstSurvey`、`submitFstSurveyAnswer` です。先に `npm ci --prefix functions` を実行します。`firebase-hosting-merge.yml` と `firebase-rules-deploy.yml` は、この6つが本番で ACTIVE でなければデプロイを止めます。Hosting 用サービスアカウントに `cloudfunctions.functions.get` が無いと、その確認は 403 になり、毎回デプロイが止まります。Rules や Hosting を先に出すと、直書きは拒否され、画面はまだ無い `/api/fst-analytics` を呼びます。IP の回数は、X-Forwarded-For の末尾（Cloud Run が付けた接続元）だけを数えます。
 
 2026-10-21 に本番へ POST した `https://cc-dev-ps7.web.app/api/fst-analytics` は 404 でした。関数は未デプロイです。`/api/fst-feedback` も 404 でした。
 
