@@ -135,6 +135,42 @@ test('missing App Check, a closed budget, and a client uid do not write', async 
   }
 });
 
+test('unknown fields, mismatched builds, and a bad version do not write', async () => {
+  const bodies = [
+    { ...payload, extra: true },
+    { ...payload, date: '2026-10-16' },
+    { ...payload, uidHash: 'client' },
+    { ...payload, appId: 'flight-strip-todo', build: 'dev' },
+    { ...payload, appId: 'flight-strip-todo-dev', build: 'stable' },
+    { ...payload, appId: 'other-app', build: 'stable' },
+    { ...payload, type: 'deleted' },
+    { ...payload, version: 'not-a-version' },
+    { ...payload, device: 'tablet' },
+  ];
+  for (const body of bodies) {
+    const { db, handler } = setup();
+    const res = response();
+    await handler(request(body), res);
+    assert.equal(res.statusCode, 400, JSON.stringify(body));
+    assert.equal(res.body.error, 'INVALID_ANALYTICS');
+    assert.equal(saved(db).length, 0);
+  }
+  const { handler } = setup();
+  const get = response();
+  await handler({ ...request(payload), method: 'GET' }, get);
+  assert.equal(get.statusCode, 405);
+});
+
+test('a shared address is limited across the minute window', async () => {
+  const { db, handler } = setup({ limits: { userMinute: 30, userDay: 400, ipMinute: 1, ipDay: 800 } });
+  await handler(request(payload), response());
+  const limited = response();
+  await handler(request({ ...payload, type: 'task_created' }), limited);
+  assert.equal(limited.statusCode, 429);
+  assert.equal(limited.headers['Retry-After'], '60');
+  assert.equal(saved(db).length, 1);
+});
+
 test('the per-user minute cap stops further events', async () => {
   const { db, handler } = setup({ limits: { userMinute: 2, userDay: 400, ipMinute: 60, ipDay: 800 } });
   await handler(request(payload), response());

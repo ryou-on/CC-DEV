@@ -1,21 +1,36 @@
-# 利用統計のサーバー受付と編集者判定の照合
+# 検査ハッシュの更新と編集者判定の揃え
 
-日付: 2026-10-19。本番への merge、deploy、Firestore Rules、Auth の変更はしていない。
+日付: 2026-10-21。本番への merge、deploy、Firestore Rules、Auth の変更はしていない。
 
 ## 完了した作業
 
-- Flight Strip の利用統計を Cloud Functions に移した。記録は `POST /api/fst-analytics`（`recordFstAnalytics`）。
-- 関数は App Check、確認済みの非匿名アカウント、appId と build の一致、種別の限定を要求する。回数は利用者 1 分 30 回・日本時間で 1 日 400 回。uid と生 IP は保存せず、日付はサーバーの日本時間。
-- クライアントからの `fst_analytics` 作成・更新・削除をルールで拒否した。読み取りは確認済みの hihaho 編集者だけ。
-- 目安箱は前回のまま Functions 経由。編集者メールは `functions/editor-policy.json` を Functions が読む。Rules は JSON を import できないため、`isHihahoEditor` との一致を試験で固定した。
-- 明友社のメール確認手順と accessGrants の移行資料は前回のまま。`--apply` は実行していない。
+- main の #8（`3e60280`、Hosting から cm-generator と sylavids-cm を外す）を merge し、検査ハッシュを取り直した。force push はしていない。
+- 編集者メールは Functions と Rules の両方で、前後の空白を除いて小文字比較する。同じ 13 件を両方に流して結果を比較する。
+- 利用統計の否定ケース（未知の項目、appId と build の不一致、不正な版、IP の分上限）を追加した。
+- 開発版の `fst_admin`、`fst_surveys`、`fst_survey_answers` は全拒否をやめ、確認済みアカウントの読み取りと編集者の書き込みに限った。回答の作成は確認済み利用者、読み取りは編集者、更新と削除は拒否。
+- デプロイ順は Functions を先、その後に Rules と Hosting。手順は `docs/fst-analytics-api.md` と `docs/access-grants-migration.md`。
+
+## IP 上限
+
+生 IP は保存しない。短命ハッシュだけを数える。
+
+- 利用統計: 1 分 60 回、日本時間で 1 日 800 回
+- 目安箱: 1 分 30 回、日本時間で 1 日 100 回
+
+利用者ごとの上限は別で、利用統計は 1 分 30 回・1 日 400 回、目安箱は 1 分 5 回・1 日 50 回。
+
+## CI
+
+対象は `tests`（Cost safety tests）と `build_and_preview`（Deploy to Firebase Hosting on PR）の両方。Firestore rules test は PR #4 だけ。
+
+直前の先端は赤だった。PR #3 は run 39190922113（tests）と 39190922110（build_and_preview）。PR #4 は run 39190978521（tests）と 39190978494（build_and_preview）。原因は main の #8 を含まない検査ハッシュで、PR のマージ結果に対する `cost_guard --check` が BLOCKED になったこと。このブランチは main を merge してハッシュを更新した。push 後の両ジョブが緑であることを完了条件にする。
 
 ## 検証
 
 - `npm test --prefix functions` 58 件成功
-- Firestore / Storage / Auth エミュレーター `tests/firestore` 27 件成功（`demo-cc-dev-cost`）
+- Firestore / Storage / Auth エミュレーター `tests/firestore` 30 件成功（`demo-cc-dev-cost`）
 - `python3 -m unittest discover -s scripts -p 'test_*.py'` 24 件成功
-- 安定版ログイン画面で v0.5.17 のリリースノート、ホームへ戻る、閉じる、Escape を確認。開発版はバナー v0.10.30-dev と利用統計の文言を確認。統計の POST と目安箱フォームはログイン後のため未操作。
+- 2026-10-21 に本番 `POST /api/fst-analytics` と `POST /api/fst-feedback` はどちらも 404
 
 ## バージョン
 
@@ -31,11 +46,13 @@
 
 ## 残課題・残リスク
 
-- accessGrants の本番付与と利用者への案内送付が終わるまで main へマージしない。資料は用意済みで、実行はロビーの作業。
-- `meiyusha@meiyusha-estimate.app` の emailVerified は未確認。未確認のままルールを出すと見積が読めない。
-- 目安箱と利用統計の Functions は未デプロイ。画面・ルール・Functions を別々に出すと送信と記録が失敗する。
-- App Check のコンソール強制は OFF。単体試験はトークン欠如を拒否するだけで、本物のトークンは未検証。
+- accessGrants の本番付与と利用者への案内送付が終わるまで main へマージしない。
+- `meiyusha@meiyusha-estimate.app` の emailVerified は未確認。
+- 目安箱と利用統計の Functions は未デプロイ。本番の `/api/fst-analytics` は 404。Functions を先に出し、その後に Rules と Hosting を出す。
+- App Check のコンソール強制は OFF。本物のトークンは未検証。
 - 予算停止ラッチが閉じていると目安箱と利用統計も `SERVICE_PAUSED` になる。
-- 過去の利用統計はクライアント時計と別方式の uid ハッシュ。新しい行とは人数の系列が続かない。
-- Rules の編集者判定は大文字小文字を区別する。Functions は小文字化する。画面の ALLOW 定数、明友社、本ドコのオーナーは別一覧のまま。
-- 本番 URL のスモーク、Functions エミュレーター結合、ログイン後のフォーム送信と統計 POST は未実施。
+- 過去の利用統計は別方式の uid ハッシュ。人数の系列は続かない。
+- アンケート回答の uidHash はクライアント生成で、Auth の uid とはルールで結び付かない。確認済み利用者は他人のハッシュで新規回答を作れる。既存回答の更新と削除は拒否し、読み取りは編集者だけ。
+- 告知の読み取りは、Flight Strip 以外の確認済みアカウントにも開く。
+- 画面の ALLOW 定数、明友社、本ドコのオーナーは編集者正本とは別一覧のまま。
+- 本番スモーク、Functions エミュレーター結合、ログイン後の送信は未実施。

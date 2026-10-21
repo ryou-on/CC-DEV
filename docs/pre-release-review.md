@@ -5,10 +5,10 @@
 | # | レベル | ルール | 場所 | 判定 | 根拠 |
 |---:|---|---|---|---|---|
 | 0 | ERROR | CACHE_BUSTER | public/hihaho-widgets/live_stats_overlay3.html:157 | fixed | Date.now() を付けた fetch をやめ、同じ URL を cache: no-cache で 30 秒ごとに再検証する。再スキャンで ERROR は 0 件。 |
-| 1 | REVIEW | PUBLIC_READ | firestore.rules:52 | accepted | playlists の公開読み取りは hihaho-view / hihaho-player の匿名再生に必要。書き込みは isHihahoEditor() のみ。2026-10-15 にルール本文を確認。 |
-| 2 | REVIEW | PUBLIC_READ | firestore.rules:56 | accepted | video_meta の公開読み取りはサムネイル表示に必要。書き込みは編集者のみで、タイトル等のサイズ上限がある。 |
-| 3 | REVIEW | PUBLIC_READ | firestore.rules:325 | accepted | hihaho-material は Chrome 拡張の一覧取得のため公開読み取り。作成・更新・削除は確認済みの編集者のみで、type と tags の上限がある。 |
-| 4 | REVIEW | PUBLIC_READ | firestore.rules:379 | accepted | hondoko-config/sharing の公開読み取りは link/public の未ログイン閲覧判定に必要。書き込みは確認済みオーナーのみ。viewers のメールが見える残リスクは docs/anonymous-user-impact.md に記載。 |
+| 1 | REVIEW | PUBLIC_READ | firestore.rules:53 | accepted | playlists の公開読み取りは hihaho-view / hihaho-player の匿名再生に必要。書き込みは isHihahoEditor() のみ。2026-10-15 にルール本文を確認。 |
+| 2 | REVIEW | PUBLIC_READ | firestore.rules:57 | accepted | video_meta の公開読み取りはサムネイル表示に必要。書き込みは編集者のみで、タイトル等のサイズ上限がある。 |
+| 3 | REVIEW | PUBLIC_READ | firestore.rules:389 | accepted | hihaho-material は Chrome 拡張の一覧取得のため公開読み取り。作成・更新・削除は確認済みの編集者のみで、type と tags の上限がある。 |
+| 4 | REVIEW | PUBLIC_READ | firestore.rules:443 | accepted | hondoko-config/sharing の公開読み取りは link/public の未ログイン閲覧判定に必要。書き込みは確認済みオーナーのみ。viewers のメールが見える残リスクは docs/anonymous-user-impact.md に記載。 |
 | 5 | REVIEW | HTTP_SERVER | functions/fst-analytics.js:1 | accepted | recordFstAnalytics は authorize で App Check と確認済み非匿名を要求し、reserve は呼ばない。uid と生 IP は保存せず、日付はサーバーの日本時間。クライアントの作成・更新・削除はルールで拒否。有料 API は呼ばない。 |
 | 6 | REVIEW | HTTP_SERVER | functions/fst-feedback.js:1 | accepted | fstFeedbackSubmit と updateFstFeedback は authorize で App Check と確認済み非匿名を要求し、reserve は呼ばない。投稿は unreviewed 固定。状態変更は編集者だけ。クライアントの作成・更新はルールで拒否。生 IP は保存しない。有料 API は呼ばない。 |
 | 7 | REVIEW | HTTP_SERVER | functions/hondoko.js:1 | accepted | hondokoAnalyze は getGuard().authorize と reserve を通す。Amazon/NDL/Cover は ID トークンとメンバー判定のあとだけ外部APIを呼ぶ。2026-10-15 の functions 試験で未認証の有料呼び出しは 0。 |
@@ -29,7 +29,7 @@
 | 22 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO_dev/index.html:5280 | accepted | 開発版の categories 単一ドキュメント。unsub あり。 |
 | 23 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO_dev/index.html:5325 | accepted | 開発版の projects 購読。users/{uid}/projects。unsub あり。 |
 | 24 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO_dev/index.html:5333 | accepted | 開発版の enhancedRequests 単一ドキュメント。unsub あり。 |
-| 25 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO_dev/index.html:5441 | accepted | fst_admin/broadcast にルールの許可が無く、末尾の拒否に落ちる。未ログインへデータを配らない。リスナーは失敗して読み取りが増え続けない。 |
+| 25 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO_dev/index.html:5441 | accepted | fst_admin/broadcast は確認済みアカウントだけが単一ドキュメントを購読する。書き込みは編集者、削除は拒否。未ログインは読めない。 |
 | 26 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO_dev/index.html:5643 | accepted | 開発版の users/{uid}/tasks。unsubscribe を保持する。 |
 | 27 | REVIEW | HTTP_SERVER | public/ai-meeting/worker/src/worker.js:1 | accepted | この Worker は Firebase ではなく Cloudflare。共有トークンがないと Anthropic へ中継しない。GCP の 1,000 円停止の対象外なので、Anthropic 側の支出上限は人間が別途設定する。 |
 | 28 | REVIEW | DB_QUERY | public/app-dashboard/index.html:167 | accepted | apps 一覧。ルールは canShare(apps__registry) が必要で、未ログインは拒否。件数は社内のアプリ台帳規模。 |
@@ -60,7 +60,7 @@
 | 53 | REVIEW | DB_LISTENER | public/ouchi-hamasushi/cloud-store.js:94 | accepted | 家族コードの assets を、共有ログインの Promise のあとで購読。currentUnsubscribe で解除。未ログインはルールで拒否。 |
 | 54 | REVIEW | DB_LISTENER | public/outreach-crm/index.html:321 | accepted | outreach-crm/{workspace} の単一ドキュメント。unsub を保持。grant が無いとルールで拒否。 |
 | 55 | REVIEW | DB_LISTENER | public/tomoe-home/index.html:289 | accepted | tomoe-home/config の単一ドキュメント。requireCCDevLogin のあとで購読。grant が必要。 |
-| 56 | REVIEW | PUBLIC_READ | storage.rules:29 | accepted | hihaho-thumbs は公開画像。書き込みは確認済み編集者、5MB 未満、image/* のみ。 |
-| 57 | REVIEW | PUBLIC_READ | storage.rules:38 | accepted | logos はプレイリストのロゴ。公開読み取り、確認済み編集者のみ書き込み、2MB 未満の画像。 |
-| 58 | REVIEW | PUBLIC_READ | storage.rules:47 | accepted | hihaho-material の実ファイルは公開読み取り。書き込みは確認済み編集者、30MB 未満。配信関数 assetServe は GET/HEAD と ETag のみ。 |
-| 59 | REVIEW | PUBLIC_READ | storage.rules:56 | accepted | hondoko の棚写真は共有リンク閲覧のため公開読み取り。書き込みは確認済みアカウントの 10MB 未満の画像。 |
+| 56 | REVIEW | PUBLIC_READ | storage.rules:30 | accepted | hihaho-thumbs は公開画像。書き込みは確認済み編集者、5MB 未満、image/* のみ。 |
+| 57 | REVIEW | PUBLIC_READ | storage.rules:39 | accepted | logos はプレイリストのロゴ。公開読み取り、確認済み編集者のみ書き込み、2MB 未満の画像。 |
+| 58 | REVIEW | PUBLIC_READ | storage.rules:48 | accepted | hihaho-material の実ファイルは公開読み取り。書き込みは確認済み編集者、30MB 未満。配信関数 assetServe は GET/HEAD と ETag のみ。 |
+| 59 | REVIEW | PUBLIC_READ | storage.rules:57 | accepted | hondoko の棚写真は共有リンク閲覧のため公開読み取り。書き込みは確認済みアカウントの 10MB 未満の画像。 |
