@@ -69,6 +69,6 @@
 
 受信箱の状態変更も同じ更新 API です。古い `new` / `replied` は表示上だけ未確認 / 対応済みとして扱います。
 
-## 未デプロイ
+## デプロイ順
 
-Functions とルールは、この PR では本番へ出していません。画面だけ先に公開すると送信先が無く、ルールだけ先に公開すると今の直書きが拒否されます。両方を同じリリースにしてください。
+Functions を先にデプロイし、その後に Firestore Rules と Hosting をデプロイします。対象は `fstFeedbackSubmit`、`updateFstFeedback`、`recordFstAnalytics` です。この PR では本番へ出していません。2026-10-21 時点の `https://cc-dev-ps7.web.app/api/fst-feedback` と `/api/fst-analytics` はどちらも 404 です。Rules や画面を先に出すと、直書きは拒否され、送信先がありません。

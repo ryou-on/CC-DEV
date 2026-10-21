@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import assert from 'node:assert/strict';
 import { test, before, after, beforeEach, describe } from 'node:test';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
@@ -9,6 +10,10 @@ import {
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth, connectAuthEmulator, signInWithCredential, GoogleAuthProvider, signOut } from 'firebase/auth';
 import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
+
+const require = createRequire(import.meta.url);
+const { isEditorEmail } = require('../../functions/editor-policy.js');
+const editorCases = require('../../functions/editor-policy-cases.json');
 
 let env;
 const token = { email: 'member@example.test', email_verified: true, firebase: { sign_in_provider: 'google.com' } };
@@ -268,6 +273,53 @@ describe('shared collections stay closed to anonymous users', () => {
     await assertFails(setDoc(doc(anon(), 'bombing-bay/global/plays/new'), play));
     await assertSucceeds(setDoc(doc(writer(), 'bombing-bay/global/plays/new'), play));
     await assertFails(updateDoc(doc(writer(), 'bombing-bay/global/plays/new'), { score: 10 }));
+  });
+});
+
+describe('editor email cases match functions and rules', () => {
+  test('the same emails are accepted or rejected on both sides', async () => {
+    for (const [index, item] of editorCases.entries()) {
+      const db = env.authenticatedContext(`editor-case-${index}`, {
+        email: item.email,
+        email_verified: true,
+        firebase: { sign_in_provider: 'google.com' },
+      }).firestore();
+      const write = setDoc(doc(db, `playlists/editor-case-${index}`), { name: 'case' });
+      if (item.editor) await assertSucceeds(write);
+      else await assertFails(write);
+      assert.equal(isEditorEmail(item.email), item.editor, item.email);
+    }
+  });
+});
+
+describe('dev admin broadcast and surveys are limited', () => {
+  test('verified users can read, only an editor can write, and answers stay private', async () => {
+    const notice = { active: true, title: '告知', message: '本文', updatedAt: serverTimestamp() };
+    await assertFails(getDoc(doc(anonAuth(), 'fst_admin/broadcast')));
+    await assertFails(setDoc(doc(writer(), 'fst_admin/broadcast'), notice));
+    await assertFails(setDoc(doc(editor(), 'fst_admin/other'), notice));
+    await assertSucceeds(setDoc(doc(editor(), 'fst_admin/broadcast'), notice));
+    await assertSucceeds(getDoc(doc(writer(), 'fst_admin/broadcast')));
+    await assertFails(setDoc(doc(editor(), 'fst_admin/broadcast'), { ...notice, extra: true }));
+    await assertFails(deleteDoc(doc(editor(), 'fst_admin/broadcast')));
+
+    const survey = {
+      title: '題', question: '質問', type: 'text', options: [], active: false, createdAt: serverTimestamp(),
+    };
+    await assertFails(setDoc(doc(writer(), 'fst_surveys/sv1'), survey));
+    await assertSucceeds(setDoc(doc(editor(), 'fst_surveys/sv1'), survey));
+    await assertSucceeds(updateDoc(doc(editor(), 'fst_surveys/sv1'), { active: true }));
+    await assertFails(updateDoc(doc(editor(), 'fst_surveys/sv1'), { title: '改ざん' }));
+    await assertSucceeds(getDoc(doc(writer(), 'fst_surveys/sv1')));
+
+    const answer = { surveyId: 'sv1', uidHash: 'abcdefghij12', answer: 'はい', answeredAt: serverTimestamp() };
+    await assertSucceeds(setDoc(doc(writer(), 'fst_survey_answers/sv1_abcdefghij12'), answer));
+    await assertFails(setDoc(doc(writer(), 'fst_survey_answers/sv1_other'), answer));
+    await assertFails(getDoc(doc(writer(), 'fst_survey_answers/sv1_abcdefghij12')));
+    await assertSucceeds(getDoc(doc(editor(), 'fst_survey_answers/sv1_abcdefghij12')));
+    await assertFails(updateDoc(doc(writer(), 'fst_survey_answers/sv1_abcdefghij12'), { answer: '変更' }));
+    await assertFails(getDocs(query(collection(writer(), 'fst_survey_answers'), orderBy('answeredAt'))));
+    await assertSucceeds(getDocs(query(collection(editor(), 'fst_survey_answers'))));
   });
 });
 

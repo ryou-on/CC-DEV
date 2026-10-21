@@ -1,7 +1,13 @@
 import { readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import assert from 'node:assert/strict';
 import { test, before, after, describe } from 'node:test';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import { ref, uploadString, getBytes } from 'firebase/storage';
+
+const require = createRequire(import.meta.url);
+const { isEditorEmail } = require('../../functions/editor-policy.js');
+const editorCases = require('../../functions/editor-policy-cases.json');
 
 let env;
 const verified = { email: 'member@example.test', email_verified: true, firebase: { sign_in_provider: 'google.com' } };
@@ -51,6 +57,20 @@ describe('storage rules', () => {
     await assertFails(uploadString(ref(anonStorage(), 'hondoko/shelves/new.jpg'), 'img', 'raw', { contentType: 'image/jpeg' }));
     await assertFails(uploadString(ref(storageFor('unverified-editor', unverifiedEditorToken), 'hondoko/shelves/new.jpg'), 'img', 'raw', { contentType: 'image/jpeg' }));
     await assertSucceeds(uploadString(ref(storageFor('writer', verified), 'hondoko/shelves/new.jpg'), 'img', 'raw', { contentType: 'image/jpeg' }));
+  });
+
+  test('the same editor emails pass or fail for storage and functions', async () => {
+    for (const [index, item] of editorCases.entries()) {
+      const storage = env.authenticatedContext(`storage-editor-${index}`, {
+        email: item.email,
+        email_verified: true,
+        firebase: { sign_in_provider: 'google.com' },
+      }).storage();
+      const upload = uploadString(ref(storage, `hihaho-thumbs/case-${index}.jpg`), 'img', 'raw', { contentType: 'image/jpeg' });
+      if (item.editor) await assertSucceeds(upload);
+      else await assertFails(upload);
+      assert.equal(isEditorEmail(item.email), item.editor, item.email);
+    }
   });
 
   test('paths outside the named folders are denied', async () => {

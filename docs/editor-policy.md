@@ -2,8 +2,10 @@
 
 `functions/editor-policy.json` が hihaho 編集者のドメインと個別メールの正本です。Cloud Functions の `isEditorEmail` はこれを読みます。
 
-Firestore Rules と Storage Rules は JavaScript や JSON を import できません。`isHihahoEditor` は同じ条件をルール言語で書いてあります。`functions/test/editor-policy.test.js` が、両方の関数に正本と同じドメイン正規表現とメールだけが入っていることを照合します。正本を変えたらルールの関数も同じ内容に直し、試験が通るまで完了にしません。
+Firestore Rules と Storage Rules は JavaScript や JSON を import できません。両方の `isHihahoEditor` は、トークンのメールを `trim().lower()` してから同じドメインと個別メールを見ます。Functions の `isEditorEmail` も前後の空白を除いて小文字化します。
 
-Rules には小文字化がありません。トークンのメールが大文字だと Rules は拒否し、Functions は小文字化して許可します。この差は試験に固定しています。
+小文字化に寄せた理由は、メールのドメインは大文字小文字を区別せず、Google のトークンも登録時の表記とずれることがあるためです。Rules だけ区別すると、Functions では編集者なのにルールでは拒否されます。Rules 言語の `lower()` と `trim()` で同じ操作ができるため、Functions を大文字区別へ戻す必要はありません。
+
+同じメールの一覧は `functions/editor-policy-cases.json` です。Functions の単体試験と、Firestore / Storage エミュレーターが、その一覧を両方に流して結果を比較します。サブドメイン（`user@sub.splineglobal.com`）はどちらも編集者にしません。
 
 明友社の共有アカウント、本ドコのオーナー、各 HTML の画面用 ALLOW は別の一覧です。編集者正本を増やしても、それらへは自動では広がりません。

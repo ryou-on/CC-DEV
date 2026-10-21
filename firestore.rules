@@ -31,11 +31,12 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // 編集者のメールは functions/editor-policy.json が正本。Rules は import できないため、検査がこの関数と照合する。
+    // 編集者のメールは functions/editor-policy.json が正本。Rules は import できない。
+    // メールは大文字小文字を区別しない。Functions の trim + lower と同じ結果になるよう、ここで揃える。
     function isHihahoEditor() {
       return verifiedAccount() && (
-        request.auth.token.email.matches('.*@splineglobal[.]com') ||
-        request.auth.token.email == 'junpei.omote@gmail.com'
+        request.auth.token.email.trim().lower().matches('.*@splineglobal[.]com') ||
+        request.auth.token.email.trim().lower() == 'junpei.omote@gmail.com'
       );
     }
     function prevData() {
@@ -73,6 +74,69 @@ service cloud.firestore {
     }
     match /fstRateLimits/{id} {
       allow read, write: if false;
+    }
+
+    // 開発版の告知と強制更新。読むのは確認済みアカウント、書くのは編集者、削除はしない。
+    match /fst_admin/{docId} {
+      allow get: if verifiedAccount() && (docId == 'broadcast' || docId == 'forceUpdate');
+      allow list: if false;
+      allow create, update: if isHihahoEditor() && (
+        (docId == 'broadcast'
+          && request.resource.data.keys().hasOnly(['active', 'title', 'message', 'updatedAt'])
+          && request.resource.data.active is bool
+          && request.resource.data.title is string
+          && request.resource.data.title.size() <= 200
+          && request.resource.data.message is string
+          && request.resource.data.message.size() <= 2000
+          && request.resource.data.updatedAt is timestamp)
+        || (docId == 'forceUpdate'
+          && request.resource.data.keys().hasOnly(['enabled', 'minVersion', 'message', 'targetBuild', 'updatedAt'])
+          && request.resource.data.enabled is bool
+          && request.resource.data.minVersion is string
+          && request.resource.data.minVersion.size() <= 40
+          && request.resource.data.message is string
+          && request.resource.data.message.size() <= 500
+          && request.resource.data.targetBuild in ['all', 'dev', 'stable']
+          && request.resource.data.updatedAt is timestamp)
+      );
+      allow delete: if false;
+    }
+    match /fst_surveys/{id} {
+      allow read: if verifiedAccount();
+      allow create: if isHihahoEditor()
+        && request.resource.data.keys().hasOnly(['title', 'question', 'type', 'options', 'active', 'createdAt'])
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 200
+        && request.resource.data.question is string
+        && request.resource.data.question.size() > 0
+        && request.resource.data.question.size() <= 2000
+        && request.resource.data.type in ['options', 'text']
+        && request.resource.data.options is list
+        && request.resource.data.options.size() <= 20
+        && request.resource.data.active is bool
+        && request.resource.data.createdAt is timestamp;
+      allow update: if isHihahoEditor()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['active'])
+        && request.resource.data.active is bool;
+      allow delete: if false;
+    }
+    match /fst_survey_answers/{id} {
+      allow read: if isHihahoEditor();
+      allow create: if verifiedAccount()
+        && request.resource.data.keys().hasOnly(['surveyId', 'uidHash', 'answer', 'answeredAt'])
+        && request.resource.data.surveyId is string
+        && request.resource.data.surveyId.size() > 0
+        && request.resource.data.surveyId.size() <= 80
+        && request.resource.data.uidHash is string
+        && request.resource.data.uidHash.size() > 0
+        && request.resource.data.uidHash.size() <= 32
+        && request.resource.data.answer is string
+        && request.resource.data.answer.size() > 0
+        && request.resource.data.answer.size() <= 2000
+        && request.resource.data.answeredAt is timestamp
+        && id == request.resource.data.surveyId + '_' + request.resource.data.uidHash;
+      allow update, delete: if false;
     }
 
     function appFieldsOk(d, ch) {
