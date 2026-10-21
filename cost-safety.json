@@ -7,7 +7,7 @@
   "reviewer": "CC-DEV pre-release review (2026-10-15)",
   "reviewedOn": "2026-10-15",
   "expiresOn": "2026-11-14",
-  "reviewedSourceSha256": "fd5a34faea0a89e1a11ad14cc87cc473498b74535f12292bc1a2524926c2133c",
+  "reviewedSourceSha256": "5f37756516e85135c0202aef1f595f781be5e02d11fa21cb406a17043792de7c",
   "controls": {
     "billingAlerts": {
       "verified": true,
@@ -43,7 +43,7 @@
     },
     "denialTests": {
       "verified": true,
-      "evidence": "2026-10-21: functions 58 passed, including unknown analytics fields, appId/build mismatch, IP minute cap, and the shared editor email cases. Firestore and Storage emulator tests 30 passed: the same emails match Functions, dev broadcast and surveys are editor-limited, clients cannot write fst_analytics. Python tests 24 passed."
+      "evidence": "2026-10-21: functions 63 passed, including editor-only survey creation, a client uidHash rejected before write, and a duplicate answer left unchanged. Firestore and Storage emulator tests 30 passed: clients cannot write fst_admin, fst_surveys, or fst_survey_answers, including another user hash. Python tests 27 passed, including the production function gate."
     }
   },
   "reviewDecisions": [
@@ -64,14 +64,14 @@
     {
       "rule": "PUBLIC_READ",
       "path": "firestore.rules",
-      "line": 389,
+      "line": 340,
       "disposition": "accepted",
       "evidence": "hihaho-material は Chrome 拡張の一覧取得のため公開読み取り。作成・更新・削除は確認済みの編集者のみで、type と tags の上限がある。"
     },
     {
       "rule": "PUBLIC_READ",
       "path": "firestore.rules",
-      "line": 443,
+      "line": 394,
       "disposition": "accepted",
       "evidence": "hondoko-config/sharing の公開読み取りは link/public の未ログイン閲覧判定に必要。書き込みは確認済みオーナーのみ。viewers のメールが見える残リスクは docs/anonymous-user-impact.md に記載。"
     },
@@ -81,6 +81,13 @@
       "line": 1,
       "disposition": "accepted",
       "evidence": "recordFstAnalytics は authorize で App Check と確認済み非匿名を要求し、reserve は呼ばない。uid と生 IP は保存せず、日付はサーバーの日本時間。クライアントの作成・更新・削除はルールで拒否。有料 API は呼ばない。"
+    },
+    {
+      "rule": "HTTP_SERVER",
+      "path": "functions/fst-dev-admin.js",
+      "line": 1,
+      "disposition": "accepted",
+      "evidence": "告知・強制更新・アンケートの作成と回答は recordFstDevAdmin / recordFstSurvey / submitFstSurveyAnswer だけが書く。authorize で App Check と確認済み非匿名を要求し、reserve は呼ばない。告知と作成は編集者だけ。回答の uidHash は認証 uid の SHA-256 先頭16桁で、クライアントは指定できない。直書きはルールで拒否。有料 API は呼ばない。"
     },
     {
       "rule": "HTTP_SERVER",
@@ -190,42 +197,42 @@
     {
       "rule": "DB_LISTENER",
       "path": "public/Flight_Strip_TODO_dev/index.html",
-      "line": 4796,
+      "line": 4820,
       "disposition": "accepted",
       "evidence": "開発版の routine projects。users/{uid}/projects に限定し unsub する。"
     },
     {
       "rule": "DB_LISTENER",
       "path": "public/Flight_Strip_TODO_dev/index.html",
-      "line": 5280,
+      "line": 5304,
       "disposition": "accepted",
       "evidence": "開発版の categories 単一ドキュメント。unsub あり。"
     },
     {
       "rule": "DB_LISTENER",
       "path": "public/Flight_Strip_TODO_dev/index.html",
-      "line": 5325,
+      "line": 5349,
       "disposition": "accepted",
       "evidence": "開発版の projects 購読。users/{uid}/projects。unsub あり。"
     },
     {
       "rule": "DB_LISTENER",
       "path": "public/Flight_Strip_TODO_dev/index.html",
-      "line": 5333,
+      "line": 5357,
       "disposition": "accepted",
       "evidence": "開発版の enhancedRequests 単一ドキュメント。unsub あり。"
     },
     {
       "rule": "DB_LISTENER",
       "path": "public/Flight_Strip_TODO_dev/index.html",
-      "line": 5441,
+      "line": 5465,
       "disposition": "accepted",
-      "evidence": "fst_admin/broadcast は確認済みアカウントだけが単一ドキュメントを購読する。書き込みは編集者、削除は拒否。未ログインは読めない。"
+      "evidence": "fst_admin/broadcast は確認済みアカウントだけが単一ドキュメントを購読する。作成・更新・削除は Functions だけ。未ログインは読めない。"
     },
     {
       "rule": "DB_LISTENER",
       "path": "public/Flight_Strip_TODO_dev/index.html",
-      "line": 5643,
+      "line": 5667,
       "disposition": "accepted",
       "evidence": "開発版の users/{uid}/tasks。unsubscribe を保持する。"
     },

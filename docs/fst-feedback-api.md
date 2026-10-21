@@ -71,4 +71,10 @@
 
 ## デプロイ順
 
-Functions を先にデプロイし、その後に Firestore Rules と Hosting をデプロイします。対象は `fstFeedbackSubmit`、`updateFstFeedback`、`recordFstAnalytics` です。この PR では本番へ出していません。2026-10-21 時点の `https://cc-dev-ps7.web.app/api/fst-feedback` と `/api/fst-analytics` はどちらも 404 です。Rules や画面を先に出すと、直書きは拒否され、送信先がありません。
+Functions を先にデプロイし、その後に Firestore Rules と Hosting をデプロイします。対象は `fstFeedbackSubmit`、`updateFstFeedback`、`recordFstAnalytics`、`recordFstDevAdmin`、`recordFstSurvey`、`submitFstSurveyAnswer` です。main の Hosting と Rules のワークフローは、デプロイ前にこの6つが本番で ACTIVE かを確認し、無ければ止めます。マージ前にリリースブランチから手動で出します。
+
+```bash
+npx firebase-tools deploy --only functions:fstFeedbackSubmit,functions:updateFstFeedback,functions:recordFstAnalytics,functions:recordFstDevAdmin,functions:recordFstSurvey,functions:submitFstSurveyAnswer --project cc-dev-ps7
+```
+
+この PR では本番へ出していません。2026-10-21 時点の `https://cc-dev-ps7.web.app/api/fst-feedback` と `/api/fst-analytics` はどちらも 404 です。Rules や画面を先に出すと、直書きは拒否され、送信先がありません。

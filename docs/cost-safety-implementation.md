@@ -29,7 +29,9 @@
 
 利用統計 `recordFstAnalytics`（`/api/fst-analytics`）も有料 API を呼ばず、`reserve()` は呼ばない。確認済みアカウントと App Check が必要で、`costControls/global.enabled` が true でないと拒否する。回数は利用者 1 分 30 回・1 日 400 回。同じ出口 IP の短命ハッシュは 1 分 60 回・1 日 800 回。目安箱の 1 分 5 回より広いのは、タスク作成と完了のたびに記録するため。日付・時刻はサーバーの日本時間、利用者識別子は uid のハッシュだけ。生 IP と生 uid は保存しない。クライアントからの作成・更新・削除はルールで拒否する。
 
-デプロイ順は Functions を先、その後に Firestore Rules と Hosting です。本番の `/api/fst-analytics` は 2026-10-21 時点で 404 です。
+開発版の告知・強制更新（`recordFstDevAdmin`、`/api/fst-admin`）とアンケートの作成・公開（`recordFstSurvey`、`/api/fst-survey`）は編集者だけが書けます。回答（`submitFstSurveyAnswer`、`/api/fst-survey-answer`）は確認済みアカウントが書けます。回答の `uidHash` は認証 uid の SHA-256 先頭16桁で、クライアントが指定した値は未知の項目として拒否します。文書 ID は `{surveyId}_{uidHash}` です。同じ人が二度目を送ると 409 で、先の回答は残ります。`btoa` 方式は使いません。クライアントからの作成・更新・削除はルールで拒否します。読み取りは、告知とアンケートが確認済みアカウント、回答が編集者だけです。
+
+デプロイ順は Functions を先、その後に Firestore Rules と Hosting です。`firebase-hosting-merge.yml` と `firebase-rules-deploy.yml` は、`fstFeedbackSubmit`、`updateFstFeedback`、`recordFstAnalytics` に加えて上の3つが本番で ACTIVE かを確認し、無ければデプロイを止めます。本番の `/api/fst-analytics` は 2026-10-21 時点で 404 です。この作業では関数をデプロイしていません。
 
 編集者判定の正本は `functions/editor-policy.json`。Functions と Rules はどちらもメールの前後空白を除いて小文字比較します。同じケースを両方に流す試験は `functions/editor-policy-cases.json` とエミュレーターです。
 

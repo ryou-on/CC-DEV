@@ -452,3 +452,7 @@ exports.fstFeedbackSubmit = fstFeedback.fstFeedbackSubmit;
 exports.updateFstFeedback = fstFeedback.updateFstFeedback;
 const fstAnalytics = require('./fst-analytics');
 exports.recordFstAnalytics = fstAnalytics.recordFstAnalytics;
+const fstDevAdmin = require('./fst-dev-admin');
+exports.recordFstDevAdmin = fstDevAdmin.recordFstDevAdmin;
+exports.recordFstSurvey = fstDevAdmin.recordFstSurvey;
+exports.submitFstSurveyAnswer = fstDevAdmin.submitFstSurveyAnswer;

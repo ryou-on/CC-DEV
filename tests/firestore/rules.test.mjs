@@ -292,34 +292,41 @@ describe('editor email cases match functions and rules', () => {
   });
 });
 
-describe('dev admin broadcast and surveys are limited', () => {
-  test('verified users can read, only an editor can write, and answers stay private', async () => {
+describe('dev admin broadcast and surveys are server-only writes', () => {
+  test('clients cannot write, including an answer that uses someone else hash', async () => {
     const notice = { active: true, title: '告知', message: '本文', updatedAt: serverTimestamp() };
-    await assertFails(getDoc(doc(anonAuth(), 'fst_admin/broadcast')));
+    await assertFails(setDoc(doc(editor(), 'fst_admin/broadcast'), notice));
     await assertFails(setDoc(doc(writer(), 'fst_admin/broadcast'), notice));
-    await assertFails(setDoc(doc(editor(), 'fst_admin/other'), notice));
-    await assertSucceeds(setDoc(doc(editor(), 'fst_admin/broadcast'), notice));
+    await assertFails(setDoc(doc(editor(), 'fst_admin/forceUpdate'), {
+      enabled: true, minVersion: '0.1.0', message: '更新', targetBuild: 'dev', updatedAt: serverTimestamp(),
+    }));
+    await env.withSecurityRulesDisabled(async (c) => {
+      await setDoc(doc(c.firestore(), 'fst_admin/broadcast'), notice);
+    });
+    await assertFails(getDoc(doc(anonAuth(), 'fst_admin/broadcast')));
     await assertSucceeds(getDoc(doc(writer(), 'fst_admin/broadcast')));
-    await assertFails(setDoc(doc(editor(), 'fst_admin/broadcast'), { ...notice, extra: true }));
-    await assertFails(deleteDoc(doc(editor(), 'fst_admin/broadcast')));
 
     const survey = {
-      title: '題', question: '質問', type: 'text', options: [], active: false, createdAt: serverTimestamp(),
+      title: '題', question: '質問', type: 'text', options: [], active: true, createdAt: serverTimestamp(),
     };
-    await assertFails(setDoc(doc(writer(), 'fst_surveys/sv1'), survey));
-    await assertSucceeds(setDoc(doc(editor(), 'fst_surveys/sv1'), survey));
-    await assertSucceeds(updateDoc(doc(editor(), 'fst_surveys/sv1'), { active: true }));
-    await assertFails(updateDoc(doc(editor(), 'fst_surveys/sv1'), { title: '改ざん' }));
-    await assertSucceeds(getDoc(doc(writer(), 'fst_surveys/sv1')));
+    await assertFails(setDoc(doc(editor(), 'fst_surveys/SV_aaaaaaaaaaaaaaaa'), survey));
+    await assertFails(updateDoc(doc(editor(), 'fst_surveys/SV_aaaaaaaaaaaaaaaa'), { active: false }));
+    await env.withSecurityRulesDisabled(async (c) => {
+      await setDoc(doc(c.firestore(), 'fst_surveys/SV_aaaaaaaaaaaaaaaa'), survey);
+    });
+    await assertSucceeds(getDoc(doc(writer(), 'fst_surveys/SV_aaaaaaaaaaaaaaaa')));
 
-    const answer = { surveyId: 'sv1', uidHash: 'abcdefghij12', answer: 'はい', answeredAt: serverTimestamp() };
-    await assertSucceeds(setDoc(doc(writer(), 'fst_survey_answers/sv1_abcdefghij12'), answer));
-    await assertFails(setDoc(doc(writer(), 'fst_survey_answers/sv1_other'), answer));
-    await assertFails(getDoc(doc(writer(), 'fst_survey_answers/sv1_abcdefghij12')));
-    await assertSucceeds(getDoc(doc(editor(), 'fst_survey_answers/sv1_abcdefghij12')));
-    await assertFails(updateDoc(doc(writer(), 'fst_survey_answers/sv1_abcdefghij12'), { answer: '変更' }));
-    await assertFails(getDocs(query(collection(writer(), 'fst_survey_answers'), orderBy('answeredAt'))));
-    await assertSucceeds(getDocs(query(collection(editor(), 'fst_survey_answers'))));
+    const own = { surveyId: 'SV_aaaaaaaaaaaaaaaa', uidHash: 'aaaaaaaaaaaaaaaa', answer: '自分', answeredAt: serverTimestamp() };
+    const other = { surveyId: 'SV_aaaaaaaaaaaaaaaa', uidHash: 'bbbbbbbbbbbbbbbb', answer: '他人', answeredAt: serverTimestamp() };
+    await assertFails(setDoc(doc(writer(), 'fst_survey_answers/SV_aaaaaaaaaaaaaaaa_aaaaaaaaaaaaaaaa'), own));
+    await assertFails(setDoc(doc(writer(), 'fst_survey_answers/SV_aaaaaaaaaaaaaaaa_bbbbbbbbbbbbbbbb'), other));
+    await assertFails(setDoc(doc(editor(), 'fst_survey_answers/SV_aaaaaaaaaaaaaaaa_bbbbbbbbbbbbbbbb'), other));
+    await env.withSecurityRulesDisabled(async (c) => {
+      await setDoc(doc(c.firestore(), 'fst_survey_answers/SV_aaaaaaaaaaaaaaaa_bbbbbbbbbbbbbbbb'), other);
+    });
+    await assertFails(getDoc(doc(writer(), 'fst_survey_answers/SV_aaaaaaaaaaaaaaaa_bbbbbbbbbbbbbbbb')));
+    await assertSucceeds(getDoc(doc(editor(), 'fst_survey_answers/SV_aaaaaaaaaaaaaaaa_bbbbbbbbbbbbbbbb')));
+    await assertFails(deleteDoc(doc(editor(), 'fst_survey_answers/SV_aaaaaaaaaaaaaaaa_bbbbbbbbbbbbbbbb')));
   });
 });
 
