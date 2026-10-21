@@ -1,10 +1,13 @@
 import importlib.util
+import urllib.error
 from pathlib import Path
 import unittest
 
 SPEC = importlib.util.spec_from_file_location('gate', Path(__file__).with_name('require_fst_functions.py'))
 gate = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(gate)
+
+REV = 'a' * 32
 
 
 class RequireFstFunctionsTest(unittest.TestCase):
@@ -18,26 +21,36 @@ class RequireFstFunctionsTest(unittest.TestCase):
             'submitFstSurveyAnswer',
         ))
 
-    def test_active_functions_pass_and_record_update_time(self):
-        def fetch(name):
-            return 200, {
-                'name': name,
-                'state': 'ACTIVE',
-                'updateTime': '2026-10-21T01:00:00Z',
-                'buildConfig': {'source': {'storageSource': {'generation': '9'}}},
-            }
-        notes = gate.require_active(gate.REQUIRED, fetch)
-        self.assertIn('fstFeedbackSubmit updateTime=2026-10-21T01:00:00Z sourceGeneration=9', notes)
+    def _ok(self, name):
+        return 200, {
+            'name': name,
+            'state': 'ACTIVE',
+            'updateTime': '2026-10-21T01:00:00Z',
+            'labels': {'fst-rev': REV},
+            'buildConfig': {'source': {'storageSource': {'generation': '9'}}},
+        }
+
+    def test_expected_rev_matches_the_function_source_hash(self):
+        rev = gate.expected_rev()
+        self.assertEqual(len(rev), 32)
+        self.assertTrue(all(ch in '0123456789abcdef' for ch in rev))
+
+    def test_active_functions_pass_when_the_revision_matches(self):
+        notes = gate.require_active(gate.REQUIRED, lambda name: self._ok(name), REV)
+        self.assertIn(
+            f'fstFeedbackSubmit updateTime=2026-10-21T01:00:00Z fst-rev={REV} sourceGeneration=9',
+            notes,
+        )
 
     def test_missing_or_inactive_function_stops_deploy(self):
         def fetch(name):
             if name == 'recordFstAnalytics':
                 return 404, {'error': {'status': 'NOT_FOUND'}}
             if name == 'submitFstSurveyAnswer':
-                return 200, {'state': 'DEPLOYING', 'updateTime': '2026-10-21T01:00:00Z'}
-            return 200, {'state': 'ACTIVE', 'updateTime': '2026-10-21T01:00:00Z'}
+                return 200, {'state': 'DEPLOYING', 'updateTime': '2026-10-21T01:00:00Z', 'labels': {'fst-rev': REV}}
+            return self._ok(name)
         with self.assertRaises(SystemExit) as caught:
-            gate.require_active(gate.REQUIRED, fetch)
+            gate.require_active(gate.REQUIRED, fetch, REV)
         message = str(caught.exception)
         self.assertIn('recordFstAnalytics', message)
         self.assertIn('submitFstSurveyAnswer', message)
@@ -48,14 +61,40 @@ class RequireFstFunctionsTest(unittest.TestCase):
         def fetch(name):
             return 403, {'error': {'status': 'PERMISSION_DENIED'}}
         with self.assertRaises(SystemExit) as caught:
-            gate.require_active(('fstFeedbackSubmit',), fetch)
+            gate.require_active(('fstFeedbackSubmit',), fetch, REV)
         self.assertIn('cloudfunctions.functions.get', str(caught.exception))
+        self.assertIn('status=403', str(caught.exception))
+
+    def test_network_failure_empty_response_and_forbidden_all_stop(self):
+        cases = [
+            ('network', lambda name: (_ for _ in ()).throw(urllib.error.URLError('timed out'))),
+            ('empty-none', lambda name: (200, None)),
+            ('empty-dict', lambda name: (200, {})),
+            ('empty-text', lambda name: (200, '')),
+            ('forbidden', lambda name: (403, {'error': {'status': 'PERMISSION_DENIED'}})),
+        ]
+        for label, fetch in cases:
+            with self.subTest(label):
+                with self.assertRaises(SystemExit) as caught:
+                    gate.require_active(('recordFstAnalytics',), fetch, REV)
+                self.assertIn('recordFstAnalytics', str(caught.exception))
+
+    def test_an_old_revision_label_does_not_pass(self):
+        def fetch(name):
+            status, body = self._ok(name)
+            body['labels'] = {'fst-rev': 'b' * 32}
+            return status, body
+        with self.assertRaises(SystemExit) as caught:
+            gate.require_active(('fstFeedbackSubmit',), fetch, REV)
+        message = str(caught.exception)
+        self.assertIn('fst-rev=' + ('b' * 32), message)
+        self.assertIn('expected=' + REV, message)
 
     def test_active_without_update_time_is_not_enough(self):
         def fetch(name):
-            return 200, {'state': 'ACTIVE'}
+            return 200, {'state': 'ACTIVE', 'labels': {'fst-rev': REV}}
         with self.assertRaises(SystemExit) as caught:
-            gate.require_active(('recordFstAnalytics',), fetch)
+            gate.require_active(('recordFstAnalytics',), fetch, REV)
         self.assertIn('updateTime=None', str(caught.exception))
 
 

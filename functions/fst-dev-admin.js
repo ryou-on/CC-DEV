@@ -5,6 +5,7 @@ const { onRequest } = require('firebase-functions/v2/https');
 const { getGuard, sendCostError, CostError, periodKeys } = require('./cost-guard');
 const { isEditorEmail } = require('./editor-policy');
 const { clientIp } = require('./client-ip');
+const { sourceRev } = require('./fst-rev');
 
 const ADMIN_LIMITS = Object.freeze({ userMinute: 10, userDay: 100, ipMinute: 20, ipDay: 200 });
 const ANSWER_LIMITS = Object.freeze({ userMinute: 5, userDay: 30, ipMinute: 20, ipDay: 100 });
@@ -24,6 +25,7 @@ const REQUEST_OPTIONS = {
   memory: '256MiB',
   maxInstances: 2,
   concurrency: 8,
+  labels: { 'fst-rev': sourceRev() },
 };
 
 function uidHash(uid) {

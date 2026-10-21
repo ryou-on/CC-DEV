@@ -78,6 +78,6 @@ npm ci --prefix functions
 npx firebase-tools deploy --only functions:fstFeedbackSubmit,functions:updateFstFeedback,functions:recordFstAnalytics,functions:recordFstDevAdmin,functions:recordFstSurvey,functions:submitFstSurveyAnswer --project cc-dev-ps7
 ```
 
-ゲートは `state == ACTIVE` と `updateTime` があることを見ます。ログには `updateTime` と、アップロードされた zip の `sourceGeneration` を出します。この generation はリポジトリのファイルハッシュではないので、git の SHA とは照合しません。SHA まで自動で見るには、デプロイ時にその値を関数の環境変数へ入れる必要があります。
+ゲートは `state == ACTIVE`、`updateTime`、ラベル `fst-rev` がチェックアウト中の関数ソースの SHA-256 先頭32桁と一致することを見ます。一致しない古いデプロイは止めます。zip の generation はログに出しますが、リポジトリのファイルハッシュではないので照合には使いません。zip のダウンロードと比較は、成果物に依存モジュールが入り、取得権限も別なため行いません。コンソールでラベルだけを期待値へ書き換えた場合は、この確認では中身の差を見ません。
 
 この PR では本番へ出していません。2026-10-21 時点の `https://cc-dev-ps7.web.app/api/fst-feedback` と `/api/fst-analytics` はどちらも 404 です。Rules や画面を先に出すと、直書きは拒否され、送信先がありません。
