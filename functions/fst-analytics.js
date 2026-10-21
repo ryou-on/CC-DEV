@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const { onRequest } = require('firebase-functions/v2/https');
 const { getGuard, sendCostError, CostError, periodKeys } = require('./cost-guard');
 const { clientIp } = require('./client-ip');
+const { sourceRev } = require('./fst-rev');
 
 const LIMITS = Object.freeze({ userMinute: 30, userDay: 400, ipMinute: 60, ipDay: 800 });
 const APPS = Object.freeze({
@@ -115,6 +116,7 @@ const REQUEST_OPTIONS = {
   memory: '256MiB',
   maxInstances: 2,
   concurrency: 8,
+  labels: { 'fst-rev': sourceRev() },
 };
 
 exports.createFstAnalyticsHandler = createFstAnalyticsHandler;

@@ -1,25 +1,24 @@
-# 既存アンケートID、信頼できるIP、デプロイ前の権限
+# 既存アンケートIDの受け入れと、古い関数を止めるゲート
 
 日付: 2026-10-21。本番への merge、deploy、Firestore Rules、Auth の変更はしていない。force push もしていない。
 
 ## 完了した作業
 
-- アンケート ID は `SV_` と16桁の16進に限らない。Firestore の自動 ID（英数字20文字）も通す。使える文字は英数字と `_` と `-`、長さは1から128。`/` と予約名 `__*__` は拒否する。
-- 選択式の回答は、保存済みの選択肢のどれかと一致するときだけ書く。
-- 強制更新の minVersion は SemVer。前後の空白を除いて40文字まで。先頭の `v` は外して保存する。
-- IP ごとの回数は X-Forwarded-For の末尾だけを使う。これは Cloud Run が接続元として付けた値。先頭は呼び出し側が付けられるので使わない。Hosting 経由では末尾が Hosting の出口になることがある。
-- 開発版 v0.10.30-dev は未リリースの開発版エントリのまま、date を 2026-10-21 に、changes を最新内容で更新した。過去の v0.10.29-dev は書き換えていない。安定版の画面は変えていないので v0.5.17 のまま。
+- 既存アンケートの ID は移行しない。内海課長の指示で、Firestore の自動 ID をそのまま受け付ける。新しい `SV_` 付き ID も受け付ける。`/` と予約名は拒否する。
+- 選択式の回答は保存済みの選択肢と一致するときだけ書く。強制更新の minVersion は SemVer で、40文字まで。
+- IP ごとの回数は X-Forwarded-For の末尾だけを使う。Cloud Run が付けた接続元であり、先頭の値は使わない。
+- 開発版は v0.10.30-dev から v0.10.31-dev へ上げた。v0.10.30-dev の記録は残している。安定版の画面は変えていないので v0.5.17 のまま。
 - 手動デプロイの前に `npm ci --prefix functions` を実行する。
 
-## サービスアカウント
+## サービスアカウントと版の照合
 
-Hosting と Rules のゲートは `functions.get` を呼ぶ。Hosting 用の `FIREBASE_SERVICE_ACCOUNT_CC_DEV_PS7` に `cloudfunctions.functions.get` が無いと、応答は 403 になり、関数が動いていても毎回デプロイが止まる。Firebase 管理者ロールが付いていればこの権限は含まれる。ロールを外した場合は、この権限を残す。
+Hosting と Rules のゲートは `functions.get` を呼ぶ。Hosting 用の `FIREBASE_SERVICE_ACCOUNT_CC_DEV_PS7` に `cloudfunctions.functions.get` が無いと 403 で毎回止まる。
 
-ゲートは `state == ACTIVE` と `updateTime` があることを確認し、ログに `updateTime` と zip の `sourceGeneration` を出す。generation はアップロードされた zip の世代であり、リポジトリのファイルハッシュではない。git の SHA と自動で照合するには、デプロイ時にその SHA を関数の環境変数へ入れる必要がある。今回はその環境変数は置いていない。古い ACTIVE をこのコミットと自動では区別しない。
+関数はデプロイ時にラベル `fst-rev` へ、対象ソースの SHA-256 先頭32桁を書く。ゲートは本番のラベルが、今のチェックアウトから計算した値と一致し、`state` が ACTIVE で `updateTime` があることを要求する。古いデプロイはラベルが違うので通さない。
 
-## 既存アンケート ID
+照合できない部分: API が返す zip の generation はリポジトリのファイルハッシュではない。zip には依存モジュールが入るため、ソースファイルのハッシュとバイト比較できない。zip の取得もこの確認の権限とは別である。コンソールでラベルだけを期待値へ書き換えると、中身が古くてもこの確認は通る。
 
-作成は以前 `collection.add()` だった。文書 ID は Firestore の自動 ID で、`^SV_[0-9a-f]{16}$` には合わない。その正規表現のままだと、公開の切り替えと回答が 400 になる。今回の検証は自動 ID を通す。
+ネットワーク失敗、空の応答、403 はどれもデプロイを止める。
 
 ## IP 上限
 
@@ -34,19 +33,19 @@ Hosting と Rules のゲートは `functions.get` を呼ぶ。Hosting 用の `FI
 
 ## CI
 
-対象は `tests` と `build_and_preview`。Firestore rules test は PR #4 だけ。この summary を書いた時点では、この修正の CI はまだ走っていない。結果は完了報告に書く。走ったあとの run ID は summary に追記しない。
+対象は `tests` と `build_and_preview`。Firestore rules test は PR #4 だけ。この summary を書いた時点では、この修正の CI はまだ走っていない。走ったあとの run ID は summary に追記しない。
 
 ## 検証
 
-- `npm test --prefix functions` 72 件成功
-- `python3 -m unittest discover -s scripts -p 'test_*.py'` 29 件成功
+- `npm test --prefix functions` 73 件成功
+- `python3 -m unittest discover -s scripts -p 'test_*.py'` 32 件成功
 - Firestore / Storage のルールファイルは今回変えていない。直前のエミュレーター試験は 30 件成功
-- 本番の関数稼働確認スクリプトは、テストでは偽の応答だけを使い、本番 API は呼んでいない
+- 本番 API は呼んでいない
 
 ## バージョン
 
 - Flight Strip TODO 安定版: v0.5.17
-- Flight Strip TODO 開発版: v0.10.30-dev（date 2026-10-21）
+- Flight Strip TODO 開発版: v0.10.31-dev
 
 ## 本番URL
 
@@ -59,9 +58,9 @@ Hosting と Rules のゲートは `functions.get` を呼ぶ。Hosting 用の `FI
 
 - accessGrants の本番付与と利用者への案内送付が終わるまで main へマージしない。
 - `meiyusha@meiyusha-estimate.app` の emailVerified は未確認。
-- 6関数は未デプロイ。Hosting 用サービスアカウントに `cloudfunctions.functions.get` が無いと、デプロイ前ゲートは 403 で止まる。
-- ゲートは git SHA とデプロイ済みソースの一致を見ない。ACTIVE と updateTime があれば、より古いデプロイでも通過する。
+- 6関数は未デプロイ。ラベル `fst-rev` が無いうちは、Hosting と Rules のゲートは止まる。
+- `cloudfunctions.functions.get` が無いサービスアカウントでは 403 で止まる。
+- ラベルだけを手で期待値に合わせると、zip の中身が古くてもゲートは通る。
 - Hosting 経由の IP 上限は、末尾が Hosting の出口なら、その出口を共有する呼び出しをまとめて数える。
 - App Check のコンソール強制は OFF。
-- 予算停止ラッチが閉じていると目安箱、利用統計、告知、アンケートも `SERVICE_PAUSED` になる。
 - ログイン後の告知とアンケート送信は未実施。
