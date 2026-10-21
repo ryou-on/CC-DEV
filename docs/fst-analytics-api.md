@@ -7,7 +7,7 @@
 - 種別（`session` / `task_created` / `task_completed`）、版、build、任意の端末種別
 - 日本時間の日付・時・曜日。サーバー時計で付ける
 - uid の SHA-256 先頭 16 桁。生の uid は保存しない
-- レート制限用の短命ハッシュ。生 IP は保存しない
+- レート制限用の利用者ハッシュと全体の回数。IP は数えない
 
 ## 主体
 
@@ -26,11 +26,11 @@
 
 成功時は `{ "ok": true }` だけです。失敗しても画面のタスク操作は止めません。
 
-回数は利用者 1 分 30 回、日本時間で 1 日 400 回です。同じ出口 IP の短命ハッシュは 1 分 60 回、1 日 800 回です。生 IP は保存しません。目安箱より広いのは、起動に加えてタスクの作成と完了でも送るためです。予算停止ラッチが閉じているときは記録しません。
+回数は利用者 1 分 30 回、日本時間で 1 日 400 回です。全体は 1 分 2,000 回、1 日 50,000 回です。IP ごとの枠はありません。Hosting の書き換えでは利用者本人の IP を信頼できる形で取れないためです。根拠は [Cloud Functions のヘッダ](https://docs.cloud.google.com/functions/docs/reference/headers)、[Hosting から Functions への書き換え](https://firebase.google.com/docs/hosting/functions)、[Hosting の rewrite 設定](https://firebase.google.com/docs/hosting/full-config#rewrite-functions) です。書き換えが関数へ渡すと書かれているのは、元のパスとクエリだけです。目安箱より広いのは、起動に加えてタスクの作成と完了でも送るためです。予算停止ラッチが閉じているときは記録しません。
 
 ## デプロイ順
 
-Functions を先にデプロイし、その後に Firestore Rules と Hosting をデプロイします。対象は `recordFstAnalytics`、`fstFeedbackSubmit`、`updateFstFeedback`、`recordFstDevAdmin`、`recordFstSurvey`、`submitFstSurveyAnswer` です。先に `npm ci --prefix functions` を実行します。`firebase-hosting-merge.yml` と `firebase-rules-deploy.yml` は、この6つが本番で ACTIVE でなければデプロイを止めます。Hosting 用サービスアカウントに `cloudfunctions.functions.get` が無いと、その確認は 403 になり、毎回デプロイが止まります。Rules や Hosting を先に出すと、直書きは拒否され、画面はまだ無い `/api/fst-analytics` を呼びます。IP の回数は、X-Forwarded-For の末尾（Cloud Run が付けた接続元）だけを数えます。
+Functions を先にデプロイし、その後に Firestore Rules と Hosting をデプロイします。対象は `recordFstAnalytics`、`fstFeedbackSubmit`、`updateFstFeedback`、`recordFstDevAdmin`、`recordFstSurvey`、`submitFstSurveyAnswer` です。先に `npm ci --prefix functions` を実行します。`firebase-hosting-merge.yml` と `firebase-rules-deploy.yml` は、この6つが本番で ACTIVE でなければデプロイを止めます。Hosting 用サービスアカウントに `cloudfunctions.functions.get` が無いと、その確認は 403 になり、毎回デプロイが止まります。Rules や Hosting を先に出すと、直書きは拒否され、画面はまだ無い `/api/fst-analytics` を呼びます。回数は利用者ごとと全体だけを数えます。IP は使いません。
 
 2026-10-21 に本番へ POST した `https://cc-dev-ps7.web.app/api/fst-analytics` は 404 でした。関数は未デプロイです。`/api/fst-feedback` も 404 でした。
 

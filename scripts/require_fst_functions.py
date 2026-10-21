@@ -58,13 +58,13 @@ def require_active(names, fetch, expected):
         except Exception as error:
             problems.append(f'{name} network-error {error.__class__.__name__}')
             continue
-        if not isinstance(body, dict) or not body:
-            problems.append(f'{name} empty-response status={status}')
-            continue
         if status == 403:
             problems.append(
                 f'{name} status=403 missing cloudfunctions.functions.get on the hosting service account'
             )
+            continue
+        if not isinstance(body, dict) or not body:
+            problems.append(f'{name} empty-response status={status}')
             continue
         state = body.get('state')
         update = body.get('updateTime')

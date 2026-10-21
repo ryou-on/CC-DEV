@@ -167,8 +167,17 @@ test('unknown fields, honeypot, timing, and overlong text are rejected before a 
   assert.equal(db.records.has('fst_feedback/FB_0001'), false);
 });
 
+test('a closed budget returns 503 before feedback is stored', async () => {
+  const { db, handler } = setup({ records: { 'costControls/global': { enabled: false } } });
+  const res = response();
+  await handler(request(payload), res);
+  assert.equal(res.statusCode, 503);
+  assert.equal(res.body.error, 'SERVICE_PAUSED');
+  assert.equal([...db.records.keys()].some(key => key.startsWith('fst_feedback/')), false);
+});
+
 test('oversized text and the per-user rate limit are rejected', async () => {
-  const { db, handler } = setup({ limits: { userMinute: 2, userDay: 50, ipMinute: 30, ipDay: 100 } });
+  const { db, handler } = setup({ limits: { userMinute: 2, userDay: 50, globalMinute: 300, globalDay: 5000 } });
   const ok = response();
   await handler(request(payload), ok);
   await handler(request({ ...payload, message: '二つ目' }), response());
@@ -191,7 +200,7 @@ test('the same content does not create a second feedback id', async () => {
   assert.equal(db.records.get('fst_feedback_meta/counter').count, 1);
 });
 
-test('a shared IP is limited across users', async () => {
+test('the global minute cap returns 429 across callers', async () => {
   const db = memoryDb({ 'costControls/global': { enabled: true } });
   let uid = 'user-a';
   const guard = createGuard({
@@ -205,16 +214,20 @@ test('a shared IP is limited across users', async () => {
     db,
     now: () => NOW,
     serverTimestamp: () => 'server-time',
-    limits: { userMinute: 10, userDay: 50, ipMinute: 2, ipDay: 100 },
+    limits: { userMinute: 10, userDay: 50, globalMinute: 1, globalDay: 5000 },
   });
-  await handler(request(payload), response());
+  await handler(request(payload, { 'x-forwarded-for': '1.1.1.1' }), response());
   uid = 'user-b';
-  await handler(request({ ...payload, message: '別の人' }), response());
-  uid = 'user-c';
   const limited = response();
-  await handler(request({ ...payload, message: '三人目' }), limited);
+  await handler(request(
+    { ...payload, message: '別の人' },
+    { 'x-forwarded-for': '9.9.9.9' },
+  ), limited);
   assert.equal(limited.statusCode, 429);
-  assert.equal(db.records.has('fst_feedback/FB_0003'), false);
+  assert.equal(limited.body.error, 'USAGE_LIMIT');
+  assert.equal(limited.headers['Retry-After'], '60');
+  assert.equal(db.records.has('fst_feedback/FB_0002'), false);
+  assert.equal([...db.records.keys()].some(key => key.includes('ip_')), false);
 });
 
 test('only an editor can change status, and the message stays', async () => {

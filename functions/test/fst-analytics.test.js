@@ -161,18 +161,47 @@ test('unknown fields, mismatched builds, and a bad version do not write', async 
   assert.equal(get.statusCode, 405);
 });
 
-test('a shared address is limited across the minute window', async () => {
-  const { db, handler } = setup({ limits: { userMinute: 30, userDay: 400, ipMinute: 1, ipDay: 800 } });
-  await handler(request(payload), response());
+test('a closed budget returns 503 before an event is stored', async () => {
+  const { db, handler } = setup({ records: { 'costControls/global': { enabled: false } } });
+  const res = response();
+  await handler(request(payload), res);
+  assert.equal(res.statusCode, 503);
+  assert.equal(res.body.error, 'SERVICE_PAUSED');
+  assert.equal(saved(db).length, 0);
+});
+
+test('the global minute cap returns 429 for a second caller', async () => {
+  const db = memoryDb({ 'costControls/global': { enabled: true } });
+  let uid = 'user-a';
+  const guard = createGuard({
+    db,
+    now: () => NOW,
+    verifyIdToken: async () => ({ uid, email: 'user@example.test', email_verified: true, firebase: { sign_in_provider: 'google.com' } }),
+    verifyAppCheck: async () => ({}),
+  });
+  const handler = createFstAnalyticsHandler({
+    authorize: req => guard.authorize(req, 'fstAnalytics'),
+    db,
+    now: () => NOW,
+    serverTimestamp: () => 'server-time',
+    limits: { userMinute: 30, userDay: 400, globalMinute: 1, globalDay: 50000 },
+  });
+  await handler(request(payload, { 'x-forwarded-for': '1.1.1.1' }), response());
+  uid = 'user-b';
   const limited = response();
-  await handler(request({ ...payload, type: 'task_created' }), limited);
+  await handler(request(
+    { ...payload, type: 'task_created' },
+    { 'x-forwarded-for': '9.9.9.9' },
+  ), limited);
   assert.equal(limited.statusCode, 429);
+  assert.equal(limited.body.error, 'USAGE_LIMIT');
   assert.equal(limited.headers['Retry-After'], '60');
   assert.equal(saved(db).length, 1);
+  assert.equal([...db.records.keys()].some(key => key.includes('an_ip_')), false);
 });
 
 test('the per-user minute cap stops further events', async () => {
-  const { db, handler } = setup({ limits: { userMinute: 2, userDay: 400, ipMinute: 60, ipDay: 800 } });
+  const { db, handler } = setup({ limits: { userMinute: 2, userDay: 400, globalMinute: 2000, globalDay: 50000 } });
   await handler(request(payload), response());
   await handler(request({ appId: payload.appId, version: payload.version, build: payload.build, type: 'task_created' }), response());
   const limited = response();

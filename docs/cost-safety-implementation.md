@@ -25,15 +25,15 @@
 | Anthropicプロキシ | 20 | 100 | 40 | 200 |
 | 本ドコAI解析（全モード合算） | 10 | 40 | 20 | 80 |
 
-目安箱 `fstFeedbackSubmit`（`/api/fst-feedback`）と `updateFstFeedback`（`/api/fst-feedback-update`）は有料 API を呼ばない。`authorize()` のバイト上限（16384）と App Check・確認済みアカウントだけを使い、`reserve()` は呼ばない。そのため `costControls/fstFeedback` の許可 UID は不要。送信と状態変更の直前に `costControls/global.enabled === true` を読む。文書がない、または false なら `SERVICE_PAUSED` で拒否する（予算 800 円の停止ラッチと同じゲート）。回数は `fstRateLimits` にサーバーだけが書く。初期値はユーザー 1 分 5 回・日本時間で 1 日 50 回、同じ内容は 10 分再送不可。IP は生値を保存せず、短命ハッシュで 1 分 30 回・1 日 100 回。状態変更は編集者のみで、クライアントからの作成・更新・削除はルールで拒否する。失敗しても枠は戻さない。
+目安箱 `fstFeedbackSubmit`（`/api/fst-feedback`）と `updateFstFeedback`（`/api/fst-feedback-update`）は有料 API を呼ばない。`authorize()` のバイト上限（16384）と App Check・確認済みアカウントだけを使い、`reserve()` は呼ばない。そのため `costControls/fstFeedback` の許可 UID は不要。送信と状態変更の直前に `costControls/global.enabled === true` を読む。文書がない、または false なら `SERVICE_PAUSED` で拒否する（予算 800 円の停止ラッチと同じゲート）。回数は `fstRateLimits` にサーバーだけが書く。初期値はユーザー 1 分 5 回・日本時間で 1 日 50 回、同じ内容は 10 分再送不可。全体は 1 分 300 回・1 日 5,000 回。IP は数えない。状態変更は編集者のみで、クライアントからの作成・更新・削除はルールで拒否する。失敗しても枠は戻さない。
 
-利用統計 `recordFstAnalytics`（`/api/fst-analytics`）も有料 API を呼ばず、`reserve()` は呼ばない。確認済みアカウントと App Check が必要で、`costControls/global.enabled` が true でないと拒否する。回数は利用者 1 分 30 回・1 日 400 回。同じ出口 IP の短命ハッシュは 1 分 60 回・1 日 800 回。目安箱の 1 分 5 回より広いのは、タスク作成と完了のたびに記録するため。日付・時刻はサーバーの日本時間、利用者識別子は uid のハッシュだけ。生 IP と生 uid は保存しない。クライアントからの作成・更新・削除はルールで拒否する。
+利用統計 `recordFstAnalytics`（`/api/fst-analytics`）も有料 API を呼ばず、`reserve()` は呼ばない。確認済みアカウントと App Check が必要で、`costControls/global.enabled` が true でないと拒否する。回数は利用者 1 分 30 回・1 日 400 回。全体は 1 分 2,000 回・1 日 50,000 回。目安箱の 1 分 5 回より広いのは、タスク作成と完了のたびに記録するため。日付・時刻はサーバーの日本時間、利用者識別子は uid のハッシュだけ。生 uid は保存しない。IP は数えない。クライアントからの作成・更新・削除はルールで拒否する。
 
 開発版の告知・強制更新（`recordFstDevAdmin`、`/api/fst-admin`）とアンケートの作成・公開（`recordFstSurvey`、`/api/fst-survey`）は編集者だけが書けます。回答（`submitFstSurveyAnswer`、`/api/fst-survey-answer`）は確認済みアカウントが書けます。回答の `uidHash` は認証 uid の SHA-256 先頭16桁で、クライアントが指定した値は未知の項目として拒否します。文書 ID は `{surveyId}_{uidHash}` です。同じ人が二度目を送ると 409 で、先の回答は残ります。`btoa` 方式は使いません。クライアントからの作成・更新・削除はルールで拒否します。読み取りは、告知とアンケートが確認済みアカウント、回答が編集者だけです。
 
 アンケート ID は、内海課長の指示で、既存の文書を別 ID へ移さない。Firestore の自動 ID（英数字20文字）と、新しい `SV_` 付き ID の両方を受けます。使える文字は英数字、`_`、`-` で、長さは1文字から128文字です。`/` や予約名 `__*__` は拒否します。選択式の回答は保存済みの選択肢と一致する必要があります。強制更新の `minVersion` は SemVer で、前後の空白を除いて40文字までです。先頭の `v` は外して保存します。
 
-IP ごとの回数は X-Forwarded-For の末尾だけを使います。これは Cloud Run が接続元として付けた値です。Hosting 経由では Hosting の出口になることがあり、その場合もブラウザが書いた先頭の値は使いません。
+IP ごとの上限は置きません。Firebase Hosting の書き換えは、関数へ元のパスとクエリを渡すことだけを文書化しており、利用者本人の IP を信頼できるヘッダとしては書いていません。Cloud Functions のヘッダ説明は `X-Forwarded-For` の先頭を「おおむねクライアント」としていますが、その先頭は呼び出し側が付けられます。末尾は Hosting の出口になり、利用者全員で同じ枠を共有します。回数は利用者ごとと、十分に大きい全体上限です。根拠は [Cloud Functions のヘッダ](https://docs.cloud.google.com/functions/docs/reference/headers)、[Hosting から Functions への書き換え](https://firebase.google.com/docs/hosting/functions)、[Hosting の rewrite 設定](https://firebase.google.com/docs/hosting/full-config#rewrite-functions) です。書き換えが関数へ渡すと書かれているのは、元のパスとクエリだけです。告知とアンケート管理の全体上限は 1 分 200 回・1 日 2,000 回、回答は 1 分 500 回・1 日 10,000 回です。
 
 デプロイ順は Functions を先、その後に Firestore Rules と Hosting です。手動デプロイの前に `npm ci --prefix functions` を実行します。デプロイ時に関数はラベル `fst-rev` へ、対象ソースの SHA-256 先頭32桁を書きます。`firebase-hosting-merge.yml` と `firebase-rules-deploy.yml` は、6関数が本番で ACTIVE であり、`updateTime` があり、`fst-rev` が今のチェックアウトと一致するかを確認します。古い版のラベルでは止まります。Hosting 用サービスアカウントに `cloudfunctions.functions.get` が無いと 403 で毎回止まります。zip の中身そのものは比較しません。API が返す generation はリポジトリのファイルハッシュではなく、zip の取得には別の権限が要るためです。本番の `/api/fst-analytics` は 2026-10-21 時点で 404 です。この作業では関数をデプロイしていません。
 
