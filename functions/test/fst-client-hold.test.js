@@ -12,6 +12,47 @@ test('the client waits out the server retry window', () => {
   hold.holdUntil(map, 'analytics', now, 90);
   assert.equal(hold.holding(map, 'analytics', now + 89_000), true);
   assert.equal(hold.holding(map, 'analytics', now + 90_000), false);
+  assert.equal(hold.holdRemaining(map, 'analytics', now + 30_000), 60);
+});
+
+test('the send button stays disabled for the retry window', () => {
+  const now = 5_000_000;
+  assert.equal(hold.retrySeconds(''), 60);
+  assert.equal(hold.retrySeconds('0'), 60);
+  assert.equal(hold.retrySeconds('45'), 45);
+  const until = hold.pauseSend(now, 45);
+  assert.equal(until, now + 45_000);
+  assert.equal(hold.sendPaused(until, now + 44_000), true);
+  assert.equal(hold.sendPaused(until, now + 45_000), false);
+  const dev = fs.readFileSync(path.join(__dirname, '../../public/Flight_Strip_TODO_dev/index.html'), 'utf8');
+  const stable = fs.readFileSync(path.join(__dirname, '../../public/Flight_Strip_TODO/index.html'), 'utf8');
+  assert.match(dev, /disabled=\{window\.fstClientHold\.sendPaused\(sendPausedUntil, Date\.now\(\)\)\}/);
+  assert.match(dev, /disabled=\{sending \|\| window\.fstClientHold\.sendPaused\(sendPausedUntil, Date\.now\(\)\)\}/);
+  assert.match(stable, /disabled=\{sending \|\| window\.fstClientHold\.sendPaused\(sendPausedUntil, Date\.now\(\)\)\}/);
+  for (const html of [dev, stable]) {
+    assert.match(html, /res\.status === 429 \|\| res\.status === 503/);
+    assert.match(html, /failed\.retryAfter = retryAfter/);
+  }
+});
+
+test('the six flight strip functions run on one instance', () => {
+  const names = ['fstFeedbackSubmit', 'updateFstFeedback', 'recordFstAnalytics', 'recordFstDevAdmin', 'recordFstSurvey', 'submitFstSurveyAnswer'];
+  const files = {
+    'fst-analytics.js': ['recordFstAnalytics'],
+    'fst-feedback.js': ['fstFeedbackSubmit', 'updateFstFeedback'],
+    'fst-dev-admin.js': ['recordFstDevAdmin', 'recordFstSurvey', 'submitFstSurveyAnswer'],
+  };
+  const seen = [];
+  for (const [file, exports] of Object.entries(files)) {
+    const src = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+    assert.match(src, /maxInstances:\s*1/);
+    assert.equal(src.includes('maxInstances: 2'), false, file);
+    for (const name of exports) {
+      assert.match(src, new RegExp('exports\\.' + name + ' = '));
+      seen.push(name);
+    }
+  }
+  assert.deepEqual(seen.sort(), names.slice().sort());
 });
 
 test('a crowded survey answer keeps a fixed message', () => {

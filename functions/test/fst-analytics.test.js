@@ -191,6 +191,23 @@ test('a closed budget returns 503 before an event is stored', async () => {
   await handler(request(payload), res);
   assert.equal(res.statusCode, 503);
   assert.equal(res.body.error, 'SERVICE_PAUSED');
+  assert.equal(res.headers['Retry-After'], '60');
+  assert.equal(saved(db).length, 0);
+});
+
+test('a guard failure returns 503 with Retry-After', async () => {
+  const { db, handler } = setup();
+  const orig = db.doc.bind(db);
+  db.doc = path => {
+    const ref = orig(path);
+    ref.get = async () => { throw new Error('firestore down'); };
+    return ref;
+  };
+  const res = response();
+  await handler(request(payload), res);
+  assert.equal(res.statusCode, 503);
+  assert.equal(res.body.error, 'COST_GUARD_UNAVAILABLE');
+  assert.equal(res.headers['Retry-After'], '60');
   assert.equal(saved(db).length, 0);
 });
 

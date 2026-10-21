@@ -8,11 +8,30 @@
     return until > now;
   }
 
-  function holdUntil(map, key, now, retryAfterSeconds) {
-    var seconds = Number(retryAfterSeconds);
+  function retrySeconds(headerValue) {
+    var seconds = Number(headerValue);
     if (!Number.isFinite(seconds) || seconds <= 0) seconds = 60;
+    return seconds;
+  }
+
+  function holdUntil(map, key, now, retryAfterSeconds) {
+    var seconds = retrySeconds(retryAfterSeconds);
     map[key] = now + seconds * 1000;
     return map[key];
+  }
+
+  function holdRemaining(map, key, now) {
+    var until = map && map[key] ? map[key] : 0;
+    if (until <= now) return 0;
+    return Math.max(1, Math.ceil((until - now) / 1000));
+  }
+
+  function pauseSend(now, retryAfterSeconds) {
+    return now + retrySeconds(retryAfterSeconds) * 1000;
+  }
+
+  function sendPaused(until, now) {
+    return Number(until) > now;
   }
 
   function crowdedAnswerMessage(status, code) {
@@ -34,5 +53,14 @@
     return true;
   }
 
-  return { holding: holding, holdUntil: holdUntil, crowdedAnswerMessage: crowdedAnswerMessage, warnDroppedAnalytics: warnDroppedAnalytics };
+  return {
+    holding: holding,
+    holdUntil: holdUntil,
+    holdRemaining: holdRemaining,
+    retrySeconds: retrySeconds,
+    pauseSend: pauseSend,
+    sendPaused: sendPaused,
+    crowdedAnswerMessage: crowdedAnswerMessage,
+    warnDroppedAnalytics: warnDroppedAnalytics
+  };
 });

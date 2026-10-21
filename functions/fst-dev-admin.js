@@ -20,7 +20,7 @@ const REQUEST_OPTIONS = {
   cors: ['https://cc-dev-ps7.web.app', 'https://cc-dev-ps7.firebaseapp.com'],
   timeoutSeconds: 20,
   memory: '256MiB',
-  maxInstances: 2,
+  maxInstances: 1,
   concurrency: 8,
   labels: { 'fst-rev': sourceRev() },
 };
