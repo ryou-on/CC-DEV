@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createGuard, LIMITS, periodKeys } = require('../cost-guard');
+const { createGuard, LIMITS, periodKeys, rateOf } = require('../cost-guard');
 const { armExpiry, expireCall, callIdFromLocation } = require('../realtime-cost');
 
 const NOW = Date.parse('2026-10-05T01:00:00Z');
@@ -40,6 +40,18 @@ function fixture(service = 'miniGenerate', overrides = {}) {
     verifyAppCheck: async () => ({}), ...overrides });
   return { db, guard };
 }
+
+test('flight strip global caps live only in cost-guard limits', () => {
+  assert.deepEqual(rateOf('fstFeedback'), { userMinute: 5, userDay: 50, globalMinute: 10, globalDay: 200 });
+  assert.deepEqual(rateOf('fstAnalytics'), { userMinute: 30, userDay: 400, globalMinute: 60, globalDay: 2000 });
+  assert.deepEqual(rateOf('fstDevAdmin'), { userMinute: 10, userDay: 100, globalMinute: 20, globalDay: 500 });
+  assert.deepEqual(rateOf('fstSurveyCreate'), { userMinute: 10, userDay: 100, globalMinute: 10, globalDay: 250 });
+  assert.deepEqual(rateOf('fstSurveySetActive'), { userMinute: 10, userDay: 100, globalMinute: 10, globalDay: 250 });
+  assert.deepEqual(rateOf('fstSurveyAnswer'), { userMinute: 5, userDay: 30, globalMinute: 20, globalDay: 500 });
+  assert.equal(LIMITS.fstSurveyCreate.globalDay + LIMITS.fstSurveySetActive.globalDay, 500);
+  assert.equal(LIMITS.fstFeedback.globalMinute < 300, true);
+  assert.equal(LIMITS.fstAnalytics.globalMinute < 2000, true);
+});
 
 test('unauthenticated, invalid and unverified accounts never reach quota storage', async () => {
   for (const [headers, overrides, code] of [

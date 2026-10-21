@@ -2,15 +2,9 @@
 
 const crypto = require('node:crypto');
 const { onRequest } = require('firebase-functions/v2/https');
-const { getGuard, sendCostError, CostError, periodKeys } = require('./cost-guard');
+const { getGuard, sendCostError, CostError, periodKeys, rateOf } = require('./cost-guard');
 const { isEditorEmail } = require('./editor-policy');
 const { sourceRev } = require('./fst-rev');
-
-// Hosting の書き換えでは利用者本人の IP を信頼できないため、IP ごとの枠は置かない。
-// 管理は利用者ごと 1 分 10 回・1 日 100 回、全体は 1 分 200 回・1 日 2,000 回。
-// 回答は利用者ごと 1 分 5 回・1 日 30 回、全体は 1 分 500 回・1 日 10,000 回。
-const ADMIN_LIMITS = Object.freeze({ userMinute: 10, userDay: 100, globalMinute: 200, globalDay: 2000 });
-const ANSWER_LIMITS = Object.freeze({ userMinute: 5, userDay: 30, globalMinute: 500, globalDay: 10000 });
 const ADMIN_FIELDS = new Set(['kind', 'active', 'title', 'message', 'enabled', 'minVersion', 'targetBuild']);
 const SURVEY_FIELDS = new Set(['kind', 'title', 'question', 'type', 'options', 'surveyId', 'active']);
 const ANSWER_FIELDS = new Set(['surveyId', 'answer']);
@@ -103,7 +97,7 @@ function requireEditor(actor) {
   if (!isEditorEmail(actor.email)) throw new CostError(403, 'EDITOR_REQUIRED');
 }
 
-function createFstDevAdminHandler({ authorize, db, now = Date.now, serverTimestamp, limits = ADMIN_LIMITS }) {
+function createFstDevAdminHandler({ authorize, db, now = Date.now, serverTimestamp, limits = rateOf('fstDevAdmin') }) {
   return async function record(req, res) {
     if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
     if (req.method !== 'POST') { res.status(405).json({ error: 'POST only' }); return; }
@@ -146,7 +140,11 @@ function createFstDevAdminHandler({ authorize, db, now = Date.now, serverTimesta
   };
 }
 
-function createFstSurveyHandler({ authorize, db, now = Date.now, serverTimestamp, limits = ADMIN_LIMITS }) {
+function createFstSurveyHandler({
+  authorize, db, now = Date.now, serverTimestamp,
+  createLimits = rateOf('fstSurveyCreate'),
+  activateLimits = rateOf('fstSurveySetActive'),
+}) {
   return async function record(req, res) {
     if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
     if (req.method !== 'POST') { res.status(405).json({ error: 'POST only' }); return; }
@@ -172,7 +170,7 @@ function createFstSurveyHandler({ authorize, db, now = Date.now, serverTimestamp
         if (type === 'text' && clean.length !== 0) throw new CostError(400, 'INVALID_SURVEY');
         if (type === 'options' && clean.length === 0) throw new CostError(400, 'INVALID_SURVEY');
         await assertBudgetOpen(db);
-        await limitActor(db, actor, 'sv', limits, at);
+        await limitActor(db, actor, 'sv_create', createLimits, at);
         const id = `SV_${hashId(actor.uid + '\0' + at + '\0' + Math.random()).slice(0, 16)}`;
         await db.doc(`fst_surveys/${id}`).set({
           title, question, type, options: clean, active: false, createdAt: serverTimestamp(),
@@ -187,7 +185,7 @@ function createFstSurveyHandler({ authorize, db, now = Date.now, serverTimestamp
           throw new CostError(400, 'INVALID_SURVEY');
         }
         await assertBudgetOpen(db);
-        await limitActor(db, actor, 'sv', limits, at);
+        await limitActor(db, actor, 'sv_active', activateLimits, at);
         const ref = db.doc(`fst_surveys/${surveyId}`);
         await db.runTransaction(async tx => {
           const snap = await tx.get(ref);
@@ -205,7 +203,7 @@ function createFstSurveyHandler({ authorize, db, now = Date.now, serverTimestamp
   };
 }
 
-function createFstSurveyAnswerHandler({ authorize, db, now = Date.now, serverTimestamp, limits = ANSWER_LIMITS }) {
+function createFstSurveyAnswerHandler({ authorize, db, now = Date.now, serverTimestamp, limits = rateOf('fstSurveyAnswer') }) {
   return async function record(req, res) {
     if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
     if (req.method !== 'POST') { res.status(405).json({ error: 'POST only' }); return; }
@@ -224,9 +222,11 @@ function createFstSurveyAnswerHandler({ authorize, db, now = Date.now, serverTim
       } else if (data.type !== 'text') {
         throw new CostError(400, 'INVALID_ANSWER');
       }
-      await limitActor(db, actor, 'ans', limits, now());
       const hash = uidHash(actor.uid);
       const ref = db.doc(`fst_survey_answers/${surveyId}_${hash}`);
+      const prior = await ref.get();
+      if (prior.exists) throw new CostError(409, 'ALREADY_ANSWERED');
+      await limitActor(db, actor, 'ans', limits, now());
       await db.runTransaction(async tx => {
         const snap = await tx.get(ref);
         if (snap.exists) throw new CostError(409, 'ALREADY_ANSWERED');

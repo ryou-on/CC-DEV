@@ -2,18 +2,9 @@
 
 const crypto = require('node:crypto');
 const { onRequest } = require('firebase-functions/v2/https');
-const { getGuard, sendCostError, CostError, periodKeys } = require('./cost-guard');
+const { getGuard, sendCostError, CostError, periodKeys, rateOf } = require('./cost-guard');
 const { sourceRev } = require('./fst-rev');
 const { isEditorEmail } = require('./editor-policy');
-
-// Hosting の書き換えでは利用者本人の IP を信頼できないため、IP ごとの枠は置かない。
-// 利用者ごと 1 分 5 件・1 日 50 件。全体は 1 分 300 件・1 日 5,000 件。
-const DEFAULT_LIMITS = Object.freeze({
-  userMinute: 5,
-  userDay: 50,
-  globalMinute: 300,
-  globalDay: 5000,
-});
 const APPS = Object.freeze({
   'flight-strip-todo': 'stable',
   'flight-strip-todo-dev': 'dev',
@@ -136,7 +127,7 @@ async function rejectDuplicate(db, id, now) {
   });
 }
 
-function createFstFeedbackHandler({ authorize, db, now = Date.now, serverTimestamp, limits = DEFAULT_LIMITS }) {
+function createFstFeedbackHandler({ authorize, db, now = Date.now, serverTimestamp, limits = rateOf('fstFeedback') }) {
   return async function fstFeedbackSubmit(req, res) {
     if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
     if (req.method !== 'POST') { res.status(405).json({ error: 'POST only' }); return; }

@@ -2,12 +2,8 @@
 
 const crypto = require('node:crypto');
 const { onRequest } = require('firebase-functions/v2/https');
-const { getGuard, sendCostError, CostError, periodKeys } = require('./cost-guard');
+const { getGuard, sendCostError, CostError, periodKeys, rateOf } = require('./cost-guard');
 const { sourceRev } = require('./fst-rev');
-
-// Hosting の書き換えでは利用者本人の IP を信頼できないため、IP ごとの枠は置かない。
-// 利用者ごと 1 分 30 回・1 日 400 回。全体は 1 分 2,000 回・1 日 50,000 回。
-const LIMITS = Object.freeze({ userMinute: 30, userDay: 400, globalMinute: 2000, globalDay: 50000 });
 const APPS = Object.freeze({
   'flight-strip-todo': 'stable',
   'flight-strip-todo-dev': 'dev',
@@ -69,7 +65,7 @@ async function consume(db, id, limit, now) {
   });
 }
 
-function createFstAnalyticsHandler({ authorize, db, now = Date.now, serverTimestamp, limits = LIMITS }) {
+function createFstAnalyticsHandler({ authorize, db, now = Date.now, serverTimestamp, limits = rateOf('fstAnalytics') }) {
   return async function record(req, res) {
     if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
     if (req.method !== 'POST') { res.status(405).json({ error: 'POST only' }); return; }

@@ -73,7 +73,7 @@ function request(body, headers = {}) {
   };
 }
 
-function setup(handlerFactory, { email = 'user@example.test', uid = 'user-1', records = {}, limits } = {}) {
+function setup(handlerFactory, { email = 'user@example.test', uid = 'user-1', records = {}, ...factory } = {}) {
   const db = memoryDb({ 'costControls/global': { enabled: true }, ...records });
   const guard = createGuard({
     db,
@@ -89,7 +89,7 @@ function setup(handlerFactory, { email = 'user@example.test', uid = 'user-1', re
     db,
     now: () => NOW,
     serverTimestamp: () => 'server-time',
-    ...(limits ? { limits } : {}),
+    ...factory,
   });
   return { db, handler };
 }
@@ -162,6 +162,49 @@ test('an answer stores the caller hash and rejects another user hash', async () 
   assert.equal(again.statusCode, 201);
   assert.equal(other.db.records.get(`fst_survey_answers/${SURVEY}_${uidHash('user-2')}`).uidHash, uidHash('user-2'));
   assert.equal(other.db.records.has(id), true);
+});
+
+test('a duplicate answer is rejected before the global cap is spent', async () => {
+  const records = { [`fst_surveys/${SURVEY}`]: { active: true, type: 'text' } };
+  const limits = { userMinute: 5, userDay: 30, globalMinute: 2, globalDay: 500 };
+  const { db, handler } = setup(createFstSurveyAnswerHandler, { records, limits });
+  await handler(request({ surveyId: SURVEY, answer: '1' }), response());
+  const duplicate = response();
+  await handler(request({ surveyId: SURVEY, answer: '2' }), duplicate);
+  assert.equal(duplicate.statusCode, 409);
+  assert.equal(duplicate.body.error, 'ALREADY_ANSWERED');
+  const globalDay = [...db.records.entries()].find(([key]) => key.includes('ans_g_d_'));
+  assert.equal(globalDay[1].count, 1);
+  assert.equal(db.records.get(`fst_survey_answers/${SURVEY}_${uidHash('user-1')}`).answer, '1');
+});
+
+test('survey create and setActive use separate caps', async () => {
+  const tight = { userMinute: 10, userDay: 100, globalMinute: 1, globalDay: 250 };
+  const { db, handler } = setup(createFstSurveyHandler, {
+    email: 'person@splineglobal.com',
+    createLimits: tight,
+    activateLimits: tight,
+  });
+  const created = response();
+  await handler(request({
+    kind: 'create', title: '題', question: '問い', type: 'options', options: ['はい'],
+  }), created);
+  assert.equal(created.statusCode, 201);
+  const published = response();
+  await handler(request({ kind: 'setActive', surveyId: created.body.surveyId, active: true }), published);
+  assert.equal(published.statusCode, 200);
+  const secondCreate = response();
+  await handler(request({
+    kind: 'create', title: '題2', question: '問い', type: 'text', options: [],
+  }), secondCreate);
+  assert.equal(secondCreate.statusCode, 429);
+  const secondActive = response();
+  await handler(request({ kind: 'setActive', surveyId: created.body.surveyId, active: false }), secondActive);
+  assert.equal(secondActive.statusCode, 429);
+  const keys = [...db.records.keys()];
+  assert.equal(keys.some(key => key.includes('sv_create_g_m_')), true);
+  assert.equal(keys.some(key => key.includes('sv_active_g_m_')), true);
+  assert.equal(keys.some(key => key.includes('/sv_g_')), false);
 });
 
 test('a second answer and an inactive survey do not write', async () => {
@@ -260,16 +303,21 @@ test('a closed budget and the minute cap stop answers', async () => {
   assert.equal(closed.statusCode, 503);
   assert.equal([...paused.db.records.keys()].some(key => key.startsWith('fst_survey_answers/')), false);
 
+  const other = 'SV_' + 'b'.repeat(16);
   const { db, handler } = setup(createFstSurveyAnswerHandler, {
-    records: { [`fst_surveys/${SURVEY}`]: { active: true, type: 'text' } },
-    limits: { userMinute: 1, userDay: 30, globalMinute: 500, globalDay: 10000 },
+    records: {
+      [`fst_surveys/${SURVEY}`]: { active: true, type: 'text' },
+      [`fst_surveys/${other}`]: { active: true, type: 'text' },
+    },
+    limits: { userMinute: 1, userDay: 30, globalMinute: 20, globalDay: 500 },
   });
   await handler(request({ surveyId: SURVEY, answer: '1' }), response());
   const limited = response();
-  await handler(request({ surveyId: SURVEY, answer: '2' }), limited);
+  await handler(request({ surveyId: other, answer: '2' }), limited);
   assert.equal(limited.statusCode, 429);
   assert.equal(limited.headers['Retry-After'], '60');
   assert.equal(db.records.get(`fst_survey_answers/${SURVEY}_${uidHash('user-1')}`).answer, '1');
+  assert.equal(db.records.has(`fst_survey_answers/${other}_${uidHash('user-1')}`), false);
 });
 
 test('the global cap is shared and does not read the forwarded address', async () => {

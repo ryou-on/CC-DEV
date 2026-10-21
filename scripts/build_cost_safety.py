@@ -139,7 +139,7 @@ def main():
             },
             'denialTests': {
                 'verified': True,
-                'evidence': '2026-10-21: functions 74 passed, including option matching, semver minVersion, a global 429 cap, a 503 budget stop, and the source revision hash. Firestore and Storage emulator tests 30 passed on the same rules. Python tests 33 passed, including an empty 403 that names cloudfunctions.functions.get.',
+                'evidence': '2026-10-21: functions 77 passed, including shared cost-guard caps, a duplicate answer that does not spend the global cap, and separate create and setActive caps. Firestore and Storage emulator tests 30 passed on the same rules. Python tests 33 passed, including an empty 403 that names cloudfunctions.functions.get.',
             },
         },
         'reviewDecisions': decisions,
