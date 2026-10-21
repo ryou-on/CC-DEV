@@ -18,6 +18,9 @@
 
 ## 実施済み
 
+- 月額予算をUSD 15（2026-10-20 ECBレート換算で2,372円）、自動停止閾値をUSD 5相当（791円）に確定。
+- Cloud Billing予算 `5629c6af-5042-4d68-926e-e76a5b0b4a26` を2,372円へ更新し、791円・50%・80%・100%通知、Pub/Sub通知、project recipientsをAPIで確認。
+- 自動停止Workflow `cc-dev-budget-stop` revision `000003-35a` を791円停止へ更新。正常なドライランが`would_stop`、閾値未満・24時間超過通知・不正イベントが`ignored`になることを確認。本番停止は実行していない。
 - `cost_guard.py` と単体テストを導入し、全Firebase predeployとデプロイWorkflowへ必須ゲートを追加。
 - Firestoreの無条件公開書き込み7件を解消。管理データは許可済みGoogleアカウントへ限定し、共有コードだけで行える削除と分析の直接書き込みを拒否。
 - `miniMeGenerate` のクォータ記録失敗を503でfail closedに変更。有料プロバイダが呼ばれない拒否試験を追加。
@@ -27,8 +30,6 @@
 
 ## 未確認・公開停止条件
 
-- 月額予算と停止閾値の入力が逆転しており、`stopThreshold < monthlyBudget` を満たす確定値がない。
-- Cloud Billing予算通知と自動停止の実設定証跡がない。
 - App Check、認証・認可、全体／利用者別クォータ、同時実行上限を全HTTP Functionsで実機確認できていない。
 - Firestore公開読み取り、全件取得、リアルタイム購読、公開大容量ファイルの上限・転送量を実機確認できていない。
 - 外部プロバイダ呼び出しのtimeout／retry上限を全Functionsで確認できていない。
