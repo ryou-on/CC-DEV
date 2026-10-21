@@ -2,7 +2,9 @@
 
 const crypto = require('node:crypto');
 const { onRequest } = require('firebase-functions/v2/https');
-const { getGuard, sendCostError, CostError, periodKeys, rateOf } = require('./cost-guard');
+const {
+  getGuard, sendCostError, CostError, periodKeys, rateOf, reserveFst, rejectIfFstHeld, holdFstRejection,
+} = require('./cost-guard');
 const { sourceRev } = require('./fst-rev');
 const { isEditorEmail } = require('./editor-policy');
 const APPS = Object.freeze({
@@ -98,36 +100,9 @@ async function assertBudgetOpen(db) {
   if (!global.exists || global.data()?.enabled !== true) throw new CostError(503, 'SERVICE_PAUSED');
 }
 
-async function consume(db, id, limit, now) {
-  const ref = db.doc(`fstRateLimits/${id}`);
-  await db.runTransaction(async tx => {
-    const snap = await tx.get(ref);
-    const data = snap.exists ? snap.data() : null;
-    const count = data && Number.isSafeInteger(data.count) && data.count >= 0 ? data.count : (data ? null : 0);
-    if (count === null) throw new CostError(503, 'INVALID_QUOTA_STATE');
-    if (count >= limit) throw new CostError(429, 'USAGE_LIMIT');
-    tx.set(ref, {
-      count: count + 1,
-      updatedAtMs: now,
-      expiresAt: new Date(now + 3 * DAY_MS),
-    });
-  });
-}
-
-async function rejectDuplicate(db, id, now) {
-  const ref = db.doc(`fstRateLimits/${id}`);
-  await db.runTransaction(async tx => {
-    const snap = await tx.get(ref);
-    const data = snap.exists ? snap.data() : null;
-    if (data && Number.isSafeInteger(data.updatedAtMs) && now - data.updatedAtMs < 10 * 60 * 1000) {
-      throw new CostError(429, 'USAGE_LIMIT');
-    }
-    if (data && !Number.isSafeInteger(data.updatedAtMs)) throw new CostError(503, 'INVALID_QUOTA_STATE');
-    tx.set(ref, { count: 1, updatedAtMs: now, expiresAt: new Date(now + 3 * DAY_MS) });
-  });
-}
-
-function createFstFeedbackHandler({ authorize, db, now = Date.now, serverTimestamp, limits = rateOf('fstFeedback') }) {
+function createFstFeedbackHandler({
+  authorize, db, now = Date.now, serverTimestamp, limits = rateOf('fstFeedback'), holdScope = '',
+}) {
   return async function fstFeedbackSubmit(req, res) {
     if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
     if (req.method !== 'POST') { res.status(405).json({ error: 'POST only' }); return; }
@@ -135,46 +110,64 @@ function createFstFeedbackHandler({ authorize, db, now = Date.now, serverTimesta
       const actor = await authorize(req);
       const at = now();
       const input = parseInput(req.body, at);
+      const holdKey = `${holdScope}fb\0${actor.uid}`;
+      rejectIfFstHeld(holdKey, at);
       await assertBudgetOpen(db);
       const keys = periodKeys(at);
       const minute = Math.floor(at / 60000);
       const user = hashId(actor.uid);
-      await consume(db, `u_${user}_m_${minute}`, limits.userMinute, at);
-      await consume(db, `u_${user}_d_${keys.day}`, limits.userDay, at);
-      await consume(db, `g_m_${minute}`, limits.globalMinute, at);
-      await consume(db, `g_d_${keys.day}`, limits.globalDay, at);
       const content = hashId(`${input.appId}\0${input.subject}\0${input.message}`);
-      await rejectDuplicate(db, `dup_${user}_${content}`, at);
-      const saved = await db.runTransaction(async tx => {
-        const counterRef = db.doc('fst_feedback_meta/counter');
-        const counter = await tx.get(counterRef);
-        const current = counter.exists ? counter.data()?.count : 0;
-        if (counter.exists && (!Number.isSafeInteger(current) || current < 0)) {
-          throw new CostError(503, 'INVALID_QUOTA_STATE');
-        }
-        const n = (Number.isSafeInteger(current) ? current : 0) + 1;
-        const fbId = `FB_${String(n).padStart(4, '0')}`;
-        const ref = db.doc(`fst_feedback/${fbId}`);
-        const row = {
-          fbId,
-          feedbackId: fbId,
-          subject: input.subject,
-          email: input.email,
-          message: input.message,
-          build: input.build,
-          appId: input.appId,
-          version: input.version,
-          url: input.url,
-          uid: actor.uid,
-          status: 'unreviewed',
-          replySent: false,
-          createdAt: serverTimestamp(),
-        };
-        if (input.type) row.type = input.type;
-        tx.set(counterRef, { count: n, updatedAtMs: at });
-        tx.set(ref, row);
-        return { fbId };
-      });
+      let saved;
+      try {
+        saved = await reserveFst(db, [
+          { id: `u_${user}_m_${minute}`, limit: limits.userMinute },
+          { id: `u_${user}_d_${keys.day}`, limit: limits.userDay },
+          { id: `g_m_${minute}`, limit: limits.globalMinute },
+          { id: `g_d_${keys.day}`, limit: limits.globalDay },
+        ], at, async tx => {
+          const dupRef = db.doc(`fstRateLimits/dup_${user}_${content}`);
+          const dup = await tx.get(dupRef);
+          const data = dup.exists ? dup.data() : null;
+          if (data && Number.isSafeInteger(data.updatedAtMs) && at - data.updatedAtMs < 10 * 60 * 1000) {
+            const err = new CostError(429, 'USAGE_LIMIT');
+            err.retryAfter = Math.max(1, Math.ceil((10 * 60 * 1000 - (at - data.updatedAtMs)) / 1000));
+            throw err;
+          }
+          if (data && !Number.isSafeInteger(data.updatedAtMs)) throw new CostError(503, 'INVALID_QUOTA_STATE');
+          const counterRef = db.doc('fst_feedback_meta/counter');
+          const counter = await tx.get(counterRef);
+          const current = counter.exists ? counter.data()?.count : 0;
+          if (counter.exists && (!Number.isSafeInteger(current) || current < 0)) {
+            throw new CostError(503, 'INVALID_QUOTA_STATE');
+          }
+          const n = (Number.isSafeInteger(current) ? current : 0) + 1;
+          const fbId = `FB_${String(n).padStart(4, '0')}`;
+          const ref = db.doc(`fst_feedback/${fbId}`);
+          const row = {
+            fbId,
+            feedbackId: fbId,
+            subject: input.subject,
+            email: input.email,
+            message: input.message,
+            build: input.build,
+            appId: input.appId,
+            version: input.version,
+            url: input.url,
+            uid: actor.uid,
+            status: 'unreviewed',
+            replySent: false,
+            createdAt: serverTimestamp(),
+          };
+          if (input.type) row.type = input.type;
+          const expiresAt = new Date(at + 3 * DAY_MS);
+          tx.set(dupRef, { count: 1, updatedAtMs: at, expiresAt });
+          tx.set(counterRef, { count: n, updatedAtMs: at });
+          tx.set(ref, row);
+          return { fbId };
+        });
+      } catch (error) {
+        holdFstRejection(holdKey, at, error);
+      }
       res.set('Cache-Control', 'no-store');
       res.status(201).json({ ok: true, fbId: saved.fbId, feedbackId: saved.fbId, status: 'unreviewed' });
     } catch (error) {

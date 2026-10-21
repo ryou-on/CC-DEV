@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createGuard, LIMITS, periodKeys, rateOf } = require('../cost-guard');
+const { createGuard, LIMITS, periodKeys, rateOf, retryAfterSeconds } = require('../cost-guard');
 const { armExpiry, expireCall, callIdFromLocation } = require('../realtime-cost');
 
 const NOW = Date.parse('2026-10-05T01:00:00Z');
@@ -47,7 +47,10 @@ test('flight strip global caps live only in cost-guard limits', () => {
   assert.deepEqual(rateOf('fstDevAdmin'), { userMinute: 10, userDay: 100, globalMinute: 20, globalDay: 500 });
   assert.deepEqual(rateOf('fstSurveyCreate'), { userMinute: 10, userDay: 100, globalMinute: 10, globalDay: 250 });
   assert.deepEqual(rateOf('fstSurveySetActive'), { userMinute: 10, userDay: 100, globalMinute: 10, globalDay: 250 });
-  assert.deepEqual(rateOf('fstSurveyAnswer'), { userMinute: 5, userDay: 30, globalMinute: 20, globalDay: 500 });
+  assert.deepEqual(rateOf('fstSurveyAnswer'), { userMinute: 5, userDay: 30, globalMinute: 60, globalDay: 500 });
+  for (const name of ['fstFeedback', 'fstAnalytics', 'fstDevAdmin', 'fstSurveyCreate', 'fstSurveySetActive', 'fstSurveyAnswer']) {
+    assert.equal(Object.hasOwn(LIMITS[name], 'globalMonth'), false);
+  }
   assert.equal(LIMITS.fstSurveyCreate.globalDay + LIMITS.fstSurveySetActive.globalDay, 500);
   assert.equal(LIMITS.fstFeedback.globalMinute < 300, true);
   assert.equal(LIMITS.fstAnalytics.globalMinute < 2000, true);
@@ -161,6 +164,24 @@ test('durable deadline is five minutes and expiration is idempotent', async () =
 module.exports = { fakeDb, fixture, request, NOW };
 
 // A budget stop remains latched across quota windows until an administrator restores it.
+test('a flight strip reserve does not write an unused monthly global counter', async () => {
+  for (const service of ['fstFeedback', 'fstAnalytics', 'fstDevAdmin', 'fstSurveyCreate', 'fstSurveySetActive', 'fstSurveyAnswer']) {
+    const { db, guard } = fixture(service);
+    await guard.reserve({ uid: 'u1', service });
+    const counters = [...db.records.keys()].filter(key => key.startsWith('costCounters/'));
+    assert.equal(counters.length, 4);
+    assert.equal(counters.some(key => key.includes('_g_M_')), false);
+  }
+});
+
+test('retry-after waits until the blocked window opens', () => {
+  const minute = retryAfterSeconds(NOW, 'an_g_m_1');
+  const day = retryAfterSeconds(NOW, 'an_g_d_2026-10');
+  assert.equal(minute, 60);
+  assert.equal(day, 50400);
+  assert.equal(day > minute, true);
+});
+
 test('budget stop blocks every paid service before counter writes, including malformed latch', async () => {
   for (const service of Object.keys(LIMITS)) {
     for (const value of [undefined, false, null, 'true']) {

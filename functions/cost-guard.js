@@ -13,16 +13,19 @@ const LIMITS = Object.freeze({
   // Suggestion box. authorize() uses the byte cap. The handler checks the budget latch
   // itself and does not call reserve(), so ordinary verified users are not UID-allowlisted.
   // globalDay 200 and globalMinute 10 are the only global caps. Handlers read them via rateOf().
-  fstFeedback: { minute: 5, globalMinute: 10, userDay: 50, userMonth: 100, globalDay: 200, globalMonth: 2000, bytes: 16384 },
+  // Flight Strip rows have no globalMonth. Handlers do not call reserve(), and an unused
+  // monthly counter would add a write on every accepted call.
+  fstFeedback: { minute: 5, globalMinute: 10, userDay: 50, userMonth: 100, globalDay: 200, bytes: 16384 },
   // Usage events. authorize() uses the byte cap only. Not on the paid-API UID allowlist.
-  fstAnalytics: { minute: 30, globalMinute: 60, userDay: 400, userMonth: 4000, globalDay: 2000, globalMonth: 20000, bytes: 4096 },
+  fstAnalytics: { minute: 30, globalMinute: 60, userDay: 400, userMonth: 4000, globalDay: 2000, bytes: 4096 },
   // Broadcast and force-update. Survey create and setActive have their own rows so they do not share a counter.
-  fstDevAdmin: { minute: 10, globalMinute: 20, userDay: 100, userMonth: 1000, globalDay: 500, globalMonth: 5000, bytes: 8192 },
+  fstDevAdmin: { minute: 10, globalMinute: 20, userDay: 100, userMonth: 1000, globalDay: 500, bytes: 8192 },
   // Together these two daily caps equal the old shared survey-admin cap of 500.
   // Giving each 500 would push the capped writes over the Firestore free tier.
-  fstSurveyCreate: { minute: 10, globalMinute: 10, userDay: 100, userMonth: 1000, globalDay: 250, globalMonth: 2500, bytes: 8192 },
-  fstSurveySetActive: { minute: 10, globalMinute: 10, userDay: 100, userMonth: 1000, globalDay: 250, globalMonth: 2500, bytes: 8192 },
-  fstSurveyAnswer: { minute: 5, globalMinute: 20, userDay: 30, userMonth: 300, globalDay: 500, globalMonth: 5000, bytes: 8192 },
+  // 内海課長は 250 と 250 の分割を承認済み。50 と 50 ではない。
+  fstSurveyCreate: { minute: 10, globalMinute: 10, userDay: 100, userMonth: 1000, globalDay: 250, bytes: 8192 },
+  fstSurveySetActive: { minute: 10, globalMinute: 10, userDay: 100, userMonth: 1000, globalDay: 250, bytes: 8192 },
+  fstSurveyAnswer: { minute: 5, globalMinute: 60, userDay: 30, userMonth: 300, globalDay: 500, bytes: 8192 },
 });
 const ORIGINS = new Set(['https://cc-dev-ps7.web.app', 'https://cc-dev-ps7.firebaseapp.com']);
 
@@ -54,6 +57,88 @@ function count(snapshot) {
   const n = snapshot.data()?.count;
   if (!Number.isSafeInteger(n) || n < 0) throw new CostError(503, 'INVALID_QUOTA_STATE');
   return n;
+}
+
+// Minute slots wait until the next minute. Day slots wait until the next 00:00 in Japan.
+// A caller who keeps going after the cap would otherwise read on every retry.
+function retryAfterSeconds(now, slotId) {
+  const id = String(slotId);
+  if (id.includes('_d_')) {
+    const shifted = now + 9 * 60 * 60 * 1000;
+    const dayStart = Math.floor(shifted / 86400000) * 86400000;
+    const nextMidnightUtc = dayStart + 86400000 - 9 * 60 * 60 * 1000;
+    return Math.max(1, Math.ceil((nextMidnightUtc - now) / 1000));
+  }
+  const nextMinute = (Math.floor(now / 60000) + 1) * 60000;
+  return Math.max(1, Math.ceil((nextMinute - now) / 1000));
+}
+
+const fstHolds = new Map();
+
+function clearFstHolds() {
+  fstHolds.clear();
+}
+
+function fstHoldRemaining(key, now) {
+  const until = fstHolds.get(key);
+  if (until == null) return 0;
+  if (until <= now) {
+    fstHolds.delete(key);
+    return 0;
+  }
+  return Math.max(1, Math.ceil((until - now) / 1000));
+}
+
+function rememberFstHold(key, now, seconds) {
+  const wait = Number.isSafeInteger(seconds) && seconds > 0 ? seconds : 60;
+  fstHolds.set(key, now + wait * 1000);
+}
+
+function rejectIfFstHeld(key, now) {
+  const wait = fstHoldRemaining(key, now);
+  if (wait <= 0) return;
+  const err = new CostError(429, 'USAGE_LIMIT');
+  err.retryAfter = wait;
+  throw err;
+}
+
+function holdFstRejection(key, now, error) {
+  if (error instanceof CostError && error.httpStatus === 429) {
+    rememberFstHold(key, now, error.retryAfter);
+  }
+  throw error;
+}
+
+// Read every counter, then decide. A rejection writes nothing. Acceptance writes every
+// counter and the handler payload in the same transaction. All reads happen before any set.
+async function reserveFst(db, slots, now, write) {
+  return db.runTransaction(async tx => {
+    const refs = slots.map(slot => db.doc(`fstRateLimits/${slot.id}`));
+    const snaps = [];
+    for (const ref of refs) snaps.push(await tx.get(ref));
+    const counts = snaps.map(count);
+    let blocked = -1;
+    let retry = 0;
+    counts.forEach((n, i) => {
+      if (n < slots[i].limit) return;
+      const wait = retryAfterSeconds(now, slots[i].id);
+      if (wait >= retry) {
+        retry = wait;
+        blocked = i;
+      }
+    });
+    if (blocked >= 0) {
+      const err = new CostError(429, 'USAGE_LIMIT');
+      err.retryAfter = retry;
+      throw err;
+    }
+    const extra = write ? await write(tx) : undefined;
+    const expiresAt = new Date(now + 3 * 24 * 60 * 60 * 1000);
+    refs.forEach((ref, i) => {
+      tx.set(ref, { count: counts[i] + 1, updatedAtMs: now, expiresAt });
+    });
+    return extra;
+  });
 }
 
 function createGuard({ db, verifyIdToken, verifyAppCheck, now = Date.now }) {
@@ -88,13 +173,16 @@ function createGuard({ db, verifyIdToken, verifyAppCheck, now = Date.now }) {
     const service = actor.service;
     const scope = service === 'miniStatus' ? 'miniGenerate' : service;
     const policyRef = db.doc(`costControls/${scope}`);
-    const entries = [
+    const pairs = [
       [`${service}_u_${subject}_m_${keys.minute}`, limits.minute],
       [`${service}_u_${subject}_d_${keys.day}`, limits.userDay],
       [`${service}_u_${subject}_M_${keys.month}`, limits.userMonth],
       [`${service}_g_d_${keys.day}`, limits.globalDay],
-      [`${service}_g_M_${keys.month}`, limits.globalMonth],
-    ].map(([id, limit]) => [db.doc(`costCounters/${id}`), limit]);
+    ];
+    if (Number.isSafeInteger(limits.globalMonth)) {
+      pairs.push([`${service}_g_M_${keys.month}`, limits.globalMonth]);
+    }
+    const entries = pairs.map(([id, limit]) => [db.doc(`costCounters/${id}`), limit]);
     try {
       await db.runTransaction(async tx => {
         // Every read precedes every write; parallel requests cannot exceed a cap.
@@ -132,7 +220,12 @@ function sendCostError(res, error) {
   const status = error instanceof CostError ? error.httpStatus : 503;
   const code = error instanceof CostError ? error.code : 'COST_GUARD_UNAVAILABLE';
   res.set('Cache-Control', 'no-store');
-  if (status === 429) res.set('Retry-After', '60');
+  if (status === 429) {
+    const retry = error instanceof CostError && Number.isSafeInteger(error.retryAfter) && error.retryAfter > 0
+      ? error.retryAfter
+      : 60;
+    res.set('Retry-After', String(retry));
+  }
   return res.status(status).json({ error: code });
 }
 
@@ -150,4 +243,7 @@ function getGuard() {
   return singleton;
 }
 
-module.exports = { createGuard, getGuard, CostError, sendCostError, periodKeys, rateOf, LIMITS };
+module.exports = {
+  createGuard, getGuard, CostError, sendCostError, periodKeys, rateOf, LIMITS,
+  retryAfterSeconds, reserveFst, clearFstHolds, rejectIfFstHeld, holdFstRejection,
+};
