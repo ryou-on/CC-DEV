@@ -73,7 +73,7 @@ function request(body, headers = {}) {
   };
 }
 
-function setup(handlerFactory, { email = 'user@example.test', uid = 'user-1', records = {} } = {}) {
+function setup(handlerFactory, { email = 'user@example.test', uid = 'user-1', records = {}, limits } = {}) {
   const db = memoryDb({ 'costControls/global': { enabled: true }, ...records });
   const guard = createGuard({
     db,
@@ -89,6 +89,7 @@ function setup(handlerFactory, { email = 'user@example.test', uid = 'user-1', re
     db,
     now: () => NOW,
     serverTimestamp: () => 'server-time',
+    ...(limits ? { limits } : {}),
   });
   return { db, handler };
 }
@@ -141,7 +142,7 @@ test('only an editor can create a survey', async () => {
 });
 
 test('an answer stores the caller hash and rejects another user hash', async () => {
-  const records = { [`fst_surveys/${SURVEY}`]: { active: true, title: '題' } };
+  const records = { [`fst_surveys/${SURVEY}`]: { active: true, type: 'text', title: '題' } };
   const first = setup(createFstSurveyAnswerHandler, { records });
   const spoof = response();
   await first.handler(request({ surveyId: SURVEY, answer: 'はい', uidHash: uidHash('user-2') }), spoof);
@@ -164,7 +165,7 @@ test('an answer stores the caller hash and rejects another user hash', async () 
 });
 
 test('a second answer and an inactive survey do not write', async () => {
-  const records = { [`fst_surveys/${SURVEY}`]: { active: true } };
+  const records = { [`fst_surveys/${SURVEY}`]: { active: true, type: 'text' } };
   const { db, handler } = setup(createFstSurveyAnswerHandler, { records });
   await handler(request({ surveyId: SURVEY, answer: '1' }), response());
   const duplicate = response();
@@ -179,4 +180,139 @@ test('a second answer and an inactive survey do not write', async () => {
   await inactive.handler(request({ surveyId: SURVEY, answer: 'はい' }), hidden);
   assert.equal(hidden.statusCode, 404);
   assert.equal([...inactive.db.records.keys()].some(key => key.startsWith('fst_survey_answers/')), false);
+});
+
+const LEGACY = 'A1b2C3d4E5f6G7h8I9j0';
+
+test('a firestore auto id can be answered and published', async () => {
+  assert.equal(/^SV_[0-9a-f]{16}$/.test(LEGACY), false);
+  const editor = setup(createFstSurveyHandler, {
+    email: 'person@splineglobal.com',
+    records: { [`fst_surveys/${LEGACY}`]: { active: false, type: 'options', options: ['はい'] } },
+  });
+  const toggled = response();
+  await editor.handler(request({ kind: 'setActive', surveyId: LEGACY, active: true }), toggled);
+  assert.equal(toggled.statusCode, 200);
+  assert.equal(editor.db.records.get(`fst_surveys/${LEGACY}`).active, true);
+
+  const answer = setup(createFstSurveyAnswerHandler, { records: Object.fromEntries(editor.db.records) });
+  const saved = response();
+  await answer.handler(request({ surveyId: LEGACY, answer: 'はい' }), saved);
+  assert.equal(saved.statusCode, 201);
+  assert.equal(answer.db.records.get(`fst_survey_answers/${LEGACY}_${uidHash('user-1')}`).answer, 'はい');
+});
+
+test('survey ids outside firestore-safe characters are rejected', async () => {
+  const editor = setup(createFstSurveyHandler, { email: 'person@splineglobal.com' });
+  for (const surveyId of ['a/b', '..', '__reserved__', 'a'.repeat(129), 'has space', '']) {
+    const res = response();
+    await editor.handler(request({ kind: 'setActive', surveyId, active: true }), res);
+    assert.equal(res.statusCode, 400, surveyId);
+  }
+  assert.equal([...editor.db.records.keys()].some(key => key.startsWith('fst_surveys/')), false);
+});
+
+test('an options answer must be one of the choices', async () => {
+  const records = {
+    [`fst_surveys/${SURVEY}`]: { active: true, type: 'options', options: ['はい', 'いいえ'] },
+  };
+  const { db, handler } = setup(createFstSurveyAnswerHandler, { records });
+  const script = response();
+  await handler(request({ surveyId: SURVEY, answer: '<script>alert(1)</script>' }), script);
+  assert.equal(script.statusCode, 400);
+  assert.equal([...db.records.keys()].some(key => key.startsWith('fst_survey_answers/')), false);
+  const ok = response();
+  await handler(request({ surveyId: SURVEY, answer: ' はい ' }), ok);
+  assert.equal(ok.statusCode, 201);
+  assert.equal(db.records.get(`fst_survey_answers/${SURVEY}_${uidHash('user-1')}`).answer, 'はい');
+});
+
+test('force update requires semver and stores a script as text', async () => {
+  const editor = setup(createFstDevAdminHandler, { email: 'person@splineglobal.com' });
+  for (const minVersion of ['', 'latest', '1.2', '01.2.3', 'v'.repeat(41)]) {
+    const bad = response();
+    await editor.handler(request({
+      kind: 'forceUpdate', enabled: true, minVersion, message: '更新', targetBuild: 'dev',
+    }), bad);
+    assert.equal(bad.statusCode, 400, minVersion);
+  }
+  assert.equal(editor.db.records.has('fst_admin/forceUpdate'), false);
+  const ok = response();
+  const message = '<script>alert(1)</script>';
+  await editor.handler(request({
+    kind: 'forceUpdate', enabled: true, minVersion: 'v0.10.30-dev', message, targetBuild: 'dev',
+  }), ok);
+  assert.equal(ok.statusCode, 200);
+  assert.deepEqual(editor.db.records.get('fst_admin/forceUpdate'), {
+    enabled: true, minVersion: '0.10.30-dev', message, targetBuild: 'dev', updatedAt: 'server-time',
+  });
+});
+
+test('a closed budget and the minute cap stop answers', async () => {
+  const paused = setup(createFstSurveyAnswerHandler, {
+    records: {
+      'costControls/global': { enabled: false },
+      [`fst_surveys/${SURVEY}`]: { active: true, type: 'text' },
+    },
+  });
+  const closed = response();
+  await paused.handler(request({ surveyId: SURVEY, answer: 'はい' }), closed);
+  assert.equal(closed.statusCode, 503);
+  assert.equal([...paused.db.records.keys()].some(key => key.startsWith('fst_survey_answers/')), false);
+
+  const { db, handler } = setup(createFstSurveyAnswerHandler, {
+    records: { [`fst_surveys/${SURVEY}`]: { active: true, type: 'text' } },
+    limits: { userMinute: 1, userDay: 30, ipMinute: 20, ipDay: 100 },
+  });
+  await handler(request({ surveyId: SURVEY, answer: '1' }), response());
+  const limited = response();
+  await handler(request({ surveyId: SURVEY, answer: '2' }), limited);
+  assert.equal(limited.statusCode, 429);
+  assert.equal(limited.headers['Retry-After'], '60');
+  assert.equal(db.records.get(`fst_survey_answers/${SURVEY}_${uidHash('user-1')}`).answer, '1');
+});
+
+test('the trusted address is the last forwarded hop', async () => {
+  const { db, handler } = setup(createFstSurveyAnswerHandler, {
+    records: { [`fst_surveys/${SURVEY}`]: { active: true, type: 'text' } },
+    limits: { userMinute: 5, userDay: 30, ipMinute: 1, ipDay: 100 },
+  });
+  await handler(request(
+    { surveyId: SURVEY, answer: '1' },
+    { 'x-forwarded-for': '1.1.1.1, 203.0.113.50' },
+  ), response());
+  const sameHop = response();
+  await handler(request(
+    { surveyId: SURVEY, answer: '2' },
+    { 'x-forwarded-for': '9.9.9.9, 203.0.113.50' },
+  ), sameHop);
+  assert.equal(sameHop.statusCode, 429);
+  assert.equal(db.records.get(`fst_survey_answers/${SURVEY}_${uidHash('user-1')}`).answer, '1');
+});
+
+test('one of two simultaneous answers is stored', async () => {
+  const { db, handler } = setup(createFstSurveyAnswerHandler, {
+    records: { [`fst_surveys/${SURVEY}`]: { active: true, type: 'text' } },
+  });
+  const first = response();
+  const second = response();
+  await Promise.all([
+    handler(request({ surveyId: SURVEY, answer: '同時A' }), first),
+    handler(request({ surveyId: SURVEY, answer: '同時B' }), second),
+  ]);
+  const codes = [first.statusCode, second.statusCode].sort();
+  assert.deepEqual(codes, [201, 409]);
+  const row = db.records.get(`fst_survey_answers/${SURVEY}_${uidHash('user-1')}`);
+  assert.equal(['同時A', '同時B'].includes(row.answer), true);
+});
+
+test('a text answer keeps a script string as data', async () => {
+  const script = '<script>alert(1)</script>';
+  const { db, handler } = setup(createFstSurveyAnswerHandler, {
+    records: { [`fst_surveys/${SURVEY}`]: { active: true, type: 'text' } },
+  });
+  const saved = response();
+  await handler(request({ surveyId: SURVEY, answer: script }), saved);
+  assert.equal(saved.statusCode, 201);
+  assert.equal(db.records.get(`fst_survey_answers/${SURVEY}_${uidHash('user-1')}`).answer, script);
 });

@@ -25,14 +25,37 @@ REQUIRED = (
 
 
 def require_active(names, fetch):
+    """ACTIVE かつ updateTime があることだけを合格にする。
+
+    functions.get はデプロイ済み zip の Cloud Storage generation と updateTime を返す。
+    generation はリポジトリのファイルハッシュではない。git の SHA と照合するには、
+    デプロイ時にその SHA を関数の環境変数へ入れる必要がある。このゲートはそれをしない。
+    """
     problems = []
+    notes = []
     for name in names:
         status, body = fetch(name)
+        if status == 403:
+            problems.append(
+                f'{name} status=403 missing cloudfunctions.functions.get on the hosting service account'
+            )
+            continue
         state = body.get('state') if isinstance(body, dict) else None
-        if status != 200 or state != 'ACTIVE':
-            problems.append(f'{name} status={status} state={state}')
+        update = body.get('updateTime') if isinstance(body, dict) else None
+        source = {}
+        if isinstance(body, dict):
+            source = ((body.get('buildConfig') or {}).get('source') or {}).get('storageSource') or {}
+        if status != 200 or state != 'ACTIVE' or not update:
+            problems.append(f'{name} status={status} state={state} updateTime={update}')
+            continue
+        notes.append(f'{name} updateTime={update} sourceGeneration={source.get("generation")}')
     if problems:
-        raise SystemExit('Flight Strip functions are not active: ' + '; '.join(problems))
+        raise SystemExit(
+            'Flight Strip functions are not active: ' + '; '.join(problems)
+            + '. The hosting service account needs cloudfunctions.functions.get '
+            + 'or every Hosting and Rules deploy stops with 403.'
+        )
+    return notes
 
 
 def _b64(raw):
@@ -102,8 +125,10 @@ def main():
             raise SystemExit('FIREBASE_SA is required')
         raw = open(path, encoding='utf-8').read()
     token = access_token(json.loads(raw))
-    require_active(REQUIRED, live_fetch(token))
-    print('Flight Strip functions are ACTIVE:', ', '.join(REQUIRED))
+    notes = require_active(REQUIRED, live_fetch(token))
+    print('Flight Strip functions are ACTIVE')
+    for note in notes:
+        print(note)
 
 
 if __name__ == '__main__':

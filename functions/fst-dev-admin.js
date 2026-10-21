@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const { onRequest } = require('firebase-functions/v2/https');
 const { getGuard, sendCostError, CostError, periodKeys } = require('./cost-guard');
 const { isEditorEmail } = require('./editor-policy');
+const { clientIp } = require('./client-ip');
 
 const ADMIN_LIMITS = Object.freeze({ userMinute: 10, userDay: 100, ipMinute: 20, ipDay: 200 });
 const ANSWER_LIMITS = Object.freeze({ userMinute: 5, userDay: 30, ipMinute: 20, ipDay: 100 });
@@ -12,6 +13,9 @@ const SURVEY_FIELDS = new Set(['kind', 'title', 'question', 'type', 'options', '
 const ANSWER_FIELDS = new Set(['surveyId', 'answer']);
 const BUILDS = new Set(['all', 'dev', 'stable']);
 const SURVEY_TYPES = new Set(['options', 'text']);
+const SURVEY_ID = /^[A-Za-z0-9_-]{1,128}$/;
+const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]{1,20})?$/;
+const MIN_VERSION_MAX = 40;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const REQUEST_OPTIONS = {
   region: 'asia-northeast1',
@@ -30,10 +34,24 @@ function hashId(value) {
   return crypto.createHash('sha256').update(String(value)).digest('hex').slice(0, 32);
 }
 
-function clientIp(req) {
-  const forwarded = req.get('x-forwarded-for') || '';
-  const first = forwarded.split(',')[0].trim();
-  return (first || req.ip || 'missing').slice(0, 200);
+function isSurveyId(value) {
+  return SURVEY_ID.test(value) && !/^__.*__$/.test(value);
+}
+
+function surveyIdOf(value) {
+  if (typeof value !== 'string') return null;
+  const id = value.trim();
+  if (!isSurveyId(id)) return null;
+  return id;
+}
+
+function minVersionOf(value) {
+  if (typeof value !== 'string') return null;
+  const raw = value.trim();
+  if (!raw || raw.length > MIN_VERSION_MAX) return null;
+  const bare = raw.replace(/^v/, '');
+  if (!bare || bare.length > MIN_VERSION_MAX || !SEMVER.test(bare)) return null;
+  return bare;
 }
 
 function rejectUnknown(body, allowed, code) {
@@ -102,7 +120,7 @@ function createFstDevAdminHandler({ authorize, db, now = Date.now, serverTimesta
         ref = db.doc('fst_admin/broadcast');
         row = { active: req.body.active, title, message, updatedAt: serverTimestamp() };
       } else if (kind === 'forceUpdate') {
-        const minVersion = text(req.body.minVersion, 40, { empty: true });
+        const minVersion = minVersionOf(req.body.minVersion);
         const message = text(req.body.message, 500, { empty: true });
         if (typeof req.body.enabled !== 'boolean' || minVersion === null || message === null || !BUILDS.has(req.body.targetBuild)) {
           throw new CostError(400, 'INVALID_ADMIN');
@@ -161,8 +179,8 @@ function createFstSurveyHandler({ authorize, db, now = Date.now, serverTimestamp
         return;
       }
       if (req.body.kind === 'setActive') {
-        const surveyId = text(req.body.surveyId, 80);
-        if (!surveyId || !/^SV_[0-9a-f]{16}$/.test(surveyId) || typeof req.body.active !== 'boolean') {
+        const surveyId = surveyIdOf(req.body.surveyId);
+        if (!surveyId || typeof req.body.active !== 'boolean') {
           throw new CostError(400, 'INVALID_SURVEY');
         }
         await assertBudgetOpen(db);
@@ -191,12 +209,18 @@ function createFstSurveyAnswerHandler({ authorize, db, now = Date.now, serverTim
     try {
       const actor = await authorize(req);
       rejectUnknown(req.body, ANSWER_FIELDS, 'INVALID_ANSWER');
-      const surveyId = text(req.body.surveyId, 80);
+      const surveyId = surveyIdOf(req.body.surveyId);
       const answer = text(req.body.answer, 2000);
-      if (!surveyId || !/^SV_[0-9a-f]{16}$/.test(surveyId) || !answer) throw new CostError(400, 'INVALID_ANSWER');
+      if (!surveyId || !answer) throw new CostError(400, 'INVALID_ANSWER');
       await assertBudgetOpen(db);
       const survey = await db.doc(`fst_surveys/${surveyId}`).get();
-      if (!survey.exists || survey.data()?.active !== true) throw new CostError(404, 'SURVEY_NOT_FOUND');
+      const data = survey.exists ? survey.data() : null;
+      if (!data || data.active !== true) throw new CostError(404, 'SURVEY_NOT_FOUND');
+      if (data.type === 'options') {
+        if (!Array.isArray(data.options) || !data.options.includes(answer)) throw new CostError(400, 'INVALID_ANSWER');
+      } else if (data.type !== 'text') {
+        throw new CostError(400, 'INVALID_ANSWER');
+      }
       await limitActor(db, actor, req, 'ans', limits, now());
       const hash = uidHash(actor.uid);
       const ref = db.doc(`fst_survey_answers/${surveyId}_${hash}`);
@@ -226,6 +250,8 @@ function bind(factory, service) {
 }
 
 exports.uidHash = uidHash;
+exports.isSurveyId = isSurveyId;
+exports.minVersionOf = minVersionOf;
 exports.createFstDevAdminHandler = createFstDevAdminHandler;
 exports.createFstSurveyHandler = createFstSurveyHandler;
 exports.createFstSurveyAnswerHandler = createFstSurveyAnswerHandler;

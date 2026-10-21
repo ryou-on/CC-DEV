@@ -26,12 +26,12 @@
 | 19 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO/index.html:902 | accepted | users/{uid}/projects を type==routine で購読し unsub する。本人データのみ。 |
 | 20 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO/index.html:1688 | accepted | users/{uid} 配下の categories 単一ドキュメント。useEffect が unsub する。 |
 | 21 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO/index.html:1709 | accepted | users/{uid}/tasks の購読。unsubscribe を保持する。他人のタスクはルールで拒否。 |
-| 22 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO_dev/index.html:4820 | accepted | 開発版の routine projects。users/{uid}/projects に限定し unsub する。 |
-| 23 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO_dev/index.html:5304 | accepted | 開発版の categories 単一ドキュメント。unsub あり。 |
-| 24 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO_dev/index.html:5349 | accepted | 開発版の projects 購読。users/{uid}/projects。unsub あり。 |
-| 25 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO_dev/index.html:5357 | accepted | 開発版の enhancedRequests 単一ドキュメント。unsub あり。 |
-| 26 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO_dev/index.html:5465 | accepted | fst_admin/broadcast は確認済みアカウントだけが単一ドキュメントを購読する。作成・更新・削除は Functions だけ。未ログインは読めない。 |
-| 27 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO_dev/index.html:5667 | accepted | 開発版の users/{uid}/tasks。unsubscribe を保持する。 |
+| 22 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO_dev/index.html:4821 | accepted | 開発版の routine projects。users/{uid}/projects に限定し unsub する。 |
+| 23 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO_dev/index.html:5305 | accepted | 開発版の categories 単一ドキュメント。unsub あり。 |
+| 24 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO_dev/index.html:5350 | accepted | 開発版の projects 購読。users/{uid}/projects。unsub あり。 |
+| 25 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO_dev/index.html:5358 | accepted | 開発版の enhancedRequests 単一ドキュメント。unsub あり。 |
+| 26 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO_dev/index.html:5466 | accepted | fst_admin/broadcast は確認済みアカウントだけが単一ドキュメントを購読する。作成・更新・削除は Functions だけ。未ログインは読めない。 |
+| 27 | REVIEW | DB_LISTENER | public/Flight_Strip_TODO_dev/index.html:5668 | accepted | 開発版の users/{uid}/tasks。unsubscribe を保持する。 |
 | 28 | REVIEW | HTTP_SERVER | public/ai-meeting/worker/src/worker.js:1 | accepted | この Worker は Firebase ではなく Cloudflare。共有トークンがないと Anthropic へ中継しない。GCP の 1,000 円停止の対象外なので、Anthropic 側の支出上限は人間が別途設定する。 |
 | 29 | REVIEW | DB_QUERY | public/app-dashboard/index.html:167 | accepted | apps 一覧。ルールは canShare(apps__registry) が必要で、未ログインは拒否。件数は社内のアプリ台帳規模。 |
 | 30 | REVIEW | DB_QUERY | public/app-dashboard/index.html:173 | accepted | インデックスが無いときの apps 全件取得。同じ認証と grant が必要。公開コレクションではない。 |

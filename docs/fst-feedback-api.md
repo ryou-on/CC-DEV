@@ -71,10 +71,13 @@
 
 ## デプロイ順
 
-Functions を先にデプロイし、その後に Firestore Rules と Hosting をデプロイします。対象は `fstFeedbackSubmit`、`updateFstFeedback`、`recordFstAnalytics`、`recordFstDevAdmin`、`recordFstSurvey`、`submitFstSurveyAnswer` です。main の Hosting と Rules のワークフローは、デプロイ前にこの6つが本番で ACTIVE かを確認し、無ければ止めます。マージ前にリリースブランチから手動で出します。
+Functions を先にデプロイし、その後に Firestore Rules と Hosting をデプロイします。対象は `fstFeedbackSubmit`、`updateFstFeedback`、`recordFstAnalytics`、`recordFstDevAdmin`、`recordFstSurvey`、`submitFstSurveyAnswer` です。main の Hosting と Rules のワークフローは、デプロイ前にこの6つが本番で ACTIVE かを確認し、無ければ止めます。確認には `cloudfunctions.functions.get` が必要です。Hosting 用のサービスアカウント `FIREBASE_SERVICE_ACCOUNT_CC_DEV_PS7` にこの権限が無いと、毎回 403 で Hosting と Rules のデプロイが止まります。マージ前にリリースブランチから手動で出します。
 
 ```bash
+npm ci --prefix functions
 npx firebase-tools deploy --only functions:fstFeedbackSubmit,functions:updateFstFeedback,functions:recordFstAnalytics,functions:recordFstDevAdmin,functions:recordFstSurvey,functions:submitFstSurveyAnswer --project cc-dev-ps7
 ```
+
+ゲートは `state == ACTIVE` と `updateTime` があることを見ます。ログには `updateTime` と、アップロードされた zip の `sourceGeneration` を出します。この generation はリポジトリのファイルハッシュではないので、git の SHA とは照合しません。SHA まで自動で見るには、デプロイ時にその値を関数の環境変数へ入れる必要があります。
 
 この PR では本番へ出していません。2026-10-21 時点の `https://cc-dev-ps7.web.app/api/fst-feedback` と `/api/fst-analytics` はどちらも 404 です。Rules や画面を先に出すと、直書きは拒否され、送信先がありません。

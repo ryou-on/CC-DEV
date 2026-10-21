@@ -31,7 +31,11 @@
 
 開発版の告知・強制更新（`recordFstDevAdmin`、`/api/fst-admin`）とアンケートの作成・公開（`recordFstSurvey`、`/api/fst-survey`）は編集者だけが書けます。回答（`submitFstSurveyAnswer`、`/api/fst-survey-answer`）は確認済みアカウントが書けます。回答の `uidHash` は認証 uid の SHA-256 先頭16桁で、クライアントが指定した値は未知の項目として拒否します。文書 ID は `{surveyId}_{uidHash}` です。同じ人が二度目を送ると 409 で、先の回答は残ります。`btoa` 方式は使いません。クライアントからの作成・更新・削除はルールで拒否します。読み取りは、告知とアンケートが確認済みアカウント、回答が編集者だけです。
 
-デプロイ順は Functions を先、その後に Firestore Rules と Hosting です。`firebase-hosting-merge.yml` と `firebase-rules-deploy.yml` は、`fstFeedbackSubmit`、`updateFstFeedback`、`recordFstAnalytics` に加えて上の3つが本番で ACTIVE かを確認し、無ければデプロイを止めます。本番の `/api/fst-analytics` は 2026-10-21 時点で 404 です。この作業では関数をデプロイしていません。
+アンケート ID は Firestore の自動 ID（英数字20文字）と、新しい `SV_` 付き ID の両方を受けます。使える文字は英数字、`_`、`-` で、長さは1文字から128文字です。`/` や予約名 `__*__` は拒否します。選択式の回答は保存済みの選択肢と一致する必要があります。強制更新の `minVersion` は SemVer で、前後の空白を除いて40文字までです。先頭の `v` は外して保存します。
+
+IP ごとの回数は X-Forwarded-For の末尾だけを使います。これは Cloud Run が接続元として付けた値です。Hosting 経由では Hosting の出口になることがあり、その場合もブラウザが書いた先頭の値は使いません。
+
+デプロイ順は Functions を先、その後に Firestore Rules と Hosting です。手動デプロイの前に `npm ci --prefix functions` を実行します。`firebase-hosting-merge.yml` と `firebase-rules-deploy.yml` は、`fstFeedbackSubmit`、`updateFstFeedback`、`recordFstAnalytics` に加えて告知とアンケートの3つが本番で ACTIVE かつ `updateTime` を持つかを確認し、無ければデプロイを止めます。Hosting 用サービスアカウントに `cloudfunctions.functions.get` が無いと 403 で毎回止まります。`updateTime` と zip の generation はログに出します。git の SHA とは照合しません。本番の `/api/fst-analytics` は 2026-10-21 時点で 404 です。この作業では関数をデプロイしていません。
 
 編集者判定の正本は `functions/editor-policy.json`。Functions と Rules はどちらもメールの前後空白を除いて小文字比較します。同じケースを両方に流す試験は `functions/editor-policy-cases.json` とエミュレーターです。
 
