@@ -274,7 +274,7 @@ function sendCostError(res, error) {
   const status = error instanceof CostError ? error.httpStatus : 503;
   const code = error instanceof CostError ? error.code : 'COST_GUARD_UNAVAILABLE';
   res.set('Cache-Control', 'no-store');
-  if (status === 429) {
+  if (status === 429 || status === 503) {
     const retry = error instanceof CostError && Number.isSafeInteger(error.retryAfter) && error.retryAfter > 0
       ? error.retryAfter
       : 60;

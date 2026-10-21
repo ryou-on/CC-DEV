@@ -115,9 +115,10 @@
       });
       const body = await res.json().catch(function () { return {}; });
       if (!res.ok) {
-        if (res.status === 429) {
-          window._fstHold = window._fstHold || {};
-          window.fstClientHold.holdUntil(window._fstHold, 'feedback', Date.now(), Number(res.headers.get('Retry-After')));
+        window._fstHold = window._fstHold || {};
+        const retryAfter = window.fstClientHold.retrySeconds(res.headers.get('Retry-After'));
+        if (res.status === 429 || res.status === 503) {
+          window.fstClientHold.holdUntil(window._fstHold, 'feedback', Date.now(), retryAfter);
         }
         const messages = {
           APP_CHECK_REQUIRED: 'App Check がありません',
@@ -130,7 +131,10 @@
           SIGN_IN_REQUIRED: 'ログインしてください',
           EDITOR_REQUIRED: 'この操作は編集者だけが実行できます',
         };
-        throw new Error(messages[body.error] || '送信に失敗しました');
+        const failed = new Error(messages[body.error] || '送信に失敗しました');
+        failed.status = res.status;
+        if (res.status === 429 || res.status === 503) failed.retryAfter = retryAfter;
+        throw failed;
       }
       return body;
     };
@@ -191,8 +195,9 @@
           }),
         });
         const body = await res.json().catch(function () { return {}; });
-        if (window.fstClientHold.warnDroppedAnalytics(res.status, body.error) && res.status === 429) {
-          window.fstClientHold.holdUntil(window._fstHold, 'analytics', Date.now(), Number(res.headers.get('Retry-After')));
+        if (res.status === 429 || res.status === 503) {
+          window.fstClientHold.warnDroppedAnalytics(res.status, body.error);
+          window.fstClientHold.holdUntil(window._fstHold, 'analytics', Date.now(), window.fstClientHold.retrySeconds(res.headers.get('Retry-After')));
         }
       } catch (e) {}
     };
@@ -211,6 +216,7 @@
       if (window.fstClientHold.holding(window._fstHold, path, Date.now())) {
         const held = new Error('FST_API');
         held.status = 429;
+        held.retryAfter = window.fstClientHold.holdRemaining(window._fstHold, path, Date.now());
         throw held;
       }
       const appCheckToken = (await firebase.appCheck().getToken(false)).token;
@@ -226,12 +232,14 @@
       });
       const body = await res.json().catch(function () { return {}; });
       if (!res.ok) {
-        if (res.status === 429) {
-          window.fstClientHold.holdUntil(window._fstHold, path, Date.now(), Number(res.headers.get('Retry-After')));
+        const retryAfter = window.fstClientHold.retrySeconds(res.headers.get('Retry-After'));
+        if (res.status === 429 || res.status === 503) {
+          window.fstClientHold.holdUntil(window._fstHold, path, Date.now(), retryAfter);
         }
         const failed = new Error('FST_API');
         failed.status = res.status;
         failed.code = body.error;
+        if (res.status === 429 || res.status === 503) failed.retryAfter = retryAfter;
         throw failed;
       }
     };
@@ -640,7 +648,7 @@
           "開発版を v0.10.31-dev に上げました。",
           "以前からあるアンケートのIDは、別のIDへ移さずにそのまま受け付けます。",
           "選択式は用意した選択肢だけを受け付けます。強制更新の版番号は40文字までの版数です。",
-          "回数の上限は利用者ごとです。全体の1日あたりは、目安箱200、統計2000、管理500、回答500です。回答の全体は1分60回です。混雑時と保護が使えないときは案内を出して、入力した回答は残します。",
+          "回数の上限は利用者ごとです。全体の1日あたりは、目安箱200、統計2000、管理500、回答500です。回答の全体は1分60回です。混雑時と保護が使えないときは案内を出して、入力した回答は残し、表示された秒数だけ送信ボタンを止めます。",
         ],
       },
       {
@@ -1618,9 +1626,11 @@
       const [text, setText] = useState('');
       const [submitted, setSubmitted] = useState(false);
       const [submitError, setSubmitError] = useState('');
+      const [sendPausedUntil, setSendPausedUntil] = useState(0);
       const isText = survey.type === 'text';
 
       const handleSubmit = async () => {
+        if (window.fstClientHold.sendPaused(sendPausedUntil, Date.now())) return;
         const answer = isText ? text : selected;
         if (!answer) return;
         setSubmitError('');
@@ -1632,6 +1642,11 @@
           setSubmitError(e && (e.status === 429 || (e.status === 503 && e.code === 'COST_GUARD_UNAVAILABLE'))
             ? '混み合っています。少し待ってもう一度送ってください'
             : '送信できませんでした');
+          if (e && (e.status === 429 || e.status === 503)) {
+            const until = window.fstClientHold.pauseSend(Date.now(), e.retryAfter);
+            setSendPausedUntil(until);
+            setTimeout(function () { setSendPausedUntil(0); }, Math.max(0, until - Date.now()));
+          }
         }
       };
 
@@ -1659,7 +1674,7 @@
                 )}
                 {submitError ? <div style={{ fontSize:'11px', color:'#ff6666', marginTop:'8px' }}>{submitError}</div> : null}
                 <div style={{ display:'flex', gap:'8px', marginTop:'16px' }}>
-                  <button onClick={handleSubmit} style={{ background:`${T.accent}22`, border:`1px solid ${T.accent}66`, color:T.accent, padding:'6px 20px', borderRadius:'2px', cursor:'pointer', fontSize:'11px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace" }}>送信</button>
+                  <button onClick={handleSubmit} disabled={window.fstClientHold.sendPaused(sendPausedUntil, Date.now())} style={{ background:`${T.accent}22`, border:`1px solid ${T.accent}66`, color:T.accent, padding:'6px 20px', borderRadius:'2px', cursor:'pointer', fontSize:'11px', fontWeight:700, fontFamily:"'JetBrains Mono',monospace" }}>送信</button>
                   <button onClick={onClose} style={{ background:'transparent', border:`1px solid ${T.border2}`, color:T.textDim, padding:'6px 14px', borderRadius:'2px', cursor:'pointer', fontSize:'11px', fontFamily:"'JetBrains Mono',monospace" }}>スキップ</button>
                 </div>
               </>
@@ -4402,10 +4417,12 @@ HAVE A NICE TRIP！
       const [sending, setSending] = useState(false);
       const [sent,    setSent]    = useState(false);
       const [error,   setError]   = useState('');
+      const [sendPausedUntil, setSendPausedUntil] = useState(0);
       const openedAtMs = useRef(Date.now());
       const faxRef = useRef(null);
 
       const handleSubmit = async () => {
+        if (window.fstClientHold.sendPaused(sendPausedUntil, Date.now())) return;
         if (!subject.trim()) { setError('件名を入力してください'); return; }
         if (!message.trim()) { setError('メッセージを入力してください'); return; }
         if (subject.trim().length > 200) { setError('件名は200文字以内です'); return; }
@@ -4432,7 +4449,14 @@ HAVE A NICE TRIP！
             } catch(e) { console.warn('Auto-reply failed:', e); }
           }
           setSent(true);
-        } catch(e) { setError(e.message || '送信に失敗しました'); }
+        } catch(e) {
+          setError(e.message || '送信に失敗しました');
+          if (e && (e.status === 429 || e.status === 503)) {
+            const until = window.fstClientHold.pauseSend(Date.now(), e.retryAfter);
+            setSendPausedUntil(until);
+            setTimeout(function () { setSendPausedUntil(0); }, Math.max(0, until - Date.now()));
+          }
+        }
         finally { setSending(false); }
       };
 
@@ -4481,7 +4505,7 @@ HAVE A NICE TRIP！
               {error && <div style={{ fontSize:"10px", color:"#ff6666", marginBottom:"12px" }}>{error}</div>}
               <div style={{ display:"flex", justifyContent:"flex-end", gap:"8px" }}>
                 <button onClick={onClose} style={{ background:"transparent", border:`1px solid ${T.border2}`, color:T.textDim, padding:"8px 16px", borderRadius:"3px", cursor:"pointer", fontSize:"11px", fontFamily:"inherit" }}>キャンセル</button>
-                <button onClick={handleSubmit} disabled={sending}
+                <button onClick={handleSubmit} disabled={sending || window.fstClientHold.sendPaused(sendPausedUntil, Date.now())}
                   style={{ background:`${T.accent}18`, border:`1px solid ${T.accent}55`, color:T.accent, padding:"8px 20px", borderRadius:"3px", cursor:"pointer", fontSize:"11px", fontWeight:700, fontFamily:"inherit", opacity:sending?0.6:1 }}>
                   {sending ? "送信中..." : "送信"}
                 </button>
