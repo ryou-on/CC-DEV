@@ -93,6 +93,12 @@ def scan(root):
         server = rel.startswith(('functions/', 'api/')) or '/worker/' in rel or '/api/' in rel
         if server and re.search(r'\bonRequest\s*\(|async\s+fetch\s*\(', text):
             add('review', 'HTTP_SERVER', rel, 1, '認証・App Check・全体/利用者クォータ・停止経路・同時実行制限を実機検証')
+        if rel in FST_ONE_INSTANCE:
+            one = re.search(r'maxInstances:\s*1\b', text)
+            other = re.search(r'maxInstances:\s*(?!1\b)\d+', text)
+            if not one or other:
+                line = text[:((other or one).start() if (other or one) else 0)].count('\n') + 1
+                add('error', 'FST_MAX_INSTANCES', rel, line, 'Flight Strip の6関数は maxInstances 1。戻すと待ちがインスタンスごとに分かれる')
         if server and "rate limit bookkeeping failed" in text:
             # Known CC-DEV fail-open implementation. A throw in the catch is mandatory.
             m = re.search(r"console\.error\([^;]*rate limit bookkeeping failed[^;]*;([^}]*?)\}", text, re.S)
@@ -138,7 +144,12 @@ def validate_policy(policy, digest, today):
     return errors
 
 
-ERROR_RULES = {'PUBLIC_WRITE', 'QUOTA_FAIL_OPEN', 'CACHE_BUSTER', 'EMPTY_SCAN'}
+ERROR_RULES = {'PUBLIC_WRITE', 'QUOTA_FAIL_OPEN', 'CACHE_BUSTER', 'EMPTY_SCAN', 'FST_MAX_INSTANCES'}
+FST_ONE_INSTANCE = {
+    'functions/fst-analytics.js',
+    'functions/fst-dev-admin.js',
+    'functions/fst-feedback.js',
+}
 
 
 def accept_reviews(findings, policy):

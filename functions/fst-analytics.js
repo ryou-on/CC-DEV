@@ -3,7 +3,8 @@
 const crypto = require('node:crypto');
 const { onRequest } = require('firebase-functions/v2/https');
 const {
-  getGuard, sendCostError, CostError, periodKeys, rateOf, reserveFst, consumeUserAttempt, rejectIfFstHeld, holdFstRejection,
+  getGuard, sendCostError, CostError, periodKeys, rateOf, reserveFst, consumeUserAttempt, holdFstRejection,
+  rejectIfServicePaused, browserOrigins,
 } = require('./cost-guard');
 const { sourceRev } = require('./fst-rev');
 const APPS = Object.freeze({
@@ -49,11 +50,6 @@ function parseInput(body) {
   return input;
 }
 
-async function assertBudgetOpen(db) {
-  const global = await db.doc('costControls/global').get();
-  if (!global.exists || global.data()?.enabled !== true) throw new CostError(503, 'SERVICE_PAUSED');
-}
-
 function createFstAnalyticsHandler({
   authorize, db, now = Date.now, serverTimestamp, limits = rateOf('fstAnalytics'), holdScope = '',
 }) {
@@ -65,11 +61,10 @@ function createFstAnalyticsHandler({
       const input = parseInput(req.body);
       const at = now();
       const holdKey = `${holdScope}an\0${actor.uid}`;
-      rejectIfFstHeld(holdScope, holdKey, at);
-      await assertBudgetOpen(db);
+      const user = hashId(actor.uid);
+      await rejectIfServicePaused(db, holdScope, holdKey, at, `an_u_${user}`, limits);
       const keys = periodKeys(at);
       const minute = Math.floor(at / 60000);
-      const user = hashId(actor.uid);
       try {
         await consumeUserAttempt(db, `an_u_${user}`, limits, at);
       } catch (error) {
@@ -110,7 +105,7 @@ function createFstAnalyticsHandler({
 
 const REQUEST_OPTIONS = {
   region: 'asia-northeast1',
-  cors: ['https://cc-dev-ps7.web.app', 'https://cc-dev-ps7.firebaseapp.com'],
+  cors: browserOrigins(),
   timeoutSeconds: 20,
   memory: '256MiB',
   maxInstances: 1,

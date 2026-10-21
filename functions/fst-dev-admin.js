@@ -3,7 +3,8 @@
 const crypto = require('node:crypto');
 const { onRequest } = require('firebase-functions/v2/https');
 const {
-  getGuard, sendCostError, CostError, periodKeys, rateOf, reserveFst, consumeUserAttempt, rejectIfFstHeld, holdFstRejection,
+  getGuard, sendCostError, CostError, periodKeys, rateOf, reserveFst, consumeUserAttempt, holdFstRejection,
+  rejectIfServicePaused, browserOrigins,
 } = require('./cost-guard');
 const { isEditorEmail } = require('./editor-policy');
 const { sourceRev } = require('./fst-rev');
@@ -17,7 +18,7 @@ const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]{1,20}
 const MIN_VERSION_MAX = 40;
 const REQUEST_OPTIONS = {
   region: 'asia-northeast1',
-  cors: ['https://cc-dev-ps7.web.app', 'https://cc-dev-ps7.firebaseapp.com'],
+  cors: browserOrigins(),
   timeoutSeconds: 20,
   memory: '256MiB',
   maxInstances: 1,
@@ -67,16 +68,10 @@ function text(value, max, { empty = false } = {}) {
   return out;
 }
 
-async function assertBudgetOpen(db) {
-  const global = await db.doc('costControls/global').get();
-  if (!global.exists || global.data()?.enabled !== true) throw new CostError(503, 'SERVICE_PAUSED');
-}
-
 async function withLimit(db, actor, prefix, limits, now, write, holdScope) {
   const holdKey = `${holdScope}${prefix}\0${actor.uid}`;
-  rejectIfFstHeld(holdScope, holdKey, now);
-  await assertBudgetOpen(db);
   const user = hashId(actor.uid);
+  await rejectIfServicePaused(db, holdScope, holdKey, now, `${prefix}_u_${user}`, limits);
   try {
     await consumeUserAttempt(db, `${prefix}_u_${user}`, limits, now);
   } catch (error) {

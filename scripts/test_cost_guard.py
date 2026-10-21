@@ -143,6 +143,12 @@ class CostGateTest(unittest.TestCase):
         r = subprocess.run([sys.executable, str(Path(guard.__file__)), '--root', str(self.root), '--check'], capture_output=True)
         self.assertEqual(1, r.returncode)
 
+    def test_flight_strip_max_instances_must_stay_one(self):
+        self.put('functions/fst-feedback.js', "exports.fstFeedbackSubmit = onRequest({ maxInstances: 2 }, handler);\n")
+        self.assertIn('FST_MAX_INSTANCES', self.codes())
+        self.put('functions/fst-feedback.js', "exports.fstFeedbackSubmit = onRequest({ maxInstances: 1 }, handler);\n")
+        self.assertNotIn('FST_MAX_INSTANCES', self.codes())
+
     def test_errors_cannot_be_waived_by_review(self):
         self.put('firestore.rules', 'allow write: if true;')
         p = self.policy()

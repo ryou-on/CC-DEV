@@ -53,13 +53,20 @@
     firebase.initializeApp(firebaseConfig);
     window._auth = firebase.auth();
     window._db   = firebase.firestore();
+    window.fstE2eEmulator = function () {
+      return window.__FST_E2E_EMULATOR === '1' && (location.hostname === 'localhost' || location.hostname === '127.0.0.1');
+    };
+    if (window.fstE2eEmulator()) {
+      firebase.auth().useEmulator('http://127.0.0.1:9099');
+      firebase.firestore().useEmulator('127.0.0.1', 8080);
+    }
     window.submitFstFeedback = async function (payload) {
       const user = firebase.auth().currentUser;
       if (!user || user.isAnonymous || user.emailVerified !== true) {
         throw new Error('確認済みのアカウントでログインしてください');
       }
-      let appCheckToken = '';
-      try {
+      let appCheckToken = window.fstE2eEmulator() ? window.__FST_APPCHECK_DEBUG_TOKEN : '';
+      if (!appCheckToken) try {
         const cfgRes = await fetch('/shared/cost-access-config.json', { cache: 'no-store' });
         if (!cfgRes.ok) throw new Error('missing');
         const cfg = await cfgRes.json();
@@ -151,16 +158,19 @@
         if (window.fstClientHold.holding(window._fstHold, 'analytics', Date.now())) return;
         const user = firebase.auth().currentUser;
         if (!user || user.isAnonymous || user.emailVerified !== true) return;
-        if (!window._fstAppCheckReady) {
-          const cfgRes = await fetch('/shared/cost-access-config.json', { cache: 'no-store' });
-          if (!cfgRes.ok) return;
-          const cfg = await cfgRes.json();
-          if (!cfg || !cfg.recaptchaEnterpriseSiteKey) return;
-          firebase.appCheck().activate(new firebase.appCheck.ReCaptchaEnterpriseProvider(cfg.recaptchaEnterpriseSiteKey), true);
-          window._fstAppCheckReady = true;
+        let appCheckToken = window.fstE2eEmulator() ? window.__FST_APPCHECK_DEBUG_TOKEN : '';
+        if (!appCheckToken) {
+          if (!window._fstAppCheckReady) {
+            const cfgRes = await fetch('/shared/cost-access-config.json', { cache: 'no-store' });
+            if (!cfgRes.ok) return;
+            const cfg = await cfgRes.json();
+            if (!cfg || !cfg.recaptchaEnterpriseSiteKey) return;
+            firebase.appCheck().activate(new firebase.appCheck.ReCaptchaEnterpriseProvider(cfg.recaptchaEnterpriseSiteKey), true);
+            window._fstAppCheckReady = true;
+          }
+          appCheckToken = (await firebase.appCheck().getToken(false)).token;
+          if (!appCheckToken) return;
         }
-        const appCheckToken = (await firebase.appCheck().getToken(false)).token;
-        if (!appCheckToken) return;
         const res = await fetch('/api/fst-analytics', {
           method: 'POST',
           cache: 'no-store',

@@ -195,6 +195,36 @@ test('a closed budget returns 503 before an event is stored', async () => {
   assert.equal(saved(db).length, 0);
 });
 
+test('a paused budget consumes one user attempt and then stops reading', async () => {
+  const { db, handler } = setup({
+    records: { 'costControls/global': { enabled: false } },
+    holdScope: 'paused-reads:',
+  });
+  const seen = watch(db);
+  const first = response();
+  await handler(request(payload), first);
+  assert.equal(first.statusCode, 503);
+  assert.equal(first.body.error, 'SERVICE_PAUSED');
+  assert.equal(first.headers['Retry-After'], '60');
+  assert.equal(saved(db).length, 0);
+  const user = [...db.records.entries()].find(([name]) => name.includes('/an_u_'));
+  assert.equal(user[1].dayCount, 1);
+  assert.equal(user[1].minuteCount, 1);
+  const gets = seen.gets;
+  const transactions = seen.transactions;
+  assert.equal(gets > 0, true);
+  for (let i = 0; i < 50; i += 1) {
+    const again = response();
+    await handler(request(payload), again);
+    assert.equal(again.statusCode, 429);
+    assert.equal(again.headers['Retry-After'], '60');
+  }
+  assert.equal(seen.gets, gets);
+  assert.equal(seen.transactions, transactions);
+  assert.equal(saved(db).length, 0);
+  assert.equal(user[1].dayCount, 1);
+});
+
 test('a guard failure returns 503 with Retry-After', async () => {
   const { db, handler } = setup();
   const orig = db.doc.bind(db);

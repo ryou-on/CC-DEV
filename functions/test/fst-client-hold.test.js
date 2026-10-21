@@ -35,6 +35,15 @@ test('the send button stays disabled for the retry window', () => {
   }
 });
 
+test('the auth emulator is wired only for a localhost e2e flag', () => {
+  for (const file of ['../../public/Flight_Strip_TODO_dev/index.html', '../../public/Flight_Strip_TODO/index.html']) {
+    const html = fs.readFileSync(path.join(__dirname, file), 'utf8');
+    assert.match(html, /__FST_E2E_EMULATOR === '1' && \(location\.hostname === 'localhost' \|\| location\.hostname === '127\.0\.0\.1'\)/);
+    assert.match(html, /if \(window\.fstE2eEmulator\(\)\) \{\s*firebase\.auth\(\)\.useEmulator\('http:\/\/127\.0\.0\.1:9099'\)/);
+    assert.equal(html.includes("useEmulator('https://"), false);
+  }
+});
+
 test('the six flight strip functions run on one instance', () => {
   const names = ['fstFeedbackSubmit', 'updateFstFeedback', 'recordFstAnalytics', 'recordFstDevAdmin', 'recordFstSurvey', 'submitFstSurveyAnswer'];
   const files = {
@@ -68,9 +77,10 @@ test('a dropped analytics event is warned and not silent', () => {
   assert.equal(hold.warnDroppedAnalytics(429, line => lines.push(line)), true);
   assert.equal(hold.warnDroppedAnalytics(503, 'COST_GUARD_UNAVAILABLE', line => lines.push(line)), true);
   assert.equal(hold.warnDroppedAnalytics(503, 'SERVICE_PAUSED', line => lines.push(line)), false);
-  assert.equal(lines.length, 2);
-  assert.match(lines[0], /混み合ったときは統計が実際より少なく出ることがある/);
-  assert.match(lines[1], /混み合ったときは統計が実際より少なく出ることがある/);
+  assert.equal(hold.warnDroppedAnalytics(503, undefined, line => lines.push(line)), true);
+  assert.equal(hold.warnDroppedAnalytics(429, '', line => lines.push(line)), true);
+  assert.equal(lines.length, 4);
+  lines.forEach(line => assert.match(line, /混み合ったときは統計が実際より少なく出ることがある/));
 });
 
 function feedbackSubmit(html) {
