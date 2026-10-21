@@ -73,44 +73,98 @@ function retryAfterSeconds(now, slotId) {
   return Math.max(1, Math.ceil((nextMinute - now) / 1000));
 }
 
-const fstHolds = new Map();
+const fstHoldScopes = new Map();
+const FST_HOLD_MAX = 1000;
 
-function clearFstHolds() {
-  fstHolds.clear();
+function holdsFor(scope) {
+  const id = String(scope || '');
+  let map = fstHoldScopes.get(id);
+  if (!map) {
+    map = new Map();
+    fstHoldScopes.set(id, map);
+  }
+  return map;
 }
 
-function fstHoldRemaining(key, now) {
-  const until = fstHolds.get(key);
-  if (until == null) return 0;
-  if (until <= now) {
-    fstHolds.delete(key);
-    return 0;
+function clearFstHolds() {
+  fstHoldScopes.clear();
+}
+
+function sweepFstHolds(now, scope) {
+  const map = holdsFor(scope);
+  for (const [key, until] of map) {
+    if (until <= now) map.delete(key);
   }
+}
+
+function fstHoldRemaining(scope, key, now) {
+  const map = holdsFor(scope);
+  sweepFstHolds(now, scope);
+  const until = map.get(key);
+  if (until == null) return 0;
   return Math.max(1, Math.ceil((until - now) / 1000));
 }
 
-function rememberFstHold(key, now, seconds) {
+function rememberFstHold(scope, key, now, seconds) {
+  const map = holdsFor(scope);
+  sweepFstHolds(now, scope);
   const wait = Number.isSafeInteger(seconds) && seconds > 0 ? seconds : 60;
-  fstHolds.set(key, now + wait * 1000);
+  if (!map.has(key) && map.size >= FST_HOLD_MAX) {
+    map.delete(map.keys().next().value);
+  }
+  map.set(key, now + wait * 1000);
 }
 
-function rejectIfFstHeld(key, now) {
-  const wait = fstHoldRemaining(key, now);
+function rejectIfFstHeld(scope, key, now) {
+  const wait = fstHoldRemaining(scope, key, now);
   if (wait <= 0) return;
   const err = new CostError(429, 'USAGE_LIMIT');
   err.retryAfter = wait;
   throw err;
 }
 
-function holdFstRejection(key, now, error) {
+function holdFstRejection(scope, key, now, error) {
   if (error instanceof CostError && error.httpStatus === 429) {
-    rememberFstHold(key, now, error.retryAfter);
+    rememberFstHold(scope, key, now, error.retryAfter);
   }
   throw error;
 }
 
-// Read every counter, then decide. A rejection writes nothing. Acceptance writes every
-// counter and the handler payload in the same transaction. All reads happen before any set.
+// One document holds both the minute and the day attempt counts. Read it before the
+// heavy transaction. At the cap, write nothing and let the caller enter the wait.
+async function consumeUserAttempt(db, id, limits, now) {
+  const keys = periodKeys(now);
+  const minute = Math.floor(now / 60000);
+  const ref = db.doc(`fstRateLimits/${id}`);
+  await db.runTransaction(async tx => {
+    const snap = await tx.get(ref);
+    const data = snap.exists ? snap.data() : null;
+    if (data && (!Number.isSafeInteger(data.minuteCount) || data.minuteCount < 0
+        || !Number.isSafeInteger(data.dayCount) || data.dayCount < 0)) {
+      throw new CostError(503, 'INVALID_QUOTA_STATE');
+    }
+    const minuteCount = data && data.minute === minute ? data.minuteCount : 0;
+    const dayCount = data && data.day === keys.day ? data.dayCount : 0;
+    if (minuteCount >= limits.userMinute || dayCount >= limits.userDay) {
+      const err = new CostError(429, 'USAGE_LIMIT');
+      err.retryAfter = dayCount >= limits.userDay
+        ? retryAfterSeconds(now, `${id}_d_${keys.day}`)
+        : retryAfterSeconds(now, `${id}_m_${minute}`);
+      throw err;
+    }
+    tx.set(ref, {
+      minute,
+      minuteCount: minuteCount + 1,
+      day: keys.day,
+      dayCount: dayCount + 1,
+      updatedAtMs: now,
+      expiresAt: new Date(now + 3 * 24 * 60 * 60 * 1000),
+    });
+  });
+}
+
+// Read every global counter, then decide. A rejection writes nothing in this transaction.
+// Acceptance writes the global counters and the handler payload together. All reads happen before any set.
 async function reserveFst(db, slots, now, write) {
   return db.runTransaction(async tx => {
     const refs = slots.map(slot => db.doc(`fstRateLimits/${slot.id}`));
@@ -245,5 +299,6 @@ function getGuard() {
 
 module.exports = {
   createGuard, getGuard, CostError, sendCostError, periodKeys, rateOf, LIMITS,
-  retryAfterSeconds, reserveFst, clearFstHolds, rejectIfFstHeld, holdFstRejection,
+  retryAfterSeconds, reserveFst, consumeUserAttempt, clearFstHolds, rejectIfFstHeld, holdFstRejection,
+  sweepFstHolds, rememberFstHold, FST_HOLD_MAX,
 };

@@ -3,7 +3,7 @@
 const crypto = require('node:crypto');
 const { onRequest } = require('firebase-functions/v2/https');
 const {
-  getGuard, sendCostError, CostError, periodKeys, rateOf, reserveFst, rejectIfFstHeld, holdFstRejection,
+  getGuard, sendCostError, CostError, periodKeys, rateOf, reserveFst, consumeUserAttempt, rejectIfFstHeld, holdFstRejection,
 } = require('./cost-guard');
 const { sourceRev } = require('./fst-rev');
 const { isEditorEmail } = require('./editor-policy');
@@ -111,17 +111,20 @@ function createFstFeedbackHandler({
       const at = now();
       const input = parseInput(req.body, at);
       const holdKey = `${holdScope}fb\0${actor.uid}`;
-      rejectIfFstHeld(holdKey, at);
+      rejectIfFstHeld(holdScope, holdKey, at);
       await assertBudgetOpen(db);
       const keys = periodKeys(at);
       const minute = Math.floor(at / 60000);
       const user = hashId(actor.uid);
+      try {
+        await consumeUserAttempt(db, `u_${user}`, limits, at);
+      } catch (error) {
+        holdFstRejection(holdScope, holdKey, at, error);
+      }
       const content = hashId(`${input.appId}\0${input.subject}\0${input.message}`);
       let saved;
       try {
         saved = await reserveFst(db, [
-          { id: `u_${user}_m_${minute}`, limit: limits.userMinute },
-          { id: `u_${user}_d_${keys.day}`, limit: limits.userDay },
           { id: `g_m_${minute}`, limit: limits.globalMinute },
           { id: `g_d_${keys.day}`, limit: limits.globalDay },
         ], at, async tx => {
@@ -166,7 +169,7 @@ function createFstFeedbackHandler({
           return { fbId };
         });
       } catch (error) {
-        holdFstRejection(holdKey, at, error);
+        holdFstRejection(holdScope, holdKey, at, error);
       }
       res.set('Cache-Control', 'no-store');
       res.status(201).json({ ok: true, fbId: saved.fbId, feedbackId: saved.fbId, status: 'unreviewed' });

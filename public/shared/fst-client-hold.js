@@ -15,13 +15,22 @@
     return map[key];
   }
 
-  function crowdedAnswerMessage(status) {
-    return status === 429 ? '混み合っています。少し待ってもう一度送ってください' : '';
+  function crowdedAnswerMessage(status, code) {
+    if (status === 429 || (status === 503 && code === 'COST_GUARD_UNAVAILABLE')) {
+      return '混み合っています。少し待ってもう一度送ってください';
+    }
+    return '';
   }
 
-  function warnDroppedAnalytics(status, warn) {
-    if (status !== 429) return false;
-    (warn || console.warn)('混み合ったときは統計が実際より少なく出ることがある');
+  function warnDroppedAnalytics(status, code, warn) {
+    var log = warn;
+    var errorCode = code;
+    if (typeof code === 'function') {
+      log = code;
+      errorCode = '';
+    }
+    if (status !== 429 && !(status === 503 && errorCode === 'COST_GUARD_UNAVAILABLE')) return false;
+    (log || console.warn)('混み合ったときは統計が実際より少なく出ることがある');
     return true;
   }
 

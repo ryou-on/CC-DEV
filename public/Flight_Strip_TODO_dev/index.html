@@ -124,6 +124,7 @@
           INVALID_APP_CHECK: 'App Check を確認できませんでした',
           VERIFIED_ACCOUNT_REQUIRED: '確認済みアカウントが必要です',
           USAGE_LIMIT: '送信回数の上限です。時間をおいて再試行してください',
+          COST_GUARD_UNAVAILABLE: '混み合っています。少し待ってもう一度送ってください',
           SERVICE_PAUSED: '予算停止中のため送信できません',
           INVALID_FEEDBACK: '入力内容を確認してください',
           SIGN_IN_REQUIRED: 'ログインしてください',
@@ -189,8 +190,8 @@
             device: payload.device,
           }),
         });
-        if (res.status === 429) {
-          window.fstClientHold.warnDroppedAnalytics(res.status);
+        const body = await res.json().catch(function () { return {}; });
+        if (window.fstClientHold.warnDroppedAnalytics(res.status, body.error) && res.status === 429) {
           window.fstClientHold.holdUntil(window._fstHold, 'analytics', Date.now(), Number(res.headers.get('Retry-After')));
         }
       } catch (e) {}
@@ -223,12 +224,14 @@
         },
         body: JSON.stringify(payload),
       });
+      const body = await res.json().catch(function () { return {}; });
       if (!res.ok) {
         if (res.status === 429) {
           window.fstClientHold.holdUntil(window._fstHold, path, Date.now(), Number(res.headers.get('Retry-After')));
         }
         const failed = new Error('FST_API');
         failed.status = res.status;
+        failed.code = body.error;
         throw failed;
       }
     };
@@ -637,7 +640,7 @@
           "開発版を v0.10.31-dev に上げました。",
           "以前からあるアンケートのIDは、別のIDへ移さずにそのまま受け付けます。",
           "選択式は用意した選択肢だけを受け付けます。強制更新の版番号は40文字までの版数です。",
-          "回数の上限は利用者ごとです。全体の1日あたりは、目安箱200、統計2000、管理500、回答500です。回答の全体は1分60回です。混雑時は案内を出して、入力した回答は残します。",
+          "回数の上限は利用者ごとです。全体の1日あたりは、目安箱200、統計2000、管理500、回答500です。回答の全体は1分60回です。混雑時と保護が使えないときは案内を出して、入力した回答は残します。",
         ],
       },
       {
@@ -1626,7 +1629,7 @@
           localStorage.setItem('fst_survey_answered_' + survey.id, '1');
           setSubmitted(true);
         } catch (e) {
-          setSubmitError(e && e.status === 429
+          setSubmitError(e && (e.status === 429 || (e.status === 503 && e.code === 'COST_GUARD_UNAVAILABLE'))
             ? '混み合っています。少し待ってもう一度送ってください'
             : '送信できませんでした');
         }
@@ -7813,6 +7816,6 @@ body{font-family:'Courier New',monospace;font-size:11px;color:#111;background:#f
     })();
   </script>
 
-<script src="/shared/info-dialog.js" data-name-target="[data-cost-name]" data-version-target="[data-cost-version]" data-version="v0.10.31-dev" data-manual="Googleでログインしてタスクを作成し、ストリップを移動して進捗を管理します。J/Kで移動、Nで新規作成、?でショートカットを表示します。詳しい操作は下の取扱説明書をご覧ください。" data-manual-link="manual.html" data-changes="v0.10.31-dev。既存のアンケートIDもそのまま受け付けます。回数の上限は利用者ごとと全体です。"></script>
+<script src="/shared/info-dialog.js" data-name-target="[data-cost-name]" data-version-target="[data-cost-version]" data-version="v0.10.31-dev" data-manual="Googleでログインしてタスクを作成し、ストリップを移動して進捗を管理します。J/Kで移動、Nで新規作成、?でショートカットを表示します。詳しい操作は下の取扱説明書をご覧ください。" data-manual-link="manual.html" data-changes="v0.10.31-dev。既存のアンケートIDもそのまま受け付けます。回数の上限は利用者ごとと全体です。保護が使えないときも案内を出して入力は残します。"></script>
 </body>
 </html>

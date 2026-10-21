@@ -275,6 +275,7 @@ test('survey ids outside firestore-safe characters are rejected', async () => {
     assert.equal(res.statusCode, 400, surveyId);
   }
   assert.equal([...editor.db.records.keys()].some(key => key.startsWith('fst_surveys/')), false);
+  assert.equal([...editor.db.records.keys()].some(key => key.startsWith('fstRateLimits/')), false);
 });
 
 test('an options answer must be one of the choices', async () => {
@@ -323,7 +324,9 @@ test('a closed budget and the minute cap stop answers', async () => {
   const closed = response();
   await paused.handler(request({ surveyId: SURVEY, answer: 'はい' }), closed);
   assert.equal(closed.statusCode, 503);
+  assert.equal(closed.body.error, 'SERVICE_PAUSED');
   assert.equal([...paused.db.records.keys()].some(key => key.startsWith('fst_survey_answers/')), false);
+  assert.equal([...paused.db.records.keys()].some(key => key.startsWith('fstRateLimits/')), false);
 
   const other = 'SV_' + 'b'.repeat(16);
   const { db, handler } = setup(createFstSurveyAnswerHandler, {
@@ -416,22 +419,25 @@ test('a rejected broadcast writes nothing', async () => {
     email: 'person@splineglobal.com',
     records: { [key]: { count: limits.globalDay, updatedAtMs: NOW } },
   });
-  const before = JSON.stringify([...db.records.entries()]);
   const res = response();
   await handler(request({ kind: 'broadcast', active: true, title: '告知', message: '本文' }), res);
   assert.equal(res.statusCode, 429);
   assert.equal(res.headers['Retry-After'], String(retryAfterSeconds(NOW, `adm_g_d_${day}`)));
   assert.equal(db.records.has('fst_admin/broadcast'), false);
-  assert.equal(JSON.stringify([...db.records.entries()]), before);
+  assert.equal(db.records.get(key).count, limits.globalDay);
+  const user = [...db.records.entries()].find(([name]) => name.includes('/adm_u_'));
+  assert.equal(user[1].dayCount, 1);
 });
 
-test('a missing survey activation writes nothing', async () => {
+test('a missing survey activation spends a user attempt and writes no survey', async () => {
   const { db, handler } = setup(createFstSurveyHandler, { email: 'person@splineglobal.com' });
   const res = response();
   await handler(request({ kind: 'setActive', surveyId: SURVEY, active: true }), res);
   assert.equal(res.statusCode, 404);
-  assert.equal([...db.records.keys()].some(key => key.startsWith('fstRateLimits/')), false);
   assert.equal(db.records.has(`fst_surveys/${SURVEY}`), false);
+  assert.equal([...db.records.keys()].some(key => key.includes('sv_active_g_')), false);
+  const user = [...db.records.entries()].find(([name]) => name.includes('/sv_active_u_'));
+  assert.equal(user[1].dayCount, 1);
 });
 
 test('a rejected answer writes nothing and a repeat does not read', async () => {
@@ -453,14 +459,156 @@ test('a rejected answer writes nothing and a repeat does not read', async () => 
   assert.equal(first.headers['Retry-After'], String(retryAfterSeconds(NOW, slot)));
   assert.equal(Number(first.headers['Retry-After']) > 60, true);
   assert.equal([...db.records.keys()].some(name => name.startsWith('fst_survey_answers/')), false);
-  assert.equal([...db.records.keys()].some(name => name.includes('ans_u_')), false);
-  assert.equal(JSON.stringify([...db.records.entries()]), before);
+  assert.equal(db.records.get(key).count, limits.globalDay);
+  const user = [...db.records.entries()].find(([name]) => name.includes('/ans_u_'));
+  assert.equal(user[1].dayCount, 1);
   const gets = seen.gets;
   const transactions = seen.transactions;
-  assert.equal(transactions, 1);
+  assert.equal(transactions, 2);
+  const held = JSON.stringify([...db.records.entries()]);
   const second = response();
   await handler(request({ surveyId: SURVEY, answer: 'はい' }), second);
   assert.equal(second.statusCode, 429);
   assert.equal(seen.gets, gets);
   assert.equal(seen.transactions, transactions);
+  assert.equal(JSON.stringify([...db.records.entries()]), held);
+  assert.notEqual(held, before);
+});
+
+test('a failed attempt spends one user slot and does not spend the global cap', async () => {
+  const mismatch = setup(createFstSurveyAnswerHandler, {
+    records: { [`fst_surveys/${SURVEY}`]: { active: true, type: 'options', options: ['はい', 'いいえ'] } },
+    holdScope: 'attempt-400:',
+  });
+  const bad = response();
+  await mismatch.handler(request({ surveyId: SURVEY, answer: 'どちらでもない' }), bad);
+  assert.equal(bad.statusCode, 400);
+  assert.equal(bad.body.error, 'INVALID_ANSWER');
+  const mismatchUser = [...mismatch.db.records.entries()].find(([name]) => name.includes('/ans_u_'));
+  assert.equal(mismatchUser[1].dayCount, 1);
+  assert.equal([...mismatch.db.records.keys()].some(name => name.includes('ans_g_')), false);
+  assert.equal([...mismatch.db.records.keys()].some(name => name.startsWith('fst_survey_answers/')), false);
+
+  const duplicate = setup(createFstSurveyAnswerHandler, {
+    records: { [`fst_surveys/${SURVEY}`]: { active: true, type: 'text' } },
+    holdScope: 'attempt-409:',
+  });
+  await duplicate.handler(request({ surveyId: SURVEY, answer: '1' }), response());
+  const again = response();
+  await duplicate.handler(request({ surveyId: SURVEY, answer: '2' }), again);
+  assert.equal(again.statusCode, 409);
+  const dupUser = [...duplicate.db.records.entries()].find(([name]) => name.includes('/ans_u_'));
+  const dupGlobal = [...duplicate.db.records.entries()].find(([name]) => name.includes('ans_g_d_'));
+  assert.equal(dupUser[1].dayCount, 2);
+  assert.equal(dupGlobal[1].count, 1);
+  assert.equal(duplicate.db.records.get(`fst_survey_answers/${SURVEY}_${uidHash('user-1')}`).answer, '1');
+});
+
+test('the user cap is counted before the heavy transaction and then waits', async () => {
+  let clock = NOW;
+  const { db, handler } = setup(createFstSurveyAnswerHandler, {
+    records: { [`fst_surveys/${SURVEY}`]: { active: true, type: 'text' } },
+    limits: { ...rateOf('fstSurveyAnswer'), userMinute: 1 },
+    now: () => clock,
+    holdScope: 'user-cap-before:',
+  });
+  const seen = watch(db);
+  const saved = response();
+  await handler(request({ surveyId: SURVEY, answer: '1' }), saved);
+  assert.equal(saved.statusCode, 201);
+  assert.equal(seen.transactions, 2);
+  const gets = seen.gets;
+  const transactions = seen.transactions;
+  const limited = response();
+  await handler(request({ surveyId: SURVEY, answer: '2' }), limited);
+  assert.equal(limited.statusCode, 429);
+  assert.equal(limited.headers['Retry-After'], '60');
+  assert.equal(seen.transactions, transactions + 1);
+  assert.equal(seen.gets, gets + 1);
+  assert.equal(db.records.get(`fst_survey_answers/${SURVEY}_${uidHash('user-1')}`).answer, '1');
+  const user = [...db.records.entries()].find(([name]) => name.includes('/ans_u_'));
+  assert.equal(user[1].minuteCount, 1);
+  const heldGets = seen.gets;
+  const heldTx = seen.transactions;
+  const repeat = response();
+  await handler(request({ surveyId: SURVEY, answer: '3' }), repeat);
+  assert.equal(repeat.statusCode, 429);
+  assert.equal(seen.gets, heldGets);
+  assert.equal(seen.transactions, heldTx);
+  clock = NOW + 60 * 1000;
+  const next = response();
+  await handler(request({ surveyId: SURVEY, answer: '4' }), next);
+  assert.equal(next.statusCode, 409);
+  assert.equal(seen.transactions, heldTx + 2);
+  const globalDay = [...db.records.entries()].find(([name]) => name.includes('ans_g_d_'));
+  assert.equal(globalDay[1].count, 1);
+});
+
+test('an already answered survey at five per second stays inside the free read tier', async () => {
+  const hash = uidHash('user-1');
+  const answerId = `fst_survey_answers/${SURVEY}_${hash}`;
+  let clock = NOW;
+  const { db, handler } = setup(createFstSurveyAnswerHandler, {
+    records: {
+      [`fst_surveys/${SURVEY}`]: { active: true, type: 'text' },
+      [answerId]: { surveyId: SURVEY, uidHash: hash, answer: '済', answeredAt: 'server-time' },
+    },
+    now: () => clock,
+    holdScope: 'hammer:',
+  });
+  let reads = 0;
+  let writes = 0;
+  const origDoc = db.doc.bind(db);
+  db.doc = path => {
+    const ref = origDoc(path);
+    const origGet = ref.get.bind(ref);
+    ref.get = async () => {
+      reads += 1;
+      return origGet();
+    };
+    return ref;
+  };
+  const origTx = db.runTransaction.bind(db);
+  db.runTransaction = fn => origTx(async tx => {
+    const origGet = tx.get.bind(tx);
+    const origSet = tx.set.bind(tx);
+    tx.get = async ref => {
+      reads += 1;
+      return origGet(ref);
+    };
+    tx.set = (ref, value, options) => {
+      writes += 1;
+      return origSet(ref, value, options);
+    };
+    return fn(tx);
+  });
+  const perSecond = 5;
+  const calls = 6 * 60 * perSecond + perSecond;
+  for (let i = 0; i < calls; i += 1) {
+    clock = NOW + Math.floor(i / perSecond) * 1000;
+    const res = response();
+    await handler(request({ surveyId: SURVEY, answer: '再送' }), res);
+    if (i === 1505) {
+      assert.equal(res.statusCode, 429);
+      assert.equal(Number(res.headers['Retry-After']) > 60, true);
+    }
+  }
+  assert.equal(reads, 192);
+  assert.equal(writes, 30);
+  const user = [...db.records.entries()].find(([name]) => name.includes('/ans_u_'));
+  assert.equal(user[1].dayCount, 30);
+  assert.equal([...db.records.keys()].some(name => name.includes('ans_g_')), false);
+  assert.equal(db.records.get(answerId).answer, '済');
+  const capped = reads;
+  clock = NOW + 10 * 60 * 1000;
+  for (let i = 0; i < perSecond * 10; i += 1) {
+    const res = response();
+    await handler(request({ surveyId: SURVEY, answer: '再送' }), res);
+    assert.equal(res.statusCode, 429);
+  }
+  assert.equal(reads, capped);
+  assert.equal(40 * capped, 7680);
+  assert.equal(40 * capped < 50000, true);
+  assert.equal(40 * writes, 1200);
+  assert.equal(40 * writes < 20000, true);
 });
