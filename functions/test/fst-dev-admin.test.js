@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
-const { createGuard } = require('../cost-guard');
+const { createGuard, rateOf, periodKeys, retryAfterSeconds } = require('../cost-guard');
 const {
   uidHash, createFstDevAdminHandler, createFstSurveyHandler, createFstSurveyAnswerHandler,
 } = require('../fst-dev-admin');
@@ -73,7 +73,29 @@ function request(body, headers = {}) {
   };
 }
 
-function setup(handlerFactory, { email = 'user@example.test', uid = 'user-1', records = {}, ...factory } = {}) {
+let scopeSeq = 0;
+
+function watch(db) {
+  const seen = { gets: 0, transactions: 0 };
+  const origDoc = db.doc.bind(db);
+  db.doc = path => {
+    const ref = origDoc(path);
+    const origGet = ref.get.bind(ref);
+    ref.get = async () => {
+      seen.gets += 1;
+      return origGet();
+    };
+    return ref;
+  };
+  const origTx = db.runTransaction.bind(db);
+  db.runTransaction = fn => {
+    seen.transactions += 1;
+    return origTx(fn);
+  };
+  return seen;
+}
+
+function setup(handlerFactory, { email = 'user@example.test', uid = 'user-1', records = {}, holdScope, ...factory } = {}) {
   const db = memoryDb({ 'costControls/global': { enabled: true }, ...records });
   const guard = createGuard({
     db,
@@ -89,6 +111,7 @@ function setup(handlerFactory, { email = 'user@example.test', uid = 'user-1', re
     db,
     now: () => NOW,
     serverTimestamp: () => 'server-time',
+    holdScope: holdScope || `adm${++scopeSeq}:`,
     ...factory,
   });
   return { db, handler };
@@ -166,7 +189,7 @@ test('an answer stores the caller hash and rejects another user hash', async () 
 
 test('a duplicate answer is rejected before the global cap is spent', async () => {
   const records = { [`fst_surveys/${SURVEY}`]: { active: true, type: 'text' } };
-  const limits = { userMinute: 5, userDay: 30, globalMinute: 2, globalDay: 500 };
+  const limits = { ...rateOf('fstSurveyAnswer'), globalMinute: 2 };
   const { db, handler } = setup(createFstSurveyAnswerHandler, { records, limits });
   await handler(request({ surveyId: SURVEY, answer: '1' }), response());
   const duplicate = response();
@@ -179,11 +202,10 @@ test('a duplicate answer is rejected before the global cap is spent', async () =
 });
 
 test('survey create and setActive use separate caps', async () => {
-  const tight = { userMinute: 10, userDay: 100, globalMinute: 1, globalDay: 250 };
   const { db, handler } = setup(createFstSurveyHandler, {
     email: 'person@splineglobal.com',
-    createLimits: tight,
-    activateLimits: tight,
+    createLimits: { ...rateOf('fstSurveyCreate'), globalMinute: 1 },
+    activateLimits: { ...rateOf('fstSurveySetActive'), globalMinute: 1 },
   });
   const created = response();
   await handler(request({
@@ -309,7 +331,7 @@ test('a closed budget and the minute cap stop answers', async () => {
       [`fst_surveys/${SURVEY}`]: { active: true, type: 'text' },
       [`fst_surveys/${other}`]: { active: true, type: 'text' },
     },
-    limits: { userMinute: 1, userDay: 30, globalMinute: 20, globalDay: 500 },
+    limits: { ...rateOf('fstSurveyAnswer'), userMinute: 1 },
   });
   await handler(request({ surveyId: SURVEY, answer: '1' }), response());
   const limited = response();
@@ -337,7 +359,8 @@ test('the global cap is shared and does not read the forwarded address', async (
     db,
     now: () => NOW,
     serverTimestamp: () => 'server-time',
-    limits: { userMinute: 5, userDay: 30, globalMinute: 1, globalDay: 10000 },
+    limits: { ...rateOf('fstSurveyAnswer'), globalMinute: 1 },
+    holdScope: 'answer-global:',
   });
   await handler(request(
     { surveyId: SURVEY, answer: '1' },
@@ -383,4 +406,61 @@ test('a text answer keeps a script string as data', async () => {
   await handler(request({ surveyId: SURVEY, answer: script }), saved);
   assert.equal(saved.statusCode, 201);
   assert.equal(db.records.get(`fst_survey_answers/${SURVEY}_${uidHash('user-1')}`).answer, script);
+});
+
+test('a rejected broadcast writes nothing', async () => {
+  const limits = rateOf('fstDevAdmin');
+  const day = periodKeys(NOW).day;
+  const key = `fstRateLimits/adm_g_d_${day}`;
+  const { db, handler } = setup(createFstDevAdminHandler, {
+    email: 'person@splineglobal.com',
+    records: { [key]: { count: limits.globalDay, updatedAtMs: NOW } },
+  });
+  const before = JSON.stringify([...db.records.entries()]);
+  const res = response();
+  await handler(request({ kind: 'broadcast', active: true, title: '告知', message: '本文' }), res);
+  assert.equal(res.statusCode, 429);
+  assert.equal(res.headers['Retry-After'], String(retryAfterSeconds(NOW, `adm_g_d_${day}`)));
+  assert.equal(db.records.has('fst_admin/broadcast'), false);
+  assert.equal(JSON.stringify([...db.records.entries()]), before);
+});
+
+test('a missing survey activation writes nothing', async () => {
+  const { db, handler } = setup(createFstSurveyHandler, { email: 'person@splineglobal.com' });
+  const res = response();
+  await handler(request({ kind: 'setActive', surveyId: SURVEY, active: true }), res);
+  assert.equal(res.statusCode, 404);
+  assert.equal([...db.records.keys()].some(key => key.startsWith('fstRateLimits/')), false);
+  assert.equal(db.records.has(`fst_surveys/${SURVEY}`), false);
+});
+
+test('a rejected answer writes nothing and a repeat does not read', async () => {
+  const limits = rateOf('fstSurveyAnswer');
+  const day = periodKeys(NOW).day;
+  const slot = `ans_g_d_${day}`;
+  const key = `fstRateLimits/${slot}`;
+  const { db, handler } = setup(createFstSurveyAnswerHandler, {
+    records: {
+      [key]: { count: limits.globalDay, updatedAtMs: NOW },
+      [`fst_surveys/${SURVEY}`]: { active: true, type: 'text' },
+    },
+  });
+  const seen = watch(db);
+  const before = JSON.stringify([...db.records.entries()]);
+  const first = response();
+  await handler(request({ surveyId: SURVEY, answer: 'はい' }), first);
+  assert.equal(first.statusCode, 429);
+  assert.equal(first.headers['Retry-After'], String(retryAfterSeconds(NOW, slot)));
+  assert.equal(Number(first.headers['Retry-After']) > 60, true);
+  assert.equal([...db.records.keys()].some(name => name.startsWith('fst_survey_answers/')), false);
+  assert.equal([...db.records.keys()].some(name => name.includes('ans_u_')), false);
+  assert.equal(JSON.stringify([...db.records.entries()]), before);
+  const gets = seen.gets;
+  const transactions = seen.transactions;
+  assert.equal(transactions, 1);
+  const second = response();
+  await handler(request({ surveyId: SURVEY, answer: 'はい' }), second);
+  assert.equal(second.statusCode, 429);
+  assert.equal(seen.gets, gets);
+  assert.equal(seen.transactions, transactions);
 });

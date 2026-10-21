@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createGuard } = require('../cost-guard');
+const { createGuard, rateOf, periodKeys, retryAfterSeconds } = require('../cost-guard');
 const { createFstFeedbackHandler, createFstFeedbackUpdateHandler } = require('../fst-feedback');
 
 const NOW = Date.parse('2026-10-15T01:00:00Z');
@@ -75,12 +75,35 @@ const payload = {
   openedAtMs: NOW - 5000,
 };
 
+let scopeSeq = 0;
+
+function watch(db) {
+  const seen = { gets: 0, transactions: 0 };
+  const origDoc = db.doc.bind(db);
+  db.doc = path => {
+    const ref = origDoc(path);
+    const origGet = ref.get.bind(ref);
+    ref.get = async () => {
+      seen.gets += 1;
+      return origGet();
+    };
+    return ref;
+  };
+  const origTx = db.runTransaction.bind(db);
+  db.runTransaction = fn => {
+    seen.transactions += 1;
+    return origTx(fn);
+  };
+  return seen;
+}
+
 function setup(overrides = {}) {
+  const clock = overrides.now || (() => NOW);
   const db = memoryDb({ 'costControls/global': { enabled: true }, ...overrides.records });
   const users = overrides.users || { valid: { uid: 'user-1', email: 'user@example.test', email_verified: true, firebase: { sign_in_provider: 'google.com' } } };
   const guard = createGuard({
     db,
-    now: () => NOW,
+    now: clock,
     verifyIdToken: async token => {
       if (!users[token]) throw Error('bad');
       return users[token];
@@ -91,9 +114,10 @@ function setup(overrides = {}) {
   const handler = createFstFeedbackHandler({
     authorize: req => guard.authorize(req, 'fstFeedback'),
     db,
-    now: () => NOW,
+    now: clock,
     serverTimestamp: () => 'server-time',
     limits: overrides.limits,
+    holdScope: overrides.holdScope || `fb${++scopeSeq}:`,
   });
   const update = createFstFeedbackUpdateHandler({
     authorize: req => guard.authorize(req, 'fstFeedback'),
@@ -177,7 +201,7 @@ test('a closed budget returns 503 before feedback is stored', async () => {
 });
 
 test('oversized text and the per-user rate limit are rejected', async () => {
-  const { db, handler } = setup({ limits: { userMinute: 2, userDay: 50, globalMinute: 300, globalDay: 5000 } });
+  const { db, handler } = setup({ limits: { ...rateOf('fstFeedback'), userMinute: 2 } });
   const ok = response();
   await handler(request(payload), ok);
   await handler(request({ ...payload, message: '二つ目' }), response());
@@ -214,7 +238,8 @@ test('the global minute cap returns 429 across callers', async () => {
     db,
     now: () => NOW,
     serverTimestamp: () => 'server-time',
-    limits: { userMinute: 10, userDay: 50, globalMinute: 1, globalDay: 5000 },
+    limits: { ...rateOf('fstFeedback'), globalMinute: 1 },
+    holdScope: 'feedback-global:',
   });
   await handler(request(payload, { 'x-forwarded-for': '1.1.1.1' }), response());
   uid = 'user-b';
@@ -228,6 +253,35 @@ test('the global minute cap returns 429 across callers', async () => {
   assert.equal(limited.headers['Retry-After'], '60');
   assert.equal(db.records.has('fst_feedback/FB_0002'), false);
   assert.equal([...db.records.keys()].some(key => key.includes('ip_')), false);
+});
+
+test('a rejected feedback call writes nothing and a repeat does not read', async () => {
+  const limits = rateOf('fstFeedback');
+  const day = periodKeys(NOW).day;
+  const slot = `g_d_${day}`;
+  const key = `fstRateLimits/${slot}`;
+  const { db, handler } = setup({
+    records: { [key]: { count: limits.globalDay, updatedAtMs: NOW } },
+  });
+  const seen = watch(db);
+  const before = JSON.stringify([...db.records.entries()]);
+  const first = response();
+  await handler(request(payload), first);
+  assert.equal(first.statusCode, 429);
+  assert.equal(first.headers['Retry-After'], String(retryAfterSeconds(NOW, slot)));
+  assert.equal(Number(first.headers['Retry-After']) > 60, true);
+  assert.equal(JSON.stringify([...db.records.entries()]), before);
+  assert.equal([...db.records.keys()].some(name => name.startsWith('fst_feedback/')), false);
+  assert.equal([...db.records.keys()].some(name => name.includes('u_')), false);
+  const gets = seen.gets;
+  const transactions = seen.transactions;
+  assert.equal(transactions, 1);
+  const second = response();
+  await handler(request(payload), second);
+  assert.equal(second.statusCode, 429);
+  assert.equal(seen.gets, gets);
+  assert.equal(seen.transactions, transactions);
+  assert.equal(JSON.stringify([...db.records.entries()]), before);
 });
 
 test('only an editor can change status, and the message stays', async () => {

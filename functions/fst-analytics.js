@@ -2,7 +2,9 @@
 
 const crypto = require('node:crypto');
 const { onRequest } = require('firebase-functions/v2/https');
-const { getGuard, sendCostError, CostError, periodKeys, rateOf } = require('./cost-guard');
+const {
+  getGuard, sendCostError, CostError, periodKeys, rateOf, reserveFst, rejectIfFstHeld, holdFstRejection,
+} = require('./cost-guard');
 const { sourceRev } = require('./fst-rev');
 const APPS = Object.freeze({
   'flight-strip-todo': 'stable',
@@ -12,7 +14,6 @@ const TYPES = new Set(['session', 'task_created', 'task_completed']);
 const DEVICES = new Set(['mobile', 'desktop']);
 const FIELDS = new Set(['appId', 'version', 'build', 'type', 'device']);
 const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]{1,20})?$/;
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 function hashId(value) {
   return crypto.createHash('sha256').update(String(value)).digest('hex').slice(0, 32);
@@ -53,34 +54,22 @@ async function assertBudgetOpen(db) {
   if (!global.exists || global.data()?.enabled !== true) throw new CostError(503, 'SERVICE_PAUSED');
 }
 
-async function consume(db, id, limit, now) {
-  const ref = db.doc(`fstRateLimits/${id}`);
-  await db.runTransaction(async tx => {
-    const snap = await tx.get(ref);
-    const data = snap.exists ? snap.data() : null;
-    const count = data && Number.isSafeInteger(data.count) && data.count >= 0 ? data.count : (data ? null : 0);
-    if (count === null) throw new CostError(503, 'INVALID_QUOTA_STATE');
-    if (count >= limit) throw new CostError(429, 'USAGE_LIMIT');
-    tx.set(ref, { count: count + 1, updatedAtMs: now, expiresAt: new Date(now + 3 * DAY_MS) });
-  });
-}
-
-function createFstAnalyticsHandler({ authorize, db, now = Date.now, serverTimestamp, limits = rateOf('fstAnalytics') }) {
+function createFstAnalyticsHandler({
+  authorize, db, now = Date.now, serverTimestamp, limits = rateOf('fstAnalytics'), holdScope = '',
+}) {
   return async function record(req, res) {
     if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
     if (req.method !== 'POST') { res.status(405).json({ error: 'POST only' }); return; }
     try {
       const actor = await authorize(req);
       const input = parseInput(req.body);
-      await assertBudgetOpen(db);
       const at = now();
+      const holdKey = `${holdScope}an\0${actor.uid}`;
+      rejectIfFstHeld(holdKey, at);
+      await assertBudgetOpen(db);
       const keys = periodKeys(at);
       const minute = Math.floor(at / 60000);
       const user = hashId(actor.uid);
-      await consume(db, `an_u_${user}_m_${minute}`, limits.userMinute, at);
-      await consume(db, `an_u_${user}_d_${keys.day}`, limits.userDay, at);
-      await consume(db, `an_g_m_${minute}`, limits.globalMinute, at);
-      await consume(db, `an_g_d_${keys.day}`, limits.globalDay, at);
       const id = `AN_${hashId(actor.uid + '\0' + at + '\0' + Math.random()).slice(0, 16)}`;
       const when = jstParts(at);
       const row = {
@@ -96,7 +85,18 @@ function createFstAnalyticsHandler({ authorize, db, now = Date.now, serverTimest
         createdAt: serverTimestamp(),
       };
       if (input.device) row.device = input.device;
-      await db.doc(`fst_analytics/${id}`).set(row);
+      try {
+        await reserveFst(db, [
+          { id: `an_u_${user}_m_${minute}`, limit: limits.userMinute },
+          { id: `an_u_${user}_d_${keys.day}`, limit: limits.userDay },
+          { id: `an_g_m_${minute}`, limit: limits.globalMinute },
+          { id: `an_g_d_${keys.day}`, limit: limits.globalDay },
+        ], at, async tx => {
+          tx.set(db.doc(`fst_analytics/${id}`), row);
+        });
+      } catch (error) {
+        holdFstRejection(holdKey, at, error);
+      }
       res.set('Cache-Control', 'no-store');
       res.status(201).json({ ok: true });
     } catch (error) {

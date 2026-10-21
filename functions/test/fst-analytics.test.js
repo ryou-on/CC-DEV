@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createGuard } = require('../cost-guard');
+const { createGuard, rateOf, periodKeys, retryAfterSeconds } = require('../cost-guard');
 const { createFstAnalyticsHandler, jstParts } = require('../fst-analytics');
 
 const NOW = Date.parse('2026-10-15T15:30:00Z');
@@ -70,11 +70,34 @@ const payload = {
   device: 'desktop',
 };
 
+let scopeSeq = 0;
+
+function watch(db) {
+  const seen = { gets: 0, transactions: 0 };
+  const origDoc = db.doc.bind(db);
+  db.doc = path => {
+    const ref = origDoc(path);
+    const origGet = ref.get.bind(ref);
+    ref.get = async () => {
+      seen.gets += 1;
+      return origGet();
+    };
+    return ref;
+  };
+  const origTx = db.runTransaction.bind(db);
+  db.runTransaction = fn => {
+    seen.transactions += 1;
+    return origTx(fn);
+  };
+  return seen;
+}
+
 function setup(overrides = {}) {
+  const clock = overrides.now || (() => NOW);
   const db = memoryDb({ 'costControls/global': { enabled: true }, ...overrides.records });
   const guard = createGuard({
     db,
-    now: () => NOW,
+    now: clock,
     verifyIdToken: async token => {
       if (token !== 'valid') throw Error('bad');
       return { uid: 'user-1', email: 'user@example.test', email_verified: true, firebase: { sign_in_provider: 'google.com' } };
@@ -85,9 +108,10 @@ function setup(overrides = {}) {
   const handler = createFstAnalyticsHandler({
     authorize: req => guard.authorize(req, 'fstAnalytics'),
     db,
-    now: () => NOW,
+    now: clock,
     serverTimestamp: () => 'server-time',
     limits: overrides.limits,
+    holdScope: overrides.holdScope || `an${++scopeSeq}:`,
   });
   return { db, handler };
 }
@@ -184,7 +208,8 @@ test('the global minute cap returns 429 for a second caller', async () => {
     db,
     now: () => NOW,
     serverTimestamp: () => 'server-time',
-    limits: { userMinute: 30, userDay: 400, globalMinute: 1, globalDay: 50000 },
+    limits: { ...rateOf('fstAnalytics'), globalMinute: 1 },
+    holdScope: 'analytics-global:',
   });
   await handler(request(payload, { 'x-forwarded-for': '1.1.1.1' }), response());
   uid = 'user-b';
@@ -201,11 +226,49 @@ test('the global minute cap returns 429 for a second caller', async () => {
 });
 
 test('the per-user minute cap stops further events', async () => {
-  const { db, handler } = setup({ limits: { userMinute: 2, userDay: 400, globalMinute: 2000, globalDay: 50000 } });
+  const { db, handler } = setup({ limits: { ...rateOf('fstAnalytics'), userMinute: 2 } });
   await handler(request(payload), response());
   await handler(request({ appId: payload.appId, version: payload.version, build: payload.build, type: 'task_created' }), response());
   const limited = response();
   await handler(request({ ...payload, type: 'task_completed' }), limited);
   assert.equal(limited.statusCode, 429);
   assert.equal(saved(db).length, 2);
+});
+
+test('a rejected analytics call writes nothing and a repeat does not read until the window opens', async () => {
+  const limits = rateOf('fstAnalytics');
+  const day = periodKeys(NOW).day;
+  const slot = `an_g_d_${day}`;
+  const key = `fstRateLimits/${slot}`;
+  let clock = NOW;
+  const { db, handler } = setup({
+    records: { [key]: { count: limits.globalDay, updatedAtMs: NOW } },
+    now: () => clock,
+  });
+  const seen = watch(db);
+  const before = JSON.stringify([...db.records.entries()]);
+  const first = response();
+  await handler(request(payload), first);
+  assert.equal(first.statusCode, 429);
+  assert.equal(first.body.error, 'USAGE_LIMIT');
+  assert.equal(first.headers['Retry-After'], String(retryAfterSeconds(NOW, slot)));
+  assert.equal(Number(first.headers['Retry-After']) > 60, true);
+  assert.equal(JSON.stringify([...db.records.entries()]), before);
+  assert.equal(saved(db).length, 0);
+  assert.equal([...db.records.keys()].some(name => name.includes('an_u_')), false);
+  const gets = seen.gets;
+  const transactions = seen.transactions;
+  assert.equal(transactions, 1);
+  const second = response();
+  await handler(request(payload), second);
+  assert.equal(second.statusCode, 429);
+  assert.equal(seen.gets, gets);
+  assert.equal(seen.transactions, transactions);
+  clock = NOW + retryAfterSeconds(NOW, slot) * 1000;
+  const third = response();
+  await handler(request(payload), third);
+  assert.equal(third.statusCode, 201);
+  assert.equal(seen.transactions, transactions + 1);
+  assert.equal(db.records.get(key).count, limits.globalDay);
+  assert.equal(saved(db).length, 1);
 });
