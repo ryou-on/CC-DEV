@@ -1,6 +1,7 @@
-export const APP_VERSION = 'v1.21.1'
+export const APP_VERSION = 'v1.22.0'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  { version: 'v1.22.0', date: '2026-10-05', changes: ['AI解析にアプリの安全確認・日次/月次の利用上限・停止処理を追加'] },
   {
     version: 'v1.21.1',
     date: '2026-08-17',

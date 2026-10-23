@@ -1,0 +1,237 @@
+'use strict';
+
+const crypto = require('node:crypto');
+const { onRequest } = require('firebase-functions/v2/https');
+const {
+  getGuard, sendCostError, CostError, periodKeys, rateOf, reserveFst, consumeUserAttempt, holdFstRejection,
+  rejectIfServicePaused, browserOrigins, e2eEmulatorEnabled,
+} = require('./cost-guard');
+const { sourceRev } = require('./fst-rev');
+const { isEditorEmail } = require('./editor-policy');
+const APPS = Object.freeze({
+  'flight-strip-todo': 'stable',
+  'flight-strip-todo-dev': 'dev',
+});
+const TYPES = new Set(['request', 'bug', 'question', 'other']);
+const STATUSES = new Set(['unreviewed', 'reviewed', 'in_progress', 'resolved']);
+const HOSTS = new Set(['cc-dev-ps7.web.app', 'cc-dev-ps7.firebaseapp.com']);
+const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]{1,20})?$/;
+const SUBMIT_FIELDS = new Set(['subject', 'email', 'message', 'build', 'appId', 'version', 'url', 'type', 'faxNumber', 'openedAtMs']);
+const UPDATE_FIELDS = new Set(['fbId', 'status', 'replyText', 'replySent']);
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function hashId(value) {
+  return crypto.createHash('sha256').update(String(value)).digest('hex').slice(0, 32);
+}
+
+function cleanText(value, max) {
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  if (!text || text.length > max) return null;
+  return text;
+}
+
+function cleanUrl(value) {
+  if (typeof value !== 'string' || value.length > 2048) return null;
+  let url;
+  try { url = new URL(value); } catch { return null; }
+  const e2eHost = e2eEmulatorEnabled()
+    && url.protocol === 'http:' && (url.hostname === '127.0.0.1' || url.hostname === 'localhost');
+  if (!e2eHost && (url.protocol !== 'https:' || !HOSTS.has(url.hostname))) return null;
+  url.search = '';
+  url.hash = '';
+  const out = url.toString();
+  return out.length <= 2048 ? out : null;
+}
+
+function rejectUnknown(body, allowed) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) throw new CostError(400, 'INVALID_FEEDBACK');
+  for (const key of Object.keys(body)) {
+    if (!allowed.has(key)) throw new CostError(400, 'INVALID_FEEDBACK');
+  }
+}
+
+function parseInput(body, now) {
+  rejectUnknown(body, SUBMIT_FIELDS);
+  if (body.faxNumber != null && body.faxNumber !== '') throw new CostError(400, 'INVALID_FEEDBACK');
+  const openedAtMs = body.openedAtMs;
+  if (!Number.isSafeInteger(openedAtMs)) throw new CostError(400, 'INVALID_FEEDBACK');
+  const elapsed = now - openedAtMs;
+  if (elapsed < 1500 || elapsed > DAY_MS) throw new CostError(400, 'INVALID_FEEDBACK');
+  const subject = cleanText(body.subject, 200);
+  const message = cleanText(body.message, 2000);
+  const build = body.build;
+  const appId = body.appId;
+  const version = typeof body.version === 'string' ? body.version : '';
+  const url = cleanUrl(body.url);
+  const rawEmail = typeof body.email === 'string' ? body.email.trim() : '';
+  if (!subject || !message || APPS[appId] !== build || !url) throw new CostError(400, 'INVALID_FEEDBACK');
+  if (version.length > 50 || !SEMVER.test(version)) throw new CostError(400, 'INVALID_FEEDBACK');
+  if (rawEmail.length > 200 || (rawEmail && !/^[^\s@]+@[^\s@]+$/.test(rawEmail))) {
+    throw new CostError(400, 'INVALID_FEEDBACK');
+  }
+  let type = null;
+  if (Object.prototype.hasOwnProperty.call(body, 'type')) {
+    if (!TYPES.has(body.type)) throw new CostError(400, 'INVALID_FEEDBACK');
+    type = body.type;
+  }
+  return { subject, message, build, appId, version, url, email: rawEmail, type };
+}
+
+function parseUpdate(body) {
+  rejectUnknown(body, UPDATE_FIELDS);
+  if (typeof body.fbId !== 'string' || !/^FB_\d{4,}$/.test(body.fbId)) throw new CostError(400, 'INVALID_FEEDBACK');
+  if (!STATUSES.has(body.status)) throw new CostError(400, 'INVALID_FEEDBACK');
+  const patch = { fbId: body.fbId, status: body.status };
+  if (Object.prototype.hasOwnProperty.call(body, 'replyText')) {
+    if (typeof body.replyText !== 'string' || body.replyText.length > 2000) throw new CostError(400, 'INVALID_FEEDBACK');
+    patch.replyText = body.replyText;
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'replySent')) {
+    if (typeof body.replySent !== 'boolean') throw new CostError(400, 'INVALID_FEEDBACK');
+    patch.replySent = body.replySent;
+  }
+  return patch;
+}
+
+function isEditor(actor) {
+  return isEditorEmail(actor.email);
+}
+
+function createFstFeedbackHandler({
+  authorize, db, now = Date.now, serverTimestamp, limits = rateOf('fstFeedback'), holdScope = '',
+}) {
+  return async function fstFeedbackSubmit(req, res) {
+    if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+    if (req.method !== 'POST') { res.status(405).json({ error: 'POST only' }); return; }
+    try {
+      const actor = await authorize(req);
+      const at = now();
+      const input = parseInput(req.body, at);
+      const holdKey = `${holdScope}fb\0${actor.uid}`;
+      const user = hashId(actor.uid);
+      await rejectIfServicePaused(db, holdScope, holdKey, at, `u_${user}`, limits);
+      const keys = periodKeys(at);
+      const minute = Math.floor(at / 60000);
+      try {
+        await consumeUserAttempt(db, `u_${user}`, limits, at);
+      } catch (error) {
+        holdFstRejection(holdScope, holdKey, at, error);
+      }
+      const content = hashId(`${input.appId}\0${input.subject}\0${input.message}`);
+      let saved;
+      try {
+        saved = await reserveFst(db, [
+          { id: `g_m_${minute}`, limit: limits.globalMinute },
+          { id: `g_d_${keys.day}`, limit: limits.globalDay },
+        ], at, async tx => {
+          const dupRef = db.doc(`fstRateLimits/dup_${user}_${content}`);
+          const dup = await tx.get(dupRef);
+          const data = dup.exists ? dup.data() : null;
+          if (data && Number.isSafeInteger(data.updatedAtMs) && at - data.updatedAtMs < 10 * 60 * 1000) {
+            const err = new CostError(429, 'USAGE_LIMIT');
+            err.retryAfter = Math.max(1, Math.ceil((10 * 60 * 1000 - (at - data.updatedAtMs)) / 1000));
+            throw err;
+          }
+          if (data && !Number.isSafeInteger(data.updatedAtMs)) throw new CostError(503, 'INVALID_QUOTA_STATE');
+          const counterRef = db.doc('fst_feedback_meta/counter');
+          const counter = await tx.get(counterRef);
+          const current = counter.exists ? counter.data()?.count : 0;
+          if (counter.exists && (!Number.isSafeInteger(current) || current < 0)) {
+            throw new CostError(503, 'INVALID_QUOTA_STATE');
+          }
+          const n = (Number.isSafeInteger(current) ? current : 0) + 1;
+          const fbId = `FB_${String(n).padStart(4, '0')}`;
+          const ref = db.doc(`fst_feedback/${fbId}`);
+          const row = {
+            fbId,
+            feedbackId: fbId,
+            subject: input.subject,
+            email: input.email,
+            message: input.message,
+            build: input.build,
+            appId: input.appId,
+            version: input.version,
+            url: input.url,
+            uid: actor.uid,
+            status: 'unreviewed',
+            replySent: false,
+            createdAt: serverTimestamp(),
+          };
+          if (input.type) row.type = input.type;
+          const expiresAt = new Date(at + 3 * DAY_MS);
+          tx.set(dupRef, { count: 1, updatedAtMs: at, expiresAt });
+          tx.set(counterRef, { count: n, updatedAtMs: at });
+          tx.set(ref, row);
+          return { fbId };
+        });
+      } catch (error) {
+        holdFstRejection(holdScope, holdKey, at, error);
+      }
+      res.set('Cache-Control', 'no-store');
+      res.status(201).json({ ok: true, fbId: saved.fbId, feedbackId: saved.fbId, status: 'unreviewed' });
+    } catch (error) {
+      sendCostError(res, error);
+    }
+  };
+}
+
+function createFstFeedbackUpdateHandler({
+  authorize, db, now = Date.now, limits = rateOf('fstFeedback'), holdScope = '',
+}) {
+  return async function fstFeedbackUpdate(req, res) {
+    if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+    if (req.method !== 'POST') { res.status(405).json({ error: 'POST only' }); return; }
+    try {
+      const actor = await authorize(req);
+      if (!isEditor(actor)) throw new CostError(403, 'EDITOR_REQUIRED');
+      const input = parseUpdate(req.body || {});
+      const at = now();
+      const holdKey = `${holdScope}fbu\0${actor.uid}`;
+      await rejectIfServicePaused(db, holdScope, holdKey, at, `u_${hashId(actor.uid)}`, limits);
+      await db.runTransaction(async tx => {
+        const ref = db.doc(`fst_feedback/${input.fbId}`);
+        const snap = await tx.get(ref);
+        if (!snap.exists) throw new CostError(404, 'NOT_FOUND');
+        const current = snap.data() || {};
+        const patch = { status: input.status, updatedAtMs: at };
+        if (Object.prototype.hasOwnProperty.call(input, 'replyText')) patch.replyText = input.replyText;
+        if (Object.prototype.hasOwnProperty.call(input, 'replySent')) patch.replySent = input.replySent;
+        tx.update(ref, patch);
+        if (current.uid == null || current.message == null) throw new CostError(503, 'INVALID_QUOTA_STATE');
+      });
+      res.set('Cache-Control', 'no-store');
+      res.status(200).json({ ok: true, fbId: input.fbId, feedbackId: input.fbId, status: input.status });
+    } catch (error) {
+      sendCostError(res, error);
+    }
+  };
+}
+
+const REQUEST_OPTIONS = {
+  region: 'asia-northeast1',
+  cors: browserOrigins(),
+  timeoutSeconds: 20,
+  memory: '256MiB',
+  maxInstances: 1,
+  concurrency: 8,
+  labels: { 'fst-rev': sourceRev() },
+};
+
+function productionHandler(factory) {
+  return (req, res) => {
+    const admin = require('firebase-admin');
+    if (!admin.apps.length) admin.initializeApp();
+    return factory({
+      authorize: request => getGuard().authorize(request, 'fstFeedback'),
+      db: admin.firestore(),
+      serverTimestamp: () => admin.firestore.FieldValue.serverTimestamp(),
+    })(req, res);
+  };
+}
+
+exports.createFstFeedbackHandler = createFstFeedbackHandler;
+exports.createFstFeedbackUpdateHandler = createFstFeedbackUpdateHandler;
+exports.parseInput = parseInput;
+exports.fstFeedbackSubmit = onRequest(REQUEST_OPTIONS, productionHandler(createFstFeedbackHandler));
+exports.updateFstFeedback = onRequest(REQUEST_OPTIONS, productionHandler(createFstFeedbackUpdateHandler));

@@ -21,6 +21,7 @@ const { onRequest } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
+const { getGuard, sendCostError } = require('./cost-guard');
 
 // index.js 側で初期化済みの場合があるので二重初期化を避ける
 if (!admin.apps.length) admin.initializeApp();
@@ -88,7 +89,6 @@ const ALLOWED_ORIGINS = new Set([
  */
 const TASKS_COL = 'mini-me/tasks/items';
 const ORDERS_COL = 'mini-me/orders/items';
-const RATE_COL = 'mini-me/ratelimit/items';
 
 /**
  * 画像の上限（デコード後6MB相当）。base64 は約 4/3 に膨らむ。
@@ -109,18 +109,7 @@ const ALLOWED_IMAGE_MIME = new Set(['image/png', 'image/jpeg', 'image/jpg', 'ima
 const PING_TASK_ID = '__ping__';
 const TASK_ID_RE = /^[A-Za-z0-9_:-]{6,128}$/;
 
-// --- 生成API（実費が発生する）の濫用防止 -----------------------------------
-// miniMeGenerate の POST は 1回＝Meshy実費（推定 ¥90〜¥250/体）。認証を持たないため、
-// (a) Origin必須 (b) IP単位の日次上限 (c) サービス全体の日次上限 の3段で守る。
-// 恒久対策としては Firebase App Check（Recaptcha Enterprise）の必須化を推奨（README §8）。
-function envInt(name, fallback) {
-  const n = Number(process.env[name]);
-  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
-}
-const RATE_LIMIT_PER_IP_PER_DAY = envInt('MINI_ME_RATE_PER_IP', 10);
-const RATE_LIMIT_GLOBAL_PER_DAY = envInt('MINI_ME_RATE_GLOBAL', 200);
-/** Origin ヘッダ無しの POST を許すデバッグ用の逃げ道（既定 off）。本番では絶対に立てないこと。 */
-const ALLOW_NO_ORIGIN_POST = process.env.MINI_ME_ALLOW_NO_ORIGIN === '1';
+// Generation uses authenticated, atomic daily/monthly quotas from cost-guard.js.
 
 // ---------------------------------------------------------------------------
 // 共通ユーティリティ
@@ -132,7 +121,7 @@ function applyCors(req, res) {
     res.set('Vary', 'Origin');
   }
   res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.set('Access-Control-Allow-Headers', 'Content-Type');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Firebase-AppCheck');
   res.set('Access-Control-Max-Age', '3600');
 }
 
@@ -145,66 +134,7 @@ function originAllowed(req) {
   return !origin || ALLOWED_ORIGINS.has(origin);
 }
 
-/**
- * 実費が発生する POST 用の厳格版。Origin を必須にする。
- * Fetch仕様上、GET/HEAD 以外のリクエストには同一オリジンでも Origin が付与されるため、
- * 正規のブラウザクライアントは必ずこれを通過する（curl等は通らない＝踏み台にされない）。
- */
-function originAllowedStrict(req) {
-  const origin = req.get('origin');
-  if (!origin) return ALLOW_NO_ORIGIN_POST;
-  return ALLOWED_ORIGINS.has(origin);
-}
-
-function db() {
-  return admin.firestore();
-}
-
-/** クライアントIP（Firebase Hosting 経由なので X-Forwarded-For の先頭が実クライアント） */
-function clientIp(req) {
-  const xff = String(req.get('x-forwarded-for') || '').split(',')[0].trim();
-  return xff || req.ip || 'unknown';
-}
-
-function utcDayKey(d = new Date()) {
-  return d.toISOString().slice(0, 10).replace(/-/g, '');
-}
-
-/**
- * 生成リクエストの日次レート制限。IP単位とサービス全体の2本を同一トランザクションで加算する。
- * 超過時は httpStatus 429 の例外を投げる。Firestore が使えない場合は「止めない」側に倒す
- * （課金保護は上位の Cloud Billing 予算アラートにも二重で用意すること／README §8）。
- */
-async function consumeGenerateQuota(req) {
-  const day = utcDayKey();
-  const ipHash = crypto.createHash('sha256').update(clientIp(req)).digest('hex').slice(0, 32);
-  const col = db().collection(RATE_COL);
-  const ipRef = col.doc(`${day}_ip_${ipHash}`);
-  const globalRef = col.doc(`${day}_global`);
-
-  try {
-    await db().runTransaction(async (tx) => {
-      const [ipSnap, gSnap] = await tx.getAll(ipRef, globalRef);
-      const ipCount = Number((ipSnap.data() || {}).count || 0);
-      const gCount = Number((gSnap.data() || {}).count || 0);
-
-      if (gCount >= RATE_LIMIT_GLOBAL_PER_DAY) {
-        throw Object.assign(new Error('本日の生成上限に達しました。時間をおいてお試しください。'), { httpStatus: 429 });
-      }
-      if (ipCount >= RATE_LIMIT_PER_IP_PER_DAY) {
-        throw Object.assign(new Error('生成のご利用が集中しています。しばらくしてからお試しください。'), { httpStatus: 429 });
-      }
-
-      const stamp = admin.firestore.FieldValue.serverTimestamp();
-      tx.set(ipRef, { count: ipCount + 1, day, updatedAt: stamp }, { merge: true });
-      tx.set(globalRef, { count: gCount + 1, day, updatedAt: stamp }, { merge: true });
-    });
-  } catch (e) {
-    if (e && e.httpStatus === 429) throw e;
-    // レート制限の記録自体に失敗しただけならリクエストは通す（可用性優先）
-    console.error('[mini-me] rate limit bookkeeping failed', e);
-  }
-}
+function db() { return admin.firestore(); }
 
 /** ログ/レスポンスに秘匿値が混ざらないよう、外部エラー文字列を短く丸める */
 function safeErrorMessage(raw, fallback = '生成に失敗しました') {
@@ -278,6 +208,7 @@ const meshyProvider = {
 
     const r = await fetch(`${MESHY_BASE}/image-to-3d`, {
       method: 'POST',
+      signal: AbortSignal.timeout(60000),
       headers: {
         Authorization: `Bearer ${key}`,
         'Content-Type': 'application/json',
@@ -317,6 +248,7 @@ const meshyProvider = {
     const key = readSecret(MESHY_API_KEY, 'MESHY_API_KEY');
     const r = await fetch(`${MESHY_BASE}/image-to-3d/${encodeURIComponent(providerTaskId)}`, {
       headers: { Authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(15000),
     });
 
     const text = await r.text();
@@ -385,6 +317,7 @@ const tripoProvider = {
 
     const up = await fetch(`${TRIPO_BASE}/upload`, {
       method: 'POST',
+      signal: AbortSignal.timeout(60000),
       headers: { Authorization: `Bearer ${key}` },
       body: form,
     });
@@ -403,6 +336,7 @@ const tripoProvider = {
     // 2) タスク作成
     const r = await fetch(`${TRIPO_BASE}/task`, {
       method: 'POST',
+      signal: AbortSignal.timeout(60000),
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         type: 'image_to_model',
@@ -429,6 +363,7 @@ const tripoProvider = {
     const key = readSecret(null, 'TRIPO_API_KEY');
     const r = await fetch(`${TRIPO_BASE}/task/${encodeURIComponent(providerTaskId)}`, {
       headers: { Authorization: `Bearer ${key}` },
+      signal: AbortSignal.timeout(15000),
     });
     const text = await r.text();
     if (!r.ok) {
@@ -479,7 +414,8 @@ exports.miniMeGenerate = onRequest(
     //   の順で行うこと（順序を逆にするとデプロイが落ちる）。
     secrets: [MESHY_API_KEY],
     cors: false,            // CORS は自前で最小限に制御する
-    timeoutSeconds: 120,
+    timeoutSeconds: 90,
+    minInstances: 0, maxInstances: 2, concurrency: 4,
     memory: '512MiB',
     invoker: 'public',
   },
@@ -488,6 +424,10 @@ exports.miniMeGenerate = onRequest(
     if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
     if (!originAllowed(req)) { res.status(403).json({ error: 'origin not allowed' }); return; }
 
+    if (!['GET', 'POST'].includes(req.method)) { res.status(405).end(); return; }
+    let actor;
+    try { actor = await getGuard().authorize(req, req.method === 'GET' ? 'miniStatus' : 'miniGenerate'); }
+    catch (e) { sendCostError(res, e); return; }
     const provider = activeProvider();
 
     // ---- GET: 状態取得 / 疎通確認 ----
@@ -495,6 +435,8 @@ exports.miniMeGenerate = onRequest(
       const taskId = String(req.query.taskId || '');
 
       if (taskId === PING_TASK_ID) {
+        // No expensive probe and no unauthenticated key-configuration disclosure.
+        try { await getGuard().reserve(actor); } catch (e) { sendCostError(res, e); return; }
         if (!provider.isConfigured()) {
           res.status(503).json({ error: 'model provider not configured', demo: true });
           return;
@@ -513,20 +455,30 @@ exports.miniMeGenerate = onRequest(
       }
 
       try {
+        await getGuard().reserve(actor);
         const snap = await db().collection(TASKS_COL).doc(taskId).get();
         if (!snap.exists) { res.status(404).json({ error: 'タスクが見つかりません' }); return; }
 
         const rec = snap.data() || {};
+        if (rec.ownerUid !== actor.uid) { res.status(404).json({ error: 'TASK_NOT_FOUND' }); return; }
+        // Terminal results require no more provider polling or database writes.
+        if (['SUCCEEDED', 'FAILED'].includes(rec.status) || Date.now() - (rec.checkedAtMs || 0) < 10000) {
+          res.set('Cache-Control', 'private, no-store');
+          res.status(200).json({ status: rec.status, progress: rec.progress, modelUrl: rec.modelUrl || null, thumbnailUrl: rec.thumbnailUrl || null });
+          return;
+        }
         const p = PROVIDERS[rec.provider] || provider;
         const result = await p.getTask(rec.meshyTaskId);
 
-        // Firestore を最新状態に更新（失敗しても応答は返す）。
+        // Firestore を最新状態に更新（失敗は記録。次回の外部照会もクォータで制限）。
         // ★ await 必須: Cloud Run(2nd gen) はレスポンス送出後に CPU 割当が絞られるため、
         //   await しないとこの書き込みはほぼ完走せず、modelUrl / printUrl が永続化されない
         //   （＝決済後に成果物URLをサーバー側から辿れなくなる）。
         await snap.ref.set({
           status: result.status,
           progress: result.progress,
+          checkedAtMs: Date.now(),
+          thumbnailUrl: result.thumbnailUrl || null,
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           ...(result.modelUrl ? { modelUrl: result.modelUrl } : {}),
           ...(result.printUrl ? { printUrl: result.printUrl } : {}),
@@ -541,8 +493,7 @@ exports.miniMeGenerate = onRequest(
           error: result.error,
         });
       } catch (e) {
-        console.error('[mini-me] generate GET error', e);
-        res.status(e.httpStatus || 500).json({ error: safeErrorMessage(e.message, 'サーバーエラー') });
+        sendCostError(res, e);
       }
       return;
     }
@@ -550,12 +501,6 @@ exports.miniMeGenerate = onRequest(
     // ---- POST: タスク作成（1回＝実費が発生するので厳しめに絞る）----
     if (req.method !== 'POST') {
       res.status(405).json({ error: 'GET または POST のみ' });
-      return;
-    }
-
-    // Origin 必須。GET/HEAD 以外には同一オリジンでも Origin が付くのでブラウザからは必ず通る。
-    if (!originAllowedStrict(req)) {
-      res.status(403).json({ error: 'origin not allowed' });
       return;
     }
 
@@ -595,7 +540,7 @@ exports.miniMeGenerate = onRequest(
 
     try {
       // 実費を伴う外部API呼び出しの直前でクォータを消費する
-      await consumeGenerateQuota(req);
+      await getGuard().reserve(actor);
 
       const { providerTaskId } = await provider.createTask({ dataUri, mimeType: normalizedMime });
 
@@ -604,6 +549,7 @@ exports.miniMeGenerate = onRequest(
 
       await db().collection(TASKS_COL).doc(taskId).set({
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        ownerUid: actor.uid,
         status: NORMALIZED.PENDING,
         meshyTaskId: providerTaskId,   // 仕様どおりのフィールド名（プロバイダ問わずこの名前で保持）
         provider: provider.id,
@@ -612,8 +558,7 @@ exports.miniMeGenerate = onRequest(
 
       res.status(200).json({ taskId });
     } catch (e) {
-      console.error('[mini-me] generate POST error', e);
-      res.status(e.httpStatus || 500).json({ error: safeErrorMessage(e.message, 'サーバーエラー') });
+      sendCostError(res, e);
     }
   }
 );
