@@ -164,7 +164,19 @@ class CostGateTest(unittest.TestCase):
             "names.some(key => process.env[key]);",
             "const seen = process.env['FUNCTION_TARGET'];",
             "process.env.K_REVISION === 'true';",
-            "process.env.GCLOUD_PROJECT = 'demo-cc-dev-fst-e2e';",
+            "process.env.K_REVISION == 'true';",
+            "process.env.FUNCTIONS_EMULATOR !== 'true';",
+            "const previous = process.env.CONFIRM_PRODUCTION_WRITE;",
+            "const value = typeof process.env[key] === 'string' ? process.env[key].trim() : '';",
+            "return process.env[envName] || '';",
+            "const name = (process.env.MODEL_PROVIDER || 'meshy').toLowerCase();",
+            "const debug = process.env.FST_APPCHECK_DEBUG_TOKEN || '';",
+            "const token = process.env.K_SERVICE;",
+            "const { K_SERVICE } = process.env;",
+            "require('node:crypto');",
+            "require('firebase-admin');",
+            "const { onRequest } = require('firebase-functions/v2/https');",
+            "// defineSecret でバインドすると実行時に process.env にも同名で入る。",
         ])
         self.put('functions/read.js', reads)
         self.put('tests/e2e/function-host.cjs', "delete process.env.K_SERVICE;\nReflect.deleteProperty(process.env, 'K_REVISION');\n")
@@ -193,6 +205,74 @@ class CostGateTest(unittest.TestCase):
             hits = [f for f in guard.scan(self.root)[0] if f['rule'] == 'FST_CLOUD_RUN_ENV']
             self.assertTrue(hits, sample)
             self.assertEqual(hits[0]['path'], 'functions/bypass.js')
+        p = self.policy()
+        today = dt.datetime.now(dt.timezone(dt.timedelta(hours=9))).date()
+        p.update(reviewedOn=today.isoformat(), expiresOn=today.isoformat(), reviewDecisions=[dict(
+            rule='FST_CLOUD_RUN_ENV', path='functions/bypass.js', line=1,
+            disposition='false_positive', evidence='This text is long enough but errors stay blocking.',
+        )])
+        self.put('cost-safety.json', json.dumps(p))
+        r = subprocess.run([sys.executable, str(Path(guard.__file__)), '--root', str(self.root), '--check'], capture_output=True)
+        self.assertEqual(1, r.returncode)
+
+    def test_env_alias_spellings_fail_and_reads_stay(self):
+        reads = "\n".join([
+            "if (process.env.K_SERVICE) return false;",
+            "process.env.FUNCTIONS_EMULATOR !== 'true';",
+            "process.env.FST_E2E_EMULATOR !== '1';",
+            "const seen = process.env['FUNCTION_TARGET'];",
+            "names.some(key => process.env[key]);",
+            "const previous = process.env.CONFIRM_PRODUCTION_WRITE;",
+            "const value = typeof process.env[key] === 'string' ? process.env[key].trim() : '';",
+            "return process.env[envName] || '';",
+            "const name = (process.env.MODEL_PROVIDER || 'meshy').toLowerCase();",
+            "if (!process.env.GCLOUD_PROJECT) setEnv('GCLOUD_PROJECT', 'cc-dev-ps7');",
+            "require('node:crypto');",
+            "require(\"firebase-admin\");",
+            "import { onRequest } from 'firebase-functions/v2/https';",
+        ])
+        self.put('functions/read.js', reads)
+        self.assertNotIn('FST_CLOUD_RUN_ENV', self.codes())
+        samples = [
+            'const e = process.env',
+            'let e=process.env',
+            'var e = process.env',
+            'e = process.env',
+            'exports.env = process.env',
+            'const { env } = process',
+            'const { env: alias } = process',
+            'let {env}=process',
+            '({ env } = process)',
+            'process.env = {}',
+            "process.env.GCLOUD_PROJECT = ''",
+            "process . env . OTHER += ''",
+            "process['env']",
+            'process ["env"]',
+            'process[ name ]',
+            'globalThis.process',
+            "globalThis['process']",
+            "require('process')",
+            'require("process")',
+            "require(`process`)",
+            "require('node:process')",
+            'require("node:process")',
+            "import process from 'process'",
+            'import * as process from "node:process"',
+            "import { env } from 'node:process'",
+            "import('node:process')",
+            'process?.env',
+            'process ?. env',
+            "process?.['env']",
+        ]
+        for sample in samples:
+            self.put('functions/bypass.js', sample + '\n')
+            hits = [f for f in guard.scan(self.root)[0] if f['rule'] == 'FST_CLOUD_RUN_ENV']
+            self.assertTrue(hits, sample)
+            self.assertEqual(hits[0]['path'], 'functions/bypass.js')
+        root = Path(__file__).resolve().parents[1]
+        real = [f for f in guard.scan(root)[0] if f['rule'] == 'FST_CLOUD_RUN_ENV']
+        self.assertEqual(real, [])
+        self.put('functions/bypass.js', 'const e = process.env\n')
         p = self.policy()
         today = dt.datetime.now(dt.timezone(dt.timedelta(hours=9))).date()
         p.update(reviewedOn=today.isoformat(), expiresOn=today.isoformat(), reviewDecisions=[dict(
