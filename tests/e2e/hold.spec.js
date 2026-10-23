@@ -99,3 +99,32 @@ test('a 503 stops the send button and keeps the typed feedback', async ({ page }
     'e2e-503-button-restored.png',
   );
 });
+
+test('a 503 without Retry-After keeps the send button paused for sixty seconds', async ({ page }) => {
+  test.skip(process.env.FST_E2E_EMULATOR !== '1', 'FST_E2E_EMULATOR=1 のときだけ Auth エミュレーターへ切り替える');
+  await seed('cap', 'e2e-503-noretry@example.test');
+  await openFeedback(page, 'e2e-503-noretry@example.test');
+  await page.clock.install();
+  await page.route('**/api/fst-feedback', route => route.fulfill({
+    status: 503,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ error: 'COST_GUARD_UNAVAILABLE' }),
+  }));
+  await page.getByRole('button', { name: '送信', exact: true }).click();
+  const subject = page.getByPlaceholder('例：タスク追加時の不具合について');
+  const body = page.getByPlaceholder('ご意見・ご要望・不具合報告など');
+  const waiting = page.getByRole('button', { name: 'あと60秒' });
+  await expect(page.getByText('混み合っています。少し待ってもう一度送ってください')).toBeVisible();
+  await expect(waiting).toBeDisabled();
+  await expect(waiting).toHaveCSS('background-color', 'rgb(92, 99, 112)');
+  await expect(subject).toHaveValue('E2Eの件名');
+  await expect(body).toHaveValue('E2Eの本文は残る');
+  await page.screenshot({ path: path.join(shotDir, 'e2e-503-no-retry-paused.png') });
+  await page.clock.fastForward(60_000);
+  const restored = page.getByRole('button', { name: '送信', exact: true });
+  await expect(restored).toBeEnabled();
+  await expect(subject).toHaveValue('E2Eの件名');
+  await expect(body).toHaveValue('E2Eの本文は残る');
+  await expect(page.getByText('混み合っています。少し待ってもう一度送ってください')).toBeVisible();
+  await page.screenshot({ path: path.join(shotDir, 'e2e-503-no-retry-restored.png') });
+});

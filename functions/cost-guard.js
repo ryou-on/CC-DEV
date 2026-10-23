@@ -27,11 +27,36 @@ const LIMITS = Object.freeze({
   fstSurveySetActive: { minute: 10, globalMinute: 10, userDay: 100, userMonth: 1000, globalDay: 250, bytes: 8192 },
   fstSurveyAnswer: { minute: 5, globalMinute: 60, userDay: 30, userMonth: 300, globalDay: 500, bytes: 8192 },
 });
-// Cloud Run sets K_SERVICE before the process starts. A deployed function must
-// ignore the local E2E switches even if a .env file copies them in.
+// Cloud Run sets K_SERVICE, FUNCTION_TARGET, and K_REVISION before the process
+// starts. A deployed function must ignore E2E switches unless every configured
+// project id is a demo-* project and none of those identity variables are set.
+const CLOUD_RUN_IDENTITY = ['K_SERVICE', 'FUNCTION_TARGET', 'K_REVISION'];
+const PROJECT_ENV = ['GCLOUD_PROJECT', 'GCP_PROJECT', 'GOOGLE_CLOUD_PROJECT'];
+
+function configuredProjectIds() {
+  const ids = [];
+  for (const key of PROJECT_ENV) {
+    const value = typeof process.env[key] === 'string' ? process.env[key].trim() : '';
+    if (value) ids.push(value);
+  }
+  const raw = typeof process.env.FIREBASE_CONFIG === 'string' ? process.env.FIREBASE_CONFIG.trim() : '';
+  if (raw) {
+    try {
+      const projectId = JSON.parse(raw).projectId;
+      if (typeof projectId !== 'string' || !projectId.trim()) return null;
+      ids.push(projectId.trim());
+    } catch {
+      return null;
+    }
+  }
+  return ids;
+}
+
 function e2eEmulatorEnabled() {
-  if (process.env.K_SERVICE) return false;
-  return process.env.FUNCTIONS_EMULATOR === 'true' && process.env.FST_E2E_EMULATOR === '1';
+  if (CLOUD_RUN_IDENTITY.some(key => process.env[key])) return false;
+  const ids = configuredProjectIds();
+  if (!ids || ids.length === 0) return false;
+  return ids.every(id => id.startsWith('demo-'));
 }
 
 function browserOrigins() {

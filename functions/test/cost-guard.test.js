@@ -2,6 +2,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createGuard, LIMITS, periodKeys, rateOf, retryAfterSeconds, clearFstHolds, sweepFstHolds, rememberFstHold, rejectIfFstHeld, FST_HOLD_MAX, debugAppCheckAccepted, browserOrigins, e2eEmulatorEnabled } = require('../cost-guard');
+
+function unsetEnv(name) {
+  Reflect.deleteProperty(process.env, name);
+}
 const { armExpiry, expireCall, callIdFromLocation } = require('../realtime-cost');
 
 const NOW = Date.parse('2026-10-05T01:00:00Z');
@@ -174,38 +178,74 @@ test('a flight strip reserve does not write an unused monthly global counter', a
   }
 });
 
-test('the app check debug token is accepted only inside the emulator e2e flag and never when K_SERVICE is set', () => {
-  const saved = {
-    FUNCTIONS_EMULATOR: process.env.FUNCTIONS_EMULATOR,
-    FST_E2E_EMULATOR: process.env.FST_E2E_EMULATOR,
-    FST_APPCHECK_DEBUG_TOKEN: process.env.FST_APPCHECK_DEBUG_TOKEN,
-    K_SERVICE: process.env.K_SERVICE,
-  };
-  delete process.env.FUNCTIONS_EMULATOR;
-  delete process.env.FST_E2E_EMULATOR;
-  delete process.env.FST_APPCHECK_DEBUG_TOKEN;
-  delete process.env.K_SERVICE;
-  assert.equal(e2eEmulatorEnabled(), false);
-  assert.equal(debugAppCheckAccepted('debug-token'), false);
-  process.env.FST_APPCHECK_DEBUG_TOKEN = 'debug-token';
-  assert.equal(debugAppCheckAccepted('debug-token'), false);
-  process.env.FUNCTIONS_EMULATOR = 'true';
-  assert.equal(debugAppCheckAccepted('debug-token'), false);
-  assert.equal(browserOrigins().includes('http://127.0.0.1:4173'), false);
-  process.env.FST_E2E_EMULATOR = '1';
-  assert.equal(e2eEmulatorEnabled(), true);
-  assert.equal(debugAppCheckAccepted('debug-token'), true);
-  assert.equal(debugAppCheckAccepted('other'), false);
-  assert.equal(browserOrigins().includes('http://127.0.0.1:4173'), true);
-  assert.equal(browserOrigins().includes('http://localhost:4173'), true);
-  process.env.K_SERVICE = 'fstFeedbackSubmit';
-  assert.equal(e2eEmulatorEnabled(), false);
-  assert.equal(debugAppCheckAccepted('debug-token'), false);
-  assert.equal(browserOrigins().includes('http://127.0.0.1:4173'), false);
-  assert.equal(browserOrigins().includes('http://localhost:4173'), false);
-  for (const [key, value] of Object.entries(saved)) {
-    if (value == null) delete process.env[key];
-    else process.env[key] = value;
+test('the app check debug token is accepted only for a demo project and never when K_SERVICE is set', () => {
+  const keys = ['FUNCTIONS_EMULATOR', 'FST_E2E_EMULATOR', 'FST_APPCHECK_DEBUG_TOKEN', 'K_SERVICE', 'GCLOUD_PROJECT', 'GCP_PROJECT', 'GOOGLE_CLOUD_PROJECT', 'FIREBASE_CONFIG'];
+  const saved = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  try {
+    for (const key of keys) unsetEnv(key);
+    assert.equal(e2eEmulatorEnabled(), false);
+    assert.equal(debugAppCheckAccepted('debug-token'), false);
+    process.env.FST_APPCHECK_DEBUG_TOKEN = 'debug-token';
+    process.env.FUNCTIONS_EMULATOR = 'true';
+    process.env.FST_E2E_EMULATOR = '1';
+    assert.equal(e2eEmulatorEnabled(), false);
+    assert.equal(debugAppCheckAccepted('debug-token'), false);
+    assert.equal(browserOrigins().includes('http://127.0.0.1:4173'), false);
+    process.env.GCLOUD_PROJECT = 'demo-cc-dev-fst-e2e';
+    assert.equal(e2eEmulatorEnabled(), true);
+    assert.equal(debugAppCheckAccepted('debug-token'), true);
+    assert.equal(debugAppCheckAccepted('other'), false);
+    assert.equal(browserOrigins().includes('http://127.0.0.1:4173'), true);
+    assert.equal(browserOrigins().includes('http://localhost:4173'), true);
+    process.env.K_SERVICE = 'fstFeedbackSubmit';
+    assert.equal(e2eEmulatorEnabled(), false);
+    assert.equal(debugAppCheckAccepted('debug-token'), false);
+    assert.equal(browserOrigins().includes('http://127.0.0.1:4173'), false);
+    assert.equal(browserOrigins().includes('http://localhost:4173'), false);
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value == null) unsetEnv(key);
+      else process.env[key] = value;
+    }
+  }
+});
+
+test('e2e switches turn on only for a demo project and stay off when cloud run identity is present', () => {
+  const keys = ['K_SERVICE', 'FUNCTION_TARGET', 'K_REVISION', 'GCLOUD_PROJECT', 'GCP_PROJECT', 'GOOGLE_CLOUD_PROJECT', 'FIREBASE_CONFIG', 'FST_APPCHECK_DEBUG_TOKEN'];
+  const saved = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  try {
+    for (const key of keys) unsetEnv(key);
+    process.env.FST_APPCHECK_DEBUG_TOKEN = 'debug-token';
+    process.env.GCLOUD_PROJECT = 'cc-dev-ps7';
+    assert.equal(e2eEmulatorEnabled(), false);
+    assert.equal(browserOrigins().includes('http://127.0.0.1:4173'), false);
+    process.env.GCLOUD_PROJECT = 'demo-cc-dev-fst-e2e';
+    assert.equal(e2eEmulatorEnabled(), true);
+    assert.equal(debugAppCheckAccepted('debug-token'), true);
+    process.env.FUNCTION_TARGET = 'fstFeedbackSubmit';
+    assert.equal(e2eEmulatorEnabled(), false);
+    unsetEnv('FUNCTION_TARGET');
+    process.env.K_REVISION = 'fstFeedbackSubmit-00001-abc';
+    assert.equal(e2eEmulatorEnabled(), false);
+    unsetEnv('K_REVISION');
+    process.env.FIREBASE_CONFIG = JSON.stringify({ projectId: 'cc-dev-ps7' });
+    assert.equal(e2eEmulatorEnabled(), false);
+    process.env.FIREBASE_CONFIG = JSON.stringify({ projectId: 'demo-cc-dev-fst-e2e' });
+    assert.equal(e2eEmulatorEnabled(), true);
+    process.env.GCP_PROJECT = 'cc-dev-ps7';
+    assert.equal(e2eEmulatorEnabled(), false);
+    unsetEnv('GCP_PROJECT');
+    unsetEnv('GCLOUD_PROJECT');
+    process.env.GOOGLE_CLOUD_PROJECT = 'demo-cc-dev-fst-e2e';
+    assert.equal(e2eEmulatorEnabled(), true);
+    process.env.FIREBASE_CONFIG = '{';
+    assert.equal(e2eEmulatorEnabled(), false);
+    assert.equal(debugAppCheckAccepted('debug-token'), false);
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value == null) unsetEnv(key);
+      else process.env[key] = value;
+    }
   }
 });
 

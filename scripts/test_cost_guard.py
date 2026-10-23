@@ -157,6 +157,25 @@ class CostGateTest(unittest.TestCase):
         self.assertEqual({f['path'] for f in hits}, {'functions/.env.local', 'functions/.env.cc-dev-ps7'})
         self.assertEqual(before, guard.scan(self.root)[1])
 
+    def test_functions_must_not_delete_k_service(self):
+        self.put('functions/keep.js', 'Reflect.deleteProperty(process.env, name);\n')
+        self.put('tests/e2e/function-host.cjs', 'delete process.env.K_SERVICE;\n')
+        self.assertNotIn('FST_K_SERVICE_DELETE', self.codes())
+        self.put('functions/cost-guard.js', 'delete process.env.K_SERVICE;\n')
+        hits = [f for f in guard.scan(self.root)[0] if f['rule'] == 'FST_K_SERVICE_DELETE']
+        self.assertEqual(len(hits), 1)
+        self.assertEqual(hits[0]['path'], 'functions/cost-guard.js')
+        self.assertEqual(hits[0]['line'], 1)
+        p = self.policy()
+        today = dt.datetime.now(dt.timezone(dt.timedelta(hours=9))).date()
+        p.update(reviewedOn=today.isoformat(), expiresOn=today.isoformat(), reviewDecisions=[dict(
+            rule='FST_K_SERVICE_DELETE', path='functions/cost-guard.js', line=1,
+            disposition='false_positive', evidence='This text is long enough but errors stay blocking.',
+        )])
+        self.put('cost-safety.json', json.dumps(p))
+        r = subprocess.run([sys.executable, str(Path(guard.__file__)), '--root', str(self.root), '--check'], capture_output=True)
+        self.assertEqual(1, r.returncode)
+
     def test_flight_strip_max_instances_must_stay_one(self):
         self.put('functions/fst-feedback.js', "exports.fstFeedbackSubmit = onRequest({ maxInstances: 2 }, handler);\n")
         self.assertIn('FST_MAX_INSTANCES', self.codes())
