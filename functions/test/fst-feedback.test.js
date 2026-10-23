@@ -173,9 +173,7 @@ test('missing App Check, anonymous auth, and a closed budget do not write feedba
   }
 });
 
-function unsetEnv(name) {
-  Reflect.deleteProperty(process.env, name);
-}
+const { setEnv, unsetEnv } = require('../../tests/fst-env.cjs');
 
 test('a localhost feedback url is stored only for a demo project outside cloud run', async () => {
   const keys = ['FUNCTIONS_EMULATOR', 'FST_E2E_EMULATOR', 'K_SERVICE', 'FUNCTION_TARGET', 'K_REVISION', 'GCLOUD_PROJECT', 'GCP_PROJECT', 'GOOGLE_CLOUD_PROJECT', 'FIREBASE_CONFIG'];
@@ -183,17 +181,19 @@ test('a localhost feedback url is stored only for a demo project outside cloud r
   const local = { ...payload, url: 'http://127.0.0.1:4173/Flight_Strip_TODO_dev/?x=1#part' };
   try {
     for (const key of keys) unsetEnv(key);
-    process.env.GCLOUD_PROJECT = 'demo-cc-dev-fst-e2e';
+    setEnv('FUNCTIONS_EMULATOR', 'true');
+    setEnv('FST_E2E_EMULATOR', '1');
+    setEnv('GCLOUD_PROJECT', 'demo-cc-dev-fst-e2e');
     const open = setup();
     const ok = response();
     await open.handler(request(local), ok);
     assert.equal(ok.statusCode, 201);
     assert.equal(open.db.records.get('fst_feedback/FB_0001').url, 'http://127.0.0.1:4173/Flight_Strip_TODO_dev/');
-    for (const [key, value] of [['K_SERVICE', 'fstFeedbackSubmit'], ['FUNCTION_TARGET', 'fstFeedbackSubmit'], ['K_REVISION', 'fstFeedbackSubmit-00001-abc']]) {
+    for (const name of ['K_SERVICE', 'FUNCTION_TARGET', 'K_REVISION']) {
       unsetEnv('K_SERVICE');
       unsetEnv('FUNCTION_TARGET');
       unsetEnv('K_REVISION');
-      process.env[key] = value;
+      setEnv(name, 'fstFeedbackSubmit');
       const closed = setup();
       const denied = response();
       await closed.handler(request(local), denied);
@@ -204,16 +204,23 @@ test('a localhost feedback url is stored only for a demo project outside cloud r
     unsetEnv('K_SERVICE');
     unsetEnv('FUNCTION_TARGET');
     unsetEnv('K_REVISION');
-    process.env.GCLOUD_PROJECT = 'cc-dev-ps7';
+    setEnv('GCLOUD_PROJECT', 'cc-dev-ps7');
     const production = setup();
     const rejected = response();
     await production.handler(request(local), rejected);
     assert.equal(rejected.statusCode, 400);
     assert.equal(rejected.body.error, 'INVALID_FEEDBACK');
+    setEnv('GCLOUD_PROJECT', 'demo-cc-dev-fst-e2e');
+    unsetEnv('FUNCTIONS_EMULATOR');
+    const noEmulator = setup();
+    const blocked = response();
+    await noEmulator.handler(request(local), blocked);
+    assert.equal(blocked.statusCode, 400);
+    assert.equal(blocked.body.error, 'INVALID_FEEDBACK');
   } finally {
     for (const [key, value] of Object.entries(saved)) {
       if (value == null) unsetEnv(key);
-      else process.env[key] = value;
+      else setEnv(key, value);
     }
   }
 });

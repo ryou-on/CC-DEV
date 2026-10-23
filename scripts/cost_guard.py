@@ -107,7 +107,7 @@ def scan(root):
     if not checked:
         add('error', 'EMPTY_SCAN', '.', 1, '検査対象が空です')
     findings.extend(fst_e2e_env_errors(root))
-    findings.extend(fst_k_service_delete_errors(root))
+    findings.extend(fst_cloud_run_env_errors(root))
     return findings, fingerprint.hexdigest(), checked
 
 
@@ -134,14 +134,27 @@ def fst_e2e_env_errors(root):
     return found
 
 
-def fst_k_service_delete_errors(root):
-    # The statement is the bypass. Keep the finding out of the fingerprint by
-    # scanning after the hash is built. tests/e2e is outside functions/.
-    needle = 'delete process.env.K_SERVICE'
+def fst_cloud_run_env_errors(root):
+    # Writes of the Cloud Run identity are rejected even when the spelling changes.
+    # Reads such as process.env[key] stay allowed. tests/ is outside this scan.
+    # The finding is added after the fingerprint, so the match text is not hashed twice.
+    names = 'K_SERVICE|FUNCTION_TARGET|K_REVISION'
+    env = r'''process\s*(?:\.\s*env|\[\s*(['"])env\1\s*\])'''
+    prop = rf'''(?:\.\s*(?:{names})|\[\s*(['"`])(?:{names})\2\s*\])'''
+    op = r'(?:\+\+|--|\+=|-=|\*=|/=|%=|\|=|&=|\^=|<<=|>>=|>>>=|=(?!=))'
+    patterns = [
+        re.compile(rf'\bdelete\s+{env}\b'),
+        re.compile(rf'{env}\s*{prop}\s*{op}'),
+        re.compile(rf'{env}\s*\[[^\]]+\]\s*{op}'),
+        re.compile(rf'\bReflect\s*(?:\.\s*(?:deleteProperty|set|defineProperty)|\[\s*[\'"](?:deleteProperty|set|defineProperty)[\'"]\s*\])\s*\(\s*{env}\b'),
+        re.compile(rf'\bObject\s*(?:\.\s*assign|\[\s*[\'"]assign[\'"]\s*\])\s*\(\s*{env}\b'),
+        re.compile(rf'\bObject\s*(?:\.\s*defineProperty|\[\s*[\'"]defineProperty[\'"]\s*\])\s*\(\s*{env}\b'),
+    ]
     found = []
     folder = root / 'functions'
     if not folder.is_dir():
         return found
+
     def files(directory):
         for path in sorted(directory.iterdir()):
             if path.name in SKIP or path.is_symlink():
@@ -150,18 +163,29 @@ def fst_k_service_delete_errors(root):
                 yield from files(path)
             elif path.is_file():
                 yield path
+
     for path in files(folder):
         if path.stat().st_size > 8 * 1024 * 1024:
             continue
         text = path.read_text(encoding='utf-8', errors='replace')
-        idx = text.find(needle)
-        if idx < 0:
-            continue
-        found.append(dict(
-            level='error', rule='FST_K_SERVICE_DELETE', path=path.relative_to(root).as_posix(),
-            line=text[:idx].count('\n') + 1,
-            message='functions/ で K_SERVICE を消すと Cloud Run の E2E 無効化を抜ける',
-        ))
+        spans = []
+        for pattern in patterns:
+            for match in pattern.finditer(text):
+                spans.append((match.start(), match.end()))
+        spans.sort()
+        merged = []
+        for start, end in spans:
+            if merged and start < merged[-1][1]:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+            else:
+                merged.append((start, end))
+        rel = path.relative_to(root).as_posix()
+        for start, _end in merged:
+            found.append(dict(
+                level='error', rule='FST_CLOUD_RUN_ENV', path=rel,
+                line=text[:start].count('\n') + 1,
+                message='functions/ で K_SERVICE、FUNCTION_TARGET、K_REVISION を消したり書き換えると Cloud Run の無効化を抜ける',
+            ))
     return found
 
 
@@ -200,7 +224,7 @@ def validate_policy(policy, digest, today):
     return errors
 
 
-ERROR_RULES = {'PUBLIC_WRITE', 'QUOTA_FAIL_OPEN', 'CACHE_BUSTER', 'EMPTY_SCAN', 'FST_MAX_INSTANCES', 'FST_E2E_ENV', 'FST_K_SERVICE_DELETE'}
+ERROR_RULES = {'PUBLIC_WRITE', 'QUOTA_FAIL_OPEN', 'CACHE_BUSTER', 'EMPTY_SCAN', 'FST_MAX_INSTANCES', 'FST_E2E_ENV', 'FST_CLOUD_RUN_ENV'}
 FST_ONE_INSTANCE = {
     'functions/fst-analytics.js',
     'functions/fst-dev-admin.js',

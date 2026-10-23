@@ -27,9 +27,9 @@ const LIMITS = Object.freeze({
   fstSurveySetActive: { minute: 10, globalMinute: 10, userDay: 100, userMonth: 1000, globalDay: 250, bytes: 8192 },
   fstSurveyAnswer: { minute: 5, globalMinute: 60, userDay: 30, userMonth: 300, globalDay: 500, bytes: 8192 },
 });
-// Cloud Run sets K_SERVICE, FUNCTION_TARGET, and K_REVISION before the process
-// starts. A deployed function must ignore E2E switches unless every configured
-// project id is a demo-* project and none of those identity variables are set.
+// E2E switches need every condition at once. Cloud Run sets K_SERVICE,
+// FUNCTION_TARGET, and K_REVISION before the process starts. A missing emulator
+// flag or a project id that does not start with demo- keeps them off.
 const CLOUD_RUN_IDENTITY = ['K_SERVICE', 'FUNCTION_TARGET', 'K_REVISION'];
 const PROJECT_ENV = ['GCLOUD_PROJECT', 'GCP_PROJECT', 'GOOGLE_CLOUD_PROJECT'];
 
@@ -53,6 +53,8 @@ function configuredProjectIds() {
 }
 
 function e2eEmulatorEnabled() {
+  if (process.env.FUNCTIONS_EMULATOR !== 'true') return false;
+  if (process.env.FST_E2E_EMULATOR !== '1') return false;
   if (CLOUD_RUN_IDENTITY.some(key => process.env[key])) return false;
   const ids = configuredProjectIds();
   if (!ids || ids.length === 0) return false;

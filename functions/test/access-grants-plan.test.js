@@ -35,11 +35,12 @@ test('a real-looking manifest is ready and uses the shorter shared expiry', () =
 });
 
 test('apply is refused before Firebase starts', () => {
+  const { setEnv, unsetEnv } = require('../../tests/fst-env.cjs');
   const previous = process.env.CONFIRM_PRODUCTION_WRITE;
-  delete process.env.CONFIRM_PRODUCTION_WRITE;
+  unsetEnv('CONFIRM_PRODUCTION_WRITE');
   assert.throws(() => applyGuard(), /本番へは書きません/);
-  if (previous === undefined) delete process.env.CONFIRM_PRODUCTION_WRITE;
-  else process.env.CONFIRM_PRODUCTION_WRITE = previous;
+  if (previous === undefined) unsetEnv('CONFIRM_PRODUCTION_WRITE');
+  else setEnv('CONFIRM_PRODUCTION_WRITE', previous);
 });
 
 test('meiyusha checklist does not contact Auth, including --apply', () => {
