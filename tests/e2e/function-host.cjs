@@ -1,9 +1,7 @@
 'use strict';
 
-// The Functions emulator sets K_SERVICE, and production Cloud Run does too.
-// This host is only the local E2E process. It drops K_SERVICE before loading
-// the handlers so the E2E switches can be tested. Cloud Run never runs this file.
-// Outside functions/. cost_guard rejects this statement only under functions/.
+// Outside functions/. The cost gate rejects these writes under functions/.
+// All four E2E conditions are set before the handlers load.
 delete process.env.K_SERVICE;
 delete process.env.FUNCTION_TARGET;
 delete process.env.K_REVISION;

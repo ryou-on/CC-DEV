@@ -157,19 +157,46 @@ class CostGateTest(unittest.TestCase):
         self.assertEqual({f['path'] for f in hits}, {'functions/.env.local', 'functions/.env.cc-dev-ps7'})
         self.assertEqual(before, guard.scan(self.root)[1])
 
-    def test_functions_must_not_delete_k_service(self):
-        self.put('functions/keep.js', 'Reflect.deleteProperty(process.env, name);\n')
-        self.put('tests/e2e/function-host.cjs', 'delete process.env.K_SERVICE;\n')
-        self.assertNotIn('FST_K_SERVICE_DELETE', self.codes())
-        self.put('functions/cost-guard.js', 'delete process.env.K_SERVICE;\n')
-        hits = [f for f in guard.scan(self.root)[0] if f['rule'] == 'FST_K_SERVICE_DELETE']
-        self.assertEqual(len(hits), 1)
-        self.assertEqual(hits[0]['path'], 'functions/cost-guard.js')
-        self.assertEqual(hits[0]['line'], 1)
+    def test_functions_cannot_rewrite_cloud_run_identity(self):
+        reads = "\n".join([
+            "if (process.env.K_SERVICE) return false;",
+            "const names = ['K_SERVICE', 'FUNCTION_TARGET', 'K_REVISION'];",
+            "names.some(key => process.env[key]);",
+            "const seen = process.env['FUNCTION_TARGET'];",
+            "process.env.K_REVISION === 'true';",
+            "process.env.GCLOUD_PROJECT = 'demo-cc-dev-fst-e2e';",
+        ])
+        self.put('functions/read.js', reads)
+        self.put('tests/e2e/function-host.cjs', "delete process.env.K_SERVICE;\nReflect.deleteProperty(process.env, 'K_REVISION');\n")
+        self.assertNotIn('FST_CLOUD_RUN_ENV', self.codes())
+        samples = [
+            "delete process.env['K_SERVICE']",
+            'Reflect.deleteProperty(process.env, "K_SERVICE")',
+            "process.env.K_SERVICE = ''",
+            "Object.assign(process.env, { K_SERVICE: '' })",
+            "delete   process.env[ 'K_SERVICE' ]",
+            "delete process.env['FUNCTION_TARGET']",
+            "delete process.env.K_REVISION",
+            "process.env['FUNCTION_TARGET']=''",
+            'process.env[ "K_REVISION" ] = ""',
+            "Reflect.deleteProperty( process.env , 'FUNCTION_TARGET' )",
+            "Reflect.deleteProperty(process.env, 'K_REVISION')",
+            "Object.assign( process.env , { FUNCTION_TARGET: '' } )",
+            "Object.assign(process.env, { K_REVISION: '' })",
+            "Object.defineProperty(process.env, 'K_SERVICE', { value: '' })",
+            "process.env.FUNCTION_TARGET = ''",
+            "process.env.K_REVISION=''",
+            "process.env[key] = ''",
+        ]
+        for sample in samples:
+            self.put('functions/bypass.js', sample + '\n')
+            hits = [f for f in guard.scan(self.root)[0] if f['rule'] == 'FST_CLOUD_RUN_ENV']
+            self.assertTrue(hits, sample)
+            self.assertEqual(hits[0]['path'], 'functions/bypass.js')
         p = self.policy()
         today = dt.datetime.now(dt.timezone(dt.timedelta(hours=9))).date()
         p.update(reviewedOn=today.isoformat(), expiresOn=today.isoformat(), reviewDecisions=[dict(
-            rule='FST_K_SERVICE_DELETE', path='functions/cost-guard.js', line=1,
+            rule='FST_CLOUD_RUN_ENV', path='functions/bypass.js', line=1,
             disposition='false_positive', evidence='This text is long enough but errors stay blocking.',
         )])
         self.put('cost-safety.json', json.dumps(p))
