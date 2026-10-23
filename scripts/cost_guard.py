@@ -135,17 +135,27 @@ def fst_e2e_env_errors(root):
 
 
 def fst_cloud_run_env_errors(root):
-    # Writes of the Cloud Run identity are rejected even when the spelling changes.
-    # Reads such as process.env[key] stay allowed. tests/ is outside this scan.
+    # A text scan, not a parser. It stops accidental rewrites. Another spelling
+    # can still slip through. Reads of process.env.NAME and process.env[key],
+    # including === and !==, stay allowed. tests/ is outside this scan.
     # The finding is added after the fingerprint, so the match text is not hashed twice.
-    names = 'K_SERVICE|FUNCTION_TARGET|K_REVISION'
-    env = r'''process\s*(?:\.\s*env|\[\s*(['"])env\1\s*\])'''
-    prop = rf'''(?:\.\s*(?:{names})|\[\s*(['"`])(?:{names})\2\s*\])'''
+    env = r'process\s*\.\s*env\b'
     op = r'(?:\+\+|--|\+=|-=|\*=|/=|%=|\|=|&=|\^=|<<=|>>=|>>>=|=(?!=))'
+    quote = r'["\'`]'
+    module = rf'{quote}(?:node:)?process{quote}'
     patterns = [
-        re.compile(rf'\bdelete\s+{env}\b'),
-        re.compile(rf'{env}\s*{prop}\s*{op}'),
+        re.compile(rf'\bdelete\s+{env}'),
+        re.compile(rf'{env}\s*\.\s*[A-Za-z_$][\w$]*\s*{op}'),
         re.compile(rf'{env}\s*\[[^\]]+\]\s*{op}'),
+        re.compile(rf'{env}\s*{op}'),
+        ('alias', re.compile(rf'(?<![=!<>])=\s*{env}(?!\s*[.\[])')),
+        re.compile(rf'\{{[^}}]*\benv\b[^}}]*\}}\s*=\s*process\b(?!\s*[.\[])'),
+        re.compile(r'\bprocess\s*\['),
+        re.compile(rf'\bglobalThis\s*(?:\.\s*process\b|\[\s*{quote}process{quote}\s*\])'),
+        re.compile(rf'\brequire\s*\(\s*{module}\s*\)'),
+        re.compile(rf'\bimport\s*(?:\(\s*{module}|[^;]*?\bfrom\s*{module}|{module})'),
+        re.compile(rf'\bprocess\s*\?\s*\.\s*env\b'),
+        re.compile(rf'\bprocess\s*\?\s*\.\s*\[\s*{quote}env{quote}\s*\]'),
         re.compile(rf'\bReflect\s*(?:\.\s*(?:deleteProperty|set|defineProperty)|\[\s*[\'"](?:deleteProperty|set|defineProperty)[\'"]\s*\])\s*\(\s*{env}\b'),
         re.compile(rf'\bObject\s*(?:\.\s*assign|\[\s*[\'"]assign[\'"]\s*\])\s*\(\s*{env}\b'),
         re.compile(rf'\bObject\s*(?:\.\s*defineProperty|\[\s*[\'"]defineProperty[\'"]\s*\])\s*\(\s*{env}\b'),
@@ -170,7 +180,12 @@ def fst_cloud_run_env_errors(root):
         text = path.read_text(encoding='utf-8', errors='replace')
         spans = []
         for pattern in patterns:
+            kind = None
+            if isinstance(pattern, tuple):
+                kind, pattern = pattern
             for match in pattern.finditer(text):
+                if kind == 'alias' and text[:match.start()].rstrip().endswith('}'):
+                    continue
                 spans.append((match.start(), match.end()))
         spans.sort()
         merged = []
@@ -184,7 +199,7 @@ def fst_cloud_run_env_errors(root):
             found.append(dict(
                 level='error', rule='FST_CLOUD_RUN_ENV', path=rel,
                 line=text[:start].count('\n') + 1,
-                message='functions/ で K_SERVICE、FUNCTION_TARGET、K_REVISION を消したり書き換えると Cloud Run の無効化を抜ける',
+                message='functions/ で process.env を消す、代入する、別名にする、process[ や globalThis.process や require("process") や process?.env で触れると Cloud Run の無効化を抜ける',
             ))
     return found
 

@@ -144,7 +144,7 @@ Flight Strip の行から `globalMonth` を削除した。ハンドラは月次�
 ## 完了した作業
 
 - 利用者の上限は試した回数で、重い処理の前に文書 1 つだけ読んで数える。上限なら待ちに入れて終わる。
-- 6 関数の `maxInstances` は 1。`cost_guard` は 1 でなければエラーにする。429 と 503 には `Retry-After` を付け、画面はその秒数だけ送信ボタンを止める。止まったボタンは灰色で残り秒数を出す。`Retry-After` が無い 503 は 60 秒止める。予算停止の 503 も待ちに入り、利用者の枠を 1 つ使う。試し直し 5 回の最悪は 880 回。Cloud Run 自身の 429 と 503 でも統計は `console.warn` を出す。E2E 用の受け入れは、`FUNCTIONS_EMULATOR==='true'`、`FST_E2E_EMULATOR==='1'`、プロジェクト ID がすべて `demo-` で始まる、`K_SERVICE` と `FUNCTION_TARGET` と `K_REVISION` が無い、の4つがそろったときだけ有効である。
+- 6 関数の `maxInstances` は 1。`cost_guard` は 1 でなければエラーにする。429 と 503 には `Retry-After` を付け、画面はその秒数だけ送信ボタンを止める。止まったボタンは灰色で残り秒数を出す。`Retry-After` が無い 503 は 60 秒止める。予算停止の 503 も待ちに入り、利用者の枠を 1 つ使う。試し直し 5 回の最悪は 880 回。Cloud Run 自身の 429 と 503 でも統計は `console.warn` を出す。E2E 用の受け入れは、`FUNCTIONS_EMULATOR==='true'`、`FST_E2E_EMULATOR==='1'`、プロジェクト ID がすべて `demo-` で始まる、`K_SERVICE` と `FUNCTION_TARGET` と `K_REVISION` が無い、の4つがそろったときだけ有効である。`FST_CLOUD_RUN_ENV` は文字列の照合であり、うっかりした書き換えを止めるためのものである。書き方を工夫したすり抜けは止めきれない。
 - 409、404、業務上の 400、目安箱の再送は利用者の枠を使い、全体の枠は使わない。
 - 待ちの期限切れは消し、件数は 1,000 で止める。待ちは 1 台の中だけで効く。
 - 503 の `COST_GUARD_UNAVAILABLE` は、回答と目安箱で混雑と同じ案内を出し、統計は `console.warn` に残す。
@@ -167,11 +167,11 @@ Hosting と Rules のゲートは `functions.get` を呼ぶ。Hosting 用の `FI
 ## 検証
 
 - `npm test --prefix functions` 102 件成功
-- `python3 -m unittest discover -s scripts -p 'test_*.py'` 37 件成功
+- `python3 -m unittest discover -s scripts -p 'test_*.py'` 38 件成功
 - Firestore / Storage のルールファイルは今回変えていない。直前のエミュレーター試験は 30 件成功
 - 本番 API は呼んでいない
 - ログイン後のアンケート送信は、ブラウザでは押していない
-- Auth のエミュレーター接続は、環境変数 `FST_E2E_EMULATOR=1` で起動した E2E が `window.__FST_E2E_EMULATOR` を注入し、かつページのホストが localhost か 127.0.0.1 のときだけ有効になる。本番のホスト名では `useEmulator` を呼ばない。App Check のデバッグトークン、localhost の CORS、目安箱 URL の http は、次の4つが全部そろったときだけ有効になる。`FUNCTIONS_EMULATOR==='true'`、`FST_E2E_EMULATOR==='1'`、`GCLOUD_PROJECT` と `GCP_PROJECT` と `GOOGLE_CLOUD_PROJECT` と `FIREBASE_CONFIG` の projectId がすべて `demo-` で始まる、`K_SERVICE` と `FUNCTION_TARGET` と `K_REVISION` が無い。1つでも欠けると無効である。Firebase の Functions エミュレーターは `K_SERVICE` を自分で付けるので、E2E はそれを使わず、`functions/` の外にある手元の関数ホストで4条件を満たしてから Auth と Firestore のエミュレーターへつなぐ。プロジェクト ID は `demo-cc-dev-fst-e2e`。`functions/.env*` に `FST_E2E_` か `FUNCTIONS_EMULATOR` があると、`cost_guard` と `require_fst_functions.py` がエラーにする。`functions/` でこの3つの識別子を消したり書き換えるコードは、`delete`、`Reflect.deleteProperty`、空文字の代入、`Object.assign`、`Object.defineProperty`、スペースを増やした書き方でも `FST_CLOUD_RUN_ENV` になり、免除できない
+- Auth のエミュレーター接続は、環境変数 `FST_E2E_EMULATOR=1` で起動した E2E が `window.__FST_E2E_EMULATOR` を注入し、かつページのホストが localhost か 127.0.0.1 のときだけ有効になる。本番のホスト名では `useEmulator` を呼ばない。App Check のデバッグトークン、localhost の CORS、目安箱 URL の http は、次の4つが全部そろったときだけ有効になる。`FUNCTIONS_EMULATOR==='true'`、`FST_E2E_EMULATOR==='1'`、`GCLOUD_PROJECT` と `GCP_PROJECT` と `GOOGLE_CLOUD_PROJECT` と `FIREBASE_CONFIG` の projectId がすべて `demo-` で始まる、`K_SERVICE` と `FUNCTION_TARGET` と `K_REVISION` が無い。1つでも欠けると無効である。Firebase の Functions エミュレーターは `K_SERVICE` を自分で付けるので、E2E はそれを使わず、`functions/` の外にある手元の関数ホストで4条件を満たしてから Auth と Firestore のエミュレーターへつなぐ。プロジェクト ID は `demo-cc-dev-fst-e2e`。`functions/.env*` に `FST_E2E_` か `FUNCTIONS_EMULATOR` があると、`cost_guard` と `require_fst_functions.py` がエラーにする。`functions/` でこの3つの識別子を消したり書き換えるコードは、`delete`、`Reflect.deleteProperty`、空文字の代入、`Object.assign`、`Object.defineProperty`、スペースを増やした書き方でも `FST_CLOUD_RUN_ENV` になり、免除できない。同じ規則は、`process.env` を変数へ入れること、`const { env } = process`、`process.env` への代入、`process[`、`globalThis.process`、`require('process')` と `"process"` と `node:process` と import、`process?.env` もエラーにする。これは文字列の照合なので、うっかりした書き換えを止めるためのものであり、書き方を工夫したすり抜けは止めきれない。`process.env.NAME` の読み取りや `===` との比較、今の `functions/` の読み取りはエラーにしない
 - Playwright は 4 件成功した。`a 429 stops the send button until the retry window ends` は上限の 429、`a paused budget stops the send button with the service paused message` は予算停止の 503、`a 503 stops the send button and keeps the typed feedback` は `Retry-After: 3` の 503、`a 503 without Retry-After keeps the send button paused for sixty seconds` は `Retry-After` の無い 503 でボタンが「あと60秒」になり、時計を 60 秒進めると戻る。どれも送信ボタンを灰色にし、件名と本文は残した。429 と予算停止は実ハンドラ、2 つの 503 は応答を差し替えた確認である
 
 ## バージョン

@@ -9,8 +9,9 @@
  */
 const test = require('node:test');
 const assert = require('node:assert');
+const { setEnv } = require('../../tests/fst-env.cjs');
 
-process.env.GCLOUD_PROJECT = process.env.GCLOUD_PROJECT || 'cc-dev-ps7';
+if (!process.env.GCLOUD_PROJECT) setEnv('GCLOUD_PROJECT', 'cc-dev-ps7');
 
 const { __test__ } = require('../mini-me');
 const { priceOrder, PLANS, OPTIONS, MAX_TOTAL_QTY, SHIPPING_FEE, FREE_SHIPPING_THRESHOLD } = __test__;
