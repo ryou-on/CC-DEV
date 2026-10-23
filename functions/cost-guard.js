@@ -27,11 +27,16 @@ const LIMITS = Object.freeze({
   fstSurveySetActive: { minute: 10, globalMinute: 10, userDay: 100, userMonth: 1000, globalDay: 250, bytes: 8192 },
   fstSurveyAnswer: { minute: 5, globalMinute: 60, userDay: 30, userMonth: 300, globalDay: 500, bytes: 8192 },
 });
+// Cloud Run sets K_SERVICE before the process starts. A deployed function must
+// ignore the local E2E switches even if a .env file copies them in.
+function e2eEmulatorEnabled() {
+  if (process.env.K_SERVICE) return false;
+  return process.env.FUNCTIONS_EMULATOR === 'true' && process.env.FST_E2E_EMULATOR === '1';
+}
+
 function browserOrigins() {
   const origins = ['https://cc-dev-ps7.web.app', 'https://cc-dev-ps7.firebaseapp.com'];
-  // The emulator flag is set only by the local E2E runner. Production Cloud Run
-  // does not set FUNCTIONS_EMULATOR, so this list stays the two hosted origins.
-  if (process.env.FUNCTIONS_EMULATOR === 'true' && process.env.FST_E2E_EMULATOR === '1') {
+  if (e2eEmulatorEnabled()) {
     origins.push('http://127.0.0.1:4173', 'http://localhost:4173');
   }
   return origins;
@@ -41,10 +46,7 @@ const ORIGINS = new Set(browserOrigins());
 
 function debugAppCheckAccepted(token) {
   const debug = process.env.FST_APPCHECK_DEBUG_TOKEN || '';
-  return process.env.FUNCTIONS_EMULATOR === 'true'
-    && process.env.FST_E2E_EMULATOR === '1'
-    && debug.length > 0
-    && token === debug;
+  return e2eEmulatorEnabled() && debug.length > 0 && token === debug;
 }
 
 class CostError extends Error {
@@ -343,4 +345,5 @@ module.exports = {
   createGuard, getGuard, CostError, sendCostError, periodKeys, rateOf, LIMITS,
   retryAfterSeconds, reserveFst, consumeUserAttempt, clearFstHolds, rejectIfFstHeld, holdFstRejection,
   rejectIfServicePaused, sweepFstHolds, rememberFstHold, FST_HOLD_MAX, browserOrigins, debugAppCheckAccepted,
+  e2eEmulatorEnabled,
 };

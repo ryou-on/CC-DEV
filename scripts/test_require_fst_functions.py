@@ -100,6 +100,20 @@ class RequireFstFunctionsTest(unittest.TestCase):
         self.assertIn('fst-rev=' + ('b' * 32), message)
         self.assertIn('expected=' + REV, message)
 
+    def test_functions_env_with_e2e_flags_stops_before_deploy(self):
+        import os
+        import tempfile
+        with tempfile.TemporaryDirectory() as folder:
+            os.makedirs(os.path.join(folder, 'functions'))
+            gate.reject_e2e_env(folder)
+            with open(os.path.join(folder, 'functions', '.env'), 'w', encoding='utf-8') as handle:
+                handle.write('FST_E2E_EMULATOR=1\nFUNCTIONS_EMULATOR=true\n')
+            with self.assertRaises(SystemExit) as caught:
+                gate.reject_e2e_env(folder)
+            message = str(caught.exception)
+            self.assertIn('functions/.env:1 contains FST_E2E_', message)
+            self.assertIn('functions/.env:2 contains FUNCTIONS_EMULATOR', message)
+
     def test_active_without_update_time_is_not_enough(self):
         def fetch(name):
             return 200, {'state': 'ACTIVE', 'labels': {'fst-rev': REV}}

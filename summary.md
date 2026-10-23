@@ -144,7 +144,7 @@ Flight Strip の行から `globalMonth` を削除した。ハンドラは月次�
 ## 完了した作業
 
 - 利用者の上限は試した回数で、重い処理の前に文書 1 つだけ読んで数える。上限なら待ちに入れて終わる。
-- 6 関数の `maxInstances` は 1。`cost_guard` は 1 でなければエラーにする。429 と 503 には `Retry-After` を付け、画面はその秒数だけ送信ボタンを止める。予算停止の 503 も待ちに入り、利用者の枠を 1 つ使う。試し直し 5 回の最悪は 880 回。Cloud Run 自身の 429 と 503 でも統計は `console.warn` を出す。
+- 6 関数の `maxInstances` は 1。`cost_guard` は 1 でなければエラーにする。429 と 503 には `Retry-After` を付け、画面はその秒数だけ送信ボタンを止める。止まったボタンは灰色で残り秒数を出す。予算停止の 503 も待ちに入り、利用者の枠を 1 つ使う。試し直し 5 回の最悪は 880 回。Cloud Run 自身の 429 と 503 でも統計は `console.warn` を出す。`K_SERVICE` があるときは E2E 用の受け入れをしない。
 - 409、404、業務上の 400、目安箱の再送は利用者の枠を使い、全体の枠は使わない。
 - 待ちの期限切れは消し、件数は 1,000 で止める。待ちは 1 台の中だけで効く。
 - 503 の `COST_GUARD_UNAVAILABLE` は、回答と目安箱で混雑と同じ案内を出し、統計は `console.warn` に残す。
@@ -166,13 +166,13 @@ Hosting と Rules のゲートは `functions.get` を呼ぶ。Hosting 用の `FI
 
 ## 検証
 
-- `npm test --prefix functions` 99 件成功
-- `python3 -m unittest discover -s scripts -p 'test_*.py'` 34 件成功
+- `npm test --prefix functions` 100 件成功
+- `python3 -m unittest discover -s scripts -p 'test_*.py'` 36 件成功
 - Firestore / Storage のルールファイルは今回変えていない。直前のエミュレーター試験は 30 件成功
 - 本番 API は呼んでいない
 - ログイン後のアンケート送信は、ブラウザでは押していない
-- Auth のエミュレーター接続は、環境変数 `FST_E2E_EMULATOR=1` で起動した E2E が `window.__FST_E2E_EMULATOR` を注入し、かつページのホストが localhost か 127.0.0.1 のときだけ有効になる。本番のホスト名では `useEmulator` を呼ばない。App Check のデバッグトークンも、Functions エミュレーターかつ同じ環境変数のときだけ受け付ける
-- Playwright の `a 429 stops the send button until the retry window ends` が成功した。画面は 429 で送信ボタンを止め、待ちのあと戻し、件名と本文は残し、「送信回数の上限です。時間をおいて再試行してください」を出した
+- Auth のエミュレーター接続は、環境変数 `FST_E2E_EMULATOR=1` で起動した E2E が `window.__FST_E2E_EMULATOR` を注入し、かつページのホストが localhost か 127.0.0.1 のときだけ有効になる。本番のホスト名では `useEmulator` を呼ばない。App Check のデバッグトークン、localhost の CORS、目安箱 URL の http は、`FUNCTIONS_EMULATOR=true` かつ `FST_E2E_EMULATOR=1` で、`K_SERVICE` が無いときだけ有効になる。`K_SERVICE` がある Cloud Run では、それらの変数が付いていても全部無効である。Firebase の Functions エミュレーターは `K_SERVICE` を自分で付けるので、E2E はそれを使わず、同じ条件を満たす手元の関数ホストで Auth と Firestore のエミュレーターへつなぐ。プロジェクト ID は `demo-cc-dev-fst-e2e`。`functions/.env*` に `FST_E2E_` か `FUNCTIONS_EMULATOR` があると、`cost_guard` と `require_fst_functions.py` がエラーにする
+- Playwright は 3 件成功した。`a 429 stops the send button until the retry window ends` は上限の 429、`a paused budget stops the send button with the service paused message` は予算停止の 503、`a 503 stops the send button and keeps the typed feedback` は `COST_GUARD_UNAVAILABLE` の 503 である。どれも送信ボタンを灰色にし残り秒数を出し、待ちのあと戻し、件名と本文は残した。429 と予算停止は実ハンドラ、503 の混雑は応答を差し替えた確認である
 
 ## バージョン
 

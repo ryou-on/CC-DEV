@@ -4,7 +4,7 @@ const crypto = require('node:crypto');
 const { onRequest } = require('firebase-functions/v2/https');
 const {
   getGuard, sendCostError, CostError, periodKeys, rateOf, reserveFst, consumeUserAttempt, holdFstRejection,
-  rejectIfServicePaused, browserOrigins,
+  rejectIfServicePaused, browserOrigins, e2eEmulatorEnabled,
 } = require('./cost-guard');
 const { sourceRev } = require('./fst-rev');
 const { isEditorEmail } = require('./editor-policy');
@@ -35,7 +35,7 @@ function cleanUrl(value) {
   if (typeof value !== 'string' || value.length > 2048) return null;
   let url;
   try { url = new URL(value); } catch { return null; }
-  const e2eHost = process.env.FUNCTIONS_EMULATOR === 'true' && process.env.FST_E2E_EMULATOR === '1'
+  const e2eHost = e2eEmulatorEnabled()
     && url.protocol === 'http:' && (url.hostname === '127.0.0.1' || url.hostname === 'localhost');
   if (!e2eHost && (url.protocol !== 'https:' || !HOSTS.has(url.hostname))) return null;
   url.search = '';

@@ -3,8 +3,8 @@
 const crypto = require('node:crypto');
 const admin = require('../../functions/node_modules/firebase-admin');
 
-const projectId = 'cc-dev-ps7';
-const email = 'e2e-fst@example.test';
+const projectId = 'demo-cc-dev-fst-e2e';
+const email = process.env.FST_E2E_EMAIL || 'e2e-fst@example.test';
 const password = 'e2e-password-1';
 
 async function main() {
@@ -25,15 +25,17 @@ async function main() {
   const minute = Math.floor(now / 60000);
   const day = new Date(now + 9 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const hash = crypto.createHash('sha256').update(user.uid).digest('hex').slice(0, 32);
-  await admin.firestore().doc('costControls/global').set({ enabled: true });
+  const mode = process.env.FST_E2E_SEED || 'cap';
+  const paused = mode === 'paused';
+  await admin.firestore().doc('costControls/global').set({ enabled: !paused });
   await admin.firestore().doc(`fstRateLimits/u_${hash}`).set({
     minute,
-    minuteCount: 5,
+    minuteCount: paused ? 0 : 5,
     day,
-    dayCount: 5,
+    dayCount: paused ? 0 : 5,
     updatedAtMs: now,
   });
-  console.log(JSON.stringify({ uid: user.uid, minute, day }));
+  console.log(JSON.stringify({ uid: user.uid, minute, day, mode, projectId }));
 }
 
 main().catch(error => {

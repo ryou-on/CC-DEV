@@ -173,6 +173,37 @@ test('missing App Check, anonymous auth, and a closed budget do not write feedba
   }
 });
 
+test('a localhost feedback url is stored only while Cloud Run is not running the function', async () => {
+  const saved = {
+    FUNCTIONS_EMULATOR: process.env.FUNCTIONS_EMULATOR,
+    FST_E2E_EMULATOR: process.env.FST_E2E_EMULATOR,
+    K_SERVICE: process.env.K_SERVICE,
+  };
+  const local = { ...payload, url: 'http://127.0.0.1:4173/Flight_Strip_TODO_dev/?x=1#part' };
+  try {
+    delete process.env.K_SERVICE;
+    process.env.FUNCTIONS_EMULATOR = 'true';
+    process.env.FST_E2E_EMULATOR = '1';
+    const open = setup();
+    const ok = response();
+    await open.handler(request(local), ok);
+    assert.equal(ok.statusCode, 201);
+    assert.equal(open.db.records.get('fst_feedback/FB_0001').url, 'http://127.0.0.1:4173/Flight_Strip_TODO_dev/');
+    process.env.K_SERVICE = 'fstFeedbackSubmit';
+    const closed = setup();
+    const denied = response();
+    await closed.handler(request(local), denied);
+    assert.equal(denied.statusCode, 400);
+    assert.equal(denied.body.error, 'INVALID_FEEDBACK');
+    assert.equal([...closed.db.records.keys()].some(key => key.startsWith('fst_feedback/')), false);
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value == null) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test('unknown fields, honeypot, timing, and overlong text are rejected before a write', async () => {
   const { db, handler } = setup();
   for (const body of [

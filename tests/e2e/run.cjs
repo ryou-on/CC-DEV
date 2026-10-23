@@ -65,12 +65,14 @@ async function main() {
   const emulators = start('npx', [
     '--yes', 'firebase-tools@15.23.0',
     'emulators:start',
-    '--only', 'auth,firestore,functions',
-    '--project', 'cc-dev-ps7',
+    '--only', 'auth,firestore',
+    '--project', 'demo-cc-dev-fst-e2e',
     '--config', 'firebase.e2e.json',
   ]);
   await waitFor('http://127.0.0.1:9099/', emulators);
   await waitFor('http://127.0.0.1:8080/', emulators);
+  const functions = start(process.execPath, [path.join(__dirname, 'function-host.cjs')]);
+  await waitFor('http://127.0.0.1:5001/', functions);
   await new Promise((resolve, reject) => {
     const seed = spawn(process.execPath, [path.join(__dirname, 'seed.cjs')], {
       cwd: root, env: process.env, stdio: 'inherit',

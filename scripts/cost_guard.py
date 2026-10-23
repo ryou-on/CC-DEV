@@ -106,7 +106,31 @@ def scan(root):
                 add('error', 'QUOTA_FAIL_OPEN', rel, text[:m.start()].count('\n') + 1, 'クォータ記録失敗時にも有料処理を続行')
     if not checked:
         add('error', 'EMPTY_SCAN', '.', 1, '検査対象が空です')
+    findings.extend(fst_e2e_env_errors(root))
     return findings, fingerprint.hexdigest(), checked
+
+
+def fst_e2e_env_errors(root):
+    # Firebase loads functions/.env* into Cloud Run. Keep these files out of the
+    # source hash: a local secret must not change the reviewed digest.
+    found = []
+    folder = root / 'functions'
+    if not folder.is_dir():
+        return found
+    for path in sorted(folder.iterdir()):
+        if not path.is_file() or not path.name.startswith('.env'):
+            continue
+        text = path.read_text(encoding='utf-8', errors='replace')
+        for token in ('FST_E2E_', 'FUNCTIONS_EMULATOR'):
+            idx = text.find(token)
+            if idx < 0:
+                continue
+            found.append(dict(
+                level='error', rule='FST_E2E_ENV', path=f'functions/{path.name}',
+                line=text[:idx].count('\n') + 1,
+                message='functions/.env の E2E 用変数は Cloud Run が読む。K_SERVICE がある本番へ載せない',
+            ))
+    return found
 
 
 def positive(value):
@@ -144,7 +168,7 @@ def validate_policy(policy, digest, today):
     return errors
 
 
-ERROR_RULES = {'PUBLIC_WRITE', 'QUOTA_FAIL_OPEN', 'CACHE_BUSTER', 'EMPTY_SCAN', 'FST_MAX_INSTANCES'}
+ERROR_RULES = {'PUBLIC_WRITE', 'QUOTA_FAIL_OPEN', 'CACHE_BUSTER', 'EMPTY_SCAN', 'FST_MAX_INSTANCES', 'FST_E2E_ENV'}
 FST_ONE_INSTANCE = {
     'functions/fst-analytics.js',
     'functions/fst-dev-admin.js',
