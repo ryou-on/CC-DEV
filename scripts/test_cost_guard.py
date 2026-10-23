@@ -72,6 +72,7 @@ class CostGateTest(unittest.TestCase):
         before = guard.scan(self.root)[1]
         self.put('firestore-debug.log', 'timestamped emulator output')
         self.put('firebase-debug.log', 'timestamped emulator output')
+        self.put('test-results/trace.zip', 'playwright output')
         self.assertEqual(before, guard.scan(self.root)[1])
 
     def test_valid_review(self):

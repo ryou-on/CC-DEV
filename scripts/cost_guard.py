@@ -16,7 +16,7 @@ import sys
 
 VERSION = "1.0.0"
 SKIP = {".git", "node_modules", ".venv", ".claude", ".agents", "__pycache__",
-        ".next", ".firebase", "coverage"}
+        ".next", ".firebase", "coverage", "test-results"}
 CODE = {".js", ".mjs", ".cjs", ".ts", ".tsx", ".jsx", ".html", ".rules", ".json", ".toml", ".yml", ".yaml"}
 CONTROLS = ("billingAlerts", "automaticStop", "edgeAbuseProtection",
             "paidApiAuthorization", "atomicQuotaFailClosed", "boundedDataAndCache",
@@ -26,8 +26,8 @@ CONTROLS = ("billingAlerts", "automaticStop", "edgeAbuseProtection",
 def walk(root):
     # Scan build outputs too. Never follow symlinks out of the repository.
     for p in sorted(root.iterdir()):
-        # Emulator logs are local artifacts. Their timestamps would change the
-        # source hash after a rules test and block the gate for a non-source file.
+        # Emulator logs and Playwright output are local artifacts. Their timestamps
+        # would change the source hash after a test and block the gate for a non-source file.
         if p.name in SKIP or p.name.startswith('.env') or p.name.endswith('-debug.log'):
             continue
         if p.is_symlink():
