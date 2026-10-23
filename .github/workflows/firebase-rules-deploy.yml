@@ -19,12 +19,33 @@ on:
       - storage.rules
       - firestore.indexes.json
       - firebase.json
+      - tests/firestore/**
+      - firebase.rules-test.json
   workflow_dispatch:
 jobs:
   deploy_rules:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Block unsafe deployment
+        run: python3 scripts/cost_guard.py --root . --check
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Test Firestore rules (auth required, emulator only)
+        run: |
+          npm ci --ignore-scripts --prefix tests/firestore
+          npx --yes firebase-tools@15.23.0 emulators:exec --only auth,firestore,storage --project demo-cc-dev-cost --config firebase.rules-test.json "npm --prefix tests/firestore test"
+      - name: Require Flight Strip functions before Rules
+        env:
+          FIREBASE_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_CC_DEV_PS7 }}
+        run: python3 scripts/require_fst_functions.py
+        # FIREBASE_SERVICE_ACCOUNT_CC_DEV_PS7 に cloudfunctions.functions.get が無いと 403 で毎回止まる。
+        # ラベル fst-rev が今のソースと違う古い関数もここで止まる。
       - name: Deploy Firebase Storage & Firestore rules
         env:
           FIREBASE_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_CC_DEV_PS7 }}

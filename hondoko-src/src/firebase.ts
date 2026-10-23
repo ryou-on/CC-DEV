@@ -26,3 +26,19 @@ export const ANALYZE_ENDPOINT = 'https://asia-northeast1-cc-dev-ps7.cloudfunctio
 export const AMAZON_ENDPOINT = 'https://asia-northeast1-cc-dev-ps7.cloudfunctions.net/hondokoAmazon'
 export const COVER_ENDPOINT = 'https://asia-northeast1-cc-dev-ps7.cloudfunctions.net/hondokoCover'
 export const NDL_ENDPOINT = 'https://asia-northeast1-cc-dev-ps7.cloudfunctions.net/hondokoNdl'
+
+let costCheck: Promise<import('firebase/app-check').AppCheck> | undefined
+export async function paidApiHeaders(): Promise<Record<string, string>> {
+  const user = auth.currentUser
+  if (!user) throw new Error('ログインが必要です')
+  const sdk = await import('firebase/app-check')
+  if (!costCheck) costCheck = (async () => {
+    const res = await fetch('/shared/cost-access-config.json', { cache: 'no-cache' })
+    if (!res.ok) throw new Error('安全設定を確認できませんでした')
+    const config = await res.json()
+    if (!config.recaptchaEnterpriseSiteKey) throw new Error('AI解析の安全設定を準備中です')
+    return sdk.initializeAppCheck(app, { provider: new sdk.ReCaptchaEnterpriseProvider(config.recaptchaEnterpriseSiteKey), isTokenAutoRefreshEnabled: true })
+  })().catch(e => { costCheck = undefined; throw e })
+  const [id, proof] = await Promise.all([user.getIdToken(), sdk.getToken(await costCheck)])
+  return { Authorization: `Bearer ${id}`, 'X-Firebase-AppCheck': proof.token }
+}

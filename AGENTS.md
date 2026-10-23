@@ -167,6 +167,12 @@ cd "$HOME/Library/Mobile Documents/com~apple~CloudDocs/#git/cc-DEV"
   cd "$HOME/Library/Mobile Documents/com~apple~CloudDocs/#git/cc-DEV"
   npx firebase deploy --only firestore:rules
   ```
+- firestore.rules を変えたら `tests/firestore/` の Emulator テストを更新・実行する（Java 11+ 必須）。PR と自動デプロイ前に CI でも走り、失敗するとデプロイされない:
+  ```bash
+  cd "$HOME/Library/Mobile Documents/com~apple~CloudDocs/#git/cc-DEV"
+  npx firebase emulators:exec --only auth,firestore,storage --project demo-cc-dev-cost --config firebase.rules-test.json "npm --prefix tests/firestore test"
+  ```
+- 共有コレクションの書き込みは確認済みアカウントと、アプリごとの許可または編集者条件に合わせている。クライアントの書き込みフィールドを増やすときは firestore.rules と `tests/firestore/rules.test.mjs` も同時に更新すること
 
 ### localStorage キー規約（Firestore doc ID と同一）
 - `voice_{prefix}_{name}` — カスタム音声（prefix: otousan / okasan / confirm / order / checkout）
@@ -176,3 +182,21 @@ cd "$HOME/Library/Mobile Documents/com~apple~CloudDocs/#git/cc-DEV"
 - `setting_*` — その他の設定値
 - `access_log` — タップ履歴（最大1000件）
 - `voices_updated` / `images_updated` — 管理画面→アプリ通知タイムスタンプ（storage event用）
+
+---
+
+# CC-DEV 開発ルール
+
+アプリの新規作成・改修には `/Users/lobby/.codex/standards/kikaku7-app-development-standard.md` を適用する。
+アプリ名から使い方（ホームへ戻る・閉じる付き）、バージョン番号からリリースノートを開けることを実機確認する。
+
+## 課金事故防止
+
+- 有料処理は本人確認・利用許可・App Check・原子的な利用者別/全体の日次/月次上限を確認してから実行する。確認失敗は停止する。
+- `functions/cost-guard.js` と `docs/cost-safety-implementation.md` を参照し、新しい有料APIにも同じガードと拒否試験を追加する。
+- プラットフォーム管理者はルールへ UID を直書きしない。カスタムクレーム `admin` か `admins/{uid}` を使う。手順は `docs/admin-access.md`。
+- コードを表示できたことだけで公開しない。`python3 scripts/cost_guard.py --root . --check` の成功を実際のデプロイ直前に必須にする。全Firebase対象のpredeployとCIを保持する。
+- `cost-safety.json` の未確認項目・予算未設定・残存リスクは実際に解消する。検査を消す、免除する、証拠なしで確認済みに変更することは禁止。
+- ページ初期表示で有料APIを呼ばない。無制限の再試行、毎回のキャッシュ破棄、全件取得、公開DB書き込みを新設しない。
+- 回数上限・maxInstances・robots.txt・予算通知だけで「請求額を保証」と説明しない。エッジ防御・金額停止・プロバイダー上限を併用する。
+- push時には安定版Flight_Strip_TODOと開発版Flight_Strip_TODO_devのリリースノートを同じコミットで更新する。

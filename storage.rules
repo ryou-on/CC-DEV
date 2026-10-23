@@ -2,16 +2,27 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
-    // COCO-ITTA: グループの写真はメンバー（認証済みユーザー）のみ読み書き可
-    match /groups/{groupId}/pins/{pinId}/{allPaths=**} {
-      allow read, write: if request.auth != null;
+    function verifiedAccount() {
+      return request.auth != null
+          && request.auth.token.email_verified == true
+          && request.auth.token.firebase.sign_in_provider != 'anonymous';
     }
 
-    // hihaho 編集者 = @splineglobal.com ドメイン or 許可リストのGoogleアカウント
+    // COCO-ITTA: 匿名サインインは拒否。パスを知る確認済みアカウントが読み書きできる。
+    // Storage ルールから Firestore の members は参照しない。
+    match /groups/{groupId}/pins/{pinId}/{allPaths=**} {
+      allow read: if verifiedAccount();
+      allow write: if verifiedAccount()
+                   && request.resource.size < 10 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+
+    // 編集者のメールは functions/editor-policy.json が正本。Rules は import できない。
+    // メールは大文字小文字を区別しない。Functions の trim + lower と同じ結果になるよう、ここで揃える。
     function isHihahoEditor() {
-      return request.auth != null
-          && (request.auth.token.email.matches('.*@splineglobal[.]com')
-              || request.auth.token.email == 'junpei.omote@gmail.com');
+      return verifiedAccount()
+          && (request.auth.token.email.trim().lower().matches('.*@splineglobal[.]com')
+              || request.auth.token.email.trim().lower() == 'junpei.omote@gmail.com');
     }
 
     // hihaho サムネイル: 読み取り公開・書き込みは編集者のみ（hihaho-admin からGoogleログイン後にアップロード）
@@ -35,18 +46,16 @@ service firebase.storage {
     // 書き込みは編集者アカウントのみ・1ファイル30MBまで
     match /hihaho-material/{allPaths=**} {
       allow read: if true;
-      allow write: if request.auth != null
-                   && (request.auth.token.email.matches('.*@splineglobal[.]com')
-                       || request.auth.token.email == 'junpei.omote@gmail.com')
+      allow write: if isHihahoEditor()
                    && (request.resource == null || request.resource.size < 30 * 1024 * 1024);
     }
 
     // hondoko (本ドコ？): 棚写真 — 読み取り公開(link/公開モードの未ログイン閲覧のため。
     // 写真URLはFirestoreの公開設定と連動できないため常時公開になる点に注意)
-    // 書き込みは認証ユーザー・画像のみ・10MBまで(メンバー判定はFirestore側で担保)
+    // 書き込みは確認済みアカウント・画像のみ・10MBまで(メンバー判定はFirestore側で担保)
     match /hondoko/{sub}/{allPaths=**} {
       allow read: if true;
-      allow write: if request.auth != null
+      allow write: if verifiedAccount()
                    && (request.resource == null ||
                        (request.resource.size < 10 * 1024 * 1024
                         && request.resource.contentType.matches('image/.*')));
