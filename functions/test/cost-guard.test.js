@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createGuard, LIMITS, periodKeys, rateOf, retryAfterSeconds, clearFstHolds, sweepFstHolds, rememberFstHold, rejectIfFstHeld, FST_HOLD_MAX, debugAppCheckAccepted } = require('../cost-guard');
+const { createGuard, LIMITS, periodKeys, rateOf, retryAfterSeconds, clearFstHolds, sweepFstHolds, rememberFstHold, rejectIfFstHeld, FST_HOLD_MAX, debugAppCheckAccepted, browserOrigins, e2eEmulatorEnabled } = require('../cost-guard');
 const { armExpiry, expireCall, callIdFromLocation } = require('../realtime-cost');
 
 const NOW = Date.parse('2026-10-05T01:00:00Z');
@@ -174,23 +174,35 @@ test('a flight strip reserve does not write an unused monthly global counter', a
   }
 });
 
-test('the app check debug token is accepted only inside the emulator e2e flag', () => {
+test('the app check debug token is accepted only inside the emulator e2e flag and never when K_SERVICE is set', () => {
   const saved = {
     FUNCTIONS_EMULATOR: process.env.FUNCTIONS_EMULATOR,
     FST_E2E_EMULATOR: process.env.FST_E2E_EMULATOR,
     FST_APPCHECK_DEBUG_TOKEN: process.env.FST_APPCHECK_DEBUG_TOKEN,
+    K_SERVICE: process.env.K_SERVICE,
   };
   delete process.env.FUNCTIONS_EMULATOR;
   delete process.env.FST_E2E_EMULATOR;
   delete process.env.FST_APPCHECK_DEBUG_TOKEN;
+  delete process.env.K_SERVICE;
+  assert.equal(e2eEmulatorEnabled(), false);
   assert.equal(debugAppCheckAccepted('debug-token'), false);
   process.env.FST_APPCHECK_DEBUG_TOKEN = 'debug-token';
   assert.equal(debugAppCheckAccepted('debug-token'), false);
   process.env.FUNCTIONS_EMULATOR = 'true';
   assert.equal(debugAppCheckAccepted('debug-token'), false);
+  assert.equal(browserOrigins().includes('http://127.0.0.1:4173'), false);
   process.env.FST_E2E_EMULATOR = '1';
+  assert.equal(e2eEmulatorEnabled(), true);
   assert.equal(debugAppCheckAccepted('debug-token'), true);
   assert.equal(debugAppCheckAccepted('other'), false);
+  assert.equal(browserOrigins().includes('http://127.0.0.1:4173'), true);
+  assert.equal(browserOrigins().includes('http://localhost:4173'), true);
+  process.env.K_SERVICE = 'fstFeedbackSubmit';
+  assert.equal(e2eEmulatorEnabled(), false);
+  assert.equal(debugAppCheckAccepted('debug-token'), false);
+  assert.equal(browserOrigins().includes('http://127.0.0.1:4173'), false);
+  assert.equal(browserOrigins().includes('http://localhost:4173'), false);
   for (const [key, value] of Object.entries(saved)) {
     if (value == null) delete process.env[key];
     else process.env[key] = value;

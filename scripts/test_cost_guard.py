@@ -144,6 +144,19 @@ class CostGateTest(unittest.TestCase):
         r = subprocess.run([sys.executable, str(Path(guard.__file__)), '--root', str(self.root), '--check'], capture_output=True)
         self.assertEqual(1, r.returncode)
 
+    def test_functions_env_must_not_carry_the_emulator_e2e_flag(self):
+        before = guard.scan(self.root)[1]
+        self.put('functions/.env', 'OPENAI_API_KEY=local\n')
+        self.assertNotIn('FST_E2E_ENV', self.codes())
+        self.assertEqual(before, guard.scan(self.root)[1])
+        self.put('functions/.env.local', 'FST_E2E_EMULATOR=1\n')
+        self.assertIn('FST_E2E_ENV', self.codes())
+        self.put('functions/.env.cc-dev-ps7', 'FUNCTIONS_EMULATOR=true\n')
+        self.assertGreaterEqual(len([c for c in self.codes() if c == 'FST_E2E_ENV']), 1)
+        hits = [f for f in guard.scan(self.root)[0] if f['rule'] == 'FST_E2E_ENV']
+        self.assertEqual({f['path'] for f in hits}, {'functions/.env.local', 'functions/.env.cc-dev-ps7'})
+        self.assertEqual(before, guard.scan(self.root)[1])
+
     def test_flight_strip_max_instances_must_stay_one(self):
         self.put('functions/fst-feedback.js', "exports.fstFeedbackSubmit = onRequest({ maxInstances: 2 }, handler);\n")
         self.assertIn('FST_MAX_INSTANCES', self.codes())

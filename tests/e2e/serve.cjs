@@ -7,7 +7,7 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '../../public');
 const port = 4173;
 const upstream = process.env.FST_E2E_FUNCTION_URL
-  || 'http://127.0.0.1:5001/cc-dev-ps7/asia-northeast1/fstFeedbackSubmit';
+  || 'http://127.0.0.1:5001/';
 const types = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',

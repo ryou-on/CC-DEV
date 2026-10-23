@@ -147,7 +147,32 @@ def live_fetch(token):
     return fetch
 
 
+def reject_e2e_env(root=None):
+    """functions/.env* に E2E 用の変数があれば、本番の関数確認より先に止める。"""
+    if root is None:
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    folder = os.path.join(root, 'functions')
+    problems = []
+    if os.path.isdir(folder):
+        for name in sorted(os.listdir(folder)):
+            if not name.startswith('.env'):
+                continue
+            path = os.path.join(folder, name)
+            if not os.path.isfile(path):
+                continue
+            with open(path, encoding='utf-8', errors='replace') as handle:
+                text = handle.read()
+            for token in ('FST_E2E_', 'FUNCTIONS_EMULATOR'):
+                idx = text.find(token)
+                if idx < 0:
+                    continue
+                problems.append(f'functions/{name}:{text[:idx].count(chr(10)) + 1} contains {token}')
+    if problems:
+        raise SystemExit('Flight Strip E2E env must not be deployed: ' + '; '.join(problems))
+
+
 def main():
+    reject_e2e_env()
     raw = os.environ.get('FIREBASE_SA')
     if not raw:
         path = os.environ.get('GOOGLE_APPLICATION_CREDENTIALS')
