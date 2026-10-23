@@ -107,6 +107,7 @@ def scan(root):
     if not checked:
         add('error', 'EMPTY_SCAN', '.', 1, '検査対象が空です')
     findings.extend(fst_e2e_env_errors(root))
+    findings.extend(fst_k_service_delete_errors(root))
     return findings, fingerprint.hexdigest(), checked
 
 
@@ -130,6 +131,37 @@ def fst_e2e_env_errors(root):
                 line=text[:idx].count('\n') + 1,
                 message='functions/.env の E2E 用変数は Cloud Run が読む。K_SERVICE がある本番へ載せない',
             ))
+    return found
+
+
+def fst_k_service_delete_errors(root):
+    # The statement is the bypass. Keep the finding out of the fingerprint by
+    # scanning after the hash is built. tests/e2e is outside functions/.
+    needle = 'delete process.env.K_SERVICE'
+    found = []
+    folder = root / 'functions'
+    if not folder.is_dir():
+        return found
+    def files(directory):
+        for path in sorted(directory.iterdir()):
+            if path.name in SKIP or path.is_symlink():
+                continue
+            if path.is_dir():
+                yield from files(path)
+            elif path.is_file():
+                yield path
+    for path in files(folder):
+        if path.stat().st_size > 8 * 1024 * 1024:
+            continue
+        text = path.read_text(encoding='utf-8', errors='replace')
+        idx = text.find(needle)
+        if idx < 0:
+            continue
+        found.append(dict(
+            level='error', rule='FST_K_SERVICE_DELETE', path=path.relative_to(root).as_posix(),
+            line=text[:idx].count('\n') + 1,
+            message='functions/ で K_SERVICE を消すと Cloud Run の E2E 無効化を抜ける',
+        ))
     return found
 
 
@@ -168,7 +200,7 @@ def validate_policy(policy, digest, today):
     return errors
 
 
-ERROR_RULES = {'PUBLIC_WRITE', 'QUOTA_FAIL_OPEN', 'CACHE_BUSTER', 'EMPTY_SCAN', 'FST_MAX_INSTANCES', 'FST_E2E_ENV'}
+ERROR_RULES = {'PUBLIC_WRITE', 'QUOTA_FAIL_OPEN', 'CACHE_BUSTER', 'EMPTY_SCAN', 'FST_MAX_INSTANCES', 'FST_E2E_ENV', 'FST_K_SERVICE_DELETE'}
 FST_ONE_INSTANCE = {
     'functions/fst-analytics.js',
     'functions/fst-dev-admin.js',

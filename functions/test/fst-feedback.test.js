@@ -173,32 +173,46 @@ test('missing App Check, anonymous auth, and a closed budget do not write feedba
   }
 });
 
-test('a localhost feedback url is stored only while Cloud Run is not running the function', async () => {
-  const saved = {
-    FUNCTIONS_EMULATOR: process.env.FUNCTIONS_EMULATOR,
-    FST_E2E_EMULATOR: process.env.FST_E2E_EMULATOR,
-    K_SERVICE: process.env.K_SERVICE,
-  };
+function unsetEnv(name) {
+  Reflect.deleteProperty(process.env, name);
+}
+
+test('a localhost feedback url is stored only for a demo project outside cloud run', async () => {
+  const keys = ['FUNCTIONS_EMULATOR', 'FST_E2E_EMULATOR', 'K_SERVICE', 'FUNCTION_TARGET', 'K_REVISION', 'GCLOUD_PROJECT', 'GCP_PROJECT', 'GOOGLE_CLOUD_PROJECT', 'FIREBASE_CONFIG'];
+  const saved = Object.fromEntries(keys.map(key => [key, process.env[key]]));
   const local = { ...payload, url: 'http://127.0.0.1:4173/Flight_Strip_TODO_dev/?x=1#part' };
   try {
-    delete process.env.K_SERVICE;
-    process.env.FUNCTIONS_EMULATOR = 'true';
-    process.env.FST_E2E_EMULATOR = '1';
+    for (const key of keys) unsetEnv(key);
+    process.env.GCLOUD_PROJECT = 'demo-cc-dev-fst-e2e';
     const open = setup();
     const ok = response();
     await open.handler(request(local), ok);
     assert.equal(ok.statusCode, 201);
     assert.equal(open.db.records.get('fst_feedback/FB_0001').url, 'http://127.0.0.1:4173/Flight_Strip_TODO_dev/');
-    process.env.K_SERVICE = 'fstFeedbackSubmit';
-    const closed = setup();
-    const denied = response();
-    await closed.handler(request(local), denied);
-    assert.equal(denied.statusCode, 400);
-    assert.equal(denied.body.error, 'INVALID_FEEDBACK');
-    assert.equal([...closed.db.records.keys()].some(key => key.startsWith('fst_feedback/')), false);
+    for (const [key, value] of [['K_SERVICE', 'fstFeedbackSubmit'], ['FUNCTION_TARGET', 'fstFeedbackSubmit'], ['K_REVISION', 'fstFeedbackSubmit-00001-abc']]) {
+      unsetEnv('K_SERVICE');
+      unsetEnv('FUNCTION_TARGET');
+      unsetEnv('K_REVISION');
+      process.env[key] = value;
+      const closed = setup();
+      const denied = response();
+      await closed.handler(request(local), denied);
+      assert.equal(denied.statusCode, 400);
+      assert.equal(denied.body.error, 'INVALID_FEEDBACK');
+      assert.equal([...closed.db.records.keys()].some(id => id.startsWith('fst_feedback/')), false);
+    }
+    unsetEnv('K_SERVICE');
+    unsetEnv('FUNCTION_TARGET');
+    unsetEnv('K_REVISION');
+    process.env.GCLOUD_PROJECT = 'cc-dev-ps7';
+    const production = setup();
+    const rejected = response();
+    await production.handler(request(local), rejected);
+    assert.equal(rejected.statusCode, 400);
+    assert.equal(rejected.body.error, 'INVALID_FEEDBACK');
   } finally {
     for (const [key, value] of Object.entries(saved)) {
-      if (value == null) delete process.env[key];
+      if (value == null) unsetEnv(key);
       else process.env[key] = value;
     }
   }

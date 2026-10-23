@@ -3,13 +3,19 @@
 // The Functions emulator sets K_SERVICE, and production Cloud Run does too.
 // This host is only the local E2E process. It drops K_SERVICE before loading
 // the handlers so the E2E switches can be tested. Cloud Run never runs this file.
+// Outside functions/. cost_guard rejects this statement only under functions/.
 delete process.env.K_SERVICE;
+delete process.env.FUNCTION_TARGET;
+delete process.env.K_REVISION;
 process.env.FUNCTIONS_EMULATOR = 'true';
 process.env.FST_E2E_EMULATOR = '1';
 process.env.FST_APPCHECK_DEBUG_TOKEN = process.env.FST_APPCHECK_DEBUG_TOKEN || 'fst-e2e-debug-token';
 process.env.FIREBASE_AUTH_EMULATOR_HOST = '127.0.0.1:9099';
 process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8080';
 process.env.GCLOUD_PROJECT = 'demo-cc-dev-fst-e2e';
+process.env.GCP_PROJECT = 'demo-cc-dev-fst-e2e';
+process.env.GOOGLE_CLOUD_PROJECT = 'demo-cc-dev-fst-e2e';
+process.env.FIREBASE_CONFIG = JSON.stringify({ projectId: 'demo-cc-dev-fst-e2e' });
 
 const http = require('node:http');
 const admin = require('../../functions/node_modules/firebase-admin');
