@@ -28,7 +28,7 @@ class BetaYakiIsolationTest(unittest.TestCase):
 
     def test_required_ui_and_loupe_are_present(self):
         for text in ['ベタ焼きノートの使い方', 'ホームへ戻る', 'リリースノート',
-                     "APP_VERSION = '0.6.1'", "event.key.toLowerCase() === 'q'"]:
+                     "APP_VERSION = '0.6.2'", "event.key.toLowerCase() === 'q'"]:
             self.assertIn(text, HTML)
 
     def test_cost_policy_is_scoped_to_independent_project(self):

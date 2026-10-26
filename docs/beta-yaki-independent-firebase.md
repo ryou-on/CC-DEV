@@ -1,7 +1,7 @@
 # ベタ焼きノート 独立Firebase環境
 
 - Firebase project / Hosting site: `beta-yaki-note`
-- App version: `v0.6.1`
+- App version: `v0.6.2`
 - Production URL: `https://beta-yaki-note.web.app/`
 - Deploy config: `firebase.beta-yaki.json`
 - Deploy command: `firebase deploy --config firebase.beta-yaki.json --project beta-yaki-note --only hosting`
