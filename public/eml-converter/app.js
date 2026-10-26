@@ -1,10 +1,20 @@
 import PostalMime from './vendor/postal-mime.js';
 
 const APP_ID = 'eml-converter';
-const APP_VERSION = '1.0.0';
+const APP_VERSION = '1.1.0';
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
+const MAX_TEXT_PREVIEW_SIZE = 2 * 1024 * 1024;
 const HOME_URL = 'https://cc-dev-ps7.web.app/';
 const RELEASE_NOTES = Object.freeze([
+  {
+    ver: 'v1.1.0',
+    date: '2026-10-26',
+    changes: [
+      '画像・PDF・テキスト・音声・動画の添付ファイルプレビューを追加',
+      'HTML・SVG・実行形式などの能動コンテンツは安全のためプレビューせず保存のみに制限',
+      'プレビュー画面から添付ファイルを直接保存できる操作を追加'
+    ]
+  },
   {
     ver: 'v1.0.0',
     date: '2026-10-26',
@@ -23,7 +33,7 @@ const HOW_TO_USE = Object.freeze([
   { heading: '1. EMLを読み込む', text: '中央へ.emlファイルをドロップするか、「EMLを選ぶ」を押します。最大50MBまで、1通ずつ処理できます。' },
   { heading: '2. 内容を確認する', text: '件名、差出人、宛先、日時と本文が表示されます。本文欄は必要に応じて編集できます。' },
   { heading: '3. TXTまたはPDFで保存する', text: '「TXTを保存」で直接ダウンロードできます。「PDFに変換」では印刷画面が開くため、送信先で「PDFとして保存」を選んでください。' },
-  { heading: '添付ファイル', text: '添付はPDF/TXTに埋め込まれません。必要なものは添付一覧から個別に保存してください。' },
+  { heading: '添付ファイル', text: '画像・PDF・テキスト・音声・動画は「プレビュー」で確認できます。HTML、SVG、実行形式などは安全のため表示せず、必要な場合だけ保存してください。添付はPDF/TXTへ自動では埋め込まれません。' },
   { heading: '注意事項', text: '内容はサーバーへ送信せずブラウザ内だけで処理します。暗号化・署名付きEML、破損ファイル、特殊なメールでは一部を正しく展開できない場合があります。' }
 ]);
 
@@ -31,6 +41,7 @@ const state = {
   file: null,
   email: null,
   attachmentUrls: [],
+  currentPreview: null,
   lastErrorCode: '',
   modalOpener: null,
   toastTimer: 0
@@ -40,6 +51,8 @@ const el = Object.fromEntries([
   'file-input', 'choose-button', 'replace-button', 'drop-zone', 'upload-stage', 'result-stage',
   'file-name', 'file-size', 'meta-subject', 'meta-from', 'meta-to', 'meta-cc', 'meta-date',
   'body-editor', 'character-count', 'attachment-list', 'attachment-empty', 'attachment-count',
+  'attachment-preview-modal', 'attachment-preview-title', 'attachment-preview-meta', 'attachment-preview-stage',
+  'attachment-preview-x', 'attachment-preview-close', 'attachment-preview-save',
   'download-txt', 'save-pdf', 'clear-button', 'status-panel', 'status-message', 'toast',
   'info-modal', 'modal-title', 'modal-body', 'modal-x', 'modal-close',
   'feedback-modal', 'feedback-x', 'feedback-close', 'feedback-copy', 'feedback-type', 'feedback-message',
@@ -176,6 +189,131 @@ function attachmentBlob(attachment) {
   return new Blob([], { type: attachment.mimeType || 'application/octet-stream' });
 }
 
+function attachmentPreviewKind(attachment, blob) {
+  const mimeType = String(attachment.mimeType || blob.type || '').toLowerCase().split(';')[0].trim();
+  const safeImages = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif', 'image/bmp']);
+  if (safeImages.has(mimeType)) return 'image';
+  if (mimeType === 'application/pdf') return 'pdf';
+  if ((mimeType.startsWith('text/') && mimeType !== 'text/html') || ['application/json', 'application/xml', 'application/csv'].includes(mimeType)) {
+    return blob.size <= MAX_TEXT_PREVIEW_SIZE ? 'text' : 'too-large-text';
+  }
+  if (mimeType.startsWith('audio/')) return 'audio';
+  if (mimeType.startsWith('video/')) return 'video';
+  return 'unsupported';
+}
+
+function triggerAttachmentDownload(preview = state.currentPreview) {
+  if (!preview) return;
+  const link = document.createElement('a');
+  link.href = preview.url;
+  link.download = preview.filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  showToast('添付ファイルを保存しました');
+}
+
+function renderPreviewMessage(title, detail) {
+  const wrapper = document.createElement('div');
+  wrapper.className = 'preview-unavailable';
+  addTextElement(wrapper, 'strong', title);
+  addTextElement(wrapper, 'span', detail);
+  el.attachment_preview_stage.append(wrapper);
+}
+
+async function decodeTextAttachment(blob) {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    try {
+      return new TextDecoder('shift_jis').decode(bytes);
+    } catch {
+      return new TextDecoder().decode(bytes);
+    }
+  }
+}
+
+async function hasPdfSignature(blob) {
+  const header = new Uint8Array(await blob.slice(0, 5).arrayBuffer());
+  return header.length === 5 && String.fromCharCode(...header) === '%PDF-';
+}
+
+async function openAttachmentPreview(attachment, blob, url, index, opener) {
+  const filename = attachment.filename || `添付ファイル-${index + 1}`;
+  const mimeType = attachment.mimeType || blob.type || 'application/octet-stream';
+  const kind = attachmentPreviewKind(attachment, blob);
+  state.currentPreview = { attachment, blob, url, filename, mimeType, kind };
+  el.attachment_preview_title.textContent = filename;
+  el.attachment_preview_meta.textContent = `${mimeType} · ${formatBytes(blob.size)}`;
+  el.attachment_preview_stage.replaceChildren();
+
+  if (kind === 'image') {
+    const image = document.createElement('img');
+    image.src = url;
+    image.alt = `${filename} のプレビュー`;
+    el.attachment_preview_stage.append(image);
+  } else if (kind === 'pdf') {
+    renderPreviewMessage('読み込み中…', 'PDFファイルの形式を確認しています。');
+  } else if (kind === 'text') {
+    renderPreviewMessage('読み込み中…', 'テキストを安全に展開しています。');
+  } else if (kind === 'audio' || kind === 'video') {
+    const media = document.createElement(kind);
+    media.src = url;
+    media.controls = true;
+    media.preload = 'metadata';
+    el.attachment_preview_stage.append(media);
+  } else if (kind === 'too-large-text') {
+    renderPreviewMessage('プレビュー上限を超えています', '2MBを超えるテキストはメモリ使用を抑えるため、保存のみ利用できます。');
+  } else {
+    renderPreviewMessage('この形式はプレビューできません', '安全のため内容を実行せず、ファイルとしてのみ保存できます。');
+  }
+
+  openOverlay(el.attachment_preview_modal, opener);
+
+  if (kind === 'pdf') {
+    try {
+      const validPdf = await hasPdfSignature(blob);
+      if (state.currentPreview?.url !== url) return;
+      el.attachment_preview_stage.replaceChildren();
+      if (!validPdf) {
+        renderPreviewMessage('PDFとして確認できませんでした', '拡張子やMIME情報と実際のファイル形式が一致していません。');
+        return;
+      }
+      const viewer = document.createElement('object');
+      viewer.className = 'pdf-preview';
+      viewer.data = url;
+      viewer.type = 'application/pdf';
+      viewer.setAttribute('aria-label', `${filename} のPDFプレビュー`);
+      el.attachment_preview_stage.append(viewer);
+    } catch {
+      if (state.currentPreview?.url !== url) return;
+      el.attachment_preview_stage.replaceChildren();
+      renderPreviewMessage('PDFを読み込めませんでした', 'ファイル内容を確認してください。');
+    }
+  } else if (kind === 'text') {
+    try {
+      const text = await decodeTextAttachment(blob);
+      if (state.currentPreview?.url !== url) return;
+      const pre = document.createElement('pre');
+      pre.className = 'preview-text';
+      pre.textContent = text || '（内容は空です）';
+      el.attachment_preview_stage.replaceChildren(pre);
+    } catch {
+      if (state.currentPreview?.url !== url) return;
+      el.attachment_preview_stage.replaceChildren();
+      renderPreviewMessage('テキストを読み込めませんでした', '文字コードまたはファイル内容を確認してください。');
+    }
+  }
+}
+
+function closeAttachmentPreview() {
+  el.attachment_preview_stage.querySelectorAll('audio, video').forEach(media => media.pause());
+  el.attachment_preview_stage.replaceChildren();
+  state.currentPreview = null;
+  closeOverlay(el.attachment_preview_modal);
+}
+
 function renderAttachments() {
   revokeAttachmentUrls();
   el.attachment_list.replaceChildren();
@@ -194,22 +332,28 @@ function renderAttachments() {
     const name = document.createElement('div');
     name.className = 'attachment-name';
     name.textContent = attachment.filename || `添付ファイル-${index + 1}`;
+    const kind = attachmentPreviewKind(attachment, blob);
     const meta = document.createElement('div');
     meta.className = 'attachment-meta';
-    meta.textContent = `${attachment.mimeType || 'application/octet-stream'} · ${formatBytes(blob.size)}`;
+    meta.textContent = `${attachment.mimeType || 'application/octet-stream'} · ${formatBytes(blob.size)}${['unsupported', 'too-large-text'].includes(kind) ? ' · 保存のみ' : ''}`;
     description.append(name, meta);
-    const button = document.createElement('button');
-    button.className = 'mini-button';
-    button.type = 'button';
-    button.textContent = '保存';
-    button.addEventListener('click', () => {
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = attachment.filename || `attachment-${index + 1}`;
-      link.click();
-      showToast('添付ファイルを保存しました');
-    });
-    item.append(description, button);
+    const actions = document.createElement('div');
+    actions.className = 'attachment-actions';
+    if (!['unsupported', 'too-large-text'].includes(kind)) {
+      const previewButton = document.createElement('button');
+      previewButton.className = 'mini-button preview';
+      previewButton.type = 'button';
+      previewButton.textContent = 'プレビュー';
+      previewButton.addEventListener('click', event => openAttachmentPreview(attachment, blob, url, index, event.currentTarget));
+      actions.append(previewButton);
+    }
+    const saveButton = document.createElement('button');
+    saveButton.className = 'mini-button';
+    saveButton.type = 'button';
+    saveButton.textContent = '保存';
+    saveButton.addEventListener('click', () => triggerAttachmentDownload({ url, filename: attachment.filename || `attachment-${index + 1}` }));
+    actions.append(saveButton);
+    item.append(description, actions);
     el.attachment_list.append(item);
   });
 }
@@ -299,6 +443,7 @@ function updateCharacterCount() {
 }
 
 function resetApp() {
+  if (state.currentPreview) closeAttachmentPreview();
   revokeAttachmentUrls();
   state.file = null;
   state.email = null;
@@ -456,6 +601,13 @@ el.feedback_copy.addEventListener('click', async () => {
   if (copied) closeOverlay(el.feedback_modal);
 });
 
+el.attachment_preview_x.addEventListener('click', closeAttachmentPreview);
+el.attachment_preview_close.addEventListener('click', closeAttachmentPreview);
+el.attachment_preview_save.addEventListener('click', () => triggerAttachmentDownload());
+el.attachment_preview_modal.addEventListener('mousedown', event => {
+  if (event.target === el.attachment_preview_modal) closeAttachmentPreview();
+});
+
 el.debug_button.addEventListener('click', () => {
   const debug = [
     `appId: ${APP_ID}`,
@@ -475,7 +627,8 @@ el.debug_button.addEventListener('click', () => {
 document.addEventListener('keydown', event => {
   const modal = document.querySelector('.modal-overlay.open');
   if (event.key === 'Escape' && modal) {
-    closeOverlay(modal);
+    if (modal === el.attachment_preview_modal) closeAttachmentPreview();
+    else closeOverlay(modal);
     return;
   }
   if (event.key === 'Tab' && modal) {

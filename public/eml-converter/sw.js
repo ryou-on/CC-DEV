@@ -1,4 +1,4 @@
-const CACHE_NAME = 'eml-post-v1.0.0-r2';
+const CACHE_NAME = 'eml-post-v1.1.0';
 const APP_SHELL = [
   './', './index.html', './app.js', './manifest.json', './icon.svg',
   './vendor/address-parser.js', './vendor/base64-decoder.js', './vendor/base64-encoder.js',

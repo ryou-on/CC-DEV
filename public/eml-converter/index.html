@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#13252b">
   <meta name="description" content="EMLメールをブラウザ内でプレーンテキストとPDFへ変換します。メール内容は外部送信しません。">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src blob:; frame-src blob:; font-src 'self'; connect-src 'self'; object-src blob:; base-uri 'self'; form-action 'self'">
   <title>EMLポスト — EMLをテキスト・PDFに変換</title>
   <link rel="icon" href="./icon.svg" type="image/svg+xml">
   <link rel="manifest" href="./manifest.json">
@@ -283,7 +283,9 @@
     }
     .attachment-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .83rem; font-weight: 750; }
     .attachment-meta { color: var(--muted); font-size: .7rem; }
+    .attachment-actions { display: flex; align-items: center; gap: 7px; }
     .mini-button { min-height: 34px; padding: 5px 10px; border: 1px solid #bcc7c3; border-radius: 8px; background: #fff; cursor: pointer; font-size: .72rem; font-weight: 800; }
+    .mini-button.preview { color: #fff; background: var(--navy-2); border-color: var(--navy-2); }
     .empty-note { margin: 0; padding: 15px; color: var(--muted); background: #f3f4ef; border-radius: 10px; font-size: .8rem; }
     .notice { margin: 18px 0 0; padding: 13px 15px; color: #6f5430; background: #fff5dc; border-left: 4px solid #e2a442; border-radius: 6px; font-size: .78rem; }
 
@@ -333,6 +335,47 @@
     .field textarea { min-height: 140px; resize: vertical; }
     .privacy-note { color: var(--muted); font-size: .74rem; }
 
+    .preview-modal-box { width: min(980px, 100%); height: min(86vh, 820px); }
+    .preview-title-wrap { min-width: 0; }
+    .preview-title-wrap h2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .preview-meta { margin: 2px 0 0; color: var(--muted); font-size: .7rem; }
+    .preview-stage {
+      min-height: 0;
+      flex: 1;
+      overflow: auto;
+      display: grid;
+      place-items: center;
+      padding: clamp(12px, 2.5vw, 24px);
+      color: #dbe9e5;
+      background:
+        linear-gradient(45deg, rgba(255,255,255,.035) 25%, transparent 25%, transparent 75%, rgba(255,255,255,.035) 75%),
+        linear-gradient(45deg, rgba(255,255,255,.035) 25%, transparent 25%, transparent 75%, rgba(255,255,255,.035) 75%),
+        #1b2c31;
+      background-position: 0 0, 12px 12px;
+      background-size: 24px 24px;
+    }
+    .preview-stage img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; box-shadow: 0 12px 36px rgba(0,0,0,.34); }
+    .preview-stage .pdf-preview { width: 100%; height: 100%; min-height: 480px; border: 0; border-radius: 8px; background: #fff; }
+    .preview-stage video { display: block; width: min(100%, 900px); max-height: 100%; border-radius: 10px; background: #000; }
+    .preview-stage audio { width: min(100%, 620px); }
+    .preview-text {
+      width: 100%;
+      min-height: 100%;
+      margin: 0;
+      padding: 20px;
+      overflow: visible;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      color: #18272b;
+      background: #fff;
+      border-radius: 9px;
+      font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Hiragino Kaku Gothic ProN", monospace;
+      font-size: .84rem;
+      line-height: 1.75;
+    }
+    .preview-unavailable { max-width: 520px; padding: 26px; text-align: center; color: #dbe9e5; }
+    .preview-unavailable strong { display: block; margin-bottom: 7px; color: #fff; }
+
     .toast {
       position: fixed;
       left: 50%;
@@ -380,7 +423,8 @@
       .toolbar-actions { display: grid; grid-template-columns: 1fr 1fr; }
       .toolbar-actions > *:last-child { grid-column: 1 / -1; }
       .attachment-item { grid-template-columns: minmax(0, 1fr); }
-      .attachment-item .mini-button { justify-self: start; }
+      .attachment-actions { justify-content: flex-start; }
+      .preview-stage .pdf-preview { min-height: 420px; }
       .modal-actions { flex-wrap: wrap; }
     }
 
@@ -409,7 +453,7 @@
         <span class="brand-mark" aria-hidden="true"></span>
         <span>EMLポスト</span>
       </button>
-      <button class="version-button" id="version-button" type="button" title="リリースノートを開く">v1.0.0</button>
+      <button class="version-button" id="version-button" type="button" title="リリースノートを開く">v1.1.0</button>
     </div>
     <div class="header-actions">
       <button class="header-button" id="feedback-button" type="button" title="目安箱を開く">✉ <span class="long-label">目安箱</span></button>
@@ -538,6 +582,23 @@
       <div class="modal-actions">
         <button class="secondary-button" id="feedback-close" type="button">閉じる</button>
         <button class="primary-button" id="feedback-copy" type="button">内容をコピー</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="attachment-preview-modal" role="dialog" aria-modal="true" aria-labelledby="attachment-preview-title" aria-hidden="true">
+    <div class="modal-box preview-modal-box" role="document">
+      <div class="modal-header">
+        <div class="preview-title-wrap">
+          <h2 id="attachment-preview-title">添付ファイル</h2>
+          <p class="preview-meta" id="attachment-preview-meta"></p>
+        </div>
+        <button class="modal-close-btn" id="attachment-preview-x" type="button" aria-label="閉じる">✕</button>
+      </div>
+      <div class="preview-stage" id="attachment-preview-stage"></div>
+      <div class="modal-actions">
+        <button class="secondary-button" id="attachment-preview-save" type="button">ファイルを保存</button>
+        <button class="primary-button" id="attachment-preview-close" type="button">閉じる</button>
       </div>
     </div>
   </div>
