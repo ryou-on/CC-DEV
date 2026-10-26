@@ -102,6 +102,19 @@ class CostGateTest(unittest.TestCase):
         r = subprocess.run([sys.executable, str(Path(guard.__file__)), '--root', str(self.root), '--check'], capture_output=True)
         self.assertEqual(2, r.returncode)
 
+    def test_cli_accepts_explicit_policy_path(self):
+        p = self.policy()
+        today = dt.datetime.now(dt.timezone(dt.timedelta(hours=9))).date()
+        p.update(reviewedOn=today.isoformat(), expiresOn=(today + dt.timedelta(days=30)).isoformat())
+        external = self.root.parent / f'{self.root.name}-policy.json'
+        external.write_text(json.dumps(p))
+        self.addCleanup(lambda: external.unlink(missing_ok=True))
+        r = subprocess.run([
+            sys.executable, str(Path(guard.__file__)), '--root', str(self.root),
+            '--policy', str(external), '--check'
+        ], capture_output=True)
+        self.assertEqual(0, r.returncode, r.stdout.decode())
+
     def test_errors_cannot_be_waived_by_review(self):
         self.put('firestore.rules', 'allow write: if true;')
         p = self.policy()

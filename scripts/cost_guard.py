@@ -139,6 +139,8 @@ def validate_policy(policy, digest, today):
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--root', type=Path, default=Path(__file__).resolve().parent.parent)
+    ap.add_argument('--policy', type=Path,
+                    help='審査ポリシーJSON。未指定時は監査ルート直下のcost-safety.json')
     ap.add_argument('--check', action='store_true', help='危険・未確認があればexit 1。デプロイ用')
     ap.add_argument('--json', type=Path, help='監査結果の保存先（秘密情報・ソース本文を含めない）')
     args = ap.parse_args()
@@ -150,7 +152,7 @@ def main():
     try:
         root = args.root.resolve()
         findings, digest, checked = scan(root)
-        policy_path = root / 'cost-safety.json'
+        policy_path = args.policy.resolve() if args.policy else root / 'cost-safety.json'
         policy = json.loads(policy_path.read_text()) if policy_path.exists() else {}
         if not isinstance(policy, dict):
             raise ValueError('cost-safety.json must be an object')

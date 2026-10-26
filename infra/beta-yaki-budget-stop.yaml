@@ -1,0 +1,85 @@
+main:
+  params: [event]
+  steps:
+    - init:
+        assign:
+          - attrs: ${map.get(event.data.message, "attributes")}
+          - payload: ${json.decode(base64.decode(event.data.message.data))}
+    - validate_type:
+        switch:
+          - condition: ${not (event.type == "google.cloud.pubsub.topic.v1.messagePublished")}
+            return: ignored
+    - validate_source:
+        switch:
+          - condition: ${not (event.source == "//pubsub.googleapis.com/projects/cc-dev-ps7/topics/cc-dev-budget-alerts")}
+            return: ignored
+    - validate_billing_account:
+        switch:
+          - condition: ${not (attrs.billingAccountId == "018CD7-29C438-31FEC4")}
+            return: ignored
+    - validate_budget:
+        switch:
+          - condition: ${not (attrs.budgetId == "a081406d-a275-4d4a-a5b6-cbbddd9babce")}
+            return: ignored
+    - validate_schema:
+        switch:
+          - condition: ${not (attrs.schemaVersion == "1.0")}
+            return: ignored
+    - validate_currency:
+        switch:
+          - condition: ${not (payload.currencyCode == "JPY")}
+            return: ignored
+    - validate_budget_amount:
+        switch:
+          - condition: ${not (payload.budgetAmount == 2372)}
+            return: ignored
+    - validate_budget_type:
+        switch:
+          - condition: ${not (payload.budgetAmountType == "SPECIFIED_AMOUNT")}
+            return: ignored
+    - validate_cost_type:
+        switch:
+          - condition: ${not (get_type(payload.costAmount) in ["integer", "double"])}
+            return: ignored
+    - validate_threshold:
+        switch:
+          - condition: ${not (payload.costAmount >= 791)}
+            return: ignored
+    - validate_not_future:
+        switch:
+          - condition: ${not (time.parse(event.data.message.publishTime) <= sys.now() + 300)}
+            return: ignored
+    - validate_freshness:
+        switch:
+          - condition: ${not (time.parse(event.data.message.publishTime) >= sys.now() - 86400)}
+            return: ignored
+    - validate_month:
+        switch:
+          - condition: ${not (text.substring(time.format(time.parse(payload.costIntervalStart), "America/Los_Angeles"), 0, 10) == text.substring(time.format(sys.now(), "America/Los_Angeles"), 0, 7) + "-01")}
+            return: ignored
+    - dry_run:
+        switch:
+          - condition: ${map.get(event, "dryRun") == true}
+            return:
+              status: would_stop
+              project: beta-yaki-note
+              site: beta-yaki-note
+              thresholdJPY: 791
+    - disable_hosting:
+        call: http.post
+        args:
+          url: https://firebasehosting.googleapis.com/v1beta1/sites/beta-yaki-note/releases
+          auth:
+            type: OAuth2
+          timeout: 20
+          body:
+            type: SITE_DISABLE
+            message: Beta Yaki Note 791 JPY budget stop; manual restart only
+        result: stop_result
+    - done:
+        return:
+          status: stopped
+          project: beta-yaki-note
+          site: beta-yaki-note
+          thresholdJPY: 791
+          release: ${stop_result.body.name}
