@@ -58,8 +58,14 @@ const { useState, useEffect, useRef, useMemo, useLayoutEffect, useCallback } = R
 
 // ===== 基本設定 =====
 const APP_NAME = 'コンテメーカー';
-const VERSION = '0.1.0';
-const RELEASE_NOTES = `## v0.1.0 (2026-10-27)
+const VERSION = '0.2.0';
+const RELEASE_NOTES = `## v0.2.0 (2026-10-27)
+- AI機能で API キーの入力が不要に（ログインするだけで使えます）
+- AIラフ一括に「バッチ生成（半額）」を追加
+- AIラフの画質を「標準／軽量」から選べるように
+- 設定画面に本日のAI利用回数を表示
+
+## v0.1.0 (2026-10-27)
 - 初回リリース
 - 脚本・シーン割りの Markdown から絵コンテ／字コンテを自動生成
 - 絵の差し替え（クリック・ドラッグ&ドロップ・貼り付け・カット間の入れ替え）
@@ -82,7 +88,6 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 
-const DEFAULT_MODEL = 'claude-sonnet-4-6';
 const ASPECTS = { '16:9': 16 / 9, '4:3': 4 / 3, '1:1': 1, '9:16': 9 / 16, '2.39:1': 2.39 };
 
 // ===== ユーティリティ =====
@@ -165,7 +170,15 @@ const idb = (() => {
 })();
 
 // ===== 設定（localStorage） =====
-const loadSettings = () => { try { return { apiKey: '', model: DEFAULT_MODEL, tts: true, ...JSON.parse(localStorage.getItem('sbm_settings') || '{}') }; } catch { return { apiKey: '', model: DEFAULT_MODEL, tts: true }; } };
+const loadSettings = () => {
+  const def = { roughTask: 'rough', tts: true };
+  try {
+    const raw = JSON.parse(localStorage.getItem('sbm_settings') || '{}');
+    // v0.1.0 でブラウザに保存していた API キーは残さず削除する
+    if ('apiKey' in raw || 'model' in raw) { delete raw.apiKey; delete raw.model; localStorage.setItem('sbm_settings', JSON.stringify(raw)); }
+    return { ...def, ...raw };
+  } catch { return def; }
+};
 const saveSettings = s => { try { localStorage.setItem('sbm_settings', JSON.stringify(s)); } catch {} };
 
 // ===== Markdown パーサー =====
@@ -311,50 +324,75 @@ const SAMPLE_MD = `# 教室のスマホ（サンプル）
 - セリフ: ハヤト「な、なんだよ、わかってるよ！ サエコ、キミだってその刀！」
 `;
 
-// ===== Claude API（ストリーミング） =====
-async function streamClaude({ apiKey, model, system, prompt, maxTokens = 4096, onText }) {
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
-    body: JSON.stringify({ model, max_tokens: maxTokens, stream: true, system, messages: [{ role: 'user', content: prompt }] }),
-  });
-  if (!res.ok) throw new Error(`Claude API ${res.status}: ${(await res.text()).slice(0, 300)}`);
+// ===== Claude API（Cloud Functions 経由。APIキーはサーバー側にのみ存在） =====
+const API_ENDPOINT = 'https://asia-northeast1-cc-dev-ps7.cloudfunctions.net/askClaude';
+const JPY_PER_USD = 150;
+const ROUGH_COST_USD = { rough: 0.02, roughLite: 0.0012 }; // 1カットあたりの目安
+const LIMITS = { convertChars: 6000 };
+
+async function apiPost(body) {
+  const user = auth.currentUser;
+  if (!user) throw new Error('AI機能を使うにはログインが必要です');
+  const token = await user.getIdToken();
+  let res;
+  try {
+    res = await fetch(API_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` }, body: JSON.stringify(body) });
+  } catch { throw new Error('AIサーバーに接続できませんでした。通信状況を確認してください'); }
+  if (!res.ok) { let msg = `AIサーバーエラー（${res.status}）`; try { msg = (await res.json()).error || msg; } catch {} throw new Error(msg); }
+  return res;
+}
+const apiJson = async body => (await apiPost(body)).json();
+
+// ストリーミング呼び出し（サーバーからの NDJSON を1行ずつ読む）
+async function callClaude({ task, input, onText }) {
+  const res = await apiPost({ action: 'stream', task, input });
   const reader = res.body.getReader(); const dec = new TextDecoder();
-  let buf = '', full = '', stopReason = null;
+  let buf = '', full = '', done = null;
   while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+    const { done: end, value } = await reader.read();
+    if (end) break;
     buf += dec.decode(value, { stream: true });
     let idx;
     while ((idx = buf.indexOf('\n')) >= 0) {
       const line = buf.slice(0, idx).trim(); buf = buf.slice(idx + 1);
-      if (!line.startsWith('data:')) continue;
-      let ev; try { ev = JSON.parse(line.slice(5).trim()); } catch { continue; }
-      if (ev.type === 'content_block_delta' && ev.delta && ev.delta.type === 'text_delta') { full += ev.delta.text; onText && onText(full); }
-      else if (ev.type === 'message_delta') stopReason = ev.delta && ev.delta.stop_reason;
-      else if (ev.type === 'error') throw new Error(ev.error && ev.error.message || 'ストリームエラー');
+      if (!line) continue;
+      let ev; try { ev = JSON.parse(line); } catch { continue; }
+      if (ev.type === 'text') { full += ev.text; onText && onText(full); }
+      else if (ev.type === 'done') done = ev;
+      else if (ev.type === 'error') throw new Error(ev.message);
     }
   }
-  return { text: full, stopReason };
+  if (!done) throw new Error('AIの応答が途中で切れました。もう一度お試しください');
+  console.log(`AI ${task}: ${full.length}字 / 本日 ${done.used}/${done.limit} 回 / 約$${done.costUsd}`);
+  return { text: full, ...done };
 }
 
-const CONVERT_SYSTEM = `あなたはアニメ・CM・映像制作の絵コンテ担当です。与えられた脚本・シーン割り・メモを、カット単位の字コンテに分解してJSONで返します。
-ルール:
-- 出力はJSONのみ（前置き・コードフェンス禁止）
-- 形式: {"title":"作品タイトル","cuts":[{"scene":"シーン名（場所・時間帯）","action":"画面に映る内容・芝居（ト書き）","camera":"カメラワーク（PAN/TU/TB/FIX/寄り/引き等、無ければ空）","dialogue":"セリフ・ナレーション（話者「セリフ」形式、複数は改行区切り）","sound":"SE/BGM（無ければ空）","duration":秒数(数値),"note":"補足（無ければ空）"}]}
-- 1カット＝1つの画面構図。セリフが長い場合や構図が変わる場合はカットを分ける
-- duration はセリフ量（日本語で1秒あたり約6文字）と芝居から現実的に見積もる（最低1.5秒）
-- 原文の情報を落とさない`;
+// 呼び出しフック：ローディング（生成文字数）とエラー表示を管理
+function useClaude() {
+  const [loading, setLoading] = useState(false);
+  const [chars, setChars] = useState(0);
+  const [error, setError] = useState('');
+  const run = useCallback(async (task, input) => {
+    setLoading(true); setChars(0); setError('');
+    try { return await callClaude({ task, input, onText: t => setChars(t.length) }); }
+    catch (e) { console.error(`AI ${task} 失敗`, e.message); setError(e.message); return null; }
+    finally { setLoading(false); }
+  }, []);
+  return { run, loading, chars, error, setError };
+}
 
-const SVG_SYSTEM = `あなたはプロの絵コンテ作家です。指定されたカットの「ラフスケッチ」をSVGで描きます。
-ルール:
-- 出力は <svg> 要素のみ（前置き・コードフェンス禁止）。xmlns 属性を付ける
-- 白背景。黒の線画（stroke="#111"、fill="none" 主体、線幅2〜4）で描く
-- 影や面は薄い水色 #bfe3f5 で塗る（参考：アニメ絵コンテの青鉛筆）
-- 構図（カメラアングル、人物の配置と向き、手前と奥の関係、背景のパース）が一目で伝わること
-- 人物は頭・胴・腕・脚の輪郭がわかる簡易な人型で描く（棒人間は不可）。表情は目と口の線で簡単に
-- 文字は入れない。カメラワークがある場合のみ赤 #e11d48 の矢印や枠（OUT/INのフレーム）で示す
-- 要素は40〜120個程度に収め、簡潔に`;
+// AI出力から SVG を取り出して JPEG 化
+async function svgFromText(text, aspect) {
+  const m = text.match(/<svg[\s\S]*<\/svg>/i);
+  if (!m) throw new Error('ラフ画像を生成できませんでした');
+  const { w, h } = canvasSize(ASPECTS[aspect]);
+  return svgToJpeg(m[0], w, h);
+}
+// AIラフ用の入力（サーバー側で文字数上限を検証）
+const roughInput = (p, i) => {
+  const c = p.cuts[i], prev = p.cuts[i - 1];
+  return { title: p.title.slice(0, 100), aspect: p.aspect, scene: c.scene, action: c.action, camera: c.camera, dialogue: c.dialogue, prevAction: prev ? prev.action.slice(0, 300) : '' };
+};
 
 // ===== 共通UI部品 =====
 function Modal({ title, onClose, children, wide, footer }) {
@@ -679,11 +717,12 @@ function SketchModal({ cut, ratio, onSave, onClose }) {
 }
 
 // ===== テキスト読込／AI変換 =====
-function ImportModal({ initialText, settings, onApply, onClose, openSettings }) {
+function ImportModal({ initialText, onApply, onClose }) {
   const [text, setText] = useState(initialText || '');
   const [mode, setMode] = useState('new');
-  const [busy, setBusy] = useState(null);
   const [err, setErr] = useState('');
+  const claude = useClaude();
+  const busy = claude.loading ? claude.chars : null;
   const fileRef = useRef(null);
 
   const rule = () => {
@@ -692,18 +731,19 @@ function ImportModal({ initialText, settings, onApply, onClose, openSettings }) 
     onApply(r, mode);
   };
   const ai = async () => {
-    if (!settings.apiKey) { openSettings(); return; }
-    setErr(''); setBusy(0);
+    setErr('');
+    const r = await claude.run('convert', { text });
+    if (!r) return;
     try {
-      const { text: out, stopReason } = await streamClaude({ apiKey: settings.apiKey, model: settings.model, system: CONVERT_SYSTEM, prompt: `次の脚本・シーン割りを字コンテJSONに変換してください。\n\n${text}`, maxTokens: 8192, onText: t => setBusy(t.length) });
-      if (stopReason === 'max_tokens') console.warn('AI変換: 出力上限に到達（途中までの可能性）');
+      if (r.stopReason === 'max_tokens') console.warn('AI変換: 出力上限に到達（途中までの可能性）');
+      const out = r.text;
       const json = JSON.parse(out.slice(out.indexOf('{'), out.lastIndexOf('}') + 1));
       const cuts = (json.cuts || []).map(c => newCut({ scene: c.scene || '', action: c.action || '', camera: c.camera || '', dialogue: c.dialogue || '', sound: c.sound || '', note: c.note || '', duration: +c.duration || 3 }));
       if (!cuts.length) throw new Error('カットが生成されませんでした');
       onApply({ title: json.title || '', cuts }, mode);
-    } catch (e) { console.error('AI変換失敗', e.message); setErr('AI変換に失敗しました: ' + e.message); }
-    finally { setBusy(null); }
+    } catch (e) { console.error('AI変換の解析失敗', e.message); setErr('AIの出力を読み取れませんでした。もう一度お試しください'); }
   };
+  const over = text.length > LIMITS.convertChars;
 
   return (
     <Modal title="📥 脚本・シーン割りを読み込む" onClose={onClose} wide footer={<>
@@ -713,7 +753,7 @@ function ImportModal({ initialText, settings, onApply, onClose, openSettings }) 
         <option value="append">今のプロジェクトの末尾に追加</option>
       </select>
       <Btn onClick={rule} disabled={!text.trim() || busy != null}>📄 ルールで変換（無料）</Btn>
-      <Btn kind="ai" onClick={ai} disabled={!text.trim() || busy != null}>{busy != null ? `生成中...（${busy}字）` : '🤖 AIで変換'}</Btn>
+      <Btn kind="ai" onClick={ai} disabled={!text.trim() || busy != null || over}>{busy != null ? `生成中...（${busy}字）` : '🤖 AIで変換'}</Btn>
     </>}>
       <div className="flex gap-2 mb-2">
         <Btn onClick={() => fileRef.current.click()}>ファイルを開く（.md / .txt）</Btn>
@@ -722,8 +762,9 @@ function ImportModal({ initialText, settings, onApply, onClose, openSettings }) 
       </div>
       <textarea value={text} onChange={e => setText(e.target.value)} className="w-full h-[45vh] border rounded-lg p-3 font-mono text-xs" placeholder="ここに Markdown の脚本・シーン割りを貼り付け" />
       {busy != null && <div className="flex items-center gap-2 text-violet-700 text-xs mt-2"><div className="w-4 h-4 border-2 border-violet-300 border-t-violet-700 rounded-full animate-spin" />生成中...（{busy}字）</div>}
-      {err && <p className="text-rose-600 text-xs mt-2">{err}</p>}
-      <p className="text-xs text-slate-500 mt-2">ルール変換は「### CUT」見出し・表・箇条書きを解析します（書式はアプリ名をクリック→ヘルプ）。自由形式の脚本は AI変換がおすすめ（Claude Sonnet で 1本あたり概ね数円〜数十円）。</p>
+      <div className={`text-right text-xs mt-1 ${over ? 'text-rose-600 font-bold' : 'text-slate-400'}`}>{text.length.toLocaleString()} / {LIMITS.convertChars.toLocaleString()}字（AI変換の上限）</div>
+      {(err || claude.error) && <p className="text-rose-600 text-xs mt-2">{err || claude.error}</p>}
+      <p className="text-xs text-slate-500 mt-2">ルール変換は「### CUT」見出し・表・箇条書きを解析します（書式はアプリ名をクリック→ヘルプ）。自由形式の脚本は AI変換がおすすめ（1回 約5円・1日20回まで）。上限を超える場合はシーンごとに分けて「末尾に追加」で読み込んでください。</p>
     </Modal>
   );
 }
@@ -896,40 +937,68 @@ function App({ user }) {
     aiRough: id => genRough(id),
   };
 
-  // AIラフ生成（1カット）
+  // AIラフ生成（1カット・ストリーミング）
   const genRough = async (id) => {
-    if (!settings.apiKey) { setModal('settings'); notify('Claude API キーを設定してください'); return false; }
-    const p = projectRef.current; const i = p.cuts.findIndex(c => c.id === id); const c = p.cuts[i];
-    const ratio = ASPECTS[p.aspect]; const { w, h } = canvasSize(ratio);
-    const prev = p.cuts[i - 1];
+    const p = projectRef.current; const i = p.cuts.findIndex(c => c.id === id);
     setAiBusy(b => ({ ...b, [id]: 0 }));
     try {
-      const prompt = `viewBox="0 0 ${w} ${h}" のSVGで、次のカットのラフを描いてください。
-作品: ${p.title}
-シーン: ${c.scene || '(未指定)'}
-画面内容: ${c.action || '(未指定)'}
-カメラ: ${c.camera || 'FIX'}
-セリフ: ${c.dialogue || 'なし'}
-${prev ? `直前のカット: ${prev.action}` : ''}`;
-      const { text } = await streamClaude({ apiKey: settings.apiKey, model: settings.model, system: SVG_SYSTEM, prompt, maxTokens: 4096, onText: t => setAiBusy(b => ({ ...b, [id]: t.length })) });
-      const m = text.match(/<svg[\s\S]*<\/svg>/i);
-      if (!m) throw new Error('SVGが出力されませんでした');
-      const img = await svgToJpeg(m[0], w, h);
+      const r = await callClaude({ task: settings.roughTask, input: roughInput(p, i), onText: t => setAiBusy(b => ({ ...b, [id]: t.length })) });
+      const img = await svgFromText(r.text, p.aspect);
       commit(pp => ({ ...pp, cuts: pp.cuts.map(x => x.id === id ? { ...x, image: img } : x) }));
       return true;
     } catch (e) { console.error('AIラフ失敗', e.message); notify('AIラフ失敗: ' + e.message.slice(0, 80)); return false; }
     finally { setAiBusy(b => { const n = { ...b }; delete n[id]; return n; }); }
   };
 
-  const genRoughAll = async () => {
-    const targets = project.cuts.filter(c => !c.image);
-    if (!targets.length) { notify('絵のないカットはありません'); return; }
-    if (!settings.apiKey) { setModal('settings'); return; }
-    if (!confirm(`絵のない ${targets.length} カットにAIラフを生成します。\n目安コスト: 約 $${(targets.length * 0.04).toFixed(2)}（Sonnet・1カット約$0.03〜0.05）\n実行しますか？`)) return;
-    let ok = 0;
-    for (const c of targets) { if (await genRough(c.id)) ok++; }
-    notify(`AIラフ生成完了：${ok}/${targets.length} カット`);
+  const roughTargets = () => project.cuts.filter(c => !c.image);
+  const genRoughAll = () => {
+    if (project.pendingBatch) { notify('バッチ生成の完了待ちです'); return; }
+    if (!roughTargets().length) { notify('絵のないカットはありません'); return; }
+    setModal('roughAll');
   };
+  // 今すぐ生成（1カットずつ順番に）
+  const runRoughNow = async () => {
+    setModal(null);
+    const ids = roughTargets().map(c => c.id); let ok = 0;
+    for (const id of ids) { if (await genRough(id)) ok++; else break; } // 上限・エラー時は止める
+    notify(`AIラフ生成：${ok}/${ids.length} カット完了`);
+  };
+  // バッチ生成（Batch API・半額。完了は30秒ごとに確認）
+  const runRoughBatch = async () => {
+    setModal(null);
+    const p = projectRef.current;
+    const items = p.cuts.map((c, i) => ({ c, i })).filter(x => !x.c.image).slice(0, 50).map(({ c, i }) => ({ id: c.id, input: roughInput(p, i) }));
+    try {
+      const r = await apiJson({ action: 'batchCreate', task: settings.roughTask, items });
+      commit(pp => ({ ...pp, pendingBatch: { id: r.batchId, count: r.count, createdAt: Date.now() } }));
+      notify(`バッチ生成を開始しました（${r.count}カット）。完了すると自動で反映されます`);
+    } catch (e) { console.error('バッチ作成失敗', e.message); notify(e.message); }
+  };
+
+  // バッチの完了確認（ページを開いている間 30 秒ごと。閉じても次回開いた時に反映）
+  const pendingBatchId = project && project.pendingBatch && project.pendingBatch.id;
+  useEffect(() => {
+    if (!pendingBatchId || !user) return;
+    let stopped = false;
+    const check = async () => {
+      try {
+        const r = await apiJson({ action: 'batchStatus', batchId: pendingBatchId });
+        if (stopped || r.status !== 'ended') return;
+        const aspect = projectRef.current.aspect; const imgs = {}; let ng = 0;
+        for (const x of r.results) {
+          if (!x.text) { ng++; continue; }
+          try { imgs[x.id] = await svgFromText(x.text, aspect); } catch { ng++; }
+        }
+        commit(pp => ({ ...pp, pendingBatch: null, cuts: pp.cuts.map(c => imgs[c.id] && !c.image ? { ...c, image: imgs[c.id] } : c) }));
+        notify(`バッチ生成完了：${Object.keys(imgs).length}カットに絵を追加${ng ? `（失敗 ${ng}）` : ''}`);
+      } catch (e) {
+        console.error('バッチ確認失敗', e.message);
+        if (/見つかりません|不正/.test(e.message)) commit(pp => ({ ...pp, pendingBatch: null }));
+      }
+    };
+    check(); const t = setInterval(check, 30000);
+    return () => { stopped = true; clearInterval(t); };
+  }, [pendingBatchId, user]);
 
   // プロジェクト操作
   const switchProject = async id => {
@@ -1086,6 +1155,7 @@ ${prev ? `直前のカット: ${prev.action}` : ''}`;
             <span>カット数 <b className="text-slate-900">{project.cuts.length}</b></span>
             <span>総尺 <b className="text-slate-900 font-mono">{fmtTC(total)}</b>（{total}秒）</span>
             <span>絵あり <b className="text-slate-900">{project.cuts.filter(c => c.image).length}</b></span>
+            {project.pendingBatch && <span className="text-violet-700 font-bold flex items-center gap-1"><span className="w-3 h-3 border-2 border-violet-300 border-t-violet-700 rounded-full animate-spin inline-block" />AIラフ バッチ生成中（{project.pendingBatch.count}カット）</span>}
             <span className="text-xs text-slate-400 self-center hidden md:inline">ヒント：絵をドラッグして別カットへ落とすと入れ替え／PICTUREを選択して ⌘V で貼り付け</span>
           </div>
           {view === 'e'
@@ -1108,24 +1178,55 @@ ${prev ? `直前のカット: ${prev.action}` : ''}`;
       {modal === 'notes' && <Modal title="リリースノート" onClose={() => setModal(null)}><MiniMd text={RELEASE_NOTES} /></Modal>}
       {modal === 'help' && <Modal title={`${APP_NAME} の使い方`} onClose={() => setModal(null)} wide><MiniMd text={HELP_MD} /></Modal>}
       {modal === 'settings' && <SettingsModal settings={settings} onSave={s => { setSettings(s); saveSettings(s); setModal(null); notify('設定を保存しました'); }} onClose={() => setModal(null)} />}
-      {modal === 'import' && <ImportModal initialText={importText} settings={settings} onApply={applyImport} onClose={() => setModal(null)} openSettings={() => setModal('settings')} />}
+      {modal === 'import' && <ImportModal initialText={importText} onApply={applyImport} onClose={() => setModal(null)} />}
       {modal === 'sketch' && sketchCut && <SketchModal cut={sketchCut} ratio={ASPECTS[project.aspect]} onClose={() => setModal(null)} onSave={img => { ops.update(sketchCut.id, { image: img }); setModal(null); }} />}
+      {modal === 'roughAll' && <RoughAllModal count={roughTargets().length} task={settings.roughTask} onNow={runRoughNow} onBatch={runRoughBatch} onClose={() => setModal(null)} />}
       {modal === 'player' && <PlayerModal p={project} starts={starts} total={total} tts={settings.tts} onClose={() => setModal(null)} />}
     </>
   );
 }
 
+const yen = usd => `約${Math.max(0.1, usd * JPY_PER_USD).toFixed(usd * JPY_PER_USD < 10 ? 1 : 0)}円`;
+
+function RoughAllModal({ count, task, onNow, onBatch, onClose }) {
+  const per = ROUGH_COST_USD[task]; const n = Math.min(count, 50);
+  return (
+    <Modal title="🤖 AIラフ一括生成" onClose={onClose}>
+      <p className="mb-4">絵のない <b>{count}</b> カットにラフを生成します（画質：{task === 'roughLite' ? '軽量' : '標準'}）。</p>
+      <div className="grid gap-3">
+        <button onClick={onNow} className="text-left border rounded-xl p-4 hover:bg-slate-50">
+          <div className="font-bold">⚡ 今すぐ生成</div>
+          <div className="text-xs text-slate-500 mt-1">1カットずつ順番に生成。目安 {yen(per * count)}（1カット{yen(per)}）</div>
+        </button>
+        <button onClick={onBatch} className="text-left border-2 border-violet-400 rounded-xl p-4 hover:bg-violet-50">
+          <div className="font-bold text-violet-800">💰 バッチ生成（半額）👈</div>
+          <div className="text-xs text-slate-500 mt-1">数分〜最大24時間で完了し、自動で反映。目安 {yen(per * n / 2)}{count > 50 && '（1回50カットまで）'}</div>
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 function SettingsModal({ settings, onSave, onClose }) {
   const [s, setS] = useState(settings);
+  const [usage, setUsage] = useState(null);
+  useEffect(() => { apiJson({ action: 'usage' }).then(setUsage).catch(e => setUsage({ error: e.message })); }, []);
+  const LABEL = { convert: 'AI変換', rough: 'AIラフ（標準）', roughLite: 'AIラフ（軽量）' };
   return (
     <Modal title="⚙ 設定" onClose={onClose} footer={<><Btn onClick={onClose}>キャンセル</Btn><Btn kind="primary" onClick={() => onSave(s)}>保存</Btn></>}>
-      <label className="block font-bold mb-1">Claude API キー</label>
-      <input type="password" value={s.apiKey} onChange={e => setS({ ...s, apiKey: e.target.value.trim() })} placeholder="sk-ant-..." className="w-full border rounded-lg px-3 py-2 font-mono text-xs" />
-      <p className="text-xs text-slate-500 mt-1">このブラウザの localStorage にのみ保存され、Anthropic API へ直接送信されます。AI変換・AIラフでのみ使用。</p>
-      <label className="block font-bold mt-4 mb-1">モデル</label>
-      <input value={s.model} onChange={e => setS({ ...s, model: e.target.value.trim() })} className="w-full border rounded-lg px-3 py-2 font-mono text-xs" />
-      <p className="text-xs text-slate-500 mt-1">既定: {DEFAULT_MODEL}（入力 $3 / 出力 $15 per 1M tokens）</p>
+      <label className="block font-bold mb-2">AIラフの画質</label>
+      {[['rough', '標準（きれい・1カット ' + yen(ROUGH_COST_USD.rough) + '）'], ['roughLite', '軽量（簡素・1カット ' + yen(ROUGH_COST_USD.roughLite) + '）']].map(([k, l]) =>
+        <label key={k} className="flex items-center gap-2 mb-1"><input type="radio" checked={s.roughTask === k} onChange={() => setS({ ...s, roughTask: k })} />{l}</label>)}
       <label className="flex items-center gap-2 mt-4"><input type="checkbox" checked={s.tts} onChange={e => setS({ ...s, tts: e.target.checked })} />プレビュー再生でセリフを読み上げる</label>
+      <div className="mt-5 border-t pt-4">
+        <div className="font-bold mb-2">本日のAI利用状況</div>
+        {!usage && <div className="text-xs text-slate-400">読み込み中...</div>}
+        {usage && usage.error && <div className="text-xs text-rose-600">{usage.error}</div>}
+        {usage && usage.limits && <>
+          {Object.keys(usage.limits).map(k => <div key={k} className="flex justify-between text-sm"><span>{LABEL[k] || k}</span><span className="font-mono">{usage.counts[k] || 0} / {usage.limits[k]} 回</span></div>)}
+          <div className="flex justify-between text-sm mt-1 text-slate-500"><span>本日の概算コスト</span><span className="font-mono">{yen(usage.costUsd)}（${(+usage.costUsd).toFixed(3)}）</span></div>
+        </>}
+      </div>
     </Modal>
   );
 }
@@ -1136,7 +1237,9 @@ const HELP_MD = `## できること
 - 絵の差し替え：📁アップロード／画像をドラッグ&ドロップ／PICTUREをクリックして ⌘V（スクショ貼り付け）
 - 絵の入れ替え：絵を別カットの PICTURE へドラッグ
 - ✏️ 手描き（ダブルクリックでも可）：既存の絵に描き足し、青い影塗り、赤い指示線
-- 🤖 AIラフ：Claude が内容・カメラから構図ラフを作成（1カット約$0.03〜0.05）
+- 🤖 AIラフ：Claude が内容・カメラから構図ラフを作成（標準 約3円／軽量 約0.2円 per カット）
+- 🤖 AIラフ一括：「バッチ生成」を選ぶと半額（完了まで数分〜最大24時間、自動で反映）
+- AIの利用回数には1日の上限があります（⚙設定で確認）
 - ⠿ をドラッグ、または ▲▼ でカットの並べ替え。＋挿入 ⧉複製 ✕削除
 - ▶ プレビュー：秒数どおりに紙芝居再生（セリフ読み上げ付きの簡易ビデオコンテ）
 - 📤 書き出し：PDF（絵コンテ／字コンテ）・Markdown・JSON

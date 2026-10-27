@@ -403,3 +403,7 @@ exports.hondokoAnalyze = hondoko.hondokoAnalyze;
 exports.hondokoAmazon = hondoko.hondokoAmazon;
 exports.hondokoCover = hondoko.hondokoCover;
 exports.hondokoNdl = hondoko.hondokoNdl;
+
+// ===== askClaude: Claude API 呼び出し（storyboard-maker 用・プロモクレジットのキー） =====
+const askClaude = require('./ask-claude');
+exports.askClaude = askClaude.askClaude;

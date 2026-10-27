@@ -1,7 +1,7 @@
 # HANDOVER.md - storyboard-maker（コンテメーカー）
 
 ## 基本情報
-- バージョン: v0.1.0
+- バージョン: v0.2.0
 - フェーズ: Phase 1（MVP・α版）
 - 最終更新: 2026-10-27
 
@@ -9,7 +9,7 @@
 - Frontend: React 18（UMD + Babel standalone）+ Tailwind CSS（CDN）、シングルファイル
 - 認証: Firebase Auth（Google ログイン）＋ `ALLOWED_EMAILS` で本人のみ許可
 - データ: ブラウザの IndexedDB（`storyboard-maker` DB）。サーバー保存なし
-- AI: Claude API をブラウザから直接呼び出し（キーは localStorage、既定モデル claude-sonnet-4-6、ストリーミング）
+- AI: Cloud Functions `askClaude`（functions/ask-claude.js）経由。キーは Secret Manager の ANTHROPIC_API_KEY_PROMO のみ。詳細は functions/ASK_CLAUDE.md
 - Hosting: Firebase Hosting
 
 ## ファイル構成
@@ -32,6 +32,7 @@ public/storyboard-maker/
 ## 次のステップ
 1. Firestore/Storage 同期（複数端末で同じプロジェクトを使う）
 2. AI ラフの画風調整・画像生成 API 連携
+4. App Check 導入（公開範囲を広げる場合）
 3. ビデオコンテ（音声ファイル付き動画書き出し）
 
 ## 既知の問題・注意事項
