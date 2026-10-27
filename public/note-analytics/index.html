@@ -12,6 +12,7 @@
   <!-- Firebase -->
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
   <style>
     :root {
       --note-green: #41C9B4;
@@ -85,7 +86,7 @@
         <ol style="list-style:decimal;padding-left:18px;color:var(--muted);">
           <li>右上の「⚙ 設定」をクリック</li>
           <li>Claude API キー（<code style="background:var(--surface2);padding:1px 5px;border-radius:3px;">sk-ant-...</code>）を入力して保存</li>
-          <li>ユーザーIDを設定（複数デバイスで同じデータを使う場合に統一する）</li>
+          <li>右上の「Googleでログイン」でログイン（データはアカウントごとに保存され、同じアカウントなら複数デバイスで共有）</li>
         </ol>
       </div>
       <div>
@@ -125,11 +126,12 @@
     <span style="font-size:18px;font-weight:700;">note Analytics</span>
     <button onclick="openModal('releaseModal')"
       style="background:rgba(65,201,180,.15);color:var(--note-green);border:1px solid rgba(65,201,180,.4);border-radius:99px;padding:2px 9px;font-size:11px;font-weight:700;cursor:pointer;"
-      title="リリースノート">v0.2.0</button>
+      title="リリースノート">v0.3.0</button>
   </div>
   <div class="flex items-center gap-3">
     <button id="settingsBtn" class="btn-ghost text-sm">⚙ 設定</button>
     <span id="userIdDisplay" style="color:var(--muted);font-size:13px;"></span>
+    <button id="authBtn" onclick="toggleAuth()" class="btn-ghost text-sm">Googleでログイン</button>
   </div>
 </header>
 
@@ -144,8 +146,11 @@
         <input type="password" id="apiKeyInput" placeholder="sk-ant-..." />
       </div>
       <div>
-        <label class="text-sm mb-1 block" style="color:var(--muted);">ユーザーID（任意）</label>
-        <input type="text" id="userIdInput" placeholder="例: your_note_id" />
+        <label class="text-sm mb-1 block" style="color:var(--muted);">旧ユーザーID（ログイン前のデータ取り込み用）</label>
+        <div class="flex gap-2">
+          <input type="text" id="userIdInput" placeholder="例: default" />
+          <button onclick="migrateLegacy()" class="btn-ghost text-sm" style="white-space:nowrap;">旧データを取り込む</button>
+        </div>
       </div>
     </div>
     <button onclick="saveSettings()" class="btn-primary mt-3 text-sm">保存</button>
@@ -367,6 +372,14 @@
 // ===== リリースノート =====
 const RELEASE_NOTES = [
   {
+    version: 'v0.3.0',
+    date: '2026-10-27',
+    changes: [
+      'Googleログインに対応（データはアカウントごとに保存）',
+      '設定から旧ユーザーIDのデータを取り込めるように',
+    ]
+  },
+  {
     version: 'v0.2.0',
     date: '2026-04-22',
     changes: [
@@ -485,6 +498,7 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
+const auth = firebase.auth();
 
 // ===== 状態管理 =====
 let snapshots = [];       // 週次データ配列
@@ -492,7 +506,8 @@ let chart = null;
 let currentMetric = 'views';
 let imgQueue = [];        // { id, file, dataUrl, base64, status, data, weekStart, error }
 let queueIdSeq = 0;
-let userId = localStorage.getItem('na_userId') || 'default';
+let userId = null;   // ログイン中ユーザーの uid（未ログイン時は null）
+let legacyUserId = localStorage.getItem('na_userId') || 'default';   // 旧 userId 方式のID（移行元）
 let apiKey = localStorage.getItem('na_apiKey') || '';
 
 // ===== デバッグログ =====
@@ -522,19 +537,78 @@ document.getElementById('settingsBtn').addEventListener('click', () => {
   const p = document.getElementById('settingsPanel');
   p.style.display = p.style.display === 'none' ? 'block' : 'none';
   document.getElementById('apiKeyInput').value = apiKey;
-  document.getElementById('userIdInput').value = userId;
+  document.getElementById('userIdInput').value = legacyUserId;
 });
 function saveSettings() {
   apiKey = document.getElementById('apiKeyInput').value.trim();
-  userId = document.getElementById('userIdInput').value.trim() || 'default';
+  legacyUserId = document.getElementById('userIdInput').value.trim() || 'default';
   localStorage.setItem('na_apiKey', apiKey);
-  localStorage.setItem('na_userId', userId);
+  localStorage.setItem('na_userId', legacyUserId);
   document.getElementById('settingsPanel').style.display = 'none';
-  document.getElementById('userIdDisplay').textContent = userId;
   showToast('設定を保存しました', 'success');
-  log('設定保存:', { userId, hasApiKey: !!apiKey });
+  log('設定保存:', { legacyUserId, hasApiKey: !!apiKey });
 }
-document.getElementById('userIdDisplay').textContent = userId;
+
+// ===== Googleログイン =====
+async function toggleAuth() {
+  try {
+    if (auth.currentUser) { await auth.signOut(); return; }
+    await auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+  } catch (e) {
+    log('ログインエラー:', e.message);
+    showToast('❌ ログイン失敗: ' + e.message, 'error');
+  }
+}
+function requireLogin() {
+  if (userId) return true;
+  showToast('Googleでログインしてください', 'error');
+  return false;
+}
+auth.onAuthStateChanged(user => {
+  userId = user ? user.uid : null;
+  document.getElementById('userIdDisplay').textContent = user ? (user.email || user.uid) : '未ログイン';
+  document.getElementById('authBtn').textContent = user ? 'ログアウト' : 'Googleでログイン';
+  log('認証状態:', user ? user.email : '未ログイン');
+  if (user) { loadSnapshots(); }
+  else { snapshots = []; renderAll(); }
+});
+
+// 旧 userId 方式（note-analytics/{旧ID}/snapshots）のデータをログイン中アカウントへコピー
+// 旧データの読み取りは firestore.rules でオーナー（編集者）のみ許可
+async function migrateLegacy() {
+  if (!requireLogin()) return;
+  const fromId = document.getElementById('userIdInput').value.trim() || 'default';
+  if (!confirm(`旧ユーザーID「${fromId}」のデータをこのアカウントに取り込みますか？\n（同じ週のデータは上書きされます）`)) return;
+  try {
+    const qs = await db.collection('note-analytics').doc(fromId).collection('snapshots').get();
+    const allowedSources = ['manual', 'screenshot', 'chrome-auto', 'migrated'];
+    let n = 0;
+    for (const d of qs.docs) {
+      if (!/^[0-9]{8}$/.test(d.id)) continue;
+      const o = d.data();
+      const snap = {
+        weekStart: String(o.weekStart || ''),
+        views: Number(o.views) || 0,
+        likes: Number(o.likes) || 0,
+        followers: Number(o.followers) || 0,
+        comments: Number(o.comments) || 0,
+        source: allowedSources.includes(o.source) ? o.source : 'migrated',
+        createdAt: o.createdAt || firebase.firestore.FieldValue.serverTimestamp(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      };
+      if (o.articles != null) snap.articles = Number(o.articles) || 0;
+      if (snap.weekStart.length !== 10) continue;
+      await getCol().doc(d.id).set(snap, { merge: true });
+      n++;
+    }
+    log('旧データ取り込み:', { fromId, count: n });
+    showToast(`✅ ${n}件を取り込みました`, 'success');
+    loadSnapshots();
+  } catch (e) {
+    log('旧データ取り込みエラー:', e.message);
+    showToast('❌ 取り込み失敗: ' + e.message, 'error');
+  }
+}
 
 // ===== タブ切替 =====
 function switchTab(tab) {
@@ -1043,6 +1117,7 @@ function getCol() {
 }
 
 async function saveSnapshot(snap) {
+  if (!requireLogin()) return;
   const docId = snap.weekStart.replace(/-/g, '');
   snap.createdAt = firebase.firestore.FieldValue.serverTimestamp();
   snap.updatedAt = firebase.firestore.FieldValue.serverTimestamp();
@@ -1058,6 +1133,7 @@ async function saveSnapshot(snap) {
 }
 
 async function deleteSnapshot(docId) {
+  if (!requireLogin()) return;
   if (!confirm('このデータを削除しますか？')) return;
   await getCol().doc(docId).delete();
   showToast('削除しました', 'success');
@@ -1065,6 +1141,7 @@ async function deleteSnapshot(docId) {
 }
 
 async function loadSnapshots() {
+  if (!userId) return;
   try {
     const qs = await getCol().orderBy('weekStart', 'asc').get();
     snapshots = qs.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -1232,7 +1309,7 @@ async function init() {
   initBookmarklet();
   checkImportFromUrl();
   setChartMetric('views');
-  await loadSnapshots();
+  // データ読み込みはログイン状態の確定時（onAuthStateChanged）に行う
 }
 
 init();

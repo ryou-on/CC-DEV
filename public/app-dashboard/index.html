@@ -15,6 +15,9 @@
       getFirestore, collection, getDocs, addDoc, updateDoc,
       deleteDoc, doc, serverTimestamp, query, orderBy
     } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+    import {
+      getAuth, GoogleAuthProvider, signInWithPopup
+    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
     /* ============================================================
        🔧 Firebase設定 — cc-dev-ps7
@@ -30,6 +33,28 @@
 
     const app = fbInitApp(firebaseConfig);
     const db = getFirestore(app);
+    const auth = getAuth(app);
+
+    /* ============================================================
+       編集権限 — firestore.rules の isHihahoEditor() と同じ判定
+       ============================================================ */
+    function isEditorUser(u) {
+      const email = (u && u.email) || "";
+      return /@splineglobal\.com$/.test(email) || email === "junpei.omote@gmail.com";
+    }
+    // 編集者でなければ Google ログインを求める（成功時 true）
+    async function ensureEditor() {
+      if (isEditorUser(auth.currentUser)) return true;
+      try {
+        const cred = await signInWithPopup(auth, new GoogleAuthProvider());
+        if (isEditorUser(cred.user)) { log(`🔑 ログイン: ${cred.user.email}`); return true; }
+        alert(`このアカウント（${cred.user.email}）には編集権限がありません`);
+        await auth.signOut();
+      } catch (e) {
+        log(`❌ ログイン失敗: ${e.message}`);
+      }
+      return false;
+    }
 
     /* ============================================================
        初期データ — 初回のみFirestoreにシードする
@@ -179,6 +204,8 @@
     }
 
     async function seedIfEmpty() {
+      // 書き込みは編集者のみ許可されているため、未ログイン時はシードしない
+      if (!isEditorUser(auth.currentUser)) return;
       const snap = await getDocs(collection(db, "apps"));
       if (!snap.empty) return;
       log("初期データをFirestoreに投入中...");
@@ -408,6 +435,7 @@
        ============================================================ */
     /* レーティングをFirestoreに保存 */
     window._rate = async (id, value) => {
+      if (!(await ensureEditor())) return;
       const current = allApps.find(a => a.id === id);
       // 同じ値をクリックしたらリセット（0に戻す）
       const newVal = (current?.rating || 0) === value ? 0 : value;
@@ -454,7 +482,9 @@
       renderCards();
       renderCount();
     };
-    window._toggleAdmin = () => {
+    window._toggleAdmin = async () => {
+      // ON にするときは Google ログイン（編集者のみ）を必須にする
+      if (!isAdmin && !(await ensureEditor())) return;
       isAdmin = !isAdmin;
       const toggle = document.getElementById('admin-toggle');
       const btnAdd = document.getElementById('btn-add-app');
