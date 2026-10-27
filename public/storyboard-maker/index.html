@@ -1,0 +1,1187 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>コンテメーカー</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<style>
+  body { background: #eef2f7; font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", sans-serif; }
+  textarea { resize: none; }
+  .cell-input { width: 100%; background: transparent; outline: none; border-radius: 4px; padding: 2px 4px; }
+  .cell-input:focus { background: #fffbe6; box-shadow: 0 0 0 1px #f5c542; }
+  .econte th, .econte td, .jiconte th, .jiconte td { border: 1px solid #1f2937; vertical-align: top; }
+  .row-drop-target { box-shadow: inset 0 3px 0 #2563eb; }
+  .print-only { display: none; }
+  /* 印刷（PDF書き出し）用 */
+  @media print {
+    @page { size: A4 portrait; margin: 8mm; }
+    body { background: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .no-print { display: none !important; }
+    .print-only { display: block !important; }
+    .print-page { break-after: page; page-break-after: always; }
+    .print-page:last-child { break-after: auto; page-break-after: auto; }
+    .ptable tr { break-inside: avoid; page-break-inside: avoid; }
+  }
+  .ptable { width: 100%; border-collapse: collapse; font-size: 8.5pt; line-height: 1.35; }
+  .ptable th, .ptable td { border: 0.8px solid #000; padding: 1.2mm; vertical-align: top; white-space: pre-wrap; word-break: break-all; }
+  .ptable th { font-size: 8pt; font-weight: 700; text-align: center; letter-spacing: .1em; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+// ===== デバッグログ収集（React読み込み前から記録） =====
+window._logs = [];
+['log', 'info', 'warn', 'error'].forEach(k => {
+  const orig = console[k].bind(console);
+  console[k] = (...a) => {
+    window._logs.push(`[${new Date().toISOString()}][${k}] ` + a.map(x => { try { return typeof x === 'string' ? x : JSON.stringify(x); } catch { return String(x); } }).join(' '));
+    if (window._logs.length > 500) window._logs.shift();
+    orig(...a);
+  };
+});
+window.addEventListener('error', e => window._logs.push(`[uncaught] ${e.message} @${e.filename}:${e.lineno}`));
+window.addEventListener('unhandledrejection', e => window._logs.push(`[unhandledrejection] ${e.reason && e.reason.message || e.reason}`));
+</script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef, useMemo, useLayoutEffect, useCallback } = React;
+
+// ===== 基本設定 =====
+const APP_NAME = 'コンテメーカー';
+const VERSION = '0.1.0';
+const RELEASE_NOTES = `## v0.1.0 (2026-10-27)
+- 初回リリース
+- 脚本・シーン割りの Markdown から絵コンテ／字コンテを自動生成
+- 絵の差し替え（クリック・ドラッグ&ドロップ・貼り付け・カット間の入れ替え）
+- 手描きスケッチ、AIラフ（Claude）で絵を作成
+- PDF・Markdown・JSON で書き出し
+- プレビュー再生（読み上げ付きの簡易ビデオコンテ）`;
+
+// 閲覧を許可するメールアドレス（自分だけ）
+const ALLOWED_EMAILS = ['junpei.omote@gmail.com'];
+const DEV_BYPASS = ['localhost', '127.0.0.1'].includes(location.hostname);
+
+const firebaseConfig = {
+  apiKey: "AIzaSyDPlsAhtxbJBihy-EAHck9P7XbuMdzV0ds",
+  authDomain: "cc-dev-ps7.firebaseapp.com",
+  projectId: "cc-dev-ps7",
+  storageBucket: "cc-dev-ps7.firebasestorage.app",
+  messagingSenderId: "1029579090333",
+  appId: "1:1029579090333:web:5a2ea499fec97c497f2774"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+
+const DEFAULT_MODEL = 'claude-sonnet-4-6';
+const ASPECTS = { '16:9': 16 / 9, '4:3': 4 / 3, '1:1': 1, '9:16': 9 / 16, '2.39:1': 2.39 };
+
+// ===== ユーティリティ =====
+const uid = () => Math.random().toString(36).slice(2, 10);
+const fmtTC = s => { const m = Math.floor(s / 60); const r = s - m * 60; return `${m}:${r.toFixed(1).padStart(4, '0')}`; };
+const cutNo = i => String(i + 1).padStart(3, '0');
+const newCut = (o = {}) => ({ id: uid(), scene: '', action: '', camera: '', dialogue: '', sound: '', note: '', duration: 3, image: '', ...o });
+const newProject = (title = '無題のコンテ', cuts) => ({ id: uid(), title, aspect: '16:9', cutsPerPage: 0, createdAt: Date.now(), updatedAt: Date.now(), cuts: cuts || [newCut()] });
+const canvasSize = ratio => ratio >= 1 ? { w: 1280, h: Math.round(1280 / ratio) } : { w: Math.round(1280 * ratio), h: 1280 };
+const safeName = s => (s || 'storyboard').replace(/[\\/:*?"<>|]/g, '_').slice(0, 60);
+
+function download(name, text, type = 'text/plain') {
+  const blob = new Blob([text], { type: type + ';charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+// 画像ファイル → 長辺1280pxのJPEG dataURL
+function fileToDataUrl(file, maxSide = 1280) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const r = Math.min(1, maxSide / Math.max(img.width, img.height));
+        const c = document.createElement('canvas');
+        c.width = Math.round(img.width * r); c.height = Math.round(img.height * r);
+        const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height);
+        x.drawImage(img, 0, 0, c.width, c.height);
+        resolve(c.toDataURL('image/jpeg', 0.86));
+      };
+      img.onerror = () => reject(new Error('画像を読み込めませんでした'));
+      img.src = reader.result;
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+// SVG文字列 → JPEG dataURL
+function svgToJpeg(svg, w, h) {
+  if (!/xmlns=/.test(svg)) svg = svg.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, w, h);
+      x.drawImage(img, 0, 0, w, h);
+      resolve(c.toDataURL('image/jpeg', 0.9));
+    };
+    img.onerror = () => reject(new Error('AIが出力したSVGを描画できませんでした'));
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  });
+}
+
+// ===== IndexedDB（データはこのブラウザ内にのみ保存） =====
+const idb = (() => {
+  let dbp;
+  const open = () => dbp || (dbp = new Promise((res, rej) => {
+    const r = indexedDB.open('storyboard-maker', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('projects', { keyPath: 'id' });
+    r.onsuccess = () => res(r.result);
+    r.onerror = () => rej(r.error);
+  }));
+  const run = async (mode, fn) => {
+    const db = await open();
+    return new Promise((res, rej) => {
+      const t = db.transaction('projects', mode);
+      const req = fn(t.objectStore('projects'));
+      t.oncomplete = () => res(req && req.result);
+      t.onerror = () => rej(t.error);
+    });
+  };
+  return {
+    all: () => run('readonly', s => s.getAll()),
+    put: p => run('readwrite', s => s.put(p)),
+    del: id => run('readwrite', s => s.delete(id)),
+  };
+})();
+
+// ===== 設定（localStorage） =====
+const loadSettings = () => { try { return { apiKey: '', model: DEFAULT_MODEL, tts: true, ...JSON.parse(localStorage.getItem('sbm_settings') || '{}') }; } catch { return { apiKey: '', model: DEFAULT_MODEL, tts: true }; } };
+const saveSettings = s => { try { localStorage.setItem('sbm_settings', JSON.stringify(s)); } catch {} };
+
+// ===== Markdown パーサー =====
+const FIELD_ALIASES = [
+  ['action', /^(画|絵|映像|内容|ト書き?|text|picture|action|描写|説明|アクション)$/i],
+  ['camera', /^(カメラ|camera|cam|カメラワーク|アングル)$/i],
+  ['dialogue', /^(セリフ|台詞|script|dialogue|ナレーション|NA|テロップ|字幕|せりふ)$/i],
+  ['sound', /^(音|SE|BGM|sound|効果音|音楽|MA|音響)$/i],
+  ['duration', /^(秒|秒数|尺|time|duration|時間)$/i],
+  ['note', /^(メモ|note|notes|備考)$/i],
+  ['scene', /^(シーン|scene|場所|場面|柱)$/i],
+];
+const fieldKey = label => { const l = String(label).replace(/[*_`]/g, '').trim(); for (const [k, re] of FIELD_ALIASES) if (re.test(l)) return k; return null; };
+const parseDuration = s => { const m = String(s).match(/(\d+(?:\.\d+)?)/); return m ? parseFloat(m[1]) : null; };
+const cleanScene = s => s.replace(/^(シーン|scene)\s*[:：]\s*/i, '').replace(/^—$/, '').trim();
+const appendField = (cut, key, val) => { if (!val) return; cut[key] = cut[key] ? cut[key] + '\n' + val : val; };
+
+function splitRow(row) { return row.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map(s => s.trim().replace(/<br\s*\/?>/gi, '\n')); }
+
+function readTable(lines, start) {
+  const head = splitRow(lines[start]);
+  const keys = head.map(h => /^(no\.?|#|cut|カット|番号|c)$/i.test(h.replace(/[*_]/g, '')) ? 'no' : fieldKey(h));
+  const rows = [];
+  let i = start + 2;
+  for (; i < lines.length && lines[i].trim().startsWith('|'); i++) {
+    const cells = splitRow(lines[i]); const cut = {};
+    cells.forEach((v, ci) => {
+      if (!v) return;
+      const k = keys[ci];
+      if (k === 'no') return;
+      if (k === 'duration') { const d = parseDuration(v); if (d) { cut.duration = d; cut._dur = true; } return; }
+      if (k) appendField(cut, k, v); else appendField(cut, 'note', `${head[ci] || '列' + (ci + 1)}: ${v}`);
+    });
+    if (Object.keys(cut).length) rows.push(cut);
+  }
+  return { rows, end: i - 1 };
+}
+
+function startCut(label, sceneMode) {
+  const cut = {};
+  let s = label.trim();
+  const dm = s.match(/[（(]\s*(\d+(?:\.\d+)?)\s*(秒|s|sec)\s*[)）]/i) || s.match(/[|｜]\s*(\d+(?:\.\d+)?)\s*(秒|s|sec)?\s*$/i) || s.match(/\s(\d+(?:\.\d+)?)\s*(秒|sec)\s*$/i);
+  if (dm) { cut.duration = parseFloat(dm[1]); cut._dur = true; s = s.replace(dm[0], ''); }
+  if (sceneMode) { cut.scene = cleanScene(s); return cut; }
+  s = s.replace(/^(cut|カット|c|#)\s*[-#.]?\s*\d+/i, '').replace(/^[\s:：|｜\-—]+/, '').trim();
+  if (s) cut.action = s;
+  return cut;
+}
+
+function applyBodyLine(cut, raw) {
+  let t = raw.replace(/^\s*([-*+]|\d+[.)])\s+/, '').trim();
+  if (!t) return;
+  const kv = t.match(/^\**([^:：「『]{1,12}?)\**\s*[:：]\s*(.*)$/);
+  if (kv && fieldKey(kv[1])) {
+    const k = fieldKey(kv[1]);
+    if (k === 'duration') { const d = parseDuration(kv[2]); if (d) { cut.duration = d; cut._dur = true; } }
+    else if (k === 'scene') cut.scene = cleanScene(kv[2]);
+    else appendField(cut, k, kv[2].trim());
+    return;
+  }
+  if (/^[^\s「『]{1,15}[「『]/.test(t)) { appendField(cut, 'dialogue', t); return; }
+  if (/^[「『]/.test(t)) { appendField(cut, 'dialogue', t); return; }
+  if (/^(SE|BGM|M)\b|^♪/.test(t)) { appendField(cut, 'sound', t); return; }
+  appendField(cut, 'action', t);
+}
+
+// md → { title, cuts }
+function parseMarkdown(text) {
+  const lines = text.replace(/\r\n?/g, '\n').split('\n');
+  const hasH3 = lines.some(l => /^###\s+/.test(l.trim()));
+  let title = '', scene = '', cur = null, pending = {}; const cuts = [];
+  const push = c => { const cut = newCut({ scene, ...c }); cuts.push(cut); return cut; };
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i].trim();
+    if (!t || /^(---|\*\*\*|___)$/.test(t)) continue;
+    let m;
+    // テーブル形式
+    if (t.startsWith('|') && i + 1 < lines.length && /^\s*\|?\s*:?-{2,}/.test(lines[i + 1])) {
+      const { rows, end } = readTable(lines, i);
+      rows.forEach(r => push(r)); i = end; cur = null; continue;
+    }
+    if ((m = t.match(/^#\s+(.+)/))) { if (!title) title = m[1].trim(); else scene = cleanScene(m[1]); cur = null; continue; }
+    if ((m = t.match(/^##\s+(.+)/))) {
+      if (hasH3) { scene = cleanScene(startCut(m[1], true).scene || ''); cur = null; }
+      else { const c = startCut(m[1], true); scene = c.scene || scene; pending = c._dur ? { duration: c.duration, _dur: true } : {}; cur = null; }
+      continue;
+    }
+    if ((m = t.match(/^#{3,6}\s+(.+)/))) { cur = push(startCut(m[1], false)); continue; }
+    if (t.startsWith('>')) continue; // 引用はメタ情報として無視
+    if (!cur) {
+      // シーン見出しの下の箇条書き＝1行1カット（シーン割り形式）
+      if (/^\s*([-*+]|\d+[.)])\s+/.test(lines[i]) && scene) { const c = {}; applyBodyLine(c, lines[i]); if (c.scene !== undefined) { scene = c.scene; continue; } push(c); continue; }
+      if (scene || title) { cur = push(pending); pending = {}; applyBodyLine(cur, lines[i]); }
+      continue;
+    }
+    applyBodyLine(cur, lines[i]);
+  }
+  // セリフ量から秒数を補完（明示されていない場合）
+  cuts.forEach(c => { if (c._dur) { delete c._dur; return; } if (c.dialogue) { const len = c.dialogue.replace(/[^「」『』]*[「『]|[」』]/g, '').length; c.duration = Math.max(2, Math.round((len / 6 + 1) * 2) / 2); } });
+  return { title, cuts };
+}
+
+// プロジェクト → md
+function toMarkdown(p) {
+  const total = p.cuts.reduce((a, c) => a + (+c.duration || 0), 0);
+  const out = [`# ${p.title}`, '', `> アスペクト比: ${p.aspect} / カット数: ${p.cuts.length} / 総尺: ${fmtTC(total)}（${total}秒）`, ''];
+  let scene = null;
+  p.cuts.forEach((c, i) => {
+    if (c.scene !== scene) { scene = c.scene; out.push(`## ${scene || '—'}`, ''); }
+    out.push(`### CUT ${cutNo(i)} (${+c.duration || 0}秒)`);
+    const put = (label, v) => { if (v) String(v).split('\n').forEach(l => out.push(`- ${label}: ${l}`)); };
+    put('画', c.action); put('カメラ', c.camera); put('セリフ', c.dialogue); put('音', c.sound); put('メモ', c.note);
+    if (c.image) out.push(`- メモ: （絵あり：JSON書き出しに含まれます）`);
+    out.push('');
+  });
+  return out.join('\n');
+}
+
+const SAMPLE_MD = `# 教室のスマホ（サンプル）
+
+## シーン: 教室・放課後
+
+### CUT 001 (4秒)
+- 画: 引きの絵で教室内。ホームルーム後で、まだ生徒は数人残っている。ハヤトの席の近くにサエコ歩く。
+- 音: 放課後のざわめき
+
+### CUT 002 (3秒)
+- 画: 俯瞰でハヤトの席。サエコ、カット頭で立ち止まる。ハヤトがスマートフォンをいじっている。彼の顔は赤い。
+- セリフ: ハヤト「……」
+
+### CUT 003 (3秒)
+- 画: サエコ声かけ、ハヤト ビクッとなる。
+- セリフ: サエコ「こらハヤト」
+- セリフ: ハヤト「わっ！」
+
+### CUT 004 (3.5秒)
+- 画: 木刀を肩に担いだサエコ。
+- カメラ: PAN↑でサエコ
+- セリフ: サエコ「スマホは禁止だよ」
+
+### CUT 005 (4秒)
+- 画: ハヤト、振り向いて言い返す。
+- セリフ: ハヤト「な、なんだよ、わかってるよ！ サエコ、キミだってその刀！」
+`;
+
+// ===== Claude API（ストリーミング） =====
+async function streamClaude({ apiKey, model, system, prompt, maxTokens = 4096, onText }) {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+    body: JSON.stringify({ model, max_tokens: maxTokens, stream: true, system, messages: [{ role: 'user', content: prompt }] }),
+  });
+  if (!res.ok) throw new Error(`Claude API ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  const reader = res.body.getReader(); const dec = new TextDecoder();
+  let buf = '', full = '', stopReason = null;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let idx;
+    while ((idx = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, idx).trim(); buf = buf.slice(idx + 1);
+      if (!line.startsWith('data:')) continue;
+      let ev; try { ev = JSON.parse(line.slice(5).trim()); } catch { continue; }
+      if (ev.type === 'content_block_delta' && ev.delta && ev.delta.type === 'text_delta') { full += ev.delta.text; onText && onText(full); }
+      else if (ev.type === 'message_delta') stopReason = ev.delta && ev.delta.stop_reason;
+      else if (ev.type === 'error') throw new Error(ev.error && ev.error.message || 'ストリームエラー');
+    }
+  }
+  return { text: full, stopReason };
+}
+
+const CONVERT_SYSTEM = `あなたはアニメ・CM・映像制作の絵コンテ担当です。与えられた脚本・シーン割り・メモを、カット単位の字コンテに分解してJSONで返します。
+ルール:
+- 出力はJSONのみ（前置き・コードフェンス禁止）
+- 形式: {"title":"作品タイトル","cuts":[{"scene":"シーン名（場所・時間帯）","action":"画面に映る内容・芝居（ト書き）","camera":"カメラワーク（PAN/TU/TB/FIX/寄り/引き等、無ければ空）","dialogue":"セリフ・ナレーション（話者「セリフ」形式、複数は改行区切り）","sound":"SE/BGM（無ければ空）","duration":秒数(数値),"note":"補足（無ければ空）"}]}
+- 1カット＝1つの画面構図。セリフが長い場合や構図が変わる場合はカットを分ける
+- duration はセリフ量（日本語で1秒あたり約6文字）と芝居から現実的に見積もる（最低1.5秒）
+- 原文の情報を落とさない`;
+
+const SVG_SYSTEM = `あなたはプロの絵コンテ作家です。指定されたカットの「ラフスケッチ」をSVGで描きます。
+ルール:
+- 出力は <svg> 要素のみ（前置き・コードフェンス禁止）。xmlns 属性を付ける
+- 白背景。黒の線画（stroke="#111"、fill="none" 主体、線幅2〜4）で描く
+- 影や面は薄い水色 #bfe3f5 で塗る（参考：アニメ絵コンテの青鉛筆）
+- 構図（カメラアングル、人物の配置と向き、手前と奥の関係、背景のパース）が一目で伝わること
+- 人物は頭・胴・腕・脚の輪郭がわかる簡易な人型で描く（棒人間は不可）。表情は目と口の線で簡単に
+- 文字は入れない。カメラワークがある場合のみ赤 #e11d48 の矢印や枠（OUT/INのフレーム）で示す
+- 要素は40〜120個程度に収め、簡潔に`;
+
+// ===== 共通UI部品 =====
+function Modal({ title, onClose, children, wide, footer }) {
+  useEffect(() => { const h = e => e.key === 'Escape' && onClose(); window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h); }, [onClose]);
+  return (
+    <div className="no-print fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-3" onMouseDown={e => e.target === e.currentTarget && onClose()}>
+      <div className={`bg-white rounded-2xl shadow-xl w-full ${wide ? 'max-w-4xl' : 'max-w-xl'} max-h-[92vh] flex flex-col`}>
+        <div className="flex items-center px-5 py-3 border-b">
+          <h3 className="font-bold text-lg">{title}</h3>
+          <button onClick={onClose} className="ml-auto text-slate-400 hover:text-slate-700 text-2xl leading-none">&times;</button>
+        </div>
+        <div className="p-5 overflow-y-auto text-sm leading-relaxed">{children}</div>
+        {footer && <div className="px-5 py-3 border-t flex flex-wrap gap-2 justify-end">{footer}</div>}
+      </div>
+    </div>
+  );
+}
+
+// 簡易Markdown表示（リリースノート・ヘルプ用）
+function MiniMd({ text }) {
+  return <div>{text.split('\n').map((l, i) => {
+    if (l.startsWith('### ')) return <h4 key={i} className="font-bold mt-3 mb-1">{l.slice(4)}</h4>;
+    if (l.startsWith('## ')) return <h3 key={i} className="font-bold text-base mt-4 mb-1 border-b">{l.slice(3)}</h3>;
+    if (l.startsWith('- ')) return <div key={i} className="pl-4 -indent-3">・{l.slice(2)}</div>;
+    if (l.startsWith('    ')) return <pre key={i} className="bg-slate-100 px-2 text-xs">{l.slice(4)}</pre>;
+    return l ? <p key={i} className="my-1">{l}</p> : <div key={i} className="h-1" />;
+  })}</div>;
+}
+
+function AutoTextarea({ value, onChange, className = '', placeholder, minRows = 1 }) {
+  const ref = useRef(null);
+  useLayoutEffect(() => { const el = ref.current; if (!el) return; el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; }, [value]);
+  return <textarea ref={ref} rows={minRows} value={value} placeholder={placeholder} onChange={e => onChange(e.target.value)} className={`cell-input ${className}`} />;
+}
+
+const Btn = ({ children, onClick, kind = 'default', className = '', disabled, title }) => {
+  const k = { default: 'bg-white border border-slate-300 hover:bg-slate-50 text-slate-700', primary: 'bg-blue-900 hover:bg-blue-800 text-white', ai: 'bg-violet-600 hover:bg-violet-500 text-white', danger: 'bg-white border border-rose-300 text-rose-600 hover:bg-rose-50' }[kind];
+  return <button title={title} disabled={disabled} onClick={onClick} className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap disabled:opacity-40 ${k} ${className}`}>{children}</button>;
+};
+
+// ===== 絵（PICTURE）セル =====
+function PictureBox({ cut, ratio, aspect, width, selected, onSelect, onSetImage, onSwap, onSketch, onAi, aiState }) {
+  const fileRef = useRef(null);
+  const [over, setOver] = useState(false);
+  const [aw, ah] = aspect.split(':');
+  const onDrop = async e => {
+    e.preventDefault(); e.stopPropagation(); setOver(false);
+    const from = e.dataTransfer.getData('application/x-cut-id');
+    if (from) { if (from !== cut.id) onSwap(from, cut.id); return; }
+    const f = [...e.dataTransfer.files].find(f => f.type.startsWith('image/'));
+    if (f) onSetImage(await fileToDataUrl(f));
+  };
+  return (
+    <div style={{ width, aspectRatio: `${aw} / ${ah}` }}
+      className={`relative group border-[3px] border-black bg-white cursor-pointer mx-auto ${selected ? 'ring-4 ring-amber-400' : ''} ${over ? 'ring-4 ring-blue-500' : ''}`}
+      onClick={onSelect}
+      onDragOver={e => { e.preventDefault(); e.stopPropagation(); setOver(true); }}
+      onDragLeave={() => setOver(false)}
+      onDrop={onDrop}
+      onDoubleClick={() => onSketch()}>
+      {cut.image
+        ? <img src={cut.image} draggable onDragStart={e => { e.dataTransfer.setData('application/x-cut-id', cut.id); e.dataTransfer.effectAllowed = 'move'; }} className="w-full h-full object-contain select-none" alt="" />
+        : <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 text-xs gap-1 p-2 text-center">
+            <span className="text-2xl">🖼️</span>
+            <span>クリックで選択→貼り付け(⌘V)<br />画像をドロップ／ダブルクリックで描く</span>
+          </div>}
+      {aiState != null && <div className="absolute inset-0 bg-white/85 flex flex-col items-center justify-center text-violet-700 text-xs gap-2">
+        <div className="w-6 h-6 border-[3px] border-violet-300 border-t-violet-700 rounded-full animate-spin" />
+        生成中...（{aiState}字）
+      </div>}
+      <div className="absolute bottom-1 right-1 flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition no-print" onClick={e => e.stopPropagation()}>
+        <button title="画像を差し替え" onClick={() => fileRef.current.click()} className="bg-white/95 border rounded px-1.5 py-0.5 text-xs shadow">📁</button>
+        <button title="手描きで描く／描き足す" onClick={onSketch} className="bg-white/95 border rounded px-1.5 py-0.5 text-xs shadow">✏️</button>
+        <button title="AIでラフを生成（Claude）" onClick={onAi} disabled={aiState != null} className="bg-white/95 border rounded px-1.5 py-0.5 text-xs shadow">🤖</button>
+        {cut.image && <button title="絵を削除" onClick={() => onSetImage('')} className="bg-white/95 border rounded px-1.5 py-0.5 text-xs shadow">🗑</button>}
+      </div>
+      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={async e => { const f = e.target.files[0]; if (f) onSetImage(await fileToDataUrl(f)); e.target.value = ''; }} />
+    </div>
+  );
+}
+
+// 行操作ボタン
+function RowOps({ index, total, onMove, onDup, onDel, onInsert }) {
+  const b = 'w-6 h-6 rounded hover:bg-slate-200 text-xs leading-none text-slate-600';
+  return (
+    <div className="flex flex-wrap gap-0.5 justify-center no-print">
+      <button className={b} title="上へ" disabled={index === 0} onClick={() => onMove(-1)}>▲</button>
+      <button className={b} title="下へ" disabled={index === total - 1} onClick={() => onMove(1)}>▼</button>
+      <button className={b} title="下にカットを挿入" onClick={onInsert}>＋</button>
+      <button className={b} title="複製" onClick={onDup}>⧉</button>
+      <button className={`${b} hover:bg-rose-100 hover:text-rose-600`} title="削除" onClick={onDel}>✕</button>
+    </div>
+  );
+}
+
+// ===== 絵コンテ表示（編集可） =====
+function EConteView({ p, ops, starts, selectedId, setSelectedId, aiBusy }) {
+  const ratio = ASPECTS[p.aspect];
+  const picW = ratio >= 1 ? 320 : Math.round(270 * ratio);
+  const [dropRow, setDropRow] = useState(null);
+  return (
+    <div className="bg-white shadow rounded-lg overflow-x-auto">
+      <table className="econte w-full border-collapse min-w-[820px] text-sm">
+        <thead className="bg-slate-50">
+          <tr className="text-xs tracking-widest">
+            <th className="w-24 py-2">CUT</th><th style={{ width: picW + 24 }}>PICTURE</th><th>内容</th><th>セリフ</th><th className="w-28">TIME</th>
+          </tr>
+        </thead>
+        <tbody>
+          {p.cuts.map((c, i) => (
+            <React.Fragment key={c.id}>
+              {(i === 0 || c.scene !== p.cuts[i - 1].scene) && c.scene && (
+                <tr><td colSpan={5} className="bg-blue-50 text-blue-900 text-xs font-bold px-3 py-1">🎬 {c.scene}</td></tr>
+              )}
+              <tr className={dropRow === c.id ? 'row-drop-target' : ''}
+                onDragOver={e => { if ([...e.dataTransfer.types].includes('application/x-row-id')) { e.preventDefault(); setDropRow(c.id); } }}
+                onDragLeave={() => setDropRow(null)}
+                onDrop={e => { const id = e.dataTransfer.getData('application/x-row-id'); setDropRow(null); if (id) { e.preventDefault(); ops.moveTo(id, c.id); } }}>
+                <td className="p-1.5">
+                  <div className="flex items-center gap-1">
+                    <span draggable onDragStart={e => e.dataTransfer.setData('application/x-row-id', c.id)} className="cursor-grab text-slate-400 select-none no-print" title="ドラッグで並べ替え">⠿</span>
+                    <span className="font-mono font-bold">{cutNo(i)}</span>
+                  </div>
+                  <input className="cell-input text-[11px] text-blue-900 mt-1" placeholder="シーン名" value={c.scene} onChange={e => ops.update(c.id, { scene: e.target.value }, 'scene')} />
+                  <div className="mt-2"><RowOps index={i} total={p.cuts.length} onMove={d => ops.move(c.id, d)} onDup={() => ops.dup(c.id)} onDel={() => ops.del(c.id)} onInsert={() => ops.insert(c.id)} /></div>
+                </td>
+                <td className="p-2 bg-slate-50">
+                  <PictureBox cut={c} ratio={ratio} aspect={p.aspect} width={picW} selected={selectedId === c.id}
+                    onSelect={() => setSelectedId(c.id)}
+                    onSetImage={img => ops.update(c.id, { image: img })}
+                    onSwap={ops.swap} onSketch={() => ops.sketch(c.id)} onAi={() => ops.aiRough(c.id)} aiState={aiBusy[c.id]} />
+                </td>
+                <td className="p-1.5 min-w-[180px]">
+                  <AutoTextarea value={c.action} minRows={3} placeholder="画面の内容・芝居" onChange={v => ops.update(c.id, { action: v }, 'action')} />
+                  <div className="flex items-center gap-1 text-xs text-rose-600 mt-1"><span>📷</span><input className="cell-input" placeholder="カメラ（PAN↑など）" value={c.camera} onChange={e => ops.update(c.id, { camera: e.target.value }, 'camera')} /></div>
+                </td>
+                <td className="p-1.5 min-w-[180px]">
+                  <AutoTextarea value={c.dialogue} minRows={3} placeholder="話者「セリフ」" onChange={v => ops.update(c.id, { dialogue: v }, 'dialogue')} />
+                  <div className="flex items-center gap-1 text-xs text-emerald-700 mt-1"><span>♪</span><input className="cell-input" placeholder="SE・BGM" value={c.sound} onChange={e => ops.update(c.id, { sound: e.target.value }, 'sound')} /></div>
+                </td>
+                <td className="p-1.5 text-center">
+                  <div className="flex items-center justify-center gap-1">
+                    <input type="number" min="0" step="0.5" className="cell-input w-14 text-right border border-slate-200" value={c.duration}
+                      onChange={e => ops.update(c.id, { duration: e.target.value === '' ? '' : Math.max(0, +e.target.value) }, 'duration')} />
+                    <span className="text-xs">秒</span>
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-2 font-mono">{fmtTC(starts[i])}<br />↓<br />{fmtTC(starts[i] + (+c.duration || 0))}</div>
+                </td>
+              </tr>
+            </React.Fragment>
+          ))}
+        </tbody>
+      </table>
+      <div className="p-3 no-print"><Btn onClick={() => ops.insert(null)}>＋ カットを追加</Btn></div>
+    </div>
+  );
+}
+
+// ===== 字コンテ表示（編集可） =====
+function JiConteView({ p, ops, starts }) {
+  const [dropRow, setDropRow] = useState(null);
+  return (
+    <div className="bg-white shadow rounded-lg overflow-x-auto">
+      <table className="jiconte w-full border-collapse min-w-[1050px] text-sm">
+        <thead className="bg-slate-50 text-xs">
+          <tr>
+            <th className="w-16 py-2">No</th><th className="w-32">シーン</th><th>映像・内容</th><th className="w-32">カメラ</th><th>セリフ・ナレーション</th><th className="w-32">音</th><th className="w-20">秒</th><th className="w-16">累計</th><th className="w-32">備考</th><th className="w-28 no-print">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {p.cuts.map((c, i) => (
+            <tr key={c.id} className={dropRow === c.id ? 'row-drop-target' : ''}
+              onDragOver={e => { if ([...e.dataTransfer.types].includes('application/x-row-id')) { e.preventDefault(); setDropRow(c.id); } }}
+              onDragLeave={() => setDropRow(null)}
+              onDrop={e => { const id = e.dataTransfer.getData('application/x-row-id'); setDropRow(null); if (id) { e.preventDefault(); ops.moveTo(id, c.id); } }}>
+              <td className="p-1 text-center font-mono font-bold">
+                <span draggable onDragStart={e => e.dataTransfer.setData('application/x-row-id', c.id)} className="cursor-grab text-slate-400 mr-1 select-none">⠿</span>{i + 1}
+                {c.image && <div className="text-[10px] text-slate-400">🖼️</div>}
+              </td>
+              <td className="p-1"><AutoTextarea value={c.scene} onChange={v => ops.update(c.id, { scene: v }, 'scene')} className="text-xs text-blue-900" /></td>
+              <td className="p-1"><AutoTextarea value={c.action} onChange={v => ops.update(c.id, { action: v }, 'action')} /></td>
+              <td className="p-1"><AutoTextarea value={c.camera} onChange={v => ops.update(c.id, { camera: v }, 'camera')} className="text-xs text-rose-600" /></td>
+              <td className="p-1"><AutoTextarea value={c.dialogue} onChange={v => ops.update(c.id, { dialogue: v }, 'dialogue')} /></td>
+              <td className="p-1"><AutoTextarea value={c.sound} onChange={v => ops.update(c.id, { sound: v }, 'sound')} className="text-xs text-emerald-700" /></td>
+              <td className="p-1"><input type="number" min="0" step="0.5" className="cell-input text-right" value={c.duration} onChange={e => ops.update(c.id, { duration: e.target.value === '' ? '' : Math.max(0, +e.target.value) }, 'duration')} /></td>
+              <td className="p-1 text-xs font-mono text-slate-500 text-center">{fmtTC(starts[i] + (+c.duration || 0))}</td>
+              <td className="p-1"><AutoTextarea value={c.note} onChange={v => ops.update(c.id, { note: v }, 'note')} className="text-xs" /></td>
+              <td className="p-1 no-print"><RowOps index={i} total={p.cuts.length} onMove={d => ops.move(c.id, d)} onDup={() => ops.dup(c.id)} onDel={() => ops.del(c.id)} onInsert={() => ops.insert(c.id)} /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="p-3"><Btn onClick={() => ops.insert(null)}>＋ カットを追加</Btn></div>
+    </div>
+  );
+}
+
+// ===== 印刷用（PDF書き出し） =====
+function printLayout(p) {
+  const ratio = ASPECTS[p.aspect];
+  const avail = 258; // A4縦・余白込みで表に使える高さ(mm)
+  const maxW = 84;
+  let per = +p.cutsPerPage;
+  if (!per) { const h0 = Math.min(maxW / ratio, 80); per = Math.max(2, Math.min(6, Math.floor(avail / (h0 + 4)))); }
+  const rowH = avail / per;
+  let picH = Math.min(rowH - 4, maxW / ratio); let picW = picH * ratio;
+  return { per, rowH, picW, picH };
+}
+
+function PrintEConte({ p, starts, total }) {
+  const { per, rowH, picW, picH } = printLayout(p);
+  const pages = []; for (let i = 0; i < p.cuts.length; i += per) pages.push(p.cuts.slice(i, i + per).map((c, k) => ({ c, i: i + k })));
+  return pages.map((rows, pi) => (
+    <div key={pi} className="print-page">
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '2mm' }}>
+        <div><span style={{ fontWeight: 800, fontSize: '12pt' }}>{p.title}</span><span style={{ fontSize: '8pt', marginLeft: '3mm', color: '#555' }}>絵コンテ</span></div>
+        <div style={{ border: '1px solid #000', padding: '0.5mm 3mm', fontSize: '9pt', fontWeight: 700 }}>Page {pi + 1}/{pages.length}</div>
+      </div>
+      <table className="ptable">
+        <thead><tr><th style={{ width: '13mm' }}>CUT</th><th style={{ width: (picW + 3) + 'mm' }}>PICTURE</th><th>内容</th><th>セリフ</th><th style={{ width: '15mm' }}>TIME</th></tr></thead>
+        <tbody>
+          {rows.map(({ c, i }) => (
+            <tr key={c.id} style={{ height: rowH + 'mm' }}>
+              <td style={{ textAlign: 'center' }}><b>{cutNo(i)}</b>{c.scene && (i === 0 || p.cuts[i - 1].scene !== c.scene) && <div style={{ fontSize: '6.5pt', marginTop: '1mm' }}>{c.scene}</div>}</td>
+              <td style={{ padding: '1mm' }}>
+                <div style={{ width: picW + 'mm', height: picH + 'mm', border: '2px solid #000', background: '#fff' }}>
+                  {c.image && <img src={c.image} style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />}
+                </div>
+              </td>
+              <td>{c.action}{c.camera && <div style={{ color: '#c00', marginTop: '1mm' }}>📷 {c.camera}</div>}</td>
+              <td>{c.dialogue}{c.sound && <div style={{ color: '#06603f', marginTop: '1mm' }}>♪ {c.sound}</div>}</td>
+              <td style={{ textAlign: 'center', fontSize: '8pt' }}>{+c.duration || 0}秒<div style={{ color: '#555', marginTop: '1mm' }}>{fmtTC(starts[i] + (+c.duration || 0))}</div></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div style={{ textAlign: 'right', fontSize: '8pt', marginTop: '1mm' }}>（総尺 {fmtTC(total)}）</div>
+    </div>
+  ));
+}
+
+function PrintJiConte({ p, starts, total }) {
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '2mm' }}>
+        <div><span style={{ fontWeight: 800, fontSize: '12pt' }}>{p.title}</span><span style={{ fontSize: '8pt', marginLeft: '3mm', color: '#555' }}>字コンテ</span></div>
+        <div style={{ fontSize: '8pt' }}>{p.cuts.length}カット／総尺 {fmtTC(total)}</div>
+      </div>
+      <table className="ptable">
+        <thead><tr><th style={{ width: '8mm' }}>No</th><th style={{ width: '22mm' }}>シーン</th><th>映像・内容</th><th style={{ width: '20mm' }}>カメラ</th><th>セリフ・ナレーション</th><th style={{ width: '22mm' }}>音</th><th style={{ width: '9mm' }}>秒</th><th style={{ width: '12mm' }}>累計</th><th style={{ width: '20mm' }}>備考</th></tr></thead>
+        <tbody>
+          {p.cuts.map((c, i) => (
+            <tr key={c.id}>
+              <td style={{ textAlign: 'center' }}>{i + 1}</td><td>{c.scene}</td><td>{c.action}</td><td>{c.camera}</td><td>{c.dialogue}</td><td>{c.sound}</td>
+              <td style={{ textAlign: 'center' }}>{+c.duration || 0}</td><td style={{ textAlign: 'center' }}>{fmtTC(starts[i] + (+c.duration || 0))}</td><td>{c.note}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ===== 手描きスケッチ =====
+function SketchModal({ cut, ratio, onSave, onClose }) {
+  const { w, h } = canvasSize(ratio);
+  const canvasRef = useRef(null);
+  const undoRef = useRef([]);
+  const drawing = useRef(null);
+  const [tool, setTool] = useState('pen');
+  const [size, setSize] = useState(4);
+  const TOOLS = { pen: { label: '✏️ 線', color: '#111' }, shade: { label: '🟦 影(青)', color: '#b9dff2' }, red: { label: '🟥 指示(赤)', color: '#e11d48' }, eraser: { label: '🧽 消しゴム', color: '#ffffff' } };
+
+  useEffect(() => {
+    const x = canvasRef.current.getContext('2d');
+    x.fillStyle = '#fff'; x.fillRect(0, 0, w, h);
+    if (cut.image) {
+      const img = new Image();
+      img.onload = () => { const r = Math.min(w / img.width, h / img.height); const dw = img.width * r, dh = img.height * r; x.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh); };
+      img.src = cut.image;
+    }
+  }, []);
+
+  const pos = e => { const r = canvasRef.current.getBoundingClientRect(); return { x: (e.clientX - r.left) * w / r.width, y: (e.clientY - r.top) * h / r.height }; };
+  const down = e => {
+    e.preventDefault(); canvasRef.current.setPointerCapture(e.pointerId);
+    const x = canvasRef.current.getContext('2d');
+    undoRef.current.push(x.getImageData(0, 0, w, h)); if (undoRef.current.length > 15) undoRef.current.shift();
+    drawing.current = pos(e);
+  };
+  const move = e => {
+    if (!drawing.current) return;
+    const x = canvasRef.current.getContext('2d'); const p = pos(e);
+    const base = tool === 'shade' ? size * 6 : tool === 'eraser' ? size * 5 : size;
+    x.globalCompositeOperation = tool === 'shade' ? 'darken' : 'source-over';
+    x.strokeStyle = TOOLS[tool].color; x.lineCap = 'round'; x.lineJoin = 'round';
+    x.lineWidth = e.pointerType === 'pen' && e.pressure > 0 && tool === 'pen' ? base * (0.4 + e.pressure * 1.2) : base;
+    x.beginPath(); x.moveTo(drawing.current.x, drawing.current.y); x.lineTo(p.x, p.y); x.stroke();
+    x.globalCompositeOperation = 'source-over';
+    drawing.current = p;
+  };
+  const up = () => { drawing.current = null; };
+  const undo = () => { const d = undoRef.current.pop(); if (d) canvasRef.current.getContext('2d').putImageData(d, 0, 0); };
+  const clear = () => { const x = canvasRef.current.getContext('2d'); undoRef.current.push(x.getImageData(0, 0, w, h)); x.fillStyle = '#fff'; x.fillRect(0, 0, w, h); };
+
+  return (
+    <Modal title="✏️ 手描きスケッチ" onClose={onClose} wide footer={<>
+      <Btn onClick={onClose}>キャンセル</Btn>
+      <Btn kind="primary" onClick={() => onSave(canvasRef.current.toDataURL('image/jpeg', 0.88))}>この絵で確定</Btn>
+    </>}>
+      <div className="flex flex-wrap gap-2 items-center mb-3">
+        {Object.entries(TOOLS).map(([k, t]) => <Btn key={k} onClick={() => setTool(k)} className={tool === k ? '!bg-blue-900 !text-white' : ''}>{t.label}</Btn>)}
+        <label className="flex items-center gap-1 text-xs ml-2">太さ<input type="range" min="1" max="16" value={size} onChange={e => setSize(+e.target.value)} /></label>
+        <Btn onClick={undo}>↶ 戻す</Btn>
+        <Btn kind="danger" onClick={clear}>全消去</Btn>
+      </div>
+      <canvas ref={canvasRef} width={w} height={h} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up}
+        className="border-2 border-black bg-white mx-auto block" style={{ touchAction: 'none', maxWidth: '100%', maxHeight: '62vh', aspectRatio: `${w} / ${h}` }} />
+      <p className="text-xs text-slate-500 mt-2">既存の絵の上に描き足せます。影(青)は線を潰さず重ね塗りできます。Apple Pencil 等の筆圧に対応。</p>
+    </Modal>
+  );
+}
+
+// ===== テキスト読込／AI変換 =====
+function ImportModal({ initialText, settings, onApply, onClose, openSettings }) {
+  const [text, setText] = useState(initialText || '');
+  const [mode, setMode] = useState('new');
+  const [busy, setBusy] = useState(null);
+  const [err, setErr] = useState('');
+  const fileRef = useRef(null);
+
+  const rule = () => {
+    const r = parseMarkdown(text);
+    if (!r.cuts.length) { setErr('カットが見つかりませんでした。書式ヘルプを確認するか「AIで変換」を試してください。'); return; }
+    onApply(r, mode);
+  };
+  const ai = async () => {
+    if (!settings.apiKey) { openSettings(); return; }
+    setErr(''); setBusy(0);
+    try {
+      const { text: out, stopReason } = await streamClaude({ apiKey: settings.apiKey, model: settings.model, system: CONVERT_SYSTEM, prompt: `次の脚本・シーン割りを字コンテJSONに変換してください。\n\n${text}`, maxTokens: 8192, onText: t => setBusy(t.length) });
+      if (stopReason === 'max_tokens') console.warn('AI変換: 出力上限に到達（途中までの可能性）');
+      const json = JSON.parse(out.slice(out.indexOf('{'), out.lastIndexOf('}') + 1));
+      const cuts = (json.cuts || []).map(c => newCut({ scene: c.scene || '', action: c.action || '', camera: c.camera || '', dialogue: c.dialogue || '', sound: c.sound || '', note: c.note || '', duration: +c.duration || 3 }));
+      if (!cuts.length) throw new Error('カットが生成されませんでした');
+      onApply({ title: json.title || '', cuts }, mode);
+    } catch (e) { console.error('AI変換失敗', e.message); setErr('AI変換に失敗しました: ' + e.message); }
+    finally { setBusy(null); }
+  };
+
+  return (
+    <Modal title="📥 脚本・シーン割りを読み込む" onClose={onClose} wide footer={<>
+      <select value={mode} onChange={e => setMode(e.target.value)} className="border rounded-lg px-2 text-sm mr-auto">
+        <option value="new">新しいプロジェクトとして作成</option>
+        <option value="replace">今のプロジェクトを置き換え</option>
+        <option value="append">今のプロジェクトの末尾に追加</option>
+      </select>
+      <Btn onClick={rule} disabled={!text.trim() || busy != null}>📄 ルールで変換（無料）</Btn>
+      <Btn kind="ai" onClick={ai} disabled={!text.trim() || busy != null}>{busy != null ? `生成中...（${busy}字）` : '🤖 AIで変換'}</Btn>
+    </>}>
+      <div className="flex gap-2 mb-2">
+        <Btn onClick={() => fileRef.current.click()}>ファイルを開く（.md / .txt）</Btn>
+        <Btn onClick={() => setText(SAMPLE_MD)}>サンプルを入れる</Btn>
+        <input ref={fileRef} type="file" accept=".md,.markdown,.txt,text/*" className="hidden" onChange={async e => { const f = e.target.files[0]; if (f) setText(await f.text()); e.target.value = ''; }} />
+      </div>
+      <textarea value={text} onChange={e => setText(e.target.value)} className="w-full h-[45vh] border rounded-lg p-3 font-mono text-xs" placeholder="ここに Markdown の脚本・シーン割りを貼り付け" />
+      {busy != null && <div className="flex items-center gap-2 text-violet-700 text-xs mt-2"><div className="w-4 h-4 border-2 border-violet-300 border-t-violet-700 rounded-full animate-spin" />生成中...（{busy}字）</div>}
+      {err && <p className="text-rose-600 text-xs mt-2">{err}</p>}
+      <p className="text-xs text-slate-500 mt-2">ルール変換は「### CUT」見出し・表・箇条書きを解析します（書式はアプリ名をクリック→ヘルプ）。自由形式の脚本は AI変換がおすすめ（Claude Sonnet で 1本あたり概ね数円〜数十円）。</p>
+    </Modal>
+  );
+}
+
+// ===== プレビュー再生（簡易ビデオコンテ） =====
+function PlayerModal({ p, starts, total, tts, onClose }) {
+  const [idx, setIdx] = useState(0);
+  const [t, setT] = useState(0);
+  const [playing, setPlaying] = useState(true);
+  const [speak, setSpeak] = useState(tts);
+  const last = useRef(null);
+  const c = p.cuts[idx] || {};
+  const dur = Math.max(0.5, +c.duration || 0);
+
+  useEffect(() => {
+    if (!playing) { last.current = null; return; }
+    let raf;
+    const tick = now => {
+      if (last.current != null) {
+        setT(prev => {
+          const n = prev + (now - last.current) / 1000;
+          if (n >= dur) { if (idx < p.cuts.length - 1) { setIdx(idx + 1); return 0; } setPlaying(false); return dur; }
+          return n;
+        });
+      }
+      last.current = now; raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [playing, idx, dur]);
+
+  // セリフ読み上げ（仮の音）
+  useEffect(() => {
+    if (!('speechSynthesis' in window)) return;
+    speechSynthesis.cancel();
+    if (!speak || !playing || !c.dialogue) return;
+    const body = c.dialogue.split('\n').map(l => (l.match(/[「『](.*?)[」』]?$/) || [null, l])[1]).join('。');
+    const u = new SpeechSynthesisUtterance(body); u.lang = 'ja-JP'; u.rate = 1.1; speechSynthesis.speak(u);
+  }, [idx, speak, playing]);
+  useEffect(() => () => { if ('speechSynthesis' in window) speechSynthesis.cancel(); }, []);
+
+  useEffect(() => {
+    const h = e => {
+      if (e.key === ' ') { e.preventDefault(); setPlaying(v => !v); }
+      if (e.key === 'ArrowRight') { setIdx(i => Math.min(p.cuts.length - 1, i + 1)); setT(0); }
+      if (e.key === 'ArrowLeft') { setIdx(i => Math.max(0, i - 1)); setT(0); }
+    };
+    window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h);
+  }, []);
+
+  const [aw, ah] = p.aspect.split(':');
+  const go = i => { setIdx(i); setT(0); };
+  return (
+    <div className="no-print fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4 text-white">
+      <button onClick={onClose} className="absolute top-3 right-4 text-3xl text-white/70 hover:text-white">&times;</button>
+      <div className="relative bg-white" style={{ aspectRatio: `${aw} / ${ah}`, width: `min(92vw, calc(70vh * ${ASPECTS[p.aspect]}))` }}>
+        {c.image ? <img src={c.image} className="w-full h-full object-contain" /> : <div className="w-full h-full flex items-center justify-center text-slate-500 p-6 text-center whitespace-pre-wrap">{c.action || '（絵なし）'}</div>}
+        {c.dialogue && <div className="absolute bottom-3 left-0 right-0 text-center px-4"><span className="bg-black/70 px-3 py-1 rounded text-lg whitespace-pre-wrap leading-relaxed">{c.dialogue}</span></div>}
+        <div className="absolute top-2 left-2 bg-black/60 rounded px-2 text-xs font-mono">CUT {cutNo(idx)} {c.camera && `｜📷 ${c.camera}`}</div>
+      </div>
+      <div className="mt-3 text-sm text-white/80 max-w-3xl text-center whitespace-pre-wrap">{c.action}{c.sound && `　♪ ${c.sound}`}</div>
+      <div className="w-full max-w-3xl mt-3 flex h-2 rounded overflow-hidden bg-white/10 cursor-pointer">
+        {p.cuts.map((x, i) => <div key={x.id} onClick={() => go(i)} title={`CUT ${cutNo(i)}`} style={{ flex: Math.max(0.5, +x.duration || 0) }} className={`border-r border-black ${i < idx ? 'bg-sky-400' : i === idx ? 'bg-sky-700' : 'bg-white/20'}`}>
+          {i === idx && <div className="h-full bg-sky-300" style={{ width: `${Math.min(100, t / dur * 100)}%` }} />}
+        </div>)}
+      </div>
+      <div className="mt-3 flex gap-3 items-center text-sm">
+        <button onClick={() => go(Math.max(0, idx - 1))} className="px-3 py-1 bg-white/10 rounded">⏮</button>
+        <button onClick={() => { if (!playing && idx === p.cuts.length - 1 && t >= dur) go(0); setPlaying(v => !v); }} className="px-4 py-1 bg-white/20 rounded">{playing ? '⏸ 一時停止' : '▶ 再生'}</button>
+        <button onClick={() => go(Math.min(p.cuts.length - 1, idx + 1))} className="px-3 py-1 bg-white/10 rounded">⏭</button>
+        <span className="font-mono">{fmtTC(starts[idx] + t)} / {fmtTC(total)}</span>
+        <label className="flex items-center gap-1"><input type="checkbox" checked={speak} onChange={e => setSpeak(e.target.checked)} />セリフ読み上げ</label>
+      </div>
+    </div>
+  );
+}
+
+// ===== ログイン画面 =====
+function Gate({ msg }) {
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-lg p-8 max-w-sm w-full text-center">
+        <div className="text-5xl mb-3">🎬</div>
+        <h1 className="text-xl font-bold mb-1">{APP_NAME}</h1>
+        <p className="text-sm text-slate-500 mb-6">オーナー専用ページです</p>
+        <Btn kind="primary" className="w-full py-2.5" onClick={() => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(e => console.error('ログイン失敗', e.message))}>Google でログイン</Btn>
+        {msg && <p className="text-rose-600 text-xs mt-4">{msg}</p>}
+      </div>
+    </div>
+  );
+}
+
+// ===== メインアプリ =====
+function App({ user }) {
+  const [projects, setProjects] = useState([]);       // 一覧用メタ情報
+  const [project, setProject] = useState(null);       // 編集中プロジェクト
+  const [view, setView] = useState('e');              // e=絵コンテ / ji=字コンテ
+  const [settings, setSettings] = useState(loadSettings);
+  const [modal, setModal] = useState(null);           // help / notes / settings / import / sketch / player
+  const [importText, setImportText] = useState('');
+  const [sketchId, setSketchId] = useState(null);
+  const [selectedId, setSelectedId] = useState(null);
+  const [aiBusy, setAiBusy] = useState({});
+  const [printMode, setPrintMode] = useState(null);
+  const [toast, setToast] = useState('');
+  const [exportOpen, setExportOpen] = useState(false);
+  const hist = useRef({ past: [], future: [], key: null, t: 0 });
+  const projectRef = useRef(null); projectRef.current = project;
+
+  const notify = msg => { setToast(msg); clearTimeout(notify.t); notify.t = setTimeout(() => setToast(''), 2600); };
+
+  // 初期読込
+  useEffect(() => {
+    (async () => {
+      let all = [];
+      try { all = await idb.all(); } catch (e) { console.error('IndexedDB読込失敗', e.message); }
+      if (!all.length) {
+        const r = parseMarkdown(SAMPLE_MD);
+        const sample = newProject(r.title, r.cuts);
+        await idb.put(sample).catch(() => {});
+        all = [sample];
+      }
+      all.sort((a, b) => b.updatedAt - a.updatedAt);
+      setProjects(all.map(({ id, title, updatedAt }) => ({ id, title, updatedAt })));
+      const lastId = localStorage.getItem('sbm_last');
+      setProject(all.find(p => p.id === lastId) || all[0]);
+      console.log('プロジェクト読込', all.length, '件');
+    })();
+  }, []);
+
+  // 自動保存（500ms デバウンス）
+  useEffect(() => {
+    if (!project) return;
+    localStorage.setItem('sbm_last', project.id);
+    const tm = setTimeout(() => {
+      const p = { ...project, updatedAt: Date.now() };
+      idb.put(p).catch(e => { console.error('保存失敗', e.message); notify('⚠️ 保存に失敗しました（容量不足の可能性）'); });
+      setProjects(list => { const m = { id: p.id, title: p.title, updatedAt: p.updatedAt }; const rest = list.filter(x => x.id !== p.id); return [m, ...rest]; });
+    }, 500);
+    return () => clearTimeout(tm);
+  }, [project]);
+
+  // 変更を履歴付きで反映（同じ欄の連続入力は1つにまとめる）
+  const commit = useCallback((updater, key) => {
+    setProject(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      if (next === prev) return prev;
+      const h = hist.current; const now = Date.now();
+      if (!(key && h.key === key && now - h.t < 1500)) { h.past.push(prev); if (h.past.length > 100) h.past.shift(); }
+      h.future = []; h.key = key; h.t = now;
+      return next;
+    });
+  }, []);
+  const undo = () => setProject(cur => { const h = hist.current; if (!h.past.length) return cur; h.future.push(cur); h.key = null; return h.past.pop(); });
+  const redo = () => setProject(cur => { const h = hist.current; if (!h.future.length) return cur; h.past.push(cur); h.key = null; return h.future.pop(); });
+  const resetHist = () => { hist.current = { past: [], future: [], key: null, t: 0 }; };
+
+  const setCuts = (fn, key) => commit(p => ({ ...p, cuts: fn(p.cuts) }), key);
+
+  // カット操作
+  const ops = {
+    update: (id, patch, key) => setCuts(cs => cs.map(c => c.id === id ? { ...c, ...patch } : c), key && `${id}:${key}`),
+    move: (id, d) => setCuts(cs => { const i = cs.findIndex(c => c.id === id); const j = i + d; if (j < 0 || j >= cs.length) return cs; const a = [...cs];[a[i], a[j]] = [a[j], a[i]]; return a; }),
+    moveTo: (fromId, toId) => setCuts(cs => { if (fromId === toId) return cs; const a = [...cs]; const i = a.findIndex(c => c.id === fromId); const [x] = a.splice(i, 1); const j = a.findIndex(c => c.id === toId); a.splice(j, 0, x); return a; }),
+    dup: id => setCuts(cs => { const i = cs.findIndex(c => c.id === id); const a = [...cs]; a.splice(i + 1, 0, { ...cs[i], id: uid() }); return a; }),
+    del: id => { setCuts(cs => cs.length <= 1 ? [newCut()] : cs.filter(c => c.id !== id)); notify('カットを削除しました（⌘Z で元に戻せます）'); },
+    insert: afterId => setCuts(cs => { const i = afterId ? cs.findIndex(c => c.id === afterId) : cs.length - 1; const a = [...cs]; a.splice(i + 1, 0, newCut({ scene: (cs[i] || {}).scene || '' })); return a; }),
+    swap: (a, b) => { setCuts(cs => { const A = cs.find(c => c.id === a), B = cs.find(c => c.id === b); return cs.map(c => c.id === a ? { ...c, image: B.image } : c.id === b ? { ...c, image: A.image } : c); }); notify('絵を入れ替えました'); },
+    sketch: id => { setSketchId(id); setModal('sketch'); },
+    aiRough: id => genRough(id),
+  };
+
+  // AIラフ生成（1カット）
+  const genRough = async (id) => {
+    if (!settings.apiKey) { setModal('settings'); notify('Claude API キーを設定してください'); return false; }
+    const p = projectRef.current; const i = p.cuts.findIndex(c => c.id === id); const c = p.cuts[i];
+    const ratio = ASPECTS[p.aspect]; const { w, h } = canvasSize(ratio);
+    const prev = p.cuts[i - 1];
+    setAiBusy(b => ({ ...b, [id]: 0 }));
+    try {
+      const prompt = `viewBox="0 0 ${w} ${h}" のSVGで、次のカットのラフを描いてください。
+作品: ${p.title}
+シーン: ${c.scene || '(未指定)'}
+画面内容: ${c.action || '(未指定)'}
+カメラ: ${c.camera || 'FIX'}
+セリフ: ${c.dialogue || 'なし'}
+${prev ? `直前のカット: ${prev.action}` : ''}`;
+      const { text } = await streamClaude({ apiKey: settings.apiKey, model: settings.model, system: SVG_SYSTEM, prompt, maxTokens: 4096, onText: t => setAiBusy(b => ({ ...b, [id]: t.length })) });
+      const m = text.match(/<svg[\s\S]*<\/svg>/i);
+      if (!m) throw new Error('SVGが出力されませんでした');
+      const img = await svgToJpeg(m[0], w, h);
+      commit(pp => ({ ...pp, cuts: pp.cuts.map(x => x.id === id ? { ...x, image: img } : x) }));
+      return true;
+    } catch (e) { console.error('AIラフ失敗', e.message); notify('AIラフ失敗: ' + e.message.slice(0, 80)); return false; }
+    finally { setAiBusy(b => { const n = { ...b }; delete n[id]; return n; }); }
+  };
+
+  const genRoughAll = async () => {
+    const targets = project.cuts.filter(c => !c.image);
+    if (!targets.length) { notify('絵のないカットはありません'); return; }
+    if (!settings.apiKey) { setModal('settings'); return; }
+    if (!confirm(`絵のない ${targets.length} カットにAIラフを生成します。\n目安コスト: 約 $${(targets.length * 0.04).toFixed(2)}（Sonnet・1カット約$0.03〜0.05）\n実行しますか？`)) return;
+    let ok = 0;
+    for (const c of targets) { if (await genRough(c.id)) ok++; }
+    notify(`AIラフ生成完了：${ok}/${targets.length} カット`);
+  };
+
+  // プロジェクト操作
+  const switchProject = async id => {
+    if (id === project.id) return;
+    const all = await idb.all(); const p = all.find(x => x.id === id);
+    if (p) { resetHist(); setSelectedId(null); setProject(p); }
+  };
+  const createProject = (p) => { resetHist(); setSelectedId(null); setProject(p); setProjects(l => [{ id: p.id, title: p.title, updatedAt: Date.now() }, ...l]); };
+  const deleteProject = async () => {
+    if (!confirm(`「${project.title}」を削除します。元に戻せません。よろしいですか？`)) return;
+    await idb.del(project.id);
+    const rest = projects.filter(x => x.id !== project.id);
+    setProjects(rest);
+    if (rest.length) { const all = await idb.all(); resetHist(); setProject(all.find(x => x.id === rest[0].id)); }
+    else createProject(newProject());
+  };
+
+  const applyImport = ({ title, cuts }, mode) => {
+    if (mode === 'new') createProject({ ...newProject(title || '読み込んだコンテ', cuts), aspect: project.aspect });
+    else if (mode === 'replace') commit(p => ({ ...p, title: title || p.title, cuts }));
+    else commit(p => ({ ...p, cuts: [...p.cuts, ...cuts] }));
+    setModal(null); notify(`${cuts.length} カットを読み込みました`);
+  };
+
+  const importJson = text => {
+    const j = JSON.parse(text);
+    if (!Array.isArray(j.cuts)) throw new Error('cuts がありません');
+    const p = { ...newProject(j.title || '読み込んだコンテ'), aspect: ASPECTS[j.aspect] ? j.aspect : '16:9', cutsPerPage: +j.cutsPerPage || 0, cuts: j.cuts.map(c => newCut({ ...c, id: uid() })) };
+    createProject(p); notify(`JSONを読み込みました（${p.cuts.length} カット）`);
+  };
+
+  const openFile = async file => {
+    try {
+      const text = await file.text();
+      if (/\.json$/i.test(file.name) || text.trim().startsWith('{')) importJson(text);
+      else { setImportText(text); setModal('import'); }
+    } catch (e) { console.error('ファイル読込失敗', e.message); notify('読み込み失敗: ' + e.message); }
+  };
+
+  // 書き出し
+  const exportPdf = mode => {
+    setExportOpen(false); setPrintMode(mode);
+    const old = document.title; document.title = `${safeName(project.title)}_${mode === 'e' ? '絵コンテ' : '字コンテ'}`;
+    setTimeout(() => { window.print(); document.title = old; setPrintMode(null); }, 400);
+  };
+  const exportMd = () => { setExportOpen(false); download(`${safeName(project.title)}.md`, toMarkdown(project), 'text/markdown'); };
+  const exportJson = (withImages = true) => {
+    setExportOpen(false);
+    const { id, ...rest } = project;
+    const data = { app: 'storyboard-maker', version: VERSION, ...rest, cuts: project.cuts.map(c => withImages ? c : { ...c, image: '' }) };
+    download(`${safeName(project.title)}${withImages ? '' : '_textonly'}.json`, JSON.stringify(data, null, 2), 'application/json');
+  };
+
+  // キーボード・貼り付け・ファイルドロップ
+  useEffect(() => {
+    const editable = el => el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable);
+    const onKey = e => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); notify('💾 自動保存されています'); return; }
+      if (modal || editable(document.activeElement)) return;
+      if (mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); }
+      if (mod && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
+    };
+    const onPaste = async e => {
+      const item = [...(e.clipboardData && e.clipboardData.items || [])].find(i => i.type.startsWith('image/'));
+      if (!item) return;
+      const target = selectedId && projectRef.current.cuts.find(c => c.id === selectedId);
+      if (!target) { notify('先に絵を貼りたいカットの PICTURE をクリックしてください'); return; }
+      e.preventDefault();
+      const img = await fileToDataUrl(item.getAsFile());
+      ops.update(target.id, { image: img });
+      notify(`CUT ${cutNo(projectRef.current.cuts.findIndex(c => c.id === target.id))} に貼り付けました`);
+    };
+    const onDragOver = e => { if ([...e.dataTransfer.types].includes('Files')) e.preventDefault(); };
+    const onDrop = e => {
+      const f = [...e.dataTransfer.files].find(f => /\.(md|markdown|txt|json)$/i.test(f.name));
+      if (f) { e.preventDefault(); openFile(f); }
+      else if (e.dataTransfer.files.length) e.preventDefault();
+    };
+    window.addEventListener('keydown', onKey); window.addEventListener('paste', onPaste);
+    window.addEventListener('dragover', onDragOver); window.addEventListener('drop', onDrop);
+    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('paste', onPaste); window.removeEventListener('dragover', onDragOver); window.removeEventListener('drop', onDrop); };
+  }, [modal, selectedId, project && project.id]);
+
+  const { starts, total } = useMemo(() => {
+    if (!project) return { starts: [], total: 0 };
+    const s = []; let acc = 0; project.cuts.forEach(c => { s.push(acc); acc += +c.duration || 0; });
+    return { starts: s, total: acc };
+  }, [project]);
+
+  const copyLogs = async () => {
+    const text = [`${APP_NAME} v${VERSION}`, navigator.userAgent, `project: ${project && project.title} (${project && project.cuts.length} cuts)`, '', ...window._logs].join('\n');
+    try { await navigator.clipboard.writeText(text); notify('🐞 ログをコピーしました'); } catch { download('debug-log.txt', text); }
+  };
+
+  if (!project) return <div className="min-h-screen flex items-center justify-center text-slate-500">読み込み中...</div>;
+  const sketchCut = project.cuts.find(c => c.id === sketchId);
+  const fileInputId = 'sbm-file';
+
+  return (
+    <>
+      <div className="no-print min-h-screen pb-20">
+        {/* ヘッダー */}
+        <header className="bg-gradient-to-r from-blue-950 to-blue-800 text-white">
+          <div className="max-w-[1400px] mx-auto px-4 py-3 flex flex-wrap items-center gap-3">
+            <button onClick={() => setModal('help')} className="font-extrabold text-lg tracking-wide hover:opacity-80" title="使い方を見る">🎬 {APP_NAME}</button>
+            <input value={project.title} onChange={e => commit(p => ({ ...p, title: e.target.value }), 'title')} className="bg-white/10 rounded-lg px-3 py-1.5 text-sm font-bold min-w-0 flex-1 max-w-sm outline-none focus:bg-white/20" />
+            <select value={project.id} onChange={e => switchProject(e.target.value)} className="bg-white/10 rounded-lg px-2 py-1.5 text-sm max-w-[200px] outline-none [&>option]:text-black">
+              {projects.map(x => <option key={x.id} value={x.id}>{x.title || '(無題)'}</option>)}
+            </select>
+            <button onClick={() => createProject(newProject())} className="text-sm bg-white/10 hover:bg-white/20 rounded-lg px-2 py-1.5" title="新規プロジェクト">＋新規</button>
+            <button onClick={deleteProject} className="text-sm bg-white/10 hover:bg-rose-500/60 rounded-lg px-2 py-1.5" title="このプロジェクトを削除">🗑</button>
+            <div className="ml-auto flex items-center gap-2 text-xs text-white/70">
+              <span className="hidden md:inline">{user ? user.email : 'local'}</span>
+              {user && <button onClick={() => auth.signOut()} className="underline">ログアウト</button>}
+            </div>
+          </div>
+        </header>
+
+        {/* ツールバー */}
+        <div className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b shadow-sm">
+          <div className="max-w-[1400px] mx-auto px-4 py-2 flex flex-wrap items-center gap-2">
+            <div className="flex rounded-lg overflow-hidden border border-blue-900">
+              {[['e', '🖼️ 絵コンテ'], ['ji', '📝 字コンテ']].map(([k, l]) => <button key={k} onClick={() => setView(k)} className={`px-3 py-1.5 text-sm font-bold ${view === k ? 'bg-blue-900 text-white' : 'bg-white text-blue-900'}`}>{l}</button>)}
+            </div>
+            <Btn onClick={() => { setImportText(''); setModal('import'); }}>📥 md読込／AI変換</Btn>
+            <label htmlFor={fileInputId} className="px-3 py-1.5 rounded-lg text-sm font-medium bg-white border border-slate-300 hover:bg-slate-50 cursor-pointer">📂 ファイル</label>
+            <input id={fileInputId} type="file" accept=".md,.markdown,.txt,.json" className="hidden" onChange={e => { const f = e.target.files[0]; if (f) openFile(f); e.target.value = ''; }} />
+            <Btn kind="ai" onClick={genRoughAll}>🤖 AIラフ一括</Btn>
+            <Btn onClick={() => setModal('player')}>▶ プレビュー</Btn>
+            <div className="relative">
+              <Btn kind="primary" onClick={() => setExportOpen(v => !v)}>📤 書き出し ▾</Btn>
+              {exportOpen && <div className="absolute right-0 md:left-0 md:right-auto mt-1 bg-white border rounded-xl shadow-lg py-1 w-56 z-40" onMouseLeave={() => setExportOpen(false)}>
+                {[['🖨 PDF（絵コンテ）', () => exportPdf('e')], ['🖨 PDF（字コンテ）', () => exportPdf('ji')], ['📄 Markdown（.md）', exportMd], ['🧩 JSON（絵を含む）', () => exportJson(true)], ['🧩 JSON（テキストのみ）', () => exportJson(false)]].map(([l, f]) =>
+                  <button key={l} onClick={f} className="block w-full text-left px-4 py-2 text-sm hover:bg-slate-100">{l}</button>)}
+              </div>}
+            </div>
+            <div className="flex items-center gap-1 ml-auto">
+              <Btn onClick={undo} disabled={!hist.current.past.length} title="元に戻す (⌘Z)">↶</Btn>
+              <Btn onClick={redo} disabled={!hist.current.future.length} title="やり直す (⌘⇧Z)">↷</Btn>
+              <select value={project.aspect} onChange={e => commit(p => ({ ...p, aspect: e.target.value }))} className="border rounded-lg px-2 py-1.5 text-sm" title="画面比率">
+                {Object.keys(ASPECTS).map(a => <option key={a}>{a}</option>)}
+              </select>
+              <select value={project.cutsPerPage} onChange={e => commit(p => ({ ...p, cutsPerPage: +e.target.value }))} className="border rounded-lg px-2 py-1.5 text-sm" title="PDFの1ページあたりカット数">
+                <option value={0}>PDF: 自動</option>{[2, 3, 4, 5, 6].map(n => <option key={n} value={n}>PDF: {n}カット/頁</option>)}
+              </select>
+              <Btn onClick={() => setModal('settings')} title="設定">⚙</Btn>
+            </div>
+          </div>
+        </div>
+
+        <main className="max-w-[1400px] mx-auto px-4 py-4">
+          <div className="flex flex-wrap gap-4 text-sm text-slate-600 mb-3">
+            <span>カット数 <b className="text-slate-900">{project.cuts.length}</b></span>
+            <span>総尺 <b className="text-slate-900 font-mono">{fmtTC(total)}</b>（{total}秒）</span>
+            <span>絵あり <b className="text-slate-900">{project.cuts.filter(c => c.image).length}</b></span>
+            <span className="text-xs text-slate-400 self-center hidden md:inline">ヒント：絵をドラッグして別カットへ落とすと入れ替え／PICTUREを選択して ⌘V で貼り付け</span>
+          </div>
+          {view === 'e'
+            ? <EConteView p={project} ops={ops} starts={starts} selectedId={selectedId} setSelectedId={setSelectedId} aiBusy={aiBusy} />
+            : <JiConteView p={project} ops={ops} starts={starts} />}
+        </main>
+
+        {/* 右下固定：バージョン＋デバッグ */}
+        <div className="fixed bottom-3 right-3 z-40 flex items-center gap-2">
+          <button onClick={copyLogs} className="bg-black/40 hover:bg-black/60 text-white text-xs rounded-full px-2.5 py-1" title="console.log をコピー">🐞</button>
+          <button onClick={() => setModal('notes')} className="bg-black/40 hover:bg-black/60 text-white text-xs rounded-full px-2.5 py-1 font-mono">v{VERSION}</button>
+        </div>
+        {toast && <div className="fixed bottom-14 left-1/2 -translate-x-1/2 z-[60] bg-slate-900 text-white text-sm rounded-full px-4 py-2 shadow-lg">{toast}</div>}
+      </div>
+
+      {/* 印刷専用DOM */}
+      {printMode && <div className="print-only">{printMode === 'e' ? <PrintEConte p={project} starts={starts} total={total} /> : <PrintJiConte p={project} starts={starts} total={total} />}</div>}
+
+      {/* モーダル群 */}
+      {modal === 'notes' && <Modal title="リリースノート" onClose={() => setModal(null)}><MiniMd text={RELEASE_NOTES} /></Modal>}
+      {modal === 'help' && <Modal title={`${APP_NAME} の使い方`} onClose={() => setModal(null)} wide><MiniMd text={HELP_MD} /></Modal>}
+      {modal === 'settings' && <SettingsModal settings={settings} onSave={s => { setSettings(s); saveSettings(s); setModal(null); notify('設定を保存しました'); }} onClose={() => setModal(null)} />}
+      {modal === 'import' && <ImportModal initialText={importText} settings={settings} onApply={applyImport} onClose={() => setModal(null)} openSettings={() => setModal('settings')} />}
+      {modal === 'sketch' && sketchCut && <SketchModal cut={sketchCut} ratio={ASPECTS[project.aspect]} onClose={() => setModal(null)} onSave={img => { ops.update(sketchCut.id, { image: img }); setModal(null); }} />}
+      {modal === 'player' && <PlayerModal p={project} starts={starts} total={total} tts={settings.tts} onClose={() => setModal(null)} />}
+    </>
+  );
+}
+
+function SettingsModal({ settings, onSave, onClose }) {
+  const [s, setS] = useState(settings);
+  return (
+    <Modal title="⚙ 設定" onClose={onClose} footer={<><Btn onClick={onClose}>キャンセル</Btn><Btn kind="primary" onClick={() => onSave(s)}>保存</Btn></>}>
+      <label className="block font-bold mb-1">Claude API キー</label>
+      <input type="password" value={s.apiKey} onChange={e => setS({ ...s, apiKey: e.target.value.trim() })} placeholder="sk-ant-..." className="w-full border rounded-lg px-3 py-2 font-mono text-xs" />
+      <p className="text-xs text-slate-500 mt-1">このブラウザの localStorage にのみ保存され、Anthropic API へ直接送信されます。AI変換・AIラフでのみ使用。</p>
+      <label className="block font-bold mt-4 mb-1">モデル</label>
+      <input value={s.model} onChange={e => setS({ ...s, model: e.target.value.trim() })} className="w-full border rounded-lg px-3 py-2 font-mono text-xs" />
+      <p className="text-xs text-slate-500 mt-1">既定: {DEFAULT_MODEL}（入力 $3 / 出力 $15 per 1M tokens）</p>
+      <label className="flex items-center gap-2 mt-4"><input type="checkbox" checked={s.tts} onChange={e => setS({ ...s, tts: e.target.checked })} />プレビュー再生でセリフを読み上げる</label>
+    </Modal>
+  );
+}
+
+const HELP_MD = `## できること
+- 脚本・シーン割りの Markdown を読み込んで、絵コンテ／字コンテを自動作成
+- 表の中で直接クリックして文字を書き換え（自動保存）
+- 絵の差し替え：📁アップロード／画像をドラッグ&ドロップ／PICTUREをクリックして ⌘V（スクショ貼り付け）
+- 絵の入れ替え：絵を別カットの PICTURE へドラッグ
+- ✏️ 手描き（ダブルクリックでも可）：既存の絵に描き足し、青い影塗り、赤い指示線
+- 🤖 AIラフ：Claude が内容・カメラから構図ラフを作成（1カット約$0.03〜0.05）
+- ⠿ をドラッグ、または ▲▼ でカットの並べ替え。＋挿入 ⧉複製 ✕削除
+- ▶ プレビュー：秒数どおりに紙芝居再生（セリフ読み上げ付きの簡易ビデオコンテ）
+- 📤 書き出し：PDF（絵コンテ／字コンテ）・Markdown・JSON
+## md の書き方（ルール変換）
+- # 見出し1 ＝ タイトル
+- ## 見出し2 ＝ シーン（### がある場合）
+- ### 見出し3 ＝ 1カット。「(3秒)」で尺を指定
+- 「画: / カメラ: / セリフ: / 音: / 秒: / メモ:」の行で各欄に入る
+- キーなしの行は内容へ、「名前「〜」」形式はセリフへ自動振り分け
+- 表形式（| No | 内容 | セリフ | 秒 |）や、シーン見出し下の箇条書き（1行＝1カット）にも対応
+- 自由形式の脚本は「🤖 AIで変換」が確実
+## 例
+    # タイトル
+    ## シーン: 教室・放課後
+    ### CUT 001 (4秒)
+    - 画: 引きの絵で教室内
+    - カメラ: PAN↑
+    - セリフ: サエコ「こらハヤト」
+    - 音: 放課後のざわめき
+## ショートカット
+- ⌘Z 元に戻す／⌘⇧Z やり直す（入力欄の外で）
+- ⌘V 選択中カットに画像貼り付け
+- プレビュー：Space 再生/停止、←→ 前後カット
+## データについて
+- データはこのブラウザ（IndexedDB）にのみ保存されます。別端末へ移すときは JSON（絵を含む）で書き出し→📂ファイルで読み込み
+- md 書き出しは文字のみ。絵も残すなら JSON を使ってください
+- PDF は印刷ダイアログで「PDFに保存」を選択（背景グラフィックON推奨）`;
+
+// ===== ルート：認証ゲート =====
+function Root() {
+  const [state, setState] = useState(DEV_BYPASS ? { ok: true, user: null } : { ok: false, loading: true });
+  useEffect(() => {
+    if (DEV_BYPASS) return;
+    return auth.onAuthStateChanged(u => {
+      if (!u) return setState({ ok: false });
+      if (!ALLOWED_EMAILS.includes(u.email)) { auth.signOut(); return setState({ ok: false, msg: `${u.email} には閲覧権限がありません` }); }
+      setState({ ok: true, user: u });
+    });
+  }, []);
+  if (state.loading) return <div className="min-h-screen flex items-center justify-center text-slate-500">認証確認中...</div>;
+  if (!state.ok) return <Gate msg={state.msg} />;
+  return <App user={state.user} />;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<Root />);
+</script>
+</body>
+</html>
