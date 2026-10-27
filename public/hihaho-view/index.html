@@ -1353,13 +1353,15 @@ function trackVideoPlay(uuid, videoId) {
   try {
     const data = {
       playCount: firebase.firestore.FieldValue.increment(1),
-      lastPlayed: firebase.firestore.FieldValue.serverTimestamp(),
-      videoId: videoId
+      lastPlayed: firebase.firestore.FieldValue.serverTimestamp()
     };
+    if (videoId) data.videoId = String(videoId);
+    // set+merge ではドット記法がネストにならないため、入れ子オブジェクトで渡す
     if (_analyticsPlaylistId) {
-      data[`playlists.${_analyticsPlaylistId}`] = firebase.firestore.FieldValue.increment(1);
+      data.playlists = { [_analyticsPlaylistId]: firebase.firestore.FieldValue.increment(1) };
     }
-    _analyticsDb.collection('video_analytics').doc(uuid).set(data, { merge: true });
+    _analyticsDb.collection('video_analytics').doc(uuid).set(data, { merge: true })
+      .catch(() => { /* 無視 */ });
   } catch(e) { /* 無視 */ }
 }
 
