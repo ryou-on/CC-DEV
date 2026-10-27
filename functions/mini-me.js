@@ -172,7 +172,7 @@ function utcDayKey(d = new Date()) {
 
 /**
  * 生成リクエストの日次レート制限。IP単位とサービス全体の2本を同一トランザクションで加算する。
- * 超過時は httpStatus 429 の例外を投げる。Firestore が使えない場合は「止めない」側に倒す
+ * 超過時は httpStatus 429 の例外を投げる。Firestore が使えない場合も有料処理は止める（fail-closed）
  * （課金保護は上位の Cloud Billing 予算アラートにも二重で用意すること／README §8）。
  */
 async function consumeGenerateQuota(req) {
@@ -201,8 +201,9 @@ async function consumeGenerateQuota(req) {
     });
   } catch (e) {
     if (e && e.httpStatus === 429) throw e;
-    // レート制限の記録自体に失敗しただけならリクエストは通す（可用性優先）
+    // レート制限を記録できない＝上限を保証できないので、有料APIは呼ばずに止める（コスト優先）
     console.error('[mini-me] rate limit bookkeeping failed', e);
+    throw Object.assign(new Error('ただいま混み合っています。しばらくしてからお試しください。'), { httpStatus: 503 });
   }
 }
 
