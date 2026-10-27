@@ -5,6 +5,7 @@
 // - 既存の localStorage.getItem('voice_...') 呼び出しは無変更で動く
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 import {
   getFirestore, doc, setDoc, deleteDoc,
   collection, onSnapshot, serverTimestamp
@@ -156,6 +157,9 @@ async function setAsset(familyCode, assetKey, dataUri, mimeType) {
 async function removeAsset(familyCode, assetKey) {
   localStorage.removeItem(assetKey);
   const ref = doc(db, 'ouchi-hamasushi', familyCode, 'assets', assetKey);
+  // 削除は匿名ログイン済みの端末のみ許可（firestore.rules）
+  const auth = getAuth(app);
+  if (!auth.currentUser) await signInAnonymously(auth);
   await deleteDoc(ref);
 }
 

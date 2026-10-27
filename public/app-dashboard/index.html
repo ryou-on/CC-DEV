@@ -15,12 +15,13 @@
       getFirestore, collection, getDocs, addDoc, updateDoc,
       deleteDoc, doc, serverTimestamp, query, orderBy
     } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+    import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
     /* ============================================================
        🔧 Firebase設定 — cc-dev-ps7
        ============================================================ */
     const firebaseConfig = {
-      apiKey: "AIzaSyDPlsAhtxbJBihy-EAHck9P7XbuM",
+      apiKey: "AIzaSyDPlsAhtxbJBihy-EAHck9P7XbuMdzV0ds",
       authDomain: "cc-dev-ps7.firebaseapp.com",
       projectId: "cc-dev-ps7",
       storageBucket: "cc-dev-ps7.firebasestorage.app",
@@ -30,6 +31,36 @@
 
     const app = fbInitApp(firebaseConfig);
     const db = getFirestore(app);
+    const auth = getAuth(app);
+
+    // ===== オーナー認証ゲート（Firestore ルールと同じメールのみ許可） =====
+    const OWNER_EMAIL = 'junpei.omote@gmail.com';
+    function showOwnerGate(msg, onLogin) {
+      let g = document.getElementById('owner-gate');
+      if (!g) {
+        g = document.createElement('div');
+        g.id = 'owner-gate';
+        g.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,.92);display:flex;align-items:center;justify-content:center;font-family:sans-serif';
+        g.innerHTML = '<div style="background:#fff;color:#111;border-radius:16px;padding:32px;max-width:340px;width:90%;text-align:center"><div style="font-size:40px">🔒</div><p style="margin:8px 0 20px;font-weight:bold">オーナー専用ページです</p><button id="owner-gate-btn" style="background:#1e3a8a;color:#fff;border:0;border-radius:10px;padding:12px 20px;font-size:15px;cursor:pointer;width:100%">Google でログイン</button><p id="owner-gate-msg" style="color:#dc2626;font-size:12px;margin-top:12px"></p></div>';
+        document.body.appendChild(g);
+        document.getElementById('owner-gate-btn').onclick = onLogin;
+      }
+      g.style.display = 'flex';
+      if (msg !== null) document.getElementById('owner-gate-msg').textContent = msg || '';
+    }
+    function hideOwnerGate() { const g = document.getElementById('owner-gate'); if (g) g.style.display = 'none'; }
+    
+    // オーナーでログインするまで待つ
+    function waitForOwner() {
+      return new Promise(resolve => {
+        const login = () => signInWithPopup(auth, new GoogleAuthProvider()).catch(e => showOwnerGate('ログイン失敗: ' + e.message, login));
+        onAuthStateChanged(auth, user => {
+          if (user && user.email === OWNER_EMAIL && user.emailVerified) { hideOwnerGate(); resolve(user); }
+          else if (user) { signOut(auth); showOwnerGate(user.email + ' には権限がありません', login); }
+          else showOwnerGate(null, login); // サインアウト直後のエラー表示は残す
+        });
+      });
+    }
 
     /* ============================================================
        初期データ — 初回のみFirestoreにシードする
@@ -489,6 +520,7 @@
       if (adminToggle) adminToggle.style.display = 'block';
 
       log("🚀 App Dashboard 起動中...");
+      await waitForOwner();
       try {
         await seedIfEmpty();
         await loadApps();

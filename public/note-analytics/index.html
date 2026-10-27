@@ -12,6 +12,7 @@
   <!-- Firebase -->
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
   <style>
     :root {
       --note-green: #41C9B4;
@@ -485,6 +486,36 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
+
+// ===== オーナー認証ゲート（Firestore ルールと同じメールのみ許可） =====
+const OWNER_EMAIL = 'junpei.omote@gmail.com';
+function showOwnerGate(msg, onLogin) {
+  let g = document.getElementById('owner-gate');
+  if (!g) {
+    g = document.createElement('div');
+    g.id = 'owner-gate';
+    g.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(15,23,42,.92);display:flex;align-items:center;justify-content:center;font-family:sans-serif';
+    g.innerHTML = '<div style="background:#fff;color:#111;border-radius:16px;padding:32px;max-width:340px;width:90%;text-align:center"><div style="font-size:40px">🔒</div><p style="margin:8px 0 20px;font-weight:bold">オーナー専用ページです</p><button id="owner-gate-btn" style="background:#1e3a8a;color:#fff;border:0;border-radius:10px;padding:12px 20px;font-size:15px;cursor:pointer;width:100%">Google でログイン</button><p id="owner-gate-msg" style="color:#dc2626;font-size:12px;margin-top:12px"></p></div>';
+    document.body.appendChild(g);
+    document.getElementById('owner-gate-btn').onclick = onLogin;
+  }
+  g.style.display = 'flex';
+  if (msg !== null) document.getElementById('owner-gate-msg').textContent = msg || '';
+}
+function hideOwnerGate() { const g = document.getElementById('owner-gate'); if (g) g.style.display = 'none'; }
+
+// オーナーでログインするまで待つ
+function waitForOwner() {
+  return new Promise(resolve => {
+    const auth = firebase.auth();
+    const login = () => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(e => showOwnerGate('ログイン失敗: ' + e.message, login));
+    auth.onAuthStateChanged(user => {
+      if (user && user.email === OWNER_EMAIL && user.emailVerified) { hideOwnerGate(); resolve(user); }
+      else if (user) { auth.signOut(); showOwnerGate(user.email + ' には権限がありません', login); }
+      else showOwnerGate(null, login); // サインアウト直後のエラー表示は残す
+    });
+  });
+}
 
 // ===== 状態管理 =====
 let snapshots = [];       // 週次データ配列
@@ -1232,6 +1263,7 @@ async function init() {
   initBookmarklet();
   checkImportFromUrl();
   setChartMetric('views');
+  await waitForOwner();
   await loadSnapshots();
 }
 

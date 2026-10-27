@@ -45,9 +45,9 @@ service cloud.firestore {
       allow read, write: if request.auth != null;
     }
 
-    // App Dashboard: 読み書き許可
+    // App Dashboard: オーナー本人（Googleログイン）のみ
     match /apps/{id} {
-      allow read, write: if true;
+      allow read, write: if request.auth != null && request.auth.token.email == 'junpei.omote@gmail.com' && request.auth.token.email_verified == true;
     }
 
     // ともえホーム: アプリリスト共有（認証不要）
@@ -69,12 +69,13 @@ service cloud.firestore {
         request.resource.data.keys().hasOnly(['data','mimeType','size','updatedAt']) &&
         request.resource.data.data is string &&
         request.resource.data.data.size() <= 950000;
-      allow delete: if true;
+      // 削除はアプリ内で匿名ログインした端末のみ（スクリプトからの無差別削除を防ぐ）
+      allow delete: if request.auth != null;
     }
 
-    // note-analytics: 個人分析ツール（パスワード不要・userId ベースのアクセス）
+    // note-analytics: 個人分析ツール。オーナー本人（Googleログイン）のみ
     match /note-analytics/{userId}/{document=**} {
-      allow read, write: if true;
+      allow read, write: if request.auth != null && request.auth.token.email == 'junpei.omote@gmail.com' && request.auth.token.email_verified == true;
     }
 
     // COCO-ITTA: 家族でグループ共有（ログインユーザーのみ）
@@ -125,18 +126,38 @@ service cloud.firestore {
           request.resource.data.hour is number && request.resource.data.hour >= 0 && request.resource.data.hour <= 23 &&
           request.resource.data.watchSec is number && request.resource.data.watchSec >= 0 && request.resource.data.watchSec <= 86400 &&
           request.resource.data.completed is bool;
-        allow delete: if true;
+        // 削除は stats.html で匿名ログインした端末のみ
+        allow delete: if request.auth != null;
       }
     }
 
-    // hihaho アナリティクス: プレイリスト表示・動画再生カウント（認証なし書き込み可）
+    // hihaho アナリティクス: プレイリスト表示・動画再生カウント（認証なし）
+    // 書き込みは「カウンターを +1 し、時刻をサーバー時刻にする」だけを許可。削除は不可
     match /playlist_analytics/{id} {
       allow read: if true;
-      allow write: if true;
+      allow create: if
+        request.resource.data.keys().hasOnly(['viewCount','lastViewed']) &&
+        request.resource.data.viewCount == 1 &&
+        request.resource.data.lastViewed == request.time;
+      allow update: if
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['viewCount','lastViewed']) &&
+        request.resource.data.viewCount == resource.data.get('viewCount', 0) + 1 &&
+        request.resource.data.lastViewed == request.time;
     }
     match /video_analytics/{uuid} {
       allow read: if true;
-      allow write: if true;
+      // playlists.<id> 形式のプレイリスト別カウントも同時に +1 されるため、変更キー数とドキュメントサイズで制限
+      allow create: if
+        request.resource.data.keys().size() <= 4 &&
+        request.resource.data.playCount == 1 &&
+        request.resource.data.lastPlayed == request.time &&
+        request.resource.data.videoId is string && request.resource.data.videoId.size() <= 100;
+      allow update: if
+        request.resource.data.diff(resource.data).affectedKeys().size() <= 4 &&
+        request.resource.data.keys().size() <= 200 &&
+        request.resource.data.playCount == resource.data.get('playCount', 0) + 1 &&
+        request.resource.data.lastPlayed == request.time &&
+        request.resource.data.videoId is string && request.resource.data.videoId.size() <= 100;
     }
 
     // Meet Knowledge: チームコードを知っている人同士でQ&Aナレッジを共有
@@ -148,7 +169,8 @@ service cloud.firestore {
         request.resource.data.question is string && request.resource.data.question.size() <= 500 &&
         request.resource.data.answer is string && request.resource.data.answer.size() <= 5000 &&
         request.resource.data.keywords is list && request.resource.data.keywords.size() <= 20;
-      allow delete: if true;
+      // 削除はアプリ内で匿名ログインした端末のみ
+      allow delete: if request.auth != null;
     }
 
     // hihaho ナレッジベース
