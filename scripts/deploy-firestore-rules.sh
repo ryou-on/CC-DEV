@@ -8,8 +8,9 @@
 #       firebase deploy --only firestore:rules --project cc-dev-ps7
 #       を実行する。firebase.json の predeploy がゲートをもう一度実行する。
 #
-# CI の本番パスは .github/workflows/firebase-rules-deploy.yml の
-# `firebase deploy --only storage,firestore`。同じ predeploy が先に走る。
+# `firebase deploy --only storage` も firebase.json の storage.predeploy で
+# 同じゲートを実行する。CI は資格情報を環境に入れる前にゲートを一度走らせ、
+# deploy 中の predeploy がもう一度走ってテストプロセスから資格情報を外す。
 set -u
 
 DRY=0

@@ -32,9 +32,13 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      # firebase.json の firestore.predeploy が scripts/firestore-rules-gate.sh を
-      # デプロイ手順の前に実行する。ルールテストか cost_guard が失敗すると
-      # firebase-tools はルールをリリースしない（predeploy の非0でデプロイチェーンが止まる）。
+      # 資格情報を書く前にゲートを一度走らせる。ここには FIREBASE_SA を渡さない。
+      - name: Rules gate before production credentials
+        run: bash scripts/firestore-rules-gate.sh
+      # firebase deploy の firestore.predeploy と storage.predeploy が同じゲートを
+      # もう一度実行する。このステップは本番SAを環境に入れるが、ゲートはテストプロセスから
+      # GOOGLE_APPLICATION_CREDENTIALS / FIREBASE_SA などを外してからエミュレータを起動する。
+      # どちらかの predeploy が非0なら firebase-tools はルールをリリースしない。
       - name: Deploy Firebase Storage & Firestore rules
         env:
           FIREBASE_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_CC_DEV_PS7 }}
