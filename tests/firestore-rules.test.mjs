@@ -17,6 +17,7 @@ const unverifiedSpline = env.authenticatedContext('spoof2', { email: 'ceo@spline
 const spline = env.authenticatedContext('spline', { email: 'jumpei.omote@splineglobal.com', email_verified: true }).firestore();
 const pilot = env.authenticatedContext('pilot', { email: 'pilot@example.com', email_verified: true }).firestore();
 const alice = env.authenticatedContext('alice', { email: 'alice@example.com', email_verified: true }).firestore();
+const friend = env.authenticatedContext('friend', { email: 'friend@example.com', email_verified: true }).firestore();
 const meiyusha = env.authenticatedContext('mei', { email: 'meiyusha@meiyusha-estimate.app', email_verified: false }).firestore();
 let pass = 0, fail = 0;
 async function t(name, p) { try { await p; pass++; console.log('  ok  ', name); } catch (e) { fail++; console.log('  NG  ', name, '-', e.message.split('\n')[0]); } }
@@ -39,7 +40,8 @@ await env.withSecurityRulesDisabled(async c => {
   await setDoc(doc(d, 'tomoe-player/ABC123'), { videos: [{ id: 'vid', title: 't' }], sources: '', name: '', updatedAt: '2026-10-28T00:00:00.000Z' });
   await setDoc(doc(d, 'meiyusha-estimate/config'), { json: '{"tiers":[]}' });
   await setDoc(doc(d, 'hondoko-books/b1'), { title: '本' });
-  await setDoc(doc(d, 'hondoko-config/sharing'), { mode: 'viewers', viewers: ['eve@example.com'], allowComments: true });
+  await setDoc(doc(d, 'hondoko-config/sharing'), { mode: 'viewers', allowComments: true, linkKey: 'sharekey' });
+  await setDoc(doc(d, 'hondoko-config/viewers'), { emails: ['eve@example.com'] });
 });
 
 console.log('apps (app-dashboard)');
@@ -87,6 +89,12 @@ const s = { uid: 'kid-device', videoId: 'abc', title: 't', startedAt: '2026-10-2
 await ng('未ログインでは視聴ログを作れない', () => setDoc(doc(anon, 'tomoe-player/ABC123/sessions/mh7x1k2q9z'), s, { merge: true }));
 await ok('再生した端末は視聴ログを作れる', () => setDoc(doc(kid, 'tomoe-player/ABC123/sessions/mh7x1k2q9z'), s, { merge: true }));
 await ok('同じ端末の中断クローズ(merge)可', () => setDoc(doc(kid, 'tomoe-player/ABC123/sessions/mh7x1k2q9z'), { endReason: 'abort', endedAt: 'x' }, { merge: true }));
+await ok('再生した端末は自分の視聴ログを読める', () => getDoc(doc(kid, 'tomoe-player/ABC123/sessions/mh7x1k2q9z')));
+await ng('未ログインは視聴ログを1件読めない', () => getDoc(doc(anon, 'tomoe-player/ABC123/sessions/mh7x1k2q9z')));
+await ng('別の端末は他人の視聴ログを読めない', () => getDoc(doc(other, 'tomoe-player/ABC123/sessions/mh7x1k2q9z')));
+await ng('未ログインは視聴ログを一覧できない', () => getDocs(collection(anon, 'tomoe-player/ABC123/sessions')));
+await ng('再生端末は視聴ログを一覧できない', () => getDocs(collection(kid, 'tomoe-player/ABC123/sessions')));
+await ok('編集者は視聴ログを一覧できる', () => getDocs(collection(editor, 'tomoe-player/ABC123/sessions')));
 await ng('別の端末は視聴ログを改ざんできない', () => setDoc(doc(other, 'tomoe-player/ABC123/sessions/mh7x1k2q9z'), { ...s, uid: 'eve', title: 'hacked' }, { merge: true }));
 await ng('未ログインでは視聴ログを削除できない', () => deleteDoc(doc(anon, 'tomoe-player/ABC123/sessions/lx9k2abc')));
 await ng('別の端末は他人の視聴ログを削除できない', () => deleteDoc(doc(other, 'tomoe-player/ABC123/sessions/mh7x1k2q9z')));
@@ -143,6 +151,16 @@ await ng('無関係な確認済みユーザーは単価を読めない', () => g
 await ng('未確認の junpei メールではメンバー名簿を書けない', () => setDoc(doc(unverifiedEditor, 'hondoko-config/members'), { emails: ['spoof@splineglobal.com'] }));
 await ok('確認済みオーナーはメンバー名簿を書ける', () => setDoc(doc(editor, 'hondoko-config/members'), { emails: ['friend@example.com'] }));
 await ng('確認済みでもオーナー以外はメンバー名簿を書けない', () => setDoc(doc(other, 'hondoko-config/members'), { emails: ['eve@example.com'] }));
+await ok('オーナーは閲覧者メールを書ける', () => setDoc(doc(editor, 'hondoko-config/viewers'), { emails: ['eve@example.com'] }));
+await ok('オーナーは閲覧者メールを読める', () => getDoc(doc(editor, 'hondoko-config/viewers')));
+await ok('家族メンバーは閲覧者メールを読める', () => getDoc(doc(friend, 'hondoko-config/viewers')));
+await ng('未ログインは閲覧者メールを読めない', () => getDoc(doc(anon, 'hondoko-config/viewers')));
+await ng('閲覧者本人はメール一覧を読めない', () => getDoc(doc(other, 'hondoko-config/viewers')));
+await ng('無関係なユーザーは閲覧者メールを読めない', () => getDoc(doc(pilot, 'hondoko-config/viewers')));
+await ng('未確認ユーザーは閲覧者メールを読めない', () => getDoc(doc(unverifiedEditor, 'hondoko-config/viewers')));
+await ng('閲覧者以外は閲覧者メールを書けない', () => setDoc(doc(other, 'hondoko-config/viewers'), { emails: ['eve@example.com'] }));
+await ng('共有設定に viewers は書けない', () => setDoc(doc(editor, 'hondoko-config/sharing'), { mode: 'viewers', viewers: ['eve@example.com'], allowComments: true }));
+await ok('メールの無い共有設定は未ログインで読める', () => getDoc(doc(anon, 'hondoko-config/sharing')));
 await ok('確認済みオーナーは蔵書を書ける', () => setDoc(doc(editor, 'hondoko-books/b2'), { title: '追加' }));
 await ng('未確認のオーナーメールでは蔵書を書けない', () => setDoc(doc(unverifiedEditor, 'hondoko-books/b3'), { title: '盗む' }));
 await ok('確認済みオーナーは評価を書ける', () => setDoc(doc(editor, 'hondoko-reviews/b1_junpei'), {
@@ -156,8 +174,19 @@ await ng('未確認ビューワーは本を読めない', () => getDoc(doc(env.a
 await ok('確認済みビューワーはコメントを書ける', () => addDoc(collection(other, 'hondoko-comments'), {
   bookId: 'b1', text: '読んだ', by: 'eve@example.com', byName: 'Eve', createdAt: serverTimestamp(),
 }));
-await ok('オーナーは共有を public にできる', () => setDoc(doc(editor, 'hondoko-config/sharing'), { mode: 'public', viewers: [], allowComments: false }));
+await ok('オーナーは共有を public にできる', () => setDoc(doc(editor, 'hondoko-config/sharing'), { mode: 'public', allowComments: false, linkKey: 'sharekey' }));
 await ok('public なら未ログインでも本を読める', () => getDoc(doc(anon, 'hondoko-books/b1')));
+await env.withSecurityRulesDisabled(async c => {
+  const d = c.firestore();
+  await setDoc(doc(d, 'hondoko-config/sharing'), { mode: 'viewers', viewers: ['eve@example.com'], allowComments: true, linkKey: 'legacy' });
+  await deleteDoc(doc(d, 'hondoko-config/viewers'));
+});
+await ng('メール入りの共有設定は未ログインで読めない', () => getDoc(doc(anon, 'hondoko-config/sharing')));
+await ng('メール入りの共有設定は閲覧者本人も読めない', () => getDoc(doc(other, 'hondoko-config/sharing')));
+await ok('メール入りの共有設定はオーナーが読める', () => getDoc(doc(editor, 'hondoko-config/sharing')));
+await ok('旧 viewers フィールドでも確認済み閲覧者は本を読める', () => getDoc(doc(other, 'hondoko-books/b1')));
+await ng('旧 viewers フィールドでも未ログインは本を読めない', () => getDoc(doc(anon, 'hondoko-books/b1')));
+await ok('オーナーは共有設定からメールを外して public に戻せる', () => setDoc(doc(editor, 'hondoko-config/sharing'), { mode: 'public', allowComments: false, linkKey: 'legacy' }));
 await ng('未確認編集者は旧 note を読めない', () => getDocs(collection(unverifiedEditor, 'note-analytics/default/snapshots')));
 
 console.log('groups (COCO-ITTA)');
@@ -230,6 +259,62 @@ await ok('作成者は承認した人を member に追加できる', () => updat
 await ok('追加されたメンバーはピンを更新できる', () => updateDoc(doc(pilot, 'groups/AB2345'), {
   pins: [{ id: 'p3', name: '山', lat: 36, lng: 138 }],
 }));
+await ng('メンバーは他のメンバーを削除できない', () => updateDoc(doc(other, 'groups/AB2345'), {
+  members: [
+    { email: 'alice@example.com', role: 'owner' },
+    { email: 'eve@example.com', role: 'member' },
+  ],
+}));
+await ng('メンバーは管理者を削除できない', () => updateDoc(doc(other, 'groups/AB2345'), {
+  members: [
+    { email: 'eve@example.com', role: 'member' },
+    { email: 'pilot@example.com', role: 'member' },
+  ],
+}));
+await ng('作成者は自分（管理者）を削除できない', () => updateDoc(doc(alice, 'groups/AB2345'), {
+  members: [
+    { email: 'eve@example.com', role: 'member' },
+    { email: 'pilot@example.com', role: 'member' },
+  ],
+}));
+await ng('作成者はメンバー削除とピン更新を同時にできない', () => updateDoc(doc(alice, 'groups/AB2345'), {
+  members: [
+    { email: 'alice@example.com', role: 'owner' },
+    { email: 'pilot@example.com', role: 'member' },
+  ],
+  pins: [],
+}));
+await ng('非メンバーはメンバーを削除できない', () => updateDoc(doc(spline, 'groups/AB2345'), {
+  members: [
+    { email: 'alice@example.com', role: 'owner' },
+    { email: 'eve@example.com', role: 'member' },
+  ],
+}));
+await ok('作成者はメンバーを1人削除できる', () => updateDoc(doc(alice, 'groups/AB2345'), {
+  members: [
+    { email: 'alice@example.com', role: 'owner' },
+    { email: 'pilot@example.com', role: 'member' },
+  ],
+}));
+await ng('外されたメンバーはグループを読めない', () => getDoc(doc(other, 'groups/AB2345')));
+await ok('残ったメンバーはピンを更新できる', () => updateDoc(doc(pilot, 'groups/AB2345'), {
+  pins: [{ id: 'p4', name: '川', lat: 35, lng: 139 }],
+}));
+await ok('メンバーは自分だけ抜けられる', () => updateDoc(doc(pilot, 'groups/AB2345'), {
+  members: [{ email: 'alice@example.com', role: 'owner' }],
+}));
+await ng('抜けたメンバーはグループを読めない', () => getDoc(doc(pilot, 'groups/AB2345')));
+await ok('抜けたあとも管理者はグループを読める', () => getDoc(doc(alice, 'groups/AB2345')));
+let groupAfterLeave;
+await env.withSecurityRulesDisabled(async c => {
+  groupAfterLeave = (await getDoc(doc(c.firestore(), 'groups/AB2345'))).data();
+});
+await t('抜けたあとも管理者だけが残る', (
+  groupAfterLeave.members.length === 1
+  && groupAfterLeave.members[0].email === 'alice@example.com'
+  && groupAfterLeave.members[0].role === 'owner'
+  && groupAfterLeave.createdBy === 'alice@example.com'
+) ? Promise.resolve() : Promise.reject(new Error(JSON.stringify(groupAfterLeave.members))));
 await ng('存在しないグループには参加申請できない', () => setDoc(doc(other, 'groups/NOGROUP/joinRequests/eve'), {
   email: 'eve@example.com', status: 'pending', createdAt: serverTimestamp(),
 }));
@@ -334,12 +419,23 @@ console.log('tomoe-player リスト');
 await ng('動画リストの一覧は不可', () => getDocs(collection(anon, 'tomoe-player')));
 await ok('共有コードの単体取得は可', () => getDoc(doc(anon, 'tomoe-player/ABC123')));
 await ok('未作成の共有コードも get できる', () => getDoc(doc(anon, 'tomoe-player/ZZZZZZ')));
-await ok('保護者は動画リストを保存できる', () => setDoc(doc(anon, 'tomoe-player/ABC123'), {
+await ng('未ログインは動画リストを上書きできない', () => setDoc(doc(anon, 'tomoe-player/ABC123'), {
   videos: [{ id: 'dQw4w9Wgxcq', title: 't' }], sources: 'https://www.youtube.com/watch?v=dQw4w9Wgxcq', name: 'ともえ', updatedAt: new Date().toISOString(),
 }));
-await ok('プレイヤー名だけの merge 保存ができる', () => setDoc(doc(anon, 'tomoe-player/ABC123'), { name: 'ともえちゃん' }, { merge: true }));
+await ng('共有コードを知るだけのユーザーは動画リストを上書きできない', () => setDoc(doc(other, 'tomoe-player/ABC123'), {
+  videos: [{ id: 'evil', title: 'x' }], sources: '', name: 'x', updatedAt: new Date().toISOString(),
+}));
+await ng('未確認の保護者メールでは動画リストを上書きできない', () => setDoc(doc(unverifiedEditor, 'tomoe-player/ABC123'), {
+  videos: [{ id: 'dQw4w9Wgxcq', title: 't' }], sources: '', name: 'ともえ', updatedAt: new Date().toISOString(),
+}));
+await ok('保護者は動画リストを保存できる', () => setDoc(doc(editor, 'tomoe-player/ABC123'), {
+  videos: [{ id: 'dQw4w9Wgxcq', title: 't' }], sources: 'https://www.youtube.com/watch?v=dQw4w9Wgxcq', name: 'ともえ', updatedAt: new Date().toISOString(),
+}));
+await ok('保護者はプレイヤー名だけの merge 保存ができる', () => setDoc(doc(editor, 'tomoe-player/ABC123'), { name: 'ともえちゃん' }, { merge: true }));
+await ng('未ログインはプレイヤー名を保存できない', () => setDoc(doc(anon, 'tomoe-player/ABC123'), { name: 'hacked' }, { merge: true }));
 await ng('動画リスト文書の削除は不可', () => deleteDoc(doc(anon, 'tomoe-player/ABC123')));
-await ok('既知コードの視聴ログ一覧は可', () => getDocs(collection(anon, 'tomoe-player/ABC123/sessions')));
+await ng('未ログインは視聴ログを一覧できない', () => getDocs(collection(anon, 'tomoe-player/ABC123/sessions')));
+await ok('保護者は視聴ログを一覧できる', () => getDocs(collection(editor, 'tomoe-player/ABC123/sessions')));
 await ng('存在しない家族コード一覧は不可', () => getDocs(collection(anon, 'ouchi-hamasushi')));
 await ok('家族コード配下の assets 一覧は維持', () => getDocs(collection(anon, 'ouchi-hamasushi/tomoe3030/assets')));
 await ng('チームコード一覧は不可', () => getDocs(collection(anon, 'meet-knowledge')));

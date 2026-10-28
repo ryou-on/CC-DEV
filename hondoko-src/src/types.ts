@@ -71,13 +71,15 @@ export interface Book {
   updatedAt: Timestamp | null
 }
 
-// 公開設定 (hondoko-config/sharing)
+// 公開設定 (hondoko-config/sharing)。メールアドレスは入れない。
+// 閲覧者メールは hondoko-config/viewers（家族メンバーだけが読める）。
 export type SharingMode = 'private' | 'viewers' | 'link' | 'public'
 export interface SharingConfig {
   mode: SharingMode
-  viewers: string[] // mode=viewers のとき閲覧を許可するGoogleアカウント
   allowComments: boolean
   linkKey: string // mode=link のときURLに付けるキー(?k=)
+  /** 旧データ。空でない配列はメンバー以外には読めない。保存時に viewers 文書へ移す。 */
+  viewers?: string[]
 }
 
 // ユーザーごとの評価・メモ (hondoko-reviews/{bookId}_{email})

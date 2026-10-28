@@ -25,22 +25,37 @@ export function SettingsView({
   members,
   userEmail,
   sharing,
+  viewerEmails,
 }: {
   shelves: Shelf[]
   books: Book[]
   members: string[]
   userEmail: string
   sharing: SharingConfig | null
+  viewerEmails: string[]
 }) {
   const isOwner = userEmail === OWNER_EMAIL
   const [newMember, setNewMember] = useState('')
   const [newViewer, setNewViewer] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const share: SharingConfig = sharing ?? { mode: 'private', viewers: [], allowComments: false, linkKey: genKey() }
+  const share: SharingConfig = sharing ?? { mode: 'private', allowComments: false, linkKey: genKey() }
+  const viewers = viewerEmails
 
-  const saveSharing = async (patch: Partial<SharingConfig>) => {
-    await setDoc(doc(db, 'hondoko-config', 'sharing'), { ...share, ...patch }, { merge: false })
+  const saveSharing = async (patch: Partial<SharingConfig> & { viewers?: string[] }) => {
+    const next = { ...share, ...patch }
+    const emails = (patch.viewers ?? viewers)
+      .map((v) => v.trim().toLowerCase())
+      .filter((v) => v.includes('@'))
+    await setDoc(doc(db, 'hondoko-config', 'sharing'), {
+      mode: next.mode,
+      allowComments: !!next.allowComments,
+      linkKey: next.linkKey || genKey(),
+    })
+    // メールは公開の sharing には書かない。旧フィールドが残っていても、この保存で外れる。
+    if (patch.viewers || (sharing?.viewers && sharing.viewers.length > 0) || viewers.length > 0) {
+      await setDoc(doc(db, 'hondoko-config', 'viewers'), { emails })
+    }
   }
 
   const shareUrl = `${location.origin}/hondoko/` + (share.mode === 'link' ? `?k=${share.linkKey}` : '')
@@ -201,22 +216,22 @@ export function SettingsView({
           {share.mode === 'viewers' && (
             <div className="mt-3 pl-6">
               <ul className="space-y-1 mb-2">
-                {share.viewers.map((v) => (
+                {viewers.map((v) => (
                   <li key={v} className="text-sm text-stone-700 flex items-center gap-2">
                     {v}
                     <button className="text-stone-400 hover:text-red-600"
-                      onClick={() => saveSharing({ viewers: share.viewers.filter((x) => x !== v) })}>
+                      onClick={() => saveSharing({ viewers: viewers.filter((x) => x !== v) })}>
                       <Trash2 size={13} />
                     </button>
                   </li>
                 ))}
-                {share.viewers.length === 0 && <li className="text-xs text-stone-400">まだ誰も追加されていません</li>}
+                {viewers.length === 0 && <li className="text-xs text-stone-400">まだ誰も追加されていません</li>}
               </ul>
               <div className="flex gap-2">
                 <input className={inputCls} placeholder="guest@gmail.com" value={newViewer}
                   onChange={(e) => setNewViewer(e.target.value)} />
                 <button className={btnSecondary} disabled={!newViewer.includes('@')}
-                  onClick={() => { saveSharing({ viewers: [...share.viewers, newViewer.trim()] }); setNewViewer('') }}>
+                  onClick={() => { saveSharing({ viewers: [...viewers, newViewer.trim()] }); setNewViewer('') }}>
                   追加
                 </button>
               </div>

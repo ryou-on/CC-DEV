@@ -1,6 +1,13 @@
-export const APP_VERSION = 'v1.21.1'
+export const APP_VERSION = 'v1.21.2'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: 'v1.21.2',
+    date: '2026-10-28',
+    changes: [
+      '公開設定の閲覧者メールは、ログインした家族メンバーだけが読めるようにしました（未ログインでは一覧を取得できません）',
+    ],
+  },
   {
     version: 'v1.21.1',
     date: '2026-08-17',

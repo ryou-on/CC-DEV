@@ -1817,6 +1817,7 @@
         <div id="joinRequestList" style="margin-top:8px;font-size:0.72rem;color:var(--ink);"></div>
         <p style="font-size:0.65rem;color:var(--ink-light);margin-top:6px;line-height:1.5;">
           グループIDを知っているだけでは参加できません。相手の参加申請を、作成者だけが承認できます。
+          作成者はメンバーを外せます。メンバー本人は「グループから抜ける」で自分だけ抜けられます。管理者は外せません。
         </p>
       </div>
 
@@ -2090,7 +2091,14 @@ const DICT_JA = {
   'confirm.deleteRoute': 'このルートを削除しますか？',
   'confirm.logout': 'ログアウトしますか？',
   'confirm.leaveGroup': 'グループから抜けますか？（ローカルデータは残ります）',
+  'confirm.leaveAsMember': 'グループから抜けますか？共有メンバーから外れます（この端末の地図は残ります）',
+  'confirm.leaveAsOwner': 'この端末の同期を止めますか？管理者はグループに残ります。',
   'confirm.removeMember': '{name} を削除しますか？',
+  'confirm.removeGroupMember': '{email} をグループから外しますか？',
+  'alert.removeMemberFail': 'メンバーを外せませんでした: {msg}',
+  'alert.leaveGroupFail': 'グループから抜けられませんでした: {msg}',
+  'alert.onlyOwnerRemoves': 'メンバーを外せるのは管理者だけです',
+  'alert.cannotRemoveOwner': '管理者は外せません',
   // マイグレーション
   'migrate.start': '📤 既存写真を共有準備中… ({done}/{total})',
   'migrate.done': '✅ 写真の共有準備が完了しました',
@@ -2318,7 +2326,14 @@ const DICT_EN = {
   'confirm.deleteRoute': 'Delete this route?',
   'confirm.logout': 'Log out?',
   'confirm.leaveGroup': 'Leave the group? (local data will remain)',
+  'confirm.leaveAsMember': 'Leave the group? You will be removed from the shared members (this device keeps its map).',
+  'confirm.leaveAsOwner': 'Stop syncing on this device? You stay the owner of the group.',
   'confirm.removeMember': 'Remove {name}?',
+  'confirm.removeGroupMember': 'Remove {email} from the group?',
+  'alert.removeMemberFail': 'Could not remove the member: {msg}',
+  'alert.leaveGroupFail': 'Could not leave the group: {msg}',
+  'alert.onlyOwnerRemoves': 'Only the owner can remove a member',
+  'alert.cannotRemoveOwner': 'The owner cannot be removed',
   // Migration
   'migrate.start': '📤 Preparing existing photos for sharing… ({done}/{total})',
   'migrate.done': '✅ Photos ready for sharing',
@@ -2718,11 +2733,72 @@ function watchJoinApproval(id) {
   }, 5000);
 }
 
-/** グループから抜ける（ローカルデータは残す） */
-function leaveGroup() {
+/** members から1人だけ外した配列。残りの要素は元のまま（ルールが完全一致で照合する）。 */
+function membersWithout(ms, email, role) {
+  const want = String(email || '').trim().toLowerCase();
+  let removed = false;
+  const next = [];
+  for (const m of ms) {
+    const same = String(m.email || '').trim().toLowerCase() === want && (!role || m.role === role);
+    if (!removed && same) { removed = true; continue; }
+    next.push(m);
+  }
+  return removed ? next : null;
+}
+
+/** グループから抜ける。member は名簿から自分を外す。管理者は端末の同期だけ止める。 */
+async function leaveGroup() {
+  const id = currentGroupId;
+  const email = currentUser?.email ? String(currentUser.email).trim().toLowerCase() : '';
+  try {
+    if (id && email) {
+      const snap = await db.collection('groups').doc(id).get();
+      if (snap.exists) {
+        const data = snap.data() || {};
+        const createdBy = String(data.createdBy || '').trim().toLowerCase();
+        const ms = Array.isArray(data.members) ? data.members : [];
+        const mine = ms.find(m => String(m.email || '').trim().toLowerCase() === email);
+        if (mine && mine.role === 'owner') {
+          if (!confirm(t('confirm.leaveAsOwner'))) return false;
+        } else if (mine && mine.role === 'member') {
+          if (email === createdBy) { alert(t('alert.cannotRemoveOwner')); return false; }
+          if (!confirm(t('confirm.leaveAsMember'))) return false;
+          const next = membersWithout(ms, email, 'member');
+          if (!next) throw new Error(t('alert.cannotRemoveOwner'));
+          await db.collection('groups').doc(id).update({ members: next });
+        } else if (!confirm(t('confirm.leaveGroup'))) return false;
+      } else if (!confirm(t('confirm.leaveGroup'))) return false;
+    } else if (!confirm(t('confirm.leaveGroup'))) return false;
+  } catch (e) {
+    const denied = e.code === 'permission-denied' || String(e.message || '').includes('permission');
+    if (!denied) throw e;
+    if (!confirm(t('confirm.leaveGroup'))) return false;
+  }
   if (groupUnsub) { groupUnsub(); groupUnsub = null; }
   setGroupId(null);
   log('グループから退出');
+  return true;
+}
+
+/** 作成者が member を1人外す。管理者は外せない。 */
+async function removeGroupMember(email) {
+  email = String(email || '').trim().toLowerCase();
+  if (!currentGroupId || !email || !currentUser?.email) return false;
+  const ref = db.collection('groups').doc(currentGroupId);
+  const snap = await ref.get();
+  const data = snap.data() || {};
+  const createdBy = String(data.createdBy || '').trim().toLowerCase();
+  const me = String(currentUser.email).trim().toLowerCase();
+  if (createdBy !== me) { alert(t('alert.onlyOwnerRemoves')); return false; }
+  if (email === createdBy) { alert(t('alert.cannotRemoveOwner')); return false; }
+  const ms = Array.isArray(data.members) ? data.members : [];
+  const target = ms.find(m => String(m.email || '').trim().toLowerCase() === email);
+  if (!target || target.role === 'owner') { alert(t('alert.cannotRemoveOwner')); return false; }
+  const next = membersWithout(ms, email, 'member');
+  if (!next) { alert(t('alert.cannotRemoveOwner')); return false; }
+  await ref.update({ members: next });
+  log('メンバー削除:', email);
+  return true;
 }
 
 /** メールアドレスでメンバーを招待（membersに登録） */
@@ -2944,15 +3020,29 @@ function openGroupModal() {
   overlay.classList.add('open');
 }
 
-/** 招待済みメンバー（メール）一覧を表示 */
+/** 招待済みメンバー（メール）一覧を表示。管理者には削除ボタンを出す。 */
 async function renderMemberEmailList() {
   const el = document.getElementById('memberEmailList');
   if (!currentGroupId) { el.innerHTML = ''; return; }
   try {
     const snap = await db.collection('groups').doc(currentGroupId).get();
-    const ms = snap.data()?.members || [];
+    const data = snap.data() || {};
+    const ms = data.members || [];
+    const me = String(currentUser?.email || '').trim().toLowerCase();
+    const createdBy = String(data.createdBy || '').trim().toLowerCase();
+    const iAmOwner = !!me && createdBy === me;
     el.innerHTML = ms.length
-      ? '登録メンバー: ' + ms.map(m => `${m.email}${m.role === 'owner' ? '（管理者）' : ''}`).join('、')
+      ? ms.map(m => {
+          const email = String(m.email || '');
+          const isOwner = m.role === 'owner';
+          const removeBtn = (iAmOwner && !isOwner)
+            ? `<button type="button" class="date-unknown-btn" data-remove-email="${escHtml(email)}">外す</button>`
+            : '';
+          return `<div style="display:flex;gap:8px;align-items:center;margin-top:4px;">
+            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;">${escHtml(email)}${isOwner ? '（管理者）' : ''}</span>
+            ${removeBtn}
+          </div>`;
+        }).join('')
       : '';
   } catch (e) { el.innerHTML = ''; }
 }
@@ -3045,11 +3135,35 @@ document.getElementById('btnInvite').addEventListener('click', async () => {
   }
 });
 
-document.getElementById('btnLeaveGroup').addEventListener('click', () => {
-  if (!confirm(t('confirm.leaveGroup'))) return;
-  leaveGroup();
-  updateCloudStatus();
-  document.getElementById('groupModalOverlay').classList.remove('open');
+document.getElementById('memberEmailList').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-remove-email]');
+  if (!btn) return;
+  const email = btn.getAttribute('data-remove-email');
+  if (!email || !confirm(t('confirm.removeGroupMember', { email }))) return;
+  btn.disabled = true;
+  try {
+    const ok = await removeGroupMember(email);
+    if (ok) renderMemberEmailList();
+    else btn.disabled = false;
+  } catch (err) {
+    alert(t('alert.removeMemberFail', { msg: err.message }));
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('btnLeaveGroup').addEventListener('click', async () => {
+  const btn = document.getElementById('btnLeaveGroup');
+  btn.disabled = true;
+  try {
+    const left = await leaveGroup();
+    if (!left) return;
+    updateCloudStatus();
+    document.getElementById('groupModalOverlay').classList.remove('open');
+  } catch (err) {
+    alert(t('alert.leaveGroupFail', { msg: err.message }));
+  } finally {
+    btn.disabled = false;
+  }
 });
 
 /** 写真を手動で再アップロード（マイグレーション再実行） */

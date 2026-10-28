@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebase/auth'
-import { collection, doc, onSnapshot, query, orderBy } from 'firebase/firestore'
+import { collection, doc, getDocs, limit, onSnapshot, orderBy, query } from 'firebase/firestore'
 import { BookOpen, LibraryBig, Loader2, LogOut, PlusCircle, RefreshCw, Search, Settings, Sparkles, X } from 'lucide-react'
 import { auth, db, googleProvider, OWNER_EMAIL } from './firebase'
 import type { Book, BookComment, BookReview, Shelf, SharingConfig, ShelfMap, ShelfPhoto } from './types'
@@ -19,11 +19,17 @@ type Tab = 'search' | 'map' | 'add' | 'settings'
 // member=編集可 / viewer=閲覧のみ(公開設定によるゲスト) / denied=不可
 type Role = 'checking' | 'member' | 'viewer' | 'denied'
 
-// 非メンバーの閲覧可否を公開設定から判定
-function resolveViewerRole(email: string, sharing: SharingConfig | null): Role {
+// 非メンバーの閲覧可否を公開設定から判定。
+// 閲覧者メール一覧を持っていないときは 'probe'（本の読み取りが通るかで判定する）。
+function resolveViewerRole(email: string, sharing: SharingConfig | null, knownViewers: string[] | null): Role | 'probe' {
   if (!sharing || sharing.mode === 'private') return 'denied'
   if (sharing.mode === 'public') return 'viewer'
-  if (sharing.mode === 'viewers') return sharing.viewers?.includes(email) ? 'viewer' : 'denied'
+  if (sharing.mode === 'viewers') {
+    if (!email) return 'denied'
+    if (!knownViewers) return 'probe'
+    const mine = email.toLowerCase()
+    return knownViewers.some((v) => v.toLowerCase() === mine) ? 'viewer' : 'denied'
+  }
   if (sharing.mode === 'link') {
     const k = new URLSearchParams(location.search).get('k')
     return k && k === sharing.linkKey ? 'viewer' : 'denied'
@@ -37,6 +43,9 @@ export default function App() {
   const [members, setMembers] = useState<string[]>([])
   const [sharing, setSharing] = useState<SharingConfig | null>(null)
   const [sharingLoaded, setSharingLoaded] = useState(false)
+  const [sharingDenied, setSharingDenied] = useState(false)
+  // null = 閲覧者文書を読めない（未ログイン・閲覧者本人）。配列 = メンバーとして読めた。
+  const [viewerEmails, setViewerEmails] = useState<string[] | null>(null)
   const [comments, setComments] = useState<BookComment[]>([])
   const [reviews, setReviews] = useState<BookReview[]>([])
   const [shelves, setShelves] = useState<Shelf[]>([])
@@ -55,26 +64,53 @@ export default function App() {
 
   useEffect(() => onAuthStateChanged(auth, (u) => setUser(u)), [])
 
-  // 公開設定の購読(未ログインでも読める — link/公開モードの判定に必要)
+  // 公開設定の購読。メール入りの旧文書はメンバー以外 permission-denied になる。
   useEffect(() => {
     return onSnapshot(
       doc(db, 'hondoko-config', 'sharing'),
       (snap) => {
         setSharing(snap.exists() ? (snap.data() as SharingConfig) : null)
+        setSharingDenied(false)
         setSharingLoaded(true)
       },
-      () => { setSharing(null); setSharingLoaded(true) },
+      () => { setSharing(null); setSharingDenied(true); setSharingLoaded(true) },
     )
   }, [])
 
-  // ロール判定: メンバー → member、そうでなければ公開設定に応じて viewer / denied
-  // 未ログインでも link(キー一致)/公開 なら viewer として閲覧できる
+  // 閲覧者メール。家族メンバーだけが読める。閲覧者本人はここに載らない。
   useEffect(() => {
-    if (user === undefined) { setRole('checking'); setMembers([]); return }
+    if (!user) { setViewerEmails(null); return }
+    return onSnapshot(
+      doc(db, 'hondoko-config', 'viewers'),
+      (snap) => {
+        if (!snap.exists()) { setViewerEmails(null); return }
+        const emails: string[] = Array.isArray(snap.data().emails) ? snap.data().emails : []
+        setViewerEmails(emails)
+      },
+      () => setViewerEmails(null),
+    )
+  }, [user])
+
+  // ロール判定: メンバー → member、そうでなければ公開設定に応じて viewer / denied
+  // 未ログインでも link(キー一致)/公開 なら viewer として閲覧できる。
+  // 閲覧者リストを読めないログインユーザーは、本が読めるかで判定する（メール一覧は渡さない）。
+  useEffect(() => {
+    let cancelled = false
+    const apply = async (base: Role | 'probe') => {
+      if (base !== 'probe') { if (!cancelled) setRole(base); return }
+      try {
+        await getDocs(query(collection(db, 'hondoko-books'), limit(1)))
+        if (!cancelled) setRole('viewer')
+      } catch {
+        if (!cancelled) setRole('denied')
+      }
+    }
+    if (user === undefined || !sharingLoaded) { setRole('checking'); if (user === undefined) setMembers([]); return }
+    const knownViewers = viewerEmails ?? (sharing?.viewers ? sharing.viewers : null)
     if (user === null) {
       setMembers([])
-      setRole(sharingLoaded ? resolveViewerRole('', sharing) : 'checking')
-      return
+      apply(sharingDenied ? 'probe' : resolveViewerRole('', sharing, knownViewers))
+      return () => { cancelled = true }
     }
     const email = user.email ?? ''
     const unsub = onSnapshot(
@@ -83,16 +119,16 @@ export default function App() {
         const emails: string[] = (snap.exists() && snap.data().emails) || []
         setMembers(emails)
         if (email === OWNER_EMAIL || emails.includes(email)) setRole('member')
-        else setRole(resolveViewerRole(email, sharing))
+        else apply(sharingDenied ? 'probe' : resolveViewerRole(email, sharing, knownViewers))
       },
       () => {
-        // permission-denied: メンバーでない
+        setMembers([])
         if (email === OWNER_EMAIL) setRole('member')
-        else setRole(resolveViewerRole(email, sharing))
+        else apply(sharingDenied ? 'probe' : resolveViewerRole(email, sharing, knownViewers))
       },
     )
-    return unsub
-  }, [user, sharing, sharingLoaded])
+    return () => { cancelled = true; unsub() }
+  }, [user, sharing, sharingLoaded, sharingDenied, viewerEmails])
 
   // データ購読
   useEffect(() => {
@@ -319,6 +355,7 @@ export default function App() {
             members={members}
             userEmail={user?.email ?? ''}
             sharing={sharing}
+            viewerEmails={viewerEmails ?? sharing?.viewers ?? []}
           />
         )}
       </main>
