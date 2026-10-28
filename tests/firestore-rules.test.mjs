@@ -40,7 +40,7 @@ await env.withSecurityRulesDisabled(async c => {
   await setDoc(doc(d, 'tomoe-player/ABC123'), { videos: [{ id: 'vid', title: 't' }], sources: '', name: '', updatedAt: '2026-10-28T00:00:00.000Z' });
   await setDoc(doc(d, 'meiyusha-estimate/config'), { json: '{"tiers":[]}' });
   await setDoc(doc(d, 'hondoko-books/b1'), { title: '本' });
-  await setDoc(doc(d, 'hondoko-config/sharing'), { mode: 'viewers', allowComments: true, linkKey: 'sharekey' });
+  await setDoc(doc(d, 'hondoko-config/sharing'), { mode: 'viewers', allowComments: true });
   await setDoc(doc(d, 'hondoko-config/viewers'), { emails: ['eve@example.com'] });
 });
 
@@ -160,6 +160,7 @@ await ng('無関係なユーザーは閲覧者メールを読めない', () => g
 await ng('未確認ユーザーは閲覧者メールを読めない', () => getDoc(doc(unverifiedEditor, 'hondoko-config/viewers')));
 await ng('閲覧者以外は閲覧者メールを書けない', () => setDoc(doc(other, 'hondoko-config/viewers'), { emails: ['eve@example.com'] }));
 await ng('共有設定に viewers は書けない', () => setDoc(doc(editor, 'hondoko-config/sharing'), { mode: 'viewers', viewers: ['eve@example.com'], allowComments: true }));
+await ng('共有設定に linkKey は書けない', () => setDoc(doc(editor, 'hondoko-config/sharing'), { mode: 'link', allowComments: false, linkKey: 'abcdefghij1234567890AB' }));
 await ok('メールの無い共有設定は未ログインで読める', () => getDoc(doc(anon, 'hondoko-config/sharing')));
 await ok('確認済みオーナーは蔵書を書ける', () => setDoc(doc(editor, 'hondoko-books/b2'), { title: '追加' }));
 await ng('未確認のオーナーメールでは蔵書を書けない', () => setDoc(doc(unverifiedEditor, 'hondoko-books/b3'), { title: '盗む' }));
@@ -174,8 +175,9 @@ await ng('未確認ビューワーは本を読めない', () => getDoc(doc(env.a
 await ok('確認済みビューワーはコメントを書ける', () => addDoc(collection(other, 'hondoko-comments'), {
   bookId: 'b1', text: '読んだ', by: 'eve@example.com', byName: 'Eve', createdAt: serverTimestamp(),
 }));
-await ok('オーナーは共有を public にできる', () => setDoc(doc(editor, 'hondoko-config/sharing'), { mode: 'public', allowComments: false, linkKey: 'sharekey' }));
+await ok('オーナーは共有を public にできる', () => setDoc(doc(editor, 'hondoko-config/sharing'), { mode: 'public', allowComments: false }));
 await ok('public なら未ログインでも本を読める', () => getDoc(doc(anon, 'hondoko-books/b1')));
+await ok('public なら未ログインでも蔵書を一覧できる', () => getDocs(collection(anon, 'hondoko-books')));
 await env.withSecurityRulesDisabled(async c => {
   const d = c.firestore();
   await setDoc(doc(d, 'hondoko-config/sharing'), { mode: 'viewers', viewers: ['eve@example.com'], allowComments: true, linkKey: 'legacy' });
@@ -186,7 +188,74 @@ await ng('メール入りの共有設定は閲覧者本人も読めない', () =
 await ok('メール入りの共有設定はオーナーが読める', () => getDoc(doc(editor, 'hondoko-config/sharing')));
 await ok('旧 viewers フィールドでも確認済み閲覧者は本を読める', () => getDoc(doc(other, 'hondoko-books/b1')));
 await ng('旧 viewers フィールドでも未ログインは本を読めない', () => getDoc(doc(anon, 'hondoko-books/b1')));
-await ok('オーナーは共有設定からメールを外して public に戻せる', () => setDoc(doc(editor, 'hondoko-config/sharing'), { mode: 'public', allowComments: false, linkKey: 'legacy' }));
+await ok('オーナーは共有設定からメールを外して public に戻せる', () => setDoc(doc(editor, 'hondoko-config/sharing'), { mode: 'public', allowComments: false }));
+const linkKey = 'abcdefghij1234567890AB';
+const linkGuest = env.authenticatedContext('link-guest').firestore();
+await ng('未ログインはリンク鍵を読めない', () => getDoc(doc(anon, 'hondoko-config/link')));
+await ng('閲覧者はリンク鍵を読めない', () => getDoc(doc(other, 'hondoko-config/link')));
+await ok('オーナーはリンク鍵を保存できる', () => setDoc(doc(editor, 'hondoko-config/link'), { key: linkKey }));
+await ok('家族はリンク鍵を読める', () => getDoc(doc(friend, 'hondoko-config/link')));
+await ng('オーナー以外はリンク鍵を書けない', () => setDoc(doc(friend, 'hondoko-config/link'), { key: linkKey }));
+await ok('オーナーは共有を link にできる', () => setDoc(doc(editor, 'hondoko-config/sharing'), { mode: 'link', allowComments: true }));
+await ok('link でも鍵の無い共有設定は未ログインで読める', () => getDoc(doc(anon, 'hondoko-config/sharing')));
+await ng('link では未ログインは本を読めない', () => getDoc(doc(anon, 'hondoko-books/b1')));
+await ng('link では未ログインは蔵書を一覧できない', () => getDocs(collection(anon, 'hondoko-books')));
+await ng('link では未ログインは棚を一覧できない', () => getDocs(collection(anon, 'hondoko-shelves')));
+await ng('link では鍵を知らないログインユーザーは蔵書を一覧できない', () => getDocs(collection(other, 'hondoko-books')));
+await ng('間違った鍵ではセッションを作れない', () => setDoc(doc(linkGuest, 'hondoko-link-sessions/link-guest'), { key: 'zzzzzzzzzzzzzzzzzzzzzz' }));
+await ng('セッション一覧は不可', () => getDocs(collection(anon, 'hondoko-link-sessions')));
+await ok('正しい鍵でセッションを作れる', () => setDoc(doc(linkGuest, 'hondoko-link-sessions/link-guest'), { key: linkKey }));
+await ng('他人のセッションは読めない', () => getDoc(doc(other, 'hondoko-link-sessions/link-guest')));
+await ok('セッションを持つゲストは本を読める', () => getDoc(doc(linkGuest, 'hondoko-books/b1')));
+await ok('セッションを持つゲストは蔵書を一覧できる', () => getDocs(collection(linkGuest, 'hondoko-books')));
+await ok('家族は link 中も蔵書を一覧できる', () => getDocs(collection(editor, 'hondoko-books')));
+await ng('セッションだけではコメントできない', () => addDoc(collection(linkGuest, 'hondoko-comments'), {
+  bookId: 'b1', text: '匿名', by: 'anon@example.com', byName: 'anon', createdAt: serverTimestamp(),
+}));
+await ok('確認済みユーザーは正しい鍵のセッションのあとコメントできる', async () => {
+  await setDoc(doc(other, 'hondoko-link-sessions/eve'), { key: linkKey });
+  await addDoc(collection(other, 'hondoko-comments'), {
+    bookId: 'b1', text: 'リンクから', by: 'eve@example.com', byName: 'Eve', createdAt: serverTimestamp(),
+  });
+});
+await env.withSecurityRulesDisabled(async c => {
+  await setDoc(doc(c.firestore(), 'hondoko-config/sharing'), { mode: 'link', allowComments: true, linkKey });
+});
+await ng('sharing に残った linkKey は未ログインで読めない', () => getDoc(doc(anon, 'hondoko-config/sharing')));
+await ok('sharing に残った linkKey はオーナーが読める', () => getDoc(doc(editor, 'hondoko-config/sharing')));
+await ok('オーナーは link をやめて private に戻せる', () => setDoc(doc(editor, 'hondoko-config/sharing'), { mode: 'private', allowComments: false }));
+await ng('private に戻すとセッション持ちでも本を一覧できない', () => getDocs(collection(linkGuest, 'hondoko-books')));
+await ng('private に戻すと未ログインは本を一覧できない', () => getDocs(collection(anon, 'hondoko-books')));
+// 本番の共有リンク。URL は /hondoko/?k=<鍵>。鍵は sharing.linkKey にだけあり、link 文書はまだ無い。
+const legacyKey = 'k3j9ab2cde1f';
+const legacyGuest = env.authenticatedContext('legacy-guest').firestore();
+await env.withSecurityRulesDisabled(async c => {
+  const d = c.firestore();
+  await deleteDoc(doc(d, 'hondoko-config/link'));
+  await setDoc(doc(d, 'hondoko-config/sharing'), {
+    mode: 'link', allowComments: true, viewers: ['someone@example.com'], linkKey: legacyKey,
+  });
+  await setDoc(doc(d, 'hondoko-shelves/s1'), { name: '棚', order: 0 });
+  await setDoc(doc(d, 'hondoko-photos/p1'), { path: 'x' });
+  await setDoc(doc(d, 'hondoko-maps/m1'), { name: '間取り' });
+});
+await ng('既存リンクの鍵は未ログインから読めない', () => getDoc(doc(anon, 'hondoko-config/sharing')));
+await ng('既存リンクの鍵文書が無くても未ログインは link 文書を読めない', () => getDoc(doc(anon, 'hondoko-config/link')));
+await ng('既存リンクでも鍵が無い未ログインは本を一覧できない', () => getDocs(collection(anon, 'hondoko-books')));
+await ng('既存リンクでも未ログインは棚を一覧できない', () => getDocs(collection(anon, 'hondoko-shelves')));
+await ng('既存リンクでも未ログインは写真を一覧できない', () => getDocs(collection(anon, 'hondoko-photos')));
+await ng('既存リンクでも未ログインは間取りを一覧できない', () => getDocs(collection(anon, 'hondoko-maps')));
+await ng('既存リンクでも未ログインはコメントを一覧できない', () => getDocs(collection(anon, 'hondoko-comments')));
+await ng('既存リンクでも未ログインは本を1件読めない', () => getDoc(doc(anon, 'hondoko-books/b1')));
+await ng('既存リンクに違う鍵を出してもセッションは作れない', () => setDoc(doc(legacyGuest, 'hondoko-link-sessions/legacy-guest'), { key: 'zzzzzzzzzzzz' }));
+await ng('既存リンクに空の鍵ではセッションは作れない', () => setDoc(doc(legacyGuest, 'hondoko-link-sessions/legacy-guest'), { key: '' }));
+await ok('既存の ?k= と同じ鍵でセッションを作れる', () => setDoc(doc(legacyGuest, 'hondoko-link-sessions/legacy-guest'), { key: legacyKey }));
+await ok('既存リンクのゲストは本を一覧できる', () => getDocs(collection(legacyGuest, 'hondoko-books')));
+await ok('既存リンクのゲストは本を1件読める', () => getDoc(doc(legacyGuest, 'hondoko-books/b1')));
+await ok('既存リンクのゲストは棚を一覧できる', () => getDocs(collection(legacyGuest, 'hondoko-shelves')));
+await ok('既存リンクのゲストは写真を一覧できる', () => getDocs(collection(legacyGuest, 'hondoko-photos')));
+await ok('既存リンクのゲストは間取りを一覧できる', () => getDocs(collection(legacyGuest, 'hondoko-maps')));
+await ng('既存リンクでも鍵の無いログインユーザーは本を一覧できない', () => getDocs(collection(pilot, 'hondoko-books')));
 await ng('未確認編集者は旧 note を読めない', () => getDocs(collection(unverifiedEditor, 'note-analytics/default/snapshots')));
 
 console.log('groups (COCO-ITTA)');

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebase/auth'
-import { collection, doc, getDocs, limit, onSnapshot, orderBy, query } from 'firebase/firestore'
+import { onAuthStateChanged, signInAnonymously, signInWithPopup, signOut, type User } from 'firebase/auth'
+import { collection, doc, getDocs, limit, onSnapshot, orderBy, query, setDoc } from 'firebase/firestore'
 import { BookOpen, LibraryBig, Loader2, LogOut, PlusCircle, RefreshCw, Search, Settings, Sparkles, X } from 'lucide-react'
 import { auth, db, googleProvider, OWNER_EMAIL } from './firebase'
 import type { Book, BookComment, BookReview, Shelf, SharingConfig, ShelfMap, ShelfPhoto } from './types'
@@ -30,11 +30,22 @@ function resolveViewerRole(email: string, sharing: SharingConfig | null, knownVi
     const mine = email.toLowerCase()
     return knownViewers.some((v) => v.toLowerCase() === mine) ? 'viewer' : 'denied'
   }
-  if (sharing.mode === 'link') {
-    const k = new URLSearchParams(location.search).get('k')
-    return k && k === sharing.linkKey ? 'viewer' : 'denied'
-  }
+  // link の鍵は共有設定に無い。URL の鍵でセッションを作れたときだけ viewer にする。
+  if (sharing.mode === 'link') return 'denied'
   return 'denied'
+}
+
+function urlLinkKey() {
+  return new URLSearchParams(location.search).get('k') || ''
+}
+
+async function openLinkSession() {
+  const key = urlLinkKey()
+  if (!key) return false
+  let current = auth.currentUser
+  if (!current) current = (await signInAnonymously(auth)).user
+  await setDoc(doc(db, 'hondoko-link-sessions', current.uid), { key })
+  return true
 }
 
 export default function App() {
@@ -46,6 +57,7 @@ export default function App() {
   const [sharingDenied, setSharingDenied] = useState(false)
   // null = 閲覧者文書を読めない（未ログイン・閲覧者本人）。配列 = メンバーとして読めた。
   const [viewerEmails, setViewerEmails] = useState<string[] | null>(null)
+  const [linkKey, setLinkKey] = useState<string | null>(null)
   const [comments, setComments] = useState<BookComment[]>([])
   const [reviews, setReviews] = useState<BookReview[]>([])
   const [shelves, setShelves] = useState<Shelf[]>([])
@@ -91,12 +103,29 @@ export default function App() {
     )
   }, [user])
 
+  // リンク鍵。家族だけが読める。ゲストは URL の鍵をセッションに出すだけで、この文書は読まない。
+  useEffect(() => {
+    if (!user || user.isAnonymous) { setLinkKey(null); return }
+    return onSnapshot(
+      doc(db, 'hondoko-config', 'link'),
+      (snap) => setLinkKey(snap.exists() && typeof snap.data().key === 'string' ? snap.data().key : null),
+      () => setLinkKey(null),
+    )
+  }, [user])
+
   // ロール判定: メンバー → member、そうでなければ公開設定に応じて viewer / denied
   // 未ログインでも link(キー一致)/公開 なら viewer として閲覧できる。
   // 閲覧者リストを読めないログインユーザーは、本が読めるかで判定する（メール一覧は渡さない）。
   useEffect(() => {
     let cancelled = false
     const apply = async (base: Role | 'probe') => {
+      if (urlLinkKey()) {
+        try {
+          if (await openLinkSession()) { if (!cancelled) setRole('viewer'); return }
+        } catch { /* 鍵が違う、または link モードではない */ }
+        if (cancelled) return
+        if (sharing?.mode === 'link' || !sharing) { setRole('denied'); return }
+      }
       if (base !== 'probe') { if (!cancelled) setRole(base); return }
       try {
         await getDocs(query(collection(db, 'hondoko-books'), limit(1)))
@@ -356,6 +385,7 @@ export default function App() {
             userEmail={user?.email ?? ''}
             sharing={sharing}
             viewerEmails={viewerEmails ?? sharing?.viewers ?? []}
+            linkKey={linkKey}
           />
         )}
       </main>
@@ -446,8 +476,8 @@ export default function App() {
           comments={comments.filter((c) => c.bookId === selectedBook.id)}
           reviews={reviews.filter((r) => r.bookId === selectedBook.id)}
           readOnly={readOnly}
-          canComment={role === 'member' || (role === 'viewer' && !!sharing?.allowComments && !!user)}
-          needsLoginToComment={role === 'viewer' && !!sharing?.allowComments && !user}
+          canComment={role === 'member' || (role === 'viewer' && !!sharing?.allowComments && !!user && !user.isAnonymous && !!user.emailVerified)}
+          needsLoginToComment={role === 'viewer' && !!sharing?.allowComments && !(user && !user.isAnonymous && user.emailVerified)}
           onLogin={login}
           currentUser={{ email: user?.email ?? '', name: user?.displayName ?? user?.email ?? 'ゲスト' }}
           isOwner={user?.email === OWNER_EMAIL}

@@ -10,12 +10,21 @@ import { changeShelfRows, MAX_ROWS } from '../lib/shelfOps'
 import { isSearchableTitle, lookupBookInfo } from '../lib/api'
 import { btnSecondary, inputCls } from './ui'
 
-const genKey = () => Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6)
+// 128bit。共有設定の文書には置かず、家族だけが読める link 文書に保存する。
+const genKey = () => {
+  const bytes = new Uint8Array(16)
+  crypto.getRandomValues(bytes)
+  let raw = ''
+  for (const b of bytes) raw += String.fromCharCode(b)
+  return btoa(raw).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+}
+// 本番で配り済みの鍵は約12文字の [0-9a-z]。再保存で置き換えない。
+const usableKey = (value: string | null | undefined) => !!value && /^[A-Za-z0-9_-]{8,128}$/.test(value)
 
 const MODE_LABEL: Record<SharingMode, { label: string; desc: string }> = {
   private: { label: 'メンバーのみ', desc: '家族メンバーだけが閲覧・編集できます(標準)' },
   viewers: { label: '特定の人のみ', desc: '下のリストに追加したGoogleアカウントが閲覧できます(編集不可)' },
-  link: { label: 'リンクを知っている人', desc: '共有リンクを知っている人がGoogleログイン後に閲覧できます' },
+  link: { label: 'リンクを知っている人', desc: '共有リンクを開いた人だけが閲覧できます。コメントにはGoogleログインが必要です' },
   public: { label: '公開', desc: 'URLを知っていれば誰でも(Googleログイン後に)閲覧できます' },
 }
 
@@ -26,6 +35,7 @@ export function SettingsView({
   userEmail,
   sharing,
   viewerEmails,
+  linkKey,
 }: {
   shelves: Shelf[]
   books: Book[]
@@ -33,32 +43,41 @@ export function SettingsView({
   userEmail: string
   sharing: SharingConfig | null
   viewerEmails: string[]
+  linkKey: string | null
 }) {
   const isOwner = userEmail === OWNER_EMAIL
   const [newMember, setNewMember] = useState('')
   const [newViewer, setNewViewer] = useState('')
   const [busy, setBusy] = useState(false)
+  const [localKey, setLocalKey] = useState<string | null>(null)
 
-  const share: SharingConfig = sharing ?? { mode: 'private', allowComments: false, linkKey: genKey() }
+  const share: SharingConfig = sharing ?? { mode: 'private', allowComments: false, linkKey: '' }
   const viewers = viewerEmails
+  const activeKey = localKey || linkKey || (usableKey(sharing?.linkKey) ? sharing?.linkKey || '' : '')
 
   const saveSharing = async (patch: Partial<SharingConfig> & { viewers?: string[] }) => {
     const next = { ...share, ...patch }
     const emails = (patch.viewers ?? viewers)
       .map((v) => v.trim().toLowerCase())
       .filter((v) => v.includes('@'))
+    // 既存の ?k= を無効にしない。新しい鍵は「再生成」のときだけ作る。
+    let key = patch.linkKey || activeKey
+    if (next.mode === 'link' && !usableKey(key)) key = genKey()
     await setDoc(doc(db, 'hondoko-config', 'sharing'), {
       mode: next.mode,
       allowComments: !!next.allowComments,
-      linkKey: next.linkKey || genKey(),
     })
+    if (next.mode === 'link' && usableKey(key)) {
+      await setDoc(doc(db, 'hondoko-config', 'link'), { key })
+      setLocalKey(key)
+    }
     // メールは公開の sharing には書かない。旧フィールドが残っていても、この保存で外れる。
     if (patch.viewers || (sharing?.viewers && sharing.viewers.length > 0) || viewers.length > 0) {
       await setDoc(doc(db, 'hondoko-config', 'viewers'), { emails })
     }
   }
 
-  const shareUrl = `${location.origin}/hondoko/` + (share.mode === 'link' ? `?k=${share.linkKey}` : '')
+  const shareUrl = `${location.origin}/hondoko/` + (share.mode === 'link' && activeKey ? `?k=${activeKey}` : '')
 
   const addShelf = async () => {
     const name = prompt('棚の名前(例: IKEA-7)')

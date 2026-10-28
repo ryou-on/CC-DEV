@@ -472,20 +472,40 @@ service cloud.firestore {
         || (legacyViewers is list && request.auth.token.email in legacyViewers)
       );
     }
+    // 本番の共有リンクは https://cc-dev-ps7.web.app/hondoko/?k=<鍵>。
+    // 鍵は Math.random().toString(36).slice(2,10)+同.slice(2,6) で、通常12文字の [0-9a-z]。
+    // 保存先は hondoko-config/sharing の linkKey。移行後は hondoko-config/link の key（同じ文字列）。
+    // どちらかに一致するセッションだけが link モードの蔵書を読める。mode=='link' だけでは読めない。
+    function storedLinkKey() {
+      let fromLink = exists(/databases/$(database)/documents/hondoko-config/link)
+        ? get(/databases/$(database)/documents/hondoko-config/link).data.get('key', '')
+        : '';
+      return fromLink is string && fromLink.size() >= 8
+        ? fromLink
+        : hondokoSharing().get('linkKey', '');
+    }
+    function hasValidLinkSession() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/hondoko-link-sessions/$(request.auth.uid))
+        && get(/databases/$(database)/documents/hondoko-link-sessions/$(request.auth.uid)).data.key is string
+        && get(/databases/$(database)/documents/hondoko-link-sessions/$(request.auth.uid)).data.key.size() >= 8
+        && get(/databases/$(database)/documents/hondoko-link-sessions/$(request.auth.uid)).data.key == storedLinkKey();
+    }
     function isHondokoViewer() {
-      // link/public はログイン不要で閲覧可。viewers はログイン+リスト登録が必要。
-      // sharing の get は1回だけ（評価ごとの get 上限に収める）。
+      // public はログイン不要。viewers は確認済みメールがリストにあるときだけ。
+      // link は、URL の鍵で作ったセッションが保存済みの鍵と一致するときだけ。
       let sharing = exists(/databases/$(database)/documents/hondoko-config/sharing)
         ? hondokoSharing()
         : {};
       return sharing.mode == 'public'
-        || sharing.mode == 'link'
-        || (sharing.mode == 'viewers' && isListedHondokoViewer(sharing));
+        || (sharing.mode == 'viewers' && isListedHondokoViewer(sharing))
+        || (sharing.mode == 'link' && hasValidLinkSession());
     }
-    // メールアドレスの入った共有設定は、未ログインに渡さない。空、または viewers キーが無い文書だけ公開。
-    function sharingHasNoViewerEmails() {
-      return !('viewers' in resource.data)
-        || (resource.data.viewers is list && resource.data.viewers.size() == 0);
+    // メールもリンク鍵も、未ログインの共有設定には載せない。
+    function sharingIsPublicSafe() {
+      return (!('viewers' in resource.data)
+          || (resource.data.viewers is list && resource.data.viewers.size() == 0))
+        && !('linkKey' in resource.data);
     }
     function canHondokoRead() {
       return isHondokoMember() || isHondokoViewer();
@@ -503,16 +523,37 @@ service cloud.firestore {
         && request.resource.data.emails.size() <= 200;
       allow delete: if false;
     }
-    match /hondoko-config/sharing {
-      // mode / allowComments / linkKey だけを置く。viewers キーにメールがあるとメンバー以外は読めない。
-      allow read: if isHondokoMember() || sharingHasNoViewerEmails();
+    match /hondoko-config/link {
+      // 共有リンクの鍵。読めるのは家族だけ。未ログインには渡さない。
+      allow read: if isHondokoMember();
       allow create, update: if isHondokoOwner()
-        && request.resource.data.keys().hasOnly(['mode', 'allowComments', 'linkKey'])
+        && request.resource.data.keys().hasOnly(['key'])
+        && request.resource.data.key is string
+        && request.resource.data.key.matches('^[A-Za-z0-9_-]{8,128}$');
+      allow delete: if false;
+    }
+    match /hondoko-link-sessions/{uid} {
+      // ゲストが URL の鍵を提示する場所。一覧は禁止。鍵の値は保存済みの鍵と一致するときだけ書ける。
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow list: if false;
+      allow create, update: if request.auth != null
+        && request.auth.uid == uid
+        && exists(/databases/$(database)/documents/hondoko-config/sharing)
+        && hondokoSharing().mode == 'link'
+        && request.resource.data.keys().hasOnly(['key'])
+        && request.resource.data.key is string
+        && request.resource.data.key.size() >= 8
+        && request.resource.data.key.size() <= 128
+        && request.resource.data.key == storedLinkKey();
+      allow delete: if request.auth != null && request.auth.uid == uid;
+    }
+    match /hondoko-config/sharing {
+      // mode と allowComments だけ。viewers や linkKey があるとメンバー以外は読めない。
+      allow read: if isHondokoMember() || sharingIsPublicSafe();
+      allow create, update: if isHondokoOwner()
+        && request.resource.data.keys().hasOnly(['mode', 'allowComments'])
         && request.resource.data.mode in ['private', 'viewers', 'link', 'public']
-        && request.resource.data.allowComments is bool
-        && (!('linkKey' in request.resource.data) || (
-          request.resource.data.linkKey is string && request.resource.data.linkKey.size() <= 64
-        ));
+        && request.resource.data.allowComments is bool;
       allow delete: if false;
     }
     match /hondoko-shelves/{docId} {
