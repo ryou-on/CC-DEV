@@ -1,0 +1,40 @@
+# Firestore rules を変える PR で、デプロイせずにゲートだけ実行する。
+# 失敗（ルールテスト失敗、または cost_guard 失敗 / 未配置）ならこのチェックは赤になる。
+# 本番リリースは firebase-rules-deploy.yml。そちらの firebase deploy は
+# firebase.json の firestore.predeploy で同じゲートを先に実行し、失敗したら中止する。
+name: Firestore rules gate
+
+on:
+  pull_request:
+    paths:
+      - firestore.rules
+      - firebase.json
+      - scripts/firestore-rules-gate.sh
+      - scripts/deploy-firestore-rules.sh
+      - tests/package.json
+      - tests/package-lock.json
+      - tests/**/*.mjs
+      - tests/**/*.js
+      - tests/**/*.cjs
+      - tests/firestore/**
+      - firebase.rules-test.json
+      - hihaho-kb-content/deploy-rules-rest.js
+      - .github/workflows/firestore-rules-gate.yml
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Run rules tests and cost_guard (no deploy)
+        run: bash scripts/firestore-rules-gate.sh
