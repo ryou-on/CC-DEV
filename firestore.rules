@@ -2,10 +2,18 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // メール確認済みのログイン。Google ログインは email_verified が true になる。
+    // 未確認の Email/Password で editor のメールを名乗るトークンはここで落とす。
+    function isVerifiedAccount() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email is string;
+    }
+
     // hihaho 編集者 = @splineglobal.com ドメイン or 許可リストのGoogleアカウント
     // （hihaho-admin / hihaho-kb-admin / hihaho-material 共通）
     function isHihahoEditor() {
-      return request.auth != null && (
+      return isVerifiedAccount() && (
         request.auth.token.email.matches('.*@splineglobal[.]com') ||
         request.auth.token.email == 'junpei.omote@gmail.com'
       );
@@ -28,21 +36,89 @@ service cloud.firestore {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
 
-    // Flight Strip TODO Analytics: 認証ユーザーは読み書き可
+    // Flight Strip TODO Analytics
+    // 安定版・開発版とも、ログインユーザーが自分のセッション／イベントを create するだけ。
+    // 文書に uid は無く uidHash だけなので、本人以外の改ざんは update/delete 禁止で止める。
+    // 読み取りは編集者のみ（analytics.html / 開発版 ADMIN の一覧）。
+    // 残リスク: 確認済みユーザーなら誰でも偽の計測を追記できる（クライアントが uid を書いていない）。
+    function fstAnalyticsCreateOk() {
+      let d = request.resource.data;
+      return isVerifiedAccount()
+        && d.keys().hasAll(['uidHash', 'date', 'version', 'build', 'createdAt'])
+        && d.keys().hasOnly(['uidHash', 'date', 'month', 'hour', 'dow', 'version', 'build', 'device', 'type', 'createdAt'])
+        && d.uidHash is string && d.uidHash.size() > 0 && d.uidHash.size() <= 32
+        && d.date is string && d.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && d.version is string && d.version.size() <= 40
+        && d.build is string && d.build.size() <= 32
+        && d.createdAt == request.time
+        && (!('month' in d) || (d.month is string && d.month.matches('^[0-9]{4}-[0-9]{2}$')))
+        && (!('hour' in d) || (d.hour is int && d.hour >= 0 && d.hour <= 23))
+        && (!('dow' in d) || (d.dow is int && d.dow >= 0 && d.dow <= 6))
+        && (!('device' in d) || (d.device is string && d.device.size() <= 16))
+        && (!('type' in d) || d.type in ['task_created', 'task_completed']);
+    }
     match /fst_analytics/{docId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
+      allow read: if isHihahoEditor();
+      allow create: if fstAnalyticsCreateOk();
+      allow update, delete: if false;
     }
 
-    // フィードバック: 認証ユーザーは書き込み可、読み取りは認証ユーザーのみ
+    // フィードバック: 本人が新規作成し、自動返信フラグだけ自分で更新できる。
+    // 受信箱の一覧と返信ステータスの更新は編集者のみ。他人の本文の改ざん・削除は不可。
+    function fstFeedbackCreateOk(docId) {
+      let d = request.resource.data;
+      return isVerifiedAccount()
+        && docId.matches('^FB_[0-9]{4}$')
+        && d.keys().hasOnly(['fbId', 'subject', 'email', 'message', 'build', 'uid', 'status', 'replySent', 'createdAt'])
+        && d.fbId == docId
+        && d.subject is string && d.subject.size() > 0 && d.subject.size() <= 100
+        && d.email is string && d.email.size() <= 320
+        && d.message is string && d.message.size() > 0 && d.message.size() <= 200
+        && d.build is string && d.build.size() <= 32
+        && d.uid == request.auth.uid
+        && d.status == 'new'
+        && d.replySent == false
+        && d.createdAt == request.time;
+    }
+    function fstFeedbackOwnerAck() {
+      return isVerifiedAccount()
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['replySent'])
+        && request.resource.data.replySent == true;
+    }
+    function fstFeedbackEditorUpdate() {
+      let changed = request.resource.data.diff(resource.data).affectedKeys();
+      return isHihahoEditor()
+        && changed.hasOnly(['status', 'replyText', 'repliedAt'])
+        && request.resource.data.status in ['new', 'read', 'replied']
+        && (!changed.hasAny(['repliedAt'])
+            || request.resource.data.repliedAt == null
+            || request.resource.data.repliedAt == request.time)
+        && (!('replyText' in request.resource.data)
+            || request.resource.data.replyText == null
+            || (request.resource.data.replyText is string && request.resource.data.replyText.size() <= 8000));
+    }
     match /fst_feedback/{docId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
+      allow read: if isHihahoEditor();
+      allow create: if fstFeedbackCreateOk(docId);
+      allow update: if fstFeedbackOwnerAck() || fstFeedbackEditorUpdate();
+      allow delete: if false;
     }
 
-    // フィードバック連番カウンター
+    // 連番カウンター。フィードバック送信のトランザクションが get して +1 する。
+    // 任意の値への書き換えと、カウンター以外のドキュメントは拒否。
     match /fst_feedback_meta/{docId} {
-      allow read, write: if request.auth != null;
+      allow get: if isVerifiedAccount() && docId == 'counter';
+      allow list: if false;
+      allow create: if isVerifiedAccount()
+        && docId == 'counter'
+        && request.resource.data.keys().hasOnly(['count'])
+        && request.resource.data.count == 1;
+      allow update: if isVerifiedAccount()
+        && docId == 'counter'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['count'])
+        && request.resource.data.count == resource.data.count + 1;
+      allow delete: if false;
     }
 
     // App Dashboard: 閲覧は公開・追加/編集/削除/評価は hihaho 編集者（Googleログイン）のみ
@@ -51,13 +127,19 @@ service cloud.firestore {
       allow write: if isHihahoEditor();
     }
 
-    // ともえホーム: アプリリスト共有（認証不要）
+    // ともえホーム: 子ども向けホームのアプリ一覧
+    // index.html は tomoe-home/config を onSnapshot（get）するだけ。
+    // admin.html はログイン無しで set({ apps }) する。この上書きを拒否すると保護者の保存が壊れる。
+    // 一覧と config 以外への書き込み・削除は拒否。
+    // 残リスク: パスが固定なので、未認証の誰でも config を同じ形で差し替えられる。
     match /tomoe-home/{docId} {
-      allow read: if true;
-      allow write: if
-        request.resource.data.keys().hasOnly(['apps']) &&
-        request.resource.data.apps is list &&
-        request.resource.data.apps.size() <= 50;
+      allow get: if docId == 'config';
+      allow list: if false;
+      allow create, update: if docId == 'config'
+        && request.resource.data.keys().hasOnly(['apps'])
+        && request.resource.data.apps is list
+        && request.resource.data.apps.size() <= 50;
+      allow delete: if false;
     }
 
     // おうち巴寿司: 家族コードを知っている人同士で音声・画像を共有
@@ -70,7 +152,9 @@ service cloud.firestore {
         request.resource.data.keys().hasOnly(['data','mimeType','size','updatedAt']) &&
         request.resource.data.data is string &&
         request.resource.data.data.size() <= 950000;
-      // 削除: 家族コードを知っている人のみ（コード長と assetKey 形式を検証）
+      // 削除はログイン無しの管理画面（removeAsset）が使っている。拒否すると音声・画像の削除が壊れる。
+      // 残リスク: 家族コードを知っていれば未認証で削除できる。初期コード tomoe3030 は cloud-store.js に書いてある。
+      // 家族コード配下の list は onSnapshot に必要。collection group の横断一覧は catch-all で拒否される。
       allow delete: if
         familyCode.size() >= 1 && familyCode.size() <= 64 &&
         assetKey.matches('^(voice|image)_.{1,200}$');
@@ -94,10 +178,40 @@ service cloud.firestore {
       allow read: if isHihahoEditor();
     }
 
-    // COCO-ITTA: 家族でグループ共有（ログインユーザーのみ）
-    // groupId はランダム6文字コードで共有。認証必須で読み書き許可
+    // COCO-ITTA: 家族グループ。Google ログイン後にだけ触る。
+    // 一覧と削除はしない（退出はローカルだけ）。参加前の get と、コードを知った人の自分自身の追加は必要。
+    // 残リスク: グループID（6文字）を知っている確認済みユーザーは、参加前でもその1件を読める。
+    function isGroupMember() {
+      return isVerifiedAccount()
+        && resource.data.members is list
+        && (
+          resource.data.members.hasAny([{'email': request.auth.token.email, 'role': 'owner'}])
+          || resource.data.members.hasAny([{'email': request.auth.token.email, 'role': 'member'}])
+        );
+    }
+    function isGroupSelfJoin() {
+      return isVerifiedAccount()
+        && resource.data.members is list
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
+        && request.resource.data.members is list
+        && request.resource.data.members.size() == resource.data.members.size() + 1
+        && request.resource.data.members.hasAll(resource.data.members)
+        && request.resource.data.members.hasAny([{'email': request.auth.token.email, 'role': 'member'}]);
+    }
     match /groups/{groupId} {
-      allow read, write: if request.auth != null;
+      allow get: if isVerifiedAccount();
+      allow list: if false;
+      allow create: if isVerifiedAccount()
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 300
+        && request.resource.data.createdBy == request.auth.token.email
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.members is list
+        && request.resource.data.members.size() == 1
+        && request.resource.data.members[0].email == request.auth.token.email
+        && request.resource.data.members[0].role == 'owner';
+      allow update: if isGroupMember() || isGroupSelfJoin();
+      allow delete: if false;
     }
 
     // BOMBING BAY: 匿名ランキング＆プレイログ（認証なし・作成のみ・改ざん不可）
@@ -122,12 +236,18 @@ service cloud.firestore {
     }
 
     // ともえプレイヤー: YouTube 動画リスト共有（認証不要・最大100本）
+    // クライアントが行うのは doc(listId).get() と set() だけで、コレクション一覧は取らない。
+    // リスト文書の削除はクライアントがしない。
+    // 残リスク: 共有コードを知っていれば未認証で動画リストを上書きできる（保護者の保存が同じ set）。
     match /tomoe-player/{listId} {
-      allow read: if true;
-      allow write: if
+      allow get: if listId.size() >= 1 && listId.size() <= 12;
+      allow list: if false;
+      allow create, update: if
+        listId.size() >= 1 && listId.size() <= 12 &&
         request.resource.data.keys().hasOnly(['videos','sources','updatedAt','name']) &&
         request.resource.data.videos is list &&
         request.resource.data.videos.size() <= 100;
+      allow delete: if false;
 
       // 視聴ログ: 1再生=1ドキュメント（認証不要・フィールド検証あり・削除は保護者向けに許可）
       match /sessions/{sessionId} {
@@ -142,7 +262,10 @@ service cloud.firestore {
           request.resource.data.hour is number && request.resource.data.hour >= 0 && request.resource.data.hour <= 23 &&
           request.resource.data.watchSec is number && request.resource.data.watchSec >= 0 && request.resource.data.watchSec <= 86400 &&
           request.resource.data.completed is bool;
-        // 削除: 保護者向け（リストコードを知っている人のみ・ID形式を検証）
+        // 削除はログイン無しの視聴ダッシュボード（stats.html の delSession）が使っている。
+        // 拒否すると保護者が再生記録を消せなくなる。
+        // 残リスク: リストコードを知る人は未認証で視聴ログを削除・改ざんできる。
+        // そのコード配下の list はダッシュボードに必要。collection group の横断一覧は catch-all で拒否される。
         allow delete: if
           listId.matches('^[A-Za-z0-9_-]{1,12}$') &&
           sessionId.matches('^[a-z0-9]{4,24}$');
@@ -187,7 +310,9 @@ service cloud.firestore {
         request.resource.data.question is string && request.resource.data.question.size() <= 500 &&
         request.resource.data.answer is string && request.resource.data.answer.size() <= 5000 &&
         request.resource.data.keywords is list && request.resource.data.keywords.size() <= 20;
-      // 削除: チームコードを知っている人のみ（コード・ID形式を検証）
+      // 削除はログイン無しの removeEntry が使っている。拒否するとナレッジ削除が壊れる。
+      // 残リスク: チームコード（初期値 default）を知る人は未認証で回答を削除・改ざんできる。
+      // そのチームの list は onSnapshot に必要。collection group の横断一覧は catch-all で拒否される。
       allow delete: if
         teamCode.matches('^[A-Za-z0-9_-]{1,64}$') &&
         entryId.size() >= 1 && entryId.size() <= 64;
@@ -220,11 +345,16 @@ service cloud.firestore {
     }
 
     // 明友社向け見積もりシミュレーター: 単価設定は許可アカウントのみ読める・書き込みは管理者のみ（Admin/REST経由）
+    // 編集者メールは email_verified 必須。専用パスワードアカウントは、画面が
+    // signInWithEmailAndPassword だけで、メール未確認のまま使っている可能性があるため確認を要求しない。
+    // 残リスク: meiyusha@meiyusha-estimate.app を未確認のまま名乗れるのは、そのアカウントが未作成のときだけ。
     match /meiyusha-estimate/{docId} {
-      allow read: if request.auth != null && (
+      allow read: if request.auth != null && request.auth.token.email is string && (
         request.auth.token.email == 'meiyusha@meiyusha-estimate.app' ||
-        request.auth.token.email.matches('.*@splineglobal[.]com') ||
-        request.auth.token.email == 'junpei.omote@gmail.com'
+        (request.auth.token.email_verified == true && (
+          request.auth.token.email.matches('.*@splineglobal[.]com') ||
+          request.auth.token.email == 'junpei.omote@gmail.com'
+        ))
       );
       allow write: if false;
     }
@@ -233,10 +363,10 @@ service cloud.firestore {
     // 編集 = メンバー(オーナー + hondoko-config/members)のみ
     // 閲覧 = メンバー + 公開設定(hondoko-config/sharing)に応じたビューワー
     function isHondokoOwner() {
-      return request.auth != null && request.auth.token.email == 'junpei.omote@gmail.com';
+      return isVerifiedAccount() && request.auth.token.email == 'junpei.omote@gmail.com';
     }
     function isHondokoMember() {
-      return request.auth != null && (
+      return isVerifiedAccount() && (
         isHondokoOwner() ||
         (exists(/databases/$(database)/documents/hondoko-config/members) &&
          request.auth.token.email in get(/databases/$(database)/documents/hondoko-config/members).data.emails)
@@ -251,6 +381,8 @@ service cloud.firestore {
         hondokoSharing().mode == 'public' ||
         hondokoSharing().mode == 'link' ||
         (request.auth != null &&
+         request.auth.token.email_verified == true &&
+         request.auth.token.email is string &&
          hondokoSharing().mode == 'viewers' &&
          request.auth.token.email in hondokoSharing().viewers)
       );
@@ -287,7 +419,7 @@ service cloud.firestore {
     // ユーザーごとの評価・メモ(相互に閲覧可、書き込みは本人のみ)
     match /hondoko-reviews/{docId} {
       allow read: if canHondokoRead();
-      allow create, update: if request.auth != null
+      allow create, update: if isVerifiedAccount()
         && request.resource.data.by == request.auth.token.email
         && request.resource.data.rating is int
         && request.resource.data.rating >= 0
@@ -297,11 +429,11 @@ service cloud.firestore {
         && (isHondokoMember() ||
             (isHondokoViewer() && hondokoSharing().allowComments == true));
       allow delete: if isHondokoOwner() ||
-        (request.auth != null && resource.data.by == request.auth.token.email);
+        (isVerifiedAccount() && resource.data.by == request.auth.token.email);
     }
     match /hondoko-comments/{docId} {
       allow read: if canHondokoRead();
-      allow create: if request.auth != null
+      allow create: if isVerifiedAccount()
         && request.resource.data.by == request.auth.token.email
         && request.resource.data.text is string
         && request.resource.data.text.size() > 0
@@ -310,16 +442,24 @@ service cloud.firestore {
             (isHondokoViewer() && hondokoSharing().allowComments == true));
       allow update: if false;
       allow delete: if isHondokoOwner() ||
-        (request.auth != null && resource.data.by == request.auth.token.email);
+        (isVerifiedAccount() && resource.data.by == request.auth.token.email);
     }
 
     // outreach-crm: ワークスペースコードを知っている端末間でリード/成約データを共有
     // outreach-crm/{workspaceCode} 単一ドキュメントに leads 配列を保持
+    // クライアントが行うのは doc(code).get() / onSnapshot / set({leads, updatedAt: Date.now()}) だけ。
+    // コレクション一覧を拒否して、全ワークスペースの個人情報をまとめて抜く穴は塞ぐ。
+    // 残リスク: コードを知っていれば未認証でその1件を読め、同じ形で上書きできる。
+    // ログインも owner フィールドもクライアントが付けていないので、ここを拒否すると同期が壊れる。
     match /outreach-crm/{workspaceCode} {
-      allow read: if true;
-      allow write: if request.resource.data.keys().hasOnly(['leads','updatedAt'])
+      allow get: if workspaceCode.size() >= 1 && workspaceCode.size() <= 128;
+      allow list: if false;
+      allow create, update: if workspaceCode.size() >= 1 && workspaceCode.size() <= 128
+                   && request.resource.data.keys().hasOnly(['leads','updatedAt'])
                    && request.resource.data.leads is list
-                   && request.resource.data.leads.size() <= 20000;
+                   && request.resource.data.leads.size() <= 20000
+                   && request.resource.data.updatedAt is int;
+      allow delete: if false;
     }
 
     // その他は全拒否
