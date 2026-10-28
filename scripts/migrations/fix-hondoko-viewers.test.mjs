@@ -72,12 +72,29 @@ const again = run([]);
 check('2回目の dry-run は更新しない', again.status === 0 && /unchanged/.test(again.stdout), again.stdout);
 
 await db.collection('hondoko-config').doc('sharing').set({
-  mode: 'link', allowComments: false, linkKey: 'no', keep: 9,
+  mode: 'link', allowComments: false, linkKey: 'bad key', keep: 9,
 });
 const weak = run([]);
-check('短すぎる linkKey は手作業として出す', weak.status === 0 && /NEEDS MANUAL ATTENTION: linkKey cannot be moved unchanged/.test(weak.stdout), weak.stdout);
+check('url-safe でない linkKey は手作業として出す', weak.status === 0 && /NEEDS MANUAL ATTENTION: linkKey cannot be moved unchanged/.test(weak.stdout), weak.stdout);
 const weakDoc = (await db.collection('hondoko-config').doc('sharing').get()).data();
-check('短すぎる linkKey は消さない', weakDoc.linkKey === 'no' && weakDoc.keep === 9);
+check('壊れた linkKey は消さない', weakDoc.linkKey === 'bad key' && weakDoc.keep === 9);
+
+await db.collection('hondoko-config').doc('link').delete();
+await db.collection('hondoko-config').doc('sharing').set({
+  mode: 'link', allowComments: true, linkKey: 'abc1234', keep: 7,
+});
+const short = run(['--write'], projectId + '\n');
+check('7文字の鍵も同じ文字列で移す', short.status === 0, short.stderr);
+const shortSharing = (await db.collection('hondoko-config').doc('sharing').get()).data();
+const shortLink = (await db.collection('hondoko-config').doc('link').get()).data();
+check('7文字鍵は link 文書に残り sharing からは消える', shortLink.key === 'abc1234' && !('linkKey' in shortSharing), JSON.stringify({ shortSharing, shortLink }));
+
+await db.collection('hondoko-config').doc('sharing').set({ mode: 'viewers', allowComments: false, keep: 4 });
+await db.collection('hondoko-config').doc('viewers').set({ emails: ['Eve@Example.com'], other: 'stay' });
+const cased = run(['--write'], projectId + '\n');
+check('大文字メールを小文字化するとログに出す', /Eve@Example.com -> eve@example.com/.test(cased.stdout), cased.stdout);
+const casedViewers = (await db.collection('hondoko-config').doc('viewers').get()).data();
+check('大文字の閲覧者メールは小文字になる', JSON.stringify(casedViewers.emails) === JSON.stringify(['eve@example.com']) && casedViewers.other === 'stay', JSON.stringify(casedViewers));
 
 await db.collection('hondoko-config').doc('sharing').set({
   mode: 'viewers', allowComments: true, viewers: ['Late@Example.com'], keep: 3,

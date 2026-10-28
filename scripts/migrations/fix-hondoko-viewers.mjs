@@ -12,8 +12,12 @@
  *   - sharing.linkKey is copied unchanged onto hondoko-config/link and then removed
  *     from sharing, in the same transaction. Production keys are the 12-character
  *     values already in ?k= links. The script does not generate a replacement.
- *   - a key shorter than 8 characters, or one that is not url-safe, is left in
- *     place and printed as NEEDS MANUAL ATTENTION
+ *   - keys of 7 characters or fewer are moved unchanged when they are url-safe.
+ *     The old generator can emit them. An empty key, or one that is not url-safe,
+ *     is left in place and printed as NEEDS MANUAL ATTENTION.
+ *   - viewers emails are lowercased (sharing.viewers and an existing viewers doc).
+ *     Mixed-case addresses do not match Google until that write. Invalid emails
+ *     are left in place and printed as NEEDS MANUAL ATTENTION.
  *   - if hondoko-config/link already holds a different key, sharing.linkKey is
  *     left in place and printed as NEEDS MANUAL ATTENTION
  *
@@ -49,7 +53,7 @@
  */
 import { initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore } from 'firebase-admin/firestore';
-import { confirmProjectWrite, describeTarget } from './confirm-write.mjs';
+import { authorizeBeforeFirestore, confirmProjectWrite } from './confirm-write.mjs';
 
 // Production links are https://cc-dev-ps7.web.app/hondoko/?k=<key>
 // where key is Math.random().toString(36).slice(2, 10) + the same .slice(2, 6):
@@ -57,11 +61,12 @@ import { confirmProjectWrite, describeTarget } from './confirm-write.mjs';
 // Moving that string onto hondoko-config/link does not change the URL.
 // Rules accept the old field via get() until this script runs, so existing links
 // keep opening before the write. This script does not invent a new key.
-const USABLE_KEY = /^[A-Za-z0-9_-]{8,128}$/;
+const USABLE_KEY = /^[A-Za-z0-9_-]{1,128}$/;
 
 const args = new Set(process.argv.slice(2));
 const write = args.has('--write');
 const backupAck = args.has('--i-have-a-backup');
+const allowProduction = args.has('--allow-production');
 const onEmu = Boolean(process.env.FIRESTORE_EMULATOR_HOST);
 const projectId = process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || (onEmu ? 'demo-cc-dev' : '');
 
@@ -72,8 +77,19 @@ function normEmail(value) {
 export function planViewerSplit(sharingData, existingEmails, existingLinkKey) {
   if (!sharingData || typeof sharingData !== 'object') return { action: 'unchanged', manual: [] };
   const manual = [];
+  const notes = [];
   let emails = null;
   let removed = null;
+  if (Array.isArray(existingEmails)) {
+    for (const raw of existingEmails) {
+      if (typeof raw !== 'string' || !normEmail(raw).includes('@')) {
+        manual.push(`hondoko-config/viewers has an email that cannot be normalized: ${JSON.stringify(raw)}`);
+      } else if (raw !== normEmail(raw)) {
+        notes.push(`viewer email lowercased so it matches Google: ${raw} -> ${normEmail(raw)}`);
+      }
+    }
+  }
+  const viewersDocDirty = manual.some((m) => m.startsWith('hondoko-config/viewers has an email'));
   if ('viewers' in sharingData) {
     if (!Array.isArray(sharingData.viewers)) {
       manual.push('sharing.viewers is not a list');
@@ -93,11 +109,15 @@ export function planViewerSplit(sharingData, existingEmails, existingLinkKey) {
         }
         fromSharing.push(email);
       }
-      if (!manual.some((m) => m.startsWith('sharing.viewers') || m.startsWith('invalid viewer'))) {
+      if (!manual.some((m) => m.startsWith('sharing.viewers') || m.startsWith('invalid viewer') || m.startsWith('hondoko-config/viewers has an email'))) {
         emails = [...new Set([...(existingEmails || []).map(normEmail).filter((e) => e.includes('@')), ...fromSharing])].sort();
         removed = sharingData.viewers.slice();
       }
     }
+  } else if (!viewersDocDirty && Array.isArray(existingEmails)) {
+    const lowered = [...new Set(existingEmails.map(normEmail).filter((e) => e.includes('@')))].sort();
+    const current = existingEmails.map((e) => String(e));
+    if (JSON.stringify(current) !== JSON.stringify(lowered)) emails = lowered;
   }
   let linkKey = null;
   if ('linkKey' in sharingData) {
@@ -108,16 +128,16 @@ export function planViewerSplit(sharingData, existingEmails, existingLinkKey) {
         linkKey = sharingData.linkKey;
       }
     } else {
-      manual.push('linkKey cannot be moved unchanged (not 8-128 url-safe characters); the handed-out ?k= value was left on sharing');
+      manual.push('linkKey cannot be moved unchanged (empty or not 1-128 url-safe characters); the handed-out ?k= value was left on sharing');
     }
   } else if (sharingData.mode === 'link' && !existingLinkKey) {
     manual.push('mode is link but no key is stored');
   }
   if (!emails && !linkKey) {
-    if (manual.length) return { action: 'manual', reason: manual.join('; '), manual };
-    return { action: 'unchanged', manual };
+    if (manual.length) return { action: 'manual', reason: manual.join('; '), manual, notes };
+    return { action: 'unchanged', manual, notes };
   }
-  return { action: 'update', emails, removed, linkKey, manual };
+  return { action: 'update', emails, removed, linkKey, manual, notes };
 }
 
 export async function writeHondokoInTransaction(db) {
@@ -148,12 +168,8 @@ async function main() {
     console.error('Set GCLOUD_PROJECT, or FIRESTORE_EMULATOR_HOST for the emulator. Nothing was written.');
     process.exit(2);
   }
-  if (write && !onEmu && !backupAck) {
-    console.log(describeTarget(projectId).text);
-    console.error('Refusing to write outside the emulator without --i-have-a-backup.');
-    console.error('Export a backup first (see the comment at the top of scripts/migrations/fix-hondoko-viewers.mjs).');
-    process.exit(2);
-  }
+  const allowed = await authorizeBeforeFirestore({ projectId, write, onEmu, allowProduction, backupAck });
+  if (!allowed) process.exit(2);
   console.log('fix-hondoko-viewers.mjs');
   console.log('project:', projectId);
   console.log('emulator:', onEmu ? process.env.FIRESTORE_EMULATOR_HOST : '(none — this reads a real project)');
@@ -177,6 +193,7 @@ async function main() {
   const existing = viewersSnap.exists && Array.isArray(viewersSnap.data().emails) ? viewersSnap.data().emails : [];
   const existingLinkKey = linkSnap.exists && typeof linkSnap.data().key === 'string' ? linkSnap.data().key : '';
   const plan = planViewerSplit(sharingSnap.data(), existing, existingLinkKey);
+  for (const note of plan.notes || []) console.log('hondoko-config: ' + note);
   for (const note of plan.manual || []) console.log('hondoko-config/sharing: NEEDS MANUAL ATTENTION: ' + note);
   if (plan.action === 'unchanged') {
     console.log('hondoko-config/sharing: unchanged (no viewers field)');
@@ -197,8 +214,10 @@ async function main() {
     console.log('dry-run: no documents were written');
     return;
   }
-  const ok = await confirmProjectWrite(projectId);
-  if (!ok) process.exit(2);
+  if (onEmu) {
+    const ok = await confirmProjectWrite(projectId);
+    if (!ok) process.exit(2);
+  }
   const applied = await writeHondokoInTransaction(db);
   if (applied.action !== 'update') {
     console.log('transaction found nothing to write: ' + applied.action);

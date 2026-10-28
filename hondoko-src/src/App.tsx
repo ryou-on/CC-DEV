@@ -5,6 +5,7 @@ import { BookOpen, LibraryBig, Loader2, LogOut, PlusCircle, RefreshCw, Search, S
 import { auth, db, googleProvider, OWNER_EMAIL } from './firebase'
 import type { Book, BookComment, BookReview, Shelf, SharingConfig, ShelfMap, ShelfPhoto } from './types'
 import { APP_VERSION, RELEASE_NOTES, USAGE_GUIDE } from './version'
+import { decideGuestAccess } from './lib/guestAccess.mjs'
 import { useAnalysisJobs } from './hooks/useAnalysisJobs'
 import { shelfCode } from './lib/diff'
 import { DiffReviewModal } from './components/DiffReviewModal'
@@ -119,14 +120,14 @@ export default function App() {
   useEffect(() => {
     let cancelled = false
     const apply = async (base: Role | 'probe') => {
+      let sessionOpened = false
       if (urlLinkKey()) {
-        try {
-          if (await openLinkSession()) { if (!cancelled) setRole('viewer'); return }
-        } catch { /* 鍵が違う、または link モードではない */ }
-        if (cancelled) return
-        if (sharing?.mode === 'link' || !sharing) { setRole('denied'); return }
+        try { sessionOpened = await openLinkSession() } catch { sessionOpened = false }
       }
-      if (base !== 'probe') { if (!cancelled) setRole(base); return }
+      if (cancelled) return
+      const decision = decideGuestAccess({ sessionOpened, sharingMode: sharing?.mode ?? null, base })
+      if (decision === 'viewer') { setRole('viewer'); return }
+      if (decision === 'denied') { setRole('denied'); return }
       try {
         await getDocs(query(collection(db, 'hondoko-books'), limit(1)))
         if (!cancelled) setRole('viewer')

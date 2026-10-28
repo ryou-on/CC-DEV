@@ -256,6 +256,26 @@ await ok('既存リンクのゲストは棚を一覧できる', () => getDocs(co
 await ok('既存リンクのゲストは写真を一覧できる', () => getDocs(collection(legacyGuest, 'hondoko-photos')));
 await ok('既存リンクのゲストは間取りを一覧できる', () => getDocs(collection(legacyGuest, 'hondoko-maps')));
 await ng('既存リンクでも鍵の無いログインユーザーは本を一覧できない', () => getDocs(collection(pilot, 'hondoko-books')));
+const shortKey = 'abc1234';
+const shortGuest = env.authenticatedContext('short-guest').firestore();
+await env.withSecurityRulesDisabled(async c => {
+  const d = c.firestore();
+  await deleteDoc(doc(d, 'hondoko-config/link'));
+  await setDoc(doc(d, 'hondoko-config/sharing'), { mode: 'link', allowComments: false, linkKey: shortKey });
+});
+await ng('7文字鍵でも未ログインは本を一覧できない', () => getDocs(collection(anon, 'hondoko-books')));
+await ok('7文字の既存鍵でもセッションを作れる', () => setDoc(doc(shortGuest, 'hondoko-link-sessions/short-guest'), { key: shortKey }));
+await ok('7文字の鍵で本を一覧できる', () => getDocs(collection(shortGuest, 'hondoko-books')));
+await env.withSecurityRulesDisabled(async c => {
+  const d = c.firestore();
+  await setDoc(doc(d, 'hondoko-config/sharing'), { mode: 'viewers', allowComments: false });
+  await setDoc(doc(d, 'hondoko-config/viewers'), { emails: ['Eve@Example.com'] });
+});
+await ng('大文字の閲覧者メールは移行前は本を読めない', () => getDoc(doc(other, 'hondoko-books/b1')));
+await ok('public に戻した共有設定は未ログインで本を一覧できる', async () => {
+  await setDoc(doc(editor, 'hondoko-config/sharing'), { mode: 'public', allowComments: false });
+  await getDocs(collection(anon, 'hondoko-books'));
+});
 await ng('未確認編集者は旧 note を読めない', () => getDocs(collection(unverifiedEditor, 'note-analytics/default/snapshots')));
 
 console.log('groups (COCO-ITTA)');

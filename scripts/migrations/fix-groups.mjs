@@ -36,11 +36,12 @@
  */
 import { initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
-import { confirmProjectWrite, describeTarget } from './confirm-write.mjs';
+import { authorizeBeforeFirestore, confirmProjectWrite } from './confirm-write.mjs';
 
 const args = new Set(process.argv.slice(2));
 const write = args.has('--write');
 const backupAck = args.has('--i-have-a-backup');
+const allowProduction = args.has('--allow-production');
 const onEmu = Boolean(process.env.FIRESTORE_EMULATOR_HOST);
 const projectId = process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || (onEmu ? 'demo-cc-dev' : '');
 
@@ -141,12 +142,8 @@ async function main() {
     console.error('Set GCLOUD_PROJECT, or FIRESTORE_EMULATOR_HOST for the emulator. Nothing was written.');
     process.exit(2);
   }
-  if (write && !onEmu && !backupAck) {
-    console.log(describeTarget(projectId).text);
-    console.error('Refusing to write outside the emulator without --i-have-a-backup.');
-    console.error('Export a backup first (see the comment at the top of scripts/migrations/fix-groups.mjs).');
-    process.exit(2);
-  }
+  const allowed = await authorizeBeforeFirestore({ projectId, write, onEmu, allowProduction, backupAck });
+  if (!allowed) process.exit(2);
   console.log('fix-groups.mjs');
   console.log('project:', projectId);
   console.log('emulator:', onEmu ? process.env.FIRESTORE_EMULATOR_HOST : '(none — this reads a real project)');
@@ -175,11 +172,10 @@ async function main() {
     for (const note of plan.notes) console.log('  - ' + note);
     console.log('  patch ' + JSON.stringify(plan.patch));
   }
-  if (write && pending.length) {
+  if (write && pending.length && onEmu) {
     const ok = await confirmProjectWrite(projectId);
     if (!ok) process.exit(2);
   } else if (write && pending.length === 0) {
-    console.log(describeTarget(projectId).text);
     console.log('No documents to write.');
   }
   if (write) {

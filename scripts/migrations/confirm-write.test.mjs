@@ -1,6 +1,6 @@
 // 書き込み前のプロジェクトID確認と、資格情報の表示をエミュレータだけで確かめる。
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { initializeApp } from 'firebase-admin/app';
@@ -69,6 +69,58 @@ check('一致の表示が wrote より前', ok.stdout.indexOf('confirmation matc
   && ok.stdout.indexOf('confirmation matched the target project ID') < ok.stdout.indexOf('CONFIRM1: wrote'));
 const fixed = (await db.collection('groups').doc('CONFIRM1').get()).data();
 check('確認後にメールが小文字になる', fixed.createdBy === 'confirm@example.com' && fixed.pins[0].id === 'keep', JSON.stringify(fixed));
+
+const noFlag = spawnSync(process.execPath, [script, '--write', '--i-have-a-backup'], {
+  encoding: 'utf8',
+  input: 'cc-dev-ps7\n',
+  env: { ...process.env, FIRESTORE_EMULATOR_HOST: '', GCLOUD_PROJECT: 'cc-dev-ps7', GOOGLE_APPLICATION_CREDENTIALS: credPath },
+});
+check('demo- 以外は --allow-production が無いと拒否', noFlag.status === 2 && /--allow-production/.test(noFlag.stderr), noFlag.stderr);
+check('拒否の時点ではグループを読んでいない', !/groups\//.test(noFlag.stdout), noFlag.stdout);
+
+const beforeRead = spawnSync(process.execPath, [script, '--allow-production', '--i-have-a-backup'], {
+  encoding: 'utf8',
+  input: 'wrong\n',
+  env: { ...process.env, FIRESTORE_EMULATOR_HOST: '', GCLOUD_PROJECT: 'cc-dev-ps7', GOOGLE_APPLICATION_CREDENTIALS: credPath },
+});
+check('本番IDの確認が違えば読む前に止まる', beforeRead.status === 2 && /No Firestore client was created/.test(beforeRead.stderr), beforeRead.stderr);
+check('確認の前に groups を走査しない', !/groups\//.test(beforeRead.stdout), beforeRead.stdout);
+
+const home = mkdtempSync(join(tmpdir(), 'adc-home-'));
+const gcloud = join(home, '.config', 'gcloud');
+mkdirSync(join(gcloud, 'configurations'), { recursive: true });
+writeFileSync(join(gcloud, 'application_default_credentials.json'), JSON.stringify({
+  type: 'authorized_user', client_id: 'c', client_secret: 's', refresh_token: 'r',
+}));
+writeFileSync(join(gcloud, 'active_config'), 'default\n');
+writeFileSync(join(gcloud, 'configurations', 'config_default'), '[core]\nproject = cc-dev-ps7\n');
+const adc = run('wrong\n', {
+  HOME: home,
+  GOOGLE_APPLICATION_CREDENTIALS: '',
+  CLOUDSDK_CORE_PROJECT: '',
+  CLOUDSDK_CONFIG: gcloud,
+});
+check('gcloud ADC の project を本番資格情報として出す', /credentials: authorized_user project_id=cc-dev-ps7/.test(adc.stdout) && /credentials are production: yes/.test(adc.stdout), adc.stdout);
+
+const bare = mkdtempSync(join(tmpdir(), 'adc-bare-'));
+mkdirSync(join(bare, '.config', 'gcloud'), { recursive: true });
+writeFileSync(join(bare, '.config', 'gcloud', 'application_default_credentials.json'), JSON.stringify({
+  type: 'authorized_user', client_id: 'c', client_secret: 's', refresh_token: 'r',
+}));
+const unknown = run('wrong\n', {
+  HOME: bare,
+  GOOGLE_APPLICATION_CREDENTIALS: '',
+  CLOUDSDK_CORE_PROJECT: '',
+  CLOUDSDK_CONFIG: join(bare, 'empty-gcloud'),
+});
+check('プロジェクトが分からない ADC は unknown', /credentials are production: unknown/.test(unknown.stdout), unknown.stdout);
+
+const emuProd = spawnSync(process.execPath, [script, '--write'], {
+  encoding: 'utf8',
+  input: '',
+  env: { ...process.env, GCLOUD_PROJECT: 'cc-dev-ps7', GOOGLE_APPLICATION_CREDENTIALS: credPath },
+});
+check('エミュレータでも demo- 以外の書き込みは --allow-production が必要', emuProd.status === 2 && /--allow-production/.test(emuProd.stderr), emuProd.stderr);
 
 console.log(failed ? `confirm-write tests: ${failed} failed` : 'confirm-write tests: all passed');
 process.exit(failed ? 1 : 0);

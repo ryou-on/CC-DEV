@@ -9,6 +9,7 @@ import { APP_VERSION } from '../version'
 import { changeShelfRows, MAX_ROWS } from '../lib/shelfOps'
 import { isSearchableTitle, lookupBookInfo } from '../lib/api'
 import { btnSecondary, inputCls } from './ui'
+import { planSharingSave } from '../lib/guestAccess.mjs'
 
 // 128bit。共有設定の文書には置かず、家族だけが読める link 文書に保存する。
 const genKey = () => {
@@ -18,8 +19,8 @@ const genKey = () => {
   for (const b of bytes) raw += String.fromCharCode(b)
   return btoa(raw).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
 }
-// 本番で配り済みの鍵は約12文字の [0-9a-z]。再保存で置き換えない。
-const usableKey = (value: string | null | undefined) => !!value && /^[A-Za-z0-9_-]{8,128}$/.test(value)
+// 本番で配り済みの鍵は約12文字。Math.random はまれに7文字以下になる。再保存で置き換えない。
+const usableKey = (value: string | null | undefined) => !!value && /^[A-Za-z0-9_-]{1,128}$/.test(value)
 
 const MODE_LABEL: Record<SharingMode, { label: string; desc: string }> = {
   private: { label: 'メンバーのみ', desc: '家族メンバーだけが閲覧・編集できます(標準)' },
@@ -60,17 +61,22 @@ export function SettingsView({
     const emails = (patch.viewers ?? viewers)
       .map((v) => v.trim().toLowerCase())
       .filter((v) => v.includes('@'))
-    // 既存の ?k= を無効にしない。新しい鍵は「再生成」のときだけ作る。
-    let key = patch.linkKey || activeKey
-    if (next.mode === 'link' && !usableKey(key)) key = genKey()
-    await setDoc(doc(db, 'hondoko-config', 'sharing'), {
+    // 既存の ?k= を無効にしない。link 文書へ先にコピーし、その後 sharing から鍵を外す。
+    // mode が link でなくてもコピーする。先に sharing を上書きすると鍵が消える。
+    const planned = planSharingSave({
       mode: next.mode,
       allowComments: !!next.allowComments,
+      existingSharingLinkKey: usableKey(sharing?.linkKey) ? sharing?.linkKey : '',
+      linkDocKey: linkKey || '',
+      localKey,
+      nextLinkKey: patch.linkKey,
     })
-    if (next.mode === 'link' && usableKey(key)) {
-      await setDoc(doc(db, 'hondoko-config', 'link'), { key })
-      setLocalKey(key)
+    const keyToStore = planned.writeLinkKeyFirst || (next.mode === 'link' ? genKey() : '')
+    if (keyToStore) {
+      await setDoc(doc(db, 'hondoko-config', 'link'), { key: keyToStore })
+      setLocalKey(keyToStore)
     }
+    await setDoc(doc(db, 'hondoko-config', 'sharing'), planned.sharing)
     // メールは公開の sharing には書かない。旧フィールドが残っていても、この保存で外れる。
     if (patch.viewers || (sharing?.viewers && sharing.viewers.length > 0) || viewers.length > 0) {
       await setDoc(doc(db, 'hondoko-config', 'viewers'), { emails })
