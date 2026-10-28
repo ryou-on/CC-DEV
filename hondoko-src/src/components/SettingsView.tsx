@@ -9,13 +9,23 @@ import { APP_VERSION } from '../version'
 import { changeShelfRows, MAX_ROWS } from '../lib/shelfOps'
 import { isSearchableTitle, lookupBookInfo } from '../lib/api'
 import { btnSecondary, inputCls } from './ui'
+import { planSharingSave } from '../lib/guestAccess.mjs'
 
-const genKey = () => Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6)
+// 128bit。共有設定の文書には置かず、家族だけが読める link 文書に保存する。
+const genKey = () => {
+  const bytes = new Uint8Array(16)
+  crypto.getRandomValues(bytes)
+  let raw = ''
+  for (const b of bytes) raw += String.fromCharCode(b)
+  return btoa(raw).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+}
+// 本番で配り済みの鍵は約12文字。Math.random はまれに7文字以下になる。再保存で置き換えない。
+const usableKey = (value: string | null | undefined) => !!value && /^[A-Za-z0-9_-]{1,128}$/.test(value)
 
 const MODE_LABEL: Record<SharingMode, { label: string; desc: string }> = {
   private: { label: 'メンバーのみ', desc: '家族メンバーだけが閲覧・編集できます(標準)' },
   viewers: { label: '特定の人のみ', desc: '下のリストに追加したGoogleアカウントが閲覧できます(編集不可)' },
-  link: { label: 'リンクを知っている人', desc: '共有リンクを知っている人がGoogleログイン後に閲覧できます' },
+  link: { label: 'リンクを知っている人', desc: '共有リンクを開いた人だけが閲覧できます。コメントにはGoogleログインが必要です' },
   public: { label: '公開', desc: 'URLを知っていれば誰でも(Googleログイン後に)閲覧できます' },
 }
 
@@ -25,25 +35,57 @@ export function SettingsView({
   members,
   userEmail,
   sharing,
+  viewerEmails,
+  linkKey,
 }: {
   shelves: Shelf[]
   books: Book[]
   members: string[]
   userEmail: string
   sharing: SharingConfig | null
+  viewerEmails: string[]
+  linkKey: string | null
 }) {
   const isOwner = userEmail === OWNER_EMAIL
   const [newMember, setNewMember] = useState('')
   const [newViewer, setNewViewer] = useState('')
   const [busy, setBusy] = useState(false)
+  const [localKey, setLocalKey] = useState<string | null>(null)
 
-  const share: SharingConfig = sharing ?? { mode: 'private', viewers: [], allowComments: false, linkKey: genKey() }
+  const share: SharingConfig = sharing ?? { mode: 'private', allowComments: false, linkKey: '' }
+  const viewers = viewerEmails
+  const activeKey = localKey || linkKey || (usableKey(sharing?.linkKey) ? sharing?.linkKey || '' : '')
 
-  const saveSharing = async (patch: Partial<SharingConfig>) => {
-    await setDoc(doc(db, 'hondoko-config', 'sharing'), { ...share, ...patch }, { merge: false })
+  const saveSharing = async (patch: Partial<SharingConfig> & { viewers?: string[] }) => {
+    const next = { ...share, ...patch }
+    const emails = (patch.viewers ?? viewers)
+      .map((v) => v.trim().toLowerCase())
+      .filter((v) => v.includes('@'))
+    // 既存の ?k= を無効にしない。link 文書へ先にコピーし、その後 sharing から鍵を外す。
+    // mode が link でなくてもコピーする。先に sharing を上書きすると鍵が消える。
+    const planned = planSharingSave({
+      mode: next.mode,
+      allowComments: !!next.allowComments,
+      existingSharingLinkKey: usableKey(sharing?.linkKey) ? sharing?.linkKey : '',
+      linkDocKey: linkKey || '',
+      localKey,
+      nextLinkKey: patch.linkKey,
+    })
+    // 8文字未満は link 文書に書けない（ルールが拒否する）。sharing.linkKey に残す。
+    const keyToStore = planned.writeLinkKeyFirst
+      || (planned.preserveShortLinkKey || next.mode !== 'link' ? '' : genKey())
+    if (keyToStore) {
+      await setDoc(doc(db, 'hondoko-config', 'link'), { key: keyToStore })
+      setLocalKey(keyToStore)
+    }
+    await setDoc(doc(db, 'hondoko-config', 'sharing'), planned.sharing)
+    // メールは公開の sharing には書かない。旧フィールドが残っていても、この保存で外れる。
+    if (patch.viewers || (sharing?.viewers && sharing.viewers.length > 0) || viewers.length > 0) {
+      await setDoc(doc(db, 'hondoko-config', 'viewers'), { emails })
+    }
   }
 
-  const shareUrl = `${location.origin}/hondoko/` + (share.mode === 'link' ? `?k=${share.linkKey}` : '')
+  const shareUrl = `${location.origin}/hondoko/` + (share.mode === 'link' && activeKey ? `?k=${activeKey}` : '')
 
   const addShelf = async () => {
     const name = prompt('棚の名前(例: IKEA-7)')
@@ -201,22 +243,22 @@ export function SettingsView({
           {share.mode === 'viewers' && (
             <div className="mt-3 pl-6">
               <ul className="space-y-1 mb-2">
-                {share.viewers.map((v) => (
+                {viewers.map((v) => (
                   <li key={v} className="text-sm text-stone-700 flex items-center gap-2">
                     {v}
                     <button className="text-stone-400 hover:text-red-600"
-                      onClick={() => saveSharing({ viewers: share.viewers.filter((x) => x !== v) })}>
+                      onClick={() => saveSharing({ viewers: viewers.filter((x) => x !== v) })}>
                       <Trash2 size={13} />
                     </button>
                   </li>
                 ))}
-                {share.viewers.length === 0 && <li className="text-xs text-stone-400">まだ誰も追加されていません</li>}
+                {viewers.length === 0 && <li className="text-xs text-stone-400">まだ誰も追加されていません</li>}
               </ul>
               <div className="flex gap-2">
                 <input className={inputCls} placeholder="guest@gmail.com" value={newViewer}
                   onChange={(e) => setNewViewer(e.target.value)} />
                 <button className={btnSecondary} disabled={!newViewer.includes('@')}
-                  onClick={() => { saveSharing({ viewers: [...share.viewers, newViewer.trim()] }); setNewViewer('') }}>
+                  onClick={() => { saveSharing({ viewers: [...viewers, newViewer.trim()] }); setNewViewer('') }}>
                   追加
                 </button>
               </div>

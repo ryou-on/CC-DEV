@@ -1,6 +1,28 @@
-export const APP_VERSION = 'v1.21.1'
+export const APP_VERSION = 'v1.21.4'
 
 export const RELEASE_NOTES: { version: string; date: string; changes: string[] }[] = [
+  {
+    version: 'v1.21.4',
+    date: '2026-10-28',
+    changes: [
+      '共有設定を保存しても、配り済みの ?k= の鍵は消さず家族用の文書へ移します',
+      '公開中のページに ?k= が付いていても、蔵書は開けるようにしました',
+    ],
+  },
+  {
+    version: 'v1.21.3',
+    date: '2026-10-28',
+    changes: [
+      '共有リンクの鍵をルールで照合するようにしました。配り済みの ?k= リンクはそのまま開けます。鍵を知らない人は蔵書を一覧できません',
+    ],
+  },
+  {
+    version: 'v1.21.2',
+    date: '2026-10-28',
+    changes: [
+      '公開設定の閲覧者メールは、ログインした家族メンバーだけが読めるようにしました（未ログインでは一覧を取得できません）',
+    ],
+  },
   {
     version: 'v1.21.1',
     date: '2026-08-17',

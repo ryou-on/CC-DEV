@@ -183,8 +183,9 @@ service cloud.firestore {
 
     // COCO-ITTA: 家族グループ。Google ログイン後にだけ触る。
     // グループIDを知っているだけの人は参加できない。参加申請を出し、作成者（createdBy）が
-    // role:member を1人だけ足す。メンバーは pins / routes / memberNames / routeSettings だけ更新でき、
-    // members・createdBy・所有者は変更できない。
+    // role:member を1人だけ足す。メンバーは pins / routes / memberNames / routeSettings だけ更新できる。
+    // members を変えられるのは次の3つだけ。作成者が member を1人足す、作成者が member を1人外す、
+    // member 本人が自分だけ抜ける。createdBy と管理者（role:owner）は外せない。
     function isGroupOwner() {
       return isVerifiedAccount()
         && resource.data.createdBy == request.auth.token.email;
@@ -222,6 +223,27 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys()
              .hasOnly(['pins', 'routes', 'memberNames', 'routeSettings']);
     }
+    // 1人だけ外す。新しい members は元の部分集合で、createdBy の owner は残す。他のフィールドは変えない。
+    function groupMemberRemoval() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members'])
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.members is list
+        && resource.data.members is list
+        && request.resource.data.members.size() == resource.data.members.size() - 1
+        && resource.data.members.hasAll(request.resource.data.members)
+        && request.resource.data.members.hasAny([{'email': resource.data.createdBy, 'role': 'owner'}]);
+    }
+    function ownerRemovesMember() {
+      return isGroupOwner() && groupMemberRemoval();
+    }
+    function memberLeavesSelf() {
+      return isVerifiedAccount()
+        && request.auth.token.email != resource.data.createdBy
+        && resource.data.members.hasAny([{'email': request.auth.token.email, 'role': 'member'}])
+        && !request.resource.data.members.hasAny([{'email': request.auth.token.email, 'role': 'member'}])
+        && !request.resource.data.members.hasAny([{'email': request.auth.token.email, 'role': 'owner'}])
+        && groupMemberRemoval();
+    }
     function isOwnerOfGroup(groupId) {
       return isVerifiedAccount()
         && get(/databases/$(database)/documents/groups/$(groupId)).data.createdBy == request.auth.token.email;
@@ -238,7 +260,7 @@ service cloud.firestore {
         && request.resource.data.members.size() == 1
         && request.resource.data.members[0].email == request.auth.token.email
         && request.resource.data.members[0].role == 'owner';
-      allow update: if groupContentUpdate() || ownerAddsMember();
+      allow update: if groupContentUpdate() || ownerAddsMember() || ownerRemovesMember() || memberLeavesSelf();
       allow delete: if false;
 
       // 参加申請。申請者は自分の文書だけ作れて読める。承認（status）は作成者だけ。
@@ -284,14 +306,15 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // ともえプレイヤー: YouTube 動画リスト共有（認証不要・最大100本）
-    // クライアントが行うのは doc(listId).get() と set() だけで、コレクション一覧は取らない。
+    // ともえプレイヤー: YouTube 動画リスト共有（最大100本）
+    // 子どもはログインせず doc(listId).get() で読んで再生する。コレクション一覧は取らない。
+    // 書き込み（videos / name）は保護者の確認済み Google ログイン（isHihahoEditor）だけ。
     // リスト文書の削除はクライアントがしない。
-    // 残リスク: 共有コードを知っていれば未認証で動画リストを上書きできる（保護者の保存が同じ set）。
     match /tomoe-player/{listId} {
       allow get: if listId.size() >= 1 && listId.size() <= 12;
       allow list: if false;
       allow create, update: if
+        isHihahoEditor() &&
         listId.size() >= 1 && listId.size() <= 12 &&
         request.resource.data.keys().hasOnly(['videos','sources','updatedAt','name']) &&
         request.resource.data.videos is list &&
@@ -299,8 +322,12 @@ service cloud.firestore {
       allow delete: if false;
 
       // 視聴ログ: 1再生=1ドキュメント。作成・更新は書いた端末の uid、削除は本人か編集者。
+      // 一覧は保護者（編集者）だけ。共有コードを知る未ログインの list は拒否する。
+      // 1件の get は保護者か、そのログを書いた端末だけ。
       match /sessions/{sessionId} {
-        allow read: if true;
+        allow get: if isHihahoEditor()
+          || (request.auth != null && resource.data.uid == request.auth.uid);
+        allow list: if isHihahoEditor();
         // 作成・更新は、その再生を書いた端末の uid だけ。更新時に uid を差し替えて乗っ取れるようにしない。
         // 削除は本人か編集者（stats.html は Google ログインした編集者）。
         allow create: if sessionOwnedFields();
@@ -432,17 +459,53 @@ service cloud.firestore {
     function hondokoSharing() {
       return get(/databases/$(database)/documents/hondoko-config/sharing).data;
     }
-    function isHondokoViewer() {
-      // link/public はログイン不要で閲覧可。viewers はログイン+リスト登録が必要
-      return exists(/databases/$(database)/documents/hondoko-config/sharing) && (
-        hondokoSharing().mode == 'public' ||
-        hondokoSharing().mode == 'link' ||
-        (request.auth != null &&
-         request.auth.token.email_verified == true &&
-         request.auth.token.email is string &&
-         hondokoSharing().mode == 'viewers' &&
-         request.auth.token.email in hondokoSharing().viewers)
+    // 閲覧者メールは hondoko-config/viewers が正。旧 sharing.viewers も、移し終わるまで本の閲覧判定に使う。
+    // get() はルール評価の中なので、閲覧者文書をクライアントに読ませずに照合できる。
+    function isListedHondokoViewer(sharing) {
+      let viewerDoc = exists(/databases/$(database)/documents/hondoko-config/viewers)
+        ? get(/databases/$(database)/documents/hondoko-config/viewers).data
+        : {};
+      let currentViewers = viewerDoc.get('emails', []);
+      let legacyViewers = sharing.get('viewers', []);
+      return isVerifiedAccount() && (
+        (currentViewers is list && request.auth.token.email in currentViewers)
+        || (legacyViewers is list && request.auth.token.email in legacyViewers)
       );
+    }
+    // 本番の共有リンクは https://cc-dev-ps7.web.app/hondoko/?k=<鍵>。
+    // 鍵は Math.random().toString(36).slice(2,10)+同.slice(2,6) で、通常12文字の [0-9a-z]。
+    // 保存先は hondoko-config/sharing の linkKey。移行後は hondoko-config/link の key（同じ文字列）。
+    // どちらかに一致するセッションだけが link モードの蔵書を読める。mode=='link' だけでは読めない。
+    function storedLinkKey() {
+      let fromLink = exists(/databases/$(database)/documents/hondoko-config/link)
+        ? get(/databases/$(database)/documents/hondoko-config/link).data.get('key', '')
+        : '';
+      return fromLink is string && fromLink.size() >= 1
+        ? fromLink
+        : hondokoSharing().get('linkKey', '');
+    }
+    function hasValidLinkSession() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/hondoko-link-sessions/$(request.auth.uid))
+        && get(/databases/$(database)/documents/hondoko-link-sessions/$(request.auth.uid)).data.key is string
+        && get(/databases/$(database)/documents/hondoko-link-sessions/$(request.auth.uid)).data.key.size() >= 1
+        && get(/databases/$(database)/documents/hondoko-link-sessions/$(request.auth.uid)).data.key == storedLinkKey();
+    }
+    function isHondokoViewer() {
+      // public はログイン不要。viewers は確認済みメールがリストにあるときだけ。
+      // link は、URL の鍵で作ったセッションが保存済みの鍵と一致するときだけ。
+      let sharing = exists(/databases/$(database)/documents/hondoko-config/sharing)
+        ? hondokoSharing()
+        : {};
+      return sharing.mode == 'public'
+        || (sharing.mode == 'viewers' && isListedHondokoViewer(sharing))
+        || (sharing.mode == 'link' && hasValidLinkSession());
+    }
+    // メールもリンク鍵も、未ログインの共有設定には載せない。
+    function sharingIsPublicSafe() {
+      return (!('viewers' in resource.data)
+          || (resource.data.viewers is list && resource.data.viewers.size() == 0))
+        && !('linkKey' in resource.data);
     }
     function canHondokoRead() {
       return isHondokoMember() || isHondokoViewer();
@@ -451,11 +514,61 @@ service cloud.firestore {
       allow read: if isHondokoMember();
       allow write: if isHondokoOwner();
     }
+    match /hondoko-config/viewers {
+      // 閲覧者のメール一覧。読めるのは家族メンバー（オーナーを含む）だけ。閲覧者本人と未ログインは不可。
+      allow read: if isHondokoMember();
+      allow create, update: if isHondokoOwner()
+        && request.resource.data.keys().hasOnly(['emails'])
+        && request.resource.data.emails is list
+        && request.resource.data.emails.size() <= 200;
+      allow delete: if false;
+    }
+    match /hondoko-config/link {
+      // 共有リンクの鍵。読めるのは家族だけ。未ログインには渡さない。
+      allow read: if isHondokoMember();
+      allow create, update: if isHondokoOwner()
+        && request.resource.data.keys().hasOnly(['key'])
+        && request.resource.data.key is string
+        && request.resource.data.key.matches('^[A-Za-z0-9_-]{8,128}$');
+      allow delete: if false;
+    }
+    match /hondoko-link-sessions/{uid} {
+      // ゲストが URL の鍵を提示する場所。一覧は禁止。鍵の値は保存済みの鍵と一致するときだけ書ける。
+      allow get: if request.auth != null && request.auth.uid == uid;
+      allow list: if false;
+      allow create, update: if request.auth != null
+        && request.auth.uid == uid
+        && exists(/databases/$(database)/documents/hondoko-config/sharing)
+        && hondokoSharing().mode == 'link'
+        && request.resource.data.keys().hasOnly(['key'])
+        && request.resource.data.key is string
+        && request.resource.data.key.size() >= 1
+        && request.resource.data.key.size() <= 128
+        && request.resource.data.key == storedLinkKey();
+      allow delete: if request.auth != null && request.auth.uid == uid;
+    }
+    // 新しい鍵は hondoko-config/link にだけ書け、8文字以上。
+    // sharing.linkKey を新しく書くことはできない。すでに置いてある7文字以下の鍵だけ、
+    // 同じ値のまま残して mode / allowComments を更新できる（配り済みの ?k= を消さない）。
+    function sharingPreservesShortKey() {
+      return resource != null
+        && request.resource.data.keys().hasOnly(['mode', 'allowComments', 'linkKey'])
+        && request.resource.data.linkKey is string
+        && request.resource.data.linkKey.matches('^[A-Za-z0-9_-]{1,7}$')
+        && resource.data.linkKey == request.resource.data.linkKey;
+    }
     match /hondoko-config/sharing {
-      // ゲスト判定のため誰でも読める(link/publicの未ログイン閲覧に必要。
-      // viewers のメールアドレス一覧を含むため注意して運用)
-      allow read: if true;
-      allow write: if isHondokoOwner();
+      // mode と allowComments だけ。viewers や新しい linkKey があると書けない。
+      // 未ログインは linkKey やメール入りの文書を読めない。
+      allow read: if isHondokoMember() || sharingIsPublicSafe();
+      allow create, update: if isHondokoOwner()
+        && request.resource.data.mode in ['private', 'viewers', 'link', 'public']
+        && request.resource.data.allowComments is bool
+        && (
+          request.resource.data.keys().hasOnly(['mode', 'allowComments'])
+          || sharingPreservesShortKey()
+        );
+      allow delete: if false;
     }
     match /hondoko-shelves/{docId} {
       allow read: if canHondokoRead();
