@@ -71,7 +71,9 @@ export function SettingsView({
       localKey,
       nextLinkKey: patch.linkKey,
     })
-    const keyToStore = planned.writeLinkKeyFirst || (next.mode === 'link' ? genKey() : '')
+    // 8文字未満は link 文書に書けない（ルールが拒否する）。sharing.linkKey に残す。
+    const keyToStore = planned.writeLinkKeyFirst
+      || (planned.preserveShortLinkKey || next.mode !== 'link' ? '' : genKey())
     if (keyToStore) {
       await setDoc(doc(db, 'hondoko-config', 'link'), { key: keyToStore })
       setLocalKey(keyToStore)

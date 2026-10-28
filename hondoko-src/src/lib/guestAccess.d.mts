@@ -12,6 +12,7 @@ export function planSharingSave(input: {
   localKey?: string | null
   nextLinkKey?: string | null
 }): {
-  sharing: { mode: string; allowComments: boolean }
+  sharing: { mode: string; allowComments: boolean; linkKey?: string }
   writeLinkKeyFirst: string | null
+  preserveShortLinkKey: boolean
 }

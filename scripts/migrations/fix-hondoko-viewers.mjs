@@ -12,9 +12,13 @@
  *   - sharing.linkKey is copied unchanged onto hondoko-config/link and then removed
  *     from sharing, in the same transaction. Production keys are the 12-character
  *     values already in ?k= links. The script does not generate a replacement.
- *   - keys of 7 characters or fewer are moved unchanged when they are url-safe.
- *     The old generator can emit them. An empty key, or one that is not url-safe,
- *     is left in place and printed as NEEDS MANUAL ATTENTION.
+ *   - a url-safe key of 8–128 characters is copied unchanged onto hondoko-config/link
+ *     and removed from sharing. The script never mints a replacement key.
+ *   - a url-safe key of 1–7 characters is NOT moved and NOT deleted. It is printed
+ *     as NEEDS REGENERATION. Lengths 1–4 are marked highest risk. Regenerate in the
+ *     app (128-bit) after reviewing who still has the old URL.
+ *   - an empty key, or one that is not url-safe, is left in place and printed as
+ *     NEEDS MANUAL ATTENTION.
  *   - viewers emails are lowercased (sharing.viewers and an existing viewers doc).
  *     Mixed-case addresses do not match Google until that write. Invalid emails
  *     are left in place and printed as NEEDS MANUAL ATTENTION.
@@ -61,7 +65,8 @@ import { authorizeBeforeFirestore, confirmProjectWrite } from './confirm-write.m
 // Moving that string onto hondoko-config/link does not change the URL.
 // Rules accept the old field via get() until this script runs, so existing links
 // keep opening before the write. This script does not invent a new key.
-const USABLE_KEY = /^[A-Za-z0-9_-]{1,128}$/;
+const MOVE_KEY = /^[A-Za-z0-9_-]{8,128}$/;
+const SHORT_KEY = /^[A-Za-z0-9_-]{1,7}$/;
 
 const args = new Set(process.argv.slice(2));
 const write = args.has('--write');
@@ -120,15 +125,23 @@ export function planViewerSplit(sharingData, existingEmails, existingLinkKey) {
     if (JSON.stringify(current) !== JSON.stringify(lowered)) emails = lowered;
   }
   let linkKey = null;
+  const flagShort = (where, key) => {
+    const risk = key.length <= 4 ? ' highest risk: 1-4 characters can be brute-forced.' : '';
+    manual.push(`NEEDS REGENERATION: ${where} is ${key.length} characters.${risk} Left unchanged; this script does not rewrite keys.`);
+  };
+  if (typeof existingLinkKey === 'string' && SHORT_KEY.test(existingLinkKey)) flagShort('hondoko-config/link.key', existingLinkKey);
   if ('linkKey' in sharingData) {
-    if (typeof sharingData.linkKey === 'string' && USABLE_KEY.test(sharingData.linkKey)) {
-      if (existingLinkKey && existingLinkKey !== sharingData.linkKey) {
+    const key = sharingData.linkKey;
+    if (typeof key === 'string' && MOVE_KEY.test(key)) {
+      if (existingLinkKey && existingLinkKey !== key) {
         manual.push(`hondoko-config/link already has a different key (${existingLinkKey}); leaving sharing.linkKey in place so the handed-out ?k= link keeps matching`);
       } else {
-        linkKey = sharingData.linkKey;
+        linkKey = key;
       }
+    } else if (typeof key === 'string' && SHORT_KEY.test(key)) {
+      flagShort('sharing.linkKey', key);
     } else {
-      manual.push('linkKey cannot be moved unchanged (empty or not 1-128 url-safe characters); the handed-out ?k= value was left on sharing');
+      manual.push('linkKey cannot be moved unchanged (empty or not url-safe); the handed-out ?k= value was left on sharing');
     }
   } else if (sharingData.mode === 'link' && !existingLinkKey) {
     manual.push('mode is link but no key is stored');
@@ -194,7 +207,10 @@ async function main() {
   const existingLinkKey = linkSnap.exists && typeof linkSnap.data().key === 'string' ? linkSnap.data().key : '';
   const plan = planViewerSplit(sharingSnap.data(), existing, existingLinkKey);
   for (const note of plan.notes || []) console.log('hondoko-config: ' + note);
-  for (const note of plan.manual || []) console.log('hondoko-config/sharing: NEEDS MANUAL ATTENTION: ' + note);
+  for (const note of plan.manual || []) {
+    const line = note.startsWith('NEEDS REGENERATION') ? note : `NEEDS MANUAL ATTENTION: ${note}`;
+    console.log('hondoko-config: ' + line);
+  }
   if (plan.action === 'unchanged') {
     console.log('hondoko-config/sharing: unchanged (no viewers field)');
     console.log(`summary: update=0 unchanged=1 manual=${(plan.manual || []).length} wrote=0 failed=0`);

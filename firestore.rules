@@ -529,7 +529,7 @@ service cloud.firestore {
       allow create, update: if isHondokoOwner()
         && request.resource.data.keys().hasOnly(['key'])
         && request.resource.data.key is string
-        && request.resource.data.key.matches('^[A-Za-z0-9_-]{1,128}$');
+        && request.resource.data.key.matches('^[A-Za-z0-9_-]{8,128}$');
       allow delete: if false;
     }
     match /hondoko-link-sessions/{uid} {
@@ -547,13 +547,27 @@ service cloud.firestore {
         && request.resource.data.key == storedLinkKey();
       allow delete: if request.auth != null && request.auth.uid == uid;
     }
+    // 新しい鍵は hondoko-config/link にだけ書け、8文字以上。
+    // sharing.linkKey を新しく書くことはできない。すでに置いてある7文字以下の鍵だけ、
+    // 同じ値のまま残して mode / allowComments を更新できる（配り済みの ?k= を消さない）。
+    function sharingPreservesShortKey() {
+      return resource != null
+        && request.resource.data.keys().hasOnly(['mode', 'allowComments', 'linkKey'])
+        && request.resource.data.linkKey is string
+        && request.resource.data.linkKey.matches('^[A-Za-z0-9_-]{1,7}$')
+        && resource.data.linkKey == request.resource.data.linkKey;
+    }
     match /hondoko-config/sharing {
-      // mode と allowComments だけ。viewers や linkKey があるとメンバー以外は読めない。
+      // mode と allowComments だけ。viewers や新しい linkKey があると書けない。
+      // 未ログインは linkKey やメール入りの文書を読めない。
       allow read: if isHondokoMember() || sharingIsPublicSafe();
       allow create, update: if isHondokoOwner()
-        && request.resource.data.keys().hasOnly(['mode', 'allowComments'])
         && request.resource.data.mode in ['private', 'viewers', 'link', 'public']
-        && request.resource.data.allowComments is bool;
+        && request.resource.data.allowComments is bool
+        && (
+          request.resource.data.keys().hasOnly(['mode', 'allowComments'])
+          || sharingPreservesShortKey()
+        );
       allow delete: if false;
     }
     match /hondoko-shelves/{docId} {

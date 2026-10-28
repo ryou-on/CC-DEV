@@ -28,7 +28,13 @@ const short = planSharingSave({
   allowComments: false,
   existingSharingLinkKey: 'abc1234',
 });
-check('7文字の鍵も保存で捨てない', short.writeLinkKeyFirst === 'abc1234');
+check('7文字の鍵は link 文書へコピーせず sharing に残す', short.writeLinkKeyFirst === null && short.preserveShortLinkKey === true && short.sharing.linkKey === 'abc1234', JSON.stringify(short));
+const one = planSharingSave({
+  mode: 'viewers',
+  allowComments: true,
+  existingSharingLinkKey: 'a',
+});
+check('1文字の鍵も保存で捨てない', one.preserveShortLinkKey === true && one.sharing.linkKey === 'a' && one.writeLinkKeyFirst === null);
 
 const minted = planSharingSave({ mode: 'link', allowComments: false });
 check('鍵が一度もない link 保存は呼び出し側が新しい鍵を作る', minted.writeLinkKeyFirst === null);

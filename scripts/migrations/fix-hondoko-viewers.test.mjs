@@ -83,11 +83,19 @@ await db.collection('hondoko-config').doc('link').delete();
 await db.collection('hondoko-config').doc('sharing').set({
   mode: 'link', allowComments: true, linkKey: 'abc1234', keep: 7,
 });
-const short = run(['--write'], projectId + '\n');
-check('7文字の鍵も同じ文字列で移す', short.status === 0, short.stderr);
+const short = run([]);
+check('7文字鍵は NEEDS REGENERATION で、highest risk ではない', short.status === 0 && /NEEDS REGENERATION: sharing.linkKey is 7 characters/.test(short.stdout) && !/highest risk/.test(short.stdout.split('is 7 characters')[1] || ''), short.stdout);
 const shortSharing = (await db.collection('hondoko-config').doc('sharing').get()).data();
-const shortLink = (await db.collection('hondoko-config').doc('link').get()).data();
-check('7文字鍵は link 文書に残り sharing からは消える', shortLink.key === 'abc1234' && !('linkKey' in shortSharing), JSON.stringify({ shortSharing, shortLink }));
+const shortLinkSnap = await db.collection('hondoko-config').doc('link').get();
+check('7文字鍵は書き換えない', shortSharing.linkKey === 'abc1234' && shortSharing.keep === 7 && !shortLinkSnap.exists, JSON.stringify(shortSharing));
+
+await db.collection('hondoko-config').doc('sharing').set({
+  mode: 'link', allowComments: false, linkKey: 'ab', keep: 2,
+});
+const tiny = run([]);
+check('1〜4文字鍵は highest risk として出す', tiny.status === 0 && /NEEDS REGENERATION: sharing.linkKey is 2 characters\. highest risk/.test(tiny.stdout), tiny.stdout);
+const tinySharing = (await db.collection('hondoko-config').doc('sharing').get()).data();
+check('2文字鍵は sharing に残る', tinySharing.linkKey === 'ab' && tinySharing.keep === 2);
 
 await db.collection('hondoko-config').doc('sharing').set({ mode: 'viewers', allowComments: false, keep: 4 });
 await db.collection('hondoko-config').doc('viewers').set({ emails: ['Eve@Example.com'], other: 'stay' });

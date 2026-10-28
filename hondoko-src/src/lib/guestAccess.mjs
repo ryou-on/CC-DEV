@@ -11,6 +11,8 @@ export function decideGuestAccess({ sessionOpened, sharingMode, base }) {
   return base
 }
 
+const URL_SAFE = /^[A-Za-z0-9_-]+$/
+
 export function planSharingSave({
   mode,
   allowComments,
@@ -21,10 +23,20 @@ export function planSharingSave({
 }) {
   const explicit = typeof nextLinkKey === 'string' ? nextLinkKey : ''
   const preserved = explicit || localKey || linkDocKey || existingSharingLinkKey || ''
-  return {
-    sharing: { mode, allowComments: !!allowComments },
-    // Write this to hondoko-config/link BEFORE replacing sharing.
-    // Null means there was no key to keep (caller may mint one only for mode=link).
-    writeLinkKeyFirst: preserved || null,
+  const sharing = { mode, allowComments: !!allowComments }
+  const safe = typeof preserved === 'string' && URL_SAFE.test(preserved)
+  // New or existing keys of 8+ go to the private link doc. sharing.linkKey is removed.
+  if (safe && preserved.length >= 8 && preserved.length <= 128) {
+    return { sharing, writeLinkKeyFirst: preserved, preserveShortLinkKey: false }
   }
+  // An already issued 1–7 character key cannot be copied: link-doc writes require 8+.
+  // Leave it on sharing so the handed-out ?k= still matches. Do not mint a replacement.
+  if (!explicit && safe && preserved.length >= 1 && preserved.length < 8) {
+    return {
+      sharing: { ...sharing, linkKey: preserved },
+      writeLinkKeyFirst: null,
+      preserveShortLinkKey: true,
+    }
+  }
+  return { sharing, writeLinkKeyFirst: null, preserveShortLinkKey: false }
 }

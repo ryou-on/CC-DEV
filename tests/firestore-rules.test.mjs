@@ -266,6 +266,28 @@ await env.withSecurityRulesDisabled(async c => {
 await ng('7文字鍵でも未ログインは本を一覧できない', () => getDocs(collection(anon, 'hondoko-books')));
 await ok('7文字の既存鍵でもセッションを作れる', () => setDoc(doc(shortGuest, 'hondoko-link-sessions/short-guest'), { key: shortKey }));
 await ok('7文字の鍵で本を一覧できる', () => getDocs(collection(shortGuest, 'hondoko-books')));
+const oneKey = 'a';
+const oneGuest = env.authenticatedContext('one-guest').firestore();
+await env.withSecurityRulesDisabled(async c => {
+  const d = c.firestore();
+  await deleteDoc(doc(d, 'hondoko-config/link'));
+  await setDoc(doc(d, 'hondoko-config/sharing'), { mode: 'link', allowComments: false, linkKey: oneKey });
+});
+await ok('1文字の既存鍵でもセッションを作れる', () => setDoc(doc(oneGuest, 'hondoko-link-sessions/one-guest'), { key: oneKey }));
+await ok('1文字の鍵で本を一覧できる', () => getDocs(collection(oneGuest, 'hondoko-books')));
+await ng('1文字鍵でも未ログインは本を一覧できない', () => getDocs(collection(anon, 'hondoko-books')));
+await ng('新しい7文字のリンク鍵は書けない', () => setDoc(doc(editor, 'hondoko-config/link'), { key: 'abc1234' }));
+await ok('8文字のリンク鍵は書ける', () => setDoc(doc(editor, 'hondoko-config/link'), { key: 'a'.repeat(8) }));
+await ok('128文字のリンク鍵は書ける', () => setDoc(doc(editor, 'hondoko-config/link'), { key: 'b'.repeat(128) }));
+await ng('129文字のリンク鍵は書けない', () => setDoc(doc(editor, 'hondoko-config/link'), { key: 'c'.repeat(129) }));
+await ng('sharing に新しい8文字の linkKey は書けない', () => setDoc(doc(editor, 'hondoko-config/sharing'), { mode: 'link', allowComments: false, linkKey: 'a'.repeat(8) }));
+await env.withSecurityRulesDisabled(async c => {
+  await deleteDoc(doc(c.firestore(), 'hondoko-config/link'));
+  await setDoc(doc(c.firestore(), 'hondoko-config/sharing'), { mode: 'link', allowComments: true, linkKey: 'abc1234' });
+});
+await ok('オーナー保存は既存の7文字鍵を同じ値で残せる', () => setDoc(doc(editor, 'hondoko-config/sharing'), { mode: 'link', allowComments: false, linkKey: 'abc1234' }));
+await ng('オーナーは既存の短鍵を別の短鍵に書き換えられない', () => setDoc(doc(editor, 'hondoko-config/sharing'), { mode: 'link', allowComments: false, linkKey: 'zzzzzzz' }));
+await ng('短鍵を残したまま未ログインは本を一覧できない', () => getDocs(collection(anon, 'hondoko-books')));
 await env.withSecurityRulesDisabled(async c => {
   const d = c.firestore();
   await setDoc(doc(d, 'hondoko-config/sharing'), { mode: 'viewers', allowComments: false });
