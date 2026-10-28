@@ -8,6 +8,7 @@
 <link rel="icon" href="/tomoe-home/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="/tomoe-home/apple-touch-icon.png">
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700;900&display=swap');
@@ -329,7 +330,20 @@ firebase.initializeApp({
   appId: "1:1029579090333:web:5a2ea499fec97c497f2774"
 });
 const _db = firebase.firestore();
+const _auth = firebase.auth();
 const CONFIG_REF = _db.collection('tomoe-home').doc('config');
+function isEditorEmail(email) {
+  return !!email && (email === 'junpei.omote@gmail.com' || /@splineglobal\.com$/.test(email));
+}
+async function ensureEditor() {
+  if (_auth.currentUser && isEditorEmail(_auth.currentUser.email)) return _auth.currentUser;
+  const cred = await _auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+  if (!isEditorEmail(cred.user.email)) {
+    await _auth.signOut();
+    throw new Error('管理者のGoogleアカウントでログインしてください');
+  }
+  return cred.user;
+}
 
 // ---- データ読み書き ----
 async function load() {
@@ -347,6 +361,7 @@ async function load() {
 
 async function save(apps) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(apps));
+  await ensureEditor();
   await CONFIG_REF.set({ apps });
 }
 

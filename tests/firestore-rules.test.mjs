@@ -53,11 +53,17 @@ await ok('編集者は評価可', () => updateDoc(doc(editor, 'apps/a1'), { rati
 await ok('編集者は削除可', () => deleteDoc(doc(editor, 'apps/a1')));
 
 console.log('ouchi-hamasushi');
-await ok('匿名で保存可', () => setDoc(doc(anon, 'ouchi-hamasushi/default/assets/image_まぐろ'), { data: 'data:image/jpeg;base64,xx', mimeType: 'image/jpeg', size: 10, updatedAt: serverTimestamp() }));
-await ok('匿名で voice_ 削除可', () => deleteDoc(doc(anon, 'ouchi-hamasushi/default/assets/voice_otousan_まぐろ')));
-await ok('匿名で image_ 削除可', () => deleteDoc(doc(anon, 'ouchi-hamasushi/default/assets/image_まぐろ')));
-await ng('不正な assetKey は削除不可', () => deleteDoc(doc(anon, 'ouchi-hamasushi/default/assets/foo')));
-await ng('65文字超の家族コードは削除不可', () => deleteDoc(doc(anon, 'ouchi-hamasushi/' + 'a'.repeat(65) + '/assets/voice_x')));
+const ouchiAsset = { data: 'data:image/jpeg;base64,xx', mimeType: 'image/jpeg', size: 10, updatedAt: serverTimestamp() };
+await ng('匿名では保存できない', () => setDoc(doc(anon, 'ouchi-hamasushi/default/assets/image_まぐろ'), ouchiAsset));
+await ng('匿名では voice_ を削除できない', () => deleteDoc(doc(anon, 'ouchi-hamasushi/default/assets/voice_otousan_まぐろ')));
+await ng('確認済みでも短い家族コードは書けない', () => setDoc(doc(other, 'ouchi-hamasushi/default/assets/image_eve'), ouchiAsset));
+await ng('確認済みでも短い家族コードは削除できない', () => deleteDoc(doc(other, 'ouchi-hamasushi/default/assets/voice_otousan_まぐろ')));
+await ok('編集者は短い家族コードに保存できる', () => setDoc(doc(editor, 'ouchi-hamasushi/default/assets/image_まぐろ'), ouchiAsset));
+await ok('編集者は voice_ を削除できる', () => deleteDoc(doc(editor, 'ouchi-hamasushi/default/assets/voice_otousan_まぐろ')));
+await ok('編集者は image_ を削除できる', () => deleteDoc(doc(editor, 'ouchi-hamasushi/default/assets/image_まぐろ')));
+await ok('確認済みユーザーは16文字以上の家族コードに保存できる', () => setDoc(doc(other, 'ouchi-hamasushi/' + 'c'.repeat(16) + '/assets/image_x'), ouchiAsset));
+await ng('不正な assetKey は削除不可', () => deleteDoc(doc(editor, 'ouchi-hamasushi/default/assets/foo')));
+await ng('65文字超の家族コードは削除不可', () => deleteDoc(doc(editor, 'ouchi-hamasushi/' + 'a'.repeat(65) + '/assets/voice_x')));
 
 console.log('note-analytics');
 const mine = env.authenticatedContext('robby', { email: 'junpei.omote@gmail.com', email_verified: true }).firestore();
@@ -76,11 +82,17 @@ await ok('編集者は旧データを読める（移行用）', () => getDocs(co
 await ng('編集者も旧データは書き換え不可', () => setDoc(doc(editor, 'note-analytics/default/snapshots/20260420'), snap));
 
 console.log('tomoe-player sessions');
-const s = { videoId: 'abc', title: 't', startedAt: '2026-10-27T10:00:00Z', day: '2026-10-27', dow: 1, hour: 10, watchSec: 30, maxPos: 30, duration: 60, completed: false, endReason: '', endedAt: '', device: 'ipad', startReason: 'tap' };
-await ok('匿名で視聴ログ作成可', () => setDoc(doc(anon, 'tomoe-player/ABC123/sessions/mh7x1k2q9z'), s, { merge: true }));
-await ok('中断クローズ(merge)可', () => setDoc(doc(anon, 'tomoe-player/ABC123/sessions/mh7x1k2q9z'), { endReason: 'abort', endedAt: 'x' }, { merge: true }));
-await ok('保護者は削除可', () => deleteDoc(doc(anon, 'tomoe-player/ABC123/sessions/lx9k2abc')));
-await ng('不正なID形式は削除不可', () => deleteDoc(doc(anon, 'tomoe-player/ABC123/sessions/AB$x')));
+const kid = env.authenticatedContext('kid-device').firestore();
+const s = { uid: 'kid-device', videoId: 'abc', title: 't', startedAt: '2026-10-27T10:00:00Z', day: '2026-10-27', dow: 1, hour: 10, watchSec: 30, maxPos: 30, duration: 60, completed: false, endReason: '', endedAt: '', device: 'ipad', startReason: 'tap' };
+await ng('未ログインでは視聴ログを作れない', () => setDoc(doc(anon, 'tomoe-player/ABC123/sessions/mh7x1k2q9z'), s, { merge: true }));
+await ok('再生した端末は視聴ログを作れる', () => setDoc(doc(kid, 'tomoe-player/ABC123/sessions/mh7x1k2q9z'), s, { merge: true }));
+await ok('同じ端末の中断クローズ(merge)可', () => setDoc(doc(kid, 'tomoe-player/ABC123/sessions/mh7x1k2q9z'), { endReason: 'abort', endedAt: 'x' }, { merge: true }));
+await ng('別の端末は視聴ログを改ざんできない', () => setDoc(doc(other, 'tomoe-player/ABC123/sessions/mh7x1k2q9z'), { ...s, uid: 'eve', title: 'hacked' }, { merge: true }));
+await ng('未ログインでは視聴ログを削除できない', () => deleteDoc(doc(anon, 'tomoe-player/ABC123/sessions/lx9k2abc')));
+await ng('別の端末は他人の視聴ログを削除できない', () => deleteDoc(doc(other, 'tomoe-player/ABC123/sessions/mh7x1k2q9z')));
+await ok('再生した端末は自分の視聴ログを削除できる', () => deleteDoc(doc(kid, 'tomoe-player/ABC123/sessions/mh7x1k2q9z')));
+await ok('編集者は uid のない既存ログを削除できる', () => deleteDoc(doc(editor, 'tomoe-player/ABC123/sessions/lx9k2abc')));
+await ng('不正なID形式は削除不可', () => deleteDoc(doc(editor, 'tomoe-player/ABC123/sessions/AB$x')));
 
 console.log('playlist_analytics');
 await ok('表示カウント +1 可', () => setDoc(doc(anon, 'playlist_analytics/pl1'), { viewCount: increment(1), lastViewed: serverTimestamp() }, { merge: true }));
@@ -106,10 +118,15 @@ await ng('匿名で削除不可', () => deleteDoc(doc(anon, 'video_analytics/v1'
 
 console.log('meet-knowledge');
 const e = { question: 'q', answer: 'a', keywords: [], category: '', createdAt: 1, updatedAt: 1, hits: 0, source: 'manual' };
-await ok('匿名で保存可', () => setDoc(doc(anon, 'meet-knowledge/default/entries/0b6c2f1e-aaaa-2222-3333-444455556666'), e));
-await ok('hits 加算可', () => updateDoc(doc(anon, 'meet-knowledge/default/entries/0b6c2f1e-aaaa-2222-3333-444455556666'), { hits: increment(1), updatedAt: 2 }));
-await ok('匿名で削除可', () => deleteDoc(doc(anon, 'meet-knowledge/default/entries/0b6c2f1e-1111-2222-3333-444455556666')));
-await ng('不正なチームコードは削除不可', () => deleteDoc(doc(anon, 'meet-knowledge/bad$code/entries/x')));
+const meetId = '0b6c2f1e-aaaa-2222-3333-444455556666';
+await ng('匿名ではナレッジを保存できない', () => setDoc(doc(anon, 'meet-knowledge/default/entries/' + meetId), e));
+await ng('匿名ではナレッジを削除できない', () => deleteDoc(doc(anon, 'meet-knowledge/default/entries/0b6c2f1e-1111-2222-3333-444455556666')));
+await ng('確認済みでも短いチームコードは書けない', () => setDoc(doc(other, 'meet-knowledge/default/entries/' + meetId), e));
+await ok('編集者は default に保存できる', () => setDoc(doc(editor, 'meet-knowledge/default/entries/' + meetId), e));
+await ok('編集者は hits を加算できる', () => updateDoc(doc(editor, 'meet-knowledge/default/entries/' + meetId), { hits: increment(1), updatedAt: 2 }));
+await ok('編集者はナレッジを削除できる', () => deleteDoc(doc(editor, 'meet-knowledge/default/entries/0b6c2f1e-1111-2222-3333-444455556666')));
+await ok('確認済みユーザーは16文字以上のチームコードに保存できる', () => setDoc(doc(other, 'meet-knowledge/' + 'd'.repeat(16) + '/entries/' + meetId), e));
+await ng('不正なチームコードは削除不可', () => deleteDoc(doc(editor, 'meet-knowledge/bad$code/entries/x')));
 
 console.log('その他');
 await ng('未定義コレクションは不可', () => setDoc(doc(anon, 'random/x'), { a: 1 }));
@@ -155,33 +172,69 @@ const groupBody = (email) => ({
   routeSettings: { color: '#f6c453', weight: 4 },
 });
 await ok('作成者はグループを作れる', () => setDoc(doc(alice, 'groups/AB2345'), groupBody('alice@example.com')));
-await ok('参加前でもコードを知っていれば単体取得できる', () => getDoc(doc(other, 'groups/AB2345')));
+await ng('IDを知るだけの人はグループを読めない', () => getDoc(doc(other, 'groups/AB2345')));
 await ng('未ログインはグループを読めない', () => getDoc(doc(anon, 'groups/AB2345')));
 await ng('未確認ユーザーはグループを読めない', () => getDoc(doc(unverifiedEditor, 'groups/AB2345')));
 await ng('グループ一覧は不可', () => getDocs(collection(other, 'groups')));
 await ng('他人のグループは削除不可', () => deleteDoc(doc(other, 'groups/AB2345')));
 await ng('作成者でもグループ削除は不可', () => deleteDoc(doc(alice, 'groups/AB2345')));
 await ng('非メンバーはピンを上書きできない', () => updateDoc(doc(other, 'groups/AB2345'), { pins: [{ id: 'evil' }] }));
-await ng('非メンバーは他人をメンバー追加できない', () => updateDoc(doc(other, 'groups/AB2345'), {
-  members: arrayUnion({ email: 'stranger@example.com', role: 'member' }),
+await ng('IDを知るだけでは自分を member にできない', () => updateDoc(doc(other, 'groups/AB2345'), {
+  members: arrayUnion({ email: 'eve@example.com', role: 'member' }),
+  lastInviteEmail: 'eve@example.com',
 }));
 await ng('非メンバーは自分を owner にはできない', () => updateDoc(doc(other, 'groups/AB2345'), {
   members: arrayUnion({ email: 'eve@example.com', role: 'owner' }),
+  lastInviteEmail: 'eve@example.com',
 }));
-await ok('コードを知る人は自分を member として参加できる', () => updateDoc(doc(other, 'groups/AB2345'), {
-  members: arrayUnion({ email: 'eve@example.com', role: 'member' }),
-}));
-await ok('メンバーはピンとルートを更新できる', () => updateDoc(doc(alice, 'groups/AB2345'), {
+await ok('作成者は共有データを更新できる', () => updateDoc(doc(alice, 'groups/AB2345'), {
   pins: [{ id: 'p1', name: '公園', lat: 35.6, lng: 139.7 }],
   routes: [{ id: 'r1', points: [{ lat: 35.6, lng: 139.7 }] }],
   memberNames: ['ともえ', '父'],
   routeSettings: { color: '#88c057', weight: 4 },
 }));
-await ok('参加後のメンバーもピンを更新できる', () => updateDoc(doc(other, 'groups/AB2345'), {
-  pins: [{ id: 'p1', name: '公園', lat: 35.6, lng: 139.7 }],
+await ok('作成者は member を1人招待できる', () => updateDoc(doc(alice, 'groups/AB2345'), {
+  members: arrayUnion({ email: 'eve@example.com', role: 'member' }),
+  lastInviteEmail: 'eve@example.com',
 }));
-await ok('オーナーはメールで招待できる', () => updateDoc(doc(alice, 'groups/AB2345'), {
-  members: arrayUnion({ email: 'friend@example.com', role: 'member' }),
+await ng('作成者は招待と同時に owner を増やせない', () => updateDoc(doc(alice, 'groups/AB2345'), {
+  members: arrayUnion({ email: 'second@example.com', role: 'owner' }),
+  lastInviteEmail: 'second@example.com',
+}));
+await ng('作成者は自分を members から外せない', () => updateDoc(doc(alice, 'groups/AB2345'), {
+  members: [{ email: 'eve@example.com', role: 'owner' }],
+  lastInviteEmail: 'eve@example.com',
+}));
+await ok('承認されたメンバーはピンを更新できる', () => updateDoc(doc(other, 'groups/AB2345'), {
+  pins: [{ id: 'p2', name: '海', lat: 35.1, lng: 139.5 }],
+}));
+await ng('メンバーは members を書き換えられない', () => updateDoc(doc(other, 'groups/AB2345'), {
+  members: [
+    { email: 'alice@example.com', role: 'owner' },
+    { email: 'eve@example.com', role: 'owner' },
+  ],
+}));
+await ng('メンバーは createdBy を奪えない', () => updateDoc(doc(other, 'groups/AB2345'), { createdBy: 'eve@example.com' }));
+await ok('未参加者は参加申請を作れる', () => setDoc(doc(pilot, 'groups/AB2345/joinRequests/pilot'), {
+  email: 'pilot@example.com', status: 'pending', createdAt: serverTimestamp(),
+}));
+await ng('申請者は自分を承認できない', () => updateDoc(doc(pilot, 'groups/AB2345/joinRequests/pilot'), { status: 'approved' }));
+await ng('申請者はグループを読めない', () => getDoc(doc(pilot, 'groups/AB2345')));
+await ng('申請者は参加申請の一覧を読めない', () => getDocs(collection(pilot, 'groups/AB2345/joinRequests')));
+await ok('作成者は参加申請を一覧できる', () => getDocs(collection(alice, 'groups/AB2345/joinRequests')));
+await ok('作成者は参加申請を承認できる', () => updateDoc(doc(alice, 'groups/AB2345/joinRequests/pilot'), { status: 'approved' }));
+await ok('作成者は承認した人を member に追加できる', () => updateDoc(doc(alice, 'groups/AB2345'), {
+  members: arrayUnion({ email: 'pilot@example.com', role: 'member' }),
+  lastInviteEmail: 'pilot@example.com',
+}));
+await ok('追加されたメンバーはピンを更新できる', () => updateDoc(doc(pilot, 'groups/AB2345'), {
+  pins: [{ id: 'p3', name: '山', lat: 36, lng: 138 }],
+}));
+await ng('存在しないグループには参加申請できない', () => setDoc(doc(other, 'groups/NOGROUP/joinRequests/eve'), {
+  email: 'eve@example.com', status: 'pending', createdAt: serverTimestamp(),
+}));
+await ng('未確認ユーザーは参加申請できない', () => setDoc(doc(unverifiedEditor, 'groups/AB2345/joinRequests/spoof'), {
+  email: 'junpei.omote@gmail.com', status: 'pending', createdAt: serverTimestamp(),
 }));
 await ng('他人のメールを createdBy にして作れない', () => setDoc(doc(other, 'groups/ZZ9999'), groupBody('alice@example.com')));
 await ng('未確認ユーザーはグループを作れない', () => setDoc(doc(unverifiedEditor, 'groups/NO9999'), groupBody('junpei.omote@gmail.com')));
@@ -242,26 +295,38 @@ await ok('編集者は返信済みを戻せる', () => updateDoc(doc(editor, 'fs
 await ng('編集者でもフィードバックは削除できない', () => deleteDoc(doc(editor, 'fst_feedback/FB_0002')));
 await ng('未確認の編集者メールでは受信箱を読めない', () => getDocs(collection(unverifiedEditor, 'fst_feedback')));
 await ok('開発版のフィードバックも作成できる', () => setDoc(doc(pilot, 'fst_feedback/FB_0004'), { ...feedback('pilot'), fbId: 'FB_0004', build: 'dev' }));
+await ok('10000件目のフィードバックIDも作れる', () => setDoc(doc(pilot, 'fst_feedback/FB_10000'), { ...feedback('pilot'), fbId: 'FB_10000' }));
+await ng('3桁のフィードバックIDは不可', () => setDoc(doc(pilot, 'fst_feedback/FB_099'), { ...feedback('pilot'), fbId: 'FB_099' }));
+await ng('9桁のフィードバックIDは不可', () => setDoc(doc(pilot, 'fst_feedback/FB_123456789'), { ...feedback('pilot'), fbId: 'FB_123456789' }));
 
 console.log('outreach-crm');
+const ws = 'a'.repeat(32);
 await ng('ワークスペース一覧は不可', () => getDocs(collection(anon, 'outreach-crm')));
-await ok('コードを知る端末はその1件を読める', () => getDoc(doc(anon, 'outreach-crm/acme')));
-await ok('未作成のワークスペースも get できる', () => getDoc(doc(anon, 'outreach-crm/newcode')));
-await ok('コードを知る端末は leads を保存できる', () => setDoc(doc(anon, 'outreach-crm/acme'), {
+await ng('未ログインは長いコードでも読めない', () => getDoc(doc(anon, 'outreach-crm/' + ws)));
+await ng('未ログインは leads を消せない', () => setDoc(doc(anon, 'outreach-crm/' + ws), { leads: [], updatedAt: Date.now() }));
+await ng('未ログインは文書を削除できない', () => deleteDoc(doc(anon, 'outreach-crm/acme')));
+await ng('ログイン済みでも短いコードは読めない', () => getDoc(doc(other, 'outreach-crm/acme')));
+await ng('ログイン済みでも短いコードは書けない', () => setDoc(doc(other, 'outreach-crm/acme'), { leads: [], updatedAt: Date.now() }));
+await ng('23文字のコードは読めない', () => getDoc(doc(other, 'outreach-crm/' + 'b'.repeat(23))));
+await ok('ログイン済みは24文字以上のコードを読める', () => getDoc(doc(other, 'outreach-crm/' + ws)));
+await ok('ログイン済みは leads を保存できる', () => setDoc(doc(other, 'outreach-crm/' + ws), {
   leads: [{ company: '株式会社サンプル', contactName: '山田太郎', email: 'taro@example.com', industry: '製造', events: [{ type: 'sent', at: 1 }] }],
   updatedAt: Date.now(),
 }));
-await ok('空の leads での同期もできる', () => setDoc(doc(anon, 'outreach-crm/acme'), { leads: [], updatedAt: Date.now() }));
-await ng('leads 以外のフィールドは不可', () => setDoc(doc(anon, 'outreach-crm/acme'), { leads: [], updatedAt: Date.now(), owner: 'eve' }));
-await ng('ワークスペースの削除は不可', () => deleteDoc(doc(anon, 'outreach-crm/acme')));
+await ok('ログイン済みは空の leads で同期できる', () => setDoc(doc(other, 'outreach-crm/' + ws), { leads: [], updatedAt: Date.now() }));
+await ng('leads 以外のフィールドは不可', () => setDoc(doc(other, 'outreach-crm/' + ws), { leads: [], updatedAt: Date.now(), owner: 'eve' }));
+await ng('ログイン済みでも文書削除は不可', () => deleteDoc(doc(other, 'outreach-crm/' + ws)));
+await ng('未確認ユーザーは長いコードでも読めない', () => getDoc(doc(unverifiedEditor, 'outreach-crm/' + ws)));
 
 console.log('tomoe-home');
 await ng('tomoe-home の一覧は不可', () => getDocs(collection(anon, 'tomoe-home')));
 await ok('ホームは config を読める', () => getDoc(doc(anon, 'tomoe-home/config')));
-await ok('管理画面は apps を保存できる', () => setDoc(doc(anon, 'tomoe-home/config'), {
+await ng('未ログインは config を上書きできない', () => setDoc(doc(anon, 'tomoe-home/config'), { apps: [] }));
+await ng('編集者以外は config を上書きできない', () => setDoc(doc(other, 'tomoe-home/config'), { apps: [] }));
+await ok('編集者は apps を保存できる', () => setDoc(doc(editor, 'tomoe-home/config'), {
   apps: [{ id: 'abc-world', name: 'ワールドABC', icon: '🌍', url: 'https://cc-dev-ps7.web.app/abc-world/', desc: 'えいご' }],
 }));
-await ng('config 以外は書けない', () => setDoc(doc(anon, 'tomoe-home/other'), { apps: [] }));
+await ng('config 以外は書けない', () => setDoc(doc(editor, 'tomoe-home/other'), { apps: [] }));
 await ng('config の削除は不可', () => deleteDoc(doc(anon, 'tomoe-home/config')));
 await ng('apps 以外のフィールドは不可', () => setDoc(doc(anon, 'tomoe-home/config'), { apps: [], evil: true }));
 
