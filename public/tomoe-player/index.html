@@ -216,6 +216,7 @@ https://www.youtube.com/playlist?list=PLxxxxxxxx"></textarea>
 </div>
 
 <script defer src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
 <script defer src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 <script>
 // 早期エラー捕捉：古い iOS 等でスクリプトが落ちても原因を画面に出す
@@ -467,16 +468,29 @@ async function waitDb(timeoutMs) {
         const d = firebase.firestore();
         d.enablePersistence({ synchronizeTabs: true }).catch(e => log('persistence: ' + (e.code || e.message)));
         db = d;   // enablePersistence は待たない（後続の呼び出しはSDK内部でキューされる）
+        await ensurePlayerAuth();
         break;
       } catch (e) {
         // 別経路が先に initializeApp 済みのケース（duplicate-app）は firestore を取り直す
-        try { db = firebase.firestore(); } catch (e2) { log('fb init: ' + e.message); }
+        try { db = firebase.firestore(); await ensurePlayerAuth(); } catch (e2) { log('fb init: ' + e.message); }
         break;
       }
     }
     await sleep(50);
   }
   return db;
+}
+async function ensurePlayerAuth() {
+  const auth = firebase.auth();
+  if (auth.currentUser) return auth.currentUser;
+  try {
+    const cred = await auth.signInAnonymously();
+    log('anon uid ' + cred.user.uid);
+    return cred.user;
+  } catch (e) {
+    log('anon auth: ' + (e.code || e.message));
+    return null;
+  }
 }
 async function initFirebaseAndSync(rawList) {
   if (!(await waitDb(20000))) { if (!videos.length && listId) setPh('⚠ 接続できません（電波を確認して再読み込み）'); return; }
@@ -794,8 +808,10 @@ function closeOrphanSession() {
   let o = null; try { o = JSON.parse(localStorage.getItem('tomoe_open_sess') || 'null'); } catch (e) {}
   if (!o || !o.id || !o.list) return;
   try { localStorage.removeItem('tomoe_open_sess'); } catch (e) {}
+  const uid = firebase.auth() && firebase.auth().currentUser && firebase.auth().currentUser.uid;
+  if (!uid) { log('orphan close skipped: no auth'); return; }
   db.collection('tomoe-player').doc(o.list).collection('sessions').doc(o.id)
-    .set({ endReason: 'abort', endedAt: new Date().toISOString() }, { merge: true })
+    .set({ endReason: 'abort', endedAt: new Date().toISOString(), uid }, { merge: true })
     .then(() => log('orphan session closed: ' + o.id)).catch(e => log('orphan close: ' + e.message));
 }
 function sessFlush() {
@@ -803,8 +819,10 @@ function sessFlush() {
   if (sess.watchSec < MIN_LOG_SEC) return;   // 5秒未満の再生は記録しない
   const d = sess; d._dirty = false; d._lastFlush = Date.now();
   try { localStorage.setItem('tomoe_open_sess', JSON.stringify({ id: d.id, list: listId })); } catch (e) {}
+  const uid = firebase.auth() && firebase.auth().currentUser && firebase.auth().currentUser.uid;
+  if (!uid) { log('log save skipped: no auth'); return; }
   const data = {
-    videoId: d.videoId, title: d.title, startedAt: d.startedAt, day: d.day, dow: d.dow, hour: d.hour,
+    uid, videoId: d.videoId, title: d.title, startedAt: d.startedAt, day: d.day, dow: d.dow, hour: d.hour,
     watchSec: Math.round(d.watchSec), maxPos: Math.round(d.maxPos), duration: Math.round(d.duration),
     completed: d.completed, endReason: d.endReason, endedAt: d.endedAt, device: d.device, startReason: d.startReason
   };

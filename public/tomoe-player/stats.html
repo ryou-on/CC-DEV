@@ -139,6 +139,7 @@ td .t{display:inline-block;max-width:360px;overflow:hidden;text-overflow:ellipsi
 <div class="toast" id="toast"></div>
 
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 <script>
 const VERSION = 'v0.7.2';
@@ -386,9 +387,26 @@ function exportCsv() {
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   toast(rows.length + '件を書き出しました');
 }
+function isEditorEmail(email) {
+  return !!email && (email === 'junpei.omote@gmail.com' || /@splineglobal\.com$/.test(email));
+}
+async function ensureEditor() {
+  const auth = firebase.auth();
+  if (auth.currentUser && isEditorEmail(auth.currentUser.email)) return auth.currentUser;
+  const cred = await auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+  if (!isEditorEmail(cred.user.email)) {
+    await auth.signOut();
+    throw new Error('管理者のGoogleアカウントでログインしてください');
+  }
+  return cred.user;
+}
 async function delSession(id) {
   if (!confirm('この再生の記録を削除しますか？')) return;
-  try { await db.collection('tomoe-player').doc(code).collection('sessions').doc(id).delete(); all = all.filter(s => s.id !== id); render(); toast('削除しました'); }
+  try {
+    await ensureEditor();
+    await db.collection('tomoe-player').doc(code).collection('sessions').doc(id).delete();
+    all = all.filter(s => s.id !== id); render(); toast('削除しました');
+  }
   catch (e) { toast('削除できませんでした: ' + e.message); }
 }
 let _rz; window.addEventListener('resize', () => { clearTimeout(_rz); _rz = setTimeout(() => { if (all.length) render(); }, 200); });

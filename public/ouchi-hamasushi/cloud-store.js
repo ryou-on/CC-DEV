@@ -9,6 +9,9 @@ import {
   getFirestore, doc, setDoc, deleteDoc,
   collection, onSnapshot, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+import {
+  getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyDPlsAhtxbJBihy-EAHck9P7XbuMdzV0ds",
@@ -21,6 +24,23 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const auth = getAuth(app);
+
+function isEditorEmail(email) {
+  return !!email && (email === 'junpei.omote@gmail.com' || /@splineglobal\.com$/.test(email));
+}
+// 編集者は従来の家族コード（tomoe3030 など）を書ける。それ以外は16文字以上のコードだけ。
+function canWriteFamily(code) {
+  const user = auth.currentUser;
+  if (!user) return false;
+  if (isEditorEmail(user.email)) return true;
+  return /^[A-Za-z0-9_-]{16,64}$/.test(code || '');
+}
+async function signIn() {
+  const cred = await signInWithPopup(auth, new GoogleAuthProvider());
+  return cred.user;
+}
+function onUser(cb) { return onAuthStateChanged(auth, cb); }
 
 // このファミリーのデフォルト家族コード。新しいブラウザでプレイヤーを開くと
 // 自動的にこのコードで接続される → 全端末で同じ録音データが鳴る
@@ -141,6 +161,10 @@ async function setAsset(familyCode, assetKey, dataUri, mimeType) {
     const kb = Math.round(dataUri.length / 1024);
     throw new Error(`ファイルが大きすぎます (${kb}KB, 上限 ${MAX_DATA_SIZE / 1024}KB)`);
   }
+  if (!auth.currentUser) throw new Error('保存にはGoogleログインが必要です');
+  if (!canWriteFamily(familyCode)) {
+    throw new Error('この家族コードは管理者だけが変更できます。16文字以上のコードを設定してください');
+  }
   // ローカル即時反映（ネット失敗しても再生はできる）
   try { localStorage.setItem(assetKey, dataUri); } catch (e) { /* quota 超過は許容 */ }
   // クラウド保存
@@ -154,6 +178,10 @@ async function setAsset(familyCode, assetKey, dataUri, mimeType) {
 }
 
 async function removeAsset(familyCode, assetKey) {
+  if (!auth.currentUser) throw new Error('削除にはGoogleログインが必要です');
+  if (!canWriteFamily(familyCode)) {
+    throw new Error('この家族コードは管理者だけが削除できます。16文字以上のコードを設定してください');
+  }
   localStorage.removeItem(assetKey);
   const ref = doc(db, 'ouchi-hamasushi', familyCode, 'assets', assetKey);
   await deleteDoc(ref);
@@ -167,6 +195,10 @@ window.cloudStore = {
   wipeLocalAssets,
   setAsset,
   removeAsset,
+  signIn,
+  onUser,
+  isEditorEmail,
+  canWriteFamily,
   getAsset,      // localStorage → memCache の順で値を取得
   memCache,      // デバッグ用に露出
   MAX_DATA_SIZE,
