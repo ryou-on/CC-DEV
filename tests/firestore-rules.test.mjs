@@ -61,9 +61,13 @@ await ng('確認済みでも短い家族コードは削除できない', () => d
 await ok('編集者は短い家族コードに保存できる', () => setDoc(doc(editor, 'ouchi-hamasushi/default/assets/image_まぐろ'), ouchiAsset));
 await ok('編集者は voice_ を削除できる', () => deleteDoc(doc(editor, 'ouchi-hamasushi/default/assets/voice_otousan_まぐろ')));
 await ok('編集者は image_ を削除できる', () => deleteDoc(doc(editor, 'ouchi-hamasushi/default/assets/image_まぐろ')));
-await ok('確認済みユーザーは16文字以上の家族コードに保存できる', () => setDoc(doc(other, 'ouchi-hamasushi/' + 'c'.repeat(16) + '/assets/image_x'), ouchiAsset));
+await ng('確認済みでも15文字の家族コードは書けない', () => setDoc(doc(other, 'ouchi-hamasushi/' + 'e'.repeat(15) + '/assets/image_x'), ouchiAsset));
+await ng('確認済みでも15文字の家族コードは削除できない', () => deleteDoc(doc(other, 'ouchi-hamasushi/' + 'e'.repeat(15) + '/assets/voice_x')));
+await ok('確認済みユーザーは16文字の家族コードに保存できる', () => setDoc(doc(other, 'ouchi-hamasushi/' + 'c'.repeat(16) + '/assets/image_x'), ouchiAsset));
+await ok('確認済みユーザーは64文字の家族コードに保存できる', () => setDoc(doc(other, 'ouchi-hamasushi/' + 'c'.repeat(64) + '/assets/image_x'), ouchiAsset));
+await ng('確認済みでも65文字の家族コードは書けない', () => setDoc(doc(other, 'ouchi-hamasushi/' + 'c'.repeat(65) + '/assets/image_x'), ouchiAsset));
 await ng('不正な assetKey は削除不可', () => deleteDoc(doc(editor, 'ouchi-hamasushi/default/assets/foo')));
-await ng('65文字超の家族コードは削除不可', () => deleteDoc(doc(editor, 'ouchi-hamasushi/' + 'a'.repeat(65) + '/assets/voice_x')));
+await ng('65文字の家族コードは削除不可', () => deleteDoc(doc(editor, 'ouchi-hamasushi/' + 'a'.repeat(65) + '/assets/voice_x')));
 
 console.log('note-analytics');
 const mine = env.authenticatedContext('robby', { email: 'junpei.omote@gmail.com', email_verified: true }).firestore();
@@ -125,7 +129,11 @@ await ng('確認済みでも短いチームコードは書けない', () => setD
 await ok('編集者は default に保存できる', () => setDoc(doc(editor, 'meet-knowledge/default/entries/' + meetId), e));
 await ok('編集者は hits を加算できる', () => updateDoc(doc(editor, 'meet-knowledge/default/entries/' + meetId), { hits: increment(1), updatedAt: 2 }));
 await ok('編集者はナレッジを削除できる', () => deleteDoc(doc(editor, 'meet-knowledge/default/entries/0b6c2f1e-1111-2222-3333-444455556666')));
-await ok('確認済みユーザーは16文字以上のチームコードに保存できる', () => setDoc(doc(other, 'meet-knowledge/' + 'd'.repeat(16) + '/entries/' + meetId), e));
+await ng('確認済みでも15文字のチームコードは書けない', () => setDoc(doc(other, 'meet-knowledge/' + 'e'.repeat(15) + '/entries/' + meetId), e));
+await ng('確認済みでも15文字のチームコードは削除できない', () => deleteDoc(doc(other, 'meet-knowledge/' + 'e'.repeat(15) + '/entries/' + meetId)));
+await ok('確認済みユーザーは16文字のチームコードに保存できる', () => setDoc(doc(other, 'meet-knowledge/' + 'd'.repeat(16) + '/entries/' + meetId), e));
+await ok('確認済みユーザーは64文字のチームコードに保存できる', () => setDoc(doc(other, 'meet-knowledge/' + 'd'.repeat(64) + '/entries/' + meetId), e));
+await ng('確認済みでも65文字のチームコードは書けない', () => setDoc(doc(other, 'meet-knowledge/' + 'd'.repeat(65) + '/entries/' + meetId), e));
 await ng('不正なチームコードは削除不可', () => deleteDoc(doc(editor, 'meet-knowledge/bad$code/entries/x')));
 
 console.log('その他');
@@ -296,6 +304,7 @@ await ng('編集者でもフィードバックは削除できない', () => dele
 await ng('未確認の編集者メールでは受信箱を読めない', () => getDocs(collection(unverifiedEditor, 'fst_feedback')));
 await ok('開発版のフィードバックも作成できる', () => setDoc(doc(pilot, 'fst_feedback/FB_0004'), { ...feedback('pilot'), fbId: 'FB_0004', build: 'dev' }));
 await ok('10000件目のフィードバックIDも作れる', () => setDoc(doc(pilot, 'fst_feedback/FB_10000'), { ...feedback('pilot'), fbId: 'FB_10000' }));
+await ok('8桁のフィードバックIDも作れる', () => setDoc(doc(pilot, 'fst_feedback/FB_12345678'), { ...feedback('pilot'), fbId: 'FB_12345678' }));
 await ng('3桁のフィードバックIDは不可', () => setDoc(doc(pilot, 'fst_feedback/FB_099'), { ...feedback('pilot'), fbId: 'FB_099' }));
 await ng('9桁のフィードバックIDは不可', () => setDoc(doc(pilot, 'fst_feedback/FB_123456789'), { ...feedback('pilot'), fbId: 'FB_123456789' }));
 
@@ -308,7 +317,10 @@ await ng('未ログインは文書を削除できない', () => deleteDoc(doc(an
 await ng('ログイン済みでも短いコードは読めない', () => getDoc(doc(other, 'outreach-crm/acme')));
 await ng('ログイン済みでも短いコードは書けない', () => setDoc(doc(other, 'outreach-crm/acme'), { leads: [], updatedAt: Date.now() }));
 await ng('23文字のコードは読めない', () => getDoc(doc(other, 'outreach-crm/' + 'b'.repeat(23))));
-await ok('ログイン済みは24文字以上のコードを読める', () => getDoc(doc(other, 'outreach-crm/' + ws)));
+await ok('24文字のコードは読める', () => getDoc(doc(other, 'outreach-crm/' + 'b'.repeat(24))));
+await ok('128文字のコードは読める', () => getDoc(doc(other, 'outreach-crm/' + 'b'.repeat(128))));
+await ng('129文字のコードは読めない', () => getDoc(doc(other, 'outreach-crm/' + 'b'.repeat(129))));
+await ok('ログイン済みは32文字のコードを読める', () => getDoc(doc(other, 'outreach-crm/' + ws)));
 await ok('ログイン済みは leads を保存できる', () => setDoc(doc(other, 'outreach-crm/' + ws), {
   leads: [{ company: '株式会社サンプル', contactName: '山田太郎', email: 'taro@example.com', industry: '製造', events: [{ type: 'sent', at: 1 }] }],
   updatedAt: Date.now(),
@@ -333,6 +345,8 @@ await ng('apps 以外のフィールドは不可', () => setDoc(doc(anon, 'tomoe
 console.log('tomoe-player リスト');
 await ng('動画リストの一覧は不可', () => getDocs(collection(anon, 'tomoe-player')));
 await ok('共有コードの単体取得は可', () => getDoc(doc(anon, 'tomoe-player/ABC123')));
+await ok('12文字の共有コードは get できる', () => getDoc(doc(anon, 'tomoe-player/' + 'Z'.repeat(12))));
+await ng('13文字の共有コードは get できない', () => getDoc(doc(anon, 'tomoe-player/' + 'Z'.repeat(13))));
 await ok('未作成の共有コードも get できる', () => getDoc(doc(anon, 'tomoe-player/ZZZZZZ')));
 await ok('保護者は動画リストを保存できる', () => setDoc(doc(anon, 'tomoe-player/ABC123'), {
   videos: [{ id: 'dQw4w9Wgxcq', title: 't' }], sources: 'https://www.youtube.com/watch?v=dQw4w9Wgxcq', name: 'ともえ', updatedAt: new Date().toISOString(),
