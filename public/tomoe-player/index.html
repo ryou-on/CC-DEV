@@ -234,8 +234,9 @@ window.addEventListener('unhandledrejection', function (e) {
 // =========================================================
 // 設定
 // =========================================================
-const VERSION = 'v0.10.0';
+const VERSION = 'v0.10.1';
 const RELEASE_NOTES = [
+  { ver:'v0.10.1', date:'2026-11-05', changes:['リピートをONにすると、その場で再生が始まるように修正（停止中・終了画面・自動停止のあとでも）','端末によってリピートの繰り返しが始まらないことがある問題を修正（1秒ごとの見張りで確実にループ）'] },
   { ver:'v0.10.0', date:'2026-11-05', changes:['1動画リピート機能を追加：動画右下の 🔁 ボタン、または Shift+R で切替。終わると同じ動画を頭からもう一度再生','リピート中は自動停止（放置検知）が働きません'] },
   { ver:'v0.9.0', date:'2026-09-13', changes:['動画の右下に全画面ボタン ⛶ を追加（動画だけを全画面に。タップ・スワイプ・キー操作はそのまま使えます）','全画面中も「▶▶ つぎ」などの操作フィードバックが見えるように'] },
   { ver:'v0.8.2', date:'2026-09-13', changes:['タイトルの長い曲で画面が横に伸びて動画がはみ出し・候補が見えなくなる崩れを修正'] },
@@ -552,9 +553,7 @@ function onYouTubeIframeAPIReady() {
         if (e.data === YT.PlayerState.ENDED) {
           if (sess) { sess.completed = true; }
           if (repeatOn && videos[cur]) {
-            // 1周ごとに視聴ログを分けて記録し直し、同じ動画を頭から再生
-            sessStart(videos[cur], 'repeat');
-            try { yt.seekTo(0, true); yt.playVideo(); } catch (err) {}
+            restartCurrent();
             flash('🔁', 'もういちど');
             return;
           }
@@ -801,6 +800,10 @@ function sessStart(v, reason) {
   // 書き込みは watchSec が MIN_LOG_SEC に達してから（sessFlush 側で判定）
 }
 function sessTickFn() {
+  // リピートの見張り：ONなのに終了画面で止まっていたら頭から再生し直す
+  if (repeatOn && ytReady && !idleStop) {
+    try { if (yt.getPlayerState() === YT.PlayerState.ENDED) { restartCurrent(); flash('🔁', 'もういちど'); } } catch (e) {}
+  }
   if (!sess || !ytReady) return;
   const now = Date.now();
   let st = -1; try { st = yt.getPlayerState(); } catch (e) {}
@@ -1055,6 +1058,24 @@ function toggleRepeat() {
   if (b) b.classList.toggle('on', repeatOn);
   userActed();
   flash('🔁', repeatOn ? 'リピート オン' : 'リピート オフ');
+  // ON にしたら「リピート再生開始」：止まっていても必ずこの動画の再生を始める
+  if (repeatOn && ytReady) {
+    try {
+      const st = yt.getPlayerState();
+      if (st === YT.PlayerState.ENDED) restartCurrent();
+      else if (st !== YT.PlayerState.PLAYING && st !== YT.PlayerState.BUFFERING) {
+        if (!userStarted) startPlay();
+        else { document.getElementById('ph').style.display = 'none'; yt.playVideo(); }
+      }
+    } catch (e) {}
+  }
+}
+// 現在の動画を頭から再生し直す（視聴ログも1周ぶん区切る）
+function restartCurrent() {
+  if (!ytReady || !videos[cur]) return;
+  sessStart(videos[cur], 'repeat');
+  try { yt.seekTo(0, true); yt.playVideo(); } catch (e) {}
+  document.getElementById('ph').style.display = 'none';
 }
 
 // 動画エリアだけを全画面に（YouTube のUIは出さない・ゾーン操作はそのまま使える）
