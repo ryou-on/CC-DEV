@@ -41,6 +41,8 @@ main>*{min-width:0}
 /* 動画の全画面ボタン */
 .fsbtn{position:absolute;right:12px;bottom:12px;z-index:6;width:48px;height:48px;border-radius:50%;border:none;background:rgba(0,0,0,.45);color:#fff;font-size:22px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .15s}
 .fsbtn:hover{background:rgba(249,115,22,.8)}
+.rptbtn{right:72px}
+.rptbtn.on{background:var(--accent2);box-shadow:0 0 0 3px rgba(249,115,22,.35)}
 .player:fullscreen{border-radius:0}
 .player:-webkit-full-screen{border-radius:0}
 /* YouTube の UI を子どもが触らないように透明カバー（タップ＝再生/一時停止） */
@@ -125,6 +127,7 @@ body.view-only .view-note{display:block}
       <div class="ph" id="ph" onclick="startPlay()"><div class="big">🧸</div><div id="phText">よみこみちゅう…</div><button id="resumeBtn" style="display:none;margin-top:6px;padding:10px 22px;border-radius:12px;border:none;background:var(--accent2);color:#fff;font-size:16px;font-weight:800;cursor:pointer"></button></div>
       <div class="zone l" onclick="goPrev('tap')">◀</div>
       <div class="zone r" onclick="goNext('tap')">▶</div>
+      <button class="fsbtn rptbtn" id="rptBtn" onclick="event.stopPropagation();toggleRepeat()" title="この動画をリピート（Shift+R）">🔁</button>
       <button class="fsbtn" id="fsBtn" onclick="toggleVideoFs(event)" title="動画を全画面に">⛶</button>
       <div class="flash" id="flash"><div class="box" id="flashBox"></div></div>
     </div>
@@ -205,7 +208,7 @@ https://www.youtube.com/playlist?list=PLxxxxxxxx"></textarea>
       <span><i style="background:#bbf7d0"></i>候補③</span>
       <span><i style="background:#ddd6fe"></i>候補④</span>
     </div>
-    <p style="color:#9ca3af">Ctrl / Alt / ⌘ を押しながらのキーはブラウザに渡します（保護者用）。矢印：← まえ／→ 候補②／<strong>↑↓ 候補のリストをスクロール</strong>（上下スワイプ・候補の上でホイールでも）。テンキーも右側ブロック扱いです。動画が終わると自動で「つぎ」に進みます。</p>
+    <p style="color:#9ca3af"><strong>Shift+R ＝ この動画をリピート</strong>（動画右下の 🔁 ボタンでも切替）。Ctrl / Alt / ⌘ を押しながらのキーはブラウザに渡します（保護者用）。矢印：← まえ／→ 候補②／<strong>↑↓ 候補のリストをスクロール</strong>（上下スワイプ・候補の上でホイールでも）。テンキーも右側ブロック扱いです。動画が終わると自動で「つぎ」に進みます。</p>
 
     <h3>全画面</h3>
     <p>PC ではキーを叩くと自動で全画面になります（ブラウザのボタンやタブに触れないように）。<label style="margin-left:6px"><input type="checkbox" id="autoFsChk" onchange="localStorage.setItem('tomoe_autofs', this.checked ? 'on' : 'off')" style="width:auto"> 自動全画面を使う</label>　戻すときは <kbd>Esc</kbd> 長押し、または ⛶。</p>
@@ -231,8 +234,9 @@ window.addEventListener('unhandledrejection', function (e) {
 // =========================================================
 // 設定
 // =========================================================
-const VERSION = 'v0.9.0';
+const VERSION = 'v0.10.0';
 const RELEASE_NOTES = [
+  { ver:'v0.10.0', date:'2026-11-05', changes:['1動画リピート機能を追加：動画右下の 🔁 ボタン、または Shift+R で切替。終わると同じ動画を頭からもう一度再生','リピート中は自動停止（放置検知）が働きません'] },
   { ver:'v0.9.0', date:'2026-09-13', changes:['動画の右下に全画面ボタン ⛶ を追加（動画だけを全画面に。タップ・スワイプ・キー操作はそのまま使えます）','全画面中も「▶▶ つぎ」などの操作フィードバックが見えるように'] },
   { ver:'v0.8.2', date:'2026-09-13', changes:['タイトルの長い曲で画面が横に伸びて動画がはみ出し・候補が見えなくなる崩れを修正'] },
   { ver:'v0.8.1', date:'2026-09-13', changes:['読み込み直後にメニューでURLを編集していると裏の同期に消されることがある問題を修正','電波が不安定なとき保存が「YouTubeを準備中…」のまま止まることがある問題を修正（自動再試行とエラー表示）'] },
@@ -311,6 +315,8 @@ let viewOnly = false;   // 再生専用（?watch= で開いた端末）
 let playerName = '';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let sess = null, sessTick = null, lastTickAt = 0;   // 視聴ログ
+let repeatOn = false;     // 1動画リピート（🔁ボタン / Shift+R）
+let shiftPend = '';       // Shift単体とShift+Rを区別するための保留
 let autoRun = 0, idleStop = false;                   // 操作なしの連続自動再生カウント（放置検知）
 const AUTO_RUN_LIMIT = 3;                            // 操作なしで続けて流す上限（本）
 const ol = console.log.bind(console);
@@ -545,6 +551,13 @@ function onYouTubeIframeAPIReady() {
         if (e.data === YT.PlayerState.PLAYING) { document.getElementById('ph').style.display = 'none'; userStarted = true; if (!sess && videos[cur]) sessStart(videos[cur], 'auto'); lastTickAt = Date.now(); }
         if (e.data === YT.PlayerState.ENDED) {
           if (sess) { sess.completed = true; }
+          if (repeatOn && videos[cur]) {
+            // 1周ごとに視聴ログを分けて記録し直し、同じ動画を頭から再生
+            sessStart(videos[cur], 'repeat');
+            try { yt.seekTo(0, true); yt.playVideo(); } catch (err) {}
+            flash('🔁', 'もういちど');
+            return;
+          }
           if (++autoRun >= AUTO_RUN_LIMIT) { idlePause(); return; }
           goNext('ended');
         }
@@ -681,12 +694,30 @@ document.addEventListener('keydown', e => {
     if (userStarted) scrollCands(code === 'ArrowDown' ? 1 : -1);
     return;
   }
+  // Shift+R = リピート切替（保護者用ショートカット）。Shift単体は keyup まで保留してゾーン誤爆を防ぐ
+  if (code === 'ShiftLeft' || code === 'ShiftRight') {
+    e.preventDefault();
+    if (!e.repeat) shiftPend = code;
+    return;
+  }
+  if (e.shiftKey && code === 'KeyR') {
+    e.preventDefault();
+    shiftPend = '';
+    if (!e.repeat) toggleRepeat();
+    return;
+  }
+  if (e.shiftKey) shiftPend = '';   // その他の Shift+キーは通常のゾーンとして処理
   const z = CODE2ZONE[code];
   if (!z) return;
   e.preventDefault();
   autoFullscreen();
+  fireZone(z, e.repeat);
+}, true);
+
+// ゾーン発動（keydown と Shift の keyup から共用）
+function fireZone(z, isRepeat) {
   const now = Date.now();
-  if (e.repeat || now - lastKeyAt < KEY_COOLDOWN) return;
+  if (isRepeat || now - lastKeyAt < KEY_COOLDOWN) return;
   lastKeyAt = now;
   if (!userStarted) { startPlay(); flash('▶', 'スタート'); return; }
   if (idleStop && z === 'P') { startPlay(); return; }
@@ -694,6 +725,15 @@ document.addEventListener('keydown', e => {
   else if (z === 'C') goNext('key');
   else if (z === 'P') togglePlay('key');
   else pick(parseInt(z[1], 10) - 1, 'key');
+}
+document.addEventListener('keyup', e => {
+  const code = e.code || codeFromKey(e.key);
+  if (code && code === shiftPend) {
+    shiftPend = '';
+    if (document.getElementById('parentMo').classList.contains('on')) return;
+    const z = CODE2ZONE[code];
+    if (z) fireZone(z, false);
+  }
 }, true);
 
 // iframe がフォーカスを奪うとキーが効かなくなるので戻す
@@ -1008,6 +1048,15 @@ function autoFullscreen() {
   const fn = el.requestFullscreen || el.webkitRequestFullscreen;
   if (fn) { try { const r = fn.call(el, { navigationUI: 'hide' }); if (r && r.catch) r.catch(() => {}); } catch (e) {} }
 }
+// 1動画リピートの切替（🔁ボタン / Shift+R）
+function toggleRepeat() {
+  repeatOn = !repeatOn;
+  const b = document.getElementById('rptBtn');
+  if (b) b.classList.toggle('on', repeatOn);
+  userActed();
+  flash('🔁', repeatOn ? 'リピート オン' : 'リピート オフ');
+}
+
 // 動画エリアだけを全画面に（YouTube のUIは出さない・ゾーン操作はそのまま使える）
 function toggleVideoFs(ev) {
   if (ev) ev.stopPropagation();
