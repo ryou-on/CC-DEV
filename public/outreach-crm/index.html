@@ -6,6 +6,7 @@
 <link rel="apple-touch-icon" href="/outreach-crm/apple-touch-icon.png">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
 <style>
   :root { --gold:#c9a84c; --bg:#0f1826; --panel:#16233a; --panel2:#1a2a3e; --line:rgba(255,255,255,.09); }
@@ -62,6 +63,7 @@
     <div class="flex items-center gap-2">
       <span class="cloud-dot" id="cloudDot" style="background:#666" title="同期状態"></span>
       <span id="cloudLabel" class="text-xs" style="color:#8fa2bd">ローカルのみ</span>
+      <button class="btn-ghost" id="btnAuth" onclick="toggleAuth()">ログイン</button>
       <button class="btn-ghost" onclick="openSettings()">⚙ 設定</button>
     </div>
   </div>
@@ -230,10 +232,12 @@
   <div class="modal-box" style="width:520px">
     <div class="modal-header"><h2>⚙ 設定 / クラウド同期</h2><button class="modal-close-btn" onclick="closeModalId('settings-modal')">✕</button></div>
     <div style="padding:16px 20px" class="text-sm">
-      <p class="text-xs mb-3" style="color:#8fa2bd">ワークスペースコードを設定すると、同じコードを入れた別のMacとFirestore経由でリアルタイム同期します（空欄ならこの端末のみ）。コードは推測されにくい文字列にしてください（リード情報を保護するため）。</p>
-      <label class="block"><span class="text-xs" style="color:#8fa2bd">ワークスペースコード</span>
-        <input id="wsCode" class="w-full mt-1" placeholder="例: ps7-outreach-9f3ax"></label>
+      <p class="text-xs mb-3" style="color:#8fa2bd">Googleログインした端末同士で、32文字のワークスペースコードを共有すると同期します。24文字未満のコードは使えません。</p>
+      <p id="wsMigration" class="text-xs mb-3" style="display:none;color:#f6c453">保存済みの短いコードは無効です。この端末のリードは残っています。「コードを発行」して接続すると、そのリードを新しいワークスペースへ保存します。他の端末には新しいコードを渡してください。クラウドにしか無いデータは、ルール変更前に書き出したJSONから取り込んでください。</p>
+      <label class="block"><span class="text-xs" style="color:#8fa2bd">ワークスペースコード（24文字以上）</span>
+        <input id="wsCode" class="w-full mt-1" placeholder="発行ボタンで作成" autocomplete="off"></label>
       <div class="flex justify-end gap-2 mt-4">
+        <button class="btn-ghost" onclick="fillWorkspaceCode()">コードを発行</button>
         <button class="btn-ghost" onclick="disableCloud()">同期解除(ローカルのみ)</button>
         <button class="btn" onclick="saveWorkspace()">接続</button>
       </div>
@@ -258,8 +262,13 @@
    outreach-crm — コールドメール成約ファネル測定CRM
    単一HTML / Firestore(compat) + localStorage キャッシュ
    ============================================================ */
-var APP_VERSION = 'v0.1.0';
+var APP_VERSION = 'v0.2.0';
 var RELEASE_NOTES = [
+  { ver:'v0.2.0', date:'2026-10-28', changes:[
+    'クラウド同期にGoogleログインを必須化',
+    'ワークスペースコードは24文字以上（発行ボタンは32文字）',
+    '短いコードのままではクラウドを読めない。この端末のリードは新しいコードへ保存できる'
+  ]},
   { ver:'v0.1.0', date:'2026-08-14', changes:[
     'リード管理（追加・編集・CSVインポート・検索・業種/状態フィルタ）',
     'アクション記録（送信/開封/クリック/返信/商談/成約/失注）とタイムライン表示',
@@ -273,7 +282,7 @@ var HOW_TO_USE = [
   { heading:'② 接触したら記録する', text:'リード行をクリック→「アクション記録」で 送信/開封/返信/商談/成約 をワンクリック記録。状態・送信通数・日数は自動計算されます。' },
   { heading:'③ フォロー漏れを防ぐ', text:'「フォロー期日超過のみ」にチェック＋日数を指定すると、前回接触からN日以上経った未成約リードだけ表示。次に送る相手が一目でわかります。' },
   { heading:'④ 数字を見る', text:'「📊 レポート」で開封率・返信率・成約率、そして"平均何通目で成約したか""初回接触から成約まで何日か"を確認。業種を切り替えて比較できます。' },
-  { heading:'⑤ 別のMacと共有', text:'⚙設定でワークスペースコードを入れると、同じコードの端末とリアルタイム同期します。' }
+  { heading:'⑤ 別のMacと共有', text:'先にGoogleでログインし、⚙設定の「コードを発行」で32文字のコードを作ります。同じコードをログイン済みの別端末に入れると同期します。' }
 ];
 
 var STATUS_META = {
@@ -287,7 +296,7 @@ var EVENT_TO_STATUS = { sent:'contacted', opened:'opened', clicked:'opened', rep
 
 var DAY = 86400000;
 var state = { leads:[], sortKey:'daysSinceLast', sortDir:-1, currentId:null };
-var db=null, unsub=null, workspace='';
+var db=null, auth=null, currentUser=null, unsub=null, workspace='';
 var dbgLog=[];
 function log(m){ dbgLog.push(new Date().toISOString().slice(11,19)+' '+m); if(dbgLog.length>500)dbgLog.shift(); }
 
@@ -305,11 +314,54 @@ var firebaseConfig = {
   messagingSenderId:"1029579090333",
   appId:"1:1029579090333:web:c699eb13e9279f467f2774"
 };
-function initFirebase(){ try{ firebase.initializeApp(firebaseConfig); db=firebase.firestore(); log('firebase init ok'); }catch(e){ log('firebase init fail '+e.message); } }
+function initFirebase(){
+  try{
+    firebase.initializeApp(firebaseConfig);
+    db=firebase.firestore();
+    auth=firebase.auth();
+    auth.onAuthStateChanged(onAuth);
+    log('firebase init ok');
+  }catch(e){ log('firebase init fail '+e.message); }
+}
+function isStrongCode(code){ return /^[A-Za-z0-9_-]{24,128}$/.test(code||''); }
+function generateWorkspaceCode(){
+  var alphabet='ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  var bytes=new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  var s='';
+  for(var i=0;i<bytes.length;i++) s+=alphabet[bytes[i]%alphabet.length];
+  return s;
+}
+function fillWorkspaceCode(){ document.getElementById('wsCode').value=generateWorkspaceCode(); }
+function toggleAuth(){
+  if(!auth){ return; }
+  if(currentUser){ auth.signOut(); return; }
+  auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(function(e){ log('login fail '+e.message); setCloud('#ef4444','ログイン失敗'); });
+}
+function renderAuth(){
+  var btn=document.getElementById('btnAuth');
+  if(!btn) return;
+  btn.textContent=currentUser ? (currentUser.email||'ログアウト') : 'ログイン';
+}
+function onAuth(user){
+  currentUser=user&&user.emailVerified!==false ? user : null;
+  renderAuth();
+  if(unsub){ unsub(); unsub=null; }
+  if(!currentUser){ setCloud('#666', user ? 'メール未確認' : '未ログイン'); return; }
+  var saved=localStorage.getItem(LS_WS)||'';
+  var note=document.getElementById('wsMigration');
+  if(isStrongCode(saved)){ if(note) note.style.display='none'; connectCloud(saved); }
+  else {
+    setCloud('#f59e0b', saved ? '短いコードは無効' : 'ローカルのみ');
+    if(note) note.style.display=saved ? 'block' : 'none';
+  }
+}
 function wsDocRef(){ return db.collection('outreach-crm').doc(workspace); }
 
 function connectCloud(code){
   if(!db){ setCloud('#ef4444','Firebase未初期化'); return; }
+  if(!currentUser){ setCloud('#f59e0b','先にログイン'); openSettings(); return; }
+  if(!isStrongCode(code)){ setCloud('#ef4444','コードは24文字以上'); document.getElementById('wsMigration').style.display='block'; return; }
   workspace=code; localStorage.setItem(LS_WS, code);
   if(unsub){ unsub(); unsub=null; }
   setCloud('#f59e0b','接続中…');
@@ -328,7 +380,7 @@ function connectCloud(code){
 }
 var pushTimer=null;
 function pushCloud(){
-  if(!db||!workspace) return;
+  if(!db||!workspace||!currentUser||!isStrongCode(workspace)) return;
   clearTimeout(pushTimer);
   pushTimer=setTimeout(function(){
     wsDocRef().set({ leads:state.leads, updatedAt:Date.now() }).then(function(){ log('pushed '+state.leads.length); })
@@ -337,7 +389,13 @@ function pushCloud(){
 }
 function setCloud(color,label){ document.getElementById('cloudDot').style.background=color; document.getElementById('cloudLabel').textContent=label; }
 function disableCloud(){ if(unsub){unsub();unsub=null;} workspace=''; localStorage.removeItem(LS_WS); setCloud('#666','ローカルのみ'); closeModalId('settings-modal'); }
-function saveWorkspace(){ var c=document.getElementById('wsCode').value.trim(); if(!c){ disableCloud(); return; } connectCloud(c); closeModalId('settings-modal'); }
+function saveWorkspace(){
+  if(!currentUser){ toggleAuth(); return; }
+  var c=document.getElementById('wsCode').value.trim();
+  if(!c){ disableCloud(); return; }
+  if(!isStrongCode(c)){ document.getElementById('wsMigration').style.display='block'; setCloud('#ef4444','コードは24文字以上'); return; }
+  connectCloud(c); closeModalId('settings-modal');
+}
 
 /* 保存の一元化：localStorage + cloud */
 function persist(){ saveLocal(); pushCloud(); }
@@ -683,7 +741,6 @@ document.getElementById('verLabel').textContent=APP_VERSION;
 initFirebase();
 loadLocal();
 renderAll();
-var savedWs=localStorage.getItem(LS_WS);
-if(savedWs){ connectCloud(savedWs); } else { setCloud('#666','ローカルのみ'); }
+setCloud('#666','未ログイン');
 log('boot done, '+state.leads.length+' leads');
 </script>

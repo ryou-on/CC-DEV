@@ -204,7 +204,8 @@
   <div class="team-box">
     <span class="sync-dot" id="syncDot"></span>
     <span>チーム</span>
-    <input type="text" id="teamCodeInput" placeholder="default" maxlength="20">
+    <input type="text" id="teamCodeInput" placeholder="16文字以上" maxlength="64">
+    <button class="btn small" id="btnMkLogin" type="button">ログイン</button>
   </div>
 </header>
 
@@ -305,6 +306,8 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/fireba
 import {
   getFirestore, collection, doc, setDoc, updateDoc, deleteDoc, onSnapshot, increment
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged }
+  from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 
 /* ================= デバッグログ（コンソールコピー用） ================= */
 const debugLogs = [];
@@ -340,6 +343,28 @@ const firebaseConfig = {
 };
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const auth = getAuth(app);
+function isEditorEmail(email) {
+  return !!email && (email === 'junpei.omote@gmail.com' || /@splineglobal\.com$/.test(email));
+}
+function teamWritable(code) {
+  if (!auth.currentUser) return false;
+  if (isEditorEmail(auth.currentUser.email)) return /^[A-Za-z0-9_-]{1,64}$/.test(code || '');
+  return /^[A-Za-z0-9_-]{16,64}$/.test(code || '');
+}
+async function ensureWriter() {
+  if (!auth.currentUser) await signInWithPopup(auth, new GoogleAuthProvider());
+  if (!teamWritable(teamCode)) {
+    throw new Error('このチームコードは管理者だけが変更できます。16文字以上のコードにしてください');
+  }
+}
+onAuthStateChanged(auth, user => {
+  const btn = document.getElementById('btnMkLogin');
+  if (btn) btn.textContent = user ? (user.email || 'ログイン中') : 'ログイン';
+});
+document.getElementById('btnMkLogin').addEventListener('click', () => {
+  signInWithPopup(auth, new GoogleAuthProvider()).catch(e => dlog('ログイン失敗', e.message));
+});
 
 /* ================= 状態 ================= */
 const LS_TEAM = 'mk_teamCode';
@@ -400,18 +425,21 @@ async function saveEntry(data, id = null) {
     hits: data.hits || 0,
     source: data.source || 'manual'
   };
+  await ensureWriter();
   await setDoc(doc(db, 'meet-knowledge', teamCode, 'entries', entryId), payload);
   dlog('ナレッジ保存:', payload.question.slice(0, 30));
   return entryId;
 }
 
 async function removeEntry(id) {
+  await ensureWriter();
   await deleteDoc(doc(db, 'meet-knowledge', teamCode, 'entries', id));
   dlog('ナレッジ削除:', id);
 }
 
 async function countHit(id) {
   try {
+    if (!teamWritable(teamCode)) return;
     await updateDoc(doc(db, 'meet-knowledge', teamCode, 'entries', id), { hits: increment(1), updatedAt: Date.now() });
   } catch (e) { dlog('hits更新失敗:', e.message); }
 }

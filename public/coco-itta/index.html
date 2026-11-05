@@ -1814,6 +1814,10 @@
           <button class="date-unknown-btn" id="btnInvite">追加</button>
         </div>
         <div id="memberEmailList" style="margin-top:8px;font-size:0.72rem;color:var(--ink-light);"></div>
+        <div id="joinRequestList" style="margin-top:8px;font-size:0.72rem;color:var(--ink);"></div>
+        <p style="font-size:0.65rem;color:var(--ink-light);margin-top:6px;line-height:1.5;">
+          グループIDを知っているだけでは参加できません。相手の参加申請を、作成者だけが承認できます。
+        </p>
       </div>
 
       <div class="form-group" style="margin-top:8px;">
@@ -1850,7 +1854,7 @@
           <input type="text" id="joinGroupId" placeholder="グループID（例: ABC123）" style="text-transform:uppercase;" />
           <button class="btn-save" id="btnJoinGroup" data-i18n="modal.group.btn.join" style="white-space:nowrap;">参加</button>
         </div>
-        <p style="font-size:0.68rem;color:var(--red);margin-top:6px;">※ 参加すると、いま端末にあるデータはグループの内容で置き換わります</p>
+        <p style="font-size:0.68rem;color:var(--red);margin-top:6px;">※ 参加申請が承認されると、いま端末にあるデータはグループの内容で置き換わります</p>
       </div>
 
       <div class="modal-actions" style="margin-top:8px;">
@@ -1989,7 +1993,7 @@ const DICT_JA = {
   'modal.group.placeholder.joinId': 'グループID（例: ABC123）',
   'modal.group.btn.join': '参加',
   'modal.group.btn.close': '閉じる',
-  'modal.group.invite.template': `【COCO-ITTA（ここいった）- 家族の地図帳】\n\n家族みんなで行った場所・行きたい場所を地図にまとめてるよ！\n一緒に使おう🗺️\n\n① 下のURLを開いてGoogleでログイン\n{url}\n\n② 画面左の 🔌 ボタンを押して\n「既存グループに参加」を選択\n\n③ グループIDを入力\nグループID：{groupId}`,
+  'modal.group.invite.template': `【COCO-ITTA（ここいった）- 家族の地図帳】\n\n家族みんなで行った場所・行きたい場所を地図にまとめてるよ！\n一緒に使おう🗺️\n\n① 下のURLを開いてGoogleでログイン\n{url}\n\n② 画面左の 🔌 ボタンを押して\n「既存グループに参加」を選択\n\n③ グループIDを入力して参加申請\nグループID：{groupId}\n\n④ 作成者が承認すると地図が共有されます`,
   // 写真ビューア / スライドショー
   'viewer.btn.play': '▶ 再生',
   'viewer.btn.pause': '⏸ 停止',
@@ -2079,6 +2083,9 @@ const DICT_JA = {
   'alert.groupCreated': 'グループを作成しました！\nグループID: {id}\n\nこのIDを家族に共有してください。',
   'alert.groupCreateFail': '作成に失敗しました: {msg}',
   'alert.groupJoinFail': '参加に失敗しました: {msg}',
+  'alert.groupNeedEmail': 'メールアドレスのあるGoogleアカウントでログインしてください',
+  'alert.groupJoinPending': '参加申請を送りました。\nグループの作成者が承認すると同期が始まります。',
+  'alert.groupJoined': 'グループへの参加が承認されました',
   'confirm.deletePin': 'このピンを削除しますか？',
   'confirm.deleteRoute': 'このルートを削除しますか？',
   'confirm.logout': 'ログアウトしますか？',
@@ -2214,7 +2221,7 @@ const DICT_EN = {
   'modal.group.placeholder.joinId': 'Group ID (e.g. ABC123)',
   'modal.group.btn.join': 'Join',
   'modal.group.btn.close': 'Close',
-  'modal.group.invite.template': `[COCO-ITTA — Family Map Journal]\n\nWe map all the places we've been and places we'd like to go!\nLet's use it together 🗺️\n\n1) Open this URL and sign in with Google\n{url}\n\n2) Tap the 🔌 button on the left and choose\n"Join existing group"\n\n3) Enter the Group ID\nGroup ID: {groupId}`,
+  'modal.group.invite.template': `[COCO-ITTA — Family Map Journal]\n\nWe map all the places we've been and places we'd like to go!\nLet's use it together 🗺️\n\n1) Open this URL and sign in with Google\n{url}\n\n2) Tap the 🔌 button on the left and choose\n"Join existing group"\n\n3) Enter the Group ID to request access\nGroup ID: {groupId}\n\n4) The map is shared after the owner approves`,
   // Viewer / slideshow
   'viewer.btn.play': '▶ Play',
   'viewer.btn.pause': '⏸ Pause',
@@ -2304,6 +2311,9 @@ const DICT_EN = {
   'alert.groupCreated': 'Group created!\nGroup ID: {id}\n\nShare this ID with your family.',
   'alert.groupCreateFail': 'Failed to create: {msg}',
   'alert.groupJoinFail': 'Failed to join: {msg}',
+  'alert.groupNeedEmail': 'Sign in with a Google account that has an email address',
+  'alert.groupJoinPending': 'Join request sent.\nSync starts after the group owner approves it.',
+  'alert.groupJoined': 'The group owner approved your request',
   'confirm.deletePin': 'Delete this pin?',
   'confirm.deleteRoute': 'Delete this route?',
   'confirm.logout': 'Log out?',
@@ -2499,6 +2509,8 @@ auth.onAuthStateChanged((user) => {
     if (currentGroupId) {
       startSync();
     } else {
+      const pendingJoin = sessionStorage.getItem('coco-itta-join-pending');
+      if (pendingJoin) watchJoinApproval(pendingJoin);
       setTimeout(() => { if (!currentGroupId) openGroupModal(); }, 600);
     }
     updateCloudStatus();
@@ -2629,12 +2641,13 @@ function sanitizePinsForFirestore(pinsArray) {
 
 /** 新規グループ作成（現在のローカルデータをそのままアップロード＝マイグレーション） */
 async function createGroup(name) {
+  if (!currentUser?.email) throw new Error(t('alert.groupNeedEmail'));
   const id = genGroupId();
   const data = {
     name:        name || '我が家',
-    createdBy:   currentUser?.email || '',
+    createdBy:   currentUser.email,
     createdAt:   firebase.firestore.FieldValue.serverTimestamp(),
-    members:     [{ email: currentUser?.email || '', role: 'owner' }],
+    members:     [{ email: currentUser.email, role: 'owner' }],
     memberNames: members,
     pins: sanitizePinsForFirestore(pins), routes: routesToFirestore(routes), routeSettings,
   };
@@ -2649,21 +2662,60 @@ async function createGroup(name) {
 async function joinGroup(id) {
   id = (id || '').trim().toUpperCase();
   if (!id) return false;
-  const ref  = db.collection('groups').doc(id);
-  const snap = await ref.get();
-  if (!snap.exists) { alert(t('alert.groupIdNotFound')); return false; }
-  // 自分をメンバーに追加（未登録なら）
-  const d = snap.data();
-  const emails = (d.members || []).map(m => m.email);
-  if (currentUser?.email && !emails.includes(currentUser.email)) {
-    await ref.update({
-      members: firebase.firestore.FieldValue.arrayUnion({ email: currentUser.email, role: 'member' }),
-    });
+  if (!currentUser?.email) { alert(t('alert.groupNeedEmail')); return false; }
+  const ref = db.collection('groups').doc(id);
+  // 作成者に追加済みなら読める。未参加・不存在はどちらも permission-denied になる。
+  try {
+    const snap = await ref.get();
+    if (snap.exists) {
+      sessionStorage.removeItem('coco-itta-join-pending');
+      setGroupId(id);
+      startSync();
+      log('グループ参加:', id);
+      return true;
+    }
+  } catch (e) {
+    const code = e.code || '';
+    if (code !== 'permission-denied' && !String(e.message || '').includes('permission')) throw e;
   }
-  setGroupId(id);
-  startSync();
-  log('グループ参加:', id);
-  return true;
+  const reqRef = ref.collection('joinRequests').doc(currentUser.uid);
+  try {
+    const existing = await reqRef.get();
+    if (!existing.exists) {
+      await reqRef.set({
+        email: currentUser.email,
+        status: 'pending',
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+  } catch (e) {
+    alert(t('alert.groupIdNotFound'));
+    return false;
+  }
+  sessionStorage.setItem('coco-itta-join-pending', id);
+  watchJoinApproval(id);
+  log('参加申請:', id);
+  return 'pending';
+}
+
+let joinPoll = null;
+function watchJoinApproval(id) {
+  if (joinPoll) clearInterval(joinPoll);
+  joinPoll = setInterval(async () => {
+    if (!currentUser || !id) { clearInterval(joinPoll); joinPoll = null; return; }
+    try {
+      const snap = await db.collection('groups').doc(id).get();
+      if (!snap.exists) return;
+      clearInterval(joinPoll);
+      joinPoll = null;
+      sessionStorage.removeItem('coco-itta-join-pending');
+      setGroupId(id);
+      startSync();
+      updateCloudStatus();
+      showToast(t('alert.groupJoined'));
+      log('参加承認:', id);
+    } catch (e) { /* 承認前は読めない */ }
+  }, 5000);
 }
 
 /** グループから抜ける（ローカルデータは残す） */
@@ -2679,9 +2731,47 @@ async function inviteMember(email) {
   if (!currentGroupId || !email) return false;
   await db.collection('groups').doc(currentGroupId).update({
     members: firebase.firestore.FieldValue.arrayUnion({ email, role: 'member' }),
+    lastInviteEmail: email,
   });
   log('メンバー招待:', email);
   return true;
+}
+
+async function approveJoinRequest(uid, email) {
+  if (!currentGroupId || !uid || !email) return;
+  await db.collection('groups').doc(currentGroupId).update({
+    members: firebase.firestore.FieldValue.arrayUnion({ email, role: 'member' }),
+    lastInviteEmail: email,
+  });
+  await db.collection('groups').doc(currentGroupId).collection('joinRequests').doc(uid).update({
+    status: 'approved',
+  });
+  log('参加承認:', email);
+  renderMemberEmailList();
+  renderJoinRequests();
+}
+
+async function renderJoinRequests() {
+  const el = document.getElementById('joinRequestList');
+  if (!el) return;
+  if (!currentGroupId) { el.innerHTML = ''; return; }
+  try {
+    const snap = await db.collection('groups').doc(currentGroupId).collection('joinRequests').get();
+    const pending = [];
+    snap.forEach(d => {
+      const x = d.data() || {};
+      if (x.status === 'pending' && x.email) pending.push({ uid: d.id, email: x.email });
+    });
+    if (!pending.length) { el.innerHTML = ''; return; }
+    el.innerHTML = '<div style="margin-top:4px;">参加申請</div>' + pending.map(p =>
+      `<div style="display:flex;gap:8px;align-items:center;margin-top:4px;">
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;">${escHtml(p.email)}</span>
+        <button type="button" class="date-unknown-btn" data-approve-uid="${escHtml(p.uid)}" data-approve-email="${escHtml(p.email)}">承認</button>
+      </div>`
+    ).join('');
+  } catch (e) {
+    el.innerHTML = '';
+  }
 }
 
 /** リアルタイム同期を開始 */
@@ -2844,6 +2934,7 @@ function openGroupModal() {
       groupId: currentGroupId
     });
     renderMemberEmailList();
+    renderJoinRequests();
   } else {
     connected.style.display = 'none';
     disconnected.style.display = 'block';
@@ -2907,10 +2998,12 @@ document.getElementById('btnJoinGroup').addEventListener('click', async (e) => {
   if (!confirm(t('confirm.leaveGroup'))) return;
   e.target.disabled = true;
   try {
-    const ok = await joinGroup(id);
-    if (ok) {
+    const joined = await joinGroup(id);
+    if (joined === true) {
       updateCloudStatus();
       openGroupModal();
+    } else if (joined === 'pending') {
+      alert(t('alert.groupJoinPending'));
     }
   } catch (err) {
     alert(t('alert.groupJoinFail', {msg: err.message}));
@@ -2927,6 +3020,18 @@ document.getElementById('btnCopyGroupId').addEventListener('click', () => {
   });
 });
 
+document.getElementById('joinRequestList').addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-approve-uid]');
+  if (!btn) return;
+  btn.disabled = true;
+  try {
+    await approveJoinRequest(btn.getAttribute('data-approve-uid'), btn.getAttribute('data-approve-email'));
+  } catch (err) {
+    alert('承認に失敗しました: ' + err.message);
+    btn.disabled = false;
+  }
+});
+
 document.getElementById('btnInvite').addEventListener('click', async () => {
   const email = document.getElementById('inviteEmail').value.trim();
   if (!email) { alert('メールアドレスを入力してください'); return; }
@@ -2934,7 +3039,7 @@ document.getElementById('btnInvite').addEventListener('click', async () => {
     await inviteMember(email);
     document.getElementById('inviteEmail').value = '';
     renderMemberEmailList();
-    alert('メンバーを招待しました。\n相手にグループID「' + currentGroupId + '」を伝えてください。');
+    alert('メンバーを追加しました。\n相手が同じGoogleアカウントでグループID「' + currentGroupId + '」を開くと同期されます。\nまだ追加していない相手は、参加申請のあと作成者が承認します。');
   } catch (err) {
     alert('招待に失敗しました: ' + err.message);
   }
