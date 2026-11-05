@@ -6,6 +6,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { spawnSync } = require('child_process');
 
 const PROJECT = 'cc-dev-ps7';
 const CLIENT_ID = '563584335869-fgrhgmd47bqnekij5i8b5pr03ho849e6.apps.googleusercontent.com';
@@ -38,6 +39,13 @@ async function api(token, method, url, body) {
 }
 
 async function main() {
+  // CLI の predeploy を通らない REST 経路でも、ルールセットを作る前に同じゲートを通す。
+  const gate = spawnSync('bash', [path.join(__dirname, '..', 'scripts', 'firestore-rules-gate.sh')], { stdio: 'inherit' });
+  if (gate.status !== 0) {
+    console.error('❌ rules gate failed (exit ' + (gate.status == null ? 'signal' : gate.status) + '). deploy aborted');
+    process.exit(gate.status || 1);
+  }
+
   const rules = fs.readFileSync(path.join(__dirname, '..', 'firestore.rules'), 'utf8');
   const token = await getAccessToken();
 
